@@ -447,6 +447,10 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// the 256 colors in the terminal color table) and `COLOR` is a typical RGB
 /// color code such as `#AABBCC` or `AABBCC`, or a named X11 color.
 ///
+/// The palette index can be in decimal, binary, octal, or hexadecimal.
+/// Decimal is assumed unless a prefix is used: `0b` for binary, `0o` for octal,
+/// and `0x` for hexadecimal.
+///
 /// For definitions on the color indices and what they canonically map to,
 /// [see this cheat sheet](https://www.ditig.com/256-colors-cheat-sheet).
 palette: Palette = .{},
@@ -4125,7 +4129,7 @@ pub const Palette = struct {
         const eqlIdx = std.mem.indexOf(u8, value, "=") orelse
             return error.InvalidValue;
 
-        const key = try std.fmt.parseInt(u8, value[0..eqlIdx], 10);
+        const key = try std.fmt.parseInt(u8, value[0..eqlIdx], 0);
         const rgb = try Color.parseCLI(value[eqlIdx + 1 ..]);
         self.value[key] = .{ .r = rgb.r, .g = rgb.g, .b = rgb.b };
     }
@@ -4163,6 +4167,28 @@ pub const Palette = struct {
         try testing.expect(p.value[0].r == 0xAA);
         try testing.expect(p.value[0].g == 0xBB);
         try testing.expect(p.value[0].b == 0xCC);
+    }
+
+    test "parseCLI base" {
+        const testing = std.testing;
+
+        var p: Self = .{};
+
+        try p.parseCLI("0b1=#014589");
+        try p.parseCLI("0o7=#234567");
+        try p.parseCLI("0xF=#ABCDEF");
+
+        try testing.expect(p.value[0b1].r == 0x01);
+        try testing.expect(p.value[0b1].g == 0x45);
+        try testing.expect(p.value[0b1].b == 0x89);
+
+        try testing.expect(p.value[0o7].r == 0x23);
+        try testing.expect(p.value[0o7].g == 0x45);
+        try testing.expect(p.value[0o7].b == 0x67);
+
+        try testing.expect(p.value[0xF].r == 0xAB);
+        try testing.expect(p.value[0xF].g == 0xCD);
+        try testing.expect(p.value[0xF].b == 0xEF);
     }
 
     test "parseCLI overflow" {
