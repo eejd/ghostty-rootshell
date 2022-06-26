@@ -750,11 +750,11 @@ test "Terminal: horizontal tabs" {
     // HT
     try t.print('1');
     try t.horizontalTab();
-    try testing.expectEqual(@as(usize, 8), t.cursor.x);
+    try testing.expectEqual(@as(usize, 7), t.cursor.x);
 
     // HT
     try t.horizontalTab();
-    try testing.expectEqual(@as(usize, 16), t.cursor.x);
+    try testing.expectEqual(@as(usize, 15), t.cursor.x);
 }
 
 test "Terminal: setCursorPosition" {
