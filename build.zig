@@ -24,8 +24,9 @@ pub fn build(b: *std.build.Builder) !void {
     const tracy = b.option(
         bool,
         "tracy",
-        "Enable Tracy integration (default true in Debug)",
-    ) orelse (mode == .Debug);
+        "Enable Tracy integration (default true in Debug on Linux)",
+    ) orelse (mode == .Debug and target.isLinux());
+
     const conformance = b.option(
         []const u8,
         "conformance",
