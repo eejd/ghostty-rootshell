@@ -1,12 +1,9 @@
 Bugs:
 
-* Paste puts a "v" at the end of the string
-
 Performance:
 
 * libuv allocates on every read, we should use a read buffer pool
 * update cells should only update the changed cells
-* terminal data structure is bad!
 
 Correctness:
 

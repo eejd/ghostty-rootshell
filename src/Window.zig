@@ -93,6 +93,12 @@ bg_a: f32,
 /// Bracketed paste mode
 bracketed_paste: bool = false,
 
+/// Set to true for a single GLFW key/char callback cycle to cause the
+/// char callback to ignore. GLFW seems to always do key followed by char
+/// callbacks so we abuse that here. This is to solve an issue where commands
+/// like such as "control-v" will write a "v" even if they're intercepted.
+ignore_char: bool = false,
+
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
@@ -368,6 +374,12 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // Ignore if requested. See field docs for more information.
+    if (win.ignore_char) {
+        win.ignore_char = false;
+        return;
+    }
+
     // Write the character to the pty
     win.queueWrite(&[1]u8{@intCast(u8, codepoint)}) catch unreachable;
 }
@@ -386,14 +398,17 @@ fn keyCallback(
 
     // Paste
     if (action == .press and mods.super and key == .v) {
+        const win = window.getUserPointer(Window) orelse return;
+
+        // Ignore this character for writing
+        win.ignore_char = true;
+
         const data = glfw.getClipboardString() catch |err| {
             log.warn("error reading clipboard: {}", .{err});
             return;
         };
 
         if (data.len > 0) {
-            const win = window.getUserPointer(Window) orelse return;
-
             if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch unreachable;
             win.queueWrite(data) catch |err|
                 log.warn("error pasting clipboard: {}", .{err});
