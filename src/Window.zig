@@ -561,15 +561,42 @@ fn renderTimerCallback(t: *libuv.Timer) void {
 
     const win = t.getData(Window).?;
 
+    // Calculate foreground and background colors
+    const fg = win.grid.foreground;
+    defer win.grid.foreground = fg;
+    if (win.terminal.mode_reverse_colors) {
+        win.grid.foreground = .{
+            .r = @floatToInt(u8, win.bg_r * 255),
+            .g = @floatToInt(u8, win.bg_g * 255),
+            .b = @floatToInt(u8, win.bg_b * 255),
+        };
+    }
+
+    // Set our background
+    const bg: struct {
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    } = if (win.terminal.mode_reverse_colors) .{
+        .r = @intToFloat(f32, fg.r) / 255,
+        .g = @intToFloat(f32, fg.g) / 255,
+        .b = @intToFloat(f32, fg.b) / 255,
+        .a = 1.0,
+    } else .{
+        .r = win.bg_r,
+        .g = win.bg_g,
+        .b = win.bg_b,
+        .a = win.bg_a,
+    };
+    gl.clearColor(bg.r, bg.g, bg.b, bg.a);
+    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
+
     // Update the cells for drawing
     win.grid.updateCells(win.terminal) catch unreachable;
 
     // Update our texture if we have to
     win.grid.flushAtlas() catch unreachable;
-
-    // Set our background
-    gl.clearColor(win.bg_r, win.bg_g, win.bg_b, win.bg_a);
-    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // Render the grid
     win.grid.render() catch |err| {
@@ -688,6 +715,13 @@ pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {
 
 pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
     switch (mode) {
+        .reverse_colors => {
+            self.terminal.mode_reverse_colors = enabled;
+
+            // Schedule a render since we changed colors
+            try self.render_timer.schedule();
+        },
+
         .origin => {
             self.terminal.mode_origin = enabled;
             self.terminal.setCursorPos(1, 1);

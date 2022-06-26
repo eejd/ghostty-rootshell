@@ -42,6 +42,9 @@ pub const RenditionAspect = enum(u16) {
 /// values correspond to the `?`-prefixed modes, since those are the ones
 /// of primary interest. The enum value is the mode value.
 pub const Mode = enum(u16) {
+    /// Reverses the foreground and background colors of all cells.
+    reverse_colors = 5,
+
     /// If set, the origin of the coordinate system is relative to the
     /// current scroll region. If set the cursor is moved to the top left of
     /// the current scroll region.

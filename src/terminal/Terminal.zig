@@ -44,6 +44,7 @@ scrolling_region: ScrollingRegion,
 /// Modes
 // TODO: turn into a bitset probably
 mode_origin: bool = false,
+mode_reverse_colors: bool = false,
 
 /// Scrolling region is the area of the screen designated where scrolling
 /// occurs. Wen scrolling the screen, only this viewport is scrolled.
