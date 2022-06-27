@@ -280,6 +280,8 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
         defer y += 1;
 
         for (line) |cell, x| {
+            // TODO: inverse
+
             // If the cell has a background, we always draw it.
             if (cell.bg) |rgb| {
                 self.cells.appendAssumeCapacity(.{

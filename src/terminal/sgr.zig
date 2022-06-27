@@ -15,6 +15,15 @@ pub const Attribute = union(enum) {
     /// Bold the text.
     bold: void,
 
+    /// Underline the text
+    underline: void,
+
+    /// Blink the text
+    blink: void,
+
+    /// Invert fg/bg colors.
+    inverse: void,
+
     /// Set foreground color as RGB values.
     direct_color_fg: RGB,
 
@@ -67,6 +76,12 @@ pub const Parser = struct {
             0 => return Attribute{ .unset = {} },
 
             1 => return Attribute{ .bold = {} },
+
+            4 => return Attribute{ .underline = {} },
+
+            5 => return Attribute{ .blink = {} },
+
+            7 => return Attribute{ .inverse = {} },
 
             30...37 => return Attribute{
                 .@"8_fg" = @intToEnum(color.Name, slice[0] - 30),
@@ -176,6 +191,11 @@ test "sgr: Parser multiple" {
 test "sgr: bold" {
     const v = testParse(&[_]u16{1});
     try testing.expect(v == .bold);
+}
+
+test "sgr: inverse" {
+    const v = testParse(&[_]u16{7});
+    try testing.expect(v == .inverse);
 }
 
 test "sgr: 8 color" {

@@ -20,6 +20,12 @@ pub const Cell = struct {
     fg: ?color.RGB = null,
     bg: ?color.RGB = null,
 
+    /// On/off attributes that can be set
+    /// TODO: pack it
+    attrs: struct {
+        inverse: u1 = 0,
+    } = .{},
+
     /// True if the cell should be skipped for drawing
     pub fn empty(self: Cell) bool {
         return self.char == 0;

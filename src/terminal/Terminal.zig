@@ -147,6 +147,11 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
         .unset => {
             self.cursor.pen.fg = null;
             self.cursor.pen.bg = null;
+            self.cursor.pen.attrs = .{};
+        },
+
+        .inverse => {
+            self.cursor.pen.attrs.inverse = 1;
         },
 
         .direct_color_fg => |rgb| {
