@@ -106,6 +106,7 @@ pub fn init(alloc: Allocator) !Grid {
     var fam = try font.Family.init(atlas);
     errdefer fam.deinit(alloc);
     try fam.loadFaceFromMemory(.regular, face_ttf, 32);
+    try fam.loadFaceFromMemory(.bold, face_bold_ttf, 32);
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
@@ -310,13 +311,19 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
             // If the cell is empty then we draw nothing in the box.
             if (cell.empty()) continue;
 
+            // Determine our glyph styling
+            const style: font.Style = if (cell.attrs.bold == 1)
+                .bold
+            else
+                .regular;
+
             // Get our glyph
             // TODO: if we add a glyph, I think we need to rerender the texture.
-            const glyph = if (self.font_atlas.getGlyph(cell.char, .regular)) |glyph|
+            const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
                 glyph
             else glyph: {
                 self.atlas_dirty = true;
-                break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, .regular);
+                break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
             };
 
             const fg = cell.fg orelse self.foreground;
@@ -509,4 +516,4 @@ test "GridSize update rounding" {
 }
 
 const face_ttf = @embedFile("../fonts/FiraCode-Regular.ttf");
-//const face_ttf = @embedFile("../fonts/Inconsolata-Regular.ttf");
+const face_bold_ttf = @embedFile("../fonts/FiraCode-Bold.ttf");

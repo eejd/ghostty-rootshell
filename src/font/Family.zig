@@ -32,6 +32,7 @@ glyphs: std.AutoHashMapUnmanaged(GlyphKey, Glyph) = .{},
 /// The font faces representing all the styles in this family.
 /// These should be set directly or via various loader functions.
 regular: ?Face = null,
+bold: ?Face = null,
 
 /// This struct is used for the hash key for glyphs.
 const GlyphKey = struct {
@@ -55,6 +56,7 @@ pub fn deinit(self: *Family, alloc: Allocator) void {
     self.glyphs.deinit(alloc);
 
     if (self.regular) |*face| face.deinit();
+    if (self.bold) |*face| face.deinit();
 
     if (ftc.FT_Done_FreeType(self.ft_library) != ftok)
         log.err("failed to clean up FreeType", .{});
@@ -77,7 +79,7 @@ pub fn loadFaceFromMemory(
 
     @field(self, switch (style) {
         .regular => "regular",
-        .bold => unreachable,
+        .bold => "bold",
         .italic => unreachable,
         .bold_italic => unreachable,
     }) = face;
@@ -106,7 +108,7 @@ pub fn addGlyph(self: *Family, alloc: Allocator, v: anytype, style: Style) !*Gly
         // Real is the face we SHOULD use for this style.
         var real = switch (style) {
             .regular => self.regular,
-            .bold => unreachable,
+            .bold => self.bold,
             .italic => unreachable,
             .bold_italic => unreachable,
         };

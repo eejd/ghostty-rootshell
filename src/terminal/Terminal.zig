@@ -150,6 +150,10 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.cursor.pen.attrs = .{};
         },
 
+        .bold => {
+            self.cursor.pen.attrs.bold = 1;
+        },
+
         .inverse => {
             self.cursor.pen.attrs.inverse = 1;
         },

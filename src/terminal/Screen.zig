@@ -23,6 +23,7 @@ pub const Cell = struct {
     /// On/off attributes that can be set
     /// TODO: pack it
     attrs: struct {
+        bold: u1 = 0,
         inverse: u1 = 0,
     } = .{},
 
