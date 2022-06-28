@@ -271,9 +271,9 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
     try self.cells.ensureTotalCapacity(
         self.alloc,
 
-        // * 2 for background modes and cursor
+        // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        (term.screen.rows * term.screen.cols * 2) + 1,
+        (term.screen.rows * term.screen.cols * 3) + 1,
     );
 
     // Build each cell
@@ -308,44 +308,67 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                 });
             }
 
-            // If the cell is empty then we draw nothing in the box.
-            if (cell.empty()) continue;
-
-            // Determine our glyph styling
-            const style: font.Style = if (cell.attrs.bold == 1)
-                .bold
-            else
-                .regular;
-
-            // Get our glyph
-            // TODO: if we add a glyph, I think we need to rerender the texture.
-            const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
-                glyph
-            else glyph: {
-                self.atlas_dirty = true;
-                break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
-            };
-
             const fg = cell.fg orelse self.foreground;
-            self.cells.appendAssumeCapacity(.{
-                .mode = 2,
-                .grid_col = @intCast(u16, x),
-                .grid_row = @intCast(u16, y),
-                .glyph_x = glyph.atlas_x,
-                .glyph_y = glyph.atlas_y,
-                .glyph_width = glyph.width,
-                .glyph_height = glyph.height,
-                .glyph_offset_x = glyph.offset_x,
-                .glyph_offset_y = glyph.offset_y,
-                .fg_r = fg.r,
-                .fg_g = fg.g,
-                .fg_b = fg.b,
-                .fg_a = 255,
-                .bg_r = 0,
-                .bg_g = 0,
-                .bg_b = 0,
-                .bg_a = 0,
-            });
+
+            // If the cell is empty then we draw nothing in the box.
+            if (!cell.empty()) {
+                // Determine our glyph styling
+                const style: font.Style = if (cell.attrs.bold == 1)
+                    .bold
+                else
+                    .regular;
+
+                // Get our glyph
+                // TODO: if we add a glyph, I think we need to rerender the texture.
+                const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
+                    glyph
+                else glyph: {
+                    self.atlas_dirty = true;
+                    break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
+                };
+
+                self.cells.appendAssumeCapacity(.{
+                    .mode = 2,
+                    .grid_col = @intCast(u16, x),
+                    .grid_row = @intCast(u16, y),
+                    .glyph_x = glyph.atlas_x,
+                    .glyph_y = glyph.atlas_y,
+                    .glyph_width = glyph.width,
+                    .glyph_height = glyph.height,
+                    .glyph_offset_x = glyph.offset_x,
+                    .glyph_offset_y = glyph.offset_y,
+                    .fg_r = fg.r,
+                    .fg_g = fg.g,
+                    .fg_b = fg.b,
+                    .fg_a = 255,
+                    .bg_r = 0,
+                    .bg_g = 0,
+                    .bg_b = 0,
+                    .bg_a = 0,
+                });
+            }
+
+            if (cell.attrs.underline == 1) {
+                self.cells.appendAssumeCapacity(.{
+                    .mode = 6, // underline
+                    .grid_col = @intCast(u16, x),
+                    .grid_row = @intCast(u16, y),
+                    .glyph_x = 0,
+                    .glyph_y = 0,
+                    .glyph_width = 0,
+                    .glyph_height = 0,
+                    .glyph_offset_x = 0,
+                    .glyph_offset_y = 0,
+                    .fg_r = fg.r,
+                    .fg_g = fg.g,
+                    .fg_b = fg.b,
+                    .fg_a = 255,
+                    .bg_r = 0,
+                    .bg_g = 0,
+                    .bg_b = 0,
+                    .bg_a = 0,
+                });
+            }
         }
     }
 

@@ -28,6 +28,7 @@ const uint MODE_FG = 2u;
 const uint MODE_CURSOR_RECT = 3u;
 const uint MODE_CURSOR_RECT_HOLLOW = 4u;
 const uint MODE_CURSOR_BAR = 5u;
+const uint MODE_UNDERLINE = 6u;
 
 void main() {
     switch (mode) {
@@ -81,6 +82,10 @@ void main() {
         break;
 
     case MODE_CURSOR_BAR:
+        out_FragColor = color;
+        break;
+
+    case MODE_UNDERLINE:
         out_FragColor = color;
         break;
     }

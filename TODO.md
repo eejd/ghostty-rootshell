@@ -1,5 +1,7 @@
 Bugs:
 
+* Underline should use freetype underline thickness hint
+
 Performance:
 
 * libuv allocates on every read, we should use a read buffer pool
@@ -19,8 +21,6 @@ Major Features:
 * Line wrap
 * Selection, highlighting
 * Copy (paste is done)
-* Bold
-* Underline
 * Strikethrough
 * Emoji
 * Ligatures

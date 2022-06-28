@@ -24,6 +24,7 @@ pub const Cell = struct {
     /// TODO: pack it
     attrs: struct {
         bold: u1 = 0,
+        underline: u1 = 0,
         inverse: u1 = 0,
     } = .{},
 

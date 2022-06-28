@@ -9,6 +9,7 @@ const uint MODE_FG = 2u;
 const uint MODE_CURSOR_RECT = 3u;
 const uint MODE_CURSOR_RECT_HOLLOW = 4u;
 const uint MODE_CURSOR_BAR = 5u;
+const uint MODE_UNDERLINE = 6u;
 
 // The grid coordinates (x, y) where x < columns and y < rows
 layout (location = 0) in vec2 grid_coord;
@@ -157,6 +158,24 @@ void main() {
 
         gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
         color = bg_color_in / 255.0;
+        break;
+
+    case MODE_UNDERLINE:
+        // Make the underline a smaller version of our cell
+        // TODO: use real font underline thickness
+        vec2 underline_size = vec2(cell_size.x, cell_size.y*0.05);
+
+        // Position our underline so that it is midway between the glyph
+        // baseline and the bottom of the cell.
+        vec2 underline_offset = vec2(cell_size.x, cell_size.y - (glyph_baseline / 2));
+
+        // Go to the bottom of the cell, take away the size of the
+        // underline, and that is our position. We also float it slightly
+        // above the bottom.
+        cell_pos = cell_pos + underline_offset - underline_size * position;
+
+        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        color = fg_color_in / 255.0;
         break;
     }
 }
