@@ -59,11 +59,11 @@ pub fn tracy_enabled() bool {
 
 test {
     _ = @import("Atlas.zig");
-    _ = @import("FontAtlas.zig");
     _ = @import("Grid.zig");
     _ = @import("Pty.zig");
     _ = @import("Command.zig");
     _ = @import("TempDir.zig");
+    _ = @import("font/font.zig");
     _ = @import("terminal/Terminal.zig");
 
     // Libraries

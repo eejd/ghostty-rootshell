@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Atlas = @import("Atlas.zig");
-const FontAtlas = @import("FontAtlas.zig");
+const font = @import("font/font.zig");
 const terminal = @import("terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("opengl.zig");
@@ -34,7 +34,7 @@ vbo: gl.Buffer,
 texture: gl.Texture,
 
 /// The font atlas.
-font_atlas: FontAtlas,
+font_atlas: font.Family,
 atlas_dirty: bool,
 
 /// Whether the cursor is visible or not. This is used to control cursor
@@ -103,9 +103,9 @@ pub fn init(alloc: Allocator) !Grid {
     // font atlas with all the visible ASCII characters since they are common.
     var atlas = try Atlas.init(alloc, 512);
     errdefer atlas.deinit(alloc);
-    var font = try FontAtlas.init(atlas);
-    errdefer font.deinit(alloc);
-    try font.loadFaceFromMemory(face_ttf, 32);
+    var fam = try font.Family.init(atlas);
+    errdefer fam.deinit(alloc);
+    try fam.loadFaceFromMemory(.regular, face_ttf, 32);
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
@@ -113,7 +113,7 @@ pub fn init(alloc: Allocator) !Grid {
         var cell_width: f32 = 0;
         var i: u8 = 32;
         while (i <= 126) : (i += 1) {
-            const glyph = try font.addGlyph(alloc, i);
+            const glyph = try fam.addGlyph(alloc, i, .regular);
             if (glyph.advance_x > cell_width) {
                 cell_width = @ceil(glyph.advance_x);
             }
@@ -126,12 +126,11 @@ pub fn init(alloc: Allocator) !Grid {
     // '_' which should live at the bottom of a cell.
     const cell_height: f32 = cell_height: {
         // This is the height reported by the font face
-        const face_height: i32 = font.unitsToPxY(font.ft_face.*.height);
+        const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.height);
 
         // Determine the height of the underscore char
-        assert(font.ft_face != null);
-        const glyph = font.getGlyph('_').?;
-        var res: i32 = font.unitsToPxY(font.ft_face.*.ascender);
+        const glyph = fam.getGlyph('_', .regular).?;
+        var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender);
         res -= glyph.offset_y;
         res += @intCast(i32, glyph.height);
 
@@ -141,7 +140,10 @@ pub fn init(alloc: Allocator) !Grid {
 
         break :cell_height @intToFloat(f32, res);
     };
-    const cell_baseline = cell_height - @intToFloat(f32, font.unitsToPxY(font.ft_face.*.ascender));
+    const cell_baseline = cell_height - @intToFloat(
+        f32,
+        fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender),
+    );
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
 
     // Create our shader
@@ -235,7 +237,7 @@ pub fn init(alloc: Allocator) !Grid {
         .ebo = ebo,
         .vbo = vbo,
         .texture = tex,
-        .font_atlas = font,
+        .font_atlas = fam,
         .atlas_dirty = false,
         .cursor_visible = true,
         .cursor_style = .box,
@@ -310,11 +312,11 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
 
             // Get our glyph
             // TODO: if we add a glyph, I think we need to rerender the texture.
-            const glyph = if (self.font_atlas.getGlyph(cell.char)) |glyph|
+            const glyph = if (self.font_atlas.getGlyph(cell.char, .regular)) |glyph|
                 glyph
             else glyph: {
                 self.atlas_dirty = true;
-                break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char);
+                break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, .regular);
             };
 
             const fg = cell.fg orelse self.foreground;
