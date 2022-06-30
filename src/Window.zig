@@ -582,18 +582,19 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     const win = t.getData(Window).?;
 
     // Calculate foreground and background colors
+    const bg = win.grid.background;
     const fg = win.grid.foreground;
-    defer win.grid.foreground = fg;
+    defer {
+        win.grid.background = bg;
+        win.grid.foreground = fg;
+    }
     if (win.terminal.mode_reverse_colors) {
-        win.grid.foreground = .{
-            .r = @floatToInt(u8, win.bg_r * 255),
-            .g = @floatToInt(u8, win.bg_g * 255),
-            .b = @floatToInt(u8, win.bg_b * 255),
-        };
+        win.grid.background = fg;
+        win.grid.foreground = bg;
     }
 
     // Set our background
-    const bg: struct {
+    const gl_bg: struct {
         r: f32,
         g: f32,
         b: f32,
@@ -609,7 +610,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         .b = win.bg_b,
         .a = win.bg_a,
     };
-    gl.clearColor(bg.r, bg.g, bg.b, bg.a);
+    gl.clearColor(gl_bg.r, gl_bg.g, gl_bg.b, gl_bg.a);
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // Update the cells for drawing

@@ -307,8 +307,6 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                 // In inverted mode, the background MUST be set to something
                 // (is never null) so it is either the fg or default fg. The
                 // fg is either the bg or default background.
-                //
-                // TODO(mitchellh): How should this interact with DECSCNM?
                 .bg = cell.fg orelse self.foreground,
                 .fg = cell.bg orelse self.background,
             };
