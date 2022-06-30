@@ -150,6 +150,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     const window_size = try window.getSize();
     var grid = try Grid.init(alloc);
     try grid.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
+    grid.background = .{
+        .r = config.background.r,
+        .g = config.background.g,
+        .b = config.background.b,
+    };
     grid.foreground = .{
         .r = config.foreground.r,
         .g = config.foreground.g,

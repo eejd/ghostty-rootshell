@@ -45,6 +45,9 @@ cursor_style: CursorStyle,
 /// Default foreground color
 foreground: terminal.color.RGB,
 
+/// Default background color
+background: terminal.color.RGB,
+
 /// Available cursor styles for drawing. The values represents the mode value
 /// in the shader.
 pub const CursorStyle = enum(u8) {
@@ -242,6 +245,7 @@ pub fn init(alloc: Allocator) !Grid {
         .atlas_dirty = false,
         .cursor_visible = true,
         .cursor_style = .box,
+        .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
     };
 }
@@ -283,10 +287,34 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
         defer y += 1;
 
         for (line) |cell, x| {
-            // TODO: inverse
+            // The colors for the cell.
+            const colors: struct {
+                /// Background is optional because in un-inverted mode
+                /// it may just be equivalent to the default background in
+                /// which case we do nothing to save on GPU render time.
+                bg: ?terminal.color.RGB,
+
+                /// Fg is always set to some color, though we may not render
+                /// any fg if the cell is empty or has no attributes like
+                /// underline.
+                fg: terminal.color.RGB,
+            } = if (cell.attrs.inverse == 0) .{
+                // In normal mode, background and fg match the cell. We
+                // un-optionalize the fg by defaulting to our fg color.
+                .bg = cell.bg,
+                .fg = cell.fg orelse self.foreground,
+            } else .{
+                // In inverted mode, the background MUST be set to something
+                // (is never null) so it is either the fg or default fg. The
+                // fg is either the bg or default background.
+                //
+                // TODO(mitchellh): How should this interact with DECSCNM?
+                .bg = cell.fg orelse self.foreground,
+                .fg = cell.bg orelse self.background,
+            };
 
             // If the cell has a background, we always draw it.
-            if (cell.bg) |rgb| {
+            if (colors.bg) |rgb| {
                 self.cells.appendAssumeCapacity(.{
                     .mode = 1,
                     .grid_col = @intCast(u16, x),
@@ -307,8 +335,6 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                     .bg_a = 0xFF,
                 });
             }
-
-            const fg = cell.fg orelse self.foreground;
 
             // If the cell is empty then we draw nothing in the box.
             if (!cell.empty()) {
@@ -337,9 +363,9 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                     .glyph_height = glyph.height,
                     .glyph_offset_x = glyph.offset_x,
                     .glyph_offset_y = glyph.offset_y,
-                    .fg_r = fg.r,
-                    .fg_g = fg.g,
-                    .fg_b = fg.b,
+                    .fg_r = colors.fg.r,
+                    .fg_g = colors.fg.g,
+                    .fg_b = colors.fg.b,
                     .fg_a = 255,
                     .bg_r = 0,
                     .bg_g = 0,
@@ -359,9 +385,9 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                     .glyph_height = 0,
                     .glyph_offset_x = 0,
                     .glyph_offset_y = 0,
-                    .fg_r = fg.r,
-                    .fg_g = fg.g,
-                    .fg_b = fg.b,
+                    .fg_r = colors.fg.r,
+                    .fg_g = colors.fg.g,
+                    .fg_b = colors.fg.b,
                     .fg_a = 255,
                     .bg_r = 0,
                     .bg_g = 0,
