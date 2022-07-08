@@ -18,9 +18,9 @@ modern, opt-in features that enable CLI tool developers to build more feature
 rich, interactive applications.
 
 There are a number of excellent terminal emulator options that exist
-today. The unique goal of ghostty is to have a platform for experimenting 
-with modern, optional, non-standards-compliant features to enhance the 
-capabilities of CLI applications. We aim to be the best in this category, 
+today. The unique goal of ghostty is to have a platform for experimenting
+with modern, optional, non-standards-compliant features to enhance the
+capabilities of CLI applications. We aim to be the best in this category,
 and competitive in the rest.
 
 While aiming for this ambitious goal, ghostty is a fully standards compliant
@@ -43,3 +43,32 @@ The high-level ambitious plan for the project, in order:
 | 4 | Richer windowing features -- multi-window, tabbing, panes | ❌ |
 | 5 | Optimal rendering performance | ❌ |
 | N | Fancy features (to be expanded upon later) | ❌ |
+
+## Developing Ghostty
+
+Ghostty is built using both the [Zig](https://ziglang.org/) programming
+language as well as the Zig build system. At a minimum, Zig must be installed.
+For [Nix](https://nixos.org/) users, a `shell.nix` is available which includes
+all the necessary dependencies pinned to exact versions.
+
+With Zig installed, a binary can be built using `zig build`:
+
+```shell-session
+$ zig build
+...
+
+$ zig-out/bin/ghostty
+```
+
+This will build a binary for the currently running system (if supported).
+You can cross compile by setting `-Dtarget=<target-triple>`. For example,
+`zig build -Dtarget=aarch64-macos` will build for Apple Silicon macOS. Note
+that not all targets supported by Zig are supported.
+
+Other useful commands:
+
+  * `zig build test` for running unit tests.
+  * `zig build run -Dconformance=<name>` run a conformance test case from
+    the `conformance` directory. The `name` is the name of the file. This runs
+    in the current running terminal emulator so if you want to check the
+    behavior of this project, you must run this command in ghostty.
