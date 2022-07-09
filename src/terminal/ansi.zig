@@ -42,6 +42,11 @@ pub const RenditionAspect = enum(u16) {
 /// values correspond to the `?`-prefixed modes, since those are the ones
 /// of primary interest. The enum value is the mode value.
 pub const Mode = enum(u16) {
+    /// Change terminal wide between 80 and 132 column mode. When set
+    /// (with ?40 set), resizes terminal to 132 columns and keeps it that
+    /// wide. When unset, resizes to 80 columns.
+    @"132_column" = 3,
+
     /// Reverses the foreground and background colors of all cells.
     reverse_colors = 5,
 
@@ -52,6 +57,11 @@ pub const Mode = enum(u16) {
 
     /// Enable or disable automatic line wrapping.
     autowrap = 7,
+
+    /// Enables or disables mode ?3. If disabled, the terminal will resize
+    /// to the size of the window. If enabled, this will take effect when
+    /// mode ?3 is set or unset.
+    enable_mode_3 = 40,
 
     /// Bracket clipboard paste contents in delimiter sequences.
     ///
