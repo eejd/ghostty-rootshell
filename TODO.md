@@ -10,6 +10,8 @@ Performance:
 Correctness:
 
 * `exit` in the shell should close the window
+* test wrap against wraptest: https://github.com/mattiase/wraptest
+  - automate this in some way
 
 Visual:
 
