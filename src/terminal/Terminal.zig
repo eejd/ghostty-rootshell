@@ -44,6 +44,7 @@ scrolling_region: ScrollingRegion,
 /// Modes
 // TODO: turn into a bitset probably
 mode_origin: bool = false,
+mode_autowrap: bool = true,
 mode_reverse_colors: bool = false,
 
 /// Scrolling region is the area of the screen designated where scrolling
@@ -202,7 +203,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     defer tracy.end();
 
     // If we're soft-wrapping, then handle that first.
-    if (self.cursor.pending_wrap) {
+    if (self.cursor.pending_wrap and self.mode_autowrap) {
         // Mark that the cell is wrapped, which guarantees that there is
         // at least one cell after it in the next row.
         const cell = self.screen.getCell(self.cursor.y, self.cursor.x);

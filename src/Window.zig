@@ -748,6 +748,10 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.terminal.setCursorPos(1, 1);
         },
 
+        .autowrap => {
+            self.terminal.mode_autowrap = enabled;
+        },
+
         .bracketed_paste => self.bracketed_paste = true,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),

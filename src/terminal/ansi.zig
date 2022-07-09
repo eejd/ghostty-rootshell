@@ -50,6 +50,9 @@ pub const Mode = enum(u16) {
     /// the current scroll region.
     origin = 6,
 
+    /// Enable or disable automatic line wrapping.
+    autowrap = 7,
+
     /// Bracket clipboard paste contents in delimiter sequences.
     ///
     /// When pasting from the (e.g. system) clipboard add "ESC [ 2 0 0 ~"
