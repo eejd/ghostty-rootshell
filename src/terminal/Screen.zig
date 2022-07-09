@@ -26,6 +26,11 @@ pub const Cell = struct {
         bold: u1 = 0,
         underline: u1 = 0,
         inverse: u1 = 0,
+
+        /// If 1, this line is soft-wrapped. Only the last cell in a row
+        /// should have this set. The first cell of the next row is actually
+        /// part of this row in raw input.
+        wrap: u1 = 0,
     } = .{},
 
     /// True if the cell should be skipped for drawing
@@ -152,9 +157,11 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     self.rows = rows;
     self.cols = cols;
 
+    // TODO: reflow due to soft wrap
+
     // If we're increasing height, then copy all rows (start at 0).
     // Otherwise start at the latest row that includes the bottom row,
-    // aka trip the top.
+    // aka strip the top.
     var y: usize = if (rows >= old.rows) 0 else old.rows - rows;
     const start = y;
     const col_end = @minimum(old.cols, cols);

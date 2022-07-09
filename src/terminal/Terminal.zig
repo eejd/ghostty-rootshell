@@ -62,6 +62,9 @@ const Cursor = struct {
 
     // pen is the current cell styling to apply to new cells.
     pen: Screen.Cell = .{ .char = 0 },
+
+    // The last column flag (LCF) used to do soft wrapping.
+    pending_wrap: bool = false,
 };
 
 /// Initialize a new terminal.
@@ -198,6 +201,18 @@ pub fn print(self: *Terminal, c: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If we're soft-wrapping, then handle that first.
+    if (self.cursor.pending_wrap) {
+        // Mark that the cell is wrapped, which guarantees that there is
+        // at least one cell after it in the next row.
+        const cell = self.screen.getCell(self.cursor.y, self.cursor.x);
+        cell.attrs.wrap = 1;
+
+        // Move to the next line
+        self.index();
+        self.cursor.x = 0;
+    }
+
     // Build our cell
     const cell = self.screen.getCell(self.cursor.y, self.cursor.x);
     cell.* = self.cursor.pen;
@@ -206,9 +221,12 @@ pub fn print(self: *Terminal, c: u21) !void {
     // Move the cursor
     self.cursor.x += 1;
 
-    // TODO: wrap
+    // If we're at the column limit, then we need to wrap the next time.
+    // This is unlikely so we do the increment above and decrement here
+    // if we need to rather than check once.
     if (self.cursor.x == self.cols) {
         self.cursor.x -= 1;
+        self.cursor.pending_wrap = true;
     }
 }
 
@@ -246,6 +264,9 @@ pub fn decaln(self: *Terminal) void {
 ///
 /// This unsets the pending wrap state without wrapping.
 pub fn index(self: *Terminal) void {
+    // Unset pending wrap state
+    self.cursor.pending_wrap = false;
+
     // If we're at the end of the screen, scroll up. This is surprisingly
     // common because most terminals live with a full screen so we do this
     // check first.
@@ -315,6 +336,9 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
 
     self.cursor.x = @minimum(params.x_max, col) -| 1;
     self.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
+
+    // Unset pending wrap state
+    self.cursor.pending_wrap = false;
 }
 
 /// Erase the display.
@@ -548,9 +572,9 @@ pub fn carriageReturn(self: *Terminal) void {
 
     // TODO: left/right margin mode
     // TODO: origin mode
-    // TODO: wrap state
 
     self.cursor.x = 0;
+    self.cursor.pending_wrap = false;
 }
 
 /// Linefeed moves the cursor to the next line.
@@ -721,6 +745,21 @@ test "Terminal: input with no control characters" {
     }
 }
 
+test "Terminal: soft wrap" {
+    var t = try init(testing.allocator, 3, 80);
+    defer t.deinit(testing.allocator);
+
+    // Basic grid writing
+    for ("hello") |c| try t.print(c);
+    try testing.expectEqual(@as(usize, 1), t.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.cursor.x);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("hel\nlo", str);
+    }
+}
+
 test "Terminal: linefeed and carriage return" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);
@@ -737,6 +776,28 @@ test "Terminal: linefeed and carriage return" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("hello\nworld", str);
     }
+}
+
+test "Terminal: linefeed unsets pending wrap" {
+    var t = try init(testing.allocator, 5, 80);
+    defer t.deinit(testing.allocator);
+
+    // Basic grid writing
+    for ("hello") |c| try t.print(c);
+    try testing.expect(t.cursor.pending_wrap == true);
+    t.linefeed();
+    try testing.expect(t.cursor.pending_wrap == false);
+}
+
+test "Terminal: carriage return unsets pending wrap" {
+    var t = try init(testing.allocator, 5, 80);
+    defer t.deinit(testing.allocator);
+
+    // Basic grid writing
+    for ("hello") |c| try t.print(c);
+    try testing.expect(t.cursor.pending_wrap == true);
+    t.carriageReturn();
+    try testing.expect(t.cursor.pending_wrap == false);
 }
 
 test "Terminal: backspace" {
@@ -787,6 +848,13 @@ test "Terminal: setCursorPosition" {
     t.setCursorPos(81, 81);
     try testing.expectEqual(@as(usize, 79), t.cursor.x);
     try testing.expectEqual(@as(usize, 79), t.cursor.y);
+
+    // Should reset pending wrap
+    t.setCursorPos(0, 80);
+    try t.print('c');
+    try testing.expect(t.cursor.pending_wrap);
+    t.setCursorPos(0, 80);
+    try testing.expect(!t.cursor.pending_wrap);
 
     // Origin mode
     t.mode_origin = true;
