@@ -6,6 +6,8 @@ Performance:
 
 * libuv allocates on every read, we should use a read buffer pool
 * update cells should only update the changed cells
+* for scrollback, investigate using segmented list for sufficiently large
+  scrollback scenarios.
 
 Correctness:
 

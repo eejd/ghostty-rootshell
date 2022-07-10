@@ -1,4 +1,14 @@
+//! Screen represents the internal storage for a terminal screen, including
+//! scrollback. This is implemented as a single continuous ring buffer.
 const Screen = @This();
+
+// FUTURE: Today this is implemented as a single contiguous ring buffer.
+// If we increase the scrollback, we perform a full memory copy. For small
+// scrollback, this is pretty cheap. For large (or infinite) scrollback,
+// this starts to get pretty nasty. We should change this in the future to
+// use a segmented list or something similar. I want to keep all the visible
+// area contiguous so its not a simple drop-in. We can take a look at this
+// one day.
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -54,23 +64,41 @@ pub const RowIterator = struct {
 /// The full list of rows, including any scrollback.
 storage: []Cell,
 
-/// The first visible row.
+/// The top of the scroll area. The first visible row if the terminal
+/// window were scrolled all the way to the top.
 zero: usize,
+
+/// The offset of the visible area within the storage. This is from the
+/// "zero" field. So the actual index of the first row is
+/// `storage[zero + visible_offset]`.
+visible_offset: usize,
+
+/// The maximum number of lines that are available in scrollback. This
+/// is in addition to the number of visible rows.
+max_scrollback: usize,
 
 /// The number of rows and columns in the visible space.
 rows: usize,
 cols: usize,
 
 /// Initialize a new screen.
-pub fn init(alloc: Allocator, rows: usize, cols: usize) !Screen {
+pub fn init(
+    alloc: Allocator,
+    rows: usize,
+    cols: usize,
+    max_scrollback: usize,
+) !Screen {
     // Allocate enough storage to cover every row and column in the visible
     // area. This wastes some up front memory but saves allocations later.
-    const buf = try alloc.alloc(Cell, rows * cols);
+    // TODO: dynamically allocate scrollback
+    const buf = try alloc.alloc(Cell, (rows + max_scrollback) * cols);
     std.mem.set(Cell, buf, .{ .char = 0 });
 
     return Screen{
         .storage = buf,
         .zero = 0,
+        .visible_offset = 0,
+        .max_scrollback = max_scrollback,
         .rows = rows,
         .cols = cols,
     };
@@ -113,15 +141,100 @@ pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
 /// storage array.
 pub fn rowIndex(self: Screen, idx: usize) usize {
     assert(idx < self.rows);
-    const val = (self.zero + idx) * self.cols;
+    const val = (self.zero + self.visible_offset + idx) * self.cols;
     if (val < self.storage.len) return val;
     return val - self.storage.len;
+}
+
+/// Scroll behaviors for the scroll function.
+pub const Scroll = union(enum) {
+    /// Scroll to the top of the scroll buffer. The first line of the
+    /// visible display will be the top line of the scroll buffer.
+    top: void,
+
+    /// Scroll to the bottom, where the last line of the visible display
+    /// will be the last line of the buffer. TODO: are we sure?
+    bottom: void,
+
+    /// Scroll up (negative) or down (positive) some fixed amount.
+    /// Scrolling direction (up/down) describes the direction the viewport
+    /// moves, not the direction text moves. This is the colloquial way that
+    /// scrolling is described: "scroll the page down".
+    delta: isize,
+};
+
+/// Scroll the screen by the given behavior. Note that this will always
+/// "move" the screen. It is up to the caller to determine if they actually
+/// want to do that yet (i.e. are they writing to the end of the screen
+/// or not).
+pub fn scroll(self: *Screen, behavior: Scroll) void {
+    switch (behavior) {
+        // Setting display offset to zero makes row 0 be at self.zero
+        // which is the top!
+        .top => self.visible_offset = 0,
+
+        // TODO: deltas greater than the entire scrollback
+        .delta => |delta| delta: {
+            // If we're scrolling up, then we just subtract and we're done.
+            if (delta < 0) {
+                self.visible_offset -|= @intCast(usize, -delta);
+                break :delta;
+            }
+
+            // If we're scrolling down, we have more work to do beacuse we
+            // need to determine if we're overwriting our scrollback.
+            self.visible_offset +|= @intCast(usize, delta);
+
+            // TODO: can optimize scrollback = 0
+
+            // Determine if we need to clear rows.
+            assert(@mod(self.storage.len, self.cols) == 0);
+            const storage_rows = self.storage.len / self.cols;
+            const visible_zero = self.zero + self.visible_offset;
+            const rows_overlapped = if (visible_zero >= storage_rows) overlap: {
+                // We're wrapping from the top of the visible area. In this
+                // scenario, we just check that we have enough space from
+                // our true visible top to zero.
+                const visible_top = visible_zero - storage_rows;
+                const rows_available = self.zero - visible_top;
+                if (rows_available >= self.rows) break :delta;
+
+                // We overlap our missing rows
+                break :overlap self.rows - rows_available;
+            } else overlap: {
+                // First check: if we have enough space in the storage buffer
+                // FORWARD to accomodate all our rows, then we're fine.
+                const rows_forward = storage_rows - (self.zero + self.visible_offset);
+                if (rows_forward >= self.rows) break :delta;
+
+                // Second check: if we have enough space PRIOR to zero when
+                // wrapped, then we're fine.
+                const rows_wrapped = self.rows - rows_forward;
+                if (rows_wrapped < self.zero) break :delta;
+
+                // We need to clear the rows in the overlap and move the top
+                // of the scrollback buffer.
+                break :overlap rows_wrapped - self.zero;
+            };
+
+            // Clear our overlap
+            const clear_start = self.zero * self.cols;
+            const clear_end = clear_start + (rows_overlapped * self.cols);
+            std.mem.set(Cell, self.storage[clear_start..clear_end], .{ .char = 0 });
+
+            // Move to accomodate overlap. This deletes scrollback.
+            self.zero = @mod(self.zero + rows_overlapped, storage_rows);
+            self.visible_offset -= rows_overlapped;
+        },
+
+        else => @panic("unimplemented"),
+    }
 }
 
 /// Scroll the screen up (positive) or down (negative). Scrolling direction
 /// is the direction text would move. For example, scrolling down would
 /// move existing text downward.
-pub fn scroll(self: *Screen, count: isize) void {
+pub fn scrollOld(self: *Screen, count: isize) void {
     if (count < 0) {
         const amount = @mod(@intCast(usize, -count), self.rows);
         if (amount > self.zero) {
@@ -239,7 +352,7 @@ test "Screen" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
 
     // Sanity check that our test helpers work
@@ -267,10 +380,10 @@ test "Screen: scrolling" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(1);
+    s.scroll(.{ .delta = 1 });
 
     // Test our row index
     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
@@ -281,22 +394,7 @@ test "Screen: scrolling" {
         // Test our contents rotated
         var contents = try s.testString(alloc);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("2EFGH\n3IJKL\n1ABCD", contents);
-    }
-
-    // Scroll by a multiple
-    s.scroll(@intCast(isize, s.rows) * 4);
-
-    // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(2));
-
-    {
-        // Test our contents rotated
-        var contents = try s.testString(alloc);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("2EFGH\n3IJKL\n1ABCD", contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
 }
 
@@ -304,36 +402,16 @@ test "Screen: scroll down from 0" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(-1);
-
-    // Test our row index
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(0));
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(1));
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(2));
+    s.scroll(.{ .delta = -1 });
 
     {
         // Test our contents rotated
         var contents = try s.testString(alloc);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("3IJKL\n1ABCD\n2EFGH", contents);
-    }
-
-    // Scroll by a multiple
-    s.scroll(-4 * @intCast(isize, s.rows));
-
-    // Test our row index
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(0));
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(1));
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(2));
-
-    {
-        // Test our contents rotated
-        var contents = try s.testString(alloc);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("3IJKL\n1ABCD\n2EFGH", contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
 }
 
@@ -341,12 +419,12 @@ test "Screen: row copy" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     // Copy
-    s.scroll(1);
+    s.scroll(.{ .delta = 1 });
     s.copyRow(2, 0);
 
     // Test our contents
@@ -359,7 +437,7 @@ test "Screen: resize more rows" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
@@ -376,7 +454,7 @@ test "Screen: resize less rows" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
@@ -393,7 +471,7 @@ test "Screen: resize more cols" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
@@ -410,7 +488,7 @@ test "Screen: resize less cols" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5);
+    var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);

@@ -73,7 +73,7 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
     return Terminal{
         .cols = cols,
         .rows = rows,
-        .screen = try Screen.init(alloc, rows, cols),
+        .screen = try Screen.init(alloc, rows, cols, 0),
         .cursor = .{},
         .saved_cursor = .{},
         .tabstops = try Tabstops.init(alloc, cols, TABSTOP_INTERVAL),
@@ -679,7 +679,7 @@ pub fn scrollUp(self: *Terminal) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.scroll(1);
+    self.screen.scroll(.{ .delta = 1 });
     const last = self.screen.getRow(self.rows - 1);
     for (last) |*cell| cell.char = 0;
 }
@@ -690,7 +690,7 @@ pub fn scrollDown(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.scroll(-1);
+    self.screen.scroll(.{ .delta = -1 });
     const top = self.screen.getRow(0);
     for (top) |*cell| cell.char = 0;
 }
