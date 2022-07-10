@@ -64,13 +64,15 @@ pub const RowIterator = struct {
 /// The full list of rows, including any scrollback.
 storage: []Cell,
 
-/// The top of the scroll area. The first visible row if the terminal
-/// window were scrolled all the way to the top.
-zero: usize,
+/// The top and bottom of the scroll area. The first visible row if the terminal
+/// window were scrolled all the way to the top. The last visible row if the
+/// terminal were scrolled all the way to the bottom.
+top: usize,
+bottom: usize,
 
 /// The offset of the visible area within the storage. This is from the
-/// "zero" field. So the actual index of the first row is
-/// `storage[zero + visible_offset]`.
+/// "top" field. So the actual index of the first row is
+/// `storage[top + visible_offset]`.
 visible_offset: usize,
 
 /// The maximum number of lines that are available in scrollback. This
@@ -96,7 +98,8 @@ pub fn init(
 
     return Screen{
         .storage = buf,
-        .zero = 0,
+        .top = 0,
+        .bottom = rows,
         .visible_offset = 0,
         .max_scrollback = max_scrollback,
         .rows = rows,
@@ -141,7 +144,7 @@ pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
 /// storage array.
 pub fn rowIndex(self: Screen, idx: usize) usize {
     assert(idx < self.rows);
-    const val = (self.zero + self.visible_offset + idx) * self.cols;
+    const val = (self.top + self.visible_offset + idx) * self.cols;
     if (val < self.storage.len) return val;
     return val - self.storage.len;
 }
@@ -174,15 +177,18 @@ pub const Scroll = union(enum) {
 /// or not).
 pub fn scroll(self: *Screen, behavior: Scroll) void {
     switch (behavior) {
-        // Setting display offset to zero makes row 0 be at self.zero
+        // Setting display offset to zero makes row 0 be at self.top
         // which is the top!
         .top => self.visible_offset = 0,
+
+        // Calc the bottom by going from top of scrollback (self.top)
+        // to the end of the storage, then subtract the number of visible
+        // rows.
+        .bottom => self.visible_offset = self.bottom - self.rows,
 
         // TODO: deltas greater than the entire scrollback
         .delta => |delta| self.scrollDown(delta, true),
         .delta_no_grow => |delta| self.scrollDown(delta, false),
-
-        else => @panic("unimplemented"),
     }
 }
 
@@ -196,19 +202,20 @@ fn scrollDown(self: *Screen, delta: isize, grow: bool) void {
     // If we're scrolling down, we have more work to do beacuse we
     // need to determine if we're overwriting our scrollback.
     self.visible_offset +|= @intCast(usize, delta);
+    if (grow) self.bottom +|= @intCast(usize, delta);
 
     // TODO: can optimize scrollback = 0
 
     // Determine if we need to clear rows.
     assert(@mod(self.storage.len, self.cols) == 0);
     const storage_rows = self.storage.len / self.cols;
-    const visible_zero = self.zero + self.visible_offset;
+    const visible_zero = self.top + self.visible_offset;
     const rows_overlapped = if (visible_zero >= storage_rows) overlap: {
         // We're wrapping from the top of the visible area. In this
         // scenario, we just check that we have enough space from
         // our true visible top to zero.
         const visible_top = visible_zero - storage_rows;
-        const rows_available = self.zero - visible_top;
+        const rows_available = self.top - visible_top;
         if (rows_available >= self.rows) return;
 
         // We overlap our missing rows
@@ -216,29 +223,32 @@ fn scrollDown(self: *Screen, delta: isize, grow: bool) void {
     } else overlap: {
         // First check: if we have enough space in the storage buffer
         // FORWARD to accomodate all our rows, then we're fine.
-        const rows_forward = storage_rows - (self.zero + self.visible_offset);
+        const rows_forward = storage_rows - (self.top + self.visible_offset);
         if (rows_forward >= self.rows) return;
 
         // Second check: if we have enough space PRIOR to zero when
         // wrapped, then we're fine.
         const rows_wrapped = self.rows - rows_forward;
-        if (rows_wrapped < self.zero) return;
+        if (rows_wrapped < self.top) return;
 
         // We need to clear the rows in the overlap and move the top
         // of the scrollback buffer.
-        break :overlap rows_wrapped - self.zero;
+        break :overlap rows_wrapped - self.top;
     };
 
     // If we are growing, then we clear the overlap and reset zero
     if (grow) {
-
         // Clear our overlap
-        const clear_start = self.zero * self.cols;
+        const clear_start = self.top * self.cols;
         const clear_end = clear_start + (rows_overlapped * self.cols);
         std.mem.set(Cell, self.storage[clear_start..clear_end], .{ .char = 0 });
 
         // Move to accomodate overlap. This deletes scrollback.
-        self.zero = @mod(self.zero + rows_overlapped, storage_rows);
+        self.top = @mod(self.top + rows_overlapped, storage_rows);
+
+        // The new bottom is right up against the new top since we're using
+        // the full buffer. The bottom is therefore the full size of the storage.
+        self.bottom = storage_rows;
     }
 
     // Move back the number of overlapped
@@ -251,13 +261,13 @@ fn scrollDown(self: *Screen, delta: isize, grow: bool) void {
 pub fn scrollOld(self: *Screen, count: isize) void {
     if (count < 0) {
         const amount = @mod(@intCast(usize, -count), self.rows);
-        if (amount > self.zero) {
-            self.zero = self.rows - amount;
+        if (amount > self.top) {
+            self.top = self.rows - amount;
         } else {
-            self.zero -|= amount;
+            self.top -|= amount;
         }
     } else {
-        self.zero = @mod(self.zero + @intCast(usize, count), self.rows);
+        self.top = @mod(self.top + @intCast(usize, count), self.rows);
     }
 }
 
@@ -280,7 +290,8 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
     // Reallocate the storage
     self.storage = try alloc.alloc(Cell, rows * cols);
-    self.zero = 0;
+    self.top = 0;
+    self.bottom = rows - 1;
     self.rows = rows;
     self.cols = cols;
 
@@ -410,6 +421,16 @@ test "Screen: scrolling" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
+
+    // Scrolling to the bottom does nothing
+    s.scroll(.{ .bottom = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
 }
 
 test "Screen: scroll down from 0" {
@@ -450,6 +471,16 @@ test "Screen: scrollback" {
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
 
+    // Scrolling to the bottom
+    s.scroll(.{ .bottom = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
     // Scrolling back should make it visible again
     s.scroll(.{ .delta = -1 });
 
@@ -470,8 +501,8 @@ test "Screen: scrollback" {
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
 
-    // Scrolling forward sould bring us back
-    s.scroll(.{ .delta = 1 });
+    // Scrolling to the bottom
+    s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
