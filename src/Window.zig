@@ -694,7 +694,7 @@ pub fn setCursorPos(self: *Window, row: u16, col: u16) !void {
 }
 
 pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
-    try self.terminal.eraseDisplay(self.alloc, mode);
+    self.terminal.eraseDisplay(mode);
 }
 
 pub fn eraseLine(self: *Window, mode: terminal.EraseLine) !void {
@@ -706,11 +706,11 @@ pub fn deleteChars(self: *Window, count: usize) !void {
 }
 
 pub fn eraseChars(self: *Window, count: usize) !void {
-    try self.terminal.eraseChars(self.alloc, count);
+    self.terminal.eraseChars(count);
 }
 
 pub fn insertLines(self: *Window, count: usize) !void {
-    try self.terminal.insertLines(self.alloc, count);
+    self.terminal.insertLines(count);
 }
 
 pub fn deleteLines(self: *Window, count: usize) !void {

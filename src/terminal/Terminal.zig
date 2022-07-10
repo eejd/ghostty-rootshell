@@ -346,9 +346,8 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
 /// TODO: test
 pub fn eraseDisplay(
     self: *Terminal,
-    alloc: Allocator,
     mode: csi.EraseDisplay,
-) !void {
+) void {
     switch (mode) {
         .complete => {
             const all = self.screen.getVisible();
@@ -359,7 +358,7 @@ pub fn eraseDisplay(
             // All lines to the right (including the cursor)
             var x: usize = self.cursor.x;
             while (x < self.cols) : (x += 1) {
-                const cell = try self.getOrPutCell(alloc, x, self.cursor.y);
+                const cell = self.getOrPutCell(x, self.cursor.y);
                 cell.* = self.cursor.pen;
                 cell.char = 0;
             }
@@ -369,7 +368,7 @@ pub fn eraseDisplay(
             while (y < self.rows) : (y += 1) {
                 x = 0;
                 while (x < self.cols) : (x += 1) {
-                    const cell = try self.getOrPutCell(alloc, x, y);
+                    const cell = self.getOrPutCell(x, y);
                     cell.* = self.cursor.pen;
                     cell.char = 0;
                 }
@@ -380,7 +379,7 @@ pub fn eraseDisplay(
             // Erase to the left (including the cursor)
             var x: usize = 0;
             while (x <= self.cursor.x) : (x += 1) {
-                const cell = try self.getOrPutCell(alloc, x, self.cursor.y);
+                const cell = self.getOrPutCell(x, self.cursor.y);
                 cell.* = self.cursor.pen;
                 cell.char = 0;
             }
@@ -390,7 +389,7 @@ pub fn eraseDisplay(
             while (y < self.cursor.y) : (y += 1) {
                 x = 0;
                 while (x < self.cols) : (x += 1) {
-                    const cell = try self.getOrPutCell(alloc, x, y);
+                    const cell = self.getOrPutCell(x, y);
                     cell.* = self.cursor.pen;
                     cell.char = 0;
                 }
@@ -460,7 +459,7 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 }
 
 // TODO: test, docs
-pub fn eraseChars(self: *Terminal, alloc: Allocator, count: usize) !void {
+pub fn eraseChars(self: *Terminal, count: usize) void {
     // Our last index is at most the end of the number of chars we have
     // in the current line.
     const end = @minimum(self.cols, self.cursor.x + count);
@@ -468,7 +467,7 @@ pub fn eraseChars(self: *Terminal, alloc: Allocator, count: usize) !void {
     // Shift
     var x: usize = self.cursor.x;
     while (x < end) : (x += 1) {
-        const cell = try self.getOrPutCell(alloc, x, self.cursor.y);
+        const cell = self.getOrPutCell(x, self.cursor.y);
         cell.* = self.cursor.pen;
         cell.char = 0;
     }
