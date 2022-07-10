@@ -161,6 +161,11 @@ pub const Scroll = union(enum) {
     /// moves, not the direction text moves. This is the colloquial way that
     /// scrolling is described: "scroll the page down".
     delta: isize,
+
+    /// Same as delta but scrolling down will not grow the scrollback.
+    /// Scrolling down at the bottom will do nothing (similar to how
+    /// delta at the top does nothing).
+    delta_no_grow: isize,
 };
 
 /// Scroll the screen by the given behavior. Note that this will always
@@ -174,61 +179,70 @@ pub fn scroll(self: *Screen, behavior: Scroll) void {
         .top => self.visible_offset = 0,
 
         // TODO: deltas greater than the entire scrollback
-        .delta => |delta| delta: {
-            // If we're scrolling up, then we just subtract and we're done.
-            if (delta < 0) {
-                self.visible_offset -|= @intCast(usize, -delta);
-                break :delta;
-            }
-
-            // If we're scrolling down, we have more work to do beacuse we
-            // need to determine if we're overwriting our scrollback.
-            self.visible_offset +|= @intCast(usize, delta);
-
-            // TODO: can optimize scrollback = 0
-
-            // Determine if we need to clear rows.
-            assert(@mod(self.storage.len, self.cols) == 0);
-            const storage_rows = self.storage.len / self.cols;
-            const visible_zero = self.zero + self.visible_offset;
-            const rows_overlapped = if (visible_zero >= storage_rows) overlap: {
-                // We're wrapping from the top of the visible area. In this
-                // scenario, we just check that we have enough space from
-                // our true visible top to zero.
-                const visible_top = visible_zero - storage_rows;
-                const rows_available = self.zero - visible_top;
-                if (rows_available >= self.rows) break :delta;
-
-                // We overlap our missing rows
-                break :overlap self.rows - rows_available;
-            } else overlap: {
-                // First check: if we have enough space in the storage buffer
-                // FORWARD to accomodate all our rows, then we're fine.
-                const rows_forward = storage_rows - (self.zero + self.visible_offset);
-                if (rows_forward >= self.rows) break :delta;
-
-                // Second check: if we have enough space PRIOR to zero when
-                // wrapped, then we're fine.
-                const rows_wrapped = self.rows - rows_forward;
-                if (rows_wrapped < self.zero) break :delta;
-
-                // We need to clear the rows in the overlap and move the top
-                // of the scrollback buffer.
-                break :overlap rows_wrapped - self.zero;
-            };
-
-            // Clear our overlap
-            const clear_start = self.zero * self.cols;
-            const clear_end = clear_start + (rows_overlapped * self.cols);
-            std.mem.set(Cell, self.storage[clear_start..clear_end], .{ .char = 0 });
-
-            // Move to accomodate overlap. This deletes scrollback.
-            self.zero = @mod(self.zero + rows_overlapped, storage_rows);
-            self.visible_offset -= rows_overlapped;
-        },
+        .delta => |delta| self.scrollDown(delta, true),
+        .delta_no_grow => |delta| self.scrollDown(delta, false),
 
         else => @panic("unimplemented"),
     }
+}
+
+fn scrollDown(self: *Screen, delta: isize, grow: bool) void {
+    // If we're scrolling up, then we just subtract and we're done.
+    if (delta < 0) {
+        self.visible_offset -|= @intCast(usize, -delta);
+        return;
+    }
+
+    // If we're scrolling down, we have more work to do beacuse we
+    // need to determine if we're overwriting our scrollback.
+    self.visible_offset +|= @intCast(usize, delta);
+
+    // TODO: can optimize scrollback = 0
+
+    // Determine if we need to clear rows.
+    assert(@mod(self.storage.len, self.cols) == 0);
+    const storage_rows = self.storage.len / self.cols;
+    const visible_zero = self.zero + self.visible_offset;
+    const rows_overlapped = if (visible_zero >= storage_rows) overlap: {
+        // We're wrapping from the top of the visible area. In this
+        // scenario, we just check that we have enough space from
+        // our true visible top to zero.
+        const visible_top = visible_zero - storage_rows;
+        const rows_available = self.zero - visible_top;
+        if (rows_available >= self.rows) return;
+
+        // We overlap our missing rows
+        break :overlap self.rows - rows_available;
+    } else overlap: {
+        // First check: if we have enough space in the storage buffer
+        // FORWARD to accomodate all our rows, then we're fine.
+        const rows_forward = storage_rows - (self.zero + self.visible_offset);
+        if (rows_forward >= self.rows) return;
+
+        // Second check: if we have enough space PRIOR to zero when
+        // wrapped, then we're fine.
+        const rows_wrapped = self.rows - rows_forward;
+        if (rows_wrapped < self.zero) return;
+
+        // We need to clear the rows in the overlap and move the top
+        // of the scrollback buffer.
+        break :overlap rows_wrapped - self.zero;
+    };
+
+    // If we are growing, then we clear the overlap and reset zero
+    if (grow) {
+
+        // Clear our overlap
+        const clear_start = self.zero * self.cols;
+        const clear_end = clear_start + (rows_overlapped * self.cols);
+        std.mem.set(Cell, self.storage[clear_start..clear_end], .{ .char = 0 });
+
+        // Move to accomodate overlap. This deletes scrollback.
+        self.zero = @mod(self.zero + rows_overlapped, storage_rows);
+    }
+
+    // Move back the number of overlapped
+    self.visible_offset -= rows_overlapped;
 }
 
 /// Scroll the screen up (positive) or down (negative). Scrolling direction
@@ -458,6 +472,16 @@ test "Screen: scrollback" {
 
     // Scrolling forward sould bring us back
     s.scroll(.{ .delta = 1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling forward with no grow should do nothing
+    s.scroll(.{ .delta_no_grow = 1 });
 
     {
         // Test our contents rotated
