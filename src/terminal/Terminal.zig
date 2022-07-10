@@ -300,7 +300,7 @@ pub fn reverseIndex(self: *Terminal) !void {
     // TODO: scrolling region
 
     if (self.cursor.y == 0) {
-        try self.scrollDown();
+        self.scrollDown(1);
     } else {
         self.cursor.y -|= 1;
     }
@@ -601,7 +601,7 @@ pub fn linefeed(self: *Terminal) void {
 /// All cleared space is colored according to the current SGR state.
 ///
 /// Moves the cursor to the left margin.
-pub fn insertLines(self: *Terminal, alloc: Allocator, count: usize) !void {
+pub fn insertLines(self: *Terminal, count: usize) void {
     // Move the cursor to the left margin
     self.cursor.x = 0;
 
@@ -627,7 +627,7 @@ pub fn insertLines(self: *Terminal, alloc: Allocator, count: usize) !void {
     while (y < self.cursor.y + adjusted_count) : (y += 1) {
         var x: usize = 0;
         while (x < self.cols) : (x += 1) {
-            const cell = try self.getOrPutCell(alloc, x, y);
+            const cell = self.getOrPutCell(x, y);
             cell.* = self.cursor.pen;
             cell.char = 0;
         }
@@ -686,13 +686,17 @@ pub fn scrollUp(self: *Terminal) void {
 
 /// Scroll the text down by one row.
 /// TODO: test
-pub fn scrollDown(self: *Terminal) !void {
+pub fn scrollDown(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.scroll(.{ .delta = -1 });
-    const top = self.screen.getRow(0);
-    for (top) |*cell| cell.char = 0;
+    // Preserve the cursor
+    const cursor = self.cursor;
+    defer self.cursor = cursor;
+
+    // Move to the top of the scroll region
+    self.cursor.y = self.scrolling_region.top;
+    self.insertLines(count);
 }
 
 /// Set Top and Bottom Margins If bottom is not specified, 0 or bigger than
@@ -723,11 +727,10 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
     self.setCursorPos(1, 1);
 }
 
-fn getOrPutCell(self: *Terminal, alloc: Allocator, x: usize, y: usize) !*Screen.Cell {
+fn getOrPutCell(self: *Terminal, x: usize, y: usize) *Screen.Cell {
     const tracy = trace(@src());
     defer tracy.end();
 
-    _ = alloc;
     return self.screen.getCell(y, x);
 }
 
@@ -1007,7 +1010,7 @@ test "Terminal: insertLines" {
     t.setCursorPos(2, 1);
 
     // Insert two lines
-    try t.insertLines(alloc, 2);
+    t.insertLines(2);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1038,7 +1041,7 @@ test "Terminal: insertLines with scroll region" {
 
     t.setScrollingRegion(1, 2);
     t.setCursorPos(1, 1);
-    try t.insertLines(alloc, 1);
+    t.insertLines(1);
 
     try t.print('X');
 
@@ -1073,7 +1076,7 @@ test "Terminal: insertLines more than remaining" {
     t.setCursorPos(2, 1);
 
     // Insert a bunch of  lines
-    try t.insertLines(alloc, 20);
+    t.insertLines(20);
 
     {
         var str = try t.plainString(testing.allocator);
