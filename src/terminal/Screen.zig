@@ -415,6 +415,68 @@ test "Screen: scroll down from 0" {
     }
 }
 
+test "Screen: scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 1);
+    defer s.deinit(alloc);
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    s.scroll(.{ .delta = 1 });
+
+    // Test our row index
+    try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
+    try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
+    try testing.expectEqual(@as(usize, 15), s.rowIndex(2));
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling back should make it visible again
+    s.scroll(.{ .delta = -1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling back again should do nothing
+    s.scroll(.{ .delta = -1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling forward sould bring us back
+    s.scroll(.{ .delta = 1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling to the top should work
+    s.scroll(.{ .top = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
 test "Screen: row copy" {
     const testing = std.testing;
     const alloc = testing.allocator;
