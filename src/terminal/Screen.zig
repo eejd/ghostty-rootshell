@@ -215,7 +215,22 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
     // If we're scrolling down, we have more work to do beacuse we
     // need to determine if we're overwriting our scrollback.
     self.visible_offset +|= @intCast(usize, delta);
-    if (grow) self.bottom +|= @intCast(usize, delta);
+    if (grow)
+        self.bottom +|= @intCast(usize, delta)
+    else {
+        // If we're not growing, then we want to ensure we don't scroll
+        // off the bottom. Calculate the number of rows we can see. If we
+        // can see less than the number of rows we have available, then scroll
+        // back a bit.
+        const visible_bottom = self.visible_offset + self.rows;
+        if (visible_bottom > self.bottom) {
+            self.visible_offset = self.bottom - self.rows;
+
+            // We can also fast-track this case because we know we won't
+            // be overlapping at all so we can return immediately.
+            return;
+        }
+    }
 
     // TODO: can optimize scrollback = 0
 
@@ -288,7 +303,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     // Reallocate the storage
     self.storage = try alloc.alloc(Cell, (rows + self.max_scrollback) * cols);
     self.top = 0;
-    self.bottom = rows - 1;
+    self.bottom = rows;
     self.rows = rows;
     self.cols = cols;
 
@@ -523,6 +538,23 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scrollback empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 50);
+    defer s.deinit(alloc);
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    s.scroll(.{ .delta_no_grow = 1 });
+
+    {
+        // Test our contents
         var contents = try s.testString(alloc);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);

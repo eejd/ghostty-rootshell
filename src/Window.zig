@@ -513,7 +513,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     _ = xoff;
 
     // Positive is up
-    const sign: isize = if (yoff < 0) -1 else 1;
+    const sign: isize = if (yoff > 0) -1 else 1;
     const delta: isize = sign * @maximum(@divFloor(win.grid.size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
     win.terminal.scrollViewport(.{ .delta = delta });
