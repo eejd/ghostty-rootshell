@@ -193,18 +193,18 @@ pub fn scroll(self: *Screen, behavior: Scroll) void {
 }
 
 fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
-    log.info("offsets before: top={} bottom={} visible={}", .{
-        self.top,
-        self.bottom,
-        self.visible_offset,
-    });
-    defer {
-        log.info("offsets after: top={} bottom={} visible={}", .{
-            self.top,
-            self.bottom,
-            self.visible_offset,
-        });
-    }
+    // log.info("offsets before: top={} bottom={} visible={}", .{
+    //     self.top,
+    //     self.bottom,
+    //     self.visible_offset,
+    // });
+    // defer {
+    //     log.info("offsets after: top={} bottom={} visible={}", .{
+    //         self.top,
+    //         self.bottom,
+    //         self.visible_offset,
+    //     });
+    // }
 
     // If we're scrolling up, then we just subtract and we're done.
     if (delta < 0) {
