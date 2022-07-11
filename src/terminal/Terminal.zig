@@ -73,7 +73,8 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
     return Terminal{
         .cols = cols,
         .rows = rows,
-        .screen = try Screen.init(alloc, rows, cols, 0),
+        // TODO: configurable scrollback
+        .screen = try Screen.init(alloc, rows, cols, 1000),
         .cursor = .{},
         .saved_cursor = .{},
         .tabstops = try Tabstops.init(alloc, cols, TABSTOP_INTERVAL),
@@ -276,7 +277,7 @@ pub fn index(self: *Terminal) void {
         if (self.cursor.y < self.scrolling_region.top or
             self.cursor.y > self.scrolling_region.bottom) return;
 
-        self.scrollUp();
+        self.screen.scroll(.{ .delta = 1 });
         return;
     }
 
@@ -673,16 +674,6 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     }
 }
 
-/// Scroll the text up by one row.
-pub fn scrollUp(self: *Terminal) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    self.screen.scroll(.{ .delta = 1 });
-    const last = self.screen.getRow(self.rows - 1);
-    for (last) |*cell| cell.char = 0;
-}
-
 /// Scroll the text down by one row.
 /// TODO: test
 pub fn scrollDown(self: *Terminal, count: usize) void {
@@ -696,6 +687,18 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
     // Move to the top of the scroll region
     self.cursor.y = self.scrolling_region.top;
     self.insertLines(count);
+}
+
+/// Options for scrolling the viewport of the terminal grid.
+pub const ScrollViewport = union(enum) {
+    delta: isize,
+};
+
+/// Scroll the viewport of the terminal grid.
+pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) void {
+    self.screen.scroll(switch (behavior) {
+        .delta => |delta| .{ .delta_no_grow = delta },
+    });
 }
 
 /// Set Top and Bottom Margins If bottom is not specified, 0 or bigger than

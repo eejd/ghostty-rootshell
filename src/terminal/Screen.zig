@@ -187,12 +187,25 @@ pub fn scroll(self: *Screen, behavior: Scroll) void {
         .bottom => self.visible_offset = self.bottom - self.rows,
 
         // TODO: deltas greater than the entire scrollback
-        .delta => |delta| self.scrollDown(delta, true),
-        .delta_no_grow => |delta| self.scrollDown(delta, false),
+        .delta => |delta| self.scrollDelta(delta, true),
+        .delta_no_grow => |delta| self.scrollDelta(delta, false),
     }
 }
 
-fn scrollDown(self: *Screen, delta: isize, grow: bool) void {
+fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
+    log.info("offsets before: top={} bottom={} visible={}", .{
+        self.top,
+        self.bottom,
+        self.visible_offset,
+    });
+    defer {
+        log.info("offsets after: top={} bottom={} visible={}", .{
+            self.top,
+            self.bottom,
+            self.visible_offset,
+        });
+    }
+
     // If we're scrolling up, then we just subtract and we're done.
     if (delta < 0) {
         self.visible_offset -|= @intCast(usize, -delta);
@@ -255,22 +268,6 @@ fn scrollDown(self: *Screen, delta: isize, grow: bool) void {
     self.visible_offset -= rows_overlapped;
 }
 
-/// Scroll the screen up (positive) or down (negative). Scrolling direction
-/// is the direction text would move. For example, scrolling down would
-/// move existing text downward.
-pub fn scrollOld(self: *Screen, count: isize) void {
-    if (count < 0) {
-        const amount = @mod(@intCast(usize, -count), self.rows);
-        if (amount > self.top) {
-            self.top = self.rows - amount;
-        } else {
-            self.top -|= amount;
-        }
-    } else {
-        self.top = @mod(self.top + @intCast(usize, count), self.rows);
-    }
-}
-
 /// Copy row at src to dst.
 pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
     const src_row = self.getRow(src);
@@ -289,7 +286,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     const old = self.*;
 
     // Reallocate the storage
-    self.storage = try alloc.alloc(Cell, rows * cols);
+    self.storage = try alloc.alloc(Cell, (rows + self.max_scrollback) * cols);
     self.top = 0;
     self.bottom = rows - 1;
     self.rows = rows;

@@ -250,6 +250,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     window.setKeyCallback(keyCallback);
     window.setFocusCallback(focusCallback);
     window.setRefreshCallback(refreshCallback);
+    window.setScrollCallback(scrollCallback);
 
     return self;
 }
@@ -502,6 +503,24 @@ fn refreshCallback(window: glfw.Window) void {
     const win = window.getUserPointer(Window) orelse return;
 
     // The point of this callback is to schedule a render, so do that.
+    win.render_timer.schedule() catch unreachable;
+}
+
+fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
+    const win = window.getUserPointer(Window) orelse return;
+
+    //log.info("SCROLL: {} {}", .{ xoff, yoff });
+    _ = xoff;
+
+    // Positive is up
+    const sign: isize = if (yoff < 0) -1 else 1;
+    const delta: isize = sign * @maximum(@divFloor(win.grid.size.rows, 15), 1);
+    log.info("scroll: delta={}", .{delta});
+    win.terminal.scrollViewport(.{ .delta = delta });
+
+    // Schedule render since scrolling usually does something.
+    // TODO(perf): we can only schedule render if we know scrolling
+    // did something
     win.render_timer.schedule() catch unreachable;
 }
 
