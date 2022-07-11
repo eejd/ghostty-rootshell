@@ -1,5 +1,14 @@
 //! Screen represents the internal storage for a terminal screen, including
 //! scrollback. This is implemented as a single continuous ring buffer.
+//!
+//! Definitions:
+//!
+//!   * Active - The area that is the current edit-able screen.
+//!   * History - The area that contains lines from prior input.
+//!   * Display - The area that is currently visible to the user. If the
+//!       user is scrolled all the way down (latest) then the display
+//!       is equivalent to the active area.
+//!
 const Screen = @This();
 
 // FUTURE: Today this is implemented as a single contiguous ring buffer.
@@ -123,7 +132,7 @@ pub fn getVisible(self: Screen) []Cell {
     return self.storage;
 }
 
-/// Get a single row by index (0-indexed).
+/// Get a single row in the active area by index (0-indexed).
 pub fn getRow(self: Screen, idx: usize) Row {
     // Get the index of the first byte of the the row at index.
     const real_idx = self.rowIndex(idx);
@@ -132,7 +141,7 @@ pub fn getRow(self: Screen, idx: usize) Row {
     return self.storage[real_idx .. real_idx + self.cols];
 }
 
-/// Get a single cell in the visible area. row and col are 0-indexed.
+/// Get a single cell in the active area. row and col are 0-indexed.
 pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
     assert(row < self.rows);
     assert(col < self.cols);
@@ -142,7 +151,7 @@ pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
 
 /// Returns the index for the given row (0-indexed) into the underlying
 /// storage array.
-pub fn rowIndex(self: Screen, idx: usize) usize {
+fn rowIndex(self: Screen, idx: usize) usize {
     assert(idx < self.rows);
     const val = (self.top + self.visible_offset + idx) * self.cols;
     if (val < self.storage.len) return val;
