@@ -1,6 +1,8 @@
 # Enquiry (Answerback)
 
-| Text |          |
+|     |   |
+| --- | --- |
+| Text |        |
 | Hex  | `0x05`   |
 
 Sends an answerback string. In the VT100, this was configurable by the
