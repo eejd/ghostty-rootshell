@@ -29,7 +29,6 @@ Improvements:
 
 Major Features:
 
-* Line wrap
 * Selection, highlighting
 * Copy (paste is done)
 * Strikethrough
