@@ -121,6 +121,15 @@ pub fn deinit(self: *Screen, alloc: Allocator) void {
     self.* = undefined;
 }
 
+/// This returns true if the display area is anchored at the bottom currently.
+pub fn displayIsBottom(self: Screen) bool {
+    return self.visible_offset == self.bottomOffset();
+}
+
+fn bottomOffset(self: Screen) usize {
+    return self.bottom - self.rows;
+}
+
 /// Returns an iterator that can be used to iterate over all of the rows
 /// from index zero.
 pub fn rowIterator(self: *const Screen) RowIterator {
@@ -429,7 +438,12 @@ test "Screen: scrolling" {
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    try testing.expect(s.displayIsBottom());
+
+    // Scroll down, should still be bottom
     s.scroll(.{ .delta = 1 });
+    try testing.expect(s.displayIsBottom());
 
     // Test our row index
     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
@@ -462,6 +476,7 @@ test "Screen: scroll down from 0" {
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     s.scroll(.{ .delta = -1 });
+    try testing.expect(s.displayIsBottom());
 
     {
         // Test our contents rotated
@@ -494,6 +509,7 @@ test "Screen: scrollback" {
 
     // Scrolling to the bottom
     s.scroll(.{ .bottom = {} });
+    try testing.expect(s.displayIsBottom());
 
     {
         // Test our contents rotated
@@ -504,6 +520,7 @@ test "Screen: scrollback" {
 
     // Scrolling back should make it visible again
     s.scroll(.{ .delta = -1 });
+    try testing.expect(!s.displayIsBottom());
 
     {
         // Test our contents rotated

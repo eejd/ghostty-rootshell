@@ -203,6 +203,9 @@ pub fn print(self: *Terminal, c: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If we're not at the bottom, then we need to move there
+    if (!self.screen.displayIsBottom()) self.screen.scroll(.{ .bottom = {} });
+
     // If we're soft-wrapping, then handle that first.
     if (self.cursor.pending_wrap and self.mode_autowrap) {
         // Mark that the cell is wrapped, which guarantees that there is
@@ -691,12 +694,15 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
 
 /// Options for scrolling the viewport of the terminal grid.
 pub const ScrollViewport = union(enum) {
+    /// Scroll to the top of the scrollback
+    top: void,
     delta: isize,
 };
 
 /// Scroll the viewport of the terminal grid.
 pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) void {
     self.screen.scroll(switch (behavior) {
+        .top => .{ .top = {} },
         .delta => |delta| .{ .delta_no_grow = delta },
     });
 }
@@ -763,6 +769,41 @@ test "Terminal: soft wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("hel\nlo", str);
+    }
+}
+
+test "Terminal: print scrolls back to bottom" {
+    var t = try init(testing.allocator, 5, 2);
+    defer t.deinit(testing.allocator);
+
+    // Basic grid writing
+    for ("hello") |c| try t.print(c);
+
+    // Make newlines so we create scrollback
+    // 3 pushes hello off the screen
+    t.index();
+    t.index();
+    t.index();
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+
+    // Scroll to the top
+    t.scrollViewport(.{ .top = {} });
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("hello", str);
+    }
+
+    // Type
+    try t.print('A');
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nA", str);
     }
 }
 

@@ -1,6 +1,8 @@
 Bugs:
 
 * Underline should use freetype underline thickness hint
+* Any printing action forces scroll to jump to bottom, this makes it impossible
+  to scroll up while logs are coming in or something
 
 Performance:
 
