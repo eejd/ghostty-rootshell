@@ -37,7 +37,7 @@ The high-level ambitious plan for the project, in order:
 
 | # | Step | Status |
 |:---:|------|:------:|
-| 1 | Standards-compliant terminal emulation     | ⚠️ |
+| 1 | [Standards-compliant terminal emulation](docs/sequences.md)     | ⚠️ |
 | 2 | Competitive rendering performance (not the fastest, but fast enough) | ✅ |
 | 3 | Basic customizability -- fonts, bg colors, etc. | ❌ |
 | 4 | Richer windowing features -- multi-window, tabbing, panes | ❌ |
