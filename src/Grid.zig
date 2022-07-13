@@ -397,7 +397,7 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
     }
 
     // Draw the cursor
-    if (self.cursor_visible) {
+    if (self.cursor_visible and term.screen.displayIsBottom()) {
         self.cells.appendAssumeCapacity(.{
             .mode = @enumToInt(self.cursor_style),
             .grid_col = @intCast(u16, term.cursor.x),
