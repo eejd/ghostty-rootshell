@@ -31,18 +31,34 @@ terminal emulator.
 **Project Status:** Pre-Alpha. This project is not ready to be used as a
 day-to-day terminal emulator. It can't even render vim yet!
 
-## Roadmap
+## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
 
 | # | Step | Status |
 |:---:|------|:------:|
-| 1 | Standards-compliant terminal emulation     | ❌ |
-| 2 | Competitive rendering performance (not the fastest, but fast enough) | ❌ |
+| 1 | Standards-compliant terminal emulation     | ⚠️ |
+| 2 | Competitive rendering performance (not the fastest, but fast enough) | ✅ |
 | 3 | Basic customizability -- fonts, bg colors, etc. | ❌ |
 | 4 | Richer windowing features -- multi-window, tabbing, panes | ❌ |
 | 5 | Optimal rendering performance | ❌ |
 | N | Fancy features (to be expanded upon later) | ❌ |
+
+### Standards-Compliant Terminal Emulation
+
+I am able to use this terminal as a daily driver. I think that's good enough
+for a yellow status. There are a LOT of missing features for full standards
+compliance but the set that are regularly in use are working pretty well.
+
+### Competitive Rendering Performance
+
+I want to automate the testing of this, but for now I've manually verified
+we can maintain 120fps `cat`-ing a 6MB file. In terms of raw draw speed,
+`cat`-ing a 6MB file is consistently faster on Linux using ghostty than
+any other terminal emulator currently.
+
+On macOS, `cat`-ing the large file is acceptable performance but not optimal.
+I don't know why and need to look into it.
 
 ## Developing Ghostty
 
