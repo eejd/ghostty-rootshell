@@ -69,7 +69,8 @@ all the necessary dependencies pinned to exact versions.
 
 **Note: Zig nightly is required.** Ghostty is built against the nightly
 releases of Zig. The latest released version (0.9.1 at the time of this
-edit) will NOT work.
+edit) will NOT work. You can find binary releases of nightly builds
+on the [Zig downloads page](https://ziglang.org/download/).
 
 With Zig installed, a binary can be built using `zig build`:
 
