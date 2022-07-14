@@ -9,7 +9,10 @@ Status meanings:
 
   * ✅ - Implementation is complete and considered 100% accurate.
   * ⚠️  - Implementation works, but may be missing some functionality. The
-    details of how well it works or doesn't are in the linked page.
+    details of how well it works or doesn't are in the linked page. In many
+    cases, the missing functionality is very specific or esoteric. Regardless,
+    we don't consider a sequence a green checkmark until all known feature
+    interactions are complete.
   * ❌ - Implementation is effectively non-functional, but ghostty continues
     in the face of it (probably in some broken state).
   * 💥 - Ghostty crashes if this control sequence is sent.
