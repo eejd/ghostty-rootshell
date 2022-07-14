@@ -67,6 +67,10 @@ language as well as the Zig build system. At a minimum, Zig must be installed.
 For [Nix](https://nixos.org/) users, a `shell.nix` is available which includes
 all the necessary dependencies pinned to exact versions.
 
+**Note: Zig nightly is required.** Ghostty is built against the nightly
+releases of Zig. The latest released version (0.9.1 at the time of this
+edit) will NOT work.
+
 With Zig installed, a binary can be built using `zig build`:
 
 ```shell-session
@@ -80,10 +84,6 @@ This will build a binary for the currently running system (if supported).
 You can cross compile by setting `-Dtarget=<target-triple>`. For example,
 `zig build -Dtarget=aarch64-macos` will build for Apple Silicon macOS. Note
 that not all targets supported by Zig are supported.
-
-**Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig. The latest released version (0.9.1 at the time of this
-edit) will NOT work.
 
 Other useful commands:
 
