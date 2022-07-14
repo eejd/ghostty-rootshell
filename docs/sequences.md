@@ -23,5 +23,11 @@ Status meanings:
 | `BEL` | `0x07` | [Bell](sequences/bel.md) | ❌ |
 | `BS` | `0x08` | [Backspace](sequences/bs.md) | ⚠️ |
 | `TAB` | `0x09` | [Tab](sequences/tab.md) | ⚠️ |
-| `LF` | `0x0A` | [Linefeed](sequences/lf.md) | ✅ |
+| `LF` | `0x0A` | [Linefeed](sequences/lf.md) | ⚠️ |
 | `VT` | `0x0B` | [Vertical Tab](sequences/vt.md) | ✅ |
+| `FF` | `0x0C` | [Form Feed](sequences/ff.md) | ✅ |
+| `CR` | `0x0D` | [Carriage Return](sequences/cr.md) | ⚠️ |
+| `SO` | `0x0E` | [Shift Out](#) | ❌ |
+| `SI` | `0x0F` | [Shift In](#) | ❌ |
+| `CAN` | `0x18` | [Cancel Parsing](sequences/can.md) | ✅ |
+| `SUB` | `0x1A` | [Cancel Parsing (Alias)](sequences/can.md) | ✅ |
