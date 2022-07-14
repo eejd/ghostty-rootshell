@@ -19,3 +19,4 @@ Status meanings:
 | `ENQ` | `0x05` | [Enquiry](sequences/enq.md) | ✅ |
 | `BEL` | `0x07` | [Bell](sequences/bel.md) | ❌ |
 | `BS` | `0x08` | [Backspace](sequences/bs.md) | ⚠️ |
+| `TAB` | `0x09` | [Tab](sequences/tab.md) | ⚠️ |

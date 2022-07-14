@@ -543,8 +543,8 @@ pub fn horizontalTab(self: *Terminal) !void {
     defer tracy.end();
 
     while (self.cursor.x < self.cols) {
-        // Clear
-        try self.print(' ');
+        // Move the cursor right
+        self.cursor.x += 1;
 
         // If the last cursor position was a tabstop we return. We do
         // "last cursor position" because we want a space to be written
