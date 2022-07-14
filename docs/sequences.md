@@ -20,3 +20,5 @@ Status meanings:
 | `BEL` | `0x07` | [Bell](sequences/bel.md) | ❌ |
 | `BS` | `0x08` | [Backspace](sequences/bs.md) | ⚠️ |
 | `TAB` | `0x09` | [Tab](sequences/tab.md) | ⚠️ |
+| `LF` | `0x0A` | [Linefeed](sequences/lf.md) | ✅ |
+| `VT` | `0x0B` | [Vertical Tab](sequences/vt.md) | ✅ |
