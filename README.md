@@ -28,8 +28,8 @@ terminal emulator that aims to remain compatible with all existing shells
 and software. You can use this as a drop-in replacement for your existing
 terminal emulator.
 
-**Project Status:** Pre-Alpha. This project is not ready to be used as a
-day-to-day terminal emulator. It can't even render vim yet!
+**Project Status:** Pre-Alpha. It now supports enough to be used day to day
+for my use case, but is still missing a lot of functionality.
 
 ## Roadmap and Status
 
