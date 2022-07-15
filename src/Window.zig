@@ -773,6 +773,23 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
 
         .bracketed_paste => self.bracketed_paste = true,
 
+        .enable_mode_3 => self.terminal.modes.enable_mode_3 = @boolToInt(enabled),
+        .@"132_column" => mode3: {
+            // TODO: test this
+
+            // Do nothing if "enable mode 3" is not set.
+            if (self.terminal.modes.enable_mode_3 == 0) break :mode3;
+
+            // Set it
+            self.terminal.modes.@"132_column" = @boolToInt(enabled);
+
+            // TODO: do not clear screen flag mode
+            self.terminal.eraseDisplay(.complete);
+            self.terminal.setCursorPos(1, 1);
+
+            // TODO: left/right margins
+        },
+
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }
 }

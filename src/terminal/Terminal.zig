@@ -47,6 +47,9 @@ modes: packed struct {
     reverse_colors: u1 = 0, // 5,
     origin: u1 = 0, // 6
     autowrap: u1 = 1, // 7
+
+    @"132_column": u1 = 0, // 3,
+    enable_mode_3: u1 = 0, // 40
 } = .{},
 
 /// Scrolling region is the area of the screen designated where scrolling
