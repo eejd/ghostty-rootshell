@@ -17,7 +17,7 @@ Status meanings:
     in the face of it (probably in some broken state).
   * 💥 - Ghostty crashes if this control sequence is sent.
 
-| Seq | ASCII | Name | Status |
+| ID | ASCII | Name | Status |
 |:---:|:-----:|:-----|:------:|
 | `ENQ` | `0x05` | [Enquiry](sequences/enq.md) | ✅ |
 | `BEL` | `0x07` | [Bell](sequences/bel.md) | ❌ |
@@ -31,3 +31,12 @@ Status meanings:
 | `SI` | `0x0F` | [Shift In](#) | ❌ |
 | `CAN` | `0x18` | [Cancel Parsing](sequences/can.md) | ✅ |
 | `SUB` | `0x1A` | [Cancel Parsing (Alias)](sequences/can.md) | ✅ |
+| `IND` | `ESC D` | [Index](sequences/ind.md) | ✅ |
+| `NEL` | `ESC E` | [Next Line](sequences/nel.md) | ✅ |
+| `HTS` | `ESC H` | [Horizontal Tab Set](sequences/hts.md) | ✅ |
+| `HTS` | `ESC H` | [Horizontal Tab Set](sequences/hts.md) | ✅ |
+| `RI` | `ESC M` | [Reverse Index](sequences/ri.md) | ⚠️ |
+| `SS2` | `ESC N` | [Single Shift 2](#) | ❌ |
+| `SS3` | `ESC O` | [Single Shift 3](#) | ❌ |
+| `SPA` | `ESC V` | [Start Protected Area](#) | ❌ |
+| `EPA` | `ESC W` | [End Protected Area](#) | ❌ |
