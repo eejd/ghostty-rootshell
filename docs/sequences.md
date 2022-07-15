@@ -34,7 +34,6 @@ Status meanings:
 | `IND` | `ESC D` | [Index](sequences/ind.md) | ✅ |
 | `NEL` | `ESC E` | [Next Line](sequences/nel.md) | ✅ |
 | `HTS` | `ESC H` | [Horizontal Tab Set](sequences/hts.md) | ✅ |
-| `HTS` | `ESC H` | [Horizontal Tab Set](sequences/hts.md) | ✅ |
 | `RI` | `ESC M` | [Reverse Index](sequences/ri.md) | ⚠️ |
 | `SS2` | `ESC N` | [Single Shift 2](#) | ❌ |
 | `SS3` | `ESC O` | [Single Shift 3](#) | ❌ |
