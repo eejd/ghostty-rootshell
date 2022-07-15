@@ -41,11 +41,13 @@ cols: usize,
 /// The current scrolling region.
 scrolling_region: ScrollingRegion,
 
-/// Modes
-// TODO: turn into a bitset probably
-mode_origin: bool = false,
-mode_autowrap: bool = true,
-mode_reverse_colors: bool = false,
+/// Modes - This isn't exhaustive, since some modes (i.e. cursor origin)
+/// are applied to the cursor and others aren't boolean yes/no.
+modes: packed struct {
+    reverse_colors: u1 = 0, // 5,
+    origin: u1 = 0, // 6
+    autowrap: u1 = 1, // 7
+} = .{},
 
 /// Scrolling region is the area of the screen designated where scrolling
 /// occurs. Wen scrolling the screen, only this viewport is scrolled.
@@ -207,7 +209,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     if (!self.screen.displayIsBottom()) self.screen.scroll(.{ .bottom = {} });
 
     // If we're soft-wrapping, then handle that first.
-    if (self.cursor.pending_wrap and self.mode_autowrap) {
+    if (self.cursor.pending_wrap and self.modes.autowrap == 1) {
         // Mark that the cell is wrapped, which guarantees that there is
         // at least one cell after it in the next row.
         const cell = self.screen.getCell(self.cursor.y, self.cursor.x);
@@ -329,7 +331,7 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
         y_offset: usize = 0,
         x_max: usize,
         y_max: usize,
-    } = if (self.mode_origin) .{
+    } = if (self.modes.origin == 1) .{
         .x_offset = 0, // TODO: left/right margins
         .x_max = self.cols, // TODO: left/right margins
         .y_offset = self.scrolling_region.top + 1,
@@ -904,7 +906,7 @@ test "Terminal: setCursorPosition" {
     try testing.expect(!t.cursor.pending_wrap);
 
     // Origin mode
-    t.mode_origin = true;
+    t.modes.origin = 1;
 
     // No change without a scroll region
     t.setCursorPos(81, 81);

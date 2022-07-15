@@ -607,7 +607,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         win.grid.background = bg;
         win.grid.foreground = fg;
     }
-    if (win.terminal.mode_reverse_colors) {
+    if (win.terminal.modes.reverse_colors == 1) {
         win.grid.background = fg;
         win.grid.foreground = bg;
     }
@@ -618,7 +618,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         g: f32,
         b: f32,
         a: f32,
-    } = if (win.terminal.mode_reverse_colors) .{
+    } = if (win.terminal.modes.reverse_colors == 1) .{
         .r = @intToFloat(f32, fg.r) / 255,
         .g = @intToFloat(f32, fg.g) / 255,
         .b = @intToFloat(f32, fg.b) / 255,
@@ -699,12 +699,12 @@ pub fn setCursorUp(self: *Window, amount: u16) !void {
 }
 
 pub fn setCursorCol(self: *Window, col: u16) !void {
-    if (self.terminal.mode_origin) unreachable; // TODO
+    if (self.terminal.modes.origin == 1) unreachable; // TODO
     self.terminal.setCursorPos(self.terminal.cursor.y + 1, col);
 }
 
 pub fn setCursorRow(self: *Window, row: u16) !void {
-    if (self.terminal.mode_origin) unreachable; // TODO
+    if (self.terminal.modes.origin == 1) unreachable; // TODO
     self.terminal.setCursorPos(row, self.terminal.cursor.x + 1);
 }
 
@@ -756,19 +756,19 @@ pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {
 pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
     switch (mode) {
         .reverse_colors => {
-            self.terminal.mode_reverse_colors = enabled;
+            self.terminal.modes.reverse_colors = @boolToInt(enabled);
 
             // Schedule a render since we changed colors
             try self.render_timer.schedule();
         },
 
         .origin => {
-            self.terminal.mode_origin = enabled;
+            self.terminal.modes.origin = @boolToInt(enabled);
             self.terminal.setCursorPos(1, 1);
         },
 
         .autowrap => {
-            self.terminal.mode_autowrap = enabled;
+            self.terminal.modes.autowrap = @boolToInt(enabled);
         },
 
         .bracketed_paste => self.bracketed_paste = true,
@@ -812,7 +812,7 @@ pub fn deviceStatusReport(
             const pos: struct {
                 x: usize,
                 y: usize,
-            } = if (self.terminal.mode_origin) .{
+            } = if (self.terminal.modes.origin == 1) .{
                 // TODO: what do we do if cursor is outside scrolling region?
                 .x = self.terminal.cursor.x,
                 .y = self.terminal.cursor.y -| self.terminal.scrolling_region.top,
