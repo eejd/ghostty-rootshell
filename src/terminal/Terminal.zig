@@ -277,20 +277,32 @@ pub fn index(self: *Terminal) void {
     // Unset pending wrap state
     self.cursor.pending_wrap = false;
 
-    // If we're at the end of the screen, scroll up. This is surprisingly
-    // common because most terminals live with a full screen so we do this
-    // check first.
-    if (self.cursor.y == self.rows - 1) {
-        // Outside of the scroll region we do nothing.
-        if (self.cursor.y < self.scrolling_region.top or
-            self.cursor.y > self.scrolling_region.bottom) return;
-
-        self.screen.scroll(.{ .delta = 1 });
+    // Outside of the scroll region we move the cursor one line down.
+    if (self.cursor.y < self.scrolling_region.top or
+        self.cursor.y > self.scrolling_region.bottom)
+    {
+        self.cursor.y = @minimum(self.cursor.y + 1, self.rows - 1);
         return;
     }
 
-    // Increase cursor by 1
-    self.cursor.y += 1;
+    // If the cursor is inside the scrolling region and on the bottom-most
+    // line, then we scroll up. If our scrolling region is the full screen
+    // we create scrollback.
+    if (self.cursor.y == self.scrolling_region.bottom) {
+        // If our scrolling region is the full screen, we create scrollback.
+        // Otherwise, we simply scroll the region.
+        if (self.scrolling_region.top == 0 and
+            self.scrolling_region.bottom == self.rows - 1)
+        {
+            self.screen.scroll(.{ .delta = 1 });
+        } else {
+            // TODO: test
+            self.scrollUp(1);
+        }
+    }
+
+    // Increase cursor by 1, maximum to bottom of scroll region
+    self.cursor.y = @minimum(self.cursor.y + 1, self.scrolling_region.bottom);
 }
 
 /// Move the cursor to the previous line in the scrolling region, possibly
@@ -346,6 +358,7 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
 
     self.cursor.x = @minimum(params.x_max, col) -| 1;
     self.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
+    log.info("set cursor position: col={} row={}", .{ self.cursor.x, self.cursor.y });
 
     // Unset pending wrap state
     self.cursor.pending_wrap = false;
@@ -695,6 +708,24 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
     // Move to the top of the scroll region
     self.cursor.y = self.scrolling_region.top;
     self.insertLines(count);
+}
+
+/// Removes amount lines from the top of the scroll region. The remaining lines
+/// to the bottom margin are shifted up and space from the bottom margin up
+/// is filled with empty lines.
+///
+/// The new lines are created according to the current SGR state.
+///
+/// Does not change the (absolute) cursor position.
+// TODO: test
+pub fn scrollUp(self: *Terminal, count: usize) void {
+    // Preserve the cursor
+    const cursor = self.cursor;
+    defer self.cursor = cursor;
+
+    // Move to the top of the scroll region
+    self.cursor.y = self.scrolling_region.top;
+    self.deleteLines(count);
 }
 
 /// Options for scrolling the viewport of the terminal grid.
