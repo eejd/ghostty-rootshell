@@ -55,6 +55,7 @@ modes: packed struct {
 /// Scrolling region is the area of the screen designated where scrolling
 /// occurs. Wen scrolling the screen, only this viewport is scrolled.
 const ScrollingRegion = struct {
+    // Top and bottom of the scroll region (0-indexed)
     // Precondition: top < bottom
     top: usize,
     bottom: usize,
