@@ -19,15 +19,20 @@ function has_func() {
 #--------------------------------------------------------------------
 # Flag parsing
 
+ARG_UPDATE=0
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -e|--exec) ARG_EXEC="$2"; shift ;;
         -c|--case) ARG_CASE="$2"; shift ;;
         -o|--output) ARG_OUT="$2"; shift ;;
+        -u|--update) ARG_UPDATE=1 ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
 done
+
+# If we're updating, then just update the file in-place
+if [ "$ARG_UPDATE" -eq 1 ]; then ARG_OUT="${ARG_CASE}.png"; fi
 
 bad=0
 if [ -z "$ARG_EXEC" ]; then bad=1; fi
