@@ -1,6 +1,5 @@
-#!/usr/bin/env bash
-
 function test_do {
-  xdotool type "vttest"
-  xdotool key Return
+  xdotool type "vttest\n"
+  sleep 1
+  xdotool type "1\n1\n"
 }
