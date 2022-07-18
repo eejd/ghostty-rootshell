@@ -13,7 +13,7 @@ pub fn build(b: *std.build.Builder) !void {
     const target = target: {
         var result = b.standardTargetOptions(.{});
 
-        if (result.isLinux()) {
+        if (result.isLinux() and result.isGnuLibC()) {
             // https://github.com/ziglang/zig/issues/9485
             result.glibc_version = .{ .major = 2, .minor = 28 };
         }
