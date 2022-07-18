@@ -4,9 +4,9 @@
 # expects to run in the Docker image so it just captures the full screen rather
 # than a specific window.
 #
-# This outputs the captured image to the `--output` value. This will not
-# compare the captured output. This is only used to capture the output of
-# a test case.
+# This script also compares the output to the expected value. The expected
+# value is the case file with ".png" appended. If the "--update" flag is
+# appended, the test case is updated.
 
 #--------------------------------------------------------------------
 # Helpers
@@ -20,6 +20,7 @@ function has_func() {
 # Flag parsing
 
 ARG_UPDATE=0
+ARG_OUT="/tmp/test.png"
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -e|--exec) ARG_EXEC="$2"; shift ;;
@@ -90,5 +91,13 @@ sleep 1
 
 echo "Capturing screen shot..."
 import -window root ${ARG_OUT}
+
+echo "Comparing results..."
+DIFF=$(compare -metric AE ${ARG_OUT} ${ARG_CASE}.png null:)
+if [ $? -eq 2 ] ; then
+  printf "  Comparison failed (error)"
+else
+  printf "  Diff: ${DIFF}"
+fi
 
 echo "Done"
