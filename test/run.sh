@@ -55,6 +55,10 @@ fi
 echo "Term: ${ARG_EXEC}"
 echo "Case: ${ARG_CASE}"
 
+if [ "$ARG_EXEC" = "ghostty" ]; then
+  ARG_EXEC="/src/ghostty";
+fi
+
 #--------------------------------------------------------------------
 # Some terminals require XDG be properly setup. We create a new
 # set of XDG directories for this.
