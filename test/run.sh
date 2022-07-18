@@ -55,8 +55,14 @@ fi
 echo "Term: ${ARG_EXEC}"
 echo "Case: ${ARG_CASE}"
 
+# NOTE: This is a huge hack right now.
 if [ "$ARG_EXEC" = "ghostty" ]; then
   ARG_EXEC="/src/ghostty";
+
+  # We build in Nix (maybe). To be sure, we replace the interpreter so
+  # it doesn't point to a Nix path. If we don't build in Nix, this should
+  # still be safe.
+  patchelf --set-interpreter /lib/ld-linux-$(uname -m).so.1 ${ARG_EXEC}
 fi
 
 #--------------------------------------------------------------------

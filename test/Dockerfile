@@ -1,45 +1,48 @@
 #--------------------------------------------------------------------
-# vttest
+# Alacritty since it has no build in Ubuntu
 #--------------------------------------------------------------------
-FROM alpine:3.16 AS vttest
+FROM rust AS alacritty
 
-RUN apk add --no-cache build-base curl
+RUN apt-get update && apt-get install -y \
+    cmake pkg-config libfreetype6-dev libfontconfig1-dev \
+    libxcb-xfixes0-dev python3 git
 
-RUN curl -o vttest.tar.gz https://invisible-island.net/archives/vttest/vttest-20220215.tgz && \
-    tar xvzf vttest.tar.gz && \
-    cd vttest-20220215 && \
-    ./configure && \
-    make && \
-    cp ./vttest /
+RUN git clone https://github.com/alacritty/alacritty.git /tmp/alacritty
+
+WORKDIR /tmp/alacritty
+
+RUN git checkout tags/$(git describe --tags $(git rev-list --tags --max-count=1))
+
+RUN RUSTFLAGS='-C link-arg=-s' cargo build --release
 
 #--------------------------------------------------------------------
-# main runner
+# Main Runner
 #--------------------------------------------------------------------
-FROM alpine:3.16
+# Note: we used to use Alpine, but we need to use an OS that is more
+# glibc friendly because on Linux we still require glibc (active todo to
+# support musl).
+FROM ubuntu:22.04
 
-# Base packages. A good set of this is just to get X (xvfb) and OpenGL
-# software rendering working (all the mesa drivers).
-RUN apk add --no-cache \
-    bash \
-    grep \
-    procps \
-    font-inconsolata-nerd \
-    i3wm \
-    imagemagick \
-    libxrandr \
-    mesa-dev \
-    mesa-dri-gallium \
-    mesa-gl \
-    xvfb \
-    xvfb-run \
-    xdotool
+# Base deps
+RUN apt-get update && apt-get install -y \
+  fonts-inconsolata \
+  i3 \
+  imagemagick \
+  libgl1-mesa-dev \
+  libxcursor1 \
+  patchelf \
+  software-properties-common \
+  xdotool \
+  xvfb \
+  vttest
 
-# Our terminals
-RUN apk add --no-cache \
-    alacritty \
-    xterm
+# Terminals
+RUN apt-get install -y \
+  xterm
 
-COPY --from=vttest /vttest /usr/bin/vttest
+RUN rm -rf /var/lib/apt/lists/*
+
+COPY --from=alacritty /tmp/alacritty/target/release/alacritty /usr/bin/alacritty
 
 COPY ./run.sh /entrypoint.sh
 
