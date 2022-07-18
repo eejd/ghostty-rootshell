@@ -93,11 +93,16 @@ echo "Capturing screen shot..."
 import -window root ${ARG_OUT}
 
 echo "Comparing results..."
-DIFF=$(compare -metric AE ${ARG_OUT} ${ARG_CASE}.png null:)
+DIFF=$(compare -metric AE ${ARG_OUT} ${ARG_CASE}.png null: 2>&1)
 if [ $? -eq 2 ] ; then
-  printf "  Comparison failed (error)"
+  echo "  Comparison failed (error)"
+  exit 1
 else
-  printf "  Diff: ${DIFF}"
+  echo "  Diff: ${DIFF}"
+  if [ $DIFF -gt 0 ]; then
+    echo "  Diff is too high. Failure."
+    exit 1
+  fi
 fi
 
 echo "Done"
