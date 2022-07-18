@@ -33,7 +33,8 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # If we're updating, then just update the file in-place
-if [ "$ARG_UPDATE" -eq 1 ]; then ARG_OUT="${ARG_CASE}.png"; fi
+GOLDEN_OUT="${ARG_CASE}.${ARG_EXEC}.png"
+if [ "$ARG_UPDATE" -eq 1 ]; then ARG_OUT=$GOLDEN_OUT; fi
 
 bad=0
 if [ -z "$ARG_EXEC" ]; then bad=1; fi
@@ -93,7 +94,7 @@ echo "Capturing screen shot..."
 import -window root ${ARG_OUT}
 
 echo "Comparing results..."
-DIFF=$(compare -metric AE ${ARG_OUT} ${ARG_CASE}.png null: 2>&1)
+DIFF=$(compare -metric AE ${ARG_OUT} ${GOLDEN_OUT} null: 2>&1)
 if [ $? -eq 2 ] ; then
   echo "  Comparison failed (error)"
   exit 1

@@ -36,7 +36,8 @@ RUN apk add --no-cache \
 
 # Our terminals
 RUN apk add --no-cache \
-    alacritty
+    alacritty \
+    xterm
 
 COPY --from=vttest /vttest /usr/bin/vttest
 
