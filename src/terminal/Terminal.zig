@@ -22,8 +22,18 @@ const log = std.log.scoped(.terminal);
 /// Default tabstop interval
 const TABSTOP_INTERVAL = 8;
 
-/// Screen is the current screen state.
+/// Screen type is an enum that tracks whether a screen is primary or alternate.
+const ScreenType = enum {
+    primary,
+    alternate,
+};
+
+/// Screen is the current screen state. The "active_screen" field says what
+/// the current screen is. The backup screen is the opposite of the active
+/// screen.
+active_screen: ScreenType,
 screen: Screen,
+secondary_screen: Screen,
 
 /// Where the tabstops are.
 tabstops: Tabstops,
@@ -60,8 +70,11 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
     return Terminal{
         .cols = cols,
         .rows = rows,
+        .active_screen = .primary,
         // TODO: configurable scrollback
         .screen = try Screen.init(alloc, rows, cols, 1000),
+        // No scrollback for the alternate screen
+        .secondary_screen = try Screen.init(alloc, rows, cols, 0),
         .tabstops = try Tabstops.init(alloc, cols, TABSTOP_INTERVAL),
         .scrolling_region = .{
             .top = 0,
@@ -73,7 +86,60 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
 pub fn deinit(self: *Terminal, alloc: Allocator) void {
     self.tabstops.deinit(alloc);
     self.screen.deinit(alloc);
+    self.secondary_screen.deinit(alloc);
     self.* = undefined;
+}
+
+/// Options for switching to the alternate screen.
+pub const AlternateScreenOptions = struct {
+    cursor_save: bool = false,
+    clear_on_enter: bool = false,
+    clear_on_exit: bool = false,
+};
+
+/// Switch to the alternate screen buffer.
+///
+/// The alternate screen buffer:
+///   * has its own grid
+///   * has its own cursor state (included saved cursor)
+///   * does not support scrollback
+///
+pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
+    // TODO: test
+    // TODO(mitchellh): what happens if we enter alternate screen multiple times?
+    // for now, we ignore...
+    if (self.active_screen == .alternate) return;
+
+    // If we requested cursor save, we save the cursor in the primary screen
+    if (options.cursor_save) self.saveCursor();
+
+    // Switch the screens
+    const old = self.screen;
+    self.screen = self.secondary_screen;
+    self.secondary_screen = old;
+    self.active_screen = .alternate;
+
+    if (options.clear_on_enter) {
+        self.eraseDisplay(.complete);
+    }
+}
+
+/// Switch back to the primary screen (reset alternate screen mode).
+pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
+    // TODO: test
+    // TODO(mitchellh): what happens if we enter alternate screen multiple times?
+    if (self.active_screen == .primary) return;
+
+    if (options.clear_on_exit) self.eraseDisplay(.complete);
+
+    // Switch the screens
+    const old = self.screen;
+    self.screen = self.secondary_screen;
+    self.secondary_screen = old;
+    self.active_screen = .primary;
+
+    // Restore the cursor from the primary screen
+    if (options.cursor_save) self.restoreCursor();
 }
 
 /// Resize the underlying terminal.

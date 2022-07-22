@@ -775,6 +775,21 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.terminal.modes.autowrap = @boolToInt(enabled);
         },
 
+        .alt_screen_save_cursor_clear_enter => {
+            const opts: terminal.Terminal.AlternateScreenOptions = .{
+                .cursor_save = true,
+                .clear_on_enter = true,
+            };
+
+            if (enabled)
+                self.terminal.alternateScreen(opts)
+            else
+                self.terminal.primaryScreen(opts);
+
+            // Schedule a render since we changed screens
+            try self.render_timer.schedule();
+        },
+
         .bracketed_paste => self.bracketed_paste = true,
 
         .enable_mode_3 => self.terminal.modes.enable_mode_3 = @boolToInt(enabled),

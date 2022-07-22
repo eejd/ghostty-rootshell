@@ -63,6 +63,9 @@ pub const Mode = enum(u16) {
     /// mode ?3 is set or unset.
     enable_mode_3 = 40,
 
+    /// Alternate screen mode with save cursor and clear on enter.
+    alt_screen_save_cursor_clear_enter = 1049,
+
     /// Bracket clipboard paste contents in delimiter sequences.
     ///
     /// When pasting from the (e.g. system) clipboard add "ESC [ 2 0 0 ~"
