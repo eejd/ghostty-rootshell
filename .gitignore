@@ -3,5 +3,6 @@ zig-cache/
 zig-out/
 /result*
 test/ghostty
+test/cases/**/*.actual.png
 
 glad.zip

@@ -3,14 +3,13 @@
 # This runs a single test case from the host (not from Docker itself). The
 # arguments are the same as run.sh but this wraps it in docker.
 
-if [ ! -f "ghostty" ]; then
-  cp ../zig-out/bin/ghostty .
-fi
+DIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+IMAGE=$(docker build --file ${DIR}/Dockerfile -q ${DIR})
 
 docker run \
   --init \
   --rm \
-  -v $(pwd):/src \
+  -v ${DIR}:/src \
   --entrypoint "xvfb-run" \
-  $(docker build -q .) \
+  $IMAGE \
   /entrypoint.sh $@

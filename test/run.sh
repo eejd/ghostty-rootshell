@@ -19,21 +19,30 @@ function has_func() {
 #--------------------------------------------------------------------
 # Flag parsing
 
+ARG_REWRITE=0
 ARG_UPDATE=0
-ARG_OUT="/tmp/test.png"
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -e|--exec) ARG_EXEC="$2"; shift ;;
         -c|--case) ARG_CASE="$2"; shift ;;
         -o|--output) ARG_OUT="$2"; shift ;;
         -u|--update) ARG_UPDATE=1 ;;
+        --rewrite-abs-path) ARG_REWRITE=1 ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
 done
 
+# Rewrite the path to be valid for us. This regex can be fooled in many ways
+# but its good enough for my PC (mitchellh) and CI. Contributors feel free
+# to harden it.
+if [ "$ARG_REWRITE" -eq 1 ]; then
+  ARG_CASE=$(echo $ARG_CASE | sed -e 's/.*cases/\/src\/cases/')
+fi
+
 # If we're updating, then just update the file in-place
 GOLDEN_OUT="${ARG_CASE}.${ARG_EXEC}.png"
+ARG_OUT="${ARG_CASE}.${ARG_EXEC}.actual.png"
 if [ "$ARG_UPDATE" -eq 1 ]; then ARG_OUT=$GOLDEN_OUT; fi
 
 bad=0
@@ -75,7 +84,13 @@ chmod 0700 $XDG_RUNTIME_DIR
 
 # Configure i3
 cat <<EOF >${XDG_BASE_DIR}/i3.cfg
+# i3 config file (v4)
+
 exec ${ARG_EXEC}
+
+bar {
+    mode invisible
+}
 EOF
 
 #--------------------------------------------------------------------

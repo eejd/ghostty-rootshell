@@ -36,6 +36,6 @@ the full test suite against only a single terminal emulator.
 ## Modifying the `ghostty` Binary
 
 This test suite expects the `ghostty` binary to be in _this directory_.
-You can manually copy it into place. By default, if the binary doesn't exist,
-the various host-side shell scripts will try to copy from
-`../zig-out/bin/ghostty` (resulting from `zig build`).
+You can manually copy it into place. Each time you modify the binary, you
+must rebuild the Docker image.
+

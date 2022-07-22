@@ -46,4 +46,6 @@ COPY --from=alacritty /tmp/alacritty/target/release/alacritty /usr/bin/alacritty
 
 COPY ./run.sh /entrypoint.sh
 
+COPY ./ghostty /usr/bin/ghostty
+
 ENTRYPOINT ["/bin/bash"]
