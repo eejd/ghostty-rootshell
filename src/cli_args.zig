@@ -72,17 +72,23 @@ fn parseIntoField(
                 const fieldInfo = @typeInfo(Field);
 
                 // If the type implements a parse function, call that.
-                if (fieldInfo == .Struct and @hasDecl(Field, "parseCLI"))
-                    break :field try Field.parseCLI(value);
-
-                // Otherwise infer based on type
-                break :field switch (Field) {
+                // NOTE(mitchellh): this is a pretty nasty break statement.
+                // I split it into two at first and it failed with Zig as of
+                // July 21, 2022. I think stage2+ will fix this so lets clean
+                // this up when that comes out.
+                break :field if (fieldInfo == .Struct and @hasDecl(Field, "parseCLI"))
+                    try Field.parseCLI(value)
+                else switch (Field) {
                     []const u8 => if (value) |slice| value: {
                         const buf = try alloc.alloc(u8, slice.len);
                         mem.copy(u8, buf, slice);
                         break :value buf;
                     } else return error.ValueRequired,
+
                     bool => try parseBool(value orelse "t"),
+
+                    u8 => try std.fmt.parseInt(u8, value orelse return error.ValueRequired, 0),
+
                     else => unreachable,
                 };
             };
@@ -175,6 +181,20 @@ test "parseIntoField: bool" {
     try testing.expectEqual(false, data.a);
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "false");
     try testing.expectEqual(false, data.a);
+}
+
+test "parseIntoField: unsigned numbers" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        @"u8": u8,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "u8", "1");
+    try testing.expectEqual(@as(u8, 1), data.@"u8");
 }
 
 test "parseIntoField: optional field" {

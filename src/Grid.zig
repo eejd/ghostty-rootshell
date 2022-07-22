@@ -12,6 +12,7 @@ const Terminal = terminal.Terminal;
 const gl = @import("opengl.zig");
 const gb = @import("gb_math.zig");
 const trace = @import("tracy/tracy.zig").trace;
+const Config = @import("config.zig").Config;
 
 const log = std.log.scoped(.grid);
 
@@ -101,15 +102,15 @@ const GPUCell = struct {
     mode: u8,
 };
 
-pub fn init(alloc: Allocator) !Grid {
+pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // Initialize our font atlas. We will initially populate the
     // font atlas with all the visible ASCII characters since they are common.
     var atlas = try Atlas.init(alloc, 512);
     errdefer atlas.deinit(alloc);
     var fam = try font.Family.init(atlas);
     errdefer fam.deinit(alloc);
-    try fam.loadFaceFromMemory(.regular, face_ttf, 32);
-    try fam.loadFaceFromMemory(.bold, face_bold_ttf, 32);
+    try fam.loadFaceFromMemory(.regular, face_ttf, config.@"font-size");
+    try fam.loadFaceFromMemory(.bold, face_bold_ttf, config.@"font-size");
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.

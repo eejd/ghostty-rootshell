@@ -2,6 +2,9 @@ const std = @import("std");
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 pub const Config = struct {
+    /// Font size
+    @"font-size": u8 = 14,
+
     /// Background color for the window.
     background: Color = .{ .r = 0, .g = 0, .b = 0 },
 

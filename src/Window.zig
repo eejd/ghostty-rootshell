@@ -148,7 +148,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Create our terminal grid with the initial window size
     const window_size = try window.getSize();
-    var grid = try Grid.init(alloc);
+    var grid = try Grid.init(alloc, config);
     try grid.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
     grid.background = .{
         .r = config.background.r,
