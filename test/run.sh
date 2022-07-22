@@ -16,6 +16,14 @@ function has_func() {
     return $?
 }
 
+# Colors
+export BOLD="\\e[1m"
+export RED="\\e[1;31m"
+export GREEN="\\e[1;32m"
+export YELLOW="\\e[1;33m"
+export WHITE="\\e[1;37m"
+export RESET="\\e[0;39m"
+
 #--------------------------------------------------------------------
 # Flag parsing
 
@@ -61,9 +69,6 @@ if ! has_func "test_do"; then
   exit 1
 fi
 
-echo "Term: ${ARG_EXEC}"
-echo "Case: ${ARG_CASE}"
-
 # NOTE: This is a huge hack right now.
 if [ "$ARG_EXEC" = "ghostty" ]; then
   ARG_EXEC="/src/ghostty";
@@ -95,13 +100,12 @@ EOF
 
 #--------------------------------------------------------------------
 
+printf "${RESET}${BOLD}[$(basename $ARG_EXEC)]${RESET} $ARG_CASE ... ${RESET}"
+
 # Start up the program under test by launching i3. We use i3 so we can
 # more carefully control the window settings, test resizing, etc.
 WM_LOG="${XDG_BASE_DIR}/wm.log"
 i3 -c ${XDG_BASE_DIR}/i3.cfg >${WM_LOG} 2>&1 &
-
-echo
-echo "Started window manager..."
 
 # Wait for startup
 # TODO: we can probably use xdotool or wmctrl or something to detect if any
@@ -109,26 +113,22 @@ echo "Started window manager..."
 sleep 2
 
 # Run our test case (should be defined in test case file)
-echo "Executing test case..."
 test_do
 
 # Sleep a second to let it render
 sleep 1
 
-echo "Capturing screen shot..."
 import -window root ${ARG_OUT}
 
-echo "Comparing results..."
 DIFF=$(compare -metric AE ${ARG_OUT} ${GOLDEN_OUT} null: 2>&1)
 if [ $? -eq 2 ] ; then
-  echo "  Comparison failed (error)"
+  printf "${RED}ERROR${RESET}\n"
   exit 1
 else
-  echo "  Diff: ${DIFF}"
   if [ $DIFF -gt 0 ]; then
-    echo "  Diff is too high. Failure."
+    printf "${RED}Fail (Diff: ${WHITE}${DIFF}${RED})${RESET}\n"
     exit 1
+  else
+    printf "${GREEN}Pass (Diff: ${WHITE}${DIFF}${GREEN})${RESET}\n"
   fi
 fi
-
-echo "Done"
