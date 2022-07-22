@@ -118,6 +118,9 @@ test_do
 # Sleep a second to let it render
 sleep 1
 
+# Uncomment this and use run-host.sh to get logs of the terminal emulator
+# cat $WM_LOG
+
 import -window root ${ARG_OUT}
 
 DIFF=$(compare -metric AE ${ARG_OUT} ${GOLDEN_OUT} null: 2>&1)
@@ -133,5 +136,3 @@ else
   fi
 fi
 
-# Uncomment this and use run-host.sh to get logs of the terminal emulator
-# cat $WM_LOG
