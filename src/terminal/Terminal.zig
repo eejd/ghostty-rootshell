@@ -404,7 +404,7 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
 
     self.screen.cursor.x = @minimum(params.x_max, col) -| 1;
     self.screen.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
-    log.info("set cursor position: col={} row={}", .{ self.screen.cursor.x, self.screen.cursor.y });
+    // log.info("set cursor position: col={} row={}", .{ self.screen.cursor.x, self.screen.cursor.y });
 
     // Unset pending wrap state
     self.screen.cursor.pending_wrap = false;
