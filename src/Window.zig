@@ -371,7 +371,8 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         log.err("error updating OpenGL viewport err={}", .{err});
 
     // Draw
-    win.render_timer.schedule() catch unreachable;
+    win.render_timer.schedule() catch |err|
+        log.err("error scheduling render timer in sizeCallback err={}", .{err});
 }
 
 fn charCallback(window: glfw.Window, codepoint: u21) void {
@@ -387,7 +388,8 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
     }
 
     // Write the character to the pty
-    win.queueWrite(&[1]u8{@intCast(u8, codepoint)}) catch unreachable;
+    win.queueWrite(&[1]u8{@intCast(u8, codepoint)}) catch |err|
+        log.err("error queueing write in charCallback err={}", .{err});
 }
 
 fn keyCallback(
@@ -415,10 +417,12 @@ fn keyCallback(
         };
 
         if (data.len > 0) {
-            if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch unreachable;
+            if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
+                log.err("error queueing write in keyCallback err={}", .{err});
             win.queueWrite(data) catch |err|
                 log.warn("error pasting clipboard: {}", .{err});
-            if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch unreachable;
+            if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
+                log.err("error queueing write in keyCallback err={}", .{err});
         }
 
         return;
@@ -464,7 +468,8 @@ fn keyCallback(
         };
 
         const win = window.getUserPointer(Window) orelse return;
-        win.queueWrite(&[1]u8{c}) catch unreachable;
+        win.queueWrite(&[1]u8{c}) catch |err|
+            log.err("error queueing write in keyCallback err={}", .{err});
     }
 }
 
@@ -633,10 +638,12 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // Update the cells for drawing
-    win.grid.updateCells(win.terminal) catch unreachable;
+    win.grid.updateCells(win.terminal) catch |err|
+        log.err("error calling updateCells in render timer err={}", .{err});
 
     // Update our texture if we have to
-    win.grid.flushAtlas() catch unreachable;
+    win.grid.flushAtlas() catch |err|
+        log.err("error calling flushAtlas in render timer err={}", .{err});
 
     // Render the grid
     win.grid.render() catch |err| {
@@ -699,12 +706,22 @@ pub fn setCursorUp(self: *Window, amount: u16) !void {
 }
 
 pub fn setCursorCol(self: *Window, col: u16) !void {
-    if (self.terminal.modes.origin == 1) unreachable; // TODO
+    if (self.terminal.modes.origin == 1) {
+        // TODO
+        log.err("setCursorCol: implement origin mode", .{});
+        unreachable;
+    }
+
     self.terminal.setCursorPos(self.terminal.screen.cursor.y + 1, col);
 }
 
 pub fn setCursorRow(self: *Window, row: u16) !void {
-    if (self.terminal.modes.origin == 1) unreachable; // TODO
+    if (self.terminal.modes.origin == 1) {
+        // TODO
+        log.err("setCursorRow: implement origin mode", .{});
+        unreachable;
+    }
+
     self.terminal.setCursorPos(row, self.terminal.screen.cursor.x + 1);
 }
 
