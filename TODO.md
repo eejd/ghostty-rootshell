@@ -1,7 +1,7 @@
 Bugs:
 
-* Something is going wrong with the vttest 1_5 test case with ghostty
-  (see screenshots in test folder)
+* If you set the screen size to really small, vttest crashes the emulator
+  Zig stack traces are currently broken to debug
 * Underline should use freetype underline thickness hint
 * Any printing action forces scroll to jump to bottom, this makes it impossible
   to scroll up while logs are coming in or something

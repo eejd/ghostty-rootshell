@@ -132,3 +132,6 @@ else
     printf "${GREEN}Pass (Diff: ${WHITE}${DIFF}${GREEN})${RESET}\n"
   fi
 fi
+
+# Uncomment this and use run-host.sh to get logs of the terminal emulator
+# cat $WM_LOG

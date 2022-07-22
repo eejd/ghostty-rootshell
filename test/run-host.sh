@@ -12,4 +12,5 @@ docker run \
   -v ${DIR}:/src \
   --entrypoint "xvfb-run" \
   $IMAGE \
+  --server-args="-screen 0, 1600x900x24" \
   /entrypoint.sh $@
