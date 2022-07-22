@@ -717,7 +717,7 @@ pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
 }
 
 pub fn eraseLine(self: *Window, mode: terminal.EraseLine) !void {
-    try self.terminal.eraseLine(mode);
+    self.terminal.eraseLine(mode);
 }
 
 pub fn deleteChars(self: *Window, count: usize) !void {
@@ -730,6 +730,10 @@ pub fn eraseChars(self: *Window, count: usize) !void {
 
 pub fn insertLines(self: *Window, count: usize) !void {
     self.terminal.insertLines(count);
+}
+
+pub fn insertBlanks(self: *Window, count: usize) !void {
+    self.terminal.insertBlanks(count);
 }
 
 pub fn deleteLines(self: *Window, count: usize) !void {

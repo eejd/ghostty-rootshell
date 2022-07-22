@@ -431,7 +431,7 @@ pub fn eraseDisplay(
 pub fn eraseLine(
     self: *Terminal,
     mode: csi.EraseLine,
-) !void {
+) void {
     switch (mode) {
         .right => {
             const row = self.screen.getRow(self.cursor.y);
@@ -603,6 +603,54 @@ pub fn carriageReturn(self: *Terminal) void {
 /// Linefeed moves the cursor to the next line.
 pub fn linefeed(self: *Terminal) void {
     self.index();
+}
+
+/// Inserts spaces at current cursor position moving existing cell contents
+/// to the right. The contents of the count right-most columns in the scroll
+/// region are lost. The cursor position is not changed.
+///
+/// This unsets the pending wrap state without wrapping.
+///
+/// The inserted cells are colored according to the current SGR state.
+pub fn insertBlanks(self: *Terminal, count: usize) void {
+    // Unset pending wrap state without wrapping
+    self.cursor.pending_wrap = false;
+
+    // If our count is larger than the remaining amount, we just erase right.
+    if (count > self.cols - self.cursor.x) {
+        self.eraseLine(.right);
+        return;
+    }
+
+    // Get the current row
+    const row = self.screen.getRow(self.cursor.y);
+
+    // Determine our indexes.
+    const start = self.cursor.x;
+    const pivot = self.cursor.x + count;
+
+    // This is the number of spaces we have left to shift existing data.
+    // If count is bigger than the available space left after the cursor,
+    // we may have no space at all for copying.
+    const copyable = row.len - pivot;
+    if (copyable > 0) {
+        // This is the index of the final copyable value that we need to copy.
+        const copyable_end = start + copyable - 1;
+
+        // Shift count cells. We have to do this backwards since we're not
+        // allocated new space, otherwise we'll copy duplicates.
+        var i: usize = 0;
+        while (i < copyable) : (i += 1) {
+            const to = row.len - 1 - i;
+            const from = copyable_end - i;
+            row[to] = row[from];
+        }
+    }
+
+    // Insert zero
+    var pen = self.cursor.pen;
+    pen.char = ' '; // NOTE: this should be 0 but we need space for tests
+    std.mem.set(Screen.Cell, row[start..pivot], pen);
 }
 
 /// Insert amount lines at the current cursor row. The contents of the line
@@ -1306,5 +1354,65 @@ test "Terminal: DECALN" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("EE\nEE", str);
+    }
+}
+
+test "Terminal: insertBlanks" {
+    // NOTE: this is not verified with conformance tests, so these
+    // tests might actually be verifying wrong behavior.
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 2);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    try t.print('B');
+    try t.print('C');
+    t.setCursorPos(1, 1);
+    t.insertBlanks(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  ABC", str);
+    }
+}
+
+test "Terminal: insertBlanks pushes off end" {
+    // NOTE: this is not verified with conformance tests, so these
+    // tests might actually be verifying wrong behavior.
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 2);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    try t.print('B');
+    try t.print('C');
+    t.setCursorPos(1, 1);
+    t.insertBlanks(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  A", str);
+    }
+}
+
+test "Terminal: insertBlanks more than size" {
+    // NOTE: this is not verified with conformance tests, so these
+    // tests might actually be verifying wrong behavior.
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 2);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    try t.print('B');
+    try t.print('C');
+    t.setCursorPos(1, 1);
+    t.insertBlanks(5);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
     }
 }

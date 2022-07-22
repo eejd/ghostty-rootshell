@@ -376,6 +376,14 @@ pub fn Stream(comptime Handler: type) type {
                     try self.handler.csiUnimplemented(action)
                 else
                     log.warn("unimplemented CSI action: {}", .{action}),
+
+                // ICH - Insert Blanks
+                // TODO: test
+                '@' => if (@hasDecl(T, "insertBlanks")) switch (action.params.len) {
+                    0 => try self.handler.insertBlanks(1),
+                    1 => try self.handler.insertBlanks(action.params[0]),
+                    else => log.warn("invalid ICH command: {}", .{action}),
+                } else log.warn("unimplemented CSI callback: {}", .{action}),
             }
         }
 
