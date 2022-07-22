@@ -346,6 +346,10 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     self.rows = rows;
     self.cols = cols;
 
+    // Move our cursor if we have to so it stays on the screen.
+    self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
+    self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
+
     // TODO: reflow due to soft wrap
 
     // If we're increasing height, then copy all rows (start at 0).

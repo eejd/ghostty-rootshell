@@ -156,6 +156,7 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void
     // If we're making the screen smaller, dealloc the unused items.
     // TODO: reflow
     try self.screen.resize(alloc, rows, cols);
+    try self.secondary_screen.resize(alloc, rows, cols);
 
     // Set our size
     self.cols = cols;
@@ -166,10 +167,6 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void
         .top = 0,
         .bottom = rows - 1,
     };
-
-    // Move our cursor
-    self.screen.cursor.x = @minimum(self.screen.cursor.x, self.cols - 1);
-    self.screen.cursor.y = @minimum(self.screen.cursor.y, self.rows - 1);
 }
 
 /// Return the current string value of the terminal. Newlines are
