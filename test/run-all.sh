@@ -16,10 +16,11 @@ IMAGE=$(docker build --file ${DIR}/Dockerfile -q ${DIR})
 # this less esoterically if we ever wanted.
 find ${DIR}/cases \
   -type f \
-  -name '*.sh' \
-  -exec \
+  -name '*.sh' | \
+  sort | \
+  xargs \
+    -I '{}' \
     ${DIR}/run-host.sh \
     --case '{}' \
     --rewrite-abs-path \
-    $@ \
-    ';'
+    $@
