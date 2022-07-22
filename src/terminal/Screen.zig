@@ -29,6 +29,20 @@ const log = std.log.scoped(.screen);
 /// A row is a set of cells.
 pub const Row = []Cell;
 
+/// Cursor represents the cursor state.
+pub const Cursor = struct {
+    // x, y where the cursor currently exists (0-indexed). This x/y is
+    // always the offset in the display area.
+    x: usize = 0,
+    y: usize = 0,
+
+    // pen is the current cell styling to apply to new cells.
+    pen: Cell = .{ .char = 0 },
+
+    // The last column flag (LCF) used to do soft wrapping.
+    pending_wrap: bool = false,
+};
+
 /// Cell is a single cell within the screen.
 pub const Cell = struct {
     /// Each cell contains exactly one character. The character is UTF-32
@@ -70,6 +84,12 @@ pub const RowIterator = struct {
     }
 };
 
+/// Each screen maintains its own cursor state.
+cursor: Cursor = .{},
+
+/// Saved cursor saved with DECSC (ESC 7).
+saved_cursor: Cursor = .{},
+
 /// The full list of rows, including any scrollback.
 storage: []Cell,
 
@@ -106,6 +126,7 @@ pub fn init(
     std.mem.set(Cell, buf, .{ .char = 0 });
 
     return Screen{
+        .cursor = .{},
         .storage = buf,
         .top = 0,
         .bottom = rows,

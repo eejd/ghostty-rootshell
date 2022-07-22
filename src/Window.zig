@@ -700,12 +700,12 @@ pub fn setCursorUp(self: *Window, amount: u16) !void {
 
 pub fn setCursorCol(self: *Window, col: u16) !void {
     if (self.terminal.modes.origin == 1) unreachable; // TODO
-    self.terminal.setCursorPos(self.terminal.cursor.y + 1, col);
+    self.terminal.setCursorPos(self.terminal.screen.cursor.y + 1, col);
 }
 
 pub fn setCursorRow(self: *Window, row: u16) !void {
     if (self.terminal.modes.origin == 1) unreachable; // TODO
-    self.terminal.setCursorPos(row, self.terminal.cursor.x + 1);
+    self.terminal.setCursorPos(row, self.terminal.screen.cursor.x + 1);
 }
 
 pub fn setCursorPos(self: *Window, row: u16, col: u16) !void {
@@ -835,11 +835,11 @@ pub fn deviceStatusReport(
                 y: usize,
             } = if (self.terminal.modes.origin == 1) .{
                 // TODO: what do we do if cursor is outside scrolling region?
-                .x = self.terminal.cursor.x,
-                .y = self.terminal.cursor.y -| self.terminal.scrolling_region.top,
+                .x = self.terminal.screen.cursor.x,
+                .y = self.terminal.screen.cursor.y -| self.terminal.scrolling_region.top,
             } else .{
-                .x = self.terminal.cursor.x,
-                .y = self.terminal.cursor.y,
+                .x = self.terminal.screen.cursor.x,
+                .y = self.terminal.screen.cursor.y,
             };
 
             // Response always is at least 4 chars, so this leaves the

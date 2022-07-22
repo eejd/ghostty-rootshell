@@ -25,12 +25,6 @@ const TABSTOP_INTERVAL = 8;
 /// Screen is the current screen state.
 screen: Screen,
 
-/// Cursor position.
-cursor: Cursor,
-
-/// Saved cursor saved with DECSC (ESC 7).
-saved_cursor: Cursor,
-
 /// Where the tabstops are.
 tabstops: Tabstops,
 
@@ -61,19 +55,6 @@ const ScrollingRegion = struct {
     bottom: usize,
 };
 
-/// Cursor represents the cursor state.
-const Cursor = struct {
-    // x, y where the cursor currently exists (0-indexed).
-    x: usize = 0,
-    y: usize = 0,
-
-    // pen is the current cell styling to apply to new cells.
-    pen: Screen.Cell = .{ .char = 0 },
-
-    // The last column flag (LCF) used to do soft wrapping.
-    pending_wrap: bool = false,
-};
-
 /// Initialize a new terminal.
 pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
     return Terminal{
@@ -81,8 +62,6 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
         .rows = rows,
         // TODO: configurable scrollback
         .screen = try Screen.init(alloc, rows, cols, 1000),
-        .cursor = .{},
-        .saved_cursor = .{},
         .tabstops = try Tabstops.init(alloc, cols, TABSTOP_INTERVAL),
         .scrolling_region = .{
             .top = 0,
@@ -123,8 +102,8 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void
     };
 
     // Move our cursor
-    self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
-    self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
+    self.screen.cursor.x = @minimum(self.screen.cursor.x, self.cols - 1);
+    self.screen.cursor.y = @minimum(self.screen.cursor.y, self.rows - 1);
 }
 
 /// Return the current string value of the terminal. Newlines are
@@ -141,7 +120,7 @@ pub fn plainString(self: Terminal, alloc: Allocator) ![]const u8 {
 /// is kept per screen (main / alternative). If for the current screen state
 /// was already saved it is overwritten.
 pub fn saveCursor(self: *Terminal) void {
-    self.saved_cursor = self.cursor;
+    self.screen.saved_cursor = self.screen.cursor;
 }
 
 /// Restore cursor position and other state.
@@ -149,32 +128,32 @@ pub fn saveCursor(self: *Terminal) void {
 /// The primary and alternate screen have distinct save state.
 /// If no save was done before values are reset to their initial values.
 pub fn restoreCursor(self: *Terminal) void {
-    self.cursor = self.saved_cursor;
+    self.screen.cursor = self.screen.saved_cursor;
 }
 
 /// TODO: test
 pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
     switch (attr) {
         .unset => {
-            self.cursor.pen.fg = null;
-            self.cursor.pen.bg = null;
-            self.cursor.pen.attrs = .{};
+            self.screen.cursor.pen.fg = null;
+            self.screen.cursor.pen.bg = null;
+            self.screen.cursor.pen.attrs = .{};
         },
 
         .bold => {
-            self.cursor.pen.attrs.bold = 1;
+            self.screen.cursor.pen.attrs.bold = 1;
         },
 
         .underline => {
-            self.cursor.pen.attrs.underline = 1;
+            self.screen.cursor.pen.attrs.underline = 1;
         },
 
         .inverse => {
-            self.cursor.pen.attrs.inverse = 1;
+            self.screen.cursor.pen.attrs.inverse = 1;
         },
 
         .direct_color_fg => |rgb| {
-            self.cursor.pen.fg = .{
+            self.screen.cursor.pen.fg = .{
                 .r = rgb.r,
                 .g = rgb.g,
                 .b = rgb.b,
@@ -182,24 +161,24 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
         },
 
         .direct_color_bg => |rgb| {
-            self.cursor.pen.bg = .{
+            self.screen.cursor.pen.bg = .{
                 .r = rgb.r,
                 .g = rgb.g,
                 .b = rgb.b,
             };
         },
 
-        .@"8_fg" => |n| self.cursor.pen.fg = color.default[@enumToInt(n)],
+        .@"8_fg" => |n| self.screen.cursor.pen.fg = color.default[@enumToInt(n)],
 
-        .@"8_bg" => |n| self.cursor.pen.bg = color.default[@enumToInt(n)],
+        .@"8_bg" => |n| self.screen.cursor.pen.bg = color.default[@enumToInt(n)],
 
-        .@"8_bright_fg" => |n| self.cursor.pen.fg = color.default[@enumToInt(n)],
+        .@"8_bright_fg" => |n| self.screen.cursor.pen.fg = color.default[@enumToInt(n)],
 
-        .@"8_bright_bg" => |n| self.cursor.pen.bg = color.default[@enumToInt(n)],
+        .@"8_bright_bg" => |n| self.screen.cursor.pen.bg = color.default[@enumToInt(n)],
 
-        .@"256_fg" => |idx| self.cursor.pen.fg = color.default[idx],
+        .@"256_fg" => |idx| self.screen.cursor.pen.fg = color.default[idx],
 
-        .@"256_bg" => |idx| self.cursor.pen.bg = color.default[idx],
+        .@"256_bg" => |idx| self.screen.cursor.pen.bg = color.default[idx],
 
         else => return error.InvalidAttribute,
     }
@@ -213,31 +192,31 @@ pub fn print(self: *Terminal, c: u21) !void {
     if (!self.screen.displayIsBottom()) self.screen.scroll(.{ .bottom = {} });
 
     // If we're soft-wrapping, then handle that first.
-    if (self.cursor.pending_wrap and self.modes.autowrap == 1) {
+    if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1) {
         // Mark that the cell is wrapped, which guarantees that there is
         // at least one cell after it in the next row.
-        const cell = self.screen.getCell(self.cursor.y, self.cursor.x);
+        const cell = self.screen.getCell(self.screen.cursor.y, self.screen.cursor.x);
         cell.attrs.wrap = 1;
 
         // Move to the next line
         self.index();
-        self.cursor.x = 0;
+        self.screen.cursor.x = 0;
     }
 
     // Build our cell
-    const cell = self.screen.getCell(self.cursor.y, self.cursor.x);
-    cell.* = self.cursor.pen;
+    const cell = self.screen.getCell(self.screen.cursor.y, self.screen.cursor.x);
+    cell.* = self.screen.cursor.pen;
     cell.char = @intCast(u32, c);
 
     // Move the cursor
-    self.cursor.x += 1;
+    self.screen.cursor.x += 1;
 
     // If we're at the column limit, then we need to wrap the next time.
     // This is unlikely so we do the increment above and decrement here
     // if we need to rather than check once.
-    if (self.cursor.x == self.cols) {
-        self.cursor.x -= 1;
-        self.cursor.pending_wrap = true;
+    if (self.screen.cursor.x == self.cols) {
+        self.screen.cursor.x -= 1;
+        self.screen.cursor.pending_wrap = true;
     }
 }
 
@@ -276,20 +255,20 @@ pub fn decaln(self: *Terminal) void {
 /// This unsets the pending wrap state without wrapping.
 pub fn index(self: *Terminal) void {
     // Unset pending wrap state
-    self.cursor.pending_wrap = false;
+    self.screen.cursor.pending_wrap = false;
 
     // Outside of the scroll region we move the cursor one line down.
-    if (self.cursor.y < self.scrolling_region.top or
-        self.cursor.y > self.scrolling_region.bottom)
+    if (self.screen.cursor.y < self.scrolling_region.top or
+        self.screen.cursor.y > self.scrolling_region.bottom)
     {
-        self.cursor.y = @minimum(self.cursor.y + 1, self.rows - 1);
+        self.screen.cursor.y = @minimum(self.screen.cursor.y + 1, self.rows - 1);
         return;
     }
 
     // If the cursor is inside the scrolling region and on the bottom-most
     // line, then we scroll up. If our scrolling region is the full screen
     // we create scrollback.
-    if (self.cursor.y == self.scrolling_region.bottom) {
+    if (self.screen.cursor.y == self.scrolling_region.bottom) {
         // If our scrolling region is the full screen, we create scrollback.
         // Otherwise, we simply scroll the region.
         if (self.scrolling_region.top == 0 and
@@ -303,7 +282,7 @@ pub fn index(self: *Terminal) void {
     }
 
     // Increase cursor by 1, maximum to bottom of scroll region
-    self.cursor.y = @minimum(self.cursor.y + 1, self.scrolling_region.bottom);
+    self.screen.cursor.y = @minimum(self.screen.cursor.y + 1, self.scrolling_region.bottom);
 }
 
 /// Move the cursor to the previous line in the scrolling region, possibly
@@ -321,10 +300,10 @@ pub fn index(self: *Terminal) void {
 pub fn reverseIndex(self: *Terminal) !void {
     // TODO: scrolling region
 
-    if (self.cursor.y == 0) {
+    if (self.screen.cursor.y == 0) {
         self.scrollDown(1);
     } else {
-        self.cursor.y -|= 1;
+        self.screen.cursor.y -|= 1;
     }
 }
 
@@ -357,12 +336,12 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
         .y_max = self.rows,
     };
 
-    self.cursor.x = @minimum(params.x_max, col) -| 1;
-    self.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
-    log.info("set cursor position: col={} row={}", .{ self.cursor.x, self.cursor.y });
+    self.screen.cursor.x = @minimum(params.x_max, col) -| 1;
+    self.screen.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
+    log.info("set cursor position: col={} row={}", .{ self.screen.cursor.x, self.screen.cursor.y });
 
     // Unset pending wrap state
-    self.cursor.pending_wrap = false;
+    self.screen.cursor.pending_wrap = false;
 }
 
 /// Erase the display.
@@ -374,25 +353,25 @@ pub fn eraseDisplay(
     switch (mode) {
         .complete => {
             const all = self.screen.getVisible();
-            std.mem.set(Screen.Cell, all, self.cursor.pen);
+            std.mem.set(Screen.Cell, all, self.screen.cursor.pen);
         },
 
         .below => {
             // All lines to the right (including the cursor)
-            var x: usize = self.cursor.x;
+            var x: usize = self.screen.cursor.x;
             while (x < self.cols) : (x += 1) {
-                const cell = self.getOrPutCell(x, self.cursor.y);
-                cell.* = self.cursor.pen;
+                const cell = self.getOrPutCell(x, self.screen.cursor.y);
+                cell.* = self.screen.cursor.pen;
                 cell.char = 0;
             }
 
             // All lines below
-            var y: usize = self.cursor.y + 1;
+            var y: usize = self.screen.cursor.y + 1;
             while (y < self.rows) : (y += 1) {
                 x = 0;
                 while (x < self.cols) : (x += 1) {
                     const cell = self.getOrPutCell(x, y);
-                    cell.* = self.cursor.pen;
+                    cell.* = self.screen.cursor.pen;
                     cell.char = 0;
                 }
             }
@@ -401,19 +380,19 @@ pub fn eraseDisplay(
         .above => {
             // Erase to the left (including the cursor)
             var x: usize = 0;
-            while (x <= self.cursor.x) : (x += 1) {
-                const cell = self.getOrPutCell(x, self.cursor.y);
-                cell.* = self.cursor.pen;
+            while (x <= self.screen.cursor.x) : (x += 1) {
+                const cell = self.getOrPutCell(x, self.screen.cursor.y);
+                cell.* = self.screen.cursor.pen;
                 cell.char = 0;
             }
 
             // All lines above
             var y: usize = 0;
-            while (y < self.cursor.y) : (y += 1) {
+            while (y < self.screen.cursor.y) : (y += 1) {
                 x = 0;
                 while (x < self.cols) : (x += 1) {
                     const cell = self.getOrPutCell(x, y);
-                    cell.* = self.cursor.pen;
+                    cell.* = self.screen.cursor.pen;
                     cell.char = 0;
                 }
             }
@@ -434,18 +413,18 @@ pub fn eraseLine(
 ) void {
     switch (mode) {
         .right => {
-            const row = self.screen.getRow(self.cursor.y);
-            std.mem.set(Screen.Cell, row[self.cursor.x..], self.cursor.pen);
+            const row = self.screen.getRow(self.screen.cursor.y);
+            std.mem.set(Screen.Cell, row[self.screen.cursor.x..], self.screen.cursor.pen);
         },
 
         .left => {
-            const row = self.screen.getRow(self.cursor.y);
-            std.mem.set(Screen.Cell, row[0..self.cursor.x], self.cursor.pen);
+            const row = self.screen.getRow(self.screen.cursor.y);
+            std.mem.set(Screen.Cell, row[0..self.screen.cursor.x], self.screen.cursor.pen);
         },
 
         .complete => {
-            const row = self.screen.getRow(self.cursor.y);
-            std.mem.set(Screen.Cell, row, self.cursor.pen);
+            const row = self.screen.getRow(self.screen.cursor.y);
+            std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
         },
 
         else => {
@@ -466,14 +445,14 @@ pub fn eraseLine(
 ///
 /// TODO: test
 pub fn deleteChars(self: *Terminal, count: usize) !void {
-    const line = self.screen.getRow(self.cursor.y);
+    const line = self.screen.getRow(self.screen.cursor.y);
 
     // Our last index is at most the end of the number of chars we have
     // in the current line.
     const end = self.cols - count;
 
     // Shift
-    var i: usize = self.cursor.x;
+    var i: usize = self.screen.cursor.x;
     while (i < end) : (i += 1) {
         const j = i + count;
         line[i] = line[j];
@@ -485,13 +464,13 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 pub fn eraseChars(self: *Terminal, count: usize) void {
     // Our last index is at most the end of the number of chars we have
     // in the current line.
-    const end = @minimum(self.cols, self.cursor.x + count);
+    const end = @minimum(self.cols, self.screen.cursor.x + count);
 
     // Shift
-    var x: usize = self.cursor.x;
+    var x: usize = self.screen.cursor.x;
     while (x < end) : (x += 1) {
-        const cell = self.getOrPutCell(x, self.cursor.y);
-        cell.* = self.cursor.pen;
+        const cell = self.getOrPutCell(x, self.screen.cursor.y);
+        cell.* = self.screen.cursor.pen;
         cell.char = 0;
     }
 }
@@ -504,7 +483,7 @@ pub fn cursorLeft(self: *Terminal, count: usize) void {
 
     // TODO: scroll region, wrap
 
-    self.cursor.x -|= if (count == 0) 1 else count;
+    self.screen.cursor.x -|= if (count == 0) 1 else count;
 }
 
 /// Move the cursor right amount columns. If amount is greater than the
@@ -516,9 +495,9 @@ pub fn cursorRight(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.cursor.x += count;
-    if (self.cursor.x >= self.cols) {
-        self.cursor.x = self.cols - 1;
+    self.screen.cursor.x += count;
+    if (self.screen.cursor.x >= self.cols) {
+        self.screen.cursor.x = self.cols - 1;
     }
 }
 
@@ -530,9 +509,9 @@ pub fn cursorDown(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.cursor.y += count;
-    if (self.cursor.y >= self.rows) {
-        self.cursor.y = self.rows - 1;
+    self.screen.cursor.y += count;
+    if (self.screen.cursor.y >= self.rows) {
+        self.screen.cursor.y = self.rows - 1;
     }
 }
 
@@ -544,7 +523,7 @@ pub fn cursorUp(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.cursor.y -|= count;
+    self.screen.cursor.y -|= count;
 }
 
 /// Backspace moves the cursor back a column (but not less than 0).
@@ -552,7 +531,7 @@ pub fn backspace(self: *Terminal) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.cursor.x -|= 1;
+    self.screen.cursor.x -|= 1;
 }
 
 /// Horizontal tab moves the cursor to the next tabstop, clearing
@@ -561,14 +540,14 @@ pub fn horizontalTab(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    while (self.cursor.x < self.cols) {
+    while (self.screen.cursor.x < self.cols) {
         // Move the cursor right
-        self.cursor.x += 1;
+        self.screen.cursor.x += 1;
 
         // If the last cursor position was a tabstop we return. We do
         // "last cursor position" because we want a space to be written
         // at the tabstop unless we're at the end (the while condition).
-        if (self.tabstops.get(self.cursor.x)) return;
+        if (self.tabstops.get(self.screen.cursor.x)) return;
     }
 }
 
@@ -576,7 +555,7 @@ pub fn horizontalTab(self: *Terminal) !void {
 /// TODO: test
 pub fn tabClear(self: *Terminal, cmd: csi.TabClear) void {
     switch (cmd) {
-        .current => self.tabstops.unset(self.cursor.x),
+        .current => self.tabstops.unset(self.screen.cursor.x),
         .all => self.tabstops.reset(0),
         else => log.warn("invalid or unknown tab clear setting: {}", .{cmd}),
     }
@@ -585,7 +564,7 @@ pub fn tabClear(self: *Terminal, cmd: csi.TabClear) void {
 /// Set a tab stop on the current cursor.
 /// TODO: test
 pub fn tabSet(self: *Terminal) void {
-    self.tabstops.set(self.cursor.x);
+    self.tabstops.set(self.screen.cursor.x);
 }
 
 /// Carriage return moves the cursor to the first column.
@@ -596,8 +575,8 @@ pub fn carriageReturn(self: *Terminal) void {
     // TODO: left/right margin mode
     // TODO: origin mode
 
-    self.cursor.x = 0;
-    self.cursor.pending_wrap = false;
+    self.screen.cursor.x = 0;
+    self.screen.cursor.pending_wrap = false;
 }
 
 /// Linefeed moves the cursor to the next line.
@@ -614,20 +593,20 @@ pub fn linefeed(self: *Terminal) void {
 /// The inserted cells are colored according to the current SGR state.
 pub fn insertBlanks(self: *Terminal, count: usize) void {
     // Unset pending wrap state without wrapping
-    self.cursor.pending_wrap = false;
+    self.screen.cursor.pending_wrap = false;
 
     // If our count is larger than the remaining amount, we just erase right.
-    if (count > self.cols - self.cursor.x) {
+    if (count > self.cols - self.screen.cursor.x) {
         self.eraseLine(.right);
         return;
     }
 
     // Get the current row
-    const row = self.screen.getRow(self.cursor.y);
+    const row = self.screen.getRow(self.screen.cursor.y);
 
     // Determine our indexes.
-    const start = self.cursor.x;
-    const pivot = self.cursor.x + count;
+    const start = self.screen.cursor.x;
+    const pivot = self.screen.cursor.x + count;
 
     // This is the number of spaces we have left to shift existing data.
     // If count is bigger than the available space left after the cursor,
@@ -648,7 +627,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     }
 
     // Insert zero
-    var pen = self.cursor.pen;
+    var pen = self.screen.cursor.pen;
     pen.char = ' '; // NOTE: this should be 0 but we need space for tests
     std.mem.set(Screen.Cell, row[start..pivot], pen);
 }
@@ -673,10 +652,10 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 /// Moves the cursor to the left margin.
 pub fn insertLines(self: *Terminal, count: usize) void {
     // Move the cursor to the left margin
-    self.cursor.x = 0;
+    self.screen.cursor.x = 0;
 
     // Remaining rows from our cursor
-    const rem = self.scrolling_region.bottom - self.cursor.y + 1;
+    const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
     // If count is greater than the amount of rows, adjust down.
     const adjusted_count = @minimum(count, rem);
@@ -693,12 +672,12 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     }
 
     // Insert count blank lines
-    y = self.cursor.y;
-    while (y < self.cursor.y + adjusted_count) : (y += 1) {
+    y = self.screen.cursor.y;
+    while (y < self.screen.cursor.y + adjusted_count) : (y += 1) {
         var x: usize = 0;
         while (x < self.cols) : (x += 1) {
             const cell = self.getOrPutCell(x, y);
-            cell.* = self.cursor.pen;
+            cell.* = self.screen.cursor.pen;
             cell.char = 0;
         }
     }
@@ -724,23 +703,23 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     // TODO: scroll region bounds
 
     // Move the cursor to the left margin
-    self.cursor.x = 0;
+    self.screen.cursor.x = 0;
 
     // Remaining number of lines in the scrolling region
-    const rem = self.scrolling_region.bottom - self.cursor.y + 1;
+    const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
     // If the count is more than our remaining lines, we adjust down.
     const adjusted_count = @minimum(count, rem);
 
     // Scroll up the count amount.
-    var y: usize = self.cursor.y;
+    var y: usize = self.screen.cursor.y;
     while (y <= self.scrolling_region.bottom - adjusted_count) : (y += 1) {
         self.screen.copyRow(y, y + adjusted_count);
     }
 
     while (y <= self.scrolling_region.bottom) : (y += 1) {
         const row = self.screen.getRow(y);
-        std.mem.set(Screen.Cell, row, self.cursor.pen);
+        std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
     }
 }
 
@@ -751,11 +730,11 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
     defer tracy.end();
 
     // Preserve the cursor
-    const cursor = self.cursor;
-    defer self.cursor = cursor;
+    const cursor = self.screen.cursor;
+    defer self.screen.cursor = cursor;
 
     // Move to the top of the scroll region
-    self.cursor.y = self.scrolling_region.top;
+    self.screen.cursor.y = self.scrolling_region.top;
     self.insertLines(count);
 }
 
@@ -769,11 +748,11 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
 // TODO: test
 pub fn scrollUp(self: *Terminal, count: usize) void {
     // Preserve the cursor
-    const cursor = self.cursor;
-    defer self.cursor = cursor;
+    const cursor = self.screen.cursor;
+    defer self.screen.cursor = cursor;
 
     // Move to the top of the scroll region
-    self.cursor.y = self.scrolling_region.top;
+    self.screen.cursor.y = self.scrolling_region.top;
     self.deleteLines(count);
 }
 
@@ -833,8 +812,8 @@ test "Terminal: input with no control characters" {
 
     // Basic grid writing
     for ("hello") |c| try t.print(c);
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
-    try testing.expectEqual(@as(usize, 5), t.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 5), t.screen.cursor.x);
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -848,8 +827,8 @@ test "Terminal: soft wrap" {
 
     // Basic grid writing
     for ("hello") |c| try t.print(c);
-    try testing.expectEqual(@as(usize, 1), t.cursor.y);
-    try testing.expectEqual(@as(usize, 2), t.cursor.x);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -901,8 +880,8 @@ test "Terminal: linefeed and carriage return" {
     t.carriageReturn();
     t.linefeed();
     for ("world") |c| try t.print(c);
-    try testing.expectEqual(@as(usize, 1), t.cursor.y);
-    try testing.expectEqual(@as(usize, 5), t.cursor.x);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 5), t.screen.cursor.x);
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -916,9 +895,9 @@ test "Terminal: linefeed unsets pending wrap" {
 
     // Basic grid writing
     for ("hello") |c| try t.print(c);
-    try testing.expect(t.cursor.pending_wrap == true);
+    try testing.expect(t.screen.cursor.pending_wrap == true);
     t.linefeed();
-    try testing.expect(t.cursor.pending_wrap == false);
+    try testing.expect(t.screen.cursor.pending_wrap == false);
 }
 
 test "Terminal: carriage return unsets pending wrap" {
@@ -927,9 +906,9 @@ test "Terminal: carriage return unsets pending wrap" {
 
     // Basic grid writing
     for ("hello") |c| try t.print(c);
-    try testing.expect(t.cursor.pending_wrap == true);
+    try testing.expect(t.screen.cursor.pending_wrap == true);
     t.carriageReturn();
-    try testing.expect(t.cursor.pending_wrap == false);
+    try testing.expect(t.screen.cursor.pending_wrap == false);
 }
 
 test "Terminal: backspace" {
@@ -940,8 +919,8 @@ test "Terminal: backspace" {
     for ("hello") |c| try t.print(c);
     t.backspace();
     try t.print('y');
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
-    try testing.expectEqual(@as(usize, 5), t.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 5), t.screen.cursor.x);
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -957,59 +936,59 @@ test "Terminal: horizontal tabs" {
     // HT
     try t.print('1');
     try t.horizontalTab();
-    try testing.expectEqual(@as(usize, 7), t.cursor.x);
+    try testing.expectEqual(@as(usize, 7), t.screen.cursor.x);
 
     // HT
     try t.horizontalTab();
-    try testing.expectEqual(@as(usize, 15), t.cursor.x);
+    try testing.expectEqual(@as(usize, 15), t.screen.cursor.x);
 }
 
 test "Terminal: setCursorPosition" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);
 
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
 
     // Setting it to 0 should keep it zero (1 based)
     t.setCursorPos(0, 0);
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
 
     // Should clamp to size
     t.setCursorPos(81, 81);
-    try testing.expectEqual(@as(usize, 79), t.cursor.x);
-    try testing.expectEqual(@as(usize, 79), t.cursor.y);
+    try testing.expectEqual(@as(usize, 79), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
     // Should reset pending wrap
     t.setCursorPos(0, 80);
     try t.print('c');
-    try testing.expect(t.cursor.pending_wrap);
+    try testing.expect(t.screen.cursor.pending_wrap);
     t.setCursorPos(0, 80);
-    try testing.expect(!t.cursor.pending_wrap);
+    try testing.expect(!t.screen.cursor.pending_wrap);
 
     // Origin mode
     t.modes.origin = 1;
 
     // No change without a scroll region
     t.setCursorPos(81, 81);
-    try testing.expectEqual(@as(usize, 79), t.cursor.x);
-    try testing.expectEqual(@as(usize, 79), t.cursor.y);
+    try testing.expectEqual(@as(usize, 79), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
     // Set the scroll region
     t.setScrollingRegion(10, t.rows);
     t.setCursorPos(0, 0);
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 9), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 9), t.screen.cursor.y);
 
     t.setCursorPos(100, 0);
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 79), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
     t.setScrollingRegion(10, 11);
     t.setCursorPos(2, 0);
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 10), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 10), t.screen.cursor.y);
 }
 
 test "Terminal: setScrollingRegion" {
@@ -1025,8 +1004,8 @@ test "Terminal: setScrollingRegion" {
     t.setScrollingRegion(3, 7);
 
     // Cursor should move back to top-left
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
 
     // Scroll region is set
     try testing.expectEqual(@as(usize, 2), t.scrolling_region.top);
@@ -1068,8 +1047,8 @@ test "Terminal: deleteLines" {
     t.linefeed();
 
     // We should be
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    try testing.expectEqual(@as(usize, 2), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.y);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1104,8 +1083,8 @@ test "Terminal: deleteLines with scroll region" {
     t.linefeed();
 
     // We should be
-    // try testing.expectEqual(@as(usize, 0), t.cursor.x);
-    // try testing.expectEqual(@as(usize, 2), t.cursor.y);
+    // try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    // try testing.expectEqual(@as(usize, 2), t.screen.cursor.y);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1311,10 +1290,10 @@ test "Terminal: index outside of scrolling region" {
     var t = try init(alloc, 2, 5);
     defer t.deinit(alloc);
 
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     t.setScrollingRegion(2, 5);
     t.index();
-    try testing.expectEqual(@as(usize, 1), t.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
 }
 
 test "Terminal: index from the bottom outside of scroll region" {
@@ -1347,8 +1326,8 @@ test "Terminal: DECALN" {
     try t.print('B');
     t.decaln();
 
-    try testing.expectEqual(@as(usize, 0), t.cursor.y);
-    try testing.expectEqual(@as(usize, 0), t.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 
     {
         var str = try t.plainString(testing.allocator);

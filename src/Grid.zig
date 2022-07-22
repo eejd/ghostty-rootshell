@@ -401,8 +401,8 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
     if (self.cursor_visible and term.screen.displayIsBottom()) {
         self.cells.appendAssumeCapacity(.{
             .mode = @enumToInt(self.cursor_style),
-            .grid_col = @intCast(u16, term.cursor.x),
-            .grid_row = @intCast(u16, term.cursor.y),
+            .grid_col = @intCast(u16, term.screen.cursor.x),
+            .grid_row = @intCast(u16, term.screen.cursor.y),
             .fg_r = 0,
             .fg_g = 0,
             .fg_b = 0,
