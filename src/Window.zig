@@ -809,22 +809,19 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
 
         .bracketed_paste => self.bracketed_paste = true,
 
-        .enable_mode_3 => self.terminal.modes.enable_mode_3 = @boolToInt(enabled),
-        .@"132_column" => mode3: {
-            // TODO: test this
+        .enable_mode_3 => {
+            // Disable deccolm
+            self.terminal.setDeccolmSupported(enabled);
 
-            // Do nothing if "enable mode 3" is not set.
-            if (self.terminal.modes.enable_mode_3 == 0) break :mode3;
-
-            // Set it
-            self.terminal.modes.@"132_column" = @boolToInt(enabled);
-
-            // TODO: do not clear screen flag mode
-            self.terminal.eraseDisplay(.complete);
-            self.terminal.setCursorPos(1, 1);
-
-            // TODO: left/right margins
+            // Force resize back to the window size
+            self.terminal.resize(self.alloc, self.grid.size.columns, self.grid.size.rows) catch |err|
+                log.err("error updating terminal size: {}", .{err});
         },
+
+        .@"132_column" => try self.terminal.deccolm(
+            self.alloc,
+            if (enabled) .@"132_cols" else .@"80_cols",
+        ),
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }

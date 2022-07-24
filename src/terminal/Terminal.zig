@@ -52,8 +52,8 @@ modes: packed struct {
     origin: u1 = 0, // 6
     autowrap: u1 = 1, // 7
 
-    @"132_column": u1 = 0, // 3,
-    enable_mode_3: u1 = 0, // 40
+    deccolm: u1 = 0, // 3,
+    deccolm_supported: u1 = 0, // 40
 } = .{},
 
 /// Scrolling region is the area of the screen designated where scrolling
@@ -142,9 +142,57 @@ pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
     if (options.cursor_save) self.restoreCursor();
 }
 
+/// The modes for DECCOLM.
+pub const DeccolmMode = enum(u1) {
+    @"80_cols" = 0,
+    @"132_cols" = 1,
+};
+
+/// DECCOLM changes the terminal width between 80 and 132 columns. This
+/// function call will do NOTHING unless `setDeccolmSupported` has been
+/// called with "true".
+///
+/// This breaks the expectation around modern terminals that they resize
+/// with the window. This will fix the grid at either 80 or 132 columns.
+/// The rows will continue to be variable.
+pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
+    // TODO: test
+
+    // We need to support this. This corresponds to xterm's private mode 40
+    // bit. If the mode "?40" is set, then "?3" (DECCOLM) is supported. This
+    // doesn't exactly match VT100 semantics but modern terminals no longer
+    // blindly accept mode 3 since its so weird in modern practice.
+    if (self.modes.deccolm_supported == 0) return;
+
+    // Enable it
+    self.modes.deccolm = @enumToInt(mode);
+
+    // Resize -- we can set cols to 0 because deccolm will force it
+    try self.resize(alloc, 0, self.rows);
+
+    // TODO: do not clear screen flag mode
+    self.eraseDisplay(.complete);
+    self.setCursorPos(1, 1);
+
+    // TODO: left/right margins
+}
+
+/// Allows or disallows deccolm.
+pub fn setDeccolmSupported(self: *Terminal, v: bool) void {
+    self.modes.deccolm_supported = @boolToInt(v);
+}
+
 /// Resize the underlying terminal.
-pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void {
+pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !void {
     // TODO: test, wrapping, etc.
+
+    // If we have deccolm supported then we are fixed at either 80 or 132
+    // columns depending on if mode 3 is set or not.
+    // TODO: test
+    const cols: usize = if (self.modes.deccolm_supported == 1)
+        @as(usize, if (self.modes.deccolm == 1) 132 else 80)
+    else
+        cols_req;
 
     // Resize our tabstops
     // TODO: use resize, but it doesn't set new tabstops
