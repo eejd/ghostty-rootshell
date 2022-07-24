@@ -99,6 +99,21 @@ pub const Action = union(enum) {
     pub const ESC = struct {
         intermediates: []u8,
         final: u8,
+
+        // Implement formatter for logging
+        pub fn format(
+            self: ESC,
+            comptime layout: []const u8,
+            opts: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = layout;
+            _ = opts;
+            try std.fmt.format(writer, "ESC {s} {c}", .{
+                self.intermediates,
+                self.final,
+            });
+        }
     };
 
     pub const DCS = struct {
@@ -106,6 +121,55 @@ pub const Action = union(enum) {
         params: []u16,
         final: u8,
     };
+
+    // Implement formatter for logging. This is mostly copied from the
+    // std.fmt implementation, but we modify it slightly so that we can
+    // print out custom formats for some of our primitives.
+    pub fn format(
+        self: Action,
+        comptime layout: []const u8,
+        opts: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = layout;
+        const T = Action;
+        const info = @typeInfo(T).Union;
+
+        try writer.writeAll(@typeName(T));
+        if (info.tag_type) |TagType| {
+            try writer.writeAll("{ .");
+            try writer.writeAll(@tagName(@as(TagType, self)));
+            try writer.writeAll(" = ");
+
+            inline for (info.fields) |u_field| {
+                // If this is the active field...
+                if (self == @field(TagType, u_field.name)) {
+                    const value = @field(self, u_field.name);
+                    switch (@TypeOf(value)) {
+                        // Unicode
+                        u21 => try std.fmt.format(writer, "'{u}'", .{value}),
+
+                        // Note: we don't do ASCII (u8) because there are a lot
+                        // of invisible characters we don't want to handle right
+                        // now.
+
+                        // All others do the default behavior
+                        else => try std.fmt.formatType(
+                            @field(self, u_field.name),
+                            "any",
+                            opts,
+                            writer,
+                            3,
+                        ),
+                    }
+                }
+            }
+
+            try writer.writeAll(" }");
+        } else {
+            try format(writer, "@{x}", .{@ptrToInt(&self)});
+        }
+    }
 };
 
 /// Keeps track of the parameter sep used for CSI params. We allow colons
