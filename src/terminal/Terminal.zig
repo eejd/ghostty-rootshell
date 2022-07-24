@@ -665,7 +665,7 @@ pub fn horizontalTab(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    while (self.screen.cursor.x < self.cols) {
+    while (self.screen.cursor.x < self.cols - 1) {
         // Move the cursor right
         self.screen.cursor.x += 1;
 
@@ -1055,7 +1055,7 @@ test "Terminal: backspace" {
 
 test "Terminal: horizontal tabs" {
     const alloc = testing.allocator;
-    var t = try init(alloc, 80, 5);
+    var t = try init(alloc, 20, 5);
     defer t.deinit(alloc);
 
     // HT
@@ -1066,6 +1066,12 @@ test "Terminal: horizontal tabs" {
     // HT
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 15), t.screen.cursor.x);
+
+    // HT at the end
+    try t.horizontalTab();
+    try testing.expectEqual(@as(usize, 19), t.screen.cursor.x);
+    try t.horizontalTab();
+    try testing.expectEqual(@as(usize, 19), t.screen.cursor.x);
 }
 
 test "Terminal: setCursorPosition" {
