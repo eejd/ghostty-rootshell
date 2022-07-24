@@ -2,6 +2,7 @@
 
 , gdb
 , glxinfo
+, parallel
 , pkg-config
 , scdoc
 , tracy
@@ -31,6 +32,7 @@
 
     # Testing
     gdb
+    parallel
     tracy
     vttest
   ];

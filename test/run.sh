@@ -71,7 +71,10 @@ fi
 
 # NOTE: This is a huge hack right now.
 if [ "$ARG_EXEC" = "ghostty" ]; then
-  ARG_EXEC="/src/ghostty";
+  ARG_EXEC="/tmp/ghostty";
+
+  # Copy so we don't read/write race when running in parallel
+  cp /src/ghostty ${ARG_EXEC}
 
   # We build in Nix (maybe). To be sure, we replace the interpreter so
   # it doesn't point to a Nix path. If we don't build in Nix, this should

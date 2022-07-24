@@ -18,9 +18,9 @@ find ${DIR}/cases \
   -type f \
   -name '*.sh' | \
   sort | \
-  xargs \
-    -I '{}' \
-    ${DIR}/run-host.sh \
+  parallel \
+  --will-cite \
+  ${DIR}/run-host.sh \
     --case '{}' \
     --rewrite-abs-path \
     $@
