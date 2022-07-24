@@ -417,6 +417,9 @@ pub fn eraseDisplay(
         .complete => {
             const all = self.screen.getVisible();
             std.mem.set(Screen.Cell, all, self.screen.cursor.pen);
+
+            // Unsets pending wrap state
+            self.screen.cursor.pending_wrap = false;
         },
 
         .below => {
@@ -438,6 +441,9 @@ pub fn eraseDisplay(
                     cell.char = 0;
                 }
             }
+
+            // Unsets pending wrap state
+            self.screen.cursor.pending_wrap = false;
         },
 
         .above => {
@@ -459,6 +465,9 @@ pub fn eraseDisplay(
                     cell.char = 0;
                 }
             }
+
+            // Unsets pending wrap state
+            self.screen.cursor.pending_wrap = false;
         },
 
         else => {
@@ -483,6 +492,9 @@ pub fn eraseLine(
         .left => {
             const row = self.screen.getRow(self.screen.cursor.y);
             std.mem.set(Screen.Cell, row[0..self.screen.cursor.x], self.screen.cursor.pen);
+
+            // Unsets pending wrap state
+            self.screen.cursor.pending_wrap = false;
         },
 
         .complete => {
@@ -558,7 +570,8 @@ pub fn cursorRight(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.cursor.x += count;
+    self.screen.cursor.x += if (count == 0) 1 else count;
+    self.screen.cursor.pending_wrap = false;
     if (self.screen.cursor.x >= self.cols) {
         self.screen.cursor.x = self.cols - 1;
     }
@@ -572,7 +585,7 @@ pub fn cursorDown(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.cursor.y += count;
+    self.screen.cursor.y += if (count == 0) 1 else count;
     if (self.screen.cursor.y >= self.rows) {
         self.screen.cursor.y = self.rows - 1;
     }
@@ -586,7 +599,8 @@ pub fn cursorUp(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.cursor.y -|= count;
+    self.screen.cursor.y -|= if (count == 0) 1 else count;
+    self.screen.cursor.pending_wrap = false;
 }
 
 /// Backspace moves the cursor back a column (but not less than 0).
@@ -594,7 +608,7 @@ pub fn backspace(self: *Terminal) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.cursor.x -|= 1;
+    self.cursorLeft(1);
 }
 
 /// Horizontal tab moves the cursor to the next tabstop, clearing
