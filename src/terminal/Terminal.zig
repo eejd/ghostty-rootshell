@@ -491,7 +491,7 @@ pub fn eraseLine(
 
         .left => {
             const row = self.screen.getRow(self.screen.cursor.y);
-            std.mem.set(Screen.Cell, row[0..self.screen.cursor.x], self.screen.cursor.pen);
+            std.mem.set(Screen.Cell, row[0 .. self.screen.cursor.x + 1], self.screen.cursor.pen);
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
