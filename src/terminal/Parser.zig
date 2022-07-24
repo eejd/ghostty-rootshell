@@ -78,6 +78,22 @@ pub const Action = union(enum) {
         intermediates: []u8,
         params: []u16,
         final: u8,
+
+        // Implement formatter for logging
+        pub fn format(
+            self: CSI,
+            comptime layout: []const u8,
+            opts: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = layout;
+            _ = opts;
+            try std.fmt.format(writer, "ESC [ {s} {any} {c}", .{
+                self.intermediates,
+                self.params,
+                self.final,
+            });
+        }
     };
 
     pub const ESC = struct {

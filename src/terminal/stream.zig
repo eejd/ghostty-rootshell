@@ -49,8 +49,9 @@ pub fn Stream(comptime Handler: type) type {
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
                 // if (action_opt) |action| {
-                //     if (action != .print) {
-                //         log.info("action: {}", .{action});
+                //     switch (action) {
+                //         .print => |p| log.info("action: print '{u}'", .{p}),
+                //         else => log.info("action: {}", .{action}),
                 //     }
                 // }
                 switch (action_opt orelse continue) {
