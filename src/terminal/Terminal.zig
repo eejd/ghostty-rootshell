@@ -390,6 +390,8 @@ pub fn index(self: *Terminal) void {
             // TODO: test
             self.scrollUp(1);
         }
+
+        return;
     }
 
     // Increase cursor by 1, maximum to bottom of scroll region
