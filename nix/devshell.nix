@@ -8,6 +8,7 @@
 , tracy
 , vulkan-loader
 , vttest
+, wraptest
 , zig
 
 , bzip2
@@ -35,6 +36,7 @@
     parallel
     tracy
     vttest
+    wraptest
   ];
 
   buildInputs = [
