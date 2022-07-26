@@ -1,6 +1,11 @@
 { stdenv
 , lib
+, autoPatchelfHook
+, libGL
+, libX11
 , zig
+, git
+, makeWrapper
 }:
 
 stdenv.mkDerivation rec {
@@ -9,20 +14,33 @@ stdenv.mkDerivation rec {
 
   src = ./..;
 
-  nativeBuildInputs = [ zig ];
+  nativeBuildInputs = [ autoPatchelfHook git makeWrapper zig ];
 
   buildInputs = [];
 
   dontConfigure = true;
 
-  # preBuild = ''
-  #   export HOME=$TMPDIR
-  # '';
+  buildPhase = ''
+    runHook preBuild
+    # Do nothing
+    runHook postBuild
+  '';
 
   installPhase = ''
     runHook preInstall
-    zig build -Drelease-safe --prefix $out install
+    export SDK_PATH=${src}/vendor/mach-sdk
+    zig build -Drelease-safe \
+      --cache-dir $TMP/cache \
+      --global-cache-dir $TMP/global-cache \
+      --prefix $out \
+      install
     runHook postInstall
+  '';
+
+  postFixup = ''
+    wrapProgram $out/bin/ghostty \
+      --prefix LD_LIBRARY_PATH : ${libGL}/lib \
+      --prefix LD_LIBRARY_PATH : ${libX11}/lib
   '';
 
   outputs = [ "out" ];
