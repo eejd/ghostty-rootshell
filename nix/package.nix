@@ -2,6 +2,11 @@
 , lib
 , libGL
 , libX11
+, libXcursor
+, libXi
+, libXrandr
+, libXxf86vm
+, libxcb
 , pkg-config
 , zig
 , git
@@ -14,6 +19,11 @@ let
     libGL
   ] ++ lib.optionals stdenv.isLinux [
     libX11
+    libXcursor
+    libXi
+    libXrandr
+    libXxf86vm
+    libxcb
   ];
 in
 
