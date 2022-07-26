@@ -23,6 +23,7 @@ pub const Attribute = union(enum) {
 
     /// Invert fg/bg colors.
     inverse: void,
+    reset_inverse: void,
 
     /// Set foreground color as RGB values.
     direct_color_fg: RGB,
@@ -82,6 +83,8 @@ pub const Parser = struct {
             5 => return Attribute{ .blink = {} },
 
             7 => return Attribute{ .inverse = {} },
+
+            27 => return Attribute{ .reset_inverse = {} },
 
             30...37 => return Attribute{
                 .@"8_fg" = @intToEnum(color.Name, slice[0] - 30),
@@ -194,8 +197,15 @@ test "sgr: bold" {
 }
 
 test "sgr: inverse" {
-    const v = testParse(&[_]u16{7});
-    try testing.expect(v == .inverse);
+    {
+        const v = testParse(&[_]u16{7});
+        try testing.expect(v == .inverse);
+    }
+
+    {
+        const v = testParse(&[_]u16{27});
+        try testing.expect(v == .reset_inverse);
+    }
 }
 
 test "sgr: 8 color" {

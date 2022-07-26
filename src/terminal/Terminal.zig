@@ -263,6 +263,10 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.inverse = 1;
         },
 
+        .reset_inverse => {
+            self.screen.cursor.pen.attrs.inverse = 0;
+        },
+
         .direct_color_fg => |rgb| {
             self.screen.cursor.pen.fg = .{
                 .r = rgb.r,
