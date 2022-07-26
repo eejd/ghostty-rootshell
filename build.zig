@@ -123,12 +123,10 @@ fn conformanceSteps(
             entry.name,
         });
 
-        // Executable builder. We install all conformance tests so that
-        // `zig build` verifies they work.
+        // Executable builder.
         const c_exe = b.addExecutable(name, path);
         c_exe.setTarget(target);
         c_exe.setBuildMode(mode);
-        c_exe.install();
 
         // Store the mapping
         try map.put(name, c_exe);
