@@ -10,3 +10,6 @@
 [submodule "vendor/tracy"]
 	path = vendor/tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "vendor/mach-sdk/sdk-linux-aarch64"]
+	path = vendor/mach-sdk/sdk-linux-aarch64
+	url = https://github.com/hexops/sdk-linux-aarch64.git
