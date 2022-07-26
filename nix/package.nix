@@ -1,12 +1,21 @@
 { stdenv
 , lib
-, autoPatchelfHook
 , libGL
 , libX11
+, pkg-config
 , zig
 , git
-, makeWrapper
 }:
+
+let
+  # These are the libraries that need to be added to the rpath for
+  # the binary so that they run properly on NixOS.
+  rpathLibs = [
+    libGL
+  ] ++ lib.optionals stdenv.isLinux [
+    libX11
+  ];
+in
 
 stdenv.mkDerivation rec {
   pname = "ghostty";
@@ -14,33 +23,42 @@ stdenv.mkDerivation rec {
 
   src = ./..;
 
-  nativeBuildInputs = [ autoPatchelfHook git makeWrapper zig ];
+  nativeBuildInputs = [ git pkg-config zig ];
 
-  buildInputs = [];
+  buildInputs = rpathLibs ++ [
+    # Nothing yet
+  ];
 
   dontConfigure = true;
+  dontPatchELF = true;
 
+  # The Zig cache goes into $HOME, so we set this to be writable
+  preBuild = ''
+    export HOME=$TMPDIR
+  '';
+
+  # Build we do nothing except run hooks
   buildPhase = ''
     runHook preBuild
-    # Do nothing
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
+
     export SDK_PATH=${src}/vendor/mach-sdk
-    zig build -Drelease-safe \
-      --cache-dir $TMP/cache \
-      --global-cache-dir $TMP/global-cache \
+    zig build \
+      -Dcpu=baseline \
       --prefix $out \
       install
-    runHook postInstall
-  '';
 
-  postFixup = ''
-    wrapProgram $out/bin/ghostty \
-      --prefix LD_LIBRARY_PATH : ${libGL}/lib \
-      --prefix LD_LIBRARY_PATH : ${libX11}/lib
+    strip -S $out/bin/ghostty
+    patchelf \
+      --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \
+      --set-rpath "${lib.makeLibraryPath rpathLibs}" \
+      $out/bin/ghostty
+
+    runHook postInstall
   '';
 
   outputs = [ "out" ];
