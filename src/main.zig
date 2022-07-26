@@ -8,6 +8,8 @@ const cli_args = @import("cli_args.zig");
 const tracy = @import("tracy/tracy.zig");
 const Config = @import("config.zig").Config;
 
+const log = std.log.scoped(.main);
+
 pub fn main() !void {
     const gpa = gpa: {
         // Use the libc allocator if it is available beacuse it is WAY
@@ -42,6 +44,9 @@ pub fn main() !void {
     };
     defer config.deinit();
 
+    // We want to log all our errors
+    glfw.setErrorCallback(glfwErrorCallback);
+
     // Initialize glfw
     try glfw.init(.{});
     defer glfw.terminate();
@@ -55,6 +60,10 @@ pub fn main() !void {
 // Required by tracy/tracy.zig to enable/disable tracy support.
 pub fn tracy_enabled() bool {
     return options.tracy_enabled;
+}
+
+fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
+    log.warn("glfw error={} message={s}", .{ code, desc });
 }
 
 test {
