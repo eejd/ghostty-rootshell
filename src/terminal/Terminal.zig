@@ -426,7 +426,7 @@ pub fn reverseIndex(self: *Terminal) !void {
 // the right-most column. If row is 0, it is adjusted to 1. If row is
 // greater than the bottom-most row it is adjusted to the bottom-most
 // row.
-pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
+pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
     // If cursor origin mode is set the cursor row will be moved relative to
     // the top margin row and adjusted to be above or at bottom-most row in
     // the current scroll region.
@@ -441,14 +441,16 @@ pub fn setCursorPos(self: *Terminal, row: usize, col: usize) void {
         y_max: usize,
     } = if (self.modes.origin == 1) .{
         .x_offset = 0, // TODO: left/right margins
+        .y_offset = self.scrolling_region.top,
         .x_max = self.cols, // TODO: left/right margins
-        .y_offset = self.scrolling_region.top + 1,
         .y_max = self.scrolling_region.bottom + 1, // We need this 1-indexed
     } else .{
         .x_max = self.cols,
         .y_max = self.rows,
     };
 
+    const row = if (row_req == 0) 1 else row_req;
+    const col = if (col_req == 0) 1 else col_req;
     self.screen.cursor.x = @minimum(params.x_max, col) -| 1;
     self.screen.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
     // log.info("set cursor position: col={} row={}", .{ self.screen.cursor.x, self.screen.cursor.y });
@@ -1111,6 +1113,10 @@ test "Terminal: setCursorPosition" {
     // Set the scroll region
     t.setScrollingRegion(10, t.rows);
     t.setCursorPos(0, 0);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 9), t.screen.cursor.y);
+
+    t.setCursorPos(1, 1);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 9), t.screen.cursor.y);
 
