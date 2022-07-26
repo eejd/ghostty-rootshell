@@ -8,6 +8,7 @@ final: prev: rec {
   #
 
   devShell = prev.callPackage ./devshell.nix { };
+  ghostty = prev.callPackage ./package.nix { };
 
   wraptest = prev.callPackage ./wraptest.nix { };
 

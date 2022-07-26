@@ -32,6 +32,8 @@
       let pkgs = import nixpkgs { inherit overlays system; };
       in rec {
         devShell = pkgs.devShell;
+        packages.ghostty = pkgs.ghostty;
+        defaultPackage = packages.ghostty;
       }
     );
 }
