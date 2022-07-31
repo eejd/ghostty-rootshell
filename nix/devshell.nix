@@ -22,7 +22,18 @@
 , libXi
 , libXinerama
 , libXrandr
-}: mkShell rec {
+}:
+let
+  # See package.nix. Keep in sync.
+  rpathLibs = [
+    libGL
+  ] ++ lib.optionals stdenv.isLinux [
+    libX11
+    libXcursor
+    libXi
+    libXrandr
+  ];
+in mkShell rec {
   name = "ghostty";
 
   nativeBuildInputs = [
@@ -50,5 +61,7 @@
     libXrandr
   ];
 
-  LD_LIBRARY_PATH = "${libX11}/lib:${libGL}/lib";
+  # This should be set onto the rpath of the ghostty binary if you want
+  # it to be "portable" across the system.
+  LD_LIBRARY_PATH = lib.makeLibraryPath rpathLibs;
 }

@@ -1,3 +1,5 @@
+# TODO(mitchellh): This currenly doesn't fully work. It generates a binary
+# that smashes the stack on run. I'm not sure why.
 { stdenv
 , lib
 , libGL

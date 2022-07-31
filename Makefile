@@ -3,6 +3,14 @@ init:
 	git submodule update --init --recursive
 .PHONY: init
 
+# Slightly cursed way that we setup a dev version of this locally on NixOS.
+dev/install:
+	zig build -Dcpu=baseline
+	patchelf --set-rpath "${LD_LIBRARY_PATH}" zig-out/bin/ghostty
+	mkdir -p ${HOME}/bin
+	cp zig-out/bin/ghostty ${HOME}/bin/devtty
+.PHONY: dev/install
+
 # glad updates the GLAD loader. To use this, place the generated glad.zip
 # in this directory next to the Makefile, remove vendor/glad and run this target.
 #
