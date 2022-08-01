@@ -61,36 +61,48 @@ fn parseIntoField(
 
     inline for (info.Struct.fields) |field| {
         if (mem.eql(u8, field.name, key)) {
-            @field(dst, field.name) = field: {
-                // For optional fields, we just treat it as the child type.
-                // This lets optional fields default to null but get set by
-                // the CLI.
-                const Field = switch (@typeInfo(field.field_type)) {
-                    .Optional => |opt| opt.child,
-                    else => field.field_type,
-                };
-                const fieldInfo = @typeInfo(Field);
+            // For optional fields, we just treat it as the child type.
+            // This lets optional fields default to null but get set by
+            // the CLI.
+            const Field = switch (@typeInfo(field.field_type)) {
+                .Optional => |opt| opt.child,
+                else => field.field_type,
+            };
+            const fieldInfo = @typeInfo(Field);
 
-                // If the type implements a parse function, call that.
-                // NOTE(mitchellh): this is a pretty nasty break statement.
-                // I split it into two at first and it failed with Zig as of
-                // July 21, 2022. I think stage2+ will fix this so lets clean
-                // this up when that comes out.
-                break :field if (fieldInfo == .Struct and @hasDecl(Field, "parseCLI"))
-                    try Field.parseCLI(value)
-                else switch (Field) {
-                    []const u8 => if (value) |slice| value: {
-                        const buf = try alloc.alloc(u8, slice.len);
-                        mem.copy(u8, buf, slice);
-                        break :value buf;
-                    } else return error.ValueRequired,
+            // If we are a struct and have parseCLI, we call that and use
+            // that to set the value.
+            if (fieldInfo == .Struct and @hasDecl(Field, "parseCLI")) {
+                const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
+                switch (fnInfo.args.len) {
+                    // 1 arg = (input) => output
+                    1 => @field(dst, field.name) = try Field.parseCLI(value),
 
-                    bool => try parseBool(value orelse "t"),
+                    // 2 arg = (self, input) => void
+                    2 => try @field(dst, field.name).parseCLI(value),
 
-                    u8 => try std.fmt.parseInt(u8, value orelse return error.ValueRequired, 0),
+                    // 3 arg = (self, alloc, input) => void
+                    3 => try @field(dst, field.name).parseCLI(alloc, value),
 
-                    else => unreachable,
-                };
+                    else => @compileError("parseCLI invalid argument count"),
+                }
+
+                return;
+            }
+
+            // No parseCLI, magic the value based on the type
+            @field(dst, field.name) = switch (Field) {
+                []const u8 => if (value) |slice| value: {
+                    const buf = try alloc.alloc(u8, slice.len);
+                    mem.copy(u8, buf, slice);
+                    break :value buf;
+                } else return error.ValueRequired,
+
+                bool => try parseBool(value orelse "t"),
+
+                u8 => try std.fmt.parseInt(u8, value orelse return error.ValueRequired, 0),
+
+                else => unreachable,
             };
 
             return;

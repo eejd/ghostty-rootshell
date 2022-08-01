@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 pub const Config = struct {
@@ -14,6 +15,9 @@ pub const Config = struct {
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH.
     command: ?[]const u8 = null,
+
+    /// Additional configuration files to read.
+    @"config-file": RepeatableString = .{},
 
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
@@ -65,13 +69,46 @@ pub const Color = struct {
 
         return result;
     }
+
+    test "fromHex" {
+        const testing = std.testing;
+
+        try testing.expectEqual(Color{ .r = 0, .g = 0, .b = 0 }, try Color.fromHex("#000000"));
+        try testing.expectEqual(Color{ .r = 10, .g = 11, .b = 12 }, try Color.fromHex("#0A0B0C"));
+        try testing.expectEqual(Color{ .r = 10, .g = 11, .b = 12 }, try Color.fromHex("0A0B0C"));
+        try testing.expectEqual(Color{ .r = 255, .g = 255, .b = 255 }, try Color.fromHex("FFFFFF"));
+    }
 };
 
-test "Color.fromHex" {
-    const testing = std.testing;
+/// RepeatableString is a string value that can be repeated to accumulate
+/// a list of strings. This isn't called "StringList" because I find that
+/// sometimes leads to confusion that it _accepts_ a list such as
+/// comma-separated values.
+pub const RepeatableString = struct {
+    const Self = @This();
 
-    try testing.expectEqual(Color{ .r = 0, .g = 0, .b = 0 }, try Color.fromHex("#000000"));
-    try testing.expectEqual(Color{ .r = 10, .g = 11, .b = 12 }, try Color.fromHex("#0A0B0C"));
-    try testing.expectEqual(Color{ .r = 10, .g = 11, .b = 12 }, try Color.fromHex("0A0B0C"));
-    try testing.expectEqual(Color{ .r = 255, .g = 255, .b = 255 }, try Color.fromHex("FFFFFF"));
+    // Allocator for the list is the arena for the parent config.
+    list: std.ArrayListUnmanaged([]const u8) = .{},
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
+        const value = input orelse return error.ValueRequired;
+        try self.list.append(alloc, value);
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+        try list.parseCLI(alloc, "B");
+
+        try testing.expectEqual(@as(usize, 2), list.list.items.len);
+    }
+};
+
+test {
+    std.testing.refAllDecls(@This());
 }

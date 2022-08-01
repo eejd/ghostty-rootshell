@@ -43,6 +43,7 @@ pub fn main() !void {
         break :config result;
     };
     defer config.deinit();
+    log.info("config={}", .{config});
 
     // We want to log all our errors
     glfw.setErrorCallback(glfwErrorCallback);
