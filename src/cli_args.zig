@@ -14,17 +14,35 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 /// the valid CLI flags. See the tests in this file as an example. For field
 /// types that are structs, the struct can implement the `parseCLI` function
 /// to do custom parsing.
+///
+/// If the destination type has a field "_arena" of type `?ArenaAllocator`,
+/// an arena allocator will be created (or reused if set already) for any
+/// allocations. Allocations are necessary for certain types, like `[]const u8`.
+///
+/// Note: If the arena is already non-null, then it will be used. In this
+/// case, in the case of an error some memory might be leaked into the arena.
 pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
     const info = @typeInfo(T);
     assert(info == .Struct);
 
     // Make an arena for all our allocations if we support it. Otherwise,
-    // use an allocator that always fails.
+    // use an allocator that always fails. If the arena is already set on
+    // the config, then we reuse that. See memory note in parse docs.
+    var arena_owned: bool = false;
     const arena_alloc = if (@hasField(T, "_arena")) arena: {
-        dst._arena = ArenaAllocator.init(alloc);
+        // If the arena is unset, we create it. We mark that we own it
+        // only so that we can clean it up on error.
+        if (dst._arena == null) {
+            dst._arena = ArenaAllocator.init(alloc);
+            arena_owned = true;
+        }
+
         break :arena dst._arena.?.allocator();
     } else std.mem.fail_allocator;
-    errdefer if (@hasField(T, "_arena")) dst._arena.?.deinit();
+    errdefer if (arena_owned) {
+        dst._arena.?.deinit();
+        dst._arena = null;
+    };
 
     while (iter.next()) |arg| {
         if (mem.startsWith(u8, arg, "--")) {
@@ -146,6 +164,18 @@ test "parse: simple" {
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expect(data._arena != null);
     try testing.expectEqualStrings("42", data.a);
+    try testing.expect(data.b);
+    try testing.expect(!data.@"b-f");
+
+    // Reparsing works
+    var iter2 = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--a=84",
+    );
+    defer iter2.deinit();
+    try parse(@TypeOf(data), testing.allocator, &data, &iter2);
+    try testing.expect(data._arena != null);
+    try testing.expectEqualStrings("84", data.a);
     try testing.expect(data.b);
     try testing.expect(!data.@"b-f");
 }
