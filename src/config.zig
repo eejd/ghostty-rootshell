@@ -2,6 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
+/// Config is the main config struct. These fields map directly to the
+/// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
 pub const Config = struct {
     /// Font size
     @"font-size": u8 = 14,

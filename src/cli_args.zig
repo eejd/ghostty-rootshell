@@ -276,3 +276,54 @@ test "parseIntoField: struct with parse func" {
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
     try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
 }
+
+/// Returns an interator (implements "next") that reads CLI args by line.
+/// Each CLI arg is expected to be a single line. This is used to implement
+/// configuration files.
+pub fn LineIterator(comptime ReaderType: type) type {
+    return struct {
+        const Self = @This();
+
+        /// The maximum size a single line can be. We don't expect any
+        /// CLI arg to exceed this size. Can't wait to git blame this in
+        /// like 4 years and be wrong about this.
+        pub const MAX_LINE_SIZE = 4096;
+
+        r: ReaderType,
+        entry: [MAX_LINE_SIZE]u8 = [_]u8{ '-', '-' } ++ ([_]u8{0} ** (MAX_LINE_SIZE - 2)),
+
+        pub fn next(self: *Self) ?[]const u8 {
+            // TODO: detect "--" prefixed lines and give a friendlier error
+            const buf = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch {
+                // TODO: handle errors
+                unreachable;
+            } orelse return null;
+
+            // We need to reslice so that we include our '--' at the beginning
+            // of our buffer so that we can trick the CLI parser to treat it
+            // as CLI args.
+            return self.entry[0 .. buf.len + 2];
+        }
+    };
+}
+
+// Constructs a LineIterator (see docs for that).
+pub fn lineIterator(reader: anytype) LineIterator(@TypeOf(reader)) {
+    return .{ .r = reader };
+}
+
+test "LineIterator" {
+    const testing = std.testing;
+    var fbs = std.io.fixedBufferStream(
+        \\A
+        \\B
+        \\C
+    );
+
+    var iter = lineIterator(fbs.reader());
+    try testing.expectEqualStrings("--A", iter.next().?);
+    try testing.expectEqualStrings("--B", iter.next().?);
+    try testing.expectEqualStrings("--C", iter.next().?);
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+}

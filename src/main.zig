@@ -43,6 +43,22 @@ pub fn main() !void {
         break :config result;
     };
     defer config.deinit();
+
+    // Parse the config files
+    // TODO(mitchellh): support nesting (config-file in a config file)
+    // TODO(mitchellh): detect cycles when nesting
+    if (config.@"config-file".list.items.len > 0) {
+        const cwd = std.fs.cwd();
+        for (config.@"config-file".list.items) |path| {
+            var file = try cwd.openFile(path, .{});
+            defer file.close();
+
+            var buf_reader = std.io.bufferedReader(file.reader());
+            var iter = cli_args.lineIterator(buf_reader.reader());
+
+            try cli_args.parse(Config, alloc, &config, &iter);
+        }
+    }
     log.info("config={}", .{config});
 
     // We want to log all our errors
