@@ -115,3 +115,22 @@ pub const CursorStyle = enum(u16) {
         };
     }
 };
+
+/// The status line type for DECSSDT.
+pub const StatusLineType = enum(u16) {
+    none = 0,
+    indicator = 1,
+    host_writable = 2,
+
+    // Non-exhaustive so that @intToEnum never fails for unsupported values.
+    _,
+};
+
+/// The display to target for status updates (DECSASD).
+pub const StatusDisplay = enum(u16) {
+    main = 0,
+    status_line = 1,
+
+    // Non-exhaustive so that @intToEnum never fails for unsupported values.
+    _,
+};

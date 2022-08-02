@@ -382,6 +382,26 @@ pub fn Stream(comptime Handler: type) type {
                     1 => try self.handler.insertBlanks(action.params[0]),
                     else => log.warn("invalid ICH command: {}", .{action}),
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                // DECSASD - Select Active Status Display
+                '}' => {
+                    const success = decsasd: {
+                        // Verify we're getting a DECSASD command
+                        if (action.intermediates.len != 1 or action.intermediates[0] != '$')
+                            break :decsasd false;
+                        if (action.params.len != 1)
+                            break :decsasd false;
+                        if (!@hasDecl(T, "setActiveStatusDisplay"))
+                            break :decsasd false;
+
+                        try self.handler.setActiveStatusDisplay(
+                            @intToEnum(ansi.StatusDisplay, action.params[0]),
+                        );
+                        break :decsasd true;
+                    };
+
+                    if (!success) log.warn("unimplemented CSI callback: {}", .{action});
+                },
             }
         }
 

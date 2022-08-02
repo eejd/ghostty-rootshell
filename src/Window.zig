@@ -925,3 +925,10 @@ pub fn restoreCursor(self: *Window) !void {
 pub fn enquiry(self: *Window) !void {
     try self.queueWrite("");
 }
+
+pub fn setActiveStatusDisplay(
+    self: *Window,
+    req: terminal.StatusDisplay,
+) !void {
+    self.terminal.status_display = req;
+}

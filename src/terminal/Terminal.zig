@@ -35,6 +35,11 @@ active_screen: ScreenType,
 screen: Screen,
 secondary_screen: Screen,
 
+/// Whether we're currently writing to the status line (DECSASD and DECSSDT).
+/// We don't support a status line currently so we just black hole this
+/// data so that it doesn't mess up our main display.
+status_display: ansi.StatusDisplay = .main,
+
 /// Where the tabstops are.
 tabstops: Tabstops,
 
@@ -302,6 +307,9 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 pub fn print(self: *Terminal, c: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    // If we're not on the main display, do nothing for now
+    if (self.status_display != .main) return;
 
     // If we're not at the bottom, then we need to move there
     if (!self.screen.displayIsBottom()) self.screen.scroll(.{ .bottom = {} });
