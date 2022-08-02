@@ -198,7 +198,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     cmd.stdout = cmd.stdin;
     cmd.stderr = cmd.stdin;
     try cmd.start(alloc);
-    log.debug("started subcommand path={s} pid={}", .{ path, cmd.pid });
+    log.debug("started subcommand path={s} pid={?}", .{ path, cmd.pid });
 
     // Read data
     var stream = try libuv.Tty.init(alloc, loop, pty.master);
