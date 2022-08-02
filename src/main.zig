@@ -48,6 +48,7 @@ pub fn main() !void {
     // TODO(mitchellh): support nesting (config-file in a config file)
     // TODO(mitchellh): detect cycles when nesting
     if (config.@"config-file".list.items.len > 0) {
+        const len = config.@"config-file".list.items.len;
         const cwd = std.fs.cwd();
         for (config.@"config-file".list.items) |path| {
             var file = try cwd.openFile(path, .{});
@@ -57,6 +58,12 @@ pub fn main() !void {
             var iter = cli_args.lineIterator(buf_reader.reader());
 
             try cli_args.parse(Config, alloc, &config, &iter);
+
+            // We don't currently support adding more config files to load
+            // from within a loaded config file. This can be supported
+            // later.
+            if (config.@"config-file".list.items.len > len)
+                return error.ConfigFileInConfigFile;
         }
     }
     log.info("config={}", .{config});
