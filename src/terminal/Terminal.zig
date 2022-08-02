@@ -463,6 +463,21 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
     self.screen.cursor.pending_wrap = false;
 }
 
+/// Move the cursor to column `col_req` (1-indexed) without modifying the row.
+/// If `col_req` is 0, it is changed to 1. If `col_req` is greater than the
+/// total number of columns, it is set to the right-most column.
+///
+/// If cursor origin mode is set, the cursor row will be set inside the
+/// current scroll region.
+pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
+    // TODO: test
+
+    assert(self.modes.origin == 0); // TODO
+
+    const col = if (col_req == 0) 1 else col_req;
+    self.screen.cursor.x = @minimum(self.cols, col) - 1;
+}
+
 /// Erase the display.
 /// TODO: test
 pub fn eraseDisplay(

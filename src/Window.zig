@@ -706,13 +706,7 @@ pub fn setCursorUp(self: *Window, amount: u16) !void {
 }
 
 pub fn setCursorCol(self: *Window, col: u16) !void {
-    if (self.terminal.modes.origin == 1) {
-        // TODO
-        log.err("setCursorCol: implement origin mode", .{});
-        unreachable;
-    }
-
-    self.terminal.setCursorPos(self.terminal.screen.cursor.y + 1, col);
+    self.terminal.setCursorColAbsolute(col);
 }
 
 pub fn setCursorRow(self: *Window, row: u16) !void {
