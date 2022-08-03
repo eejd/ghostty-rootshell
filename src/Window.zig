@@ -512,6 +512,9 @@ fn refreshCallback(window: glfw.Window) void {
 }
 
 fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     const win = window.getUserPointer(Window) orelse return;
 
     //log.info("SCROLL: {} {}", .{ xoff, yoff });
