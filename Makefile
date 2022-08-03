@@ -5,7 +5,7 @@ init:
 
 # Slightly cursed way that we setup a dev version of this locally on NixOS.
 dev/install:
-	zig build -Dcpu=baseline
+	zig build -Dcpu=baseline -Drelease-fast
 	if [ -f "/etc/NIXOS" ]; then patchelf --set-rpath "${LD_LIBRARY_PATH}" zig-out/bin/ghostty; fi
 	mkdir -p ${HOME}/bin
 	cp zig-out/bin/ghostty ${HOME}/bin/devtty
