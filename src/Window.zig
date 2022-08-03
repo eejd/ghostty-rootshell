@@ -885,8 +885,6 @@ pub fn setCursorStyle(
     self: *Window,
     style: terminal.CursorStyle,
 ) !void {
-    _ = self;
-
     // Get the style that we use in the renderer
     const grid_style = Grid.CursorStyle.fromTerminal(style) orelse {
         log.warn("unimplemented cursor style: {}", .{style});
