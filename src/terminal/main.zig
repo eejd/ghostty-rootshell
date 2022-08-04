@@ -2,7 +2,7 @@ const stream = @import("stream.zig");
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
-const point = @import("point.zig");
+pub const point = @import("point.zig");
 pub const color = @import("color.zig");
 
 pub const Terminal = @import("Terminal.zig");
@@ -20,7 +20,6 @@ pub const EraseDisplay = csi.EraseDisplay;
 pub const EraseLine = csi.EraseLine;
 pub const TabClear = csi.TabClear;
 pub const Attribute = sgr.Attribute;
-pub const Point = point.Point;
 
 // Not exported because they're just used for tests.
 

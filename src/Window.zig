@@ -50,6 +50,9 @@ pty: Pty,
 /// The command we're running for our tty.
 command: Command,
 
+/// Mouse state.
+mouse: Mouse,
+
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
 /// just stores internal state about a grid. This is connected back to
@@ -128,6 +131,18 @@ const Cursor = struct {
     pub fn stopTimer(self: Cursor) !void {
         try self.timer.stop();
     }
+};
+
+/// Mouse state for the window.
+const Mouse = struct {
+    /// The current state of mouse click.
+    click_state: ClickState = .none,
+
+    /// The point at which the mouse click happened. This is in screen
+    /// coordinates so that scrolling preserves the location.
+    click_point: terminal.point.ScreenPoint = .{},
+
+    const ClickState = enum { none, left };
 };
 
 /// Create a new window. This allocates and returns a pointer because we
@@ -267,6 +282,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .grid = grid,
         .pty = pty,
         .command = cmd,
+        .mouse = .{},
         .terminal = term,
         .terminal_stream = .{ .handler = self },
         .terminal_cursor = .{
@@ -290,6 +306,8 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     window.setFocusCallback(focusCallback);
     window.setRefreshCallback(refreshCallback);
     window.setScrollCallback(scrollCallback);
+    window.setCursorPosCallback(cursorPosCallback);
+    window.setMouseButtonCallback(mouseButtonCallback);
 
     return self;
 }
@@ -546,6 +564,104 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     // TODO(perf): we can only schedule render if we know scrolling
     // did something
     win.render_timer.schedule() catch unreachable;
+}
+
+fn mouseButtonCallback(
+    window: glfw.Window,
+    button: glfw.MouseButton,
+    action: glfw.Action,
+    mods: glfw.Mods,
+) void {
+    _ = mods;
+
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    if (button == .left) {
+        switch (action) {
+            .press => {
+                const win = window.getUserPointer(Window) orelse return;
+                const pos = window.getCursorPos() catch |err| {
+                    log.err("error reading cursor position: {}", .{err});
+                    return;
+                };
+
+                // Store it
+                const point = win.posToViewport(pos.xpos, pos.ypos);
+                win.mouse.click_state = .left;
+                win.mouse.click_point = point.toScreen(&win.terminal.screen);
+                log.debug("click start state={} viewport={} screen={}", .{
+                    win.mouse.click_state,
+                    point,
+                    win.mouse.click_point,
+                });
+
+                // Selection is always cleared
+                if (win.terminal.selection != null) {
+                    win.terminal.selection = null;
+                    win.render_timer.schedule() catch |err|
+                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                }
+            },
+
+            .release => {
+                const win = window.getUserPointer(Window) orelse return;
+                win.mouse.click_state = .none;
+                log.debug("click end", .{});
+            },
+
+            .repeat => {},
+        }
+    }
+}
+
+fn cursorPosCallback(
+    window: glfw.Window,
+    xpos: f64,
+    ypos: f64,
+) void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    const win = window.getUserPointer(Window) orelse return;
+
+    // If the cursor isn't clicked currently, it doesn't matter
+    if (win.mouse.click_state != .left) return;
+
+    // All roads lead to requiring a re-render at this pont.
+    win.render_timer.schedule() catch |err|
+        log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+
+    // Convert to points
+    const viewport_point = win.posToViewport(xpos, ypos);
+    const screen_point = viewport_point.toScreen(&win.terminal.screen);
+
+    // If the start point is the same as this point, we clear selection.
+    // This means we either haven't moved enough OR we moved the mouse back
+    // to the same place, and we "unhighlighted" everything.
+    if (std.meta.eql(screen_point, win.mouse.click_point)) {
+        win.terminal.selection = null;
+        return;
+    }
+
+    // TODO: detect if selection point is passed the point where we've
+    // actually written data before and disallow it.
+
+    // We moved! Set the selection
+    win.terminal.selection = .{
+        .start = win.mouse.click_point,
+        .end = screen_point,
+    };
+}
+
+fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
+    // Convert the mouse position to the viewport x/y
+    const cell_width = @floatCast(f64, self.grid.cell_size.width);
+    const cell_height = @floatCast(f64, self.grid.cell_size.height);
+    return .{
+        .x = @floatToInt(usize, xpos / cell_width),
+        .y = @floatToInt(usize, ypos / cell_height),
+    };
 }
 
 fn cursorTimerCallback(t: *libuv.Timer) void {
