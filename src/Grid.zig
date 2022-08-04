@@ -288,8 +288,7 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
         defer y += 1;
 
         for (line) |cell, x| {
-            // The colors for the cell.
-            const colors: struct {
+            const BgFg = struct {
                 /// Background is optional because in un-inverted mode
                 /// it may just be equivalent to the default background in
                 /// which case we do nothing to save on GPU render time.
@@ -299,17 +298,42 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                 /// any fg if the cell is empty or has no attributes like
                 /// underline.
                 fg: terminal.color.RGB,
-            } = if (cell.attrs.inverse == 0) .{
-                // In normal mode, background and fg match the cell. We
-                // un-optionalize the fg by defaulting to our fg color.
-                .bg = cell.bg,
-                .fg = cell.fg orelse self.foreground,
-            } else .{
-                // In inverted mode, the background MUST be set to something
-                // (is never null) so it is either the fg or default fg. The
-                // fg is either the bg or default background.
-                .bg = cell.fg orelse self.foreground,
-                .fg = cell.bg orelse self.background,
+            };
+
+            // The colors for the cell.
+            const colors: BgFg = colors: {
+                // If we have a selection, then we need to check if this
+                // cell is selected.
+                // TODO(perf): we can check in advance if selection is in
+                // our viewport at all and not run this on every point.
+                if (term.selection) |sel| {
+                    const screen_point = (terminal.point.Viewport{
+                        .x = x,
+                        .y = y,
+                    }).toScreen(&term.screen);
+
+                    // If we are selected, we our colors are just inverted fg/bg
+                    if (sel.contains(screen_point)) {
+                        break :colors BgFg{
+                            .bg = self.foreground,
+                            .fg = self.background,
+                        };
+                    }
+                }
+
+                const res: BgFg = if (cell.attrs.inverse == 0) .{
+                    // In normal mode, background and fg match the cell. We
+                    // un-optionalize the fg by defaulting to our fg color.
+                    .bg = cell.bg,
+                    .fg = cell.fg orelse self.foreground,
+                } else .{
+                    // In inverted mode, the background MUST be set to something
+                    // (is never null) so it is either the fg or default fg. The
+                    // fg is either the bg or default background.
+                    .bg = cell.fg orelse self.foreground,
+                    .fg = cell.bg orelse self.background,
+                };
+                break :colors res;
             };
 
             // If the cell has a background, we always draw it.
