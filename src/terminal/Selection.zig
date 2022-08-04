@@ -22,6 +22,14 @@ pub fn contains(self: Selection, p: ScreenPoint) bool {
     const tl = self.topLeft();
     const br = self.bottomRight();
 
+    // Honestly there is probably way more efficient boolean logic here.
+    // Look back at this in the future...
+
+    // If tl/br are same line
+    if (tl.y == br.y) return p.y == tl.y and
+        p.x >= tl.x and
+        p.x <= br.x;
+
     // If on top line, just has to be left of X
     if (p.y == tl.y) return p.x >= tl.x;
 
@@ -83,5 +91,17 @@ test "Selection: contains" {
         try testing.expect(sel.contains(.{ .x = 1, .y = 2 }));
         try testing.expect(!sel.contains(.{ .x = 1, .y = 1 }));
         try testing.expect(!sel.contains(.{ .x = 5, .y = 2 }));
+    }
+
+    // Single line
+    {
+        const sel: Selection = .{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 10, .y = 1 },
+        };
+
+        try testing.expect(sel.contains(.{ .x = 6, .y = 1 }));
+        try testing.expect(!sel.contains(.{ .x = 2, .y = 1 }));
+        try testing.expect(!sel.contains(.{ .x = 12, .y = 1 }));
     }
 }
