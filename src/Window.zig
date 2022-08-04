@@ -142,6 +142,12 @@ const Mouse = struct {
     /// coordinates so that scrolling preserves the location.
     click_point: terminal.point.ScreenPoint = .{},
 
+    /// The starting xpos/ypos of the click. This is only useful initially.
+    /// As soon as scrolling occurs, these are no longer accurate to calculate
+    /// the screen point.
+    click_xpos: f64 = 0,
+    click_ypos: f64 = 0,
+
     const ClickState = enum { none, left };
 };
 
@@ -590,6 +596,8 @@ fn mouseButtonCallback(
                 const point = win.posToViewport(pos.xpos, pos.ypos);
                 win.mouse.click_state = .left;
                 win.mouse.click_point = point.toScreen(&win.terminal.screen);
+                win.mouse.click_xpos = pos.xpos;
+                win.mouse.click_ypos = pos.ypos;
                 log.debug("click start state={} viewport={} screen={}", .{
                     win.mouse.click_state,
                     point,
@@ -636,22 +644,106 @@ fn cursorPosCallback(
     const viewport_point = win.posToViewport(xpos, ypos);
     const screen_point = viewport_point.toScreen(&win.terminal.screen);
 
-    // If the start point is the same as this point, we clear selection.
-    // This means we either haven't moved enough OR we moved the mouse back
-    // to the same place, and we "unhighlighted" everything.
+    // NOTE(mitchellh): This logic super sucks. There has to be an easier way
+    // to calculate this, but this is good for a v1. Selection isn't THAT
+    // common so its not like this performance heavy code is running that
+    // often.
+    // TODO: unit test this, this logic sucks
+
+    // If we were selecting, and we switched directions, then we restart
+    // calculations because it forces us to reconsider if the first cell is
+    // selected.
+    if (win.terminal.selection) |sel| {
+        const reset: bool = if (sel.end.before(sel.start))
+            sel.start.before(screen_point)
+        else
+            screen_point.before(sel.start);
+
+        if (reset) win.terminal.selection = null;
+    }
+
+    // Our logic for determing if the starting cell is selected:
+    //
+    //   - The "xboundary" is 60% the width of a cell from the left. We choose
+    //     60% somewhat arbitrarily based on feeling.
+    //   - If we started our click left of xboundary, backwards selections
+    //     can NEVER select the current char.
+    //   - If we started our click right of xboundary, backwards selections
+    //     ALWAYS selected the current char, but we must move the cursor
+    //     left of the xboundary.
+    //   - Inverted logic for forwards selections.
+    //
+
+    // the boundary point at which we consider selection or non-selection
+    const cell_xboundary = win.grid.cell_size.width * 0.6;
+
+    // first xpos of the clicked cell
+    const cell_xstart = @intToFloat(f32, win.mouse.click_point.x) * win.grid.cell_size.width;
+    const cell_start_xpos = win.mouse.click_xpos - cell_xstart;
+
+    // If this is the same cell, then we only start the selection if weve
+    // moved past the boundary point the opposite direction from where we
+    // started.
     if (std.meta.eql(screen_point, win.mouse.click_point)) {
-        win.terminal.selection = null;
+        const cell_xpos = xpos - cell_xstart;
+        const selected: bool = if (cell_start_xpos < cell_xboundary)
+            cell_xpos >= cell_xboundary
+        else
+            cell_xpos < cell_xboundary;
+
+        win.terminal.selection = if (selected) .{
+            .start = screen_point,
+            .end = screen_point,
+        } else null;
+
+        return;
+    }
+
+    // If this is a different cell and we haven't started selection,
+    // we determine the starting cell first.
+    if (win.terminal.selection == null) {
+        //   - If we're moving to a point before the start, then we select
+        //     the starting cell if we started after the boundary, else
+        //     we start selection of the prior cell.
+        //   - Inverse logic for a point after the start.
+        const click_point = win.mouse.click_point;
+        const start: terminal.point.ScreenPoint = if (screen_point.before(click_point)) start: {
+            if (win.mouse.click_xpos > cell_xboundary) {
+                break :start click_point;
+            } else {
+                break :start if (click_point.x > 0) terminal.point.ScreenPoint{
+                    .y = click_point.y,
+                    .x = click_point.x - 1,
+                } else terminal.point.ScreenPoint{
+                    .x = win.terminal.screen.cols - 1,
+                    .y = click_point.y -| 1,
+                };
+            }
+        } else start: {
+            if (win.mouse.click_xpos < cell_xboundary) {
+                break :start click_point;
+            } else {
+                break :start if (click_point.x < win.terminal.screen.cols - 1) terminal.point.ScreenPoint{
+                    .y = click_point.y,
+                    .x = click_point.x + 1,
+                } else terminal.point.ScreenPoint{
+                    .y = click_point.y + 1,
+                    .x = 0,
+                };
+            }
+        };
+
+        win.terminal.selection = .{ .start = start, .end = screen_point };
         return;
     }
 
     // TODO: detect if selection point is passed the point where we've
     // actually written data before and disallow it.
 
-    // We moved! Set the selection
-    win.terminal.selection = .{
-        .start = win.mouse.click_point,
-        .end = screen_point,
-    };
+    // We moved! Set the selection end point. The start point should be
+    // set earlier.
+    assert(win.terminal.selection != null);
+    win.terminal.selection.?.end = screen_point;
 }
 
 fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {

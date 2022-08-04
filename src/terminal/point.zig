@@ -69,6 +69,20 @@ pub const Viewport = struct {
 pub const ScreenPoint = struct {
     x: usize = 0,
     y: usize = 0,
+
+    /// Returns if this point is before another point.
+    pub fn before(self: ScreenPoint, other: ScreenPoint) bool {
+        return self.y < other.y or
+            (self.y == other.y and self.x < other.x);
+    }
+
+    test "before" {
+        const testing = std.testing;
+
+        const p: ScreenPoint = .{ .x = 5, .y = 2 };
+        try testing.expect(p.before(.{ .x = 6, .y = 2 }));
+        try testing.expect(p.before(.{ .x = 3, .y = 3 }));
+    }
 };
 
 test {
