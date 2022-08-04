@@ -58,6 +58,9 @@ pub const Mode = enum(u16) {
     /// Enable or disable automatic line wrapping.
     autowrap = 7,
 
+    /// Set whether the cursor is visible or not.
+    cursor_visible = 25,
+
     /// Enables or disables mode ?3. If disabled, the terminal will resize
     /// to the size of the window. If enabled, this will take effect when
     /// mode ?3 is set or unset.

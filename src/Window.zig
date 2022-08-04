@@ -59,9 +59,8 @@ terminal: terminal.Terminal,
 /// The stream parser.
 terminal_stream: terminal.Stream(*Window),
 
-/// Timer that blinks the cursor.
-cursor_timer: libuv.Timer,
-cursor_style: terminal.CursorStyle,
+/// Cursor state.
+terminal_cursor: Cursor,
 
 /// Render at least 60fps.
 render_timer: RenderTimer,
@@ -75,10 +74,6 @@ write_req_pool: SegmentedPool(libuv.WriteReq.T, WRITE_REQ_PREALLOC) = .{},
 
 /// The pool of available buffers for writing to the pty.
 write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
-
-/// Set this to true whenver an event occurs that we may want to wake up
-/// the event loop. Only set this from the main thread.
-wakeup: bool = false,
 
 /// The app configuration
 config: *const Config,
@@ -97,6 +92,42 @@ bracketed_paste: bool = false,
 /// callbacks so we abuse that here. This is to solve an issue where commands
 /// like such as "control-v" will write a "v" even if they're intercepted.
 ignore_char: bool = false,
+
+/// Information related to the current cursor for the window.
+//
+// QUESTION(mitchellh): should this be attached to the Screen instead?
+// I'm not sure if the cursor settings stick to the screen, i.e. if you
+// change to an alternate screen if those are preserved. Need to check this.
+const Cursor = struct {
+    /// Timer for cursor blinking.
+    timer: libuv.Timer,
+
+    /// Current cursor style. This can be set by escape sequences. To get
+    /// the default style, the config has to be referenced.
+    style: terminal.CursorStyle = .default,
+
+    /// Whether the cursor is visible at all. This should not be used for
+    /// "blink" settings, see "blink" for that. This is used to turn the
+    /// cursor ON or OFF.
+    visible: bool = true,
+
+    /// Whether the cursor is currently blinking. If it is blinking, then
+    /// the cursor will not be rendered.
+    blink: bool = false,
+
+    /// Start (or restart) the timer. This is idempotent.
+    pub fn startTimer(self: Cursor) !void {
+        try self.timer.start(
+            cursorTimerCallback,
+            0,
+            self.timer.getRepeat(),
+        );
+    }
+
+    pub fn stopTimer(self: Cursor) !void {
+        try self.timer.stop();
+    }
+};
 
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
@@ -231,8 +262,10 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .command = cmd,
         .terminal = term,
         .terminal_stream = .{ .handler = self },
-        .cursor_timer = timer,
-        .cursor_style = .blinking_block,
+        .terminal_cursor = .{
+            .timer = timer,
+            .style = .blinking_block,
+        },
         .render_timer = try RenderTimer.init(loop, self, 16, 64),
         .pty_stream = stream,
         .config = config,
@@ -265,7 +298,7 @@ pub fn destroy(self: *Window) void {
     self.grid.deinit();
     self.window.destroy();
 
-    self.cursor_timer.close((struct {
+    self.terminal_cursor.timer.close((struct {
         fn callback(t: *libuv.Timer) void {
             const alloc = t.loop().getData(Allocator).?.*;
             t.deinit(alloc);
@@ -316,25 +349,6 @@ fn queueWrite(self: *Window, data: []const u8) !void {
 
         i += end;
     }
-}
-
-/// Updates te style of the cursor.
-fn updateCursorStyle(self: *Window, style: Grid.CursorStyle, blink: bool) !void {
-    self.grid.cursor_style = style;
-    self.grid.cursor_visible = !blink;
-
-    if (blink) {
-        try self.cursor_timer.start(
-            cursorTimerCallback,
-            0,
-            self.cursor_timer.getRepeat(),
-        );
-    } else {
-        try self.cursor_timer.stop();
-    }
-
-    // Always schedule a render when we change cursors
-    try self.render_timer.schedule();
 }
 
 fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
@@ -483,21 +497,17 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
     if (win.focused == focused) return;
 
     // We have to schedule a render because no matter what we're changing
-    // the cursor.
+    // the cursor. If we're focused its reappearing, if we're not then
+    // its changing to hollow and not blinking.
     win.render_timer.schedule() catch unreachable;
 
     // Set our focused state on the window.
     win.focused = focused;
 
-    if (focused) {
-        win.wakeup = true;
-        win.updateCursorStyle(
-            Grid.CursorStyle.fromTerminal(win.cursor_style) orelse .box,
-            win.cursor_style.blinking(),
-        ) catch unreachable;
-    } else {
-        win.updateCursorStyle(.box_hollow, false) catch unreachable;
-    }
+    if (focused)
+        win.terminal_cursor.startTimer() catch unreachable
+    else
+        win.terminal_cursor.stopTimer() catch unreachable;
 }
 
 fn refreshCallback(window: glfw.Window) void {
@@ -536,7 +546,13 @@ fn cursorTimerCallback(t: *libuv.Timer) void {
     defer tracy.end();
 
     const win = t.getData(Window) orelse return;
-    win.grid.cursor_visible = !win.grid.cursor_visible;
+
+    // If the cursor is currently invisible, then we do nothing. Ideally
+    // in this state the timer would be cancelled but no big deal.
+    if (!win.terminal_cursor.visible) return;
+
+    // Swap blink state and schedule a render
+    win.terminal_cursor.blink = !win.terminal_cursor.blink;
     win.render_timer.schedule() catch unreachable;
 }
 
@@ -570,11 +586,11 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
         return;
     };
 
-    // Whenever a character is typed, we ensure the cursor is visible
-    // and we restart the cursor timer.
-    win.grid.cursor_visible = true;
-    if (win.cursor_timer.isActive() catch false) {
-        _ = win.cursor_timer.again() catch null;
+    // Whenever a character is typed, we ensure the cursor is in the
+    // non-blink state so it is rendered if visible.
+    win.terminal_cursor.blink = false;
+    if (win.terminal_cursor.timer.isActive() catch false) {
+        _ = win.terminal_cursor.timer.again() catch null;
     }
 
     // Schedule a render
@@ -606,6 +622,10 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     defer tracy.end();
 
     const win = t.getData(Window).?;
+
+    // Setup our cursor settings
+    win.grid.cursor_visible = win.terminal_cursor.visible and !win.terminal_cursor.blink;
+    win.grid.cursor_style = Grid.CursorStyle.fromTerminal(win.terminal_cursor.style) orelse .box;
 
     // Calculate foreground and background colors
     const bg = win.grid.background;
@@ -788,6 +808,10 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.terminal.modes.autowrap = @boolToInt(enabled);
         },
 
+        .cursor_visible => {
+            self.terminal_cursor.visible = enabled;
+        },
+
         .alt_screen_save_cursor_clear_enter => {
             const opts: terminal.Terminal.AlternateScreenOptions = .{
                 .cursor_save = true,
@@ -887,19 +911,7 @@ pub fn setCursorStyle(
     self: *Window,
     style: terminal.CursorStyle,
 ) !void {
-    // Get the style that we use in the renderer
-    const grid_style = Grid.CursorStyle.fromTerminal(style) orelse {
-        log.warn("unimplemented cursor style: {}", .{style});
-        return;
-    };
-
-    // Set our style
-    self.cursor_style = style;
-
-    // If we're currently focused, we update our style, since our unfocused
-    // cursor is manually managed. If we're not focused, we ignore it because
-    // it'll be updated the next time the window comes into focus.
-    if (self.focused) try self.updateCursorStyle(grid_style, style.blinking());
+    self.terminal_cursor.style = style;
 }
 
 pub fn decaln(self: *Window) !void {
