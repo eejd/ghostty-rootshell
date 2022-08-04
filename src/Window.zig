@@ -124,6 +124,7 @@ const Cursor = struct {
         );
     }
 
+    /// Stop the timer. This is idempotent.
     pub fn stopTimer(self: Cursor) !void {
         try self.timer.stop();
     }
@@ -166,6 +167,12 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         gl.glad.versionMajor(version),
         gl.glad.versionMinor(version),
     });
+    if (builtin.mode == .Debug) {
+        var ext_iter = try gl.ext.iterator();
+        while (try ext_iter.next()) |ext| {
+            log.debug("OpenGL extension available name={s}", .{ext});
+        }
+    }
 
     // Culling, probably not necessary. We have to change the winding
     // order since our 0,0 is top-left.

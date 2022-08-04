@@ -15,6 +15,7 @@ pub const c = @import("opengl/c.zig");
 pub const glad = @import("opengl/glad.zig");
 pub usingnamespace @import("opengl/draw.zig");
 
+pub const ext = @import("opengl/extensions.zig");
 pub const Buffer = @import("opengl/Buffer.zig");
 pub const Program = @import("opengl/Program.zig");
 pub const Shader = @import("opengl/Shader.zig");
