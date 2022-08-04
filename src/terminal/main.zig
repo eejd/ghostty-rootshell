@@ -8,6 +8,7 @@ pub const color = @import("color.zig");
 pub const Terminal = @import("Terminal.zig");
 pub const Parser = @import("Parser.zig");
 pub const Selection = @import("Selection.zig");
+pub const Screen = @import("Screen.zig");
 pub const Stream = stream.Stream;
 pub const CursorStyle = ansi.CursorStyle;
 pub const DeviceAttributeReq = ansi.DeviceAttributeReq;
@@ -33,9 +34,9 @@ test {
     _ = Parser;
     _ = Selection;
     _ = Terminal;
+    _ = Screen;
 
     _ = @import("osc.zig");
     _ = @import("parse_table.zig");
-    _ = @import("Screen.zig");
     _ = @import("Tabstops.zig");
 }

@@ -12,6 +12,7 @@ const Allocator = std.mem.Allocator;
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
+const Selection = @import("Selection.zig");
 const Tabstops = @import("Tabstops.zig");
 const trace = @import("../tracy/tracy.zig").trace;
 const color = @import("color.zig");
@@ -34,6 +35,9 @@ const ScreenType = enum {
 active_screen: ScreenType,
 screen: Screen,
 secondary_screen: Screen,
+
+/// The current selection (if any).
+selection: ?Selection = null,
 
 /// Whether we're currently writing to the status line (DECSASD and DECSSDT).
 /// We don't support a status line currently so we just black hole this
@@ -127,6 +131,9 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.secondary_screen = old;
     self.active_screen = .alternate;
 
+    // Clear our selection
+    self.selection = null;
+
     if (options.clear_on_enter) {
         self.eraseDisplay(.complete);
     }
@@ -148,6 +155,9 @@ pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.screen = self.secondary_screen;
     self.secondary_screen = old;
     self.active_screen = .primary;
+
+    // Clear our selection
+    self.selection = null;
 
     // Restore the cursor from the primary screen
     if (options.cursor_save) self.restoreCursor();
@@ -330,7 +340,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     if (self.status_display != .main) return;
 
     // If we're not at the bottom, then we need to move there
-    if (!self.screen.displayIsBottom()) self.screen.scroll(.{ .bottom = {} });
+    if (!self.screen.viewportIsBottom()) self.screen.scroll(.{ .bottom = {} });
 
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1) {

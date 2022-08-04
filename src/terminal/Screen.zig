@@ -3,11 +3,16 @@
 //!
 //! Definitions:
 //!
-//!   * Active - The area that is the current edit-able screen.
-//!   * History - The area that contains lines from prior input.
-//!   * Display - The area that is currently visible to the user. If the
-//!       user is scrolled all the way down (latest) then the display
-//!       is equivalent to the active area.
+//!   * Screen - The full screen (active + history).
+//!   * Active - The area that is the current edit-able screen (the
+//!       bottom of the scrollback). This is "edit-able" because it is
+//!       the only part that escape sequences such as set cursor position
+//!       actually affect.
+//!   * History - The area that contains the lines prior to the active
+//!       area. This is the scrollback area. Escape sequences can no longer
+//!       affect this area.
+//!   * Viewport - The area that is currently visible to the user. This
+//!       can be thought of as the current window into the screen.
 //!
 const Screen = @This();
 
@@ -23,6 +28,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const color = @import("color.zig");
+const point = @import("point.zig");
+const Point = point.Point;
 
 const log = std.log.scoped(.screen);
 
@@ -32,7 +39,7 @@ pub const Row = []Cell;
 /// Cursor represents the cursor state.
 pub const Cursor = struct {
     // x, y where the cursor currently exists (0-indexed). This x/y is
-    // always the offset in the display area.
+    // always the offset in the active area.
     x: usize = 0,
     y: usize = 0,
 
@@ -142,8 +149,8 @@ pub fn deinit(self: *Screen, alloc: Allocator) void {
     self.* = undefined;
 }
 
-/// This returns true if the display area is anchored at the bottom currently.
-pub fn displayIsBottom(self: Screen) bool {
+/// This returns true if the viewport is anchored at the bottom currently.
+pub fn viewportIsBottom(self: Screen) bool {
     return self.visible_offset == self.bottomOffset();
 }
 
@@ -191,10 +198,10 @@ fn rowIndex(self: Screen, idx: usize) usize {
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
-    /// visible display will be the top line of the scroll buffer.
+    /// viewport will be the top line of the scroll buffer.
     top: void,
 
-    /// Scroll to the bottom, where the last line of the visible display
+    /// Scroll to the bottom, where the last line of the viewport
     /// will be the last line of the buffer. TODO: are we sure?
     bottom: void,
 
@@ -216,7 +223,7 @@ pub const Scroll = union(enum) {
 /// or not).
 pub fn scroll(self: *Screen, behavior: Scroll) void {
     switch (behavior) {
-        // Setting display offset to zero makes row 0 be at self.top
+        // Setting viewport offset to zero makes row 0 be at self.top
         // which is the top!
         .top => self.visible_offset = 0,
 
@@ -254,9 +261,9 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
     // If we're scrolling down, we have more work to do beacuse we
     // need to determine if we're overwriting our scrollback.
     self.visible_offset +|= @intCast(usize, delta);
-    if (grow)
-        self.bottom +|= @intCast(usize, delta)
-    else {
+    if (grow) {
+        self.bottom +|= @intCast(usize, delta);
+    } else {
         // If we're not growing, then we want to ensure we don't scroll
         // off the bottom. Calculate the number of rows we can see. If we
         // can see less than the number of rows we have available, then scroll
@@ -464,11 +471,11 @@ test "Screen: scrolling" {
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
-    try testing.expect(s.displayIsBottom());
+    try testing.expect(s.viewportIsBottom());
 
     // Scroll down, should still be bottom
     s.scroll(.{ .delta = 1 });
-    try testing.expect(s.displayIsBottom());
+    try testing.expect(s.viewportIsBottom());
 
     // Test our row index
     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
@@ -493,6 +500,27 @@ test "Screen: scrolling" {
     }
 }
 
+// TODO
+// test "Screen: scrolling more than size" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var s = try init(alloc, 3, 5, 3);
+//     defer s.deinit(alloc);
+//     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+//
+//     try testing.expect(s.viewportIsBottom());
+//
+//     // Scroll down, should still be bottom
+//     s.scroll(.{ .delta = 7 });
+//     try testing.expect(s.viewportIsBottom());
+//
+//     // Test our row index
+//     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
+//     try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
+//     try testing.expectEqual(@as(usize, 15), s.rowIndex(2));
+// }
+
 test "Screen: scroll down from 0" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -501,7 +529,7 @@ test "Screen: scroll down from 0" {
     defer s.deinit(alloc);
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     s.scroll(.{ .delta = -1 });
-    try testing.expect(s.displayIsBottom());
+    try testing.expect(s.viewportIsBottom());
 
     {
         // Test our contents rotated
@@ -534,7 +562,7 @@ test "Screen: scrollback" {
 
     // Scrolling to the bottom
     s.scroll(.{ .bottom = {} });
-    try testing.expect(s.displayIsBottom());
+    try testing.expect(s.viewportIsBottom());
 
     {
         // Test our contents rotated
@@ -545,7 +573,7 @@ test "Screen: scrollback" {
 
     // Scrolling back should make it visible again
     s.scroll(.{ .delta = -1 });
-    try testing.expect(!s.displayIsBottom());
+    try testing.expect(!s.viewportIsBottom());
 
     {
         // Test our contents rotated

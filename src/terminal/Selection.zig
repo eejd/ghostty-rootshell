@@ -4,21 +4,21 @@ const Selection = @This();
 
 const std = @import("std");
 const point = @import("point.zig");
-const Point = point.Point;
+const ScreenPoint = point.ScreenPoint;
 
 /// Start and end of the selection. There is no guarantee that
 /// start is before end or vice versa. If a user selects backwards,
 /// start will be after end, and vice versa. Use the struct functions
 /// to not have to worry about this.
-start: Point,
-end: Point,
+start: ScreenPoint,
+end: ScreenPoint,
 
 /// Returns true if the selection contains the given point.
 ///
 /// This recalculates top left and bottom right each call. If you have
 /// many points to check, it is cheaper to do the containment logic
 /// yourself and cache the topleft/bottomright.
-pub fn contains(self: Selection, p: Point) bool {
+pub fn contains(self: Selection, p: ScreenPoint) bool {
     const tl = self.topLeft();
     const br = self.bottomRight();
 
@@ -33,7 +33,7 @@ pub fn contains(self: Selection, p: Point) bool {
 }
 
 /// Returns the top left point of the selection.
-pub fn topLeft(self: Selection) Point {
+pub fn topLeft(self: Selection) ScreenPoint {
     return switch (self.order()) {
         .forward => self.start,
         .reverse => self.end,
@@ -41,7 +41,7 @@ pub fn topLeft(self: Selection) Point {
 }
 
 /// Returns the bottom right point of the selection.
-pub fn bottomRight(self: Selection) Point {
+pub fn bottomRight(self: Selection) ScreenPoint {
     return switch (self.order()) {
         .forward => self.end,
         .reverse => self.start,
