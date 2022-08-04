@@ -77,7 +77,7 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
         .rows = rows,
         .active_screen = .primary,
         // TODO: configurable scrollback
-        .screen = try Screen.init(alloc, rows, cols, 1000),
+        .screen = try Screen.init(alloc, rows, cols, 10000),
         // No scrollback for the alternate screen
         .secondary_screen = try Screen.init(alloc, rows, cols, 0),
         .tabstops = try Tabstops.init(alloc, cols, TABSTOP_INTERVAL),

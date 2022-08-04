@@ -16,7 +16,6 @@ const libuv = @import("libuv/main.zig");
 const Pty = @import("Pty.zig");
 const Command = @import("Command.zig");
 const SegmentedPool = @import("segmented_pool.zig").SegmentedPool;
-const frame = @import("tracy/tracy.zig").frame;
 const trace = @import("tracy/tracy.zig").trace;
 const max_timer = @import("max_timer.zig");
 const terminal = @import("terminal/main.zig");

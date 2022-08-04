@@ -43,13 +43,16 @@ pub fn Stream(comptime Handler: type) type {
         /// Process the next character and call any callbacks if necessary.
         pub fn next(self: *Self, c: u8) !void {
             const tracy = trace(@src());
+            tracy.value(@intCast(u64, c));
             defer tracy.end();
 
             //log.debug("char: {x}", .{c});
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
                 if (action_opt) |action| {
-                    log.info("action: {}", .{action});
+                    if (action != .print) {
+                        log.info("action: {}", .{action});
+                    }
                 }
                 switch (action_opt orelse continue) {
                     .print => |p| if (@hasDecl(T, "print")) try self.handler.print(p),
