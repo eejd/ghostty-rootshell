@@ -402,7 +402,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
 /// Returns the raw text associated with a selection. This will unwrap
 /// soft-wrapped edges. The returned slice is owned by the caller.
-pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const u8 {
+pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]const u8 {
     // Get the slices for the string
     const slices = self.selectionSlices(sel);
 
@@ -424,7 +424,8 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const 
 
         break :chars count;
     };
-    const buf = try alloc.alloc(u8, chars + newlines);
+    const buf = try alloc.alloc(u8, chars + newlines + 1);
+    errdefer alloc.free(buf);
 
     var i: usize = 0;
     for (slices.top) |cell, idx| {
@@ -465,9 +466,9 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const 
         i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
     }
 
-    // If we wrote less than what we allocated, try to shrink it. Otherwise
-    // return the buf as-is.
-    return if (i < buf.len) try alloc.realloc(buf, i) else buf;
+    // Add null termination
+    buf[i] = 0;
+    return buf[0..i :0];
 }
 
 /// Returns the slices that make up the selection, in order. There are at most
