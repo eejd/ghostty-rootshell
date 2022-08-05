@@ -448,28 +448,58 @@ fn keyCallback(
 
     _ = scancode;
 
-    // Paste
-    if (action == .press and mods.super and key == .v) {
-        const win = window.getUserPointer(Window) orelse return;
+    if (action == .press and mods.super) {
+        switch (key) {
+            // Copy
+            .c => {
+                const win = window.getUserPointer(Window) orelse return;
 
-        // Ignore this character for writing
-        win.ignore_char = true;
+                // Ignore this character for writing
+                win.ignore_char = true;
 
-        const data = glfw.getClipboardString() catch |err| {
-            log.warn("error reading clipboard: {}", .{err});
-            return;
-        };
+                // If we have a selection, copy it.
+                if (win.terminal.selection) |sel| {
+                    var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
+                        log.err("error reading selection string err={}", .{err});
+                        return;
+                    };
+                    defer win.alloc.free(buf);
 
-        if (data.len > 0) {
-            if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
-                log.err("error queueing write in keyCallback err={}", .{err});
-            win.queueWrite(data) catch |err|
-                log.warn("error pasting clipboard: {}", .{err});
-            if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
-                log.err("error queueing write in keyCallback err={}", .{err});
+                    glfw.setClipboardString(buf) catch |err| {
+                        log.err("error setting clipboard string err={}", .{err});
+                        return;
+                    };
+                }
+
+                return;
+            },
+
+            // Paste
+            .v => {
+                const win = window.getUserPointer(Window) orelse return;
+
+                // Ignore this character for writing
+                win.ignore_char = true;
+
+                const data = glfw.getClipboardString() catch |err| {
+                    log.warn("error reading clipboard: {}", .{err});
+                    return;
+                };
+
+                if (data.len > 0) {
+                    if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
+                        log.err("error queueing write in keyCallback err={}", .{err});
+                    win.queueWrite(data) catch |err|
+                        log.warn("error pasting clipboard: {}", .{err});
+                    if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
+                        log.err("error queueing write in keyCallback err={}", .{err});
+                }
+
+                return;
+            },
+
+            else => {},
         }
-
-        return;
     }
 
     //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
