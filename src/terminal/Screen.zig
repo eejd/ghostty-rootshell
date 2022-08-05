@@ -406,12 +406,24 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const 
     // Get the slices for the string
     const slices = self.selectionSlices(sel);
 
-    // We can now know how much space we'll need to store the string. We
-    // can waste as much as 4x the size here as we make space for unicode
-    // characters (which may take up 32 bits).
-    // TODO: loop over and pre-calculate the sizeto avoid wasted space.
+    // We can now know how much space we'll need to store the string. We loop
+    // over and UTF8-encode and calculate the exact size required. We will be
+    // off here by at most "newlines" values in the worst case that every
+    // single line is soft-wrapped.
     const newlines = @divFloor(slices.top.len + slices.bot.len, self.cols) + 1;
-    const chars = (slices.top.len + slices.bot.len) * 4;
+    const chars = chars: {
+        var count: usize = 0;
+        const arr = [_][]Cell{ slices.top, slices.bot };
+        for (arr) |slice| {
+            for (slice) |cell| {
+                var buf: [4]u8 = undefined;
+                const char = if (cell.char > 0) cell.char else ' ';
+                count += try std.unicode.utf8Encode(@intCast(u21, char), &buf);
+            }
+        }
+
+        break :chars count;
+    };
     const buf = try alloc.alloc(u8, chars + newlines);
 
     var i: usize = 0;
