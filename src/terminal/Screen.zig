@@ -503,13 +503,9 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
 
     // The bottom and top are split into two slices, so we slice to the
     // bottom of the storage, then from the top.
-
-    // This the last row in the storage area, which is the total rows
-    // in the full storage minus the top offset minus 1 (due to 0-index).
-    const storage_bot = self.rowIndex(self.totalRows() - self.top - 1);
     return .{
         .top_offset = sel_top.x,
-        .top = self.storage[top + sel_top.x .. storage_bot + self.cols],
+        .top = self.storage[top + sel_top.x .. self.storage.len],
         .bot = self.storage[0 .. bot + sel_bot.x + 1],
     };
 }
