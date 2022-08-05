@@ -31,7 +31,6 @@ Improvements:
 
 Major Features:
 
-* Copy (paste is done)
 * Strikethrough
 * Emoji
 * Ligatures
