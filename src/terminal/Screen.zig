@@ -30,6 +30,7 @@ const Allocator = std.mem.Allocator;
 const color = @import("color.zig");
 const point = @import("point.zig");
 const Point = point.Point;
+const Selection = @import("Selection.zig");
 
 const log = std.log.scoped(.screen);
 
@@ -172,7 +173,7 @@ pub fn getVisible(self: Screen) []Cell {
 /// Get a single row in the active area by index (0-indexed).
 pub fn getRow(self: Screen, idx: usize) Row {
     // Get the index of the first byte of the the row at index.
-    const real_idx = self.rowIndex(idx);
+    const real_idx = self.viewportRowIndex(idx);
 
     // The storage is sliced to return exactly the number of columns.
     return self.storage[real_idx .. real_idx + self.cols];
@@ -182,17 +183,29 @@ pub fn getRow(self: Screen, idx: usize) Row {
 pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
     assert(row < self.rows);
     assert(col < self.cols);
-    const row_idx = self.rowIndex(row);
+    const row_idx = self.viewportRowIndex(row);
     return &self.storage[row_idx + col];
 }
 
 /// Returns the index for the given row (0-indexed) into the underlying
-/// storage array.
-fn rowIndex(self: Screen, idx: usize) usize {
+/// storage array. The row is 0-indexed from the top of the viewport.
+fn viewportRowIndex(self: Screen, idx: usize) usize {
     assert(idx < self.rows);
-    const val = (self.top + self.visible_offset + idx) * self.cols;
+    return self.rowIndex(self.visible_offset + idx);
+}
+
+/// Returns the index for the given row (0-indexed) into the underlying
+/// storage array. The row is 0-indexed from the top of the screen.
+fn rowIndex(self: Screen, y: usize) usize {
+    assert(y < self.totalRows());
+    const val = (self.top + y) * self.cols;
     if (val < self.storage.len) return val;
     return val - self.storage.len;
+}
+
+/// Returns the total number of rows in the screen.
+inline fn totalRows(self: Screen) usize {
+    return self.storage.len / self.cols;
 }
 
 /// Scroll behaviors for the scroll function.
@@ -380,11 +393,96 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
     // If we grew rows, then set the remaining data to zero.
     if (rows > old.rows) {
-        std.mem.set(Cell, self.storage[self.rowIndex(old.rows)..], .{ .char = 0 });
+        std.mem.set(Cell, self.storage[self.viewportRowIndex(old.rows)..], .{ .char = 0 });
     }
 
     // Free the old data
     alloc.free(old.storage);
+}
+
+/// Returns the raw text associated with a selection. This will unwrap
+/// soft-wrapped edges. The returned slice is owned by the caller.
+pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const u8 {
+    // Get the slices for the string
+    const slices = self.selectionSlices(sel);
+
+    // We can now know how much space we'll need to store the string. We
+    // can waste as much as 4x the size here as we make space for unicode
+    // characters (which may take up 32 bits).
+    // TODO: loop over and pre-calculate the sizeto avoid wasted space.
+    const newlines = @divFloor(slices.top.len + slices.bot.len, self.cols) + 1;
+    const chars = (slices.top.len + slices.bot.len) * 4;
+    const buf = try alloc.alloc(u8, chars + newlines);
+
+    var i: usize = 0;
+    for (slices.top) |cell, idx| {
+        // If our index cleanly divides into the col count then we're
+        // at a newline and we add it.
+        if (idx > 0 and @mod(idx + slices.top_offset, self.cols) == 0) {
+            buf[i] = '\n';
+            i += 1;
+        }
+
+        const char = if (cell.char > 0) cell.char else ' ';
+        i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
+    }
+
+    for (slices.bot) |cell, idx| {
+        // We don't use "top_offset" here because the bot by definition
+        // is never offset, it always starts at index 0 so we can just check
+        // the index directly.
+        if (@mod(idx, self.cols) == 0) {
+            buf[i] = '\n';
+            i += 1;
+        }
+
+        const char = if (cell.char > 0) cell.char else ' ';
+        i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
+    }
+
+    // If we wrote less than what we allocated, try to shrink it. Otherwise
+    // return the buf as-is.
+    return if (i < buf.len) try alloc.realloc(buf, i) else buf;
+}
+
+/// Returns the slices that make up the selection, in order. There are at most
+/// two parts to handle the ring buffer. If the selection fits in one contiguous
+/// slice, then the second slice will have a length of zero.
+fn selectionSlices(self: Screen, sel: Selection) struct {
+    // Top offset can be used to determine if a newline is required by
+    // seeing if the cell index plus the offset cleanly divides by screen cols.
+    top_offset: usize,
+    top: []Cell,
+    bot: []Cell,
+} {
+    // TODO: test
+    assert(sel.start.y < self.totalRows());
+    assert(sel.end.y < self.totalRows());
+    assert(sel.start.x < self.cols);
+    assert(sel.end.x < self.cols);
+
+    // Get the true "top" and "bottom"
+    const sel_top = sel.topLeft();
+    const sel_bot = sel.bottomRight();
+    const top = self.rowIndex(sel_top.y);
+    const bot = self.rowIndex(sel_bot.y);
+
+    // The bottom and top are available in one contiguous slice.
+    if (bot >= top) {
+        return .{
+            .top_offset = sel_top.x,
+            .top = self.storage[top + sel_top.x .. bot + sel_bot.x + 1],
+            .bot = self.storage[0..0], // just so its a valid slice, but zero length
+        };
+    }
+
+    // The bottom and top are split into two slices, so we slice to the
+    // bottom of the storage, then from the top.
+    return .{
+        .top_offset = sel_top.x,
+        .top = self.storage[top + sel_top.x .. self.bottom + self.cols],
+        .bot = self.storage[0 .. bot + sel_bot.x],
+    };
 }
 
 /// Turns the screen into a string.
@@ -478,9 +576,9 @@ test "Screen: scrolling" {
     try testing.expect(s.viewportIsBottom());
 
     // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(2));
+    try testing.expectEqual(@as(usize, 5), s.viewportRowIndex(0));
+    try testing.expectEqual(@as(usize, 10), s.viewportRowIndex(1));
+    try testing.expectEqual(@as(usize, 0), s.viewportRowIndex(2));
 
     {
         // Test our contents rotated
@@ -516,9 +614,9 @@ test "Screen: scrolling" {
 //     try testing.expect(s.viewportIsBottom());
 //
 //     // Test our row index
-//     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
-//     try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
-//     try testing.expectEqual(@as(usize, 15), s.rowIndex(2));
+//     try testing.expectEqual(@as(usize, 5), s.viewportRowIndex(0));
+//     try testing.expectEqual(@as(usize, 10), s.viewportRowIndex(1));
+//     try testing.expectEqual(@as(usize, 15), s.viewportRowIndex(2));
 // }
 
 test "Screen: scroll down from 0" {
@@ -549,9 +647,9 @@ test "Screen: scrollback" {
     s.scroll(.{ .delta = 1 });
 
     // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
-    try testing.expectEqual(@as(usize, 15), s.rowIndex(2));
+    try testing.expectEqual(@as(usize, 5), s.viewportRowIndex(0));
+    try testing.expectEqual(@as(usize, 10), s.viewportRowIndex(1));
+    try testing.expectEqual(@as(usize, 15), s.viewportRowIndex(2));
 
     {
         // Test our contents rotated
@@ -723,6 +821,26 @@ test "Screen: resize less cols" {
         var contents = try s.testString(alloc);
         defer alloc.free(contents);
         const expected = "1ABC\n2EFG\n3IJK";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        });
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJ";
         try testing.expectEqualStrings(expected, contents);
     }
 }
