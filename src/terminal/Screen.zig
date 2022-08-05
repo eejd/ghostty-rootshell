@@ -418,7 +418,10 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const 
     for (slices.top) |cell, idx| {
         // If our index cleanly divides into the col count then we're
         // at a newline and we add it.
-        if (idx > 0 and @mod(idx + slices.top_offset, self.cols) == 0) {
+        if (idx > 0 and
+            @mod(idx + slices.top_offset, self.cols) == 0 and
+            slices.top[idx - 1].attrs.wrap == 0)
+        {
             buf[i] = '\n';
             i += 1;
         }
@@ -432,8 +435,18 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![]const 
         // is never offset, it always starts at index 0 so we can just check
         // the index directly.
         if (@mod(idx, self.cols) == 0) {
-            buf[i] = '\n';
-            i += 1;
+            // Determine if we soft-wrapped. For the bottom slice this is
+            // a bit unique because if we're at idx 0, we actually need to
+            // check the end of the top.
+            const wrapped = if (idx > 0)
+                slices.bot[idx - 1].attrs.wrap == 1
+            else
+                slices.top[slices.top.len - 1].attrs.wrap == 1;
+
+            if (!wrapped) {
+                buf[i] = '\n';
+                i += 1;
+            }
         }
 
         const char = if (cell.char > 0) cell.char else ' ';
@@ -514,12 +527,14 @@ pub fn testString(self: Screen, alloc: Allocator) ![]const u8 {
 }
 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
-/// each row.
+/// each row. If a line is longer than the available columns, soft-wrapping
+/// will occur.
 fn testWriteString(self: *Screen, text: []const u8) void {
     var y: usize = 0;
     var x: usize = 0;
     var row = self.getRow(y);
     for (text) |c| {
+        // Explicit newline forces a new row
         if (c == '\n') {
             y += 1;
             x = 0;
@@ -527,7 +542,14 @@ fn testWriteString(self: *Screen, text: []const u8) void {
             continue;
         }
 
-        assert(x < self.cols);
+        // If we're writing past the end, we need to soft wrap.
+        if (x == self.cols) {
+            row[x - 1].attrs.wrap = 1;
+            y += 1;
+            x = 0;
+            row = self.getRow(y);
+        }
+
         row[x].char = @intCast(u32, c);
         x += 1;
     }
@@ -841,6 +863,26 @@ test "Screen: selectionString" {
         });
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD2EFGH3IJKL";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        });
+        defer alloc.free(contents);
+        const expected = "2EFGH3IJ";
         try testing.expectEqualStrings(expected, contents);
     }
 }
