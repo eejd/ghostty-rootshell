@@ -481,7 +481,8 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
     top: []Cell,
     bot: []Cell,
 } {
-    // TODO: test
+    // Note: this function is tested via selectionString
+
     assert(sel.start.y < self.totalRows());
     assert(sel.end.y < self.totalRows());
     assert(sel.start.x < self.cols);
