@@ -503,10 +503,14 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
 
     // The bottom and top are split into two slices, so we slice to the
     // bottom of the storage, then from the top.
+
+    // This the last row in the storage area, which is the total rows
+    // in the full storage minus the top offset minus 1 (due to 0-index).
+    const storage_bot = self.rowIndex(self.totalRows() - self.top - 1);
     return .{
         .top_offset = sel_top.x,
-        .top = self.storage[top + sel_top.x .. self.bottom + self.cols],
-        .bot = self.storage[0 .. bot + sel_bot.x],
+        .top = self.storage[top + sel_top.x .. storage_bot + self.cols],
+        .bot = self.storage[0 .. bot + sel_bot.x + 1],
     };
 }
 
@@ -895,6 +899,33 @@ test "Screen: selectionString soft wrap" {
         });
         defer alloc.free(contents);
         const expected = "2EFGH3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString wrap around" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Scroll down, should still be bottom, but should wrap because
+    // we're out of space.
+    s.scroll(.{ .delta = 1 });
+    try testing.expect(s.viewportIsBottom());
+    try testing.expectEqual(@as(usize, 0), s.viewportRowIndex(2));
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        });
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJ";
         try testing.expectEqualStrings(expected, contents);
     }
 }
