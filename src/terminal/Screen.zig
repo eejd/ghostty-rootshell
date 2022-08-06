@@ -361,6 +361,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
     // Reallocate the storage
     self.storage = try alloc.alloc(Cell, (rows + self.max_scrollback) * cols);
+    std.mem.set(Cell, self.storage, .{ .char = 0 });
     self.top = 0;
     self.bottom = rows;
     self.rows = rows;
