@@ -469,7 +469,10 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
 
     // Add null termination
     buf[i] = 0;
-    return buf[0..i :0];
+
+    // Realloc so our free length is exactly correct
+    const result = try alloc.realloc(buf, i + 1);
+    return result[0..i :0];
 }
 
 /// Returns the slices that make up the selection, in order. There are at most
