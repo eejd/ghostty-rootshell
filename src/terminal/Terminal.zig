@@ -525,6 +525,8 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 
     assert(self.modes.origin == 0); // TODO
 
+    if (self.status_display != .main) return; // TODO
+
     const col = if (col_req == 0) 1 else col_req;
     self.screen.cursor.x = @minimum(self.cols, col) - 1;
 }
