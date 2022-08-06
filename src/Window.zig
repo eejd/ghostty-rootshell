@@ -869,8 +869,13 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     const win = t.getData(Window).?;
 
     // Setup our cursor settings
-    win.grid.cursor_visible = win.terminal_cursor.visible and !win.terminal_cursor.blink;
-    win.grid.cursor_style = Grid.CursorStyle.fromTerminal(win.terminal_cursor.style) orelse .box;
+    if (win.focused) {
+        win.grid.cursor_visible = win.terminal_cursor.visible and !win.terminal_cursor.blink;
+        win.grid.cursor_style = Grid.CursorStyle.fromTerminal(win.terminal_cursor.style) orelse .box;
+    } else {
+        win.grid.cursor_visible = true;
+        win.grid.cursor_style = .box_hollow;
+    }
 
     // Calculate foreground and background colors
     const bg = win.grid.background;
