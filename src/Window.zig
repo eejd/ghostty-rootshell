@@ -777,12 +777,25 @@ fn cursorPosCallback(
 }
 
 fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
-    // Convert the mouse position to the viewport x/y
-    const cell_width = @floatCast(f64, self.grid.cell_size.width);
-    const cell_height = @floatCast(f64, self.grid.cell_size.height);
+    // xpos and ypos can be negative if while dragging, the user moves the
+    // mouse off the window. Likewise, they can be larger than our window
+    // width if the user drags out of the window positively.
     return .{
-        .x = @floatToInt(usize, xpos / cell_width),
-        .y = @floatToInt(usize, ypos / cell_height),
+        .x = if (xpos < 0) 0 else x: {
+            // Our cell is the mouse divided by cell width
+            const cell_width = @floatCast(f64, self.grid.cell_size.width);
+            const x = @floatToInt(usize, xpos / cell_width);
+
+            // Can be off the screen if the user drags it out, so max
+            // it out on our available columns
+            break :x @minimum(x, self.terminal.cols - 1);
+        },
+
+        .y = if (ypos < 0) 0 else y: {
+            const cell_height = @floatCast(f64, self.grid.cell_size.height);
+            const y = @floatToInt(usize, ypos / cell_height);
+            break :y @minimum(y, self.terminal.rows - 1);
+        },
     };
 }
 
