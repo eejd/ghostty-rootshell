@@ -35,3 +35,7 @@ Major Features:
 * Emoji
 * Ligatures
 * Bell
+* Mac:
+  - Enable retina framebuffer
+  - When retina, fonts need to be rendered 2x, they're blurry right now
+  - Switch to raw Cocoa and Metal instead of glfw and libuv (major!)
