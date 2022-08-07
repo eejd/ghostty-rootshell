@@ -444,12 +444,12 @@ pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
 pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     _ = cols;
 
-    // We always grow first so we don't lose any data.
-    var storage = self.storage;
+    // If the rows increased, we alloc space for the new rows (w/ existing cols)
+    // and move the viewport such that the bottom is in view.
     if (rows > self.rows) {
-        storage = try alloc.alloc(
+        var storage = try alloc.alloc(
             Cell,
-            (rows + self.max_scrollback) * cols,
+            (rows + self.max_scrollback) * self.cols,
         );
 
         // Copy our screen into the new storage area. Since we're growing
@@ -473,6 +473,44 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
         self.top = 0;
         self.bottom = @maximum(rows, self.bottom);
         self.scroll(.{ .bottom = {} });
+    }
+
+    // If our columns increased, we alloc space for the new column width
+    // and go through each row and reflow if necessary.
+    if (cols > self.cols) {
+        var storage = try alloc.alloc(
+            Cell,
+            (self.rows + self.max_scrollback) * cols,
+        );
+        std.mem.set(Cell, storage, .{ .char = 0 });
+
+        // Nothing can fail from this point forward (no "try" expressions)
+        // so replace our storage. We defer freeing the "old" value because
+        // we need to access the old screen to copy.
+        var old = self.*;
+        defer {
+            assert(old.storage.ptr != self.storage.ptr);
+            old.deinit(alloc);
+        }
+        self.storage = storage;
+        self.cols = cols;
+
+        // Iterate over the screen since we need to check for reflow.
+        var iter = old.rowIterator(.screen);
+        var y: usize = 0;
+        while (iter.next()) |row| {
+            // No matter what we copy this row
+            var new_row = self.getRow(.{ .screen = y });
+            std.mem.copy(Cell, new_row, row);
+
+            // If no reflow, just keep going
+            if (row[row.len - 1].attrs.wrap == 0) {
+                y += 1;
+                continue;
+            }
+
+            @panic("REFLOW");
+        }
     }
 }
 
@@ -1144,6 +1182,7 @@ test "Screen: resize more rows with empty scrollback" {
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
     try s.resize2(alloc, 10, 5);
+    try testing.expectEqual(@as(usize, 20), s.totalRows());
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1174,6 +1213,7 @@ test "Screen: resize more rows with populated scrollback" {
 
     // Resize
     try s.resize2(alloc, 10, 5);
+    try testing.expectEqual(@as(usize, 15), s.totalRows());
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1181,3 +1221,51 @@ test "Screen: resize more rows with populated scrollback" {
         try testing.expectEqualStrings(str, contents);
     }
 }
+
+test "Screen: resize more cols no reflow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    try s.resize2(alloc, 3, 10);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+// test "Screen: resize more cols with reflow that fits full width" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var s = try init(alloc, 3, 5, 0);
+//     defer s.deinit(alloc);
+//     const str = "1ABCD2EFGH\n3IJKL";
+//     s.testWriteString(str);
+//
+//     // Verify we soft wrapped
+//     {
+//         var contents = try s.testString(alloc, .viewport);
+//         defer alloc.free(contents);
+//         const expected = "1ABCD\n2EFGH\n3IJKL";
+//         try testing.expectEqualStrings(expected, contents);
+//     }
+//
+//     // Resize and verify we undid the soft wrap because we have space now
+//     try s.resize2(alloc, 3, 10);
+//     {
+//         var contents = try s.testString(alloc, .viewport);
+//         defer alloc.free(contents);
+//         try testing.expectEqualStrings(str, contents);
+//     }
+// }
