@@ -107,6 +107,11 @@ pub const RowIndex = union(enum) {
     /// on where the user has scrolled the viewport, "0" is different.
     viewport: usize,
 
+    /// The index is from the top of the active area. The active area is
+    /// always "rows" tall, and 0 is the top row. The active area is the
+    /// "edit-able" area where the terminal cursor is.
+    active: usize,
+
     // TODO: others
 };
 
@@ -204,7 +209,7 @@ pub fn getRow(self: Screen, idx: RowIndex) Row {
 pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
     assert(row < self.rows);
     assert(col < self.cols);
-    const row_idx = self.rowIndex(.{ .viewport = row });
+    const row_idx = self.rowIndex(.{ .active = row });
     return &self.storage[row_idx + col];
 }
 
@@ -220,6 +225,11 @@ fn rowIndex(self: Screen, idx: RowIndex) usize {
         .viewport => |y| y: {
             assert(y < self.rows);
             break :y y + self.visible_offset;
+        },
+
+        .active => |y| y: {
+            assert(y < self.rows);
+            break :y self.bottomOffset() + y;
         },
     };
 
@@ -369,8 +379,8 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
 
 /// Copy row at src to dst.
 pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
-    const src_row = self.getRow(.{ .viewport = src });
-    const dst_row = self.getRow(.{ .viewport = dst });
+    const src_row = self.getRow(.{ .active = src });
+    const dst_row = self.getRow(.{ .active = dst });
     std.mem.copy(Cell, dst_row, src_row);
 }
 
@@ -581,13 +591,13 @@ pub fn testString(self: Screen, alloc: Allocator) ![]const u8 {
 fn testWriteString(self: *Screen, text: []const u8) void {
     var y: usize = 0;
     var x: usize = 0;
-    var row = self.getRow(.{ .viewport = y });
+    var row = self.getRow(.{ .active = y });
     for (text) |c| {
         // Explicit newline forces a new row
         if (c == '\n') {
             y += 1;
             x = 0;
-            row = self.getRow(.{ .viewport = y });
+            row = self.getRow(.{ .active = y });
             continue;
         }
 
@@ -596,7 +606,7 @@ fn testWriteString(self: *Screen, text: []const u8) void {
             row[x - 1].attrs.wrap = 1;
             y += 1;
             x = 0;
-            row = self.getRow(.{ .viewport = y });
+            row = self.getRow(.{ .active = y });
         }
 
         row[x].char = @intCast(u32, c);
@@ -647,9 +657,9 @@ test "Screen: scrolling" {
     try testing.expect(s.viewportIsBottom());
 
     // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .viewport = 0 }));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .viewport = 1 }));
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .viewport = 2 }));
+    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .active = 0 }));
+    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .active = 1 }));
+    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .active = 2 }));
 
     {
         // Test our contents rotated
@@ -718,9 +728,9 @@ test "Screen: scrollback" {
     s.scroll(.{ .delta = 1 });
 
     // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .viewport = 0 }));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .viewport = 1 }));
-    try testing.expectEqual(@as(usize, 15), s.rowIndex(.{ .viewport = 2 }));
+    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .active = 0 }));
+    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .active = 1 }));
+    try testing.expectEqual(@as(usize, 15), s.rowIndex(.{ .active = 2 }));
 
     {
         // Test our contents rotated
@@ -949,7 +959,7 @@ test "Screen: selectionString wrap around" {
     // we're out of space.
     s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .viewport = 2 }));
+    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .active = 2 }));
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     {
