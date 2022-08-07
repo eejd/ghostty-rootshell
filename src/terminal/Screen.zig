@@ -441,6 +441,51 @@ pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
 ///
 /// This will trim data if the size is getting smaller. This will reflow the
 /// soft wrapped text.
+pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
+    _ = cols;
+
+    // We always grow first so we don't lose any data.
+    var storage = self.storage;
+    if (rows > self.rows) {
+        storage = try alloc.alloc(
+            Cell,
+            (rows + self.max_scrollback) * cols,
+        );
+
+        // Copy our screen into the new storage area. Since we're growing
+        // rows, we know that the full buffer will fit so we copy it in
+        // order.
+        const reg = self.region(.screen);
+        std.mem.copy(Cell, storage, reg[0]);
+        std.mem.copy(Cell, storage[reg[0].len..], reg[1]);
+        std.mem.set(Cell, storage[reg[0].len + reg[1].len ..], .{ .char = 0 });
+
+        // Modify our storage, our lines have grown
+        alloc.free(self.storage);
+        self.storage = storage;
+
+        // Fix our row count
+        self.rows = rows;
+
+        // Top is now 0 because we reoriented the ring buffer to be ordered.
+        // Bottom must be at least "rows" since we always show at least that
+        // much in the viewport.
+        self.top = 0;
+        self.bottom = @maximum(rows, self.bottom);
+        self.scroll(.{ .bottom = {} });
+    }
+}
+
+/// Resize the screen. The rows or cols can be bigger or smaller. This
+/// function can only be used to resize the viewport. The scrollback size
+/// (in lines) can't be changed. But due to the resize, more or less scrollback
+/// "space" becomes available due to the width of lines.
+///
+/// Due to the internal representation of a screen, this usually involves a
+/// significant amount of copying compared to any other operations.
+///
+/// This will trim data if the size is getting smaller. This will reflow the
+/// soft wrapped text.
 pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     // We do this in a pretty inefficient way because this implementation
     // is easier and resizing is relatively rare. I welcome anyone to improve
@@ -608,13 +653,15 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
     };
 }
 
-/// Turns the screen into a string.
-pub fn testString(self: Screen, alloc: Allocator) ![]const u8 {
+/// Turns the screen into a string. Different regions of the screen can
+/// be selected using the "tag", i.e. if you want to output the viewport,
+/// the scrollback, the full screen, etc.
+pub fn testString(self: Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 {
     const buf = try alloc.alloc(u8, self.storage.len + self.rows);
 
     var i: usize = 0;
     var y: usize = 0;
-    var rows = self.rowIterator(.viewport);
+    var rows = self.rowIterator(tag);
     while (rows.next()) |row| {
         defer y += 1;
 
@@ -642,15 +689,22 @@ pub fn testString(self: Screen, alloc: Allocator) ![]const u8 {
 fn testWriteString(self: *Screen, text: []const u8) void {
     var y: usize = 0;
     var x: usize = 0;
-    var row = self.getRow(.{ .active = y });
     for (text) |c| {
         // Explicit newline forces a new row
         if (c == '\n') {
             y += 1;
             x = 0;
-            row = self.getRow(.{ .active = y });
             continue;
         }
+
+        // If we're writing past the end of the active area, scroll.
+        if (y >= self.rows) {
+            y -= 1;
+            self.scroll(.{ .delta = 1 });
+        }
+
+        // Get our row
+        var row = self.getRow(.{ .active = y });
 
         // If we're writing past the end, we need to soft wrap.
         if (x == self.cols) {
@@ -676,7 +730,7 @@ test "Screen" {
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
@@ -699,7 +753,7 @@ test "Screen" {
     std.mem.set(Cell, reg[0], .{ .char = 'A' });
     std.mem.set(Cell, reg[1], .{ .char = 'A' });
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings("AAAAA\nAAAAA\nAAAAA", contents);
     }
@@ -726,7 +780,7 @@ test "Screen: scrolling" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -736,7 +790,7 @@ test "Screen: scrolling" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -775,7 +829,7 @@ test "Screen: scroll down from 0" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
@@ -797,7 +851,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -808,7 +862,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -819,7 +873,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
@@ -829,7 +883,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
@@ -839,7 +893,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -849,7 +903,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -859,7 +913,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
@@ -869,7 +923,7 @@ test "Screen: scrollback" {
     std.mem.set(Cell, reg[0], .{ .char = 0 });
     std.mem.set(Cell, reg[1], .{ .char = 0 });
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD", contents);
     }
@@ -879,7 +933,7 @@ test "Screen: scrollback" {
 
     {
         // Test our contents rotated
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("", contents);
     }
@@ -896,7 +950,7 @@ test "Screen: scrollback empty" {
 
     {
         // Test our contents
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
@@ -915,7 +969,7 @@ test "Screen: row copy" {
     s.copyRow(2, 0);
 
     // Test our contents
-    var contents = try s.testString(alloc);
+    var contents = try s.testString(alloc, .viewport);
     defer alloc.free(contents);
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
 }
@@ -931,7 +985,7 @@ test "Screen: resize more rows" {
     try s.resize(alloc, 10, 5);
 
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
@@ -948,7 +1002,7 @@ test "Screen: resize less rows" {
     try s.resize(alloc, 2, 5);
 
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
@@ -965,7 +1019,7 @@ test "Screen: resize more cols" {
     try s.resize(alloc, 3, 10);
 
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
@@ -982,7 +1036,7 @@ test "Screen: resize less cols" {
     try s.resize(alloc, 3, 4);
 
     {
-        var contents = try s.testString(alloc);
+        var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         const expected = "1ABC\n2EFG\n3IJK";
         try testing.expectEqualStrings(expected, contents);
@@ -1053,5 +1107,77 @@ test "Screen: selectionString wrap around" {
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJ";
         try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// NEW RESIZE TESTS
+
+test "Screen: resize more rows no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    try s.resize2(alloc, 10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more rows with empty scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    try s.resize2(alloc, 10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more rows with populated scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize
+    try s.resize2(alloc, 10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
     }
 }

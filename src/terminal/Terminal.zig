@@ -252,7 +252,7 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
 ///
 /// The caller must free the string.
 pub fn plainString(self: Terminal, alloc: Allocator) ![]const u8 {
-    return try self.screen.testString(alloc);
+    return try self.screen.testString(alloc, .viewport);
 }
 
 /// Save cursor position and further state.
