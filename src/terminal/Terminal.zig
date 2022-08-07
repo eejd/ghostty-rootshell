@@ -383,7 +383,7 @@ pub fn decaln(self: *Terminal) void {
 
     // Fill with Es, does not move cursor. We reset fg/bg so we can just
     // optimize here by doing row copies.
-    const filled = self.screen.getRow(0);
+    const filled = self.screen.getRow(.{ .viewport = 0 });
     var col: usize = 0;
     while (col < self.cols) : (col += 1) {
         filled[col] = .{ .char = 'E' };
@@ -391,7 +391,7 @@ pub fn decaln(self: *Terminal) void {
 
     var row: usize = 1;
     while (row < self.rows) : (row += 1) {
-        std.mem.copy(Screen.Cell, self.screen.getRow(row), filled);
+        std.mem.copy(Screen.Cell, self.screen.getRow(.{ .viewport = row }), filled);
     }
 }
 
@@ -615,12 +615,12 @@ pub fn eraseLine(
 
     switch (mode) {
         .right => {
-            const row = self.screen.getRow(self.screen.cursor.y);
+            const row = self.screen.getRow(.{ .viewport = self.screen.cursor.y });
             std.mem.set(Screen.Cell, row[self.screen.cursor.x..], self.screen.cursor.pen);
         },
 
         .left => {
-            const row = self.screen.getRow(self.screen.cursor.y);
+            const row = self.screen.getRow(.{ .viewport = self.screen.cursor.y });
             std.mem.set(Screen.Cell, row[0 .. self.screen.cursor.x + 1], self.screen.cursor.pen);
 
             // Unsets pending wrap state
@@ -628,7 +628,7 @@ pub fn eraseLine(
         },
 
         .complete => {
-            const row = self.screen.getRow(self.screen.cursor.y);
+            const row = self.screen.getRow(.{ .viewport = self.screen.cursor.y });
             std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
         },
 
@@ -821,7 +821,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     }
 
     // Get the current row
-    const row = self.screen.getRow(self.screen.cursor.y);
+    const row = self.screen.getRow(.{ .viewport = self.screen.cursor.y });
 
     // Determine our indexes.
     const start = self.screen.cursor.x;
@@ -943,7 +943,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     }
 
     while (y <= self.scrolling_region.bottom) : (y += 1) {
-        const row = self.screen.getRow(y);
+        const row = self.screen.getRow(.{ .viewport = y });
         std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
     }
 }

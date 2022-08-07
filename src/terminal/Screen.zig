@@ -86,11 +86,32 @@ pub const RowIterator = struct {
 
     pub fn next(self: *RowIterator) ?Row {
         if (self.index >= self.screen.rows) return null;
-        const res = self.screen.getRow(self.index);
+        const res = self.screen.getRow(.{ .viewport = self.index });
         self.index += 1;
         return res;
     }
 };
+
+/// RowIndex represents a row within the screen. There are various meanings
+/// of a row index and this union represents the available types. For example,
+/// when talking about row "0" you may want the first row in the viewport,
+/// the first row in the scrollback, or the first row in the active area.
+///
+/// All row indexes are 0-indexed.
+pub const RowIndex = union(enum) {
+    /// The index is from the top of the screen. The screen includes all
+    /// the history.
+    screen: usize,
+
+    /// The index is from the top of the viewport. Therefore, depending
+    /// on where the user has scrolled the viewport, "0" is different.
+    viewport: usize,
+
+    // TODO: others
+};
+
+/// The tags of RowIndex
+pub const RowIndexType = std.meta.FieldEnum(RowIndex);
 
 /// Each screen maintains its own cursor state.
 cursor: Cursor = .{},
@@ -171,9 +192,9 @@ pub fn getVisible(self: Screen) []Cell {
 }
 
 /// Get a single row in the active area by index (0-indexed).
-pub fn getRow(self: Screen, idx: usize) Row {
+pub fn getRow(self: Screen, idx: RowIndex) Row {
     // Get the index of the first byte of the the row at index.
-    const real_idx = self.viewportRowIndex(idx);
+    const real_idx = self.rowIndex(idx);
 
     // The storage is sliced to return exactly the number of columns.
     return self.storage[real_idx .. real_idx + self.cols];
@@ -183,21 +204,25 @@ pub fn getRow(self: Screen, idx: usize) Row {
 pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
     assert(row < self.rows);
     assert(col < self.cols);
-    const row_idx = self.viewportRowIndex(row);
+    const row_idx = self.rowIndex(.{ .viewport = row });
     return &self.storage[row_idx + col];
 }
 
 /// Returns the index for the given row (0-indexed) into the underlying
-/// storage array. The row is 0-indexed from the top of the viewport.
-fn viewportRowIndex(self: Screen, idx: usize) usize {
-    assert(idx < self.rows);
-    return self.rowIndex(self.visible_offset + idx);
-}
-
-/// Returns the index for the given row (0-indexed) into the underlying
 /// storage array. The row is 0-indexed from the top of the screen.
-fn rowIndex(self: Screen, y: usize) usize {
-    assert(y < self.totalRows());
+fn rowIndex(self: Screen, idx: RowIndex) usize {
+    const y = switch (idx) {
+        .screen => |y| y: {
+            assert(y < self.totalRows());
+            break :y y;
+        },
+
+        .viewport => |y| y: {
+            assert(y < self.rows);
+            break :y y + self.visible_offset;
+        },
+    };
+
     const val = (self.top + y) * self.cols;
     if (val < self.storage.len) return val;
     return val - self.storage.len;
@@ -344,18 +369,28 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
 
 /// Copy row at src to dst.
 pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
-    const src_row = self.getRow(src);
-    const dst_row = self.getRow(dst);
+    const src_row = self.getRow(.{ .viewport = src });
+    const dst_row = self.getRow(.{ .viewport = dst });
     std.mem.copy(Cell, dst_row, src_row);
 }
 
-/// Resize the screen. The rows or cols can be bigger or smaller. Due to
-/// the internal representation of a screen, this usually involves a significant
-/// amount of copying compared to any other operations.
+/// Resize the screen. The rows or cols can be bigger or smaller. This
+/// function can only be used to resize the viewport. The scrollback size
+/// (in lines) can't be changed. But due to the resize, more or less scrollback
+/// "space" becomes available due to the width of lines.
 ///
-/// This will trim data if the size is getting smaller. It is expected that
-/// callers will reflow the text prior to calling this.
+/// Due to the internal representation of a screen, this usually involves a
+/// significant amount of copying compared to any other operations.
+///
+/// This will trim data if the size is getting smaller. This will reflow the
+/// soft wrapped text.
 pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
+    // We do this in a pretty inefficient way because this implementation
+    // is easier and resizing is relatively rare. I welcome anyone to improve
+    // on this! Our naive approach is to just iterate over the entire screen
+    // (including scrollback) and reflow the entire thing by rewriting it.
+    // TODO: above not implemented yet
+
     // Make a copy so we can access the old indexes.
     const old = self.*;
 
@@ -381,8 +416,8 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     while (y < old.rows) : (y += 1) {
         // Copy the old row into the new row, just losing the columsn
         // if we got thinner.
-        const old_row = old.getRow(y);
-        const new_row = self.getRow(y - start);
+        const old_row = old.getRow(.{ .viewport = y });
+        const new_row = self.getRow(.{ .viewport = y - start });
         std.mem.copy(Cell, new_row, old_row[0..col_end]);
 
         // If our new row is wider, then we copy zeroes into the rest.
@@ -393,7 +428,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
     // If we grew rows, then set the remaining data to zero.
     if (rows > old.rows) {
-        std.mem.set(Cell, self.storage[self.viewportRowIndex(old.rows)..], .{ .char = 0 });
+        std.mem.set(Cell, self.storage[self.rowIndex(.{ .viewport = old.rows })..], .{ .char = 0 });
     }
 
     // Free the old data
@@ -491,8 +526,8 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
     // Get the true "top" and "bottom"
     const sel_top = sel.topLeft();
     const sel_bot = sel.bottomRight();
-    const top = self.rowIndex(sel_top.y);
-    const bot = self.rowIndex(sel_bot.y);
+    const top = self.rowIndex(.{ .screen = sel_top.y });
+    const bot = self.rowIndex(.{ .screen = sel_bot.y });
 
     // The bottom and top are available in one contiguous slice.
     if (bot >= top) {
@@ -546,13 +581,13 @@ pub fn testString(self: Screen, alloc: Allocator) ![]const u8 {
 fn testWriteString(self: *Screen, text: []const u8) void {
     var y: usize = 0;
     var x: usize = 0;
-    var row = self.getRow(y);
+    var row = self.getRow(.{ .viewport = y });
     for (text) |c| {
         // Explicit newline forces a new row
         if (c == '\n') {
             y += 1;
             x = 0;
-            row = self.getRow(y);
+            row = self.getRow(.{ .viewport = y });
             continue;
         }
 
@@ -561,7 +596,7 @@ fn testWriteString(self: *Screen, text: []const u8) void {
             row[x - 1].attrs.wrap = 1;
             y += 1;
             x = 0;
-            row = self.getRow(y);
+            row = self.getRow(.{ .viewport = y });
         }
 
         row[x].char = @intCast(u32, c);
@@ -588,7 +623,7 @@ test "Screen" {
     var iter = s.rowIterator();
     while (iter.next()) |row| {
         // Rows should be pointer equivalent to getRow
-        const row_other = s.getRow(count);
+        const row_other = s.getRow(.{ .viewport = count });
         try testing.expectEqual(row.ptr, row_other.ptr);
         count += 1;
     }
@@ -612,9 +647,9 @@ test "Screen: scrolling" {
     try testing.expect(s.viewportIsBottom());
 
     // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.viewportRowIndex(0));
-    try testing.expectEqual(@as(usize, 10), s.viewportRowIndex(1));
-    try testing.expectEqual(@as(usize, 0), s.viewportRowIndex(2));
+    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .viewport = 0 }));
+    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .viewport = 1 }));
+    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .viewport = 2 }));
 
     {
         // Test our contents rotated
@@ -650,9 +685,9 @@ test "Screen: scrolling" {
 //     try testing.expect(s.viewportIsBottom());
 //
 //     // Test our row index
-//     try testing.expectEqual(@as(usize, 5), s.viewportRowIndex(0));
-//     try testing.expectEqual(@as(usize, 10), s.viewportRowIndex(1));
-//     try testing.expectEqual(@as(usize, 15), s.viewportRowIndex(2));
+//     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
+//     try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
+//     try testing.expectEqual(@as(usize, 15), s.rowIndex(2));
 // }
 
 test "Screen: scroll down from 0" {
@@ -683,9 +718,9 @@ test "Screen: scrollback" {
     s.scroll(.{ .delta = 1 });
 
     // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.viewportRowIndex(0));
-    try testing.expectEqual(@as(usize, 10), s.viewportRowIndex(1));
-    try testing.expectEqual(@as(usize, 15), s.viewportRowIndex(2));
+    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .viewport = 0 }));
+    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .viewport = 1 }));
+    try testing.expectEqual(@as(usize, 15), s.rowIndex(.{ .viewport = 2 }));
 
     {
         // Test our contents rotated
@@ -914,7 +949,7 @@ test "Screen: selectionString wrap around" {
     // we're out of space.
     s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
-    try testing.expectEqual(@as(usize, 0), s.viewportRowIndex(2));
+    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .viewport = 2 }));
     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     {
