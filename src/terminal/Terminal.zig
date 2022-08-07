@@ -339,9 +339,6 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
-    // If we're not at the bottom, then we need to move there
-    if (!self.screen.viewportIsBottom()) self.screen.scroll(.{ .bottom = {} });
-
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1) {
         // Mark that the cell is wrapped, which guarantees that there is
@@ -383,7 +380,7 @@ pub fn decaln(self: *Terminal) void {
 
     // Fill with Es, does not move cursor. We reset fg/bg so we can just
     // optimize here by doing row copies.
-    const filled = self.screen.getRow(0);
+    const filled = self.screen.getRow(.{ .active = 0 });
     var col: usize = 0;
     while (col < self.cols) : (col += 1) {
         filled[col] = .{ .char = 'E' };
@@ -391,7 +388,7 @@ pub fn decaln(self: *Terminal) void {
 
     var row: usize = 1;
     while (row < self.rows) : (row += 1) {
-        std.mem.copy(Screen.Cell, self.screen.getRow(row), filled);
+        std.mem.copy(Screen.Cell, self.screen.getRow(.{ .active = row }), filled);
     }
 }
 
@@ -542,8 +539,9 @@ pub fn eraseDisplay(
 
     switch (mode) {
         .complete => {
-            const all = self.screen.getVisible();
-            std.mem.set(Screen.Cell, all, self.screen.cursor.pen);
+            const region = self.screen.region(.active);
+            std.mem.set(Screen.Cell, region[0], self.screen.cursor.pen);
+            std.mem.set(Screen.Cell, region[1], self.screen.cursor.pen);
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
@@ -615,12 +613,12 @@ pub fn eraseLine(
 
     switch (mode) {
         .right => {
-            const row = self.screen.getRow(self.screen.cursor.y);
+            const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
             std.mem.set(Screen.Cell, row[self.screen.cursor.x..], self.screen.cursor.pen);
         },
 
         .left => {
-            const row = self.screen.getRow(self.screen.cursor.y);
+            const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
             std.mem.set(Screen.Cell, row[0 .. self.screen.cursor.x + 1], self.screen.cursor.pen);
 
             // Unsets pending wrap state
@@ -628,7 +626,7 @@ pub fn eraseLine(
         },
 
         .complete => {
-            const row = self.screen.getRow(self.screen.cursor.y);
+            const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
             std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
         },
 
@@ -653,7 +651,7 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    const line = self.screen.getRow(self.screen.cursor.y);
+    const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
 
     // Our last index is at most the end of the number of chars we have
     // in the current line.
@@ -821,7 +819,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     }
 
     // Get the current row
-    const row = self.screen.getRow(self.screen.cursor.y);
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
 
     // Determine our indexes.
     const start = self.screen.cursor.x;
@@ -943,7 +941,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     }
 
     while (y <= self.scrolling_region.bottom) : (y += 1) {
-        const row = self.screen.getRow(y);
+        const row = self.screen.getRow(.{ .active = y });
         std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
     }
 }
@@ -985,6 +983,10 @@ pub fn scrollUp(self: *Terminal, count: usize) void {
 pub const ScrollViewport = union(enum) {
     /// Scroll to the top of the scrollback
     top: void,
+
+    /// Scroll to the bottom, i.e. the top of the active area
+    bottom: void,
+
     delta: isize,
 };
 
@@ -995,6 +997,7 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) void {
 
     self.screen.scroll(switch (behavior) {
         .top => .{ .top = {} },
+        .bottom => .{ .bottom = {} },
         .delta => |delta| .{ .delta_no_grow = delta },
     });
 }
@@ -1067,7 +1070,7 @@ test "Terminal: soft wrap" {
     }
 }
 
-test "Terminal: print scrolls back to bottom" {
+test "Terminal: print writes to bottom if scrolled" {
     var t = try init(testing.allocator, 5, 2);
     defer t.deinit(testing.allocator);
 
@@ -1095,6 +1098,7 @@ test "Terminal: print scrolls back to bottom" {
 
     // Type
     try t.print('A');
+    t.scrollViewport(.{ .bottom = {} });
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
