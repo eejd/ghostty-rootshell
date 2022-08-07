@@ -539,8 +539,9 @@ pub fn eraseDisplay(
 
     switch (mode) {
         .complete => {
-            const all = self.screen.getVisible();
-            std.mem.set(Screen.Cell, all, self.screen.cursor.pen);
+            const region = self.screen.region(.active);
+            std.mem.set(Screen.Cell, region[0], self.screen.cursor.pen);
+            std.mem.set(Screen.Cell, region[1], self.screen.cursor.pen);
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;

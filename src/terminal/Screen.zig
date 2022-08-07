@@ -86,7 +86,7 @@ pub const RowIterator = struct {
     value: usize = 0,
 
     pub fn next(self: *RowIterator) ?Row {
-        if (self.value >= self.tag.max(self.screen)) return null;
+        if (self.value > self.tag.max(self.screen)) return null;
         const idx = self.tag.index(self.value);
         const res = self.screen.getRow(idx);
         self.value += 1;
@@ -129,7 +129,7 @@ pub const RowIndexTag = enum {
             .screen => screen.totalRows(),
             .viewport => screen.rows,
             .active => screen.rows,
-        };
+        } - 1;
     }
 
     /// Construct a RowIndex from a tag.
@@ -216,9 +216,31 @@ pub fn rowIterator(self: *const Screen, tag: RowIndexTag) RowIterator {
     return .{ .screen = self, .tag = tag };
 }
 
-/// Get the visible portion of the screen.
-pub fn getVisible(self: Screen) []Cell {
-    return self.storage;
+/// Region gets the contiguous portions of memory that constitute an
+/// entire region. This is an efficient way to clear regions, for example
+/// since you can memcpy directly into it.
+///
+/// This has two elements because internally we use a ring buffer and
+/// so any region can be split into two if it crosses the ring buffer
+/// boundary.
+pub fn region(self: *const Screen, tag: RowIndexTag) [2][]Cell {
+    const top = self.rowIndex(tag.index(0));
+    const bot = self.rowIndex(tag.index(tag.max(self)));
+
+    // The bottom and top are available in one contiguous slice.
+    if (bot >= top) {
+        return .{
+            self.storage[top .. bot + self.cols],
+            self.storage[0..0], // just so its a valid slice, but zero length
+        };
+    }
+
+    // The bottom and top are split into two slices, so we slice to the
+    // bottom of the storage, then from the top.
+    return .{
+        self.storage[top..self.storage.len],
+        self.storage[0 .. bot + self.cols],
+    };
 }
 
 /// Get a single row in the active area by index (0-indexed).
@@ -649,9 +671,11 @@ test "Screen" {
     // Sanity check that our test helpers work
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
-    var contents = try s.testString(alloc);
-    defer alloc.free(contents);
-    try testing.expectEqualStrings(str, contents);
+    {
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
 
     // Test the row iterator
     var count: usize = 0;
@@ -665,6 +689,16 @@ test "Screen" {
 
     // Should go through all rows
     try testing.expectEqual(@as(usize, 3), count);
+
+    // Should be able to easily clear screen
+    const reg = s.region(.viewport);
+    std.mem.set(Cell, reg[0], .{ .char = 'A' });
+    std.mem.set(Cell, reg[1], .{ .char = 'A' });
+    {
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("AAAAA\nAAAAA\nAAAAA", contents);
+    }
 }
 
 test "Screen: scrolling" {
@@ -824,6 +858,26 @@ test "Screen: scrollback" {
         var contents = try s.testString(alloc);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Should be able to easily clear active area only
+    const reg = s.region(.active);
+    std.mem.set(Cell, reg[0], .{ .char = 0 });
+    std.mem.set(Cell, reg[1], .{ .char = 0 });
+    {
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD", contents);
+    }
+
+    // Scrolling to the bottom
+    s.scroll(.{ .bottom = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
     }
 }
 
