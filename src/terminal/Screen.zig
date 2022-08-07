@@ -82,12 +82,14 @@ pub const Cell = struct {
 
 pub const RowIterator = struct {
     screen: *const Screen,
-    index: usize,
+    tag: RowIndexTag,
+    value: usize = 0,
 
     pub fn next(self: *RowIterator) ?Row {
-        if (self.index >= self.screen.rows) return null;
-        const res = self.screen.getRow(.{ .viewport = self.index });
-        self.index += 1;
+        if (self.value >= self.tag.max(self.screen)) return null;
+        const idx = self.tag.index(self.value);
+        const res = self.screen.getRow(idx);
+        self.value += 1;
         return res;
     }
 };
@@ -98,7 +100,7 @@ pub const RowIterator = struct {
 /// the first row in the scrollback, or the first row in the active area.
 ///
 /// All row indexes are 0-indexed.
-pub const RowIndex = union(enum) {
+pub const RowIndex = union(RowIndexTag) {
     /// The index is from the top of the screen. The screen includes all
     /// the history.
     screen: usize,
@@ -116,7 +118,29 @@ pub const RowIndex = union(enum) {
 };
 
 /// The tags of RowIndex
-pub const RowIndexType = std.meta.FieldEnum(RowIndex);
+pub const RowIndexTag = enum {
+    screen,
+    viewport,
+    active,
+
+    /// The max value for the given tag.
+    pub fn max(self: RowIndexTag, screen: *const Screen) usize {
+        return switch (self) {
+            .screen => screen.totalRows(),
+            .viewport => screen.rows,
+            .active => screen.rows,
+        };
+    }
+
+    /// Construct a RowIndex from a tag.
+    pub fn index(self: RowIndexTag, value: usize) RowIndex {
+        return switch (self) {
+            .screen => .{ .screen = value },
+            .viewport => .{ .viewport = value },
+            .active => .{ .active = value },
+        };
+    }
+};
 
 /// Each screen maintains its own cursor state.
 cursor: Cursor = .{},
@@ -186,9 +210,10 @@ fn bottomOffset(self: Screen) usize {
 }
 
 /// Returns an iterator that can be used to iterate over all of the rows
-/// from index zero.
-pub fn rowIterator(self: *const Screen) RowIterator {
-    return .{ .screen = self, .index = 0 };
+/// from index zero of the given row index type. This can therefore iterate
+/// from row 0 of the active area, history, viewport, etc.
+pub fn rowIterator(self: *const Screen, tag: RowIndexTag) RowIterator {
+    return .{ .screen = self, .tag = tag };
 }
 
 /// Get the visible portion of the screen.
@@ -563,7 +588,7 @@ pub fn testString(self: Screen, alloc: Allocator) ![]const u8 {
 
     var i: usize = 0;
     var y: usize = 0;
-    var rows = self.rowIterator();
+    var rows = self.rowIterator(.viewport);
     while (rows.next()) |row| {
         defer y += 1;
 
@@ -630,7 +655,7 @@ test "Screen" {
 
     // Test the row iterator
     var count: usize = 0;
-    var iter = s.rowIterator();
+    var iter = s.rowIterator(.viewport);
     while (iter.next()) |row| {
         // Rows should be pointer equivalent to getRow
         const row_other = s.getRow(.{ .viewport = count });

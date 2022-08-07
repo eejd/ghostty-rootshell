@@ -282,7 +282,7 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
     );
 
     // Build each cell
-    var rowIter = term.screen.rowIterator();
+    var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
     while (rowIter.next()) |line| {
         defer y += 1;
