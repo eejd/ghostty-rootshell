@@ -444,7 +444,7 @@ pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
 ///
 /// This will trim data if the size is getting smaller. This will reflow the
 /// soft wrapped text.
-pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
+pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
     // If the rows increased, we alloc space for the new rows (w/ existing cols)
     // and move the viewport such that the bottom is in view.
     if (rows > self.rows) {
@@ -667,68 +667,6 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
             }
         }
     }
-}
-
-/// Resize the screen. The rows or cols can be bigger or smaller. This
-/// function can only be used to resize the viewport. The scrollback size
-/// (in lines) can't be changed. But due to the resize, more or less scrollback
-/// "space" becomes available due to the width of lines.
-///
-/// Due to the internal representation of a screen, this usually involves a
-/// significant amount of copying compared to any other operations.
-///
-/// This will trim data if the size is getting smaller. This will reflow the
-/// soft wrapped text.
-pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
-    // We do this in a pretty inefficient way because this implementation
-    // is easier and resizing is relatively rare. I welcome anyone to improve
-    // on this! Our naive approach is to just iterate over the entire screen
-    // (including scrollback) and reflow the entire thing by rewriting it.
-    // TODO: above not implemented yet
-
-    // Make a copy so we can access the old indexes.
-    const old = self.*;
-
-    // Reallocate the storage
-    self.storage = try alloc.alloc(Cell, (rows + self.max_scrollback) * cols);
-    std.mem.set(Cell, self.storage, .{ .char = 0 });
-    self.top = 0;
-    self.bottom = rows;
-    self.rows = rows;
-    self.cols = cols;
-
-    // Move our cursor if we have to so it stays on the screen.
-    self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
-    self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
-
-    // TODO: reflow due to soft wrap
-
-    // If we're increasing height, then copy all rows (start at 0).
-    // Otherwise start at the latest row that includes the bottom row,
-    // aka strip the top.
-    var y: usize = if (rows >= old.rows) 0 else old.rows - rows;
-    const start = y;
-    const col_end = @minimum(old.cols, cols);
-    while (y < old.rows) : (y += 1) {
-        // Copy the old row into the new row, just losing the columsn
-        // if we got thinner.
-        const old_row = old.getRow(.{ .viewport = y });
-        const new_row = self.getRow(.{ .viewport = y - start });
-        std.mem.copy(Cell, new_row, old_row[0..col_end]);
-
-        // If our new row is wider, then we copy zeroes into the rest.
-        if (new_row.len > old_row.len) {
-            std.mem.set(Cell, new_row[old_row.len..], .{ .char = 0 });
-        }
-    }
-
-    // If we grew rows, then set the remaining data to zero.
-    if (rows > old.rows) {
-        std.mem.set(Cell, self.storage[self.rowIndex(.{ .viewport = old.rows })..], .{ .char = 0 });
-    }
-
-    // Free the old data
-    alloc.free(old.storage);
 }
 
 /// Returns the raw text associated with a selection. This will unwrap
@@ -1167,75 +1105,6 @@ test "Screen: row copy" {
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
 }
 
-test "Screen: resize more rows" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resize(alloc, 10, 5);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
-    }
-}
-
-test "Screen: resize less rows" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resize(alloc, 2, 5);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
-    }
-}
-
-test "Screen: resize more cols" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resize(alloc, 3, 10);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
-    }
-}
-
-test "Screen: resize less cols" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resize(alloc, 3, 4);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        const expected = "1ABC\n2EFG\n3IJK";
-        try testing.expectEqualStrings(expected, contents);
-    }
-}
-
 test "Screen: selectionString" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1303,9 +1172,6 @@ test "Screen: selectionString wrap around" {
     }
 }
 
-// ----------------------------------------------------------------------------
-// NEW RESIZE TESTS
-
 test "Screen: resize more rows no scrollback" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1314,7 +1180,7 @@ test "Screen: resize more rows no scrollback" {
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
-    try s.resize2(alloc, 10, 5);
+    try s.resize(alloc, 10, 5);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1336,7 +1202,7 @@ test "Screen: resize more rows with empty scrollback" {
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
-    try s.resize2(alloc, 10, 5);
+    try s.resize(alloc, 10, 5);
     try testing.expectEqual(@as(usize, 20), s.totalRows());
 
     {
@@ -1367,7 +1233,7 @@ test "Screen: resize more rows with populated scrollback" {
     }
 
     // Resize
-    try s.resize2(alloc, 10, 5);
+    try s.resize(alloc, 10, 5);
     try testing.expectEqual(@as(usize, 15), s.totalRows());
 
     {
@@ -1385,7 +1251,7 @@ test "Screen: resize more cols no reflow" {
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
-    try s.resize2(alloc, 3, 10);
+    try s.resize(alloc, 3, 10);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1417,7 +1283,7 @@ test "Screen: resize more cols with reflow that fits full width" {
     }
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize2(alloc, 3, 10);
+    try s.resize(alloc, 3, 10);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1443,7 +1309,7 @@ test "Screen: resize more cols with reflow that forces more wrapping" {
     }
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize2(alloc, 3, 7);
+    try s.resize(alloc, 3, 7);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1470,7 +1336,7 @@ test "Screen: resize more cols with reflow that unwraps multiple times" {
     }
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize2(alloc, 3, 15);
+    try s.resize(alloc, 3, 15);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1487,7 +1353,7 @@ test "Screen: resize less rows no scrollback" {
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
-    try s.resize2(alloc, 1, 5);
+    try s.resize(alloc, 1, 5);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1511,7 +1377,7 @@ test "Screen: resize less rows with empty scrollback" {
     defer s.deinit(alloc);
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
-    try s.resize2(alloc, 1, 5);
+    try s.resize(alloc, 1, 5);
 
     {
         var contents = try s.testString(alloc, .screen);
@@ -1542,7 +1408,7 @@ test "Screen: resize less rows with populated scrollback" {
     }
 
     // Resize
-    try s.resize2(alloc, 1, 5);
+    try s.resize(alloc, 1, 5);
 
     {
         var contents = try s.testString(alloc, .screen);
@@ -1565,7 +1431,7 @@ test "Screen: resize less cols no reflow" {
     defer s.deinit(alloc);
     const str = "1AB\n2EF\n3IJ";
     s.testWriteString(str);
-    try s.resize2(alloc, 3, 3);
+    try s.resize(alloc, 3, 3);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1587,7 +1453,7 @@ test "Screen: resize less cols with reflow but row space" {
     defer s.deinit(alloc);
     const str = "1ABCD";
     s.testWriteString(str);
-    try s.resize2(alloc, 3, 3);
+    try s.resize(alloc, 3, 3);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1611,7 +1477,7 @@ test "Screen: resize less cols with reflow with trimmed rows" {
     defer s.deinit(alloc);
     const str = "3IJKL\n4ABCD\n5EFGH";
     s.testWriteString(str);
-    try s.resize2(alloc, 3, 3);
+    try s.resize(alloc, 3, 3);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1635,7 +1501,7 @@ test "Screen: resize less cols with reflow with trimmed rows and scrollback" {
     defer s.deinit(alloc);
     const str = "3IJKL\n4ABCD\n5EFGH";
     s.testWriteString(str);
-    try s.resize2(alloc, 3, 3);
+    try s.resize(alloc, 3, 3);
 
     {
         var contents = try s.testString(alloc, .viewport);
