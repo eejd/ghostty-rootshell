@@ -593,6 +593,80 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
         //log.warn("BOTTOM={}", .{self.bottom});
         self.scroll(.{ .bottom = {} });
     }
+
+    // If our cols got smaller, we have to reflow text. This is the worst
+    // possible case because we can't do any easy trick sto get reflow,
+    // we just have to iterate over the screen and "print", wrapping as
+    // needed.
+    if (cols < self.cols) {
+        var storage = try alloc.alloc(
+            Cell,
+            (self.rows + self.max_scrollback) * cols,
+        );
+        std.mem.set(Cell, storage, .{ .char = 0 });
+
+        // Nothing can fail from this point forward (no "try" expressions)
+        // so replace our storage. We defer freeing the "old" value because
+        // we need to access the old screen to copy.
+        var old = self.*;
+        defer {
+            assert(old.storage.ptr != self.storage.ptr);
+            old.deinit(alloc);
+        }
+        self.storage = storage;
+        self.cols = cols;
+
+        // Iterate over the screen since we need to check for reflow.
+        var iter = old.rowIterator(.screen);
+        var x: usize = 0;
+        var y: usize = 0;
+        while (iter.next()) |row| {
+            // Trim the row from the right so that we ignore all trailing
+            // empty chars and don't wrap them.
+            const trimmed_row = trim: {
+                var i: usize = row.len;
+                while (i > 0) {
+                    if (!row[i - 1].empty()) break;
+                    i -= 1;
+                }
+
+                break :trim row[0..i];
+            };
+
+            // Copy all the cells into our row.
+            for (trimmed_row) |cell| {
+                // Soft wrap if we have to
+                if (x == self.cols) {
+                    var last_cell = self.getCell(y, x - 1);
+                    last_cell.attrs.wrap = 1;
+                    x = 0;
+                    y += 1;
+                }
+
+                // If our y is more than our rows, we need to scroll
+                if (y >= self.rows) {
+                    self.scroll(.{ .delta = 1 });
+                    y -= 1;
+                }
+
+                // Copy the old cell, unset the old wrap state
+                var new_cell = self.getCell(y, x);
+                new_cell.* = cell;
+                new_cell.attrs.wrap = 0;
+
+                // Next
+                x += 1;
+            }
+
+            // If we aren't wrapping, then move to the next row
+            if (trimmed_row.len == 0 or
+                trimmed_row[trimmed_row.len - 1].attrs.wrap == 0)
+            {
+                y += 1;
+                x = 0;
+            }
+        }
+    }
 }
 
 /// Resize the screen. The rows or cols can be bigger or smaller. This
@@ -1479,6 +1553,100 @@ test "Screen: resize less rows with populated scrollback" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         const expected = "5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less cols no reflow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1AB\n2EF\n3IJ";
+    s.testWriteString(str);
+    try s.resize2(alloc, 3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize less cols with reflow but row space" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD";
+    s.testWriteString(str);
+    try s.resize2(alloc, 3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1AB\nCD";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "1AB\nCD";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less cols with reflow with trimmed rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "3IJKL\n4ABCD\n5EFGH";
+    s.testWriteString(str);
+    try s.resize2(alloc, 3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "CD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "CD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less cols with reflow with trimmed rows and scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 1);
+    defer s.deinit(alloc);
+    const str = "3IJKL\n4ABCD\n5EFGH";
+    s.testWriteString(str);
+    try s.resize2(alloc, 3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "CD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "4AB\nCD\n5EF\nGH";
         try testing.expectEqualStrings(expected, contents);
     }
 }
