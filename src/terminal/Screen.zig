@@ -265,20 +265,20 @@ pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
 
 /// Returns the index for the given row (0-indexed) into the underlying
 /// storage array. The row is 0-indexed from the top of the screen.
-fn rowIndex(self: Screen, idx: RowIndex) usize {
+fn rowIndex(self: *const Screen, idx: RowIndex) usize {
     const y = switch (idx) {
         .screen => |y| y: {
-            assert(y < self.bottom);
+            assert(y <= RowIndexTag.screen.max(self));
             break :y y;
         },
 
         .viewport => |y| y: {
-            assert(y < self.rows);
+            assert(y <= RowIndexTag.viewport.max(self));
             break :y y + self.visible_offset;
         },
 
         .active => |y| y: {
-            assert(y < self.rows);
+            assert(y <= RowIndexTag.active.max(self));
             break :y self.bottomOffset() + y;
         },
     };
