@@ -444,6 +444,13 @@ pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
 /// This will trim data if the size is getting smaller. This will reflow the
 /// soft wrapped text.
 pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
+    defer {
+        assert(self.cursor.x < self.cols);
+        assert(self.cursor.y < self.rows);
+        assert(self.rows == rows);
+        assert(self.cols == cols);
+    }
+
     // If the rows increased, we alloc space for the new rows (w/ existing cols)
     // and move the viewport such that the bottom is in view.
     if (rows > self.rows) {
