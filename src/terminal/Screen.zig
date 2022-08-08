@@ -647,6 +647,13 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         );
         std.mem.set(Cell, storage, .{ .char = 0 });
 
+        // Convert our cursor coordinates to screen coordinates because
+        // we may have to reflow the cursor if the line it is on is moved.
+        var cursor_pos = (point.Viewport{
+            .x = self.cursor.x,
+            .y = self.cursor.y,
+        }).toScreen(self);
+
         // Nothing can fail from this point forward (no "try" expressions)
         // so replace our storage. We defer freeing the "old" value because
         // we need to access the old screen to copy.
@@ -657,6 +664,9 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         }
         self.storage = storage;
         self.cols = cols;
+
+        // Whether we need to move the cursor or not
+        var new_cursor: ?point.ScreenPoint = null;
 
         // Iterate over the screen since we need to check for reflow.
         var iter = old.rowIterator(.screen);
@@ -672,11 +682,19 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     i -= 1;
                 }
 
+                // If our cursor was past the end of this line, move it
+                // to the end of the contentful area.
+                if (cursor_pos.y == iter.value - 1 and
+                    cursor_pos.x >= i)
+                {
+                    cursor_pos.x = i - 1;
+                }
+
                 break :trim row[0..i];
             };
 
             // Copy all the cells into our row.
-            for (trimmed_row) |cell| {
+            for (trimmed_row) |cell, i| {
                 // Soft wrap if we have to
                 if (x == self.cols) {
                     var last_cell = self.getCell(y, x - 1);
@@ -690,6 +708,14 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     self.scroll(.{ .delta = 1 });
                     y -= 1;
                     x = 0;
+                }
+
+                // If our cursor is on this point, we need to move it.
+                if (cursor_pos.y == iter.value - 1 and
+                    cursor_pos.x == i)
+                {
+                    assert(new_cursor == null);
+                    new_cursor = .{ .x = x, .y = y };
                 }
 
                 // Copy the old cell, unset the old wrap state
@@ -708,6 +734,14 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 y += 1;
                 x = 0;
             }
+        }
+
+        // If we have a new cursor, we need to convert that to a viewport
+        // point and set it up.
+        if (new_cursor) |pos| {
+            const viewport_pos = pos.toViewport(self);
+            self.cursor.x = viewport_pos.x;
+            self.cursor.y = viewport_pos.y;
         }
     }
 }
@@ -1556,7 +1590,11 @@ test "Screen: resize less cols no reflow" {
     defer s.deinit(alloc);
     const str = "1AB\n2EF\n3IJ";
     s.testWriteString(str);
+    const cursor = s.cursor;
     try s.resize(alloc, 3, 3);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1578,8 +1616,13 @@ test "Screen: resize less cols with reflow but row space" {
     defer s.deinit(alloc);
     const str = "1ABCD";
     s.testWriteString(str);
-    try s.resize(alloc, 3, 3);
 
+    // Put our cursor on the end
+    s.cursor.x = 4;
+    s.cursor.y = 0;
+    try testing.expectEqual(@as(u32, 'D'), s.getCell(s.cursor.y, s.cursor.x).char);
+
+    try s.resize(alloc, 3, 3);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1592,6 +1635,10 @@ test "Screen: resize less cols with reflow but row space" {
         const expected = "1AB\nCD";
         try testing.expectEqualStrings(expected, contents);
     }
+
+    // Cursor should be on the last line
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 1), s.cursor.y);
 }
 
 test "Screen: resize less cols with reflow with trimmed rows" {
