@@ -442,8 +442,6 @@ pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
 /// This will trim data if the size is getting smaller. This will reflow the
 /// soft wrapped text.
 pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
-    _ = cols;
-
     // If the rows increased, we alloc space for the new rows (w/ existing cols)
     // and move the viewport such that the bottom is in view.
     if (rows > self.rows) {
@@ -550,6 +548,48 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
                 }
             }
         }
+    }
+
+    // If our rows got smaller, we trim the scrollback.
+    if (rows < self.rows) {
+        var storage = try alloc.alloc(
+            Cell,
+            (rows + self.max_scrollback) * self.cols,
+        );
+
+        // Get the slices for our full screen. We only copy the end of it
+        // that fits into our new memory region. We know we have the same
+        // number of columns in this block so we can just copy as-is.
+        const reg = self.region(.screen);
+        const bot_len = @minimum(reg[1].len, storage.len);
+        const top_len = @minimum(reg[0].len, storage.len - bot_len);
+        std.mem.copy(Cell, storage, reg[0][reg[0].len - top_len ..]);
+        std.mem.copy(Cell, storage[top_len..], reg[1][reg[1].len - bot_len ..]);
+        std.mem.set(Cell, storage[top_len + bot_len ..], .{ .char = 0 });
+
+        // Calculate the number of rows we copied since this will be
+        // our new "bottom". This should always divide cleanly because
+        // our cols haven't changed.
+        assert(@mod(top_len + bot_len, self.cols) == 0);
+        const copied_rows = (top_len + bot_len) / self.cols;
+
+        //log.warn("bot={} top={} copied={}", .{ bot_len, top_len, copied_rows });
+
+        // Modify our storage
+        alloc.free(self.storage);
+        self.storage = storage;
+
+        // Fix our row count
+        self.rows = rows;
+
+        // Top is now 0 because we reoriented the ring buffer to be ordered.
+        // Bottom must be at least "rows" since we always show at least that
+        // much in the viewport.
+        self.top = 0;
+        self.bottom = @maximum(rows, copied_rows);
+        //self.bottom = @minimum(self.bottom, copied_rows);
+        log.warn("BOTTOM={}", .{self.bottom});
+        self.scroll(.{ .bottom = {} });
     }
 }
 
@@ -1362,3 +1402,77 @@ test "Screen: resize more cols with reflow that unwraps multiple times" {
         try testing.expectEqualStrings(expected, contents);
     }
 }
+
+test "Screen: resize less rows no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    try s.resize2(alloc, 1, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+// test "Screen: resize less rows with empty scrollback" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var s = try init(alloc, 3, 5, 10);
+//     defer s.deinit(alloc);
+//     const str = "1ABCD\n2EFGH\n3IJKL";
+//     s.testWriteString(str);
+//     try s.resize2(alloc, 1, 5);
+//
+//     {
+//         var contents = try s.testString(alloc, .screen);
+//         defer alloc.free(contents);
+//         try testing.expectEqualStrings(str, contents);
+//     }
+//     {
+//         var contents = try s.testString(alloc, .viewport);
+//         defer alloc.free(contents);
+//         const expected = "3IJKL";
+//         try testing.expectEqualStrings(expected, contents);
+//     }
+// }
+
+// test "Screen: resize more rows with populated scrollback" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var s = try init(alloc, 3, 5, 5);
+//     defer s.deinit(alloc);
+//     const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+//     s.testWriteString(str);
+//     {
+//         var contents = try s.testString(alloc, .viewport);
+//         defer alloc.free(contents);
+//         const expected = "3IJKL\n4ABCD\n5EFGH";
+//         try testing.expectEqualStrings(expected, contents);
+//     }
+//
+//     // Resize
+//     try s.resize2(alloc, 10, 5);
+//     try testing.expectEqual(@as(usize, 15), s.totalRows());
+//
+//     {
+//         var contents = try s.testString(alloc, .viewport);
+//         defer alloc.free(contents);
+//         try testing.expectEqualStrings(str, contents);
+//     }
+// }
+//
