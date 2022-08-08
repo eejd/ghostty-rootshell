@@ -689,14 +689,6 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     i -= 1;
                 }
 
-                // If our cursor was past the end of this line, move it
-                // to the end of the contentful area.
-                if (cursor_pos.y == iter.value - 1 and
-                    cursor_pos.x >= i)
-                {
-                    cursor_pos.x = i - 1;
-                }
-
                 break :trim row[0..i];
             };
 
@@ -732,6 +724,18 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
                 // Next
                 x += 1;
+            }
+
+            // If our cursor is on this line but not in a content area,
+            // then we just set it to be at the end.
+            if (cursor_pos.y == iter.value - 1 and
+                cursor_pos.x >= trimmed_row.len)
+            {
+                assert(new_cursor == null);
+                new_cursor = .{
+                    .x = @minimum(cursor_pos.x, self.cols - 1),
+                    .y = y,
+                };
             }
 
             // If we aren't wrapping, then move to the next row
