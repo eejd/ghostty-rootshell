@@ -126,7 +126,10 @@ pub const RowIndexTag = enum {
     /// The max value for the given tag.
     pub fn max(self: RowIndexTag, screen: *const Screen) usize {
         return switch (self) {
-            .screen => screen.totalRows(),
+            // The max of the screen is "bottom" so that we don't read
+            // past the pre-allocated space.
+            .screen => screen.bottom,
+
             .viewport => screen.rows,
             .active => screen.rows,
         } - 1;
@@ -265,7 +268,7 @@ pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
 fn rowIndex(self: Screen, idx: RowIndex) usize {
     const y = switch (idx) {
         .screen => |y| y: {
-            assert(y < self.totalRows());
+            assert(y < self.bottom);
             break :y y;
         },
 
@@ -573,8 +576,6 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
         assert(@mod(top_len + bot_len, self.cols) == 0);
         const copied_rows = (top_len + bot_len) / self.cols;
 
-        //log.warn("bot={} top={} copied={}", .{ bot_len, top_len, copied_rows });
-
         // Modify our storage
         alloc.free(self.storage);
         self.storage = storage;
@@ -588,7 +589,8 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
         self.top = 0;
         self.bottom = @maximum(rows, copied_rows);
         //self.bottom = @minimum(self.bottom, copied_rows);
-        log.warn("BOTTOM={}", .{self.bottom});
+        //log.warn("bot={} top={} copied={}", .{ bot_len, top_len, copied_rows });
+        //log.warn("BOTTOM={}", .{self.bottom});
         self.scroll(.{ .bottom = {} });
     }
 }
@@ -1427,52 +1429,56 @@ test "Screen: resize less rows no scrollback" {
     }
 }
 
-// test "Screen: resize less rows with empty scrollback" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     var s = try init(alloc, 3, 5, 10);
-//     defer s.deinit(alloc);
-//     const str = "1ABCD\n2EFGH\n3IJKL";
-//     s.testWriteString(str);
-//     try s.resize2(alloc, 1, 5);
-//
-//     {
-//         var contents = try s.testString(alloc, .screen);
-//         defer alloc.free(contents);
-//         try testing.expectEqualStrings(str, contents);
-//     }
-//     {
-//         var contents = try s.testString(alloc, .viewport);
-//         defer alloc.free(contents);
-//         const expected = "3IJKL";
-//         try testing.expectEqualStrings(expected, contents);
-//     }
-// }
+test "Screen: resize less rows with empty scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
 
-// test "Screen: resize more rows with populated scrollback" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     var s = try init(alloc, 3, 5, 5);
-//     defer s.deinit(alloc);
-//     const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
-//     s.testWriteString(str);
-//     {
-//         var contents = try s.testString(alloc, .viewport);
-//         defer alloc.free(contents);
-//         const expected = "3IJKL\n4ABCD\n5EFGH";
-//         try testing.expectEqualStrings(expected, contents);
-//     }
-//
-//     // Resize
-//     try s.resize2(alloc, 10, 5);
-//     try testing.expectEqual(@as(usize, 15), s.totalRows());
-//
-//     {
-//         var contents = try s.testString(alloc, .viewport);
-//         defer alloc.free(contents);
-//         try testing.expectEqualStrings(str, contents);
-//     }
-// }
-//
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    try s.resize2(alloc, 1, 5);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less rows with populated scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize
+    try s.resize2(alloc, 1, 5);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
