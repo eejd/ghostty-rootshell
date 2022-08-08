@@ -13,7 +13,6 @@ Performance:
 Correctness:
 
 * `exit` in the shell should close the window
-* scrollback: reflow on resize
 * test wrap against wraptest: https://github.com/mattiase/wraptest
   - automate this in some way
 
