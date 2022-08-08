@@ -509,7 +509,46 @@ pub fn resize2(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void 
                 continue;
             }
 
-            @panic("REFLOW");
+            // We need to reflow. At this point things get a bit messy.
+            // The goal is to keep the messiness of reflow down here and
+            // only reloop when we're back to clean non-wrapped lines.
+
+            // Mark the last element as not wrapped
+            new_row[row.len - 1].attrs.wrap = 0;
+            new_row = new_row[row.len..];
+            wrapping: while (iter.next()) |wrapped_row| {
+                var wrapped_rem = wrapped_row;
+                while (wrapped_rem.len > 0) {
+                    // If the wrapped row fits nicely...
+                    if (wrapped_rem.len <= new_row.len) {
+                        // Copy the row
+                        std.mem.copy(Cell, new_row, wrapped_rem);
+
+                        // If this row isn't also wrapped, we're done!
+                        if (wrapped_rem[wrapped_rem.len - 1].attrs.wrap == 0) {
+                            y += 1;
+                            break :wrapping;
+                        }
+
+                        // Wrapped again!
+                        new_row[wrapped_rem.len - 1].attrs.wrap = 0;
+                        new_row = new_row[wrapped_rem.len..];
+                        break;
+                    }
+
+                    // The row doesn't fit, meaning we have to soft-wrap the
+                    // new row but probably at a diff boundary.
+                    std.mem.copy(Cell, new_row, wrapped_rem[0..new_row.len]);
+                    new_row[new_row.len - 1].attrs.wrap = 1;
+
+                    // We still need to copy the remainder
+                    wrapped_rem = wrapped_rem[new_row.len..];
+
+                    // Move to a new line in our new screen
+                    y += 1;
+                    new_row = self.getRow(.{ .screen = y });
+                }
+            }
         }
     }
 }
@@ -1244,28 +1283,82 @@ test "Screen: resize more cols no reflow" {
     }
 }
 
-// test "Screen: resize more cols with reflow that fits full width" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     var s = try init(alloc, 3, 5, 0);
-//     defer s.deinit(alloc);
-//     const str = "1ABCD2EFGH\n3IJKL";
-//     s.testWriteString(str);
-//
-//     // Verify we soft wrapped
-//     {
-//         var contents = try s.testString(alloc, .viewport);
-//         defer alloc.free(contents);
-//         const expected = "1ABCD\n2EFGH\n3IJKL";
-//         try testing.expectEqualStrings(expected, contents);
-//     }
-//
-//     // Resize and verify we undid the soft wrap because we have space now
-//     try s.resize2(alloc, 3, 10);
-//     {
-//         var contents = try s.testString(alloc, .viewport);
-//         defer alloc.free(contents);
-//         try testing.expectEqualStrings(str, contents);
-//     }
-// }
+test "Screen: resize more cols with reflow that fits full width" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD2EFGH\n3IJKL";
+    s.testWriteString(str);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize2(alloc, 3, 10);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more cols with reflow that forces more wrapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD2EFGH\n3IJKL";
+    s.testWriteString(str);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize2(alloc, 3, 7);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD2E\nFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize more cols with reflow that unwraps multiple times" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD2EFGH3IJKL";
+    s.testWriteString(str);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize2(alloc, 3, 15);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD2EFGH3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
