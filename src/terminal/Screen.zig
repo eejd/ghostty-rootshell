@@ -705,7 +705,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 // If our y is more than our rows, we need to scroll
                 if (y >= self.rows) {
                     self.scroll(.{ .delta = 1 });
-                    y -= 1;
+                    y = self.rows - 1;
                     x = 0;
                 }
 
@@ -718,6 +718,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 }
 
                 // Copy the old cell, unset the old wrap state
+                // log.warn("y={} x={} rows={}", .{ y, x, self.rows });
                 var new_cell = self.getCell(y, x);
                 new_cell.* = cell;
                 new_cell.attrs.wrap = 0;
