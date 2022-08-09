@@ -219,6 +219,13 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .b = config.foreground.b,
     };
 
+    // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
+    // but is otherwise somewhat arbitrary.
+    try window.setSizeLimits(.{
+        .width = @floatToInt(u32, grid.cell_size.width * 10),
+        .height = @floatToInt(u32, grid.cell_size.height * 4),
+    }, .{ .width = null, .height = null });
+
     // Create our pty
     var pty = try Pty.open(.{
         .ws_row = @intCast(u16, grid.size.rows),
