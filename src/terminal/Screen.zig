@@ -517,6 +517,9 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         self.storage = storage;
         self.cols = cols;
 
+        // Whether we need to move the cursor or not
+        var new_cursor: ?point.ScreenPoint = null;
+
         // Iterate over the screen since we need to check for reflow.
         var iter = old.rowIterator(.screen);
         var y: usize = 0;
@@ -524,6 +527,13 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             // No matter what we copy this row
             var new_row = self.getRow(.{ .screen = y });
             std.mem.copy(Cell, new_row, row);
+
+            // We need to check if our cursor was on this line
+            // and in the part that WAS copied. If so, we need to move it.
+            if (cursor_pos.y == iter.value - 1) {
+                assert(new_cursor == null); // should only happen once
+                new_cursor = .{ .y = y, .x = cursor_pos.x };
+            }
 
             // If no reflow, just keep going
             if (row[row.len - 1].attrs.wrap == 0) {
@@ -535,9 +545,6 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             // The goal is to keep the messiness of reflow down here and
             // only reloop when we're back to clean non-wrapped lines.
 
-            // Whether we need to move the cursor or not
-            var new_cursor: ?point.ScreenPoint = null;
-
             // Mark the last element as not wrapped
             new_row[row.len - 1].attrs.wrap = 0;
 
@@ -545,7 +552,15 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             var x: usize = row.len;
             new_row = new_row[x..];
             wrapping: while (iter.next()) |wrapped_row| {
-                var wrapped_rem = wrapped_row;
+                // Trim the row from the right so that we ignore all trailing
+                // empty chars and don't wrap them.
+                const trimmed_row = trim: {
+                    var i: usize = wrapped_row.len;
+                    while (i > 0) : (i -= 1) if (!wrapped_row[i - 1].empty()) break;
+                    break :trim wrapped_row[0..i];
+                };
+
+                var wrapped_rem = trimmed_row;
                 while (wrapped_rem.len > 0) {
                     // If the wrapped row fits nicely...
                     if (wrapped_rem.len <= new_row.len) {
@@ -561,6 +576,17 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                         // If this row isn't also wrapped, we're done!
                         if (wrapped_rem[wrapped_rem.len - 1].attrs.wrap == 0) {
                             y += 1;
+
+                            // If we were able to copy the entire row then
+                            // we shortened the screen by one. We need to reflect
+                            // this in our viewport.
+                            if (wrapped_rem.len == trimmed_row.len and
+                                self.visible_offset > 0)
+                            {
+                                self.visible_offset -= 1;
+                                self.bottom -= 1;
+                            }
+
                             break :wrapping;
                         }
 
@@ -594,14 +620,14 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     new_row = self.getRow(.{ .screen = y });
                 }
             }
+        }
 
-            // If we have a new cursor, we need to convert that to a viewport
-            // point and set it up.
-            if (new_cursor) |pos| {
-                const viewport_pos = pos.toViewport(self);
-                self.cursor.x = viewport_pos.x;
-                self.cursor.y = viewport_pos.y;
-            }
+        // If we have a new cursor, we need to convert that to a viewport
+        // point and set it up.
+        if (new_cursor) |pos| {
+            const viewport_pos = pos.toViewport(self);
+            self.cursor.x = viewport_pos.x;
+            self.cursor.y = viewport_pos.y;
         }
     }
 
@@ -970,6 +996,10 @@ fn testWriteString(self: *Screen, text: []const u8) void {
             row[x - 1].attrs.wrap = 1;
             y += 1;
             x = 0;
+            if (y >= self.rows) {
+                y -= 1;
+                self.scroll(.{ .delta = 1 });
+            }
             row = self.getRow(.{ .active = y });
         }
 
@@ -1451,6 +1481,40 @@ test "Screen: resize more cols with reflow that fits full width" {
     try testing.expectEqual(@as(usize, 0), s.cursor.y);
 }
 
+test "Screen: resize more cols with reflow that ends in newline" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 6, 0);
+    defer s.deinit(alloc);
+    const str = "1ABCD2EFGH\n3IJKL";
+    s.testWriteString(str);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD2\nEFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Let's put our cursor on the last row
+    s.cursor.x = 0;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, '3'), s.getCell(s.cursor.y, s.cursor.x).char);
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize(alloc, 3, 10);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Our cursor should still be on the 3
+    try testing.expectEqual(@as(u32, '3'), s.getCell(s.cursor.y, s.cursor.x).char);
+}
+
 test "Screen: resize more cols with reflow that forces more wrapping" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1521,6 +1585,41 @@ test "Screen: resize more cols with reflow that unwraps multiple times" {
     // Our cursor should've moved
     try testing.expectEqual(@as(usize, 10), s.cursor.x);
     try testing.expectEqual(@as(usize, 0), s.cursor.y);
+}
+
+test "Screen: resize more cols with populated scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit(alloc);
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD5EFGH";
+    s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // // Set our cursor to be on the "5"
+    s.cursor.x = 0;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, '5'), s.getCell(s.cursor.y, s.cursor.x).char);
+
+    // Resize
+    try s.resize(alloc, 3, 10);
+
+    // Cursor should still be on the "5"
+    log.warn("cursor={}", .{s.cursor});
+    try testing.expectEqual(@as(u32, '5'), s.getCell(s.cursor.y, s.cursor.x).char);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJKL\n4ABCD5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
 }
 
 test "Screen: resize less rows no scrollback" {
