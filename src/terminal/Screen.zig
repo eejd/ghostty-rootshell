@@ -85,7 +85,7 @@ pub const RowIterator = struct {
     value: usize = 0,
 
     pub fn next(self: *RowIterator) ?Row {
-        if (self.value > self.tag.max(self.screen)) return null;
+        if (self.value >= self.tag.maxLen(self.screen)) return null;
         const idx = self.tag.index(self.value);
         const res = self.screen.getRow(idx);
         self.value += 1;
@@ -113,6 +113,10 @@ pub const RowIndex = union(RowIndexTag) {
     /// "edit-able" area where the terminal cursor is.
     active: usize,
 
+    /// The index is from the top of the history (scrollback) to just
+    /// prior to the active area.
+    history: usize,
+
     // TODO: others
 };
 
@@ -121,17 +125,20 @@ pub const RowIndexTag = enum {
     screen,
     viewport,
     active,
+    history,
 
-    /// The max value for the given tag.
-    pub fn max(self: RowIndexTag, screen: *const Screen) usize {
+    /// The max length for a given tag. This is a length, not an index,
+    /// so it is 1-indexed. If the value is zero, it means that this
+    /// section of the screen is empty or disabled.
+    pub fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
         return switch (self) {
             // The max of the screen is "bottom" so that we don't read
             // past the pre-allocated space.
             .screen => screen.bottom,
-
             .viewport => screen.rows,
             .active => screen.rows,
-        } - 1;
+            .history => screen.bottomOffset(),
+        };
     }
 
     /// Construct a RowIndex from a tag.
@@ -140,6 +147,7 @@ pub const RowIndexTag = enum {
             .screen => .{ .screen = value },
             .viewport => .{ .viewport = value },
             .active => .{ .active = value },
+            .history => .{ .history = value },
         };
     }
 };
@@ -226,8 +234,14 @@ pub fn rowIterator(self: *const Screen, tag: RowIndexTag) RowIterator {
 /// so any region can be split into two if it crosses the ring buffer
 /// boundary.
 pub fn region(self: *const Screen, tag: RowIndexTag) [2][]Cell {
+    const max_len = tag.maxLen(self);
+    if (max_len == 0) {
+        // This region is disabled or empty
+        return .{ self.storage[0..0], self.storage[0..0] };
+    }
+
     const top = self.rowIndex(tag.index(0));
-    const bot = self.rowIndex(tag.index(tag.max(self)));
+    const bot = self.rowIndex(tag.index(max_len - 1));
 
     // The bottom and top are available in one contiguous slice.
     if (bot >= top) {
@@ -267,18 +281,23 @@ pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
 fn rowIndex(self: *const Screen, idx: RowIndex) usize {
     const y = switch (idx) {
         .screen => |y| y: {
-            assert(y <= RowIndexTag.screen.max(self));
+            assert(y < RowIndexTag.screen.maxLen(self));
             break :y y;
         },
 
         .viewport => |y| y: {
-            assert(y <= RowIndexTag.viewport.max(self));
+            assert(y < RowIndexTag.viewport.maxLen(self));
             break :y y + self.visible_offset;
         },
 
         .active => |y| y: {
-            assert(y <= RowIndexTag.active.max(self));
+            assert(y < RowIndexTag.active.maxLen(self));
             break :y self.bottomOffset() + y;
+        },
+
+        .history => |y| y: {
+            assert(y < RowIndexTag.history.maxLen(self));
+            break :y y;
         },
     };
 
@@ -995,7 +1014,7 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
 /// be selected using the "tag", i.e. if you want to output the viewport,
 /// the scrollback, the full screen, etc.
 pub fn testString(self: Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 {
-    const buf = try alloc.alloc(u8, self.storage.len + self.rows);
+    const buf = try alloc.alloc(u8, self.storage.len + self.rows + 1);
 
     var i: usize = 0;
     var y: usize = 0;
@@ -1295,6 +1314,65 @@ test "Screen: scrollback empty" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: history region with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 5, 0);
+    defer s.deinit(alloc);
+
+    // Write a bunch that WOULD invoke scrollback if exists
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Verify no scrollback
+    const reg = s.region(.history);
+    try testing.expect(reg[0].len == 0);
+    try testing.expect(reg[1].len == 0);
+}
+
+test "Screen: history region with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 5, 2);
+    defer s.deinit(alloc);
+
+    // Write a bunch that WOULD invoke scrollback if exists
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        // Test our contents
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Verify history region
+    const reg = s.region(.history);
+    try testing.expect(reg[0].len > 0);
+    try testing.expect(reg[1].len >= 0);
+
+    {
+        var contents = try s.testString(alloc, .history);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH";
+        try testing.expectEqualStrings(expected, contents);
     }
 }
 
