@@ -745,7 +745,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     cursor_pos.x == i)
                 {
                     assert(new_cursor == null);
-                    new_cursor = .{ .x = x, .y = y };
+                    new_cursor = .{ .x = x, .y = self.visible_offset + y };
                 }
 
                 // Copy the old cell, unset the old wrap state
@@ -766,7 +766,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 assert(new_cursor == null);
                 new_cursor = .{
                     .x = @minimum(cursor_pos.x, self.cols - 1),
-                    .y = y,
+                    .y = self.visible_offset + y,
                 };
             }
 
