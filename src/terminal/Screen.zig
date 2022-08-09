@@ -116,8 +116,6 @@ pub const RowIndex = union(RowIndexTag) {
     /// The index is from the top of the history (scrollback) to just
     /// prior to the active area.
     history: usize,
-
-    // TODO: others
 };
 
 /// The tags of RowIndex

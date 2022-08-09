@@ -597,9 +597,15 @@ pub fn eraseDisplay(
             self.screen.cursor.pending_wrap = false;
         },
 
-        else => {
-            log.err("unimplemented display mode: {}", .{mode});
-            @panic("unimplemented");
+        .scrollback => {
+            const region = self.screen.region(.history);
+            std.mem.set(Screen.Cell, region[0], self.screen.cursor.pen);
+            std.mem.set(Screen.Cell, region[1], self.screen.cursor.pen);
+
+            // TODO: move this logic to the Screen implementation
+            self.screen.top = self.screen.visible_offset;
+            self.screen.bottom = self.screen.bottom - self.screen.visible_offset;
+            self.screen.visible_offset = 0;
         },
     }
 }
