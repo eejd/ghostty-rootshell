@@ -6,7 +6,10 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 /// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
 pub const Config = struct {
     /// Font size
-    @"font-size": u8 = 14,
+    /// TODO: this default size is too big, what we need to do is use a reasonable
+    /// size and then mult a high-DPI scaling factor. This is only high because
+    /// all our test machines are high-DPI right now.
+    @"font-size": u8 = 32,
 
     /// Background color for the window.
     background: Color = .{ .r = 0, .g = 0, .b = 0 },

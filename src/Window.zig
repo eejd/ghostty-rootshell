@@ -318,6 +318,17 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     window.setCursorPosCallback(cursorPosCallback);
     window.setMouseButtonCallback(mouseButtonCallback);
 
+    // Call our size callback which handles all our retina setup
+    // Note: this shouldn't be necessary and when we clean up the window
+    // init stuff we should get rid of this. But this is required because
+    // sizeCallback does retina-aware stuff we don't do here and don't want
+    // to duplicate.
+    sizeCallback(
+        window,
+        @intCast(i32, window_size.width),
+        @intCast(i32, window_size.height),
+    );
+
     return self;
 }
 
@@ -394,11 +405,23 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
     assert(width >= 0);
     assert(height >= 0);
 
+    // Get our framebuffer size since this will give us the size in pixels
+    // whereas width/height in this callback is in screen coordinates. For
+    // Retina displays (or any other displays that have a scale factor),
+    // these will not match.
+    const px_size = window.getFramebufferSize() catch |err| err: {
+        log.err("error querying window size in pixels, will use screen size err={}", .{err});
+        break :err glfw.Window.Size{
+            .width = @intCast(u32, width),
+            .height = @intCast(u32, height),
+        };
+    };
+
     // Update our grid so that the projections on render are correct.
     const win = window.getUserPointer(Window) orelse return;
     win.grid.setScreenSize(.{
-        .width = @intCast(u32, width),
-        .height = @intCast(u32, height),
+        .width = px_size.width,
+        .height = px_size.height,
     }) catch |err| log.err("error updating grid screen size err={}", .{err});
 
     // Update the size of our terminal state
@@ -412,18 +435,6 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         .ws_xpixel = @intCast(u16, width),
         .ws_ypixel = @intCast(u16, height),
     }) catch |err| log.err("error updating pty screen size err={}", .{err});
-
-    // Get our framebuffer size since this will give us the size in pixels
-    // whereas width/height in this callback is in screen coordinates. For
-    // Retina displays (or any other displays that have a scale factor),
-    // these will not match.
-    const px_size = window.getFramebufferSize() catch |err| err: {
-        log.err("error querying window size in pixels, will use screen size err={}", .{err});
-        break :err glfw.Window.Size{
-            .width = @intCast(u32, width),
-            .height = @intCast(u32, height),
-        };
-    };
 
     // Update our viewport for this context to be the entire window.
     // OpenGL works in pixels, so we have to use the pixel size.
