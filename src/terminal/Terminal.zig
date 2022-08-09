@@ -214,8 +214,6 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: test, wrapping, etc.
-
     // If we have deccolm supported then we are fixed at either 80 or 132
     // columns depending on if mode 3 is set or not.
     // TODO: test
@@ -232,9 +230,13 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
     }
 
     // If we're making the screen smaller, dealloc the unused items.
-    // TODO: reflow
-    try self.screen.resize(alloc, rows, cols);
-    try self.secondary_screen.resize(alloc, rows, cols);
+    if (self.active_screen == .primary) {
+        try self.screen.resize(alloc, rows, cols);
+        try self.secondary_screen.resizeWithoutReflow(alloc, rows, cols);
+    } else {
+        try self.screen.resizeWithoutReflow(alloc, rows, cols);
+        try self.secondary_screen.resize(alloc, rows, cols);
+    }
 
     // Set our size
     self.cols = cols;
@@ -252,7 +254,7 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
 ///
 /// The caller must free the string.
 pub fn plainString(self: Terminal, alloc: Allocator) ![]const u8 {
-    return try self.screen.testString(alloc);
+    return try self.screen.testString(alloc, .viewport);
 }
 
 /// Save cursor position and further state.

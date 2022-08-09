@@ -76,6 +76,24 @@ pub const ScreenPoint = struct {
             (self.y == other.y and self.x < other.x);
     }
 
+    /// Converts this to a viewport point. If the point is above the
+    /// viewport this will move the point to (0, 0) and if it is below
+    /// the viewport it'll move it to (cols - 1, rows - 1).
+    pub fn toViewport(self: ScreenPoint, screen: *const Screen) Viewport {
+        // TODO: test
+
+        // Before viewport
+        if (self.y < screen.visible_offset) return .{ .x = 0, .y = 0 };
+
+        // After viewport
+        if (self.y > screen.visible_offset + screen.rows) return .{
+            .x = screen.cols - 1,
+            .y = screen.rows - 1,
+        };
+
+        return .{ .x = self.x, .y = self.y - screen.visible_offset };
+    }
+
     test "before" {
         const testing = std.testing;
 
