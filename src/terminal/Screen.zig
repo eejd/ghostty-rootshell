@@ -474,12 +474,20 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         // Fix our row count
         self.rows = rows;
 
+        // Store our visible offset so we can move our cursor accordingly.
+        const old_offset = self.visible_offset;
+
         // Top is now 0 because we reoriented the ring buffer to be ordered.
         // Bottom must be at least "rows" since we always show at least that
         // much in the viewport.
         self.top = 0;
         self.bottom = @maximum(rows, self.bottom);
         self.scroll(.{ .bottom = {} });
+
+        // Move our cursor to account for the new rows. The old offset
+        // should always be bigger (or the same) than the new offset since
+        // we are adding rows.
+        self.cursor.y += old_offset - self.visible_offset;
     }
 
     // If our columns increased, we alloc space for the new column width
@@ -1360,13 +1368,20 @@ test "Screen: resize more rows with populated scrollback" {
         try testing.expectEqualStrings(expected, contents);
     }
 
+    // Set our cursor to be on the "4"
+    s.cursor.x = 0;
+    s.cursor.y = 1;
+    try testing.expectEqual(@as(u32, '4'), s.getCell(s.cursor.y, s.cursor.x).char);
+
     // Resize
-    const cursor = s.cursor;
     try s.resize(alloc, 10, 5);
     try testing.expectEqual(@as(usize, 15), s.totalRows());
 
-    // Cursor should not move
-    try testing.expectEqual(cursor, s.cursor);
+    // Cursor should still be on the "4"
+    try testing.expectEqual(@as(u32, '4'), s.getCell(s.cursor.y, s.cursor.x).char);
+    // s.cursor.x = 0;
+    // s.cursor.y = 1;
+    //try testing.expectEqual(cursor, s.cursor);
 
     {
         var contents = try s.testString(alloc, .viewport);
