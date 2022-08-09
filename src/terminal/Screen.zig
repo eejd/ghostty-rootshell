@@ -608,10 +608,42 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         // that fits into our new memory region. We know we have the same
         // number of columns in this block so we can just copy as-is.
         const reg = self.region(.screen);
-        const bot_len = @minimum(reg[1].len, storage.len);
-        const top_len = @minimum(reg[0].len, storage.len - bot_len);
-        std.mem.copy(Cell, storage, reg[0][reg[0].len - top_len ..]);
-        std.mem.copy(Cell, storage[top_len..], reg[1][reg[1].len - bot_len ..]);
+
+        // Trim the empty space off the end. The "end" might go into
+        // "top" since bottom may be empty or only implies the wraparound
+        // on the ring buffer.
+        const top = reg[0];
+        const bot = reg[1];
+        const bot_trimmed = trim: {
+            var i: usize = bot.len;
+            while (i > 0) : (i -= 1) if (!bot[i - 1].empty()) break;
+            i += self.cols - @mod(i, self.cols);
+            i = @minimum(bot.len, i);
+            break :trim bot[0..i];
+        };
+        const top_trimmed = if (bot.len > 0 and bot_trimmed.len == bot.len) noop: {
+            // We do nothing here because it means that we hit real content
+            // in the "bottom" so we don't want to trim zeros off the top
+            // when they might actually be useful.
+            break :noop top;
+        } else trim: {
+            var i: usize = top.len;
+            while (i > 0) : (i -= 1) if (!top[i - 1].empty()) break;
+            i += self.cols - @mod(i, self.cols);
+            i = @minimum(top.len, i);
+            break :trim top[0..i];
+        };
+
+        // The trimmed also have to be cleanly divisible by rows since
+        // the copy and other math below depends on this invariant.
+        assert(@mod(bot_trimmed.len, self.cols) == 0);
+        assert(@mod(top_trimmed.len, self.cols) == 0);
+
+        // Copy the top and bottom into the storage
+        const bot_len = @minimum(bot_trimmed.len, storage.len);
+        const top_len = @minimum(top_trimmed.len, storage.len - bot_len);
+        std.mem.copy(Cell, storage, top_trimmed[top_trimmed.len - top_len ..]);
+        std.mem.copy(Cell, storage[top_len..], bot_trimmed[bot_trimmed.len - bot_len ..]);
         std.mem.set(Cell, storage[top_len + bot_len ..], .{ .char = 0 });
 
         // Calculate the number of rows we copied since this will be
@@ -637,7 +669,6 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         // much in the viewport.
         self.top = 0;
         self.bottom = @maximum(rows, copied_rows);
-        //self.bottom = @minimum(self.bottom, copied_rows);
         //log.warn("bot={} top={} copied={}", .{ bot_len, top_len, copied_rows });
         //log.warn("BOTTOM={}", .{self.bottom});
         self.scroll(.{ .bottom = {} });
@@ -1698,5 +1729,57 @@ test "Screen: resize less cols with reflow with trimmed rows and scrollback" {
         defer alloc.free(contents);
         const expected = "4AB\nCD\n5EF\nGH";
         try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+// This seems like it should work fine but for some reason in practice
+// in the initial implementation I found this bug! This is a regression
+// test for that.
+test "Screen: resize more rows then shrink again" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit(alloc);
+    const str = "1ABC";
+    s.testWriteString(str);
+
+    // Grow
+    try s.resize(alloc, 10, 5);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Shrink
+    try s.resize(alloc, 3, 5);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Grow again
+    try s.resize(alloc, 10, 5);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
     }
 }
