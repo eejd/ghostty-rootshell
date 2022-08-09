@@ -165,11 +165,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .opengl_profile = .opengl_core_profile,
         .opengl_forward_compat = true,
         .cocoa_graphics_switching = builtin.os.tag == .macos,
-
-        // We need to disable this for now since this causes all sorts
-        // of artifacts and issues to debug. This probably SHOULD be re-enable
-        // at some point but only when we're ready to debug.
-        .cocoa_retina_framebuffer = false,
+        .cocoa_retina_framebuffer = true,
     });
     errdefer window.destroy();
 
@@ -417,8 +413,21 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         .ws_ypixel = @intCast(u16, height),
     }) catch |err| log.err("error updating pty screen size err={}", .{err});
 
-    // Update our viewport for this context to be the entire window
-    gl.viewport(0, 0, width, height) catch |err|
+    // Get our framebuffer size since this will give us the size in pixels
+    // whereas width/height in this callback is in screen coordinates. For
+    // Retina displays (or any other displays that have a scale factor),
+    // these will not match.
+    const px_size = window.getFramebufferSize() catch |err| err: {
+        log.err("error querying window size in pixels, will use screen size err={}", .{err});
+        break :err glfw.Window.Size{
+            .width = @intCast(u32, width),
+            .height = @intCast(u32, height),
+        };
+    };
+
+    // Update our viewport for this context to be the entire window.
+    // OpenGL works in pixels, so we have to use the pixel size.
+    gl.viewport(0, 0, @intCast(i32, px_size.width), @intCast(i32, px_size.height)) catch |err|
         log.err("error updating OpenGL viewport err={}", .{err});
 
     // Draw
