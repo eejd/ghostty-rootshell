@@ -9,6 +9,9 @@ Performance:
 * for scrollback, investigate using segmented list for sufficiently large
   scrollback scenarios.
 * scrollback: dynamic growth rather than prealloc
+* reflow: text reflow is really poorly implemented right now specifically
+  for shrinking columns. Look into this. This may require changing the
+  screen data structure.
 
 Correctness:
 
