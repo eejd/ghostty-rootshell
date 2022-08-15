@@ -392,7 +392,7 @@ fn queueWrite(self: *Window, data: []const u8) !void {
             ttyWrite,
         );
 
-        i += end;
+        i = end;
     }
 }
 
