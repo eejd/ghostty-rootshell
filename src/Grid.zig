@@ -11,7 +11,7 @@ const terminal = @import("terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("opengl.zig");
 const gb = @import("gb_math.zig");
-const trace = @import("tracy/tracy.zig").trace;
+const trace = @import("tracy").trace;
 const Config = @import("config.zig").Config;
 
 const log = std.log.scoped(.grid);

@@ -5,7 +5,7 @@ const LibExeObjStep = std.build.LibExeObjStep;
 const glfw = @import("vendor/mach/glfw/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const libuv = @import("pkg/libuv/build.zig");
-const tracylib = @import("src/tracy/build.zig");
+const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
 
 pub fn build(b: *std.build.Builder) !void {

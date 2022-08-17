@@ -4,7 +4,7 @@ const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
-const trace = @import("../tracy/tracy.zig").trace;
+const trace = @import("tracy").trace;
 
 const log = std.log.scoped(.stream);
 

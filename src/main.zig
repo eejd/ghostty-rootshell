@@ -2,10 +2,10 @@ const builtin = @import("builtin");
 const options = @import("build_options");
 const std = @import("std");
 const glfw = @import("glfw");
+const tracy = @import("tracy");
 
 const App = @import("App.zig");
 const cli_args = @import("cli_args.zig");
-const tracy = @import("tracy/tracy.zig");
 const Config = @import("config.zig").Config;
 
 const log = std.log.scoped(.main);
