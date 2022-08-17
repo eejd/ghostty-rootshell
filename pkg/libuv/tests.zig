@@ -7,11 +7,6 @@ const testing = std.testing;
 const libuv = @import("main.zig");
 
 test "Async: cancel timer" {
-    // Not sure why, but failing in CI... but passes locally. It used
-    // to pass before we moved this out to a separate package so I don't
-    // know whats going on yet.
-    if (@import("builtin").cpu.arch != .aarch64) return error.SkipZigTest;
-
     const alloc = testing.allocator;
     var loop = try libuv.Loop.init(alloc);
     defer loop.deinit(alloc);
