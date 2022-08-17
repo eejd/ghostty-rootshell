@@ -100,8 +100,8 @@ test {
     _ = @import("terminal/Terminal.zig");
 
     // Libraries
+    _ = @import("libuv");
     _ = @import("segmented_pool.zig");
-    _ = @import("libuv/main.zig");
     _ = @import("terminal/main.zig");
 
     // TODO

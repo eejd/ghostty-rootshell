@@ -7,7 +7,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const glfw = @import("glfw");
 const Window = @import("Window.zig");
-const libuv = @import("libuv/main.zig");
+const libuv = @import("libuv");
 const tracy = @import("tracy/tracy.zig");
 const Config = @import("config.zig").Config;
 

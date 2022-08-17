@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const libuv = @import("libuv/main.zig");
+const libuv = @import("libuv");
 
 /// A coalescing timer that forces a run after a certain maximum time
 /// since the last run. This is used for example by the renderer to try
