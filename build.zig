@@ -47,9 +47,6 @@ pub fn build(b: *std.build.Builder) !void {
 
         // Add the shared dependencies
         try addDeps(b, exe);
-
-        // Tracy
-        if (tracy) try tracylib.link(b, exe, target);
     }
 
     // term.wasm
@@ -62,7 +59,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
-        wasm.addPackage(pkg_tracy);
+        wasm.addPackage(tracylib.pkg);
 
         const step = b.step("term-wasm", "Build the terminal.wasm library");
         step.dependOn(&wasm.step);
@@ -161,7 +158,8 @@ fn addDeps(
     try libuv.link(b, step);
 
     // Tracy
-    step.addPackage(pkg_tracy);
+    step.addPackage(tracylib.pkg);
+    try tracylib.link(b, step);
 }
 
 fn conformanceSteps(
@@ -206,11 +204,6 @@ fn conformanceSteps(
 fn root() []const u8 {
     return std.fs.path.dirname(@src().file) orelse unreachable;
 }
-
-pub const pkg_tracy = std.build.Pkg{
-    .name = "tracy",
-    .source = .{ .path = root() ++ "/src/tracy/tracy.zig" },
-};
 
 /// ANSI escape codes for colored log output
 const color_map = std.ComptimeStringMap([]const u8, .{
