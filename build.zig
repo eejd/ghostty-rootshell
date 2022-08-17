@@ -62,6 +62,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
+        wasm.addPackage(pkg_tracy);
 
         const step = b.step("term-wasm", "Build the terminal.wasm library");
         step.dependOn(&wasm.step);
@@ -158,6 +159,9 @@ fn addDeps(
     // Libuv
     step.addPackage(libuv.pkg);
     try libuv.link(b, step);
+
+    // Tracy
+    step.addPackage(pkg_tracy);
 }
 
 fn conformanceSteps(
@@ -202,6 +206,11 @@ fn conformanceSteps(
 fn root() []const u8 {
     return std.fs.path.dirname(@src().file) orelse unreachable;
 }
+
+pub const pkg_tracy = std.build.Pkg{
+    .name = "tracy",
+    .source = .{ .path = root() ++ "/src/tracy/tracy.zig" },
+};
 
 /// ANSI escape codes for colored log output
 const color_map = std.ComptimeStringMap([]const u8, .{

@@ -14,7 +14,7 @@ const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 const Selection = @import("Selection.zig");
 const Tabstops = @import("Tabstops.zig");
-const trace = @import("../tracy/tracy.zig").trace;
+const trace = @import("tracy").trace;
 const color = @import("color.zig");
 const Screen = @import("Screen.zig");
 

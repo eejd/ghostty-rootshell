@@ -4,6 +4,7 @@
 , glxinfo
 , parallel
 , pkg-config
+, python
 , scdoc
 , tracy
 , vulkan-loader
@@ -47,6 +48,7 @@ in mkShell rec {
     # Testing
     gdb
     parallel
+    python
     tracy
     vttest
     wraptest

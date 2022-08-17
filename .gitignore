@@ -2,6 +2,7 @@
 zig-cache/
 zig-out/
 /result*
+example/*.wasm
 test/ghostty
 test/cases/**/*.actual.png
 
