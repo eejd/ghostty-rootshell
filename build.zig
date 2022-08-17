@@ -170,7 +170,7 @@ fn conformanceSteps(
     var map = std.StringHashMap(*LibExeObjStep).init(b.allocator);
 
     // Open the directory ./conformance
-    const c_dir_path = root() ++ "/conformance";
+    const c_dir_path = (comptime root()) ++ "/conformance";
     var c_dir = try fs.openIterableDirAbsolute(c_dir_path, .{});
     defer c_dir.close();
 

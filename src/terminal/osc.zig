@@ -210,13 +210,13 @@ pub const Parser = struct {
 
                 'B' => {
                     self.state = .semantic_option_start;
-                    self.command = .{ .prompt_end = .{} };
+                    self.command = .{ .prompt_end = {} };
                     self.complete = true;
                 },
 
                 'C' => {
                     self.state = .semantic_option_start;
-                    self.command = .{ .end_of_input = .{} };
+                    self.command = .{ .end_of_input = {} };
                     self.complete = true;
                 },
 

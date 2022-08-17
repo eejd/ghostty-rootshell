@@ -32,6 +32,8 @@ const Allocator = std.mem.Allocator;
 const File = std.fs.File;
 const EnvMap = std.process.EnvMap;
 
+const PreExecFn = fn (*Command) void;
+
 /// Path to the command to run. This must be an absolute path. This
 /// library does not do PATH lookup.
 path: []const u8,
@@ -55,7 +57,10 @@ stderr: ?File = null,
 /// If set, this will be executed /in the child process/ after fork but
 /// before exec. This is useful to setup some state in the child before the
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
-pre_exec: ?fn (*Command) void = null,
+pre_exec: switch (builtin.zig_backend) {
+    .stage1 => ?PreExecFn,
+    else => ?*const PreExecFn,
+} = null,
 
 /// User data that is sent to the callback. Set with setData and getData
 /// for a more user-friendly API.

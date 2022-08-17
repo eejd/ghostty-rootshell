@@ -587,5 +587,5 @@ test "GridSize update rounding" {
     try testing.expectEqual(@as(GridSize.Unit, 2), grid.rows);
 }
 
-const face_ttf = @embedFile("../fonts/FiraCode-Regular.ttf");
-const face_bold_ttf = @embedFile("../fonts/FiraCode-Bold.ttf");
+const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
+const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");

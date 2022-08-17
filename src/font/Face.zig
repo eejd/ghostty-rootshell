@@ -161,4 +161,4 @@ test {
     }
 }
 
-const testFont = @embedFile("../../fonts/Inconsolata-Regular.ttf");
+const testFont = @embedFile("res/Inconsolata-Regular.ttf");
