@@ -1,3 +1,4 @@
+const std = @import("std");
 const stream = @import("stream.zig");
 
 pub const Loop = @import("Loop.zig");
@@ -16,6 +17,11 @@ pub const Embed = @import("Embed.zig");
 pub usingnamespace @import("error.zig");
 
 test {
+    // Leak a loop... I don't know why but this fixes CI failures. Probably
+    // a miscompilation or something. TODO: double check this once self-hosted
+    // lands to see if we need this.
+    _ = try Loop.init(std.heap.page_allocator);
+
     _ = @import("tests.zig");
     _ = stream;
 
