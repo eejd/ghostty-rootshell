@@ -8,6 +8,8 @@
 , tracy
 , vulkan-loader
 , vttest
+, wabt
+, wasmtime
 , wraptest
 , zig
 
@@ -48,6 +50,10 @@ in mkShell rec {
     tracy
     vttest
     wraptest
+
+    # wasm
+    wabt
+    wasmtime
   ];
 
   buildInputs = [

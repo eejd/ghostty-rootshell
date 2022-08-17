@@ -52,6 +52,21 @@ pub fn build(b: *std.build.Builder) !void {
         if (tracy) try tracylib.link(b, exe, target);
     }
 
+    // term.wasm
+    {
+        const wasm = b.addSharedLibrary(
+            "ghostty-term",
+            "src/terminal/main_wasm.zig",
+            .{ .unversioned = {} },
+        );
+        wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
+        wasm.setBuildMode(mode);
+        wasm.setOutputDir("zig-out");
+
+        const step = b.step("term-wasm", "Build the terminal.wasm library");
+        step.dependOn(&wasm.step);
+    }
+
     // Run
     {
         // Build our run step, which runs the main app by default, but will
