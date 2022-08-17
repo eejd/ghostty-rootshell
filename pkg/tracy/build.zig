@@ -12,10 +12,11 @@ fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
-pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !void {
+pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const tracy = try buildTracy(b, step);
     step.linkLibrary(tracy);
     step.addIncludePath(root);
+    return tracy;
 }
 
 pub fn buildTracy(

@@ -14,11 +14,12 @@ fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
-pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !void {
+pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const lib = try buildFreetype(b, step);
     step.linkLibrary(lib);
     step.addIncludePath(include_path);
     step.addIncludePath(include_path_self);
+    return lib;
 }
 
 pub fn buildFreetype(

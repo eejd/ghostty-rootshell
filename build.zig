@@ -144,7 +144,7 @@ fn addDeps(
 
     // Freetype
     step.addPackage(freetype.pkg);
-    try freetype.link(b, step);
+    _ = try freetype.link(b, step);
 
     // Glfw
     step.addPackage(glfw.pkg);
@@ -155,11 +155,13 @@ fn addDeps(
 
     // Libuv
     step.addPackage(libuv.pkg);
-    try libuv.link(b, step);
+    var libuv_step = try libuv.link(b, step);
+    system_sdk.include(b, libuv_step, .{});
 
     // Tracy
     step.addPackage(tracylib.pkg);
-    try tracylib.link(b, step);
+    var tracy_step = try tracylib.link(b, step);
+    system_sdk.include(b, tracy_step, .{});
 }
 
 fn conformanceSteps(

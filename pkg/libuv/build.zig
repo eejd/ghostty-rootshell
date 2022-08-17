@@ -13,10 +13,11 @@ fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
-pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !void {
+pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const libuv = try buildLibuv(b, step);
     step.linkLibrary(libuv);
     step.addIncludePath(include_path);
+    return libuv;
 }
 
 pub fn buildLibuv(
