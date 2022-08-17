@@ -9,7 +9,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const ftc = @import("../freetype/c.zig");
+const ftc = @import("freetype").c;
 const Atlas = @import("../Atlas.zig");
 const Glyph = @import("font.zig").Glyph;
 

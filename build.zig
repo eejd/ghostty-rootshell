@@ -3,7 +3,7 @@ const fs = std.fs;
 const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
 const glfw = @import("vendor/mach/glfw/build.zig");
-const ft = @import("src/freetype/build.zig");
+const freetype = @import("pkg/freetype/build.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const tracylib = @import("src/tracy/build.zig");
 const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
@@ -130,8 +130,8 @@ fn addDeps(
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
     // Freetype
-    const ftlib = try ft.create(b, step.target, step.build_mode, .{});
-    ftlib.link(step);
+    step.addPackage(freetype.pkg);
+    try freetype.link(b, step);
 
     // Glfw
     step.addPackage(glfw.pkg);

@@ -157,13 +157,3 @@ pub fn buildLibuv(
 
     return lib;
 }
-
-pub fn testLibuv(
-    b: *std.build.Builder,
-    step: *std.build.LibExeObjStep,
-) !*std.build.LibExeObjStep {
-    const lib = b.addTest(root ++ "src/main.zig");
-    lib.setTarget(step.target);
-    try link(b, step);
-    return lib;
-}
