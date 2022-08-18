@@ -458,6 +458,19 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
         return;
     }
 
+    // Anytime is character is created, we have to clear the selection
+    if (win.terminal.selection != null) {
+        win.terminal.selection = null;
+        win.render_timer.schedule() catch |err|
+            log.err("error scheduling render in charCallback err={}", .{err});
+    }
+
+    // We want to scroll to the bottom
+    // TODO: detect if we're at the bottom to avoid the render call here.
+    win.terminal.scrollViewport(.{ .bottom = {} });
+    win.render_timer.schedule() catch |err|
+        log.err("error scheduling render in charCallback err={}", .{err});
+
     // Write the character to the pty
     win.queueWrite(&[1]u8{@intCast(u8, codepoint)}) catch |err|
         log.err("error queueing write in charCallback err={}", .{err});
