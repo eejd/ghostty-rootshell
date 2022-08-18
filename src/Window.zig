@@ -1049,6 +1049,12 @@ pub fn setCursorPos(self: *Window, row: u16, col: u16) !void {
 }
 
 pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
+    if (mode == .complete) {
+        // Whenever we erase the full display, scroll to bottom.
+        self.terminal.scrollViewport(.{ .bottom = {} });
+        try self.render_timer.schedule();
+    }
+
     self.terminal.eraseDisplay(mode);
 }
 
