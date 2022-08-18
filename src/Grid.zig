@@ -10,9 +10,9 @@ const font = @import("font/font.zig");
 const terminal = @import("terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("opengl.zig");
-const gb = @import("gb_math.zig");
 const trace = @import("tracy").trace;
 const Config = @import("config.zig").Config;
+const math = @import("math.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -442,20 +442,20 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
 pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
-    // Create a 2D orthographic projection matrix with the full width/height.
-    var projection: gb.gbMat4 = undefined;
-    gb.gb_mat4_ortho2d(
-        &projection,
-        0,
-        @intToFloat(f32, dim.width),
-        @intToFloat(f32, dim.height),
-        0,
-    );
-
     // Update the projection uniform within our shader
     const bind = try self.program.use();
     defer bind.unbind();
-    try self.program.setUniform("projection", projection);
+    try self.program.setUniform(
+        "projection",
+
+        // 2D orthographic projection with the full w/h
+        math.ortho2d(
+            0,
+            @intToFloat(f32, dim.width),
+            @intToFloat(f32, dim.height),
+            0,
+        ),
+    );
 
     // Recalculate the rows/columns.
     self.size.update(dim, self.cell_size);

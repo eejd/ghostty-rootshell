@@ -140,8 +140,6 @@ fn addDeps(
     b: *std.build.Builder,
     step: *std.build.LibExeObjStep,
 ) !void {
-    step.addIncludeDir("src/");
-    step.addCSourceFile("src/gb_math.c", &.{});
     step.addIncludeDir("vendor/glad/include/");
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
