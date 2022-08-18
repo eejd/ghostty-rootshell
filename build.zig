@@ -8,6 +8,9 @@ const libuv = @import("pkg/libuv/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
 
+/// A build that is set to true if Tracy integration should be built.
+var tracy: bool = false;
+
 pub fn build(b: *std.build.Builder) !void {
     const mode = b.standardReleaseOptions();
     const target = target: {
@@ -21,7 +24,7 @@ pub fn build(b: *std.build.Builder) !void {
         break :target result;
     };
 
-    const tracy = b.option(
+    tracy = b.option(
         bool,
         "tracy",
         "Enable Tracy integration (default true in Debug on Linux)",
@@ -160,8 +163,10 @@ fn addDeps(
 
     // Tracy
     step.addPackage(tracylib.pkg);
-    var tracy_step = try tracylib.link(b, step);
-    system_sdk.include(b, tracy_step, .{});
+    if (tracy) {
+        var tracy_step = try tracylib.link(b, step);
+        system_sdk.include(b, tracy_step, .{});
+    }
 }
 
 fn conformanceSteps(
