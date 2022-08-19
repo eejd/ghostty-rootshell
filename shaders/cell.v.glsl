@@ -35,17 +35,6 @@ layout (location = 5) in vec4 bg_color_in;
 // the entire terminal grid in a single GPU pass.
 layout (location = 6) in uint mode_in;
 
-// The Z-depth. This is between 0.0 and 1.0. This is used to paint newer
-// values on top of older ones to limit the amount of data that needs to
-// be sent to the GPU.
-//
-// 0 is further back/away, 1 is front/near
-//
-// TODO: It would be better to just send the Z value as part of grid_coord
-// and normalize it to NDC and then linearly transform it but this was easy
-// to get going more quickly.
-layout (location = 7) in float grid_z;
-
 // The background or foreground color for the fragment, depending on
 // whether this is a background or foreground pass.
 flat out vec4 color;
@@ -96,7 +85,7 @@ void main() {
     // Our Z value. For now we just use grid_z directly but we pull it
     // out here so the variable name is more uniform to our cell_pos and
     // in case we want to do any other math later.
-    float cell_z = grid_z;
+    float cell_z = 0.0;
 
     // Turn the cell position into a vertex point depending on the
     // gl_VertexID. Since we use instanced drawing, we have 4 vertices

@@ -58,9 +58,6 @@ foreground: terminal.color.RGB,
 /// Default background color
 background: terminal.color.RGB,
 
-/// The current value of the Z buffer.
-cell_z: u16 = 0,
-
 /// Available cursor styles for drawing. The values represents the mode value
 /// in the shader.
 pub const CursorStyle = enum(u8) {
@@ -112,10 +109,6 @@ const GPUCell = struct {
 
     /// uint mode
     mode: u8,
-
-    /// float grid_z. This is normalized to a float by dividing by the
-    /// max int value.
-    grid_z: u16,
 };
 
 pub fn init(alloc: Allocator, config: *const Config) !Grid {
@@ -214,8 +207,6 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
     offset += 4 * @sizeOf(u8);
     try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
-    offset += 1 * @sizeOf(u8);
-    try vbobind.attributeAdvanced(7, 1, gl.c.GL_UNSIGNED_SHORT, true, @sizeOf(GPUCell), offset);
     try vbobind.enableAttribArray(0);
     try vbobind.enableAttribArray(1);
     try vbobind.enableAttribArray(2);
@@ -223,7 +214,6 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     try vbobind.enableAttribArray(4);
     try vbobind.enableAttribArray(5);
     try vbobind.enableAttribArray(6);
-    try vbobind.enableAttribArray(7);
     try vbobind.attributeDivisor(0, 1);
     try vbobind.attributeDivisor(1, 1);
     try vbobind.attributeDivisor(2, 1);
@@ -231,7 +221,6 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     try vbobind.attributeDivisor(4, 1);
     try vbobind.attributeDivisor(5, 1);
     try vbobind.attributeDivisor(6, 1);
-    try vbobind.attributeDivisor(7, 1);
 
     // Build our texture
     const tex = try gl.Texture.create();
@@ -303,15 +292,11 @@ pub fn rebuildCells(self: *Grid, term: Terminal) !void {
 
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        // * N for cache space for changes
-        ((term.screen.rows * term.screen.cols * 3) + 1) * 10,
+        (term.screen.rows * term.screen.cols * 3) + 1,
     );
 
     // We've written no data to the GPU, refresh it all
     self.gl_cells_written = 0;
-
-    // Reset the Z buffer at the end no matter what since we're fresh.
-    defer self.cell_z = 0;
 
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
@@ -319,7 +304,6 @@ pub fn rebuildCells(self: *Grid, term: Terminal) !void {
     while (rowIter.next()) |line| {
         defer y += 1;
         for (line) |cell, x| {
-            self.cell_z = 0;
             assert(try self.updateCell(term, cell, x, y));
         }
     }
@@ -338,9 +322,7 @@ pub fn finalizeCells(self: *Grid, term: Terminal) !void {
         self.addCursor(term);
 
     // If we're out of space or we have no more Z-space, rebuild.
-    if (self.cells.items.len == self.cells.capacity or
-        self.cell_z == std.math.maxInt(@TypeOf(self.cell_z)))
-    {
+    if (self.cells.items.len == self.cells.capacity) {
         log.info("cell cache full, rebuilding from scratch", .{});
         try self.rebuildCells(term);
     }
@@ -349,6 +331,7 @@ pub fn finalizeCells(self: *Grid, term: Terminal) !void {
     if (self.atlas_dirty) {
         log.info("atlas dirty, flushing changes", .{});
         try self.flushAtlas();
+        self.atlas_dirty = false;
     }
 }
 
@@ -367,9 +350,6 @@ fn addCursor(self: *Grid, term: Terminal) void {
             .bg_g = 0xFF,
             .bg_b = 0xFF,
             .bg_a = 255,
-
-            // The cursor is always at the very front
-            .grid_z = 255,
         });
     }
 }
@@ -445,25 +425,12 @@ pub fn updateCell(
     };
     if (self.cells.items.len + needed > self.cells.capacity) return false;
 
-    // Bump our Z value. The "zbump" is the max amount we could increase
-    // the Z value this call. If it could theoretically go over the max
-    // int size of the Z type, then we return false -- we need a rebuild.
-    const zbump = 2;
-    const zmax = std.math.maxInt(@TypeOf(self.cell_z));
-    const zmax_padded = zmax - (zbump * 2);
-    if (self.cell_z > zmax_padded) {
-        self.cell_z = zmax;
-        return false;
-    }
-    self.cell_z += zbump;
-
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
         self.cells.appendAssumeCapacity(.{
             .mode = 1,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
-            .grid_z = self.cell_z,
             .glyph_x = 0,
             .glyph_y = 0,
             .glyph_width = 0,
@@ -502,7 +469,6 @@ pub fn updateCell(
             .mode = 2,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
-            .grid_z = self.cell_z + 1,
             .glyph_x = glyph.atlas_x,
             .glyph_y = glyph.atlas_y,
             .glyph_width = glyph.width,
@@ -525,7 +491,6 @@ pub fn updateCell(
             .mode = 6, // underline
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
-            .grid_z = self.cell_z + 1,
             .glyph_x = 0,
             .glyph_y = 0,
             .glyph_width = 0,
@@ -584,8 +549,6 @@ fn flushAtlas(self: *Grid) !void {
         .UnsignedByte,
         self.font_atlas.atlas.data.ptr,
     );
-
-    self.atlas_dirty = false;
 }
 
 /// Render renders the current cell state. This will not modify any of

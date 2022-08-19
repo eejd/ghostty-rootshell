@@ -200,14 +200,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     gl.c.glEnable(gl.c.GL_BLEND);
     gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
 
-    // Depth test since we use the Z-buffer as an optimization to send
-    // only changed cells to the GPU. As cells are updated, we bump their
-    // Z value to be closer, so that over time new values are rendered "over"
-    // values (in reality old values are culled by the depth test, so they
-    // aren't ever "rendered").
-    gl.c.glEnable(gl.c.GL_DEPTH_TEST);
-    gl.c.glDepthFunc(gl.c.GL_LESS);
-
     // Create our terminal grid with the initial window size
     const window_size = try window.getSize();
     var grid = try Grid.init(alloc, config);
@@ -968,7 +960,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         .a = win.bg_a,
     };
     gl.clearColor(gl_bg.r, gl_bg.g, gl_bg.b, gl_bg.a);
-    gl.clear(gl.c.GL_COLOR_BUFFER_BIT | gl.c.GL_DEPTH_BUFFER_BIT);
+    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // For now, rebuild all cells
     win.grid.rebuildCells(win.terminal) catch |err|
