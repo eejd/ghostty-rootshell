@@ -93,6 +93,11 @@ pub fn reserve(self: *Atlas, alloc: Allocator, width: u32, height: u32) !Region 
     // x, y are populated within :best_idx below
     var region: Region = .{ .x = 0, .y = 0, .width = width, .height = height };
 
+    // If our width/height are 0, then we return the region as-is. This
+    // may seem like an error case but it simplifies downstream callers who
+    // might be trying to write empty data.
+    if (width == 0 and height == 0) return region;
+
     // Find the location in our nodes list to insert the new node for this region.
     var best_idx: usize = best_idx: {
         var best_height: u32 = std.math.maxInt(u32);

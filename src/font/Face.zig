@@ -88,6 +88,7 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 
     const glyph = self.ft_face.*.glyph;
     const bitmap = glyph.*.bitmap;
+    assert(bitmap.pixel_mode == ftc.FT_PIXEL_MODE_GRAY);
 
     const src_w = bitmap.width;
     const src_h = bitmap.rows;
@@ -96,25 +97,33 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 
     const region = try atlas.reserve(alloc, tgt_w, tgt_h);
 
-    // Build our buffer
-    //
-    // TODO(perf): we can avoid a buffer copy here in some cases where
-    // tgt_w == bitmap.width and bitmap.width == bitmap.pitch
-    const buffer = try alloc.alloc(u8, tgt_w * tgt_h);
-    defer alloc.free(buffer);
-    var dst_ptr = buffer;
-    var src_ptr = bitmap.buffer;
-    var i: usize = 0;
-    while (i < src_h) : (i += 1) {
-        std.mem.copy(u8, dst_ptr, src_ptr[0..bitmap.width]);
-        dst_ptr = dst_ptr[tgt_w..];
-        src_ptr += @intCast(usize, bitmap.pitch);
-    }
+    // If we have data, copy it into the atlas
+    if (region.width > 0 and region.height > 0) {
+        // We can avoid a buffer copy if our atlas width and bitmap
+        // width match and the bitmap pitch is just the width (meaning
+        // the data is tightly packed).
+        const needs_copy = !(tgt_w == bitmap.width and bitmap.width == bitmap.pitch);
 
-    // Write the glyph information into the atlas
-    assert(region.width == tgt_w);
-    assert(region.height == tgt_h);
-    atlas.set(region, buffer);
+        // If we need to copy the data, we copy it into a temporary buffer.
+        const buffer = if (needs_copy) buffer: {
+            var temp = try alloc.alloc(u8, tgt_w * tgt_h);
+            var dst_ptr = temp;
+            var src_ptr = bitmap.buffer;
+            var i: usize = 0;
+            while (i < src_h) : (i += 1) {
+                std.mem.copy(u8, dst_ptr, src_ptr[0..bitmap.width]);
+                dst_ptr = dst_ptr[tgt_w..];
+                src_ptr += @intCast(usize, bitmap.pitch);
+            }
+            break :buffer temp;
+        } else bitmap.buffer[0..(tgt_w * tgt_h)];
+        defer if (buffer.ptr != bitmap.buffer) alloc.free(buffer);
+
+        // Write the glyph information into the atlas
+        assert(region.width == tgt_w);
+        assert(region.height == tgt_h);
+        atlas.set(region, buffer);
+    }
 
     // Store glyph metadata
     return Glyph{
