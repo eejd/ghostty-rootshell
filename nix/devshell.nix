@@ -29,6 +29,7 @@
 let
   # See package.nix. Keep in sync.
   rpathLibs = [
+    libpng
     libGL
   ] ++ lib.optionals stdenv.isLinux [
     libX11
@@ -61,6 +62,7 @@ in mkShell rec {
   buildInputs = [
     # TODO: non-linux
   ] ++ lib.optionals stdenv.isLinux [
+    libpng
     libX11
     libXcursor
     libXext
