@@ -69,6 +69,16 @@ pub const Binding = struct {
         try errors.getError();
     }
 
+    /// Same as setDataNull but lets you manually specify the buffer size.
+    pub inline fn setDataNullManual(
+        b: Binding,
+        size: usize,
+        usage: Usage,
+    ) !void {
+        c.glBufferData(@enumToInt(b.target), @intCast(c_long, size), null, @enumToInt(usage));
+        try errors.getError();
+    }
+
     fn dataInfo(data: anytype) struct {
         size: isize,
         ptr: *const anyopaque,

@@ -27,6 +27,11 @@ cell_size: CellSize,
 /// The current set of cells to render.
 cells: std.ArrayListUnmanaged(GPUCell),
 
+/// The size of the cells list that was sent to the GPU. This is used
+/// to detect when the cells array was reallocated/resized and handle that
+/// accordingly.
+gl_cells_size: usize = 0,
+
 /// Shader program for cell rendering.
 program: gl.Program,
 vao: gl.VertexArray,
@@ -497,7 +502,7 @@ pub fn flushAtlas(self: *Grid) !void {
     self.atlas_dirty = false;
 }
 
-pub fn render(self: Grid) !void {
+pub fn render(self: *Grid) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -518,7 +523,25 @@ pub fn render(self: Grid) !void {
     // Bind VBO and set data
     var binding = try self.vbo.bind(.ArrayBuffer);
     defer binding.unbind();
-    try binding.setData(self.cells.items, .StaticDraw);
+
+    // Our allocated buffer on the GPU is smaller than our capacity.
+    // We reallocate a new buffer with the full new capacity.
+    if (self.gl_cells_size < self.cells.capacity) {
+        log.info("reallocating GPU buffer old={} new={}", .{
+            self.gl_cells_size,
+            self.cells.capacity,
+        });
+
+        try binding.setDataNullManual(
+            @sizeOf(GPUCell) * self.cells.capacity,
+            .StaticDraw,
+        );
+        self.gl_cells_size = self.cells.capacity;
+    }
+
+    // We always set the data using subdata if possible to avoid reallocation
+    // on the GPU.
+    try binding.setSubData(0, self.cells.items);
 
     // Bind our texture
     try gl.Texture.active(gl.c.GL_TEXTURE0);
