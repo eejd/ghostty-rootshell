@@ -96,7 +96,7 @@ test {
     _ = @import("Pty.zig");
     _ = @import("Command.zig");
     _ = @import("TempDir.zig");
-    _ = @import("font/font.zig");
+    _ = @import("font/main.zig");
     _ = @import("terminal/Terminal.zig");
 
     // Libraries

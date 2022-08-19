@@ -7,9 +7,9 @@ const Allocator = std.mem.Allocator;
 const Atlas = @import("../Atlas.zig");
 const ftc = @import("freetype").c;
 const ftok = ftc.FT_Err_Ok;
-const Face = @import("font.zig").Face;
-const Glyph = @import("font.zig").Glyph;
-const Style = @import("font.zig").Style;
+const Face = @import("main.zig").Face;
+const Glyph = @import("main.zig").Glyph;
+const Style = @import("main.zig").Style;
 const testFont = @import("test.zig").fontRegular;
 
 const log = std.log.scoped(.font_family);

@@ -11,7 +11,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ftc = @import("freetype").c;
 const Atlas = @import("../Atlas.zig");
-const Glyph = @import("font.zig").Glyph;
+const Glyph = @import("main.zig").Glyph;
 
 const ftok = ftc.FT_Err_Ok;
 const log = std.log.scoped(.font_face);
