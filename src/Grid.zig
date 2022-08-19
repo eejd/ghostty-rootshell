@@ -32,6 +32,10 @@ cells: std.ArrayListUnmanaged(GPUCell),
 /// accordingly.
 gl_cells_size: usize = 0,
 
+/// The last length of the cells that was written to the GPU. This is used to
+/// determine what data needs to be rewritten on the GPU.
+gl_cells_written: usize = 0,
+
 /// Shader program for cell rendering.
 program: gl.Program,
 vao: gl.VertexArray,
@@ -276,9 +280,14 @@ pub fn deinit(self: *Grid) void {
     self.* = undefined;
 }
 
-/// updateCells updates our GPU cells from the current terminal view.
-/// The updated cells will take effect on the next render.
-pub fn updateCells(self: *Grid, term: Terminal) !void {
+/// rebuildCells rebuilds all the GPU cells from our CPU state. This is a
+/// slow operation but ensures that the GPU state exactly matches the CPU state.
+/// In steady-state operation, we use some GPU tricks to send down stale data
+/// that is ignored. This accumulates more memory; rebuildCells clears it.
+///
+/// Note this doesn't have to typically be manually called. Internally,
+/// the renderer will do this when it needs more memory space.
+pub fn rebuildCells(self: *Grid, term: Terminal) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -291,153 +300,49 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
 
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        (term.screen.rows * term.screen.cols * 3) + 1,
+        // * N for cache space for changes
+        ((term.screen.rows * term.screen.cols * 3) + 1) * 10,
     );
+
+    // We've written no data to the GPU, refresh it all
+    self.gl_cells_written = 0;
 
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
     while (rowIter.next()) |line| {
         defer y += 1;
-
-        for (line) |cell, x| {
-            const BgFg = struct {
-                /// Background is optional because in un-inverted mode
-                /// it may just be equivalent to the default background in
-                /// which case we do nothing to save on GPU render time.
-                bg: ?terminal.color.RGB,
-
-                /// Fg is always set to some color, though we may not render
-                /// any fg if the cell is empty or has no attributes like
-                /// underline.
-                fg: terminal.color.RGB,
-            };
-
-            // The colors for the cell.
-            const colors: BgFg = colors: {
-                // If we have a selection, then we need to check if this
-                // cell is selected.
-                // TODO(perf): we can check in advance if selection is in
-                // our viewport at all and not run this on every point.
-                if (term.selection) |sel| {
-                    const screen_point = (terminal.point.Viewport{
-                        .x = x,
-                        .y = y,
-                    }).toScreen(&term.screen);
-
-                    // If we are selected, we our colors are just inverted fg/bg
-                    if (sel.contains(screen_point)) {
-                        break :colors BgFg{
-                            .bg = self.foreground,
-                            .fg = self.background,
-                        };
-                    }
-                }
-
-                const res: BgFg = if (cell.attrs.inverse == 0) .{
-                    // In normal mode, background and fg match the cell. We
-                    // un-optionalize the fg by defaulting to our fg color.
-                    .bg = cell.bg,
-                    .fg = cell.fg orelse self.foreground,
-                } else .{
-                    // In inverted mode, the background MUST be set to something
-                    // (is never null) so it is either the fg or default fg. The
-                    // fg is either the bg or default background.
-                    .bg = cell.fg orelse self.foreground,
-                    .fg = cell.bg orelse self.background,
-                };
-                break :colors res;
-            };
-
-            // If the cell has a background, we always draw it.
-            if (colors.bg) |rgb| {
-                self.cells.appendAssumeCapacity(.{
-                    .mode = 1,
-                    .grid_col = @intCast(u16, x),
-                    .grid_row = @intCast(u16, y),
-                    .grid_z = 0,
-                    .glyph_x = 0,
-                    .glyph_y = 0,
-                    .glyph_width = 0,
-                    .glyph_height = 0,
-                    .glyph_offset_x = 0,
-                    .glyph_offset_y = 0,
-                    .fg_r = 0,
-                    .fg_g = 0,
-                    .fg_b = 0,
-                    .fg_a = 0,
-                    .bg_r = rgb.r,
-                    .bg_g = rgb.g,
-                    .bg_b = rgb.b,
-                    .bg_a = 0xFF,
-                });
-            }
-
-            // If the cell is empty then we draw nothing in the box.
-            if (!cell.empty()) {
-                // Determine our glyph styling
-                const style: font.Style = if (cell.attrs.bold == 1)
-                    .bold
-                else
-                    .regular;
-
-                // Get our glyph
-                // TODO: if we add a glyph, I think we need to rerender the texture.
-                const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
-                    glyph
-                else glyph: {
-                    self.atlas_dirty = true;
-                    break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
-                };
-
-                self.cells.appendAssumeCapacity(.{
-                    .mode = 2,
-                    .grid_col = @intCast(u16, x),
-                    .grid_row = @intCast(u16, y),
-                    .grid_z = 1,
-                    .glyph_x = glyph.atlas_x,
-                    .glyph_y = glyph.atlas_y,
-                    .glyph_width = glyph.width,
-                    .glyph_height = glyph.height,
-                    .glyph_offset_x = glyph.offset_x,
-                    .glyph_offset_y = glyph.offset_y,
-                    .fg_r = colors.fg.r,
-                    .fg_g = colors.fg.g,
-                    .fg_b = colors.fg.b,
-                    .fg_a = 255,
-                    .bg_r = 0,
-                    .bg_g = 0,
-                    .bg_b = 0,
-                    .bg_a = 0,
-                });
-            }
-
-            if (cell.attrs.underline == 1) {
-                self.cells.appendAssumeCapacity(.{
-                    .mode = 6, // underline
-                    .grid_col = @intCast(u16, x),
-                    .grid_row = @intCast(u16, y),
-                    .grid_z = 1,
-                    .glyph_x = 0,
-                    .glyph_y = 0,
-                    .glyph_width = 0,
-                    .glyph_height = 0,
-                    .glyph_offset_x = 0,
-                    .glyph_offset_y = 0,
-                    .fg_r = colors.fg.r,
-                    .fg_g = colors.fg.g,
-                    .fg_b = colors.fg.b,
-                    .fg_a = 255,
-                    .bg_r = 0,
-                    .bg_g = 0,
-                    .bg_b = 0,
-                    .bg_a = 0,
-                });
-            }
-        }
+        for (line) |cell, x| assert(try self.updateCell(term, cell, x, y));
     }
 
-    // Draw the cursor
+    // Add the cursor
+    self.addCursor(term);
+}
+
+/// This should be called prior to render to finalize the cells and prepare
+/// for render. This performs tasks such as preparing the cursor, refreshing
+/// the cells if necessary, etc.
+pub fn finalizeCells(self: *Grid, term: Terminal) !void {
+    // Add the cursor
+    // TODO: only add cursor if it changed
+    if (self.cells.items.len < self.cells.capacity)
+        self.addCursor(term);
+
+    // If we're out of space, rebuild
+    if (self.cells.items.len == self.cells.capacity) {
+        log.info("cell cache full, rebuilding from scratch", .{});
+        try self.rebuildCells(term);
+    }
+
+    // If our atlas is dirty, we need to flush it
+    if (self.atlas_dirty) {
+        log.info("atlas dirty, flushing changes", .{});
+        try self.flushAtlas();
+    }
+}
+
+fn addCursor(self: *Grid, term: Terminal) void {
+    // Add the cursor
     if (self.cursor_visible and term.screen.viewportIsBottom()) {
         self.cells.appendAssumeCapacity(.{
             .mode = @enumToInt(self.cursor_style),
@@ -456,6 +361,166 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
             .grid_z = 255,
         });
     }
+}
+
+/// Update a single cell. The bool returns whether the cell was updated
+/// or not. If the cell wasn't updated, a full refreshCells call is
+/// needed.
+pub fn updateCell(
+    self: *Grid,
+    term: Terminal,
+    cell: terminal.Screen.Cell,
+    x: usize,
+    y: usize,
+) !bool {
+    const t = trace(@src());
+    defer t.end();
+
+    const BgFg = struct {
+        /// Background is optional because in un-inverted mode
+        /// it may just be equivalent to the default background in
+        /// which case we do nothing to save on GPU render time.
+        bg: ?terminal.color.RGB,
+
+        /// Fg is always set to some color, though we may not render
+        /// any fg if the cell is empty or has no attributes like
+        /// underline.
+        fg: terminal.color.RGB,
+    };
+
+    // The colors for the cell.
+    const colors: BgFg = colors: {
+        // If we have a selection, then we need to check if this
+        // cell is selected.
+        // TODO(perf): we can check in advance if selection is in
+        // our viewport at all and not run this on every point.
+        if (term.selection) |sel| {
+            const screen_point = (terminal.point.Viewport{
+                .x = x,
+                .y = y,
+            }).toScreen(&term.screen);
+
+            // If we are selected, we our colors are just inverted fg/bg
+            if (sel.contains(screen_point)) {
+                break :colors BgFg{
+                    .bg = self.foreground,
+                    .fg = self.background,
+                };
+            }
+        }
+
+        const res: BgFg = if (cell.attrs.inverse == 0) .{
+            // In normal mode, background and fg match the cell. We
+            // un-optionalize the fg by defaulting to our fg color.
+            .bg = cell.bg,
+            .fg = cell.fg orelse self.foreground,
+        } else .{
+            // In inverted mode, the background MUST be set to something
+            // (is never null) so it is either the fg or default fg. The
+            // fg is either the bg or default background.
+            .bg = cell.fg orelse self.foreground,
+            .fg = cell.bg orelse self.background,
+        };
+        break :colors res;
+    };
+
+    // Calculate the amount of space we need in the cells list.
+    const needed = needed: {
+        var i: usize = 0;
+        if (colors.bg != null) i += 1;
+        if (!cell.empty()) i += 1;
+        if (cell.attrs.underline == 1) i += 1;
+        break :needed i;
+    };
+    if (self.cells.items.len + needed > self.cells.capacity) return false;
+
+    // If the cell has a background, we always draw it.
+    if (colors.bg) |rgb| {
+        self.cells.appendAssumeCapacity(.{
+            .mode = 1,
+            .grid_col = @intCast(u16, x),
+            .grid_row = @intCast(u16, y),
+            .grid_z = 0,
+            .glyph_x = 0,
+            .glyph_y = 0,
+            .glyph_width = 0,
+            .glyph_height = 0,
+            .glyph_offset_x = 0,
+            .glyph_offset_y = 0,
+            .fg_r = 0,
+            .fg_g = 0,
+            .fg_b = 0,
+            .fg_a = 0,
+            .bg_r = rgb.r,
+            .bg_g = rgb.g,
+            .bg_b = rgb.b,
+            .bg_a = 0xFF,
+        });
+    }
+
+    // If the cell is empty then we draw nothing in the box.
+    if (!cell.empty()) {
+        // Determine our glyph styling
+        const style: font.Style = if (cell.attrs.bold == 1)
+            .bold
+        else
+            .regular;
+
+        // Get our glyph
+        // TODO: if we add a glyph, I think we need to rerender the texture.
+        const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
+            glyph
+        else glyph: {
+            self.atlas_dirty = true;
+            break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
+        };
+
+        self.cells.appendAssumeCapacity(.{
+            .mode = 2,
+            .grid_col = @intCast(u16, x),
+            .grid_row = @intCast(u16, y),
+            .grid_z = 1,
+            .glyph_x = glyph.atlas_x,
+            .glyph_y = glyph.atlas_y,
+            .glyph_width = glyph.width,
+            .glyph_height = glyph.height,
+            .glyph_offset_x = glyph.offset_x,
+            .glyph_offset_y = glyph.offset_y,
+            .fg_r = colors.fg.r,
+            .fg_g = colors.fg.g,
+            .fg_b = colors.fg.b,
+            .fg_a = 255,
+            .bg_r = 0,
+            .bg_g = 0,
+            .bg_b = 0,
+            .bg_a = 0,
+        });
+    }
+
+    if (cell.attrs.underline == 1) {
+        self.cells.appendAssumeCapacity(.{
+            .mode = 6, // underline
+            .grid_col = @intCast(u16, x),
+            .grid_row = @intCast(u16, y),
+            .grid_z = 1,
+            .glyph_x = 0,
+            .glyph_y = 0,
+            .glyph_width = 0,
+            .glyph_height = 0,
+            .glyph_offset_x = 0,
+            .glyph_offset_y = 0,
+            .fg_r = colors.fg.r,
+            .fg_g = colors.fg.g,
+            .fg_b = colors.fg.b,
+            .fg_a = 255,
+            .bg_r = 0,
+            .bg_g = 0,
+            .bg_b = 0,
+            .bg_a = 0,
+        });
+    }
+
+    return true;
 }
 
 /// Set the screen size for rendering. This will update the projection
@@ -483,9 +548,7 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 }
 
 /// Updates the font texture atlas if it is dirty.
-pub fn flushAtlas(self: *Grid) !void {
-    if (!self.atlas_dirty) return;
-
+fn flushAtlas(self: *Grid) !void {
     var texbind = try self.texture.bind(.@"2D");
     defer texbind.unbind();
     try texbind.subImage2D(
@@ -502,6 +565,8 @@ pub fn flushAtlas(self: *Grid) !void {
     self.atlas_dirty = false;
 }
 
+/// Render renders the current cell state. This will not modify any of
+/// the cells.
 pub fn render(self: *Grid) !void {
     const t = trace(@src());
     defer t.end();
@@ -536,12 +601,21 @@ pub fn render(self: *Grid) !void {
             @sizeOf(GPUCell) * self.cells.capacity,
             .StaticDraw,
         );
+
         self.gl_cells_size = self.cells.capacity;
+        self.gl_cells_written = 0;
     }
 
-    // We always set the data using subdata if possible to avoid reallocation
-    // on the GPU.
-    try binding.setSubData(0, self.cells.items);
+    // If we have data to write to the GPU, send it.
+    if (self.gl_cells_written < self.cells.items.len) {
+        const data = self.cells.items[self.gl_cells_written..];
+        //log.info("sending {} cells to GPU", .{data.len});
+        try binding.setSubData(self.gl_cells_written * @sizeOf(GPUCell), data);
+
+        self.gl_cells_written += data.len;
+        assert(data.len > 0);
+        assert(self.gl_cells_written <= self.cells.items.len);
+    }
 
     // Bind our texture
     try gl.Texture.active(gl.c.GL_TEXTURE0);

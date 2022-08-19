@@ -970,13 +970,13 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     gl.clearColor(gl_bg.r, gl_bg.g, gl_bg.b, gl_bg.a);
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT | gl.c.GL_DEPTH_BUFFER_BIT);
 
-    // Update the cells for drawing
-    win.grid.updateCells(win.terminal) catch |err|
-        log.err("error calling updateCells in render timer err={}", .{err});
+    // For now, rebuild all cells
+    win.grid.rebuildCells(win.terminal) catch |err|
+        log.err("error calling rebuildCells in render timer err={}", .{err});
 
-    // Update our texture if we have to
-    win.grid.flushAtlas() catch |err|
-        log.err("error calling flushAtlas in render timer err={}", .{err});
+    // Finalize the cells prior to render
+    win.grid.finalizeCells(win.terminal) catch |err|
+        log.err("error calling updateCells in render timer err={}", .{err});
 
     // Render the grid
     win.grid.render() catch |err| {
