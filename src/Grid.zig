@@ -100,6 +100,10 @@ const GPUCell = struct {
 
     /// uint mode
     mode: u8,
+
+    /// float grid_z. This is normalized to a float by dividing by the
+    /// max int value.
+    grid_z: u16,
 };
 
 pub fn init(alloc: Allocator, config: *const Config) !Grid {
@@ -198,6 +202,8 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
     offset += 4 * @sizeOf(u8);
     try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
+    offset += 1 * @sizeOf(u8);
+    try vbobind.attributeAdvanced(7, 1, gl.c.GL_UNSIGNED_SHORT, true, @sizeOf(GPUCell), offset);
     try vbobind.enableAttribArray(0);
     try vbobind.enableAttribArray(1);
     try vbobind.enableAttribArray(2);
@@ -205,6 +211,7 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     try vbobind.enableAttribArray(4);
     try vbobind.enableAttribArray(5);
     try vbobind.enableAttribArray(6);
+    try vbobind.enableAttribArray(7);
     try vbobind.attributeDivisor(0, 1);
     try vbobind.attributeDivisor(1, 1);
     try vbobind.attributeDivisor(2, 1);
@@ -212,6 +219,7 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     try vbobind.attributeDivisor(4, 1);
     try vbobind.attributeDivisor(5, 1);
     try vbobind.attributeDivisor(6, 1);
+    try vbobind.attributeDivisor(7, 1);
 
     // Build our texture
     const tex = try gl.Texture.create();
@@ -342,6 +350,7 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                     .mode = 1,
                     .grid_col = @intCast(u16, x),
                     .grid_row = @intCast(u16, y),
+                    .grid_z = 0,
                     .glyph_x = 0,
                     .glyph_y = 0,
                     .glyph_width = 0,
@@ -380,6 +389,7 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                     .mode = 2,
                     .grid_col = @intCast(u16, x),
                     .grid_row = @intCast(u16, y),
+                    .grid_z = 1,
                     .glyph_x = glyph.atlas_x,
                     .glyph_y = glyph.atlas_y,
                     .glyph_width = glyph.width,
@@ -402,6 +412,7 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
                     .mode = 6, // underline
                     .grid_col = @intCast(u16, x),
                     .grid_row = @intCast(u16, y),
+                    .grid_z = 1,
                     .glyph_x = 0,
                     .glyph_y = 0,
                     .glyph_width = 0,
@@ -435,6 +446,9 @@ pub fn updateCells(self: *Grid, term: Terminal) !void {
             .bg_g = 0xFF,
             .bg_b = 0xFF,
             .bg_a = 255,
+
+            // The cursor is always at the very front
+            .grid_z = 255,
         });
     }
 }

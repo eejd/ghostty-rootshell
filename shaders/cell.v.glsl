@@ -35,6 +35,17 @@ layout (location = 5) in vec4 bg_color_in;
 // the entire terminal grid in a single GPU pass.
 layout (location = 6) in uint mode_in;
 
+// The Z-depth. This is between 0.0 and 1.0. This is used to paint newer
+// values on top of older ones to limit the amount of data that needs to
+// be sent to the GPU.
+//
+// 0 is further back/away, 1 is front/near
+//
+// TODO: It would be better to just send the Z value as part of grid_coord
+// and normalize it to NDC and then linearly transform it but this was easy
+// to get going more quickly.
+layout (location = 7) in float grid_z;
+
 // The background or foreground color for the fragment, depending on
 // whether this is a background or foreground pass.
 flat out vec4 color;
@@ -82,6 +93,11 @@ void main() {
     // Example: (1,0) with a 30 wide cell is converted to (30,0)
     vec2 cell_pos = cell_size * grid_coord;
 
+    // Our Z value. For now we just use grid_z directly but we pull it
+    // out here so the variable name is more uniform to our cell_pos and
+    // in case we want to do any other math later.
+    float cell_z = grid_z;
+
     // Turn the cell position into a vertex point depending on the
     // gl_VertexID. Since we use instanced drawing, we have 4 vertices
     // for each corner of the cell. We can use gl_VertexID to determine
@@ -103,7 +119,7 @@ void main() {
         // one cell up and to the left. (Do the math to verify yourself)
         cell_pos = cell_pos + cell_size * position;
 
-        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
         break;
 
@@ -117,7 +133,7 @@ void main() {
 
         // Calculate the final position of the cell.
         cell_pos = cell_pos + glyph_size * position + glyph_offset_calc;
-        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
 
         // We need to convert our texture position and size to normalized
         // device coordinates (0 to 1.0) by dividing by the size of the texture.
@@ -134,7 +150,7 @@ void main() {
         // Same as background since we're taking up the whole cell.
         cell_pos = cell_pos + cell_size * position;
 
-        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
         break;
 
@@ -145,7 +161,7 @@ void main() {
         // Same as background since we're taking up the whole cell.
         cell_pos = cell_pos + cell_size * position;
 
-        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
         break;
 
@@ -156,7 +172,7 @@ void main() {
         // Same as background since we're taking up the whole cell.
         cell_pos = cell_pos + bar_size * position;
 
-        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
         break;
 
@@ -174,7 +190,7 @@ void main() {
         // above the bottom.
         cell_pos = cell_pos + underline_offset - underline_size * position;
 
-        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
+        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = fg_color_in / 255.0;
         break;
     }
