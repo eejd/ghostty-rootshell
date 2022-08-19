@@ -146,7 +146,7 @@ test {
     defer _ = ftc.FT_Done_FreeType(ft_lib);
 
     const alloc = testing.allocator;
-    var atlas = try Atlas.init(alloc, 512);
+    var atlas = try Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
     var font = try init(ft_lib);

@@ -156,7 +156,7 @@ fn codepoint(v: anytype) u32 {
 test {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var fam = try init(try Atlas.init(alloc, 512));
+    var fam = try init(try Atlas.init(alloc, 512, .greyscale));
     defer fam.deinit(alloc);
     defer fam.atlas.deinit(alloc);
     try fam.loadFaceFromMemory(.regular, testFont, 48);

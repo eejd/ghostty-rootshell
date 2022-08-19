@@ -114,7 +114,7 @@ const GPUCell = struct {
 pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // Initialize our font atlas. We will initially populate the
     // font atlas with all the visible ASCII characters since they are common.
-    var atlas = try Atlas.init(alloc, 512);
+    var atlas = try Atlas.init(alloc, 512, .greyscale);
     errdefer atlas.deinit(alloc);
     var fam = try font.Family.init(atlas);
     errdefer fam.deinit(alloc);

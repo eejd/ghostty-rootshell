@@ -8,7 +8,6 @@
 //!
 //! Limitations that are easy to fix, but I didn't need them:
 //!
-//!   * Greyscale support only, no support for RGB or RGBA.
 //!   * Written data must be packed, no support for custom strides.
 //!   * Texture is always a square, no ability to set width != height. Note
 //!     that regions written INTO the atlas do not have to be square, only
@@ -31,6 +30,17 @@ size: u32 = 0,
 /// The nodes (rectangles) of available space.
 nodes: std.ArrayListUnmanaged(Node) = .{},
 
+/// The format of the texture data being written into the Atlas. This must be
+/// uniform for all textures in the Atlas. If you have some textures with
+/// different formats, you must use multiple atlases or convert the textures.
+format: Format = .greyscale,
+
+pub const Format = enum(u3) {
+    greyscale = 1,
+    rgb = 3,
+    rgba = 4,
+};
+
 const Node = struct {
     x: u32,
     y: u32,
@@ -51,12 +61,14 @@ pub const Region = struct {
     height: u32,
 };
 
-pub fn init(alloc: Allocator, size: u32) !Atlas {
+pub fn init(alloc: Allocator, size: u32, format: Format) !Atlas {
     var result = Atlas{
-        .data = try alloc.alloc(u8, size * size),
+        .data = try alloc.alloc(u8, size * size * @enumToInt(format)),
         .size = size,
         .nodes = .{},
+        .format = format,
     };
+    errdefer result.deinit(alloc);
 
     // TODO: figure out optimal prealloc based on real world usage
     try result.nodes.ensureUnusedCapacity(alloc, 64);
@@ -181,21 +193,23 @@ fn merge(self: *Atlas) void {
 }
 
 /// Set the data associated with a reserved region. The data is expected
-/// to fit exactly within the region.
+/// to fit exactly within the region. The data must be formatted with the
+/// proper bpp configured on init.
 pub fn set(self: *Atlas, reg: Region, data: []const u8) void {
     assert(reg.x < (self.size - 1));
     assert((reg.x + reg.width) <= (self.size - 1));
     assert(reg.y < (self.size - 1));
     assert((reg.y + reg.height) <= (self.size - 1));
 
+    const depth = @enumToInt(self.format);
     var i: u32 = 0;
     while (i < reg.height) : (i += 1) {
-        const tex_offset = ((reg.y + i) * self.size) + reg.x;
-        const data_offset = i * reg.width;
+        const tex_offset = (((reg.y + i) * self.size) + reg.x) * depth;
+        const data_offset = i * reg.width * depth;
         std.mem.copy(
             u8,
             self.data[tex_offset..],
-            data[data_offset .. data_offset + reg.width],
+            data[data_offset .. data_offset + (reg.width * depth)],
         );
     }
 }
@@ -209,9 +223,26 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
     const data_old = self.data;
     const size_old = self.size;
 
-    self.data = try alloc.alloc(u8, size_new * size_new);
-    defer alloc.free(data_old); // Only defer after new data succeeded
-    self.size = size_new; // Only set size after new alloc succeeded
+    // Allocate our new data
+    self.data = try alloc.alloc(u8, size_new * size_new * @enumToInt(self.format));
+    defer alloc.free(data_old);
+    errdefer {
+        alloc.free(self.data);
+        self.data = data_old;
+    }
+
+    // Add our new rectangle for our added righthand space. We do this
+    // right away since its the only operation that can fail and we want
+    // to make error cleanup easier.
+    try self.nodes.append(alloc, .{
+        .x = size_old - 1,
+        .y = 1,
+        .width = size_new - size_old,
+    });
+
+    // If our allocation and rectangle add succeeded, we can go ahead
+    // and persist our new size and copy over the old data.
+    self.size = size_new;
     std.mem.set(u8, self.data, 0);
     self.set(.{
         .x = 0, // don't bother skipping border so we can avoid strides
@@ -219,13 +250,6 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
         .width = size_old,
         .height = size_old - 2, // skip the last border row
     }, data_old[size_old..]);
-
-    // Add our new rectangle for our added righthand space
-    try self.nodes.append(alloc, .{
-        .x = size_old - 1,
-        .y = 1,
-        .width = size_new - size_old,
-    });
 }
 
 // Empty the atlas. This doesn't reclaim any previously allocated memory.
@@ -241,7 +265,7 @@ pub fn clear(self: *Atlas) void {
 
 test "exact fit" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 34); // +2 for 1px border
+    var atlas = try init(alloc, 34, .greyscale); // +2 for 1px border
     defer atlas.deinit(alloc);
 
     _ = try atlas.reserve(alloc, 32, 32);
@@ -250,7 +274,7 @@ test "exact fit" {
 
 test "doesnt fit" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 32);
+    var atlas = try init(alloc, 32, .greyscale);
     defer atlas.deinit(alloc);
 
     // doesn't fit due to border
@@ -259,7 +283,7 @@ test "doesnt fit" {
 
 test "fit multiple" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 32);
+    var atlas = try init(alloc, 32, .greyscale);
     defer atlas.deinit(alloc);
 
     _ = try atlas.reserve(alloc, 15, 30);
@@ -269,7 +293,7 @@ test "fit multiple" {
 
 test "writing data" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 32);
+    var atlas = try init(alloc, 32, .greyscale);
     defer atlas.deinit(alloc);
 
     const reg = try atlas.reserve(alloc, 2, 2);
@@ -284,7 +308,7 @@ test "writing data" {
 
 test "grow" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 4); // +2 for 1px border
+    var atlas = try init(alloc, 4, .greyscale); // +2 for 1px border
     defer atlas.deinit(alloc);
 
     const reg = try atlas.reserve(alloc, 2, 2);
@@ -306,4 +330,26 @@ test "grow" {
     try testing.expectEqual(@as(u8, 2), atlas.data[atlas.size + 2]);
     try testing.expectEqual(@as(u8, 3), atlas.data[atlas.size * 2 + 1]);
     try testing.expectEqual(@as(u8, 4), atlas.data[atlas.size * 2 + 2]);
+}
+
+test "writing RGB data" {
+    const alloc = testing.allocator;
+    var atlas = try init(alloc, 32, .rgb);
+    defer atlas.deinit(alloc);
+
+    // This is RGB so its 3 bpp
+    const reg = try atlas.reserve(alloc, 1, 2);
+    atlas.set(reg, &[_]u8{
+        1, 2, 3,
+        4, 5, 6,
+    });
+
+    // 33 because of the 1px border and so on
+    const depth = @intCast(usize, @enumToInt(atlas.format));
+    try testing.expectEqual(@as(u8, 1), atlas.data[33 * depth]);
+    try testing.expectEqual(@as(u8, 2), atlas.data[33 * depth + 1]);
+    try testing.expectEqual(@as(u8, 3), atlas.data[33 * depth + 2]);
+    try testing.expectEqual(@as(u8, 4), atlas.data[65 * depth]);
+    try testing.expectEqual(@as(u8, 5), atlas.data[65 * depth + 1]);
+    try testing.expectEqual(@as(u8, 6), atlas.data[65 * depth + 2]);
 }
