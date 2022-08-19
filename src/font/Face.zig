@@ -58,8 +58,31 @@ pub fn loadFaceFromMemory(self: *Face, source: [:0]const u8, size: u32) !void {
     if (ftc.FT_Select_Charmap(self.ft_face, ftc.FT_ENCODING_UNICODE) != ftok)
         return error.FaceLoadFailed;
 
-    if (ftc.FT_Set_Pixel_Sizes(self.ft_face, size, size) != ftok)
-        return error.FaceLoadFailed;
+    // If we have fixed sizes, we just have to try to pick the one closest
+    // to what the user requested. Otherwise, we can choose an arbitrary
+    // pixel size.
+    if (!ftc.FT_HAS_FIXED_SIZES(self.ft_face)) {
+        if (ftc.FT_Set_Pixel_Sizes(self.ft_face, size, size) != ftok)
+            return error.FaceLoadFailed;
+    } else try self.selectSizeNearest(size);
+}
+
+/// Selects the fixed size in the loaded face that is closest to the
+/// requested pixel size.
+fn selectSizeNearest(self: *Face, size: u32) !void {
+    var i: usize = 0;
+    var best_i: usize = 0;
+    var best_diff: i32 = 0;
+    while (i < self.ft_face.*.num_fixed_sizes) : (i += 1) {
+        const diff = @intCast(i32, size) - @intCast(i32, self.ft_face.*.available_sizes[i].width);
+        if (i == 0 or diff < best_diff) {
+            best_diff = diff;
+            best_i = i;
+        }
+    }
+
+    if (ftc.FT_Select_Size(self.ft_face, @intCast(c_int, best_i)) != ftok)
+        return error.FaceSelectSizeFailed;
 }
 
 /// Load a glyph for this face. The codepoint can be either a u8 or
@@ -69,7 +92,7 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 
     // We need a UTF32 codepoint for freetype
     const glyph_index = glyph_index: {
-        // log.warn("glyph load: {x}", .{cp});
+        //log.warn("glyph load: {x}", .{cp});
         const idx = ftc.FT_Get_Char_Index(self.ft_face, cp);
         if (idx > 0) break :glyph_index idx;
 
@@ -79,16 +102,32 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
         // TODO: render something more identifiable than a space
         break :glyph_index ftc.FT_Get_Char_Index(self.ft_face, ' ');
     };
+    //log.warn("glyph index: {}", .{glyph_index});
+
+    // If our glyph has color, we want to render the color
+    var load_flags: c_int = ftc.FT_LOAD_RENDER;
+    if (ftc.FT_HAS_COLOR(self.ft_face)) load_flags |= @intCast(c_int, ftc.FT_LOAD_COLOR);
 
     if (ftc.FT_Load_Glyph(
         self.ft_face,
         glyph_index,
-        ftc.FT_LOAD_RENDER,
+        load_flags,
     ) != ftok) return error.LoadGlyphFailed;
 
     const glyph = self.ft_face.*.glyph;
     const bitmap = glyph.*.bitmap;
-    assert(bitmap.pixel_mode == ftc.FT_PIXEL_MODE_GRAY);
+
+    // Ensure we know how to work with the font format. And assure that
+    // or color depth is as expected on the texture atlas.
+    const format: Atlas.Format = switch (bitmap.pixel_mode) {
+        ftc.FT_PIXEL_MODE_GRAY => .greyscale,
+        ftc.FT_PIXEL_MODE_BGRA => .rgba,
+        else => {
+            log.warn("pixel mode={}", .{bitmap.pixel_mode});
+            @panic("unsupported pixel mode");
+        },
+    };
+    assert(atlas.format == format);
 
     const src_w = bitmap.width;
     const src_h = bitmap.rows;
@@ -99,24 +138,26 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 
     // If we have data, copy it into the atlas
     if (region.width > 0 and region.height > 0) {
+        const depth = @enumToInt(format);
+
         // We can avoid a buffer copy if our atlas width and bitmap
         // width match and the bitmap pitch is just the width (meaning
         // the data is tightly packed).
-        const needs_copy = !(tgt_w == bitmap.width and bitmap.width == bitmap.pitch);
+        const needs_copy = !(tgt_w == bitmap.width and (bitmap.width * depth) == bitmap.pitch);
 
         // If we need to copy the data, we copy it into a temporary buffer.
         const buffer = if (needs_copy) buffer: {
-            var temp = try alloc.alloc(u8, tgt_w * tgt_h);
+            var temp = try alloc.alloc(u8, tgt_w * tgt_h * depth);
             var dst_ptr = temp;
             var src_ptr = bitmap.buffer;
             var i: usize = 0;
             while (i < src_h) : (i += 1) {
-                std.mem.copy(u8, dst_ptr, src_ptr[0..bitmap.width]);
-                dst_ptr = dst_ptr[tgt_w..];
+                std.mem.copy(u8, dst_ptr, src_ptr[0 .. bitmap.width * depth]);
+                dst_ptr = dst_ptr[tgt_w * depth ..];
                 src_ptr += @intCast(usize, bitmap.pitch);
             }
             break :buffer temp;
-        } else bitmap.buffer[0..(tgt_w * tgt_h)];
+        } else bitmap.buffer[0..(tgt_w * tgt_h * depth)];
         defer if (buffer.ptr != bitmap.buffer) alloc.free(buffer);
 
         // Write the glyph information into the atlas
@@ -149,6 +190,8 @@ fn f26dot6ToFloat(v: ftc.FT_F26Dot6) f32 {
 }
 
 test {
+    const testFont = @import("test.zig").fontRegular;
+
     var ft_lib: ftc.FT_Library = undefined;
     if (ftc.FT_Init_FreeType(&ft_lib) != ftok)
         return error.FreeTypeInitFailed;
@@ -170,4 +213,21 @@ test {
     }
 }
 
-const testFont = @embedFile("res/Inconsolata-Regular.ttf");
+test "color emoji" {
+    const testFont = @import("test.zig").fontEmoji;
+
+    var ft_lib: ftc.FT_Library = undefined;
+    if (ftc.FT_Init_FreeType(&ft_lib) != ftok)
+        return error.FreeTypeInitFailed;
+    defer _ = ftc.FT_Done_FreeType(ft_lib);
+
+    const alloc = testing.allocator;
+    var atlas = try Atlas.init(alloc, 512, .rgba);
+    defer atlas.deinit(alloc);
+
+    var font = try init(ft_lib);
+    defer font.deinit();
+
+    try font.loadFaceFromMemory(testFont, 48);
+    _ = try font.loadGlyph(alloc, &atlas, '🥸');
+}
