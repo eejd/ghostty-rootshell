@@ -42,9 +42,11 @@ vao: gl.VertexArray,
 ebo: gl.Buffer,
 vbo: gl.Buffer,
 texture: gl.Texture,
+texture_color: gl.Texture,
 
 /// The font atlas.
 font_atlas: font.Family,
+font_emoji: font.Family,
 atlas_dirty: bool,
 
 /// Whether the cursor is visible or not. This is used to control cursor
@@ -160,6 +162,13 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     );
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
 
+    // Load our emoji font
+    var atlas_color = try Atlas.init(alloc, 512, .rgba);
+    errdefer atlas_color.deinit(alloc);
+    var fam_emoji = try font.Family.init(atlas_color);
+    errdefer fam_emoji.deinit(alloc);
+    try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, config.@"font-size");
+
     // Create our shader
     const program = try gl.Program.createVF(
         @embedFile("../shaders/cell.v.glsl"),
@@ -171,6 +180,10 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ cell_width, cell_height });
     try program.setUniform("glyph_baseline", cell_baseline);
+
+    // Set all of our texture indexes
+    try program.setUniform("text", 0);
+    try program.setUniform("text_emoji", 1);
 
     // Setup our VAO
     const vao = try gl.VertexArray.create();
@@ -225,21 +238,44 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // Build our texture
     const tex = try gl.Texture.create();
     errdefer tex.destroy();
-    const texbind = try tex.bind(.@"2D");
-    try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
-    try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
-    try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
-    try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
-    try texbind.image2D(
-        0,
-        .Red,
-        @intCast(c_int, atlas.size),
-        @intCast(c_int, atlas.size),
-        0,
-        .Red,
-        .UnsignedByte,
-        atlas.data.ptr,
-    );
+    {
+        const texbind = try tex.bind(.@"2D");
+        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+        try texbind.image2D(
+            0,
+            .Red,
+            @intCast(c_int, atlas.size),
+            @intCast(c_int, atlas.size),
+            0,
+            .Red,
+            .UnsignedByte,
+            atlas.data.ptr,
+        );
+    }
+
+    // Build our color texture
+    const tex_color = try gl.Texture.create();
+    errdefer tex_color.destroy();
+    {
+        const texbind = try tex_color.bind(.@"2D");
+        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+        try texbind.image2D(
+            0,
+            .RGBA,
+            @intCast(c_int, atlas_color.size),
+            @intCast(c_int, atlas_color.size),
+            0,
+            .BGRA,
+            .UnsignedByte,
+            atlas_color.data.ptr,
+        );
+    }
 
     return Grid{
         .alloc = alloc,
@@ -251,7 +287,9 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
         .ebo = ebo,
         .vbo = vbo,
         .texture = tex,
+        .texture_color = tex_color,
         .font_atlas = fam,
+        .font_emoji = fam_emoji,
         .atlas_dirty = false,
         .cursor_visible = true,
         .cursor_style = .box,
@@ -263,7 +301,10 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
 pub fn deinit(self: *Grid) void {
     self.font_atlas.atlas.deinit(self.alloc);
     self.font_atlas.deinit(self.alloc);
+    self.font_emoji.atlas.deinit(self.alloc);
+    self.font_emoji.deinit(self.alloc);
     self.texture.destroy();
+    self.texture_color.destroy();
     self.vbo.destroy();
     self.ebo.destroy();
     self.vao.destroy();
@@ -456,17 +497,32 @@ pub fn updateCell(
         else
             .regular;
 
-        // Get our glyph
-        // TODO: if we add a glyph, I think we need to rerender the texture.
+        var mode: u8 = 2; // MODE_FG
+
+        // Get our glyph. Try our normal font atlas first.
         const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
             glyph
         else glyph: {
             self.atlas_dirty = true;
-            break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
+            break :glyph self.font_atlas.addGlyph(
+                self.alloc,
+                cell.char,
+                style,
+            ) catch |err| switch (err) {
+                error.GlyphNotFound => not_found: {
+                    mode = 7; // MODE_FG_COLOR
+                    break :not_found try self.font_emoji.addGlyph(
+                        self.alloc,
+                        cell.char,
+                        style,
+                    );
+                },
+                else => return err,
+            };
         };
 
         self.cells.appendAssumeCapacity(.{
-            .mode = 2,
+            .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .glyph_x = glyph.atlas_x,
@@ -537,18 +593,35 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 
 /// Updates the font texture atlas if it is dirty.
 fn flushAtlas(self: *Grid) !void {
-    var texbind = try self.texture.bind(.@"2D");
-    defer texbind.unbind();
-    try texbind.subImage2D(
-        0,
-        0,
-        0,
-        @intCast(c_int, self.font_atlas.atlas.size),
-        @intCast(c_int, self.font_atlas.atlas.size),
-        .Red,
-        .UnsignedByte,
-        self.font_atlas.atlas.data.ptr,
-    );
+    {
+        var texbind = try self.texture.bind(.@"2D");
+        defer texbind.unbind();
+        try texbind.subImage2D(
+            0,
+            0,
+            0,
+            @intCast(c_int, self.font_atlas.atlas.size),
+            @intCast(c_int, self.font_atlas.atlas.size),
+            .Red,
+            .UnsignedByte,
+            self.font_atlas.atlas.data.ptr,
+        );
+    }
+
+    {
+        var texbind = try self.texture_color.bind(.@"2D");
+        defer texbind.unbind();
+        try texbind.subImage2D(
+            0,
+            0,
+            0,
+            @intCast(c_int, self.font_emoji.atlas.size),
+            @intCast(c_int, self.font_emoji.atlas.size),
+            .BGRA,
+            .UnsignedByte,
+            self.font_emoji.atlas.data.ptr,
+        );
+    }
 }
 
 /// Render renders the current cell state. This will not modify any of
@@ -603,10 +676,14 @@ pub fn render(self: *Grid) !void {
         assert(self.gl_cells_written <= self.cells.items.len);
     }
 
-    // Bind our texture
+    // Bind our textures
     try gl.Texture.active(gl.c.GL_TEXTURE0);
     var texbind = try self.texture.bind(.@"2D");
     defer texbind.unbind();
+
+    try gl.Texture.active(gl.c.GL_TEXTURE1);
+    var texbind1 = try self.texture_color.bind(.@"2D");
+    defer texbind1.unbind();
 
     try gl.drawElementsInstanced(
         gl.c.GL_TRIANGLES,
@@ -686,3 +763,4 @@ test "GridSize update rounding" {
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
 const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
+const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");

@@ -98,9 +98,7 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 
         // Unknown glyph.
         log.warn("glyph not found: {x}", .{cp});
-
-        // TODO: render something more identifiable than a space
-        break :glyph_index ftc.FT_Get_Char_Index(self.ft_face, ' ');
+        return error.GlyphNotFound;
     };
     //log.warn("glyph index: {}", .{glyph_index});
 
