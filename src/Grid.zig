@@ -109,7 +109,30 @@ const GPUCell = struct {
     bg_a: u8,
 
     /// uint mode
-    mode: u8,
+    mode: GPUCellMode,
+};
+
+const GPUCellMode = enum(u8) {
+    bg = 1,
+    fg = 2,
+    fg_color = 7,
+    cursor_rect = 3,
+    cursor_rect_hollow = 4,
+    cursor_bar = 5,
+    underline = 6,
+
+    wide_mask = 0b1000_0000,
+
+    // Non-exhaustive because masks change it
+    _,
+
+    /// Apply a mask to the mode.
+    pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
+        return @intToEnum(
+            GPUCellMode,
+            @enumToInt(self) | @enumToInt(m),
+        );
+    }
 };
 
 pub fn init(alloc: Allocator, config: *const Config) !Grid {
@@ -399,8 +422,19 @@ pub fn finalizeCells(self: *Grid, term: Terminal) !void {
 fn addCursor(self: *Grid, term: Terminal) void {
     // Add the cursor
     if (self.cursor_visible and term.screen.viewportIsBottom()) {
+        const cell = term.screen.getCell(
+            term.screen.cursor.y,
+            term.screen.cursor.x,
+        );
+
+        var mode: GPUCellMode = @intToEnum(
+            GPUCellMode,
+            @enumToInt(self.cursor_style),
+        );
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+
         self.cells.appendAssumeCapacity(.{
-            .mode = @enumToInt(self.cursor_style),
+            .mode = mode,
             .grid_col = @intCast(u16, term.screen.cursor.x),
             .grid_row = @intCast(u16, term.screen.cursor.y),
             .fg_r = 0,
@@ -488,8 +522,11 @@ pub fn updateCell(
 
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
+        var mode: GPUCellMode = .bg;
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+
         self.cells.appendAssumeCapacity(.{
-            .mode = 1,
+            .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .glyph_x = 0,
@@ -517,13 +554,16 @@ pub fn updateCell(
         else
             .regular;
 
-        var mode: u8 = 2; // MODE_FG
+        var mode: GPUCellMode = .fg;
 
         // Get our glyph. Try our normal font atlas first.
         const goa = try self.font_set.getOrAddGlyph(self.alloc, cell.char, style);
         if (!goa.found_existing) self.atlas_dirty = true;
-        if (goa.family == 1) mode = 7; // MODE_FG_COLOR
+        if (goa.family == 1) mode = .fg_color;
         const glyph = goa.glyph;
+
+        // If the cell is wide, we need to note that in the mode
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -547,8 +587,11 @@ pub fn updateCell(
     }
 
     if (cell.attrs.underline == 1) {
+        var mode: GPUCellMode = .underline;
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+
         self.cells.appendAssumeCapacity(.{
-            .mode = 6, // underline
+            .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .glyph_x = 0,

@@ -31,6 +31,7 @@ const uint MODE_CURSOR_RECT = 3u;
 const uint MODE_CURSOR_RECT_HOLLOW = 4u;
 const uint MODE_CURSOR_BAR = 5u;
 const uint MODE_UNDERLINE = 6u;
+const uint MODE_WIDE_MASK = 128u; // 0b1000_0000
 
 void main() {
     float a;

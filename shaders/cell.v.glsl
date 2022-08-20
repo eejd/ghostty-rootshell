@@ -11,6 +11,7 @@ const uint MODE_CURSOR_RECT = 3u;
 const uint MODE_CURSOR_RECT_HOLLOW = 4u;
 const uint MODE_CURSOR_BAR = 5u;
 const uint MODE_UNDERLINE = 6u;
+const uint MODE_WIDE_MASK = 128u; // 0b1000_0000
 
 // The grid coordinates (x, y) where x < columns and y < rows
 layout (location = 0) in vec2 grid_coord;
@@ -77,8 +78,12 @@ uniform float glyph_baseline;
  */
 
 void main() {
-    // We always forward our mode
-    mode = mode_in;
+    // Remove any masks from our mode
+    uint mode_unmasked = mode_in & ~MODE_WIDE_MASK;
+
+    // We always forward our mode unmasked because the fragment
+    // shader doesn't use any of the masks.
+    mode = mode_unmasked;
 
     // Top-left cell coordinates converted to world space
     // Example: (1,0) with a 30 wide cell is converted to (30,0)
@@ -103,12 +108,18 @@ void main() {
     position.x = (gl_VertexID == 0 || gl_VertexID == 1) ? 1. : 0.;
     position.y = (gl_VertexID == 0 || gl_VertexID == 3) ? 0. : 1.;
 
-    switch (mode_in) {
+    // Scaled for wide chars
+    vec2 cell_size_scaled = cell_size;
+    if ((mode_in & MODE_WIDE_MASK) == MODE_WIDE_MASK) {
+        cell_size_scaled.x = cell_size_scaled.x * 2;
+    }
+
+    switch (mode) {
     case MODE_BG:
         // Calculate the final position of our cell in world space.
         // We have to add our cell size since our vertices are offset
         // one cell up and to the left. (Do the math to verify yourself)
-        cell_pos = cell_pos + cell_size * position;
+        cell_pos = cell_pos + cell_size_scaled * position;
 
         gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
@@ -122,8 +133,8 @@ void main() {
         // TODO: for now, we assume this means it is a full width character
         // TODO: in the future, use unicode libs to verify this.
         vec2 glyph_size_downsampled = glyph_size;
-        if (mode_in == MODE_FG_COLOR && glyph_size.x > cell_size.x) {
-            glyph_size_downsampled.x = cell_size.x * 2;
+        if (glyph_size.x > cell_size.x) {
+            glyph_size_downsampled.x = cell_size_scaled.x;
             glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
             glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.x / glyph_size.x);
         }
@@ -132,7 +143,7 @@ void main() {
         // to the baseline is the offset (+y is up). Our grid goes down.
         // So we flip it with `cell_size.y - glyph_offset.y`. The glyph_baseline
         // uniform sets our line baseline where characters "sit".
-        glyph_offset_calc.y = cell_size.y - glyph_offset_calc.y - glyph_baseline;
+        glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y - glyph_baseline;
 
         // Calculate the final position of the cell.
         cell_pos = cell_pos + glyph_size_downsampled * position + glyph_offset_calc;
@@ -141,7 +152,7 @@ void main() {
         // We need to convert our texture position and size to normalized
         // device coordinates (0 to 1.0) by dividing by the size of the texture.
         ivec2 text_size;
-        switch(mode_in) {
+        switch(mode) {
         case MODE_FG:
             text_size = textureSize(text, 0);
             break;
@@ -160,7 +171,7 @@ void main() {
 
     case MODE_CURSOR_RECT:
         // Same as background since we're taking up the whole cell.
-        cell_pos = cell_pos + cell_size * position;
+        cell_pos = cell_pos + cell_size_scaled * position;
 
         gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
@@ -171,7 +182,7 @@ void main() {
         screen_cell_pos = cell_pos;
 
         // Same as background since we're taking up the whole cell.
-        cell_pos = cell_pos + cell_size * position;
+        cell_pos = cell_pos + cell_size_scaled * position;
 
         gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = bg_color_in / 255.0;
@@ -191,11 +202,11 @@ void main() {
     case MODE_UNDERLINE:
         // Make the underline a smaller version of our cell
         // TODO: use real font underline thickness
-        vec2 underline_size = vec2(cell_size.x, cell_size.y*0.05);
+        vec2 underline_size = vec2(cell_size_scaled.x, cell_size_scaled.y*0.05);
 
         // Position our underline so that it is midway between the glyph
         // baseline and the bottom of the cell.
-        vec2 underline_offset = vec2(cell_size.x, cell_size.y - (glyph_baseline / 2));
+        vec2 underline_offset = vec2(cell_size_scaled.x, cell_size_scaled.y - (glyph_baseline / 2));
 
         // Go to the bottom of the cell, take away the size of the
         // underline, and that is our position. We also float it slightly
