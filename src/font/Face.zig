@@ -97,7 +97,7 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
         if (idx > 0) break :glyph_index idx;
 
         // Unknown glyph.
-        log.warn("glyph not found: {x}", .{cp});
+        //log.warn("glyph not found: {x}", .{cp});
         return error.GlyphNotFound;
     };
     //log.warn("glyph index: {}", .{glyph_index});

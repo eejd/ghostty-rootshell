@@ -137,13 +137,12 @@ pub fn addGlyph(self: *Family, alloc: Allocator, v: anytype, style: Style) !*Gly
     errdefer _ = self.glyphs.remove(glyphKey);
 
     // Get the glyph and add it to the atlas.
-    // TODO: handle glyph not found
     gop.value_ptr.* = try face.loadGlyph(alloc, &self.atlas, utf32);
     return gop.value_ptr;
 }
 
 /// Returns the UTF-32 codepoint for the given value.
-fn codepoint(v: anytype) u32 {
+pub fn codepoint(v: anytype) u32 {
     // We need a UTF32 codepoint for freetype
     return switch (@TypeOf(v)) {
         u32 => v,

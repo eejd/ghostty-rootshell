@@ -45,8 +45,7 @@ texture: gl.Texture,
 texture_color: gl.Texture,
 
 /// The font atlas.
-font_atlas: font.Family,
-font_emoji: font.Family,
+font_set: font.FallbackSet,
 atlas_dirty: bool,
 
 /// Whether the cursor is visible or not. This is used to control cursor
@@ -118,10 +117,32 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // font atlas with all the visible ASCII characters since they are common.
     var atlas = try Atlas.init(alloc, 512, .greyscale);
     errdefer atlas.deinit(alloc);
-    var fam = try font.Family.init(atlas);
-    errdefer fam.deinit(alloc);
-    try fam.loadFaceFromMemory(.regular, face_ttf, config.@"font-size");
-    try fam.loadFaceFromMemory(.bold, face_bold_ttf, config.@"font-size");
+
+    // Load our emoji font
+    var atlas_color = try Atlas.init(alloc, 512, .rgba);
+    errdefer atlas_color.deinit(alloc);
+
+    // Build our fallback set so we can look up all codepoints
+    var font_set: font.FallbackSet = .{};
+    try font_set.families.ensureTotalCapacity(alloc, 2);
+    errdefer font_set.deinit(alloc);
+
+    // Regular text
+    font_set.families.appendAssumeCapacity(fam: {
+        var fam = try font.Family.init(atlas);
+        errdefer fam.deinit(alloc);
+        try fam.loadFaceFromMemory(.regular, face_ttf, config.@"font-size");
+        try fam.loadFaceFromMemory(.bold, face_bold_ttf, config.@"font-size");
+        break :fam fam;
+    });
+
+    // Emoji
+    font_set.families.appendAssumeCapacity(fam: {
+        var fam_emoji = try font.Family.init(atlas_color);
+        errdefer fam_emoji.deinit(alloc);
+        try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, config.@"font-size");
+        break :fam fam_emoji;
+    });
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
@@ -129,9 +150,9 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
         var cell_width: f32 = 0;
         var i: u8 = 32;
         while (i <= 126) : (i += 1) {
-            const glyph = try fam.addGlyph(alloc, i, .regular);
-            if (glyph.advance_x > cell_width) {
-                cell_width = @ceil(glyph.advance_x);
+            const goa = try font_set.getOrAddGlyph(alloc, i, .regular);
+            if (goa.glyph.advance_x > cell_width) {
+                cell_width = @ceil(goa.glyph.advance_x);
             }
         }
 
@@ -141,11 +162,13 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // The cell height is the vertical height required to render underscore
     // '_' which should live at the bottom of a cell.
     const cell_height: f32 = cell_height: {
+        const fam = &font_set.families.items[0];
+
         // This is the height reported by the font face
         const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.height);
 
         // Determine the height of the underscore char
-        const glyph = fam.getGlyph('_', .regular).?;
+        const glyph = font_set.families.items[0].getGlyph('_', .regular).?;
         var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender);
         res -= glyph.offset_y;
         res += @intCast(i32, glyph.height);
@@ -156,18 +179,14 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
 
         break :cell_height @intToFloat(f32, res);
     };
-    const cell_baseline = cell_height - @intToFloat(
-        f32,
-        fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender),
-    );
+    const cell_baseline = cell_baseline: {
+        const fam = &font_set.families.items[0];
+        break :cell_baseline cell_height - @intToFloat(
+            f32,
+            fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender),
+        );
+    };
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
-
-    // Load our emoji font
-    var atlas_color = try Atlas.init(alloc, 512, .rgba);
-    errdefer atlas_color.deinit(alloc);
-    var fam_emoji = try font.Family.init(atlas_color);
-    errdefer fam_emoji.deinit(alloc);
-    try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, config.@"font-size");
 
     // Create our shader
     const program = try gl.Program.createVF(
@@ -183,7 +202,7 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
 
     // Set all of our texture indexes
     try program.setUniform("text", 0);
-    try program.setUniform("text_emoji", 1);
+    try program.setUniform("text_color", 1);
 
     // Setup our VAO
     const vao = try gl.VertexArray.create();
@@ -288,8 +307,7 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
         .vbo = vbo,
         .texture = tex,
         .texture_color = tex_color,
-        .font_atlas = fam,
-        .font_emoji = fam_emoji,
+        .font_set = font_set,
         .atlas_dirty = false,
         .cursor_visible = true,
         .cursor_style = .box,
@@ -299,10 +317,12 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
 }
 
 pub fn deinit(self: *Grid) void {
-    self.font_atlas.atlas.deinit(self.alloc);
-    self.font_atlas.deinit(self.alloc);
-    self.font_emoji.atlas.deinit(self.alloc);
-    self.font_emoji.deinit(self.alloc);
+    for (self.font_set.families.items) |*family| {
+        family.atlas.deinit(self.alloc);
+        family.deinit(self.alloc);
+    }
+    self.font_set.deinit(self.alloc);
+
     self.texture.destroy();
     self.texture_color.destroy();
     self.vbo.destroy();
@@ -500,26 +520,10 @@ pub fn updateCell(
         var mode: u8 = 2; // MODE_FG
 
         // Get our glyph. Try our normal font atlas first.
-        const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
-            glyph
-        else glyph: {
-            self.atlas_dirty = true;
-            break :glyph self.font_atlas.addGlyph(
-                self.alloc,
-                cell.char,
-                style,
-            ) catch |err| switch (err) {
-                error.GlyphNotFound => not_found: {
-                    mode = 7; // MODE_FG_COLOR
-                    break :not_found try self.font_emoji.addGlyph(
-                        self.alloc,
-                        cell.char,
-                        style,
-                    );
-                },
-                else => return err,
-            };
-        };
+        const goa = try self.font_set.getOrAddGlyph(self.alloc, cell.char, style);
+        if (!goa.found_existing) self.atlas_dirty = true;
+        if (goa.family == 1) mode = 7; // MODE_FG_COLOR
+        const glyph = goa.glyph;
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -594,32 +598,34 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 /// Updates the font texture atlas if it is dirty.
 fn flushAtlas(self: *Grid) !void {
     {
+        const atlas = &self.font_set.families.items[0].atlas;
         var texbind = try self.texture.bind(.@"2D");
         defer texbind.unbind();
         try texbind.subImage2D(
             0,
             0,
             0,
-            @intCast(c_int, self.font_atlas.atlas.size),
-            @intCast(c_int, self.font_atlas.atlas.size),
+            @intCast(c_int, atlas.size),
+            @intCast(c_int, atlas.size),
             .Red,
             .UnsignedByte,
-            self.font_atlas.atlas.data.ptr,
+            atlas.data.ptr,
         );
     }
 
     {
+        const atlas = &self.font_set.families.items[1].atlas;
         var texbind = try self.texture_color.bind(.@"2D");
         defer texbind.unbind();
         try texbind.subImage2D(
             0,
             0,
             0,
-            @intCast(c_int, self.font_emoji.atlas.size),
-            @intCast(c_int, self.font_emoji.atlas.size),
+            @intCast(c_int, atlas.size),
+            @intCast(c_int, atlas.size),
             .BGRA,
             .UnsignedByte,
-            self.font_emoji.atlas.data.ptr,
+            atlas.data.ptr,
         );
     }
 }
