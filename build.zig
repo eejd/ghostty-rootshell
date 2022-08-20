@@ -11,7 +11,7 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
 
-/// A build that is set to true if Tracy integration should be built.
+// Build options, see the build options help for more info.
 var tracy: bool = false;
 
 pub fn build(b: *std.build.Builder) !void {
@@ -33,6 +33,12 @@ pub fn build(b: *std.build.Builder) !void {
         "Enable Tracy integration (default true in Debug on Linux)",
     ) orelse (mode == .Debug and target.isLinux());
 
+    const static = b.option(
+        bool,
+        "static",
+        "Statically build as much as possible for the exe",
+    ) orelse true;
+
     const conformance = b.option(
         []const u8,
         "conformance",
@@ -52,7 +58,7 @@ pub fn build(b: *std.build.Builder) !void {
         exe.install();
 
         // Add the shared dependencies
-        try addDeps(b, exe);
+        try addDeps(b, exe, static);
     }
 
     // term.wasm
@@ -105,7 +111,7 @@ pub fn build(b: *std.build.Builder) !void {
             }
 
             main_test.setTarget(target);
-            try addDeps(b, main_test);
+            try addDeps(b, main_test, true);
 
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
             var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
@@ -123,7 +129,7 @@ pub fn build(b: *std.build.Builder) !void {
             var test_ = b.addTestSource(pkg.source);
 
             test_.setTarget(target);
-            try addDeps(b, test_);
+            try addDeps(b, test_, true);
             if (pkg.dependencies) |children| {
                 test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
                 try test_.packages.appendSlice(children);
@@ -142,56 +148,72 @@ pub fn build(b: *std.build.Builder) !void {
 fn addDeps(
     b: *std.build.Builder,
     step: *std.build.LibExeObjStep,
+    static: bool,
 ) !void {
+    // We always need the Zig packages
+    step.addPackage(freetype.pkg);
+    step.addPackage(glfw.pkg);
+    step.addPackage(libuv.pkg);
+    step.addPackage(utf8proc.pkg);
+
+    // We always statically compile glad
     step.addIncludeDir("vendor/glad/include/");
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
-
-    // Dependencies of other dependencies
-    const zlib_step = try zlib.link(b, step);
-    const libpng_step = try libpng.link(b, step, .{
-        .zlib = .{
-            .step = zlib_step,
-            .include = &zlib.include_paths,
-        },
-    });
-
-    // Freetype
-    step.addPackage(freetype.pkg);
-    _ = try freetype.link(b, step, .{
-        .libpng = freetype.Options.Libpng{
-            .enabled = true,
-            .step = libpng_step,
-            .include = &libpng.include_paths,
-        },
-
-        .zlib = .{
-            .enabled = true,
-            .step = zlib_step,
-            .include = &zlib.include_paths,
-        },
-    });
-
-    // Glfw
-    step.addPackage(glfw.pkg);
-    glfw.link(b, step, .{
-        .metal = false,
-        .opengl = false, // Found at runtime
-    });
-
-    // Libuv
-    step.addPackage(libuv.pkg);
-    var libuv_step = try libuv.link(b, step);
-    system_sdk.include(b, libuv_step, .{});
-
-    // utf8proc
-    step.addPackage(utf8proc.pkg);
-    _ = try utf8proc.link(b, step);
 
     // Tracy
     step.addPackage(tracylib.pkg);
     if (tracy) {
         var tracy_step = try tracylib.link(b, step);
         system_sdk.include(b, tracy_step, .{});
+    }
+
+    // utf8proc
+    _ = try utf8proc.link(b, step);
+
+    // Glfw
+    glfw.link(b, step, .{
+        .metal = false,
+        .opengl = false, // Found at runtime
+    });
+
+    // Dynamic link
+    if (!static) {
+        step.addIncludePath(freetype.include_path_self);
+        step.linkSystemLibrary("bzip2");
+        step.linkSystemLibrary("freetype2");
+        step.linkSystemLibrary("libpng");
+        step.linkSystemLibrary("libuv");
+        step.linkSystemLibrary("zlib");
+    }
+
+    // Other dependencies, we may dynamically link
+    if (static) {
+        const zlib_step = try zlib.link(b, step);
+        const libpng_step = try libpng.link(b, step, .{
+            .zlib = .{
+                .step = zlib_step,
+                .include = &zlib.include_paths,
+            },
+        });
+
+        // Freetype
+        _ = try freetype.link(b, step, .{
+            .libpng = freetype.Options.Libpng{
+                .enabled = true,
+                .step = libpng_step,
+                .include = &libpng.include_paths,
+            },
+
+            .zlib = .{
+                .enabled = true,
+                .step = zlib_step,
+                .include = &zlib.include_paths,
+            },
+        });
+
+        // Libuv
+        var libuv_step = try libuv.link(b, step);
+        system_sdk.include(b, libuv_step, .{});
     }
 }
 
