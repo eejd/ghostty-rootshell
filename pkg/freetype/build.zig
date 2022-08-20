@@ -16,11 +16,18 @@ fn thisDir() []const u8 {
 
 pub const Options = struct {
     libpng: Libpng = .{},
+    zlib: Zlib = .{},
 
     pub const Libpng = struct {
         enabled: bool = false,
         step: ?*std.build.LibExeObjStep = null,
-        include: ?[]const u8 = null,
+        include: ?[]const []const u8 = null,
+    };
+
+    pub const Zlib = struct {
+        enabled: bool = false,
+        step: ?*std.build.LibExeObjStep = null,
+        include: ?[]const []const u8 = null,
     };
 };
 
@@ -57,8 +64,17 @@ pub fn buildFreetype(
         else
             lib.linkSystemLibrary("libpng");
 
-        if (opt.libpng.include) |dir|
-            lib.addIncludePath(dir);
+        if (opt.libpng.include) |dirs|
+            for (dirs) |dir| lib.addIncludePath(dir);
+    }
+    if (opt.zlib.enabled) {
+        if (opt.zlib.step) |zlib|
+            lib.linkLibrary(zlib)
+        else
+            lib.linkSystemLibrary("z");
+
+        if (opt.zlib.include) |dirs|
+            for (dirs) |dir| lib.addIncludePath(dir);
     }
 
     // Compile
@@ -71,7 +87,8 @@ pub fn buildFreetype(
         "-DHAVE_UNISTD_H",
         "-DHAVE_FCNTL_H",
     });
-    if (opt.libpng.enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG");
+    if (opt.libpng.enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG=1");
+    if (opt.zlib.enabled) try flags.append("-DFT_CONFIG_OPTION_SYSTEM_ZLIB=1");
 
     // C files
     lib.addCSourceFiles(srcs, flags.items);

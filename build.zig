@@ -145,11 +145,12 @@ fn addDeps(
     step.addIncludeDir("vendor/glad/include/");
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
+    // Dependencies of other dependencies
     const zlib_step = try zlib.link(b, step);
     const libpng_step = try libpng.link(b, step, .{
         .zlib = .{
             .step = zlib_step,
-            .include = zlib.include_path,
+            .include = &zlib.include_paths,
         },
     });
 
@@ -157,7 +158,15 @@ fn addDeps(
     step.addPackage(freetype.pkg);
     _ = try freetype.link(b, step, .{
         .libpng = freetype.Options.Libpng{
+            .enabled = true,
             .step = libpng_step,
+            .include = &libpng.include_paths,
+        },
+
+        .zlib = .{
+            .enabled = true,
+            .step = zlib_step,
+            .include = &zlib.include_paths,
         },
     });
 

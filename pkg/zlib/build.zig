@@ -2,7 +2,9 @@ const std = @import("std");
 
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/zlib/";
-pub const include_path = root;
+const include_path = root;
+
+pub const include_paths = .{include_path};
 
 pub const pkg = std.build.Pkg{
     .name = "zlib",

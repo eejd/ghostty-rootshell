@@ -5,6 +5,8 @@ const root = thisDir() ++ "../../../vendor/libpng/";
 const include_path = root;
 const include_path_pnglibconf = thisDir();
 
+pub const include_paths = .{ include_path, include_path_pnglibconf };
+
 pub const pkg = std.build.Pkg{
     .name = "libpng",
     .source = .{ .path = thisDir() ++ "/main.zig" },
@@ -19,7 +21,7 @@ pub const Options = struct {
 
     pub const Zlib = struct {
         step: ?*std.build.LibExeObjStep = null,
-        include: ?[]const u8 = null,
+        include: ?[]const []const u8 = null,
     };
 };
 
@@ -59,8 +61,8 @@ pub fn buildLib(
     else
         lib.linkSystemLibrary("z");
 
-    if (opt.zlib.include) |dir|
-        lib.addIncludePath(dir);
+    if (opt.zlib.include) |dirs|
+        for (dirs) |dir| lib.addIncludePath(dir);
 
     // Compile
     var flags = std.ArrayList([]const u8).init(b.allocator);
