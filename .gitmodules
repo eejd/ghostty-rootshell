@@ -13,3 +13,6 @@
 [submodule "vendor/mach-sdk/sdk-linux-aarch64"]
 	path = vendor/mach-sdk/sdk-linux-aarch64
 	url = https://github.com/hexops/sdk-linux-aarch64.git
+[submodule "vendor/zlib"]
+	path = vendor/zlib
+	url = https://github.com/madler/zlib.git
