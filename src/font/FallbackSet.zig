@@ -71,7 +71,7 @@ pub fn getOrAddGlyph(
     errdefer _ = self.glyphs.remove(glyphKey);
 
     // Go through each familiy and look for a matching glyph
-    var fam_i: usize = 0;
+    var fam_i: ?usize = 0;
     const glyph = glyph: {
         for (self.families.items) |*family, i| {
             fam_i = i;
@@ -97,13 +97,19 @@ pub fn getOrAddGlyph(
 
         // If we are regular, we use a fallback character
         log.warn("glyph not found, using fallback. codepoint={x}", .{utf32});
-        fam_i = 0;
+        fam_i = null;
         break :glyph try self.families.items[0].addGlyph(alloc, ' ', style);
     };
 
-    gop.value_ptr.* = fam_i;
+    // If we found a real value, then cache it.
+    // TODO: support caching fallbacks too
+    if (fam_i) |i|
+        gop.value_ptr.* = i
+    else
+        _ = self.glyphs.remove(glyphKey);
+
     return GetOrAdd{
-        .family = fam_i,
+        .family = fam_i orelse 0,
         .glyph = glyph,
 
         // Technically possible that we found this in a cache...
