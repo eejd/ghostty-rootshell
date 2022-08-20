@@ -6,6 +6,7 @@ const glfw = @import("vendor/mach/glfw/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
+const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
@@ -181,6 +182,10 @@ fn addDeps(
     step.addPackage(libuv.pkg);
     var libuv_step = try libuv.link(b, step);
     system_sdk.include(b, libuv_step, .{});
+
+    // utf8proc
+    step.addPackage(utf8proc.pkg);
+    _ = try utf8proc.link(b, step);
 
     // Tracy
     step.addPackage(tracylib.pkg);
