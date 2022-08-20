@@ -71,6 +71,15 @@ pub const Cell = struct {
         /// should have this set. The first cell of the next row is actually
         /// part of this row in raw input.
         wrap: u1 = 0,
+
+        /// True if this is a wide character. This char takes up
+        /// two cells. The following cell ALWAYS is a space.
+        wide: u1 = 0,
+
+        /// Notes that this only exists to be blank for a preceeding
+        /// wide character (tail) or following (head).
+        wide_spacer_tail: u1 = 0,
+        wide_spacer_head: u1 = 0,
     } = .{},
 
     /// True if the cell should be skipped for drawing

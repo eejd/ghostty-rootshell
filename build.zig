@@ -71,7 +71,11 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
+
+        // Wasm-specific deps
         wasm.addPackage(tracylib.pkg);
+        wasm.addPackage(utf8proc.pkg);
+        _ = try utf8proc.link(b, wasm);
 
         const step = b.step("term-wasm", "Build the terminal.wasm library");
         step.dependOn(&wasm.step);
