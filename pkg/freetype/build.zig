@@ -14,8 +14,22 @@ fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
-pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
-    const lib = try buildFreetype(b, step);
+pub const Options = struct {
+    libpng: Libpng = .{},
+
+    pub const Libpng = struct {
+        enabled: bool = false,
+        step: ?*std.build.LibExeObjStep = null,
+        include: ?[]const u8 = null,
+    };
+};
+
+pub fn link(
+    b: *std.build.Builder,
+    step: *std.build.LibExeObjStep,
+    opt: Options,
+) !*std.build.LibExeObjStep {
+    const lib = try buildFreetype(b, step, opt);
     step.linkLibrary(lib);
     step.addIncludePath(include_path);
     step.addIncludePath(include_path_self);
@@ -25,6 +39,7 @@ pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.L
 pub fn buildFreetype(
     b: *std.build.Builder,
     step: *std.build.LibExeObjStep,
+    opt: Options,
 ) !*std.build.LibExeObjStep {
     const target = step.target;
     const lib = b.addStaticLibrary("freetype", null);
@@ -36,6 +51,15 @@ pub fn buildFreetype(
 
     // Link
     lib.linkLibC();
+    if (opt.libpng.enabled) {
+        if (opt.libpng.step) |libpng|
+            lib.linkLibrary(libpng)
+        else
+            lib.linkSystemLibrary("libpng");
+
+        if (opt.libpng.include) |dir|
+            lib.addIncludePath(dir);
+    }
 
     // Compile
     var flags = std.ArrayList([]const u8).init(b.allocator);
@@ -47,6 +71,7 @@ pub fn buildFreetype(
         "-DHAVE_UNISTD_H",
         "-DHAVE_FCNTL_H",
     });
+    if (opt.libpng.enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG");
 
     // C files
     lib.addCSourceFiles(srcs, flags.items);

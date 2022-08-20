@@ -5,6 +5,8 @@ const LibExeObjStep = std.build.LibExeObjStep;
 const glfw = @import("vendor/mach/glfw/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const libuv = @import("pkg/libuv/build.zig");
+const libpng = @import("pkg/libpng/build.zig");
+const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
 
@@ -143,9 +145,21 @@ fn addDeps(
     step.addIncludeDir("vendor/glad/include/");
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
+    const zlib_step = try zlib.link(b, step);
+    const libpng_step = try libpng.link(b, step, .{
+        .zlib = .{
+            .step = zlib_step,
+            .include = zlib.include_path,
+        },
+    });
+
     // Freetype
     step.addPackage(freetype.pkg);
-    _ = try freetype.link(b, step);
+    _ = try freetype.link(b, step, .{
+        .libpng = freetype.Options.Libpng{
+            .step = libpng_step,
+        },
+    });
 
     // Glfw
     step.addPackage(glfw.pkg);
