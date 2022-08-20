@@ -122,7 +122,7 @@ void main() {
         // TODO: for now, we assume this means it is a full width character
         // TODO: in the future, use unicode libs to verify this.
         vec2 glyph_size_downsampled = glyph_size;
-        if (glyph_size.x > cell_size.x) {
+        if (mode_in == MODE_FG_COLOR && glyph_size.x > cell_size.x) {
             glyph_size_downsampled.x = cell_size.x * 2;
             glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
             glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.x / glyph_size.x);
