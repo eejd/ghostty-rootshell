@@ -73,31 +73,31 @@ pub fn getOrAddGlyph(
     // Go through each familiy and look for a matching glyph
     var fam_i: usize = 0;
     const glyph = glyph: {
-        var style_current = style;
-        while (true) {
-            for (self.families.items) |*family, i| {
-                fam_i = i;
+        for (self.families.items) |*family, i| {
+            fam_i = i;
 
-                // If this family already has it loaded, return it.
-                if (family.getGlyph(v, style_current)) |glyph| break :glyph glyph;
+            // If this family already has it loaded, return it.
+            if (family.getGlyph(v, style)) |glyph| break :glyph glyph;
 
-                // Try to load it.
-                if (family.addGlyph(alloc, v, style_current)) |glyph|
-                    break :glyph glyph
-                else |err| switch (err) {
-                    error.GlyphNotFound => {},
-                    else => return err,
-                }
+            // Try to load it.
+            if (family.addGlyph(alloc, v, style)) |glyph|
+                break :glyph glyph
+            else |err| switch (err) {
+                // TODO: this probably doesn't belong here and should
+                // be higher level... but how?
+                error.AtlasFull => {
+                    try family.atlas.grow(alloc, family.atlas.size * 2);
+                    break :glyph try family.addGlyph(alloc, v, style);
+                },
+
+                error.GlyphNotFound => {},
+                else => return err,
             }
-
-            // We never found any glyph! For our first fallback, we'll simply
-            // try to the non-styled variant.
-            if (style_current == .regular) break;
-            style_current = .regular;
         }
 
         // If we are regular, we use a fallback character
         log.warn("glyph not found, using fallback. codepoint={x}", .{utf32});
+        fam_i = 0;
         break :glyph try self.families.items[0].addGlyph(alloc, ' ', style);
     };
 
