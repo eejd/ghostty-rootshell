@@ -12,6 +12,7 @@ const Atlas = @import("../Atlas.zig");
 const Family = @import("main.zig").Family;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
+const codepoint = @import("main.zig").codepoint;
 
 const ftok = ftc.FT_Err_Ok;
 const log = std.log.scoped(.font_fallback);
@@ -54,7 +55,7 @@ pub fn getOrAddGlyph(
     assert(self.families.items.len > 0);
 
     // We need a UTF32 codepoint
-    const utf32 = Family.codepoint(v);
+    const utf32 = codepoint(v);
 
     // If we have this already, load it directly
     const glyphKey: GlyphKey = .{ .style = style, .codepoint = utf32 };
