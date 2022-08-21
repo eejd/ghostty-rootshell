@@ -510,6 +510,9 @@ pub fn updateCell(
         break :colors res;
     };
 
+    // If we are a trailing spacer, we never render anything.
+    if (cell.attrs.wide_spacer_tail == 1) return true;
+
     // Calculate the amount of space we need in the cells list.
     const needed = needed: {
         var i: usize = 0;
