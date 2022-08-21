@@ -18,6 +18,7 @@ layout(location = 0) out vec4 out_FragColor;
 
 // Font texture
 uniform sampler2D text;
+uniform sampler2D text_color;
 
 // Dimensions of the cell
 uniform vec2 cell_size;
@@ -25,20 +26,28 @@ uniform vec2 cell_size;
 // See vertex shader
 const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
+const uint MODE_FG_COLOR = 7u;
 const uint MODE_CURSOR_RECT = 3u;
 const uint MODE_CURSOR_RECT_HOLLOW = 4u;
 const uint MODE_CURSOR_BAR = 5u;
 const uint MODE_UNDERLINE = 6u;
+const uint MODE_WIDE_MASK = 128u; // 0b1000_0000
 
 void main() {
+    float a;
+
     switch (mode) {
     case MODE_BG:
         out_FragColor = color;
         break;
 
     case MODE_FG:
-        float a = texture(text, glyph_tex_coords).r;
+        a = texture(text, glyph_tex_coords).r;
         out_FragColor = vec4(color.rgb, color.a*a);
+        break;
+
+    case MODE_FG_COLOR:
+        out_FragColor = texture(text_color, glyph_tex_coords);
         break;
 
     case MODE_CURSOR_RECT:

@@ -42,9 +42,10 @@ vao: gl.VertexArray,
 ebo: gl.Buffer,
 vbo: gl.Buffer,
 texture: gl.Texture,
+texture_color: gl.Texture,
 
 /// The font atlas.
-font_atlas: font.Family,
+font_set: font.FallbackSet,
 atlas_dirty: bool,
 
 /// Whether the cursor is visible or not. This is used to control cursor
@@ -108,7 +109,30 @@ const GPUCell = struct {
     bg_a: u8,
 
     /// uint mode
-    mode: u8,
+    mode: GPUCellMode,
+};
+
+const GPUCellMode = enum(u8) {
+    bg = 1,
+    fg = 2,
+    fg_color = 7,
+    cursor_rect = 3,
+    cursor_rect_hollow = 4,
+    cursor_bar = 5,
+    underline = 6,
+
+    wide_mask = 0b1000_0000,
+
+    // Non-exhaustive because masks change it
+    _,
+
+    /// Apply a mask to the mode.
+    pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
+        return @intToEnum(
+            GPUCellMode,
+            @enumToInt(self) | @enumToInt(m),
+        );
+    }
 };
 
 pub fn init(alloc: Allocator, config: *const Config) !Grid {
@@ -116,10 +140,32 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // font atlas with all the visible ASCII characters since they are common.
     var atlas = try Atlas.init(alloc, 512, .greyscale);
     errdefer atlas.deinit(alloc);
-    var fam = try font.Family.init(atlas);
-    errdefer fam.deinit(alloc);
-    try fam.loadFaceFromMemory(.regular, face_ttf, config.@"font-size");
-    try fam.loadFaceFromMemory(.bold, face_bold_ttf, config.@"font-size");
+
+    // Load our emoji font
+    var atlas_color = try Atlas.init(alloc, 512, .rgba);
+    errdefer atlas_color.deinit(alloc);
+
+    // Build our fallback set so we can look up all codepoints
+    var font_set: font.FallbackSet = .{};
+    try font_set.families.ensureTotalCapacity(alloc, 2);
+    errdefer font_set.deinit(alloc);
+
+    // Regular text
+    font_set.families.appendAssumeCapacity(fam: {
+        var fam = try font.Family.init(atlas);
+        errdefer fam.deinit(alloc);
+        try fam.loadFaceFromMemory(.regular, face_ttf, config.@"font-size");
+        try fam.loadFaceFromMemory(.bold, face_bold_ttf, config.@"font-size");
+        break :fam fam;
+    });
+
+    // Emoji
+    font_set.families.appendAssumeCapacity(fam: {
+        var fam_emoji = try font.Family.init(atlas_color);
+        errdefer fam_emoji.deinit(alloc);
+        try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, config.@"font-size");
+        break :fam fam_emoji;
+    });
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
@@ -127,9 +173,9 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
         var cell_width: f32 = 0;
         var i: u8 = 32;
         while (i <= 126) : (i += 1) {
-            const glyph = try fam.addGlyph(alloc, i, .regular);
-            if (glyph.advance_x > cell_width) {
-                cell_width = @ceil(glyph.advance_x);
+            const goa = try font_set.getOrAddGlyph(alloc, i, .regular);
+            if (goa.glyph.advance_x > cell_width) {
+                cell_width = @ceil(goa.glyph.advance_x);
             }
         }
 
@@ -139,11 +185,13 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // The cell height is the vertical height required to render underscore
     // '_' which should live at the bottom of a cell.
     const cell_height: f32 = cell_height: {
+        const fam = &font_set.families.items[0];
+
         // This is the height reported by the font face
         const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.height);
 
         // Determine the height of the underscore char
-        const glyph = fam.getGlyph('_', .regular).?;
+        const glyph = font_set.families.items[0].getGlyph('_', .regular).?;
         var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender);
         res -= glyph.offset_y;
         res += @intCast(i32, glyph.height);
@@ -154,10 +202,13 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
 
         break :cell_height @intToFloat(f32, res);
     };
-    const cell_baseline = cell_height - @intToFloat(
-        f32,
-        fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender),
-    );
+    const cell_baseline = cell_baseline: {
+        const fam = &font_set.families.items[0];
+        break :cell_baseline cell_height - @intToFloat(
+            f32,
+            fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender),
+        );
+    };
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
 
     // Create our shader
@@ -171,6 +222,10 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ cell_width, cell_height });
     try program.setUniform("glyph_baseline", cell_baseline);
+
+    // Set all of our texture indexes
+    try program.setUniform("text", 0);
+    try program.setUniform("text_color", 1);
 
     // Setup our VAO
     const vao = try gl.VertexArray.create();
@@ -225,21 +280,44 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     // Build our texture
     const tex = try gl.Texture.create();
     errdefer tex.destroy();
-    const texbind = try tex.bind(.@"2D");
-    try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
-    try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
-    try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
-    try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
-    try texbind.image2D(
-        0,
-        .Red,
-        @intCast(c_int, atlas.size),
-        @intCast(c_int, atlas.size),
-        0,
-        .Red,
-        .UnsignedByte,
-        atlas.data.ptr,
-    );
+    {
+        const texbind = try tex.bind(.@"2D");
+        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+        try texbind.image2D(
+            0,
+            .Red,
+            @intCast(c_int, atlas.size),
+            @intCast(c_int, atlas.size),
+            0,
+            .Red,
+            .UnsignedByte,
+            atlas.data.ptr,
+        );
+    }
+
+    // Build our color texture
+    const tex_color = try gl.Texture.create();
+    errdefer tex_color.destroy();
+    {
+        const texbind = try tex_color.bind(.@"2D");
+        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+        try texbind.image2D(
+            0,
+            .RGBA,
+            @intCast(c_int, atlas_color.size),
+            @intCast(c_int, atlas_color.size),
+            0,
+            .BGRA,
+            .UnsignedByte,
+            atlas_color.data.ptr,
+        );
+    }
 
     return Grid{
         .alloc = alloc,
@@ -251,7 +329,8 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
         .ebo = ebo,
         .vbo = vbo,
         .texture = tex,
-        .font_atlas = fam,
+        .texture_color = tex_color,
+        .font_set = font_set,
         .atlas_dirty = false,
         .cursor_visible = true,
         .cursor_style = .box,
@@ -261,9 +340,14 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
 }
 
 pub fn deinit(self: *Grid) void {
-    self.font_atlas.atlas.deinit(self.alloc);
-    self.font_atlas.deinit(self.alloc);
+    for (self.font_set.families.items) |*family| {
+        family.atlas.deinit(self.alloc);
+        family.deinit(self.alloc);
+    }
+    self.font_set.deinit(self.alloc);
+
     self.texture.destroy();
+    self.texture_color.destroy();
     self.vbo.destroy();
     self.ebo.destroy();
     self.vao.destroy();
@@ -338,8 +422,19 @@ pub fn finalizeCells(self: *Grid, term: Terminal) !void {
 fn addCursor(self: *Grid, term: Terminal) void {
     // Add the cursor
     if (self.cursor_visible and term.screen.viewportIsBottom()) {
+        const cell = term.screen.getCell(
+            term.screen.cursor.y,
+            term.screen.cursor.x,
+        );
+
+        var mode: GPUCellMode = @intToEnum(
+            GPUCellMode,
+            @enumToInt(self.cursor_style),
+        );
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+
         self.cells.appendAssumeCapacity(.{
-            .mode = @enumToInt(self.cursor_style),
+            .mode = mode,
             .grid_col = @intCast(u16, term.screen.cursor.x),
             .grid_row = @intCast(u16, term.screen.cursor.y),
             .fg_r = 0,
@@ -415,6 +510,9 @@ pub fn updateCell(
         break :colors res;
     };
 
+    // If we are a trailing spacer, we never render anything.
+    if (cell.attrs.wide_spacer_tail == 1) return true;
+
     // Calculate the amount of space we need in the cells list.
     const needed = needed: {
         var i: usize = 0;
@@ -427,8 +525,11 @@ pub fn updateCell(
 
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
+        var mode: GPUCellMode = .bg;
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+
         self.cells.appendAssumeCapacity(.{
-            .mode = 1,
+            .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .glyph_x = 0,
@@ -456,17 +557,19 @@ pub fn updateCell(
         else
             .regular;
 
-        // Get our glyph
-        // TODO: if we add a glyph, I think we need to rerender the texture.
-        const glyph = if (self.font_atlas.getGlyph(cell.char, style)) |glyph|
-            glyph
-        else glyph: {
-            self.atlas_dirty = true;
-            break :glyph try self.font_atlas.addGlyph(self.alloc, cell.char, style);
-        };
+        var mode: GPUCellMode = .fg;
+
+        // Get our glyph. Try our normal font atlas first.
+        const goa = try self.font_set.getOrAddGlyph(self.alloc, cell.char, style);
+        if (!goa.found_existing) self.atlas_dirty = true;
+        if (goa.family == 1) mode = .fg_color;
+        const glyph = goa.glyph;
+
+        // If the cell is wide, we need to note that in the mode
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
-            .mode = 2,
+            .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .glyph_x = glyph.atlas_x,
@@ -487,8 +590,11 @@ pub fn updateCell(
     }
 
     if (cell.attrs.underline == 1) {
+        var mode: GPUCellMode = .underline;
+        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+
         self.cells.appendAssumeCapacity(.{
-            .mode = 6, // underline
+            .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .glyph_x = 0,
@@ -537,18 +643,37 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 
 /// Updates the font texture atlas if it is dirty.
 fn flushAtlas(self: *Grid) !void {
-    var texbind = try self.texture.bind(.@"2D");
-    defer texbind.unbind();
-    try texbind.subImage2D(
-        0,
-        0,
-        0,
-        @intCast(c_int, self.font_atlas.atlas.size),
-        @intCast(c_int, self.font_atlas.atlas.size),
-        .Red,
-        .UnsignedByte,
-        self.font_atlas.atlas.data.ptr,
-    );
+    {
+        const atlas = &self.font_set.families.items[0].atlas;
+        var texbind = try self.texture.bind(.@"2D");
+        defer texbind.unbind();
+        try texbind.subImage2D(
+            0,
+            0,
+            0,
+            @intCast(c_int, atlas.size),
+            @intCast(c_int, atlas.size),
+            .Red,
+            .UnsignedByte,
+            atlas.data.ptr,
+        );
+    }
+
+    {
+        const atlas = &self.font_set.families.items[1].atlas;
+        var texbind = try self.texture_color.bind(.@"2D");
+        defer texbind.unbind();
+        try texbind.subImage2D(
+            0,
+            0,
+            0,
+            @intCast(c_int, atlas.size),
+            @intCast(c_int, atlas.size),
+            .BGRA,
+            .UnsignedByte,
+            atlas.data.ptr,
+        );
+    }
 }
 
 /// Render renders the current cell state. This will not modify any of
@@ -603,10 +728,14 @@ pub fn render(self: *Grid) !void {
         assert(self.gl_cells_written <= self.cells.items.len);
     }
 
-    // Bind our texture
+    // Bind our textures
     try gl.Texture.active(gl.c.GL_TEXTURE0);
     var texbind = try self.texture.bind(.@"2D");
     defer texbind.unbind();
+
+    try gl.Texture.active(gl.c.GL_TEXTURE1);
+    var texbind1 = try self.texture_color.bind(.@"2D");
+    defer texbind1.unbind();
 
     try gl.drawElementsInstanced(
         gl.c.GL_TRIANGLES,
@@ -686,3 +815,4 @@ test "GridSize update rounding" {
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
 const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
+const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");

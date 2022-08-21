@@ -11,6 +11,7 @@ const Face = @import("main.zig").Face;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const testFont = @import("test.zig").fontRegular;
+const codepoint = @import("main.zig").codepoint;
 
 const log = std.log.scoped(.font_family);
 
@@ -137,20 +138,8 @@ pub fn addGlyph(self: *Family, alloc: Allocator, v: anytype, style: Style) !*Gly
     errdefer _ = self.glyphs.remove(glyphKey);
 
     // Get the glyph and add it to the atlas.
-    // TODO: handle glyph not found
     gop.value_ptr.* = try face.loadGlyph(alloc, &self.atlas, utf32);
     return gop.value_ptr;
-}
-
-/// Returns the UTF-32 codepoint for the given value.
-fn codepoint(v: anytype) u32 {
-    // We need a UTF32 codepoint for freetype
-    return switch (@TypeOf(v)) {
-        u32 => v,
-        comptime_int, u8 => @intCast(u32, v),
-        []const u8 => @intCast(u32, try std.unicode.utfDecode(v)),
-        else => @compileError("invalid codepoint type"),
-    };
 }
 
 test {

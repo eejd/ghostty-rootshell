@@ -25,8 +25,10 @@ const Screen = @This();
 // one day.
 
 const std = @import("std");
+const utf8proc = @import("utf8proc");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+
 const color = @import("color.zig");
 const point = @import("point.zig");
 const Selection = @import("Selection.zig");
@@ -71,6 +73,15 @@ pub const Cell = struct {
         /// should have this set. The first cell of the next row is actually
         /// part of this row in raw input.
         wrap: u1 = 0,
+
+        /// True if this is a wide character. This char takes up
+        /// two cells. The following cell ALWAYS is a space.
+        wide: u1 = 0,
+
+        /// Notes that this only exists to be blank for a preceeding
+        /// wide character (tail) or following (head).
+        wide_spacer_tail: u1 = 0,
+        wide_spacer_head: u1 = 0,
     } = .{},
 
     /// True if the cell should be skipped for drawing
@@ -932,6 +943,10 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
             i += 1;
         }
 
+        // Skip spacers
+        if (cell.attrs.wide_spacer_head == 1 or
+            cell.attrs.wide_spacer_tail == 1) continue;
+
         const char = if (cell.char > 0) cell.char else ' ';
         i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
     }
@@ -955,6 +970,10 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
             }
         }
 
+        // Skip spacers
+        if (cell.attrs.wide_spacer_head == 1 or
+            cell.attrs.wide_spacer_tail == 1) continue;
+
         const char = if (cell.char > 0) cell.char else ' ';
         i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
     }
@@ -970,7 +989,7 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
 /// Returns the slices that make up the selection, in order. There are at most
 /// two parts to handle the ring buffer. If the selection fits in one contiguous
 /// slice, then the second slice will have a length of zero.
-fn selectionSlices(self: Screen, sel: Selection) struct {
+fn selectionSlices(self: Screen, sel_raw: Selection) struct {
     // Top offset can be used to determine if a newline is required by
     // seeing if the cell index plus the offset cleanly divides by screen cols.
     top_offset: usize,
@@ -979,10 +998,35 @@ fn selectionSlices(self: Screen, sel: Selection) struct {
 } {
     // Note: this function is tested via selectionString
 
-    assert(sel.start.y < self.totalRows());
-    assert(sel.end.y < self.totalRows());
-    assert(sel.start.x < self.cols);
-    assert(sel.end.x < self.cols);
+    assert(sel_raw.start.y < self.totalRows());
+    assert(sel_raw.end.y < self.totalRows());
+    assert(sel_raw.start.x < self.cols);
+    assert(sel_raw.end.x < self.cols);
+
+    const sel = sel: {
+        var sel = sel_raw;
+
+        // If the end of our selection is a wide char leader, include the
+        // first part of the next line.
+        if (sel.end.x == self.cols - 1) {
+            const row = self.getRow(.{ .screen = sel.end.y });
+            if (row[sel.end.x].attrs.wide_spacer_head == 1) {
+                sel.end.y += 1;
+                sel.end.x = 0;
+            }
+        }
+
+        // If the start of our selection is a wide char spacer, include the
+        // wide char.
+        if (sel.start.x > 0) {
+            const row = self.getRow(.{ .screen = sel.start.y });
+            if (row[sel.start.x].attrs.wide_spacer_tail == 1) {
+                sel.end.x -= 1;
+            }
+        }
+
+        break :sel sel;
+    };
 
     // Get the true "top" and "bottom"
     const sel_top = sel.topLeft();
@@ -1044,7 +1088,10 @@ pub fn testString(self: Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 
 fn testWriteString(self: *Screen, text: []const u8) void {
     var y: usize = 0;
     var x: usize = 0;
-    for (text) |c| {
+
+    const view = std.unicode.Utf8View.init(text) catch unreachable;
+    var iter = view.iterator();
+    while (iter.nextCodepoint()) |c| {
         // Explicit newline forces a new row
         if (c == '\n') {
             y += 1;
@@ -1073,7 +1120,39 @@ fn testWriteString(self: *Screen, text: []const u8) void {
             row = self.getRow(.{ .active = y });
         }
 
-        row[x].char = @intCast(u32, c);
+        // If our character is double-width, handle it.
+        const width = utf8proc.charwidth(c);
+        assert(width == 1 or width == 2);
+        switch (width) {
+            1 => row[x].char = @intCast(u32, c),
+
+            2 => {
+                if (x == self.cols - 1) {
+                    row[x].char = ' ';
+                    row[x].attrs.wide_spacer_head = 1;
+
+                    // wrap
+                    row[x].attrs.wrap = 1;
+                    y += 1;
+                    x = 0;
+                    if (y >= self.rows) {
+                        y -= 1;
+                        self.scroll(.{ .delta = 1 });
+                    }
+                    row = self.getRow(.{ .active = y });
+                }
+
+                row[x].char = @intCast(u32, c);
+                row[x].attrs.wide = 1;
+
+                x += 1;
+                row[x].char = ' ';
+                row[x].attrs.wide_spacer_tail = 1;
+            },
+
+            else => unreachable,
+        }
+
         x += 1;
     }
 }
@@ -1455,6 +1534,66 @@ test "Screen: selectionString wrap around" {
         });
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString wide char" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1A⚡";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 3, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = str;
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 2, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = str;
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 3, .y = 0 },
+            .end = .{ .x = 3, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = "⚡";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString wide char with header" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit(alloc);
+    const str = "1ABC⚡";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 4, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = str;
         try testing.expectEqualStrings(expected, contents);
     }
 }

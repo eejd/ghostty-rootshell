@@ -47,6 +47,7 @@ pub const Parameter = enum(c_uint) {
 /// Internal format enum for texture images.
 pub const InternalFormat = enum(c_int) {
     Red = c.GL_RED,
+    RGBA = c.GL_RGBA,
 
     // There are so many more that I haven't filled in.
     _,
@@ -55,6 +56,7 @@ pub const InternalFormat = enum(c_int) {
 /// Format for texture images
 pub const Format = enum(c_uint) {
     Red = c.GL_RED,
+    BGRA = c.GL_BGRA,
 
     // There are so many more that I haven't filled in.
     _,

@@ -6,9 +6,11 @@ const Terminal = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const utf8proc = @import("utf8proc");
 const testing = std.testing;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
@@ -341,22 +343,44 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
+    // Determine the width of this character so we can handle
+    // non-single-width characters properly.
+    const width = utf8proc.charwidth(c);
+    assert(width == 1 or width == 2);
+
     // If we're soft-wrapping, then handle that first.
-    if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1) {
-        // Mark that the cell is wrapped, which guarantees that there is
-        // at least one cell after it in the next row.
-        const cell = self.screen.getCell(self.screen.cursor.y, self.screen.cursor.x);
-        cell.attrs.wrap = 1;
+    if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1)
+        _ = self.printWrap();
 
-        // Move to the next line
-        self.index();
-        self.screen.cursor.x = 0;
+    switch (width) {
+        // Single cell is very easy: just write in the cell
+        1 => _ = self.printCell(c),
+
+        // Wide character requires a spacer. We print this by
+        // using two cells: the first is flagged "wide" and has the
+        // wide char. The second is guaranteed to be a spacer if
+        // we're not at the end of the line.
+        2 => {
+            // If we don't have space for the wide char, we need
+            // to insert spacers and wrap. Then we just print the wide
+            // char as normal.
+            if (self.screen.cursor.x == self.cols - 1) {
+                const spacer_head = self.printCell(' ');
+                spacer_head.attrs.wide_spacer_head = 1;
+                _ = self.printWrap();
+            }
+
+            const wide_cell = self.printCell(c);
+            wide_cell.attrs.wide = 1;
+
+            // Write our spacer
+            self.screen.cursor.x += 1;
+            const spacer = self.printCell(' ');
+            spacer.attrs.wide_spacer_tail = 1;
+        },
+
+        else => unreachable,
     }
-
-    // Build our cell
-    const cell = self.screen.getCell(self.screen.cursor.y, self.screen.cursor.x);
-    cell.* = self.screen.cursor.pen;
-    cell.char = @intCast(u32, c);
 
     // Move the cursor
     self.screen.cursor.x += 1;
@@ -368,6 +392,69 @@ pub fn print(self: *Terminal, c: u21) !void {
         self.screen.cursor.x -= 1;
         self.screen.cursor.pending_wrap = true;
     }
+}
+
+fn printCell(self: *Terminal, c: u21) *Screen.Cell {
+    const cell = self.screen.getCell(
+        self.screen.cursor.y,
+        self.screen.cursor.x,
+    );
+
+    // If this cell is wide char then we need to clear it.
+    // We ignore wide spacer HEADS because we can just write
+    // single-width characters into that.
+    if (cell.attrs.wide == 1) {
+        const x = self.screen.cursor.x + 1;
+        assert(x < self.cols);
+
+        const spacer_cell = self.screen.getCell(self.screen.cursor.y, x);
+        spacer_cell.attrs.wide_spacer_tail = 0;
+
+        if (self.screen.cursor.x <= 1) {
+            self.clearWideSpacerHead();
+        }
+    } else if (cell.attrs.wide_spacer_tail == 1) {
+        assert(self.screen.cursor.x > 0);
+        const x = self.screen.cursor.x - 1;
+
+        const wide_cell = self.screen.getCell(self.screen.cursor.y, x);
+        wide_cell.attrs.wide = 0;
+
+        if (self.screen.cursor.x <= 1) {
+            self.clearWideSpacerHead();
+        }
+    }
+
+    // Write
+    cell.* = self.screen.cursor.pen;
+    cell.char = @intCast(u32, c);
+    return cell;
+}
+
+fn printWrap(self: *Terminal) *Screen.Cell {
+    // Mark that the cell is wrapped, which guarantees that there is
+    // at least one cell after it in the next row.
+    const cell = self.screen.getCell(
+        self.screen.cursor.y,
+        self.screen.cursor.x,
+    );
+    cell.attrs.wrap = 1;
+
+    // Move to the next line
+    self.index();
+    self.screen.cursor.x = 0;
+
+    return cell;
+}
+
+fn clearWideSpacerHead(self: *Terminal) void {
+    // TODO: handle deleting wide char on row 0 of active
+    assert(self.screen.cursor.y >= 1);
+    const cell = self.screen.getCell(
+        self.screen.cursor.y - 1,
+        self.cols - 1,
+    );
+    cell.attrs.wide_spacer_head = 0;
 }
 
 /// Resets all margins and fills the whole screen with the character 'E'

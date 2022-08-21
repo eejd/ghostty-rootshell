@@ -3,7 +3,7 @@ const std = @import("std");
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/freetype/";
 const include_path = root ++ "include";
-const include_path_self = thisDir();
+pub const include_path_self = thisDir();
 
 pub const pkg = std.build.Pkg{
     .name = "freetype",

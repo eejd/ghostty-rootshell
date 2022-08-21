@@ -19,18 +19,26 @@
 , freetype
 , libpng
 , libGL
+, libuv
 , libX11
 , libXcursor
 , libXext
 , libXi
 , libXinerama
 , libXrandr
+, zlib
 }:
 let
   # See package.nix. Keep in sync.
   rpathLibs = [
     libGL
   ] ++ lib.optionals stdenv.isLinux [
+    bzip2
+    freetype
+    libpng
+    libuv
+    zlib
+
     libX11
     libXcursor
     libXi
@@ -61,6 +69,12 @@ in mkShell rec {
   buildInputs = [
     # TODO: non-linux
   ] ++ lib.optionals stdenv.isLinux [
+    bzip2
+    freetype
+    libpng
+    libuv
+    zlib
+
     libX11
     libXcursor
     libXext
