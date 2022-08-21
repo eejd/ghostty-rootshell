@@ -408,7 +408,6 @@ fn printCell(self: *Terminal, c: u21) *Screen.Cell {
         assert(x < self.cols);
 
         const spacer_cell = self.screen.getCell(self.screen.cursor.y, x);
-        assert(spacer_cell.attrs.wide_spacer_tail == 1);
         spacer_cell.attrs.wide_spacer_tail = 0;
 
         if (self.screen.cursor.x <= 1) {
@@ -419,7 +418,6 @@ fn printCell(self: *Terminal, c: u21) *Screen.Cell {
         const x = self.screen.cursor.x - 1;
 
         const wide_cell = self.screen.getCell(self.screen.cursor.y, x);
-        assert(wide_cell.attrs.wide == 1);
         wide_cell.attrs.wide = 0;
 
         if (self.screen.cursor.x <= 1) {
