@@ -1,6 +1,7 @@
 Bugs:
 
 * Underline should use freetype underline thickness hint
+* I think Atlas resizing is broken
 
 Performance:
 
@@ -32,10 +33,7 @@ Improvements:
 Major Features:
 
 * Strikethrough
-* Emoji
 * Ligatures
 * Bell
 * Mac:
-  - Enable retina framebuffer
-  - When retina, fonts need to be rendered 2x, they're blurry right now
   - Switch to raw Cocoa and Metal instead of glfw and libuv (major!)
