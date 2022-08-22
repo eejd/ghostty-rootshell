@@ -32,7 +32,10 @@ pub fn main() !void {
     };
 
     // If we're tracing, then wrap memory so we can trace allocations
-    const alloc = if (!tracy.enabled) gpa else tracy.allocator(gpa, null).allocator();
+    const alloc = if (!tracy.enabled) gpa else alloc: {
+        var tracy_alloc = tracy.allocator(gpa, null);
+        break :alloc tracy_alloc.allocator();
+    };
 
     // Parse the config from the CLI args
     var config = config: {
