@@ -13,5 +13,7 @@ final: prev: rec {
   wraptest = prev.callPackage ./wraptest.nix { };
 
   # zig we want to be the latest nightly since 0.9.0 is not released yet.
-  zig = final.zigpkgs.master.latest;
+  # NOTE: we are pinned to this master version because it broke at a certain
+  # point due to the self-hosted compiler. We'll fix this ASAP.
+  zig = final.zigpkgs.master-2022-08-19;
 }
