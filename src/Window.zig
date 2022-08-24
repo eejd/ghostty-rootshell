@@ -20,6 +20,7 @@ const trace = @import("tracy").trace;
 const max_timer = @import("max_timer.zig");
 const terminal = @import("terminal/main.zig");
 const Config = @import("config.zig").Config;
+const input = @import("input.zig");
 
 const RenderTimer = max_timer.MaxTimer(renderTimerCallback);
 
@@ -486,104 +487,162 @@ fn keyCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
+    const win = window.getUserPointer(Window) orelse return;
+
+    // Reset the ignore char setting. If we didn't handle the char
+    // by here, we aren't going to get it so we just reset this.
+    win.ignore_char = false;
+
+    //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
     _ = scancode;
 
-    if (action == .press and mods.super) {
-        switch (key) {
-            // Copy
-            .c => {
-                const win = window.getUserPointer(Window) orelse return;
-
-                // Ignore this character for writing
-                win.ignore_char = true;
-
-                // If we have a selection, copy it.
-                if (win.terminal.selection) |sel| {
-                    var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
-                        log.err("error reading selection string err={}", .{err});
-                        return;
-                    };
-                    defer win.alloc.free(buf);
-
-                    glfw.setClipboardString(buf) catch |err| {
-                        log.err("error setting clipboard string err={}", .{err});
-                        return;
-                    };
-                }
-
-                return;
+    if (action == .press or action == .repeat) {
+        // Convert our glfw input into a platform agnostic trigger. When we
+        // extract the platform out of this file, we'll pull a lot of this out
+        // into a function. For now, this is the only place we do it so we just
+        // put it right here.
+        const trigger: input.Binding.Trigger = .{
+            .mods = @bitCast(input.Mods, mods),
+            .key = switch (key) {
+                .a => .a,
+                .b => .b,
+                .c => .c,
+                .d => .d,
+                .e => .e,
+                .f => .f,
+                .g => .g,
+                .h => .h,
+                .i => .i,
+                .j => .j,
+                .k => .k,
+                .l => .l,
+                .m => .m,
+                .n => .n,
+                .o => .o,
+                .p => .p,
+                .q => .q,
+                .r => .r,
+                .s => .s,
+                .t => .t,
+                .u => .u,
+                .v => .v,
+                .w => .w,
+                .x => .x,
+                .y => .y,
+                .z => .z,
+                .up => .up,
+                .down => .down,
+                .right => .right,
+                .left => .left,
+                .home => .home,
+                .end => .end,
+                .page_up => .page_up,
+                .page_down => .page_down,
+                else => .invalid,
             },
+        };
 
-            // Paste
-            .v => {
-                const win = window.getUserPointer(Window) orelse return;
+        if (win.config.keybind.set.get(trigger)) |binding_action| {
+            //log.warn("BINDING ACTION={}", .{binding_action});
 
-                // Ignore this character for writing
-                win.ignore_char = true;
+            switch (binding_action) {
+                .unbind => unreachable,
+                .ignore => {},
 
-                const data = glfw.getClipboardString() catch |err| {
-                    log.warn("error reading clipboard: {}", .{err});
-                    return;
-                };
-
-                if (data.len > 0) {
-                    if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
+                .csi => |data| {
+                    win.queueWrite("\x1B[") catch |err|
                         log.err("error queueing write in keyCallback err={}", .{err});
                     win.queueWrite(data) catch |err|
                         log.warn("error pasting clipboard: {}", .{err});
-                    if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
-                        log.err("error queueing write in keyCallback err={}", .{err});
-                }
+                },
 
-                return;
-            },
+                .copy_to_clipboard => {
+                    if (win.terminal.selection) |sel| {
+                        var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
+                            log.err("error reading selection string err={}", .{err});
+                            return;
+                        };
+                        defer win.alloc.free(buf);
 
-            else => {},
+                        glfw.setClipboardString(buf) catch |err| {
+                            log.err("error setting clipboard string err={}", .{err});
+                            return;
+                        };
+                    }
+                },
+
+                .paste_from_clipboard => {
+                    const data = glfw.getClipboardString() catch |err| {
+                        log.warn("error reading clipboard: {}", .{err});
+                        return;
+                    };
+
+                    if (data.len > 0) {
+                        if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
+                            log.err("error queueing write in keyCallback err={}", .{err});
+                        win.queueWrite(data) catch |err|
+                            log.warn("error pasting clipboard: {}", .{err});
+                        if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
+                            log.err("error queueing write in keyCallback err={}", .{err});
+                    }
+                },
+            }
+
+            // Bindings always result in us ignoring the char if printable
+            win.ignore_char = true;
+
+            // No matter what, if there is a binding then we are done.
+            return;
         }
-    }
 
-    //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
-    if (action == .press or action == .repeat) {
-        const c: u8 = switch (key) {
-            // Lots more of these:
-            // https://www.physics.udel.edu/~watson/scen103/ascii.html
-            .a => if (mods.control and !mods.shift) 0x01 else return,
-            .b => if (mods.control and !mods.shift) 0x02 else return,
-            .c => if (mods.control and !mods.shift) 0x03 else return,
-            .d => if (mods.control and !mods.shift) 0x04 else return,
-            .e => if (mods.control and !mods.shift) 0x05 else return,
-            .f => if (mods.control and !mods.shift) 0x06 else return,
-            .g => if (mods.control and !mods.shift) 0x07 else return,
-            .h => if (mods.control and !mods.shift) 0x08 else return,
-            .i => if (mods.control and !mods.shift) 0x09 else return,
-            .j => if (mods.control and !mods.shift) 0x0A else return,
-            .k => if (mods.control and !mods.shift) 0x0B else return,
-            .l => if (mods.control and !mods.shift) 0x0C else return,
-            .m => if (mods.control and !mods.shift) 0x0D else return,
-            .n => if (mods.control and !mods.shift) 0x0E else return,
-            .o => if (mods.control and !mods.shift) 0x0F else return,
-            .p => if (mods.control and !mods.shift) 0x10 else return,
-            .q => if (mods.control and !mods.shift) 0x11 else return,
-            .r => if (mods.control and !mods.shift) 0x12 else return,
-            .s => if (mods.control and !mods.shift) 0x13 else return,
-            .t => if (mods.control and !mods.shift) 0x14 else return,
-            .u => if (mods.control and !mods.shift) 0x15 else return,
-            .v => if (mods.control and !mods.shift) 0x16 else return,
-            .w => if (mods.control and !mods.shift) 0x17 else return,
-            .x => if (mods.control and !mods.shift) 0x18 else return,
-            .y => if (mods.control and !mods.shift) 0x19 else return,
-            .z => if (mods.control and !mods.shift) 0x1A else return,
+        // Handle non-printables
+        const char: u8 = switch (@bitCast(u8, mods)) {
+            // No modifiers pressed at all
+            0 => @as(u8, switch (key) {
+                .backspace => 0x7F,
+                .enter => '\r',
+                .tab => '\t',
+                .escape => 0x1B,
+                else => 0,
+            }),
 
-            .backspace => 0x08,
-            .enter => '\r',
-            .tab => '\t',
-            .escape => 0x1B,
-            else => return,
+            // Control only
+            @bitCast(u8, glfw.Mods{ .control = true }) => @as(u8, switch (key) {
+                .a => 0x01,
+                .b => 0x02,
+                .c => 0x03,
+                .d => 0x04,
+                .e => 0x05,
+                .f => 0x06,
+                .g => 0x07,
+                .h => 0x08,
+                .i => 0x09,
+                .j => 0x0A,
+                .k => 0x0B,
+                .l => 0x0C,
+                .m => 0x0D,
+                .n => 0x0E,
+                .o => 0x0F,
+                .p => 0x10,
+                .q => 0x11,
+                .r => 0x12,
+                .s => 0x13,
+                .t => 0x14,
+                .u => 0x15,
+                .v => 0x16,
+                .w => 0x17,
+                .x => 0x18,
+                .y => 0x19,
+                .z => 0x1A,
+                else => 0,
+            }),
+
+            else => 0,
         };
-
-        const win = window.getUserPointer(Window) orelse return;
-        win.queueWrite(&[1]u8{c}) catch |err|
-            log.err("error queueing write in keyCallback err={}", .{err});
+        if (char > 0) {
+            win.queueWrite(&[1]u8{char}) catch |err|
+                log.err("error queueing write in keyCallback err={}", .{err});
+        }
     }
 }
 

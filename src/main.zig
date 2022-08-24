@@ -39,7 +39,8 @@ pub fn main() !void {
 
     // Parse the config from the CLI args
     var config = config: {
-        var result: Config = .{};
+        var result = try Config.default(alloc);
+        errdefer result.deinit();
         var iter = try std.process.argsWithAllocator(alloc);
         defer iter.deinit();
         try cli_args.parse(Config, alloc, &result, &iter);
@@ -101,6 +102,7 @@ test {
     _ = @import("TempDir.zig");
     _ = @import("font/main.zig");
     _ = @import("terminal/Terminal.zig");
+    _ = @import("input.zig");
 
     // Libraries
     _ = @import("libuv");
