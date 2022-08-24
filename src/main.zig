@@ -102,6 +102,7 @@ test {
     _ = @import("TempDir.zig");
     _ = @import("font/main.zig");
     _ = @import("terminal/Terminal.zig");
+    _ = @import("input.zig");
 
     // Libraries
     _ = @import("libuv");
@@ -111,5 +112,4 @@ test {
     // TODO
     _ = @import("config.zig");
     _ = @import("cli_args.zig");
-    _ = @import("input.zig");
 }
