@@ -486,6 +486,7 @@ fn keyCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
+    //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
     _ = scancode;
 
     if (action == .press and mods.super) {
@@ -542,7 +543,6 @@ fn keyCallback(
         }
     }
 
-    //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
     if (action == .press or action == .repeat) {
         const c: u8 = switch (key) {
             // Lots more of these:
