@@ -20,6 +20,9 @@ pub const Binding = struct {
     /// modifiers and keys. Action is the action name and optionally a
     /// parameter after a colon, i.e. "csi:A" or "ignore".
     pub fn parse(input: []const u8) !Binding {
+        // NOTE(mitchellh): This is not the most efficient way to do any
+        // of this, I welcome any improvements here!
+
         // Find the first = which splits are mapping into the trigger
         // and action, respectively.
         const eqlIdx = std.mem.indexOf(u8, input, "=") orelse return Error.InvalidFormat;
@@ -66,27 +69,41 @@ pub const Binding = struct {
             return Error.InvalidFormat;
         }
 
-        // Split our action by colon. A colon may not exist for some
-        // actions so it is optional. The part preceding the colon is the
-        // action name.
-        const actionRaw = input[eqlIdx + 1 ..];
-        const colonIdx = std.mem.indexOf(u8, actionRaw, ":");
-        const action = actionRaw[0..(colonIdx orelse actionRaw.len)];
-
-        // An action name is always required
-        if (action.len == 0) return Error.InvalidFormat;
-
         // Find a matching action
-        const actionInfo = @typeInfo(Action).Union;
-        inline for (actionInfo.fields) |field| {
-            if (std.mem.eql(u8, action, field.name)) {
-                // If the field type is void we expect no value
-                if (field.field_type == void) {
-                    if (colonIdx != null) return Error.InvalidFormat;
-                    result.action = @unionInit(Action, field.name, {});
+        result.action = action: {
+            // Split our action by colon. A colon may not exist for some
+            // actions so it is optional. The part preceding the colon is the
+            // action name.
+            const actionRaw = input[eqlIdx + 1 ..];
+            const colonIdx = std.mem.indexOf(u8, actionRaw, ":");
+            const action = actionRaw[0..(colonIdx orelse actionRaw.len)];
+
+            // An action name is always required
+            if (action.len == 0) return Error.InvalidFormat;
+
+            const actionInfo = @typeInfo(Action).Union;
+            inline for (actionInfo.fields) |field| {
+                if (std.mem.eql(u8, action, field.name)) {
+                    // If the field type is void we expect no value
+                    switch (field.field_type) {
+                        void => {
+                            if (colonIdx != null) return Error.InvalidFormat;
+                            break :action @unionInit(Action, field.name, {});
+                        },
+
+                        []const u8 => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = actionRaw[idx + 1 ..];
+                            break :action @unionInit(Action, field.name, param);
+                        },
+
+                        else => unreachable,
+                    }
                 }
             }
-        }
+
+            return Error.InvalidFormat;
+        };
 
         return result;
     }
@@ -134,6 +151,27 @@ pub const Binding = struct {
 
         // multiple character
         try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
+    }
+
+    test "parse: action" {
+        const testing = std.testing;
+
+        // invalid action
+        try testing.expectError(Error.InvalidFormat, parse("a=nopenopenope"));
+
+        // no parameters
+        try testing.expectEqual(
+            Binding{ .key = .a, .action = .{ .ignore = {} } },
+            try parse("a=ignore"),
+        );
+        try testing.expectError(Error.InvalidFormat, parse("a=ignore:A"));
+
+        // parameter
+        {
+            const binding = try parse("a=csi:A");
+            try testing.expect(binding.action == .csi);
+            try testing.expectEqualStrings("A", binding.action.csi);
+        }
     }
 };
 
