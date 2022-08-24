@@ -534,6 +534,10 @@ fn keyCallback(
                 .down => .down,
                 .right => .right,
                 .left => .left,
+                .home => .home,
+                .end => .end,
+                .page_up => .page_up,
+                .page_down => .page_down,
                 else => .invalid,
             },
         };

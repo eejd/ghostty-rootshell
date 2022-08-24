@@ -54,6 +54,10 @@ pub const Key = enum {
     down,
     right,
     left,
+    home,
+    end,
+    page_up,
+    page_down,
 
     // To support more keys (there are obviously more!) add them here
     // and ensure the mapping is up to date in the Window key handler.

@@ -92,6 +92,10 @@ pub const Config = struct {
         try result.keybind.set.put(alloc, .{ .key = .down }, .{ .csi = "B" });
         try result.keybind.set.put(alloc, .{ .key = .right }, .{ .csi = "C" });
         try result.keybind.set.put(alloc, .{ .key = .left }, .{ .csi = "D" });
+        try result.keybind.set.put(alloc, .{ .key = .home }, .{ .csi = "H" });
+        try result.keybind.set.put(alloc, .{ .key = .end }, .{ .csi = "F" });
+        try result.keybind.set.put(alloc, .{ .key = .page_up }, .{ .csi = "5~" });
+        try result.keybind.set.put(alloc, .{ .key = .page_down }, .{ .csi = "6~" });
 
         return result;
     }
