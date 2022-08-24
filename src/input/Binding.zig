@@ -4,6 +4,7 @@ const Binding = @This();
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const assert = std.debug.assert;
 const key = @import("key.zig");
 
 /// The trigger that needs to be performed to execute the action.
@@ -127,6 +128,11 @@ pub const Action = union(enum) {
     /// just black hole it.
     ignore: void,
 
+    /// This action is used to flag that the binding should be removed
+    /// from the set. This should never exist in an active set and
+    /// `set.put` has an assertion to verify this.
+    unbind: Void,
+
     /// Send a CSI sequence. The value should be the CSI sequence
     /// without the CSI header ("ESC ]" or "\x1b]").
     csi: []const u8,
@@ -164,13 +170,21 @@ pub const Set = struct {
 
     /// Add a binding to the set. If the binding already exists then
     /// this will overwrite it.
-    pub fn put(self: Set, alloc: Allocator, t: Trigger, action: Action) !void {
+    pub fn put(self: *Set, alloc: Allocator, t: Trigger, action: Action) !void {
+        // unbind should never go into the set, it should be handled prior
+        assert(action != .unbind);
+
         try self.bindings.put(alloc, t, action);
     }
 
     /// Get a binding for a given trigger.
     pub fn get(self: Set, t: Trigger) ?Action {
         return self.bindings.get(t);
+    }
+
+    /// Remove a binding for a given trigger.
+    pub fn remove(self: *Set, t: Trigger) void {
+        _ = self.bindings.remove(t);
     }
 };
 

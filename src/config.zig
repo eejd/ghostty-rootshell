@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const inputpkg = @import("input.zig");
 
 /// Config is the main config struct. These fields map directly to the
 /// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
@@ -20,6 +21,37 @@ pub const Config = struct {
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH.
     command: ?[]const u8 = null,
+
+    /// Key bindings. The format is "trigger=action". Duplicate triggers
+    /// will overwrite previously set values.
+    ///
+    /// Trigger: "+"-separated list of keys and modifiers. Example:
+    /// "ctrl+a", "ctrl+shift+b", "up". Some notes:
+    ///
+    ///   - modifiers cannot repeat, "ctrl+ctrl+a" is invalid.
+    ///   - modifers and key scan be in any order, "shift+a+ctrl" is weird,
+    ///     but valid.
+    ///   - only a single key input is allowed, "ctrl+a+b" is invalid.
+    ///
+    /// Action is the action to take when the trigger is satisfied. It takes
+    /// the format "action" or "action:param". The latter form is only valid
+    /// if the action requires a parameter.
+    ///
+    ///   - "ignore" - Do nothing, ignore the key input. This can be used to
+    ///     black hole certain inputs to have no effect.
+    ///   - "unbind" - Remove the binding. This makes it so the previous action
+    ///     is removed, and the key will be sent through to the child command
+    ///     if it is printable.
+    ///   - "csi:text" - Send a CSI sequence. i.e. "csi:A" sends "cursor up".
+    ///
+    /// Some notes for the action:
+    ///
+    ///   - The parameter is taken as-is after the ":". Double quotes or
+    ///     other mechanisms are included and NOT parsed. If you want to
+    ///     send a string value that includes spaces, wrap the entire
+    ///     trigger/action in double quotes. Example: --keybind="up=csi:A B"
+    ///
+    keybind: Keybinds = .{},
 
     /// Additional configuration files to read.
     @"config-file": RepeatableString = .{},
@@ -111,6 +143,48 @@ pub const RepeatableString = struct {
         try list.parseCLI(alloc, "B");
 
         try testing.expectEqual(@as(usize, 2), list.list.items.len);
+    }
+};
+
+/// Stores a set of keybinds.
+pub const Keybinds = struct {
+    set: inputpkg.Binding.Set = .{},
+
+    pub fn parseCLI(self: *Keybinds, alloc: Allocator, input: ?[]const u8) !void {
+        var copy: ?[]u8 = null;
+        var value = value: {
+            const value = input orelse return error.ValueRequired;
+
+            // If we don't have a colon, use the value as-is, no copy
+            if (std.mem.indexOf(u8, value, ":") == null)
+                break :value value;
+
+            // If we have a colon, we copy the whole value for now. We could
+            // do this more efficiently later if we wanted to.
+            const buf = try alloc.alloc(u8, value.len);
+            copy = buf;
+
+            std.mem.copy(u8, buf, value);
+            break :value buf;
+        };
+        errdefer if (copy) |v| alloc.free(v);
+
+        const binding = try inputpkg.Binding.parse(value);
+        switch (binding.action) {
+            .unbind => self.set.remove(binding.trigger),
+            else => try self.set.put(alloc, binding.trigger, binding.action),
+        }
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var set: Keybinds = .{};
+        try set.parseCLI(alloc, "shift+a=copy_to_clipboard");
+        try set.parseCLI(alloc, "shift+a=csi:hello");
     }
 };
 
