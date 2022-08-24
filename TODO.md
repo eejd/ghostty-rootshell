@@ -35,3 +35,6 @@ Major Features:
 * Bell
 * Mac:
   - Switch to raw Cocoa and Metal instead of glfw and libuv (major!)
+* Sixels: https://saitoha.github.io/libsixel/
+* Kitty keyboard protocol: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+* Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/
