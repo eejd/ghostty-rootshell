@@ -1,7 +1,6 @@
 Bugs:
 
 * Underline should use freetype underline thickness hint
-* I think Atlas resizing is broken
 
 Performance:
 
