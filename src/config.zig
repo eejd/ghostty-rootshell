@@ -20,7 +20,7 @@ pub const Config = struct {
 
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH.
-    command: ?[]const u8 = null,
+    command: ?[]const u8,
 
     /// Key bindings. The format is "trigger=action". Duplicate triggers
     /// will overwrite previously set values.
@@ -62,6 +62,38 @@ pub const Config = struct {
     pub fn deinit(self: *Config) void {
         if (self._arena) |arena| arena.deinit();
         self.* = undefined;
+    }
+
+    pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        // Build up our basic config
+        var result: Config = .{
+            ._arena = arena,
+            .command = "sh",
+        };
+
+        // Add our default keybindings
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .c, .mods = .{ .super = true } },
+            .{ .copy_to_clipboard = 0 },
+        );
+
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .v, .mods = .{ .super = true } },
+            .{ .paste_from_clipboard = 0 },
+        );
+
+        try result.keybind.set.put(alloc, .{ .key = .up }, .{ .csi = "A" });
+        try result.keybind.set.put(alloc, .{ .key = .down }, .{ .csi = "B" });
+        try result.keybind.set.put(alloc, .{ .key = .right }, .{ .csi = "C" });
+        try result.keybind.set.put(alloc, .{ .key = .left }, .{ .csi = "D" });
+
+        return result;
     }
 };
 

@@ -530,13 +530,59 @@ fn keyCallback(
                 .x => .x,
                 .y => .y,
                 .z => .z,
+                .up => .up,
+                .down => .down,
+                .right => .right,
+                .left => .left,
                 else => .invalid,
             },
         };
 
         if (win.config.keybind.set.get(trigger)) |binding_action| {
-            log.warn("BINDING ACTION={}", .{binding_action});
-            _ = binding_action;
+            //log.warn("BINDING ACTION={}", .{binding_action});
+
+            switch (binding_action) {
+                .unbind => unreachable,
+                .ignore => {},
+
+                .csi => |data| {
+                    win.queueWrite("\x1B[") catch |err|
+                        log.err("error queueing write in keyCallback err={}", .{err});
+                    win.queueWrite(data) catch |err|
+                        log.warn("error pasting clipboard: {}", .{err});
+                },
+
+                .copy_to_clipboard => {
+                    if (win.terminal.selection) |sel| {
+                        var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
+                            log.err("error reading selection string err={}", .{err});
+                            return;
+                        };
+                        defer win.alloc.free(buf);
+
+                        glfw.setClipboardString(buf) catch |err| {
+                            log.err("error setting clipboard string err={}", .{err});
+                            return;
+                        };
+                    }
+                },
+
+                .paste_from_clipboard => {
+                    const data = glfw.getClipboardString() catch |err| {
+                        log.warn("error reading clipboard: {}", .{err});
+                        return;
+                    };
+
+                    if (data.len > 0) {
+                        if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
+                            log.err("error queueing write in keyCallback err={}", .{err});
+                        win.queueWrite(data) catch |err|
+                            log.warn("error pasting clipboard: {}", .{err});
+                        if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
+                            log.err("error queueing write in keyCallback err={}", .{err});
+                    }
+                },
+            }
 
             // Bindings always result in us ignoring the char if printable
             win.ignore_char = true;
@@ -592,57 +638,6 @@ fn keyCallback(
         if (char > 0) {
             win.queueWrite(&[1]u8{char}) catch |err|
                 log.err("error queueing write in keyCallback err={}", .{err});
-        }
-    }
-
-    if (action == .press and mods.super) {
-        switch (key) {
-            // Copy
-            .c => {
-                // Ignore this character for writing
-                win.ignore_char = true;
-
-                // If we have a selection, copy it.
-                if (win.terminal.selection) |sel| {
-                    var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
-                        log.err("error reading selection string err={}", .{err});
-                        return;
-                    };
-                    defer win.alloc.free(buf);
-
-                    glfw.setClipboardString(buf) catch |err| {
-                        log.err("error setting clipboard string err={}", .{err});
-                        return;
-                    };
-                }
-
-                return;
-            },
-
-            // Paste
-            .v => {
-
-                // Ignore this character for writing
-                win.ignore_char = true;
-
-                const data = glfw.getClipboardString() catch |err| {
-                    log.warn("error reading clipboard: {}", .{err});
-                    return;
-                };
-
-                if (data.len > 0) {
-                    if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
-                        log.err("error queueing write in keyCallback err={}", .{err});
-                    win.queueWrite(data) catch |err|
-                        log.warn("error pasting clipboard: {}", .{err});
-                    if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
-                        log.err("error queueing write in keyCallback err={}", .{err});
-                }
-
-                return;
-            },
-
-            else => {},
         }
     }
 }

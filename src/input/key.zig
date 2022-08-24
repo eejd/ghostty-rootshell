@@ -49,6 +49,12 @@ pub const Key = enum {
     y,
     z,
 
+    // control
+    up,
+    down,
+    right,
+    left,
+
     // To support more keys (there are obviously more!) add them here
     // and ensure the mapping is up to date in the Window key handler.
 };
