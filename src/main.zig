@@ -110,5 +110,5 @@ test {
     // TODO
     _ = @import("config.zig");
     _ = @import("cli_args.zig");
-    _ = @import("key.zig");
+    _ = @import("input.zig");
 }
