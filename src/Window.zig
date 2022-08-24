@@ -544,6 +544,55 @@ fn keyCallback(
             // No matter what, if there is a binding then we are done.
             return;
         }
+
+        // Handle non-printables
+        const char: u8 = switch (@bitCast(u8, mods)) {
+            // No modifiers pressed at all
+            0 => @as(u8, switch (key) {
+                .backspace => 0x7F,
+                .enter => '\r',
+                .tab => '\t',
+                .escape => 0x1B,
+                else => 0,
+            }),
+
+            // Control only
+            @bitCast(u8, glfw.Mods{ .control = true }) => @as(u8, switch (key) {
+                .a => 0x01,
+                .b => 0x02,
+                .c => 0x03,
+                .d => 0x04,
+                .e => 0x05,
+                .f => 0x06,
+                .g => 0x07,
+                .h => 0x08,
+                .i => 0x09,
+                .j => 0x0A,
+                .k => 0x0B,
+                .l => 0x0C,
+                .m => 0x0D,
+                .n => 0x0E,
+                .o => 0x0F,
+                .p => 0x10,
+                .q => 0x11,
+                .r => 0x12,
+                .s => 0x13,
+                .t => 0x14,
+                .u => 0x15,
+                .v => 0x16,
+                .w => 0x17,
+                .x => 0x18,
+                .y => 0x19,
+                .z => 0x1A,
+                else => 0,
+            }),
+
+            else => 0,
+        };
+        if (char > 0) {
+            win.queueWrite(&[1]u8{char}) catch |err|
+                log.err("error queueing write in keyCallback err={}", .{err});
+        }
     }
 
     if (action == .press and mods.super) {
@@ -594,57 +643,6 @@ fn keyCallback(
             },
 
             else => {},
-        }
-    }
-
-    // Handle non-printable characters
-    if (action == .press or action == .repeat) {
-        const char: u8 = switch (@bitCast(u8, mods)) {
-            // No modifiers pressed at all
-            0 => @as(u8, switch (key) {
-                .backspace => 0x7F,
-                .enter => '\r',
-                .tab => '\t',
-                .escape => 0x1B,
-                else => 0,
-            }),
-
-            // Control only
-            @bitCast(u8, glfw.Mods{ .control = true }) => @as(u8, switch (key) {
-                .a => 0x01,
-                .b => 0x02,
-                .c => 0x03,
-                .d => 0x04,
-                .e => 0x05,
-                .f => 0x06,
-                .g => 0x07,
-                .h => 0x08,
-                .i => 0x09,
-                .j => 0x0A,
-                .k => 0x0B,
-                .l => 0x0C,
-                .m => 0x0D,
-                .n => 0x0E,
-                .o => 0x0F,
-                .p => 0x10,
-                .q => 0x11,
-                .r => 0x12,
-                .s => 0x13,
-                .t => 0x14,
-                .u => 0x15,
-                .v => 0x16,
-                .w => 0x17,
-                .x => 0x18,
-                .y => 0x19,
-                .z => 0x1A,
-                else => 0,
-            }),
-
-            else => 0,
-        };
-        if (char > 0) {
-            win.queueWrite(&[1]u8{char}) catch |err|
-                log.err("error queueing write in keyCallback err={}", .{err});
         }
     }
 }
