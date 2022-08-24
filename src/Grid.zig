@@ -46,7 +46,6 @@ texture_color: gl.Texture,
 
 /// The font atlas.
 font_set: font.FallbackSet,
-atlas_dirty: bool,
 
 /// Whether the cursor is visible or not. This is used to control cursor
 /// blinking.
@@ -331,7 +330,6 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
         .texture = tex,
         .texture_color = tex_color,
         .font_set = font_set,
-        .atlas_dirty = false,
         .cursor_visible = true,
         .cursor_style = .box,
         .background = .{ .r = 0, .g = 0, .b = 0 },
@@ -411,12 +409,9 @@ pub fn finalizeCells(self: *Grid, term: Terminal) !void {
         try self.rebuildCells(term);
     }
 
-    // If our atlas is dirty, we need to flush it
-    if (self.atlas_dirty) {
-        log.info("atlas dirty, flushing changes", .{});
-        try self.flushAtlas();
-        self.atlas_dirty = false;
-    }
+    // Try to flush our atlas, this will only do something if there
+    // are changes to the atlas.
+    try self.flushAtlas();
 }
 
 fn addCursor(self: *Grid, term: Terminal) void {
@@ -561,7 +556,6 @@ pub fn updateCell(
 
         // Get our glyph. Try our normal font atlas first.
         const goa = try self.font_set.getOrAddGlyph(self.alloc, cell.char, style);
-        if (!goa.found_existing) self.atlas_dirty = true;
         if (goa.family == 1) mode = .fg_color;
         const glyph = goa.glyph;
 
@@ -645,34 +639,70 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 fn flushAtlas(self: *Grid) !void {
     {
         const atlas = &self.font_set.families.items[0].atlas;
-        var texbind = try self.texture.bind(.@"2D");
-        defer texbind.unbind();
-        try texbind.subImage2D(
-            0,
-            0,
-            0,
-            @intCast(c_int, atlas.size),
-            @intCast(c_int, atlas.size),
-            .Red,
-            .UnsignedByte,
-            atlas.data.ptr,
-        );
+        if (atlas.modified) {
+            atlas.modified = false;
+            var texbind = try self.texture.bind(.@"2D");
+            defer texbind.unbind();
+
+            if (atlas.resized) {
+                atlas.resized = false;
+                try texbind.image2D(
+                    0,
+                    .Red,
+                    @intCast(c_int, atlas.size),
+                    @intCast(c_int, atlas.size),
+                    0,
+                    .Red,
+                    .UnsignedByte,
+                    atlas.data.ptr,
+                );
+            } else {
+                try texbind.subImage2D(
+                    0,
+                    0,
+                    0,
+                    @intCast(c_int, atlas.size),
+                    @intCast(c_int, atlas.size),
+                    .Red,
+                    .UnsignedByte,
+                    atlas.data.ptr,
+                );
+            }
+        }
     }
 
     {
         const atlas = &self.font_set.families.items[1].atlas;
-        var texbind = try self.texture_color.bind(.@"2D");
-        defer texbind.unbind();
-        try texbind.subImage2D(
-            0,
-            0,
-            0,
-            @intCast(c_int, atlas.size),
-            @intCast(c_int, atlas.size),
-            .BGRA,
-            .UnsignedByte,
-            atlas.data.ptr,
-        );
+        if (atlas.modified) {
+            atlas.modified = false;
+            var texbind = try self.texture_color.bind(.@"2D");
+            defer texbind.unbind();
+
+            if (atlas.resized) {
+                atlas.resized = false;
+                try texbind.image2D(
+                    0,
+                    .RGBA,
+                    @intCast(c_int, atlas.size),
+                    @intCast(c_int, atlas.size),
+                    0,
+                    .BGRA,
+                    .UnsignedByte,
+                    atlas.data.ptr,
+                );
+            } else {
+                try texbind.subImage2D(
+                    0,
+                    0,
+                    0,
+                    @intCast(c_int, atlas.size),
+                    @intCast(c_int, atlas.size),
+                    .BGRA,
+                    .UnsignedByte,
+                    atlas.data.ptr,
+                );
+            }
+        }
     }
 }
 
