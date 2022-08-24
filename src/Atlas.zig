@@ -254,7 +254,7 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
         .y = 1, // skip the first border row
         .width = size_old,
         .height = size_old - 2, // skip the last border row
-    }, data_old[size_old..]);
+    }, data_old[size_old * @enumToInt(self.format) ..]);
 }
 
 // Empty the atlas. This doesn't reclaim any previously allocated memory.
@@ -357,4 +357,72 @@ test "writing RGB data" {
     try testing.expectEqual(@as(u8, 4), atlas.data[65 * depth]);
     try testing.expectEqual(@as(u8, 5), atlas.data[65 * depth + 1]);
     try testing.expectEqual(@as(u8, 6), atlas.data[65 * depth + 2]);
+}
+
+test "grow RGB" {
+    const alloc = testing.allocator;
+
+    // Atlas is 4x4 so its a 1px border meaning we only have 2x2 available
+    var atlas = try init(alloc, 4, .rgb);
+    defer atlas.deinit(alloc);
+
+    // Get our 2x2, which should be ALL our usable space
+    const reg = try atlas.reserve(alloc, 2, 2);
+    try testing.expectError(Error.AtlasFull, atlas.reserve(alloc, 1, 1));
+
+    // This is RGB so its 3 bpp
+    atlas.set(reg, &[_]u8{
+        10, 11, 12, // (0, 0) (x, y) from top-left
+        13, 14, 15, // (1, 0)
+        20, 21, 22, // (0, 1)
+        23, 24, 25, // (1, 1)
+    });
+
+    // Our top left skips the first row (size * depth) and the first
+    // column (depth) for the 1px border.
+    const depth = @intCast(usize, @enumToInt(atlas.format));
+    var tl = (atlas.size * depth) + depth;
+    try testing.expectEqual(@as(u8, 10), atlas.data[tl]);
+    try testing.expectEqual(@as(u8, 11), atlas.data[tl + 1]);
+    try testing.expectEqual(@as(u8, 12), atlas.data[tl + 2]);
+    try testing.expectEqual(@as(u8, 13), atlas.data[tl + 3]);
+    try testing.expectEqual(@as(u8, 14), atlas.data[tl + 4]);
+    try testing.expectEqual(@as(u8, 15), atlas.data[tl + 5]);
+    try testing.expectEqual(@as(u8, 0), atlas.data[tl + 6]); // border
+
+    tl += (atlas.size * depth); // next row
+    try testing.expectEqual(@as(u8, 20), atlas.data[tl]);
+    try testing.expectEqual(@as(u8, 21), atlas.data[tl + 1]);
+    try testing.expectEqual(@as(u8, 22), atlas.data[tl + 2]);
+    try testing.expectEqual(@as(u8, 23), atlas.data[tl + 3]);
+    try testing.expectEqual(@as(u8, 24), atlas.data[tl + 4]);
+    try testing.expectEqual(@as(u8, 25), atlas.data[tl + 5]);
+    try testing.expectEqual(@as(u8, 0), atlas.data[tl + 6]); // border
+
+    // Expand by exactly 1 should fit our new 1x1 block.
+    try atlas.grow(alloc, atlas.size + 1);
+
+    // Data should be in same place accounting for the new size
+    tl = (atlas.size * depth) + depth;
+    try testing.expectEqual(@as(u8, 10), atlas.data[tl]);
+    try testing.expectEqual(@as(u8, 11), atlas.data[tl + 1]);
+    try testing.expectEqual(@as(u8, 12), atlas.data[tl + 2]);
+    try testing.expectEqual(@as(u8, 13), atlas.data[tl + 3]);
+    try testing.expectEqual(@as(u8, 14), atlas.data[tl + 4]);
+    try testing.expectEqual(@as(u8, 15), atlas.data[tl + 5]);
+    try testing.expectEqual(@as(u8, 0), atlas.data[tl + 6]); // border
+
+    tl += (atlas.size * depth); // next row
+    try testing.expectEqual(@as(u8, 20), atlas.data[tl]);
+    try testing.expectEqual(@as(u8, 21), atlas.data[tl + 1]);
+    try testing.expectEqual(@as(u8, 22), atlas.data[tl + 2]);
+    try testing.expectEqual(@as(u8, 23), atlas.data[tl + 3]);
+    try testing.expectEqual(@as(u8, 24), atlas.data[tl + 4]);
+    try testing.expectEqual(@as(u8, 25), atlas.data[tl + 5]);
+    try testing.expectEqual(@as(u8, 0), atlas.data[tl + 6]); // border
+
+    // Should fit the new blocks around the edges
+    _ = try atlas.reserve(alloc, 1, 3);
+    _ = try atlas.reserve(alloc, 2, 1);
+    try testing.expectError(Error.AtlasFull, atlas.reserve(alloc, 1, 1));
 }
