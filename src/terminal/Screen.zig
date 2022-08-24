@@ -63,8 +63,7 @@ pub const Cell = struct {
     bg: ?color.RGB = null,
 
     /// On/off attributes that can be set
-    /// TODO: pack it
-    attrs: struct {
+    attrs: packed struct {
         bold: u1 = 0,
         underline: u1 = 0,
         inverse: u1 = 0,
@@ -82,11 +81,21 @@ pub const Cell = struct {
         /// wide character (tail) or following (head).
         wide_spacer_tail: u1 = 0,
         wide_spacer_head: u1 = 0,
+
+        _padding: u1 = 0,
     } = .{},
 
     /// True if the cell should be skipped for drawing
     pub fn empty(self: Cell) bool {
         return self.char == 0;
+    }
+
+    test {
+        // We use this test to ensure we always get the right size of the attrs
+        const cell: Cell = .{ .char = 0 };
+        try std.testing.expectEqual(1, @sizeOf(@TypeOf(cell.attrs)));
+
+        log.warn("CELL={}", .{@sizeOf(Cell)});
     }
 };
 

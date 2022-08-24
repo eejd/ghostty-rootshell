@@ -346,7 +346,11 @@ pub fn print(self: *Terminal, c: u21) !void {
     // Determine the width of this character so we can handle
     // non-single-width characters properly.
     const width = utf8proc.charwidth(c);
-    assert(width == 1 or width == 2);
+    assert(width <= 2);
+
+    // For now, we ignore zero-width characters. When we support ligatures,
+    // this will have to change.
+    if (width == 0) return;
 
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1)
