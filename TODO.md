@@ -37,3 +37,4 @@ Major Features:
 * Sixels: https://saitoha.github.io/libsixel/
 * Kitty keyboard protocol: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 * Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+* Mouse events
