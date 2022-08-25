@@ -440,6 +440,8 @@ fn cursorPosToPixels(self: Window, pos: glfw.Window.CursorPos) glfw.Window.Curso
     const size = self.window.getSize() catch unreachable;
     const fb_size = self.window.getFramebufferSize() catch unreachable;
 
+    // If our framebuffer and screen are the same, then there is no scaling
+    // happening and we can short-circuit by returning the pos as-is.
     if (fb_size.width == size.width and fb_size.height == size.height)
         return pos;
 
