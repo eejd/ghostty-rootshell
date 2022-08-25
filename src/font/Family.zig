@@ -72,7 +72,7 @@ pub fn loadFaceFromMemory(
     self: *Family,
     comptime style: Style,
     source: [:0]const u8,
-    size: u32,
+    size: Face.DesiredSize,
 ) !void {
     var face = try Face.init(self.ft_library);
     errdefer face.deinit();
@@ -148,7 +148,7 @@ test {
     var fam = try init(try Atlas.init(alloc, 512, .greyscale));
     defer fam.deinit(alloc);
     defer fam.atlas.deinit(alloc);
-    try fam.loadFaceFromMemory(.regular, testFont, 48);
+    try fam.loadFaceFromMemory(.regular, testFont, .{ .points = 12 });
 
     // Generate all visible ASCII
     var i: u8 = 32;

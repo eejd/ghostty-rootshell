@@ -14,6 +14,7 @@ const glfw = @import("glfw");
 const gl = @import("opengl.zig");
 const libuv = @import("libuv");
 const Pty = @import("Pty.zig");
+const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const SegmentedPool = @import("segmented_pool.zig").SegmentedPool;
 const trace = @import("tracy").trace;
@@ -192,6 +193,18 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         }
     }
 
+    // Determine our DPI configurations so we can properly configure
+    // font points to pixels and handle other high-DPI scaling factors.
+    const content_scale = try window.getContentScale();
+    const x_dpi = content_scale.x_scale * font.Face.default_dpi;
+    const y_dpi = content_scale.y_scale * font.Face.default_dpi;
+    log.debug("xscale={} yscale={} xdpi={} ydpi={}", .{
+        content_scale.x_scale,
+        content_scale.y_scale,
+        x_dpi,
+        y_dpi,
+    });
+
     // Culling, probably not necessary. We have to change the winding
     // order since our 0,0 is top-left.
     gl.c.glEnable(gl.c.GL_CULL_FACE);
@@ -203,7 +216,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Create our terminal grid with the initial window size
     const window_size = try window.getSize();
-    var grid = try Grid.init(alloc, config);
+    var grid = try Grid.init(alloc, .{
+        .points = config.@"font-size",
+        .xdpi = @floatToInt(u32, x_dpi),
+        .ydpi = @floatToInt(u32, y_dpi),
+    });
     try grid.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
     grid.background = .{
         .r = config.background.r,

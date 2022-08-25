@@ -11,7 +11,6 @@ const terminal = @import("terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("opengl.zig");
 const trace = @import("tracy").trace;
-const Config = @import("config.zig").Config;
 const math = @import("math.zig");
 
 const log = std.log.scoped(.grid);
@@ -134,7 +133,10 @@ const GPUCellMode = enum(u8) {
     }
 };
 
-pub fn init(alloc: Allocator, config: *const Config) !Grid {
+pub fn init(
+    alloc: Allocator,
+    font_size: font.Face.DesiredSize,
+) !Grid {
     // Initialize our font atlas. We will initially populate the
     // font atlas with all the visible ASCII characters since they are common.
     var atlas = try Atlas.init(alloc, 512, .greyscale);
@@ -153,8 +155,8 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     font_set.families.appendAssumeCapacity(fam: {
         var fam = try font.Family.init(atlas);
         errdefer fam.deinit(alloc);
-        try fam.loadFaceFromMemory(.regular, face_ttf, config.@"font-size");
-        try fam.loadFaceFromMemory(.bold, face_bold_ttf, config.@"font-size");
+        try fam.loadFaceFromMemory(.regular, face_ttf, font_size);
+        try fam.loadFaceFromMemory(.bold, face_bold_ttf, font_size);
         break :fam fam;
     });
 
@@ -162,7 +164,7 @@ pub fn init(alloc: Allocator, config: *const Config) !Grid {
     font_set.families.appendAssumeCapacity(fam: {
         var fam_emoji = try font.Family.init(atlas_color);
         errdefer fam_emoji.deinit(alloc);
-        try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, config.@"font-size");
+        try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, font_size);
         break :fam fam_emoji;
     });
 

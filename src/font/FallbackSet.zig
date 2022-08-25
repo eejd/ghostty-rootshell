@@ -128,12 +128,12 @@ test {
     var set: FallbackSet = .{};
     try set.families.append(alloc, fam: {
         var fam = try Family.init(try Atlas.init(alloc, 512, .greyscale));
-        try fam.loadFaceFromMemory(.regular, fontRegular, 48);
+        try fam.loadFaceFromMemory(.regular, fontRegular, .{ .points = 48 });
         break :fam fam;
     });
     try set.families.append(alloc, fam: {
         var fam = try Family.init(try Atlas.init(alloc, 512, .rgba));
-        try fam.loadFaceFromMemory(.regular, fontEmoji, 48);
+        try fam.loadFaceFromMemory(.regular, fontEmoji, .{ .points = 48 });
         break :fam fam;
     });
 

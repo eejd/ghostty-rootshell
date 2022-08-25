@@ -6,6 +6,7 @@
 const Face = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
@@ -22,6 +23,11 @@ ft_library: ftc.FT_Library,
 /// Our font face.
 ft_face: ftc.FT_Face = null,
 
+/// If a DPI can't be calculated, this DPI is used. This is probably
+/// wrong on modern devices so it is highly recommended you get the DPI
+/// using whatever platform method you can.
+pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
+
 pub fn init(lib: ftc.FT_Library) !Face {
     return Face{
         .ft_library = lib,
@@ -37,10 +43,28 @@ pub fn deinit(self: *Face) void {
     self.* = undefined;
 }
 
-/// Loads a font to use.
-///
-/// This can only be called if a font is not already loaded.
-pub fn loadFaceFromMemory(self: *Face, source: [:0]const u8, size: u32) !void {
+/// The desired size for loading a font.
+pub const DesiredSize = struct {
+    // Desired size in points
+    points: u32,
+
+    // The DPI of the screen so we can convert points to pixels.
+    xdpi: u32 = default_dpi,
+    ydpi: u32 = default_dpi,
+
+    // Converts points to pixels
+    pub fn pixels(self: DesiredSize) u32 {
+        // 1 point = 1/72 inch
+        return (self.points * self.ydpi) / 72;
+    }
+};
+
+/// Loads a font to use. This can only be called if a font is not already loaded.
+pub fn loadFaceFromMemory(
+    self: *Face,
+    source: [:0]const u8,
+    size: DesiredSize,
+) !void {
     assert(self.ft_face == null);
 
     if (ftc.FT_New_Memory_Face(
@@ -62,9 +86,10 @@ pub fn loadFaceFromMemory(self: *Face, source: [:0]const u8, size: u32) !void {
     // to what the user requested. Otherwise, we can choose an arbitrary
     // pixel size.
     if (!ftc.FT_HAS_FIXED_SIZES(self.ft_face)) {
-        if (ftc.FT_Set_Pixel_Sizes(self.ft_face, size, size) != ftok)
+        const size_26dot6 = size.points << 6; // mult by 64
+        if (ftc.FT_Set_Char_Size(self.ft_face, 0, size_26dot6, size.xdpi, size.ydpi) != ftok)
             return error.FaceLoadFailed;
-    } else try self.selectSizeNearest(size);
+    } else try self.selectSizeNearest(size.pixels());
 }
 
 /// Selects the fixed size in the loaded face that is closest to the
@@ -202,7 +227,7 @@ test {
     var font = try init(ft_lib);
     defer font.deinit();
 
-    try font.loadFaceFromMemory(testFont, 48);
+    try font.loadFaceFromMemory(testFont, .{ .points = 12 });
 
     // Generate all visible ASCII
     var i: u8 = 32;
@@ -226,6 +251,6 @@ test "color emoji" {
     var font = try init(ft_lib);
     defer font.deinit();
 
-    try font.loadFaceFromMemory(testFont, 48);
+    try font.loadFaceFromMemory(testFont, .{ .points = 12 });
     _ = try font.loadGlyph(alloc, &atlas, '🥸');
 }
