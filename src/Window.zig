@@ -431,6 +431,26 @@ fn queueWrite(self: *Window, data: []const u8) !void {
     }
 }
 
+/// The cursor position from glfw directly is in screen coordinates but
+/// all our internal state works in pixels.
+fn cursorPosToPixels(self: Window, pos: glfw.Window.CursorPos) glfw.Window.CursorPos {
+    // The cursor position is in screen coordinates but we
+    // want it in pixels. we need to get both the size of the
+    // window in both to get the ratio to make the conversion.
+    const size = self.window.getSize() catch unreachable;
+    const fb_size = self.window.getFramebufferSize() catch unreachable;
+
+    if (fb_size.width == size.width and fb_size.height == size.height)
+        return pos;
+
+    const x_scale = @intToFloat(f64, fb_size.width) / @intToFloat(f64, size.width);
+    const y_scale = @intToFloat(f64, fb_size.height) / @intToFloat(f64, size.height);
+    return .{
+        .xpos = pos.xpos * x_scale,
+        .ypos = pos.ypos * y_scale,
+    };
+}
+
 fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -750,10 +770,10 @@ fn mouseButtonCallback(
         switch (action) {
             .press => {
                 const win = window.getUserPointer(Window) orelse return;
-                const pos = window.getCursorPos() catch |err| {
+                const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
                     log.err("error reading cursor position: {}", .{err});
                     return;
-                };
+                });
 
                 // Store it
                 const point = win.posToViewport(pos.xpos, pos.ypos);
@@ -788,8 +808,8 @@ fn mouseButtonCallback(
 
 fn cursorPosCallback(
     window: glfw.Window,
-    xpos: f64,
-    ypos: f64,
+    unscaled_xpos: f64,
+    unscaled_ypos: f64,
 ) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -802,6 +822,11 @@ fn cursorPosCallback(
     // All roads lead to requiring a re-render at this pont.
     win.render_timer.schedule() catch |err|
         log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+
+    // Convert to pixels from screen coords
+    const pos = win.cursorPosToPixels(.{ .xpos = unscaled_xpos, .ypos = unscaled_ypos });
+    const xpos = pos.xpos;
+    const ypos = pos.ypos;
 
     // Convert to points
     const viewport_point = win.posToViewport(xpos, ypos);
