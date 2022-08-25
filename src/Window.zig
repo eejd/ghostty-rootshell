@@ -193,6 +193,23 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         }
     }
 
+    if (builtin.mode == .Debug) {
+        // Get our physical DPI - debug only because we don't have a use for
+        // this but the logging of it may be useful
+        const monitor = window.getMonitor() orelse monitor: {
+            log.warn("window had null monitor, getting primary monitor", .{});
+            break :monitor glfw.Monitor.getPrimary().?;
+        };
+        const physical_size = monitor.getPhysicalSize();
+        const video_mode = try monitor.getVideoMode();
+        const physical_x_dpi = @intToFloat(f32, video_mode.getWidth()) / (@intToFloat(f32, physical_size.width_mm) / 25.4);
+        const physical_y_dpi = @intToFloat(f32, video_mode.getHeight()) / (@intToFloat(f32, physical_size.height_mm) / 25.4);
+        log.debug("physical dpi x={} y={}", .{
+            physical_x_dpi,
+            physical_y_dpi,
+        });
+    }
+
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
     const content_scale = try window.getContentScale();
