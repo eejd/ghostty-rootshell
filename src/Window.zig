@@ -154,9 +154,8 @@ const Mouse = struct {
     left_click_xpos: f64 = 0,
     left_click_ypos: f64 = 0,
 
-    // /// The last
-    // event_cx: usize = 0,
-    // event_cy: usize = 0,
+    /// The last x/y sent for mouse reports.
+    event_point: terminal.point.Viewport = .{},
 };
 
 /// Create a new window. This allocates and returns a pointer because we
@@ -788,10 +787,13 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     win.render_timer.schedule() catch unreachable;
 }
 
+/// The type of action to report for a mouse event.
+const MouseReportAction = enum { press, release, motion };
+
 fn mouseReport(
     self: *Window,
     button: input.MouseButton,
-    action: input.MouseButtonState,
+    action: MouseReportAction,
     mods: input.Mods,
     unscaled_pos: glfw.Window.CursorPos,
 ) !void {
@@ -809,34 +811,17 @@ fn mouseReport(
             button == .right or
             button == .middle)) return,
 
-        // Everything
-        .normal => {},
+        // Doesn't report motion
+        .normal => if (action == .motion) return,
 
-        else => {},
+        // Everything
+        .button => {},
+
+        else => unreachable,
     }
 
     switch (self.terminal.modes.mouse_format) {
         .x10 => {
-            const button_code: u8 = code: {
-                var acc: u8 = if (action == .press) @as(u8, switch (button) {
-                    .left => 0,
-                    .right => 1,
-                    .middle => 2,
-                    .four => 64,
-                    .five => 65,
-                    else => return, // unsupported
-                }) else 3; // release is always 3
-
-                // Normal mode adds in modifiers
-                if (self.terminal.modes.mouse_event == .normal) {
-                    if (mods.shift) acc += 4;
-                    if (mods.super) acc += 8;
-                    if (mods.ctrl) acc += 16;
-                }
-
-                break :code acc;
-            };
-
             // This format reports X/Y
             const pos = self.cursorPosToPixels(unscaled_pos);
             const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
@@ -844,6 +829,38 @@ fn mouseReport(
                 log.info("X10 mouse format can only encode X/Y up to 223", .{});
                 return;
             }
+
+            // For button events, we only report if we moved cells
+            if (self.terminal.modes.mouse_event == .button) {
+                if (self.mouse.event_point.x == viewport_point.x and
+                    self.mouse.event_point.y == viewport_point.y) return;
+
+                // Record our new point
+                self.mouse.event_point = viewport_point;
+            }
+
+            const button_code: u8 = code: {
+                var acc: u8 = if (action == .release) 3 else @as(u8, switch (button) {
+                    .left => 0,
+                    .right => 1,
+                    .middle => 2,
+                    .four => 64,
+                    .five => 65,
+                    else => return, // unsupported
+                });
+
+                // X10 doesn't have modifiers
+                if (self.terminal.modes.mouse_event != .x10) {
+                    if (mods.shift) acc += 4;
+                    if (mods.super) acc += 8;
+                    if (mods.ctrl) acc += 16;
+                }
+
+                // Motion adds another bit
+                if (action == .motion) acc += 32;
+
+                break :code acc;
+            };
 
             // + 1 below is because our x/y is 0-indexed and proto wants 1
             var buf = [_]u8{ '\x1b', '[', 'M', 0, 0, 0 };
@@ -898,9 +915,14 @@ fn mouseButtonCallback(
             return;
         };
 
+        const report_action: MouseReportAction = switch (action) {
+            .press => .press,
+            .release => .release,
+        };
+
         win.mouseReport(
             button,
-            action,
+            report_action,
             win.mouse.mods,
             pos,
         ) catch |err| {
@@ -941,6 +963,31 @@ fn cursorPosCallback(
     defer tracy.end();
 
     const win = window.getUserPointer(Window) orelse return;
+
+    // Do a mouse report
+    if (win.terminal.modes.mouse_event == .button) {
+        // We use the first mouse button we find pressed in order to report
+        // since the spec (afaict) does not say...
+        const button_: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
+            if (state == .press)
+                break :button @intToEnum(input.MouseButton, i);
+        } else null;
+
+        // A button must be pressed.
+        if (button_) |button| {
+            win.mouseReport(button, .motion, win.mouse.mods, .{
+                .xpos = unscaled_xpos,
+                .ypos = unscaled_ypos,
+            }) catch |err| {
+                log.err("error reporting mouse event: {}", .{err});
+                return;
+            };
+        }
+
+        // If we're doing mouse motion tracking, we do not support text
+        // selection.
+        return;
+    }
 
     // If the cursor isn't clicked currently, it doesn't matter
     if (win.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
