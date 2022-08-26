@@ -58,6 +58,9 @@ pub const Mode = enum(u16) {
     /// Enable or disable automatic line wrapping.
     autowrap = 7,
 
+    /// Click-only (press) mouse reporting.
+    mouse_event_x10 = 9,
+
     /// Set whether the cursor is visible or not.
     cursor_visible = 25,
 
@@ -65,6 +68,29 @@ pub const Mode = enum(u16) {
     /// to the size of the window. If enabled, this will take effect when
     /// mode ?3 is set or unset.
     enable_mode_3 = 40,
+
+    /// "Normal" mouse events: click/release, scroll
+    mouse_event_normal = 1000,
+
+    /// Same as normal mode but also send events for mouse motion
+    /// while the button is pressed when the cell in the grid changes.
+    mouse_event_button = 1002,
+
+    /// Same as button mode but doesn't require a button to be pressed
+    /// to track mouse movement.
+    mouse_event_any = 1003,
+
+    /// Report mouse position in the utf8 format to support larger screens.
+    mouse_format_utf8 = 1005,
+
+    /// Report mouse position in the SGR format.
+    mouse_format_sgr = 1006,
+
+    /// Report mouse position in the urxvt format.
+    mouse_format_urxvt = 1015,
+
+    /// Report mouse position in the SGR format as pixels, instead of cells.
+    mouse_format_sgr_pixels = 1016,
 
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,

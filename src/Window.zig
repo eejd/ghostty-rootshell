@@ -137,20 +137,25 @@ const Cursor = struct {
 
 /// Mouse state for the window.
 const Mouse = struct {
-    /// The current state of mouse click.
-    click_state: ClickState = .none,
+    /// The last tracked mouse button state by button.
+    click_state: [input.MouseButton.max]input.MouseButtonState = .{.release} ** input.MouseButton.max,
 
-    /// The point at which the mouse click happened. This is in screen
+    /// The last mods state when the last mouse button (whatever it was) was
+    /// pressed or release.
+    mods: input.Mods = .{},
+
+    /// The point at which the left mouse click happened. This is in screen
     /// coordinates so that scrolling preserves the location.
-    click_point: terminal.point.ScreenPoint = .{},
+    left_click_point: terminal.point.ScreenPoint = .{},
 
-    /// The starting xpos/ypos of the click. This is only useful initially.
-    /// As soon as scrolling occurs, these are no longer accurate to calculate
-    /// the screen point.
-    click_xpos: f64 = 0,
-    click_ypos: f64 = 0,
+    /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
+    /// these will point to different "cells", but the xpos/ypos will stay
+    /// stable during scrolling relative to the window.
+    left_click_xpos: f64 = 0,
+    left_click_ypos: f64 = 0,
 
-    const ClickState = enum { none, left };
+    /// The last x/y sent for mouse reports.
+    event_point: terminal.point.Viewport = .{},
 };
 
 /// Create a new window. This allocates and returns a pointer because we
@@ -754,6 +759,19 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // If we're scrolling up or down, then send a mouse event
+    if (yoff != 0) {
+        const pos = window.getCursorPos() catch |err| {
+            log.err("error reading cursor position: {}", .{err});
+            return;
+        };
+
+        win.mouseReport(if (yoff < 0) .four else .five, .press, win.mouse.mods, pos) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
+    }
+
     //log.info("SCROLL: {} {}", .{ xoff, yoff });
     _ = xoff;
 
@@ -769,10 +787,178 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     win.render_timer.schedule() catch unreachable;
 }
 
+/// The type of action to report for a mouse event.
+const MouseReportAction = enum { press, release, motion };
+
+fn mouseReport(
+    self: *Window,
+    button: ?input.MouseButton,
+    action: MouseReportAction,
+    mods: input.Mods,
+    unscaled_pos: glfw.Window.CursorPos,
+) !void {
+    // TODO: posToViewport currently clamps to the window boundary,
+    // do we want to not report mouse events at all outside the window?
+
+    // Depending on the event, we may do nothing at all.
+    switch (self.terminal.modes.mouse_event) {
+        .none => return,
+
+        // X10 only reports clicks with mouse button 1, 2, 3. We verify
+        // the button later.
+        .x10 => if (action != .press or
+            button == null or
+            !(button.? == .left or
+            button.? == .right or
+            button.? == .middle)) return,
+
+        // Doesn't report motion
+        .normal => if (action == .motion) return,
+
+        // Button must be pressed
+        .button => if (button == null) return,
+
+        // Everything
+        .any => {},
+    }
+
+    // This format reports X/Y
+    const pos = self.cursorPosToPixels(unscaled_pos);
+    const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
+
+    // For button events, we only report if we moved cells
+    if (self.terminal.modes.mouse_event == .button or
+        self.terminal.modes.mouse_event == .any)
+    {
+        if (self.mouse.event_point.x == viewport_point.x and
+            self.mouse.event_point.y == viewport_point.y) return;
+
+        // Record our new point
+        self.mouse.event_point = viewport_point;
+    }
+
+    // Get the code we'll actually write
+    const button_code: u8 = code: {
+        var acc: u8 = 0;
+
+        // Determine our initial button value
+        if (button == null) {
+            // Null button means motion without a button pressed
+            acc = 3;
+        } else if (action == .release and self.terminal.modes.mouse_format != .sgr) {
+            // Release is 3. It is NOT 3 in SGR mode because SGR can tell
+            // the application what button was released.
+            acc = 3;
+        } else {
+            acc = switch (button.?) {
+                .left => 0,
+                .right => 1,
+                .middle => 2,
+                .four => 64,
+                .five => 65,
+                else => return, // unsupported
+            };
+        }
+
+        // X10 doesn't have modifiers
+        if (self.terminal.modes.mouse_event != .x10) {
+            if (mods.shift) acc += 4;
+            if (mods.super) acc += 8;
+            if (mods.ctrl) acc += 16;
+        }
+
+        // Motion adds another bit
+        if (action == .motion) acc += 32;
+
+        break :code acc;
+    };
+
+    switch (self.terminal.modes.mouse_format) {
+        .x10 => {
+            if (viewport_point.x > 222 or viewport_point.y > 222) {
+                log.info("X10 mouse format can only encode X/Y up to 223", .{});
+                return;
+            }
+
+            // + 1 below is because our x/y is 0-indexed and proto wants 1
+            var buf = [_]u8{ '\x1b', '[', 'M', 0, 0, 0 };
+            buf[3] = 32 + button_code;
+            buf[4] = 32 + @intCast(u8, viewport_point.x) + 1;
+            buf[5] = 32 + @intCast(u8, viewport_point.y) + 1;
+            try self.queueWrite(&buf);
+        },
+
+        .utf8 => {
+            // Maximum of 12 because at most we have 2 fully UTF-8 encoded chars
+            var buf: [12]u8 = undefined;
+            buf[0] = '\x1b';
+            buf[1] = '[';
+            buf[2] = 'M';
+
+            // The button code will always fit in a single u8
+            buf[3] = 32 + button_code;
+
+            // UTF-8 encode the x/y
+            var i: usize = 4;
+            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.x + 1), buf[i..]);
+            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.y + 1), buf[i..]);
+
+            try self.queueWrite(buf[0..i]);
+        },
+
+        .sgr => {
+            // Final character to send in the CSI
+            const final: u8 = if (action == .release) 'm' else 'M';
+
+            // Response always is at least 4 chars, so this leaves the
+            // remainder for numbers which are very large...
+            var buf: [32]u8 = undefined;
+            const resp = try std.fmt.bufPrint(&buf, "\x1B[<{d};{d};{d}{c}", .{
+                button_code,
+                viewport_point.x + 1,
+                viewport_point.y + 1,
+                final,
+            });
+
+            try self.queueWrite(resp);
+        },
+
+        .urxvt => {
+            // Response always is at least 4 chars, so this leaves the
+            // remainder for numbers which are very large...
+            var buf: [32]u8 = undefined;
+            const resp = try std.fmt.bufPrint(&buf, "\x1B[{d};{d};{d}M", .{
+                32 + button_code,
+                viewport_point.x + 1,
+                viewport_point.y + 1,
+            });
+
+            try self.queueWrite(resp);
+        },
+
+        .sgr_pixels => {
+            // Final character to send in the CSI
+            const final: u8 = if (action == .release) 'm' else 'M';
+
+            // Response always is at least 4 chars, so this leaves the
+            // remainder for numbers which are very large...
+            var buf: [32]u8 = undefined;
+            const resp = try std.fmt.bufPrint(&buf, "\x1B[<{d};{d};{d}{c}", .{
+                button_code,
+                pos.xpos,
+                pos.ypos,
+                final,
+            });
+
+            try self.queueWrite(resp);
+        },
+    }
+}
+
 fn mouseButtonCallback(
     window: glfw.Window,
-    button: glfw.MouseButton,
-    action: glfw.Action,
+    glfw_button: glfw.MouseButton,
+    glfw_action: glfw.Action,
     mods: glfw.Mods,
 ) void {
     _ = mods;
@@ -780,42 +966,71 @@ fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
-    if (button == .left) {
-        switch (action) {
-            .press => {
-                const win = window.getUserPointer(Window) orelse return;
-                const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
-                    log.err("error reading cursor position: {}", .{err});
-                    return;
-                });
+    const win = window.getUserPointer(Window) orelse return;
 
-                // Store it
-                const point = win.posToViewport(pos.xpos, pos.ypos);
-                win.mouse.click_state = .left;
-                win.mouse.click_point = point.toScreen(&win.terminal.screen);
-                win.mouse.click_xpos = pos.xpos;
-                win.mouse.click_ypos = pos.ypos;
-                log.debug("click start state={} viewport={} screen={}", .{
-                    win.mouse.click_state,
-                    point,
-                    win.mouse.click_point,
-                });
+    // Convert glfw button to input button
+    const button: input.MouseButton = switch (glfw_button) {
+        .left => .left,
+        .right => .right,
+        .middle => .middle,
+        .four => .four,
+        .five => .five,
+        .six => .six,
+        .seven => .seven,
+        .eight => .eight,
+    };
+    const action: input.MouseButtonState = switch (glfw_action) {
+        .press => .press,
+        .release => .release,
+        else => unreachable,
+    };
 
-                // Selection is always cleared
-                if (win.terminal.selection != null) {
-                    win.terminal.selection = null;
-                    win.render_timer.schedule() catch |err|
-                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
-                }
-            },
+    // Always record our latest mouse state
+    win.mouse.click_state[@enumToInt(button)] = action;
+    win.mouse.mods = @bitCast(input.Mods, mods);
 
-            .release => {
-                const win = window.getUserPointer(Window) orelse return;
-                win.mouse.click_state = .none;
-                log.debug("click end", .{});
-            },
+    // Report mouse events if enabled
+    if (win.terminal.modes.mouse_event != .none) {
+        const pos = window.getCursorPos() catch |err| {
+            log.err("error reading cursor position: {}", .{err});
+            return;
+        };
 
-            .repeat => {},
+        const report_action: MouseReportAction = switch (action) {
+            .press => .press,
+            .release => .release,
+        };
+
+        win.mouseReport(
+            button,
+            report_action,
+            win.mouse.mods,
+            pos,
+        ) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
+    }
+
+    // For left button clicks we always record some information for
+    // selection/highlighting purposes.
+    if (button == .left and action == .press) {
+        const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
+            log.err("error reading cursor position: {}", .{err});
+            return;
+        });
+
+        // Store it
+        const point = win.posToViewport(pos.xpos, pos.ypos);
+        win.mouse.left_click_point = point.toScreen(&win.terminal.screen);
+        win.mouse.left_click_xpos = pos.xpos;
+        win.mouse.left_click_ypos = pos.ypos;
+
+        // Selection is always cleared
+        if (win.terminal.selection != null) {
+            win.terminal.selection = null;
+            win.render_timer.schedule() catch |err|
+                log.err("error scheduling render in mouseButtinCallback err={}", .{err});
         }
     }
 }
@@ -830,8 +1045,30 @@ fn cursorPosCallback(
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // Do a mouse report
+    if (win.terminal.modes.mouse_event != .none) {
+        // We use the first mouse button we find pressed in order to report
+        // since the spec (afaict) does not say...
+        const button: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
+            if (state == .press)
+                break :button @intToEnum(input.MouseButton, i);
+        } else null;
+
+        win.mouseReport(button, .motion, win.mouse.mods, .{
+            .xpos = unscaled_xpos,
+            .ypos = unscaled_ypos,
+        }) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
+
+        // If we're doing mouse motion tracking, we do not support text
+        // selection.
+        return;
+    }
+
     // If the cursor isn't clicked currently, it doesn't matter
-    if (win.mouse.click_state != .left) return;
+    if (win.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
 
     // All roads lead to requiring a re-render at this pont.
     win.render_timer.schedule() catch |err|
@@ -880,13 +1117,13 @@ fn cursorPosCallback(
     const cell_xboundary = win.grid.cell_size.width * 0.6;
 
     // first xpos of the clicked cell
-    const cell_xstart = @intToFloat(f32, win.mouse.click_point.x) * win.grid.cell_size.width;
-    const cell_start_xpos = win.mouse.click_xpos - cell_xstart;
+    const cell_xstart = @intToFloat(f32, win.mouse.left_click_point.x) * win.grid.cell_size.width;
+    const cell_start_xpos = win.mouse.left_click_xpos - cell_xstart;
 
     // If this is the same cell, then we only start the selection if weve
     // moved past the boundary point the opposite direction from where we
     // started.
-    if (std.meta.eql(screen_point, win.mouse.click_point)) {
+    if (std.meta.eql(screen_point, win.mouse.left_click_point)) {
         const cell_xpos = xpos - cell_xstart;
         const selected: bool = if (cell_start_xpos < cell_xboundary)
             cell_xpos >= cell_xboundary
@@ -908,9 +1145,9 @@ fn cursorPosCallback(
         //     the starting cell if we started after the boundary, else
         //     we start selection of the prior cell.
         //   - Inverse logic for a point after the start.
-        const click_point = win.mouse.click_point;
+        const click_point = win.mouse.left_click_point;
         const start: terminal.point.ScreenPoint = if (screen_point.before(click_point)) start: {
-            if (win.mouse.click_xpos > cell_xboundary) {
+            if (win.mouse.left_click_xpos > cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x > 0) terminal.point.ScreenPoint{
@@ -922,7 +1159,7 @@ fn cursorPosCallback(
                 };
             }
         } else start: {
-            if (win.mouse.click_xpos < cell_xboundary) {
+            if (win.mouse.left_click_xpos < cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x < win.terminal.screen.cols - 1) terminal.point.ScreenPoint{
@@ -1069,7 +1306,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         win.grid.background = bg;
         win.grid.foreground = fg;
     }
-    if (win.terminal.modes.reverse_colors == 1) {
+    if (win.terminal.modes.reverse_colors) {
         win.grid.background = fg;
         win.grid.foreground = bg;
     }
@@ -1080,7 +1317,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         g: f32,
         b: f32,
         a: f32,
-    } = if (win.terminal.modes.reverse_colors == 1) .{
+    } = if (win.terminal.modes.reverse_colors) .{
         .r = @intToFloat(f32, fg.r) / 255,
         .g = @intToFloat(f32, fg.g) / 255,
         .b = @intToFloat(f32, fg.b) / 255,
@@ -1167,7 +1404,7 @@ pub fn setCursorCol(self: *Window, col: u16) !void {
 }
 
 pub fn setCursorRow(self: *Window, row: u16) !void {
-    if (self.terminal.modes.origin == 1) {
+    if (self.terminal.modes.origin) {
         // TODO
         log.err("setCursorRow: implement origin mode", .{});
         unreachable;
@@ -1234,19 +1471,19 @@ pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {
 pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
     switch (mode) {
         .reverse_colors => {
-            self.terminal.modes.reverse_colors = @boolToInt(enabled);
+            self.terminal.modes.reverse_colors = enabled;
 
             // Schedule a render since we changed colors
             try self.render_timer.schedule();
         },
 
         .origin => {
-            self.terminal.modes.origin = @boolToInt(enabled);
+            self.terminal.modes.origin = enabled;
             self.terminal.setCursorPos(1, 1);
         },
 
         .autowrap => {
-            self.terminal.modes.autowrap = @boolToInt(enabled);
+            self.terminal.modes.autowrap = enabled;
         },
 
         .cursor_visible => {
@@ -1283,6 +1520,16 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.alloc,
             if (enabled) .@"132_cols" else .@"80_cols",
         ),
+
+        .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
+        .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
+        .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
+        .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
+
+        .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
+        .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
+        .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
+        .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }
@@ -1323,7 +1570,7 @@ pub fn deviceStatusReport(
             const pos: struct {
                 x: usize,
                 y: usize,
-            } = if (self.terminal.modes.origin == 1) .{
+            } = if (self.terminal.modes.origin) .{
                 // TODO: what do we do if cursor is outside scrolling region?
                 .x = self.terminal.screen.cursor.x,
                 .y = self.terminal.screen.cursor.y -| self.terminal.scrolling_region.top,

@@ -61,20 +61,43 @@ scrolling_region: ScrollingRegion,
 modes: packed struct {
     const Self = @This();
 
-    reverse_colors: u1 = 0, // 5,
-    origin: u1 = 0, // 6
-    autowrap: u1 = 1, // 7
+    reverse_colors: bool = false, // 5,
+    origin: bool = false, // 6
+    autowrap: bool = true, // 7
 
-    deccolm: u1 = 0, // 3,
-    deccolm_supported: u1 = 0, // 40
+    deccolm: bool = false, // 3,
+    deccolm_supported: bool = false, // 40
+
+    mouse_event: MouseEvents = .none,
+    mouse_format: MouseFormat = .x10,
 
     test {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
         // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(1, @sizeOf(Self));
+        try std.testing.expectEqual(2, @sizeOf(Self));
     }
 } = .{},
+
+/// The event types that can be reported for mouse-related activities.
+/// These are all mutually exclusive (hence in a single enum).
+pub const MouseEvents = enum(u3) {
+    none = 0,
+    x10 = 1, // 9
+    normal = 2, // 1000
+    button = 3, // 1002
+    any = 4, // 1003
+};
+
+/// The format of mouse events when enabled.
+/// These are all mutually exclusive (hence in a single enum).
+pub const MouseFormat = enum(u3) {
+    x10 = 0,
+    utf8 = 1, // 1005
+    sgr = 2, // 1006
+    urxvt = 3, // 1015
+    sgr_pixels = 4, // 1016
+};
 
 /// Scrolling region is the area of the screen designated where scrolling
 /// occurs. Wen scrolling the screen, only this viewport is scrolled.
@@ -197,10 +220,10 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     // bit. If the mode "?40" is set, then "?3" (DECCOLM) is supported. This
     // doesn't exactly match VT100 semantics but modern terminals no longer
     // blindly accept mode 3 since its so weird in modern practice.
-    if (self.modes.deccolm_supported == 0) return;
+    if (!self.modes.deccolm_supported) return;
 
     // Enable it
-    self.modes.deccolm = @enumToInt(mode);
+    self.modes.deccolm = mode == .@"132_cols";
 
     // Resize -- we can set cols to 0 because deccolm will force it
     try self.resize(alloc, 0, self.rows);
@@ -217,7 +240,7 @@ pub fn setDeccolmSupported(self: *Terminal, v: bool) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.modes.deccolm_supported = @boolToInt(v);
+    self.modes.deccolm_supported = v;
 }
 
 /// Resize the underlying terminal.
@@ -228,8 +251,8 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
     // If we have deccolm supported then we are fixed at either 80 or 132
     // columns depending on if mode 3 is set or not.
     // TODO: test
-    const cols: usize = if (self.modes.deccolm_supported == 1)
-        @as(usize, if (self.modes.deccolm == 1) 132 else 80)
+    const cols: usize = if (self.modes.deccolm_supported)
+        @as(usize, if (self.modes.deccolm) 132 else 80)
     else
         cols_req;
 
@@ -370,7 +393,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     if (width == 0) return;
 
     // If we're soft-wrapping, then handle that first.
-    if (self.screen.cursor.pending_wrap and self.modes.autowrap == 1)
+    if (self.screen.cursor.pending_wrap and self.modes.autowrap)
         _ = self.printWrap();
 
     switch (width) {
@@ -598,7 +621,7 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
         y_offset: usize = 0,
         x_max: usize,
         y_max: usize,
-    } = if (self.modes.origin == 1) .{
+    } = if (self.modes.origin) .{
         .x_offset = 0, // TODO: left/right margins
         .y_offset = self.scrolling_region.top,
         .x_max = self.cols, // TODO: left/right margins
@@ -630,7 +653,7 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 
     // TODO: test
 
-    assert(self.modes.origin == 0); // TODO
+    assert(!self.modes.origin); // TODO
 
     if (self.status_display != .main) return; // TODO
 
@@ -1325,7 +1348,7 @@ test "Terminal: setCursorPosition" {
     try testing.expect(!t.screen.cursor.pending_wrap);
 
     // Origin mode
-    t.modes.origin = 1;
+    t.modes.origin = true;
 
     // No change without a scroll region
     t.setCursorPos(81, 81);
