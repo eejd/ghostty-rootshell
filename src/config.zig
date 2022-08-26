@@ -94,6 +94,26 @@ pub const Config = struct {
         try result.keybind.set.put(alloc, .{ .key = .page_up }, .{ .csi = "5~" });
         try result.keybind.set.put(alloc, .{ .key = .page_down }, .{ .csi = "6~" });
 
+        // From xterm:
+        // Note that F1 through F4 are prefixed with SS3 , while the other keys are
+        // prefixed with CSI .  Older versions of xterm implement different escape
+        // sequences for F1 through F4, with a CSI  prefix.  These can be activated
+        // by setting the oldXtermFKeys resource.  However, since they do not
+        // correspond to any hardware terminal, they have been deprecated.  (The
+        // DEC VT220 reserves F1 through F5 for local functions such as Setup).
+        try result.keybind.set.put(alloc, .{ .key = .f1 }, .{ .csi = "11~" });
+        try result.keybind.set.put(alloc, .{ .key = .f2 }, .{ .csi = "12~" });
+        try result.keybind.set.put(alloc, .{ .key = .f3 }, .{ .csi = "13~" });
+        try result.keybind.set.put(alloc, .{ .key = .f4 }, .{ .csi = "14~" });
+        try result.keybind.set.put(alloc, .{ .key = .f5 }, .{ .csi = "15~" });
+        try result.keybind.set.put(alloc, .{ .key = .f6 }, .{ .csi = "17~" });
+        try result.keybind.set.put(alloc, .{ .key = .f7 }, .{ .csi = "18~" });
+        try result.keybind.set.put(alloc, .{ .key = .f8 }, .{ .csi = "19~" });
+        try result.keybind.set.put(alloc, .{ .key = .f9 }, .{ .csi = "20~" });
+        try result.keybind.set.put(alloc, .{ .key = .f10 }, .{ .csi = "21~" });
+        try result.keybind.set.put(alloc, .{ .key = .f11 }, .{ .csi = "23~" });
+        try result.keybind.set.put(alloc, .{ .key = .f12 }, .{ .csi = "24~" });
+
         return result;
     }
 };
