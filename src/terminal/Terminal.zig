@@ -301,6 +301,10 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.bold = true;
         },
 
+        .faint => {
+            self.screen.cursor.pen.attrs.faint = true;
+        },
+
         .underline => {
             self.screen.cursor.pen.attrs.underline = true;
         },

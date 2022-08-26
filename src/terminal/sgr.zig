@@ -21,6 +21,9 @@ pub const Attribute = union(enum) {
     /// Bold the text.
     bold: void,
 
+    /// Faint/dim text.
+    faint: void,
+
     /// Underline the text
     underline: void,
 
@@ -87,6 +90,8 @@ pub const Parser = struct {
             0 => return Attribute{ .unset = {} },
 
             1 => return Attribute{ .bold = {} },
+
+            2 => return Attribute{ .faint = {} },
 
             4 => return Attribute{ .underline = {} },
 

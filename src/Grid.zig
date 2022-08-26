@@ -520,6 +520,9 @@ pub fn updateCell(
     };
     if (self.cells.items.len + needed > self.cells.capacity) return false;
 
+    // Alpha multiplier
+    const alpha: u8 = if (cell.attrs.faint) 175 else 255;
+
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
         var mode: GPUCellMode = .bg;
@@ -542,7 +545,7 @@ pub fn updateCell(
             .bg_r = rgb.r,
             .bg_g = rgb.g,
             .bg_b = rgb.b,
-            .bg_a = 0xFF,
+            .bg_a = alpha,
         });
     }
 
@@ -577,7 +580,7 @@ pub fn updateCell(
             .fg_r = colors.fg.r,
             .fg_g = colors.fg.g,
             .fg_b = colors.fg.b,
-            .fg_a = 255,
+            .fg_a = alpha,
             .bg_r = 0,
             .bg_g = 0,
             .bg_b = 0,
@@ -602,7 +605,7 @@ pub fn updateCell(
             .fg_r = colors.fg.r,
             .fg_g = colors.fg.g,
             .fg_b = colors.fg.b,
-            .fg_a = 255,
+            .fg_a = alpha,
             .bg_r = 0,
             .bg_g = 0,
             .bg_b = 0,
