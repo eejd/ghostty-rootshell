@@ -59,12 +59,21 @@ scrolling_region: ScrollingRegion,
 /// Modes - This isn't exhaustive, since some modes (i.e. cursor origin)
 /// are applied to the cursor and others aren't boolean yes/no.
 modes: packed struct {
+    const Self = @This();
+
     reverse_colors: u1 = 0, // 5,
     origin: u1 = 0, // 6
     autowrap: u1 = 1, // 7
 
     deccolm: u1 = 0, // 3,
     deccolm_supported: u1 = 0, // 40
+
+    test {
+        // We have this here so that we explicitly fail when we change the
+        // size of modes. The size of modes is NOT particularly important,
+        // we just want to be mentally aware when it happens.
+        try std.testing.expectEqual(1, @sizeOf(Self));
+    }
 } = .{},
 
 /// Scrolling region is the area of the screen designated where scrolling
@@ -289,19 +298,19 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
         },
 
         .bold => {
-            self.screen.cursor.pen.attrs.bold = 1;
+            self.screen.cursor.pen.attrs.bold = true;
         },
 
         .underline => {
-            self.screen.cursor.pen.attrs.underline = 1;
+            self.screen.cursor.pen.attrs.underline = true;
         },
 
         .inverse => {
-            self.screen.cursor.pen.attrs.inverse = 1;
+            self.screen.cursor.pen.attrs.inverse = true;
         },
 
         .reset_inverse => {
-            self.screen.cursor.pen.attrs.inverse = 0;
+            self.screen.cursor.pen.attrs.inverse = false;
         },
 
         .direct_color_fg => |rgb| {
@@ -374,17 +383,17 @@ pub fn print(self: *Terminal, c: u21) !void {
             // char as normal.
             if (self.screen.cursor.x == self.cols - 1) {
                 const spacer_head = self.printCell(' ');
-                spacer_head.attrs.wide_spacer_head = 1;
+                spacer_head.attrs.wide_spacer_head = true;
                 _ = self.printWrap();
             }
 
             const wide_cell = self.printCell(c);
-            wide_cell.attrs.wide = 1;
+            wide_cell.attrs.wide = true;
 
             // Write our spacer
             self.screen.cursor.x += 1;
             const spacer = self.printCell(' ');
-            spacer.attrs.wide_spacer_tail = 1;
+            spacer.attrs.wide_spacer_tail = true;
         },
 
         else => unreachable,
@@ -411,22 +420,22 @@ fn printCell(self: *Terminal, c: u21) *Screen.Cell {
     // If this cell is wide char then we need to clear it.
     // We ignore wide spacer HEADS because we can just write
     // single-width characters into that.
-    if (cell.attrs.wide == 1) {
+    if (cell.attrs.wide) {
         const x = self.screen.cursor.x + 1;
         assert(x < self.cols);
 
         const spacer_cell = self.screen.getCell(self.screen.cursor.y, x);
-        spacer_cell.attrs.wide_spacer_tail = 0;
+        spacer_cell.attrs.wide_spacer_tail = false;
 
         if (self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
         }
-    } else if (cell.attrs.wide_spacer_tail == 1) {
+    } else if (cell.attrs.wide_spacer_tail) {
         assert(self.screen.cursor.x > 0);
         const x = self.screen.cursor.x - 1;
 
         const wide_cell = self.screen.getCell(self.screen.cursor.y, x);
-        wide_cell.attrs.wide = 0;
+        wide_cell.attrs.wide = false;
 
         if (self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
@@ -446,7 +455,7 @@ fn printWrap(self: *Terminal) *Screen.Cell {
         self.screen.cursor.y,
         self.screen.cursor.x,
     );
-    cell.attrs.wrap = 1;
+    cell.attrs.wrap = true;
 
     // Move to the next line
     self.index();
@@ -462,7 +471,7 @@ fn clearWideSpacerHead(self: *Terminal) void {
         self.screen.cursor.y - 1,
         self.cols - 1,
     );
-    cell.attrs.wide_spacer_head = 0;
+    cell.attrs.wide_spacer_head = false;
 }
 
 /// Resets all margins and fills the whole screen with the character 'E'

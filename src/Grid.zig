@@ -428,7 +428,7 @@ fn addCursor(self: *Grid, term: Terminal) void {
             GPUCellMode,
             @enumToInt(self.cursor_style),
         );
-        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -492,7 +492,7 @@ pub fn updateCell(
             }
         }
 
-        const res: BgFg = if (cell.attrs.inverse == 0) .{
+        const res: BgFg = if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = cell.bg,
@@ -508,14 +508,14 @@ pub fn updateCell(
     };
 
     // If we are a trailing spacer, we never render anything.
-    if (cell.attrs.wide_spacer_tail == 1) return true;
+    if (cell.attrs.wide_spacer_tail) return true;
 
     // Calculate the amount of space we need in the cells list.
     const needed = needed: {
         var i: usize = 0;
         if (colors.bg != null) i += 1;
         if (!cell.empty()) i += 1;
-        if (cell.attrs.underline == 1) i += 1;
+        if (cell.attrs.underline) i += 1;
         break :needed i;
     };
     if (self.cells.items.len + needed > self.cells.capacity) return false;
@@ -523,7 +523,7 @@ pub fn updateCell(
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
         var mode: GPUCellMode = .bg;
-        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -549,7 +549,7 @@ pub fn updateCell(
     // If the cell is empty then we draw nothing in the box.
     if (!cell.empty()) {
         // Determine our glyph styling
-        const style: font.Style = if (cell.attrs.bold == 1)
+        const style: font.Style = if (cell.attrs.bold)
             .bold
         else
             .regular;
@@ -562,7 +562,7 @@ pub fn updateCell(
         const glyph = goa.glyph;
 
         // If the cell is wide, we need to note that in the mode
-        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -585,9 +585,9 @@ pub fn updateCell(
         });
     }
 
-    if (cell.attrs.underline == 1) {
+    if (cell.attrs.underline) {
         var mode: GPUCellMode = .underline;
-        if (cell.attrs.wide == 1) mode = mode.mask(.wide_mask);
+        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,

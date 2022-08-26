@@ -64,25 +64,24 @@ pub const Cell = struct {
 
     /// On/off attributes that can be set
     attrs: packed struct {
-        bold: u1 = 0,
-        underline: u1 = 0,
-        inverse: u1 = 0,
+        bold: bool = false,
+        faint: bool = false,
+        underline: bool = false,
+        inverse: bool = false,
 
         /// If 1, this line is soft-wrapped. Only the last cell in a row
         /// should have this set. The first cell of the next row is actually
         /// part of this row in raw input.
-        wrap: u1 = 0,
+        wrap: bool = false,
 
         /// True if this is a wide character. This char takes up
         /// two cells. The following cell ALWAYS is a space.
-        wide: u1 = 0,
+        wide: bool = false,
 
         /// Notes that this only exists to be blank for a preceeding
         /// wide character (tail) or following (head).
-        wide_spacer_tail: u1 = 0,
-        wide_spacer_head: u1 = 0,
-
-        _padding: u1 = 0,
+        wide_spacer_tail: bool = false,
+        wide_spacer_head: bool = false,
     } = .{},
 
     /// True if the cell should be skipped for drawing
@@ -573,7 +572,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             }
 
             // If no reflow, just keep going
-            if (row[row.len - 1].attrs.wrap == 0) {
+            if (!row[row.len - 1].attrs.wrap) {
                 y += 1;
                 continue;
             }
@@ -583,7 +582,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             // only reloop when we're back to clean non-wrapped lines.
 
             // Mark the last element as not wrapped
-            new_row[row.len - 1].attrs.wrap = 0;
+            new_row[row.len - 1].attrs.wrap = false;
 
             // We maintain an x coord so that we can set cursors properly
             var x: usize = row.len;
@@ -611,7 +610,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                         }
 
                         // If this row isn't also wrapped, we're done!
-                        if (wrapped_rem[wrapped_rem.len - 1].attrs.wrap == 0) {
+                        if (!wrapped_rem[wrapped_rem.len - 1].attrs.wrap) {
                             y += 1;
 
                             // If we were able to copy the entire row then
@@ -628,7 +627,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                         }
 
                         // Wrapped again!
-                        new_row[wrapped_rem.len - 1].attrs.wrap = 0;
+                        new_row[wrapped_rem.len - 1].attrs.wrap = false;
                         new_row = new_row[wrapped_rem.len..];
                         x += wrapped_rem.len;
                         break;
@@ -637,7 +636,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     // The row doesn't fit, meaning we have to soft-wrap the
                     // new row but probably at a diff boundary.
                     std.mem.copy(Cell, new_row, wrapped_rem[0..new_row.len]);
-                    new_row[new_row.len - 1].attrs.wrap = 1;
+                    new_row[new_row.len - 1].attrs.wrap = true;
 
                     // We still need to copy the remainder
                     wrapped_rem = wrapped_rem[new_row.len..];
@@ -799,7 +798,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 // Soft wrap if we have to
                 if (x == self.cols) {
                     var last_cell = self.getCell(y, x - 1);
-                    last_cell.attrs.wrap = 1;
+                    last_cell.attrs.wrap = true;
                     x = 0;
                     y += 1;
                 }
@@ -823,7 +822,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 // log.warn("y={} x={} rows={}", .{ y, x, self.rows });
                 var new_cell = self.getCell(y, x);
                 new_cell.* = cell;
-                new_cell.attrs.wrap = 0;
+                new_cell.attrs.wrap = false;
 
                 // Next
                 x += 1;
@@ -843,7 +842,7 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
 
             // If we aren't wrapping, then move to the next row
             if (trimmed_row.len == 0 or
-                trimmed_row[trimmed_row.len - 1].attrs.wrap == 0)
+                !trimmed_row[trimmed_row.len - 1].attrs.wrap)
             {
                 y += 1;
                 x = 0;
@@ -946,15 +945,15 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
         // at a newline and we add it.
         if (idx > 0 and
             @mod(idx + slices.top_offset, self.cols) == 0 and
-            slices.top[idx - 1].attrs.wrap == 0)
+            !slices.top[idx - 1].attrs.wrap)
         {
             buf[i] = '\n';
             i += 1;
         }
 
         // Skip spacers
-        if (cell.attrs.wide_spacer_head == 1 or
-            cell.attrs.wide_spacer_tail == 1) continue;
+        if (cell.attrs.wide_spacer_head or
+            cell.attrs.wide_spacer_tail) continue;
 
         const char = if (cell.char > 0) cell.char else ' ';
         i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
@@ -969,9 +968,9 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
             // a bit unique because if we're at idx 0, we actually need to
             // check the end of the top.
             const wrapped = if (idx > 0)
-                slices.bot[idx - 1].attrs.wrap == 1
+                slices.bot[idx - 1].attrs.wrap
             else
-                slices.top[slices.top.len - 1].attrs.wrap == 1;
+                slices.top[slices.top.len - 1].attrs.wrap;
 
             if (!wrapped) {
                 buf[i] = '\n';
@@ -980,8 +979,8 @@ pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]cons
         }
 
         // Skip spacers
-        if (cell.attrs.wide_spacer_head == 1 or
-            cell.attrs.wide_spacer_tail == 1) continue;
+        if (cell.attrs.wide_spacer_head or
+            cell.attrs.wide_spacer_tail) continue;
 
         const char = if (cell.char > 0) cell.char else ' ';
         i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
@@ -1019,7 +1018,7 @@ fn selectionSlices(self: Screen, sel_raw: Selection) struct {
         // first part of the next line.
         if (sel.end.x == self.cols - 1) {
             const row = self.getRow(.{ .screen = sel.end.y });
-            if (row[sel.end.x].attrs.wide_spacer_head == 1) {
+            if (row[sel.end.x].attrs.wide_spacer_head) {
                 sel.end.y += 1;
                 sel.end.x = 0;
             }
@@ -1029,7 +1028,7 @@ fn selectionSlices(self: Screen, sel_raw: Selection) struct {
         // wide char.
         if (sel.start.x > 0) {
             const row = self.getRow(.{ .screen = sel.start.y });
-            if (row[sel.start.x].attrs.wide_spacer_tail == 1) {
+            if (row[sel.start.x].attrs.wide_spacer_tail) {
                 sel.end.x -= 1;
             }
         }
@@ -1119,7 +1118,7 @@ fn testWriteString(self: *Screen, text: []const u8) void {
 
         // If we're writing past the end, we need to soft wrap.
         if (x == self.cols) {
-            row[x - 1].attrs.wrap = 1;
+            row[x - 1].attrs.wrap = true;
             y += 1;
             x = 0;
             if (y >= self.rows) {
@@ -1138,10 +1137,10 @@ fn testWriteString(self: *Screen, text: []const u8) void {
             2 => {
                 if (x == self.cols - 1) {
                     row[x].char = ' ';
-                    row[x].attrs.wide_spacer_head = 1;
+                    row[x].attrs.wide_spacer_head = true;
 
                     // wrap
-                    row[x].attrs.wrap = 1;
+                    row[x].attrs.wrap = true;
                     y += 1;
                     x = 0;
                     if (y >= self.rows) {
@@ -1152,11 +1151,11 @@ fn testWriteString(self: *Screen, text: []const u8) void {
                 }
 
                 row[x].char = @intCast(u32, c);
-                row[x].attrs.wide = 1;
+                row[x].attrs.wide = true;
 
                 x += 1;
                 row[x].char = ' ';
-                row[x].attrs.wide_spacer_tail = 1;
+                row[x].attrs.wide_spacer_tail = true;
             },
 
             else => unreachable,
