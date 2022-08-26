@@ -822,52 +822,54 @@ fn mouseReport(
         .any => {},
     }
 
+    // This format reports X/Y
+    const pos = self.cursorPosToPixels(unscaled_pos);
+    const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
+
+    // For button events, we only report if we moved cells
+    if (self.terminal.modes.mouse_event == .button or
+        self.terminal.modes.mouse_event == .any)
+    {
+        if (self.mouse.event_point.x == viewport_point.x and
+            self.mouse.event_point.y == viewport_point.y) return;
+
+        // Record our new point
+        self.mouse.event_point = viewport_point;
+    }
+
+    // Get the code we'll actually write
+    const button_code: u8 = code: {
+        var acc: u8 = if (action == .release or button == null)
+            3
+        else
+            @as(u8, switch (button.?) {
+                .left => 0,
+                .right => 1,
+                .middle => 2,
+                .four => 64,
+                .five => 65,
+                else => return, // unsupported
+            });
+
+        // X10 doesn't have modifiers
+        if (self.terminal.modes.mouse_event != .x10) {
+            if (mods.shift) acc += 4;
+            if (mods.super) acc += 8;
+            if (mods.ctrl) acc += 16;
+        }
+
+        // Motion adds another bit
+        if (action == .motion) acc += 32;
+
+        break :code acc;
+    };
+
     switch (self.terminal.modes.mouse_format) {
         .x10 => {
-            // This format reports X/Y
-            const pos = self.cursorPosToPixels(unscaled_pos);
-            const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
             if (viewport_point.x > 222 or viewport_point.y > 222) {
                 log.info("X10 mouse format can only encode X/Y up to 223", .{});
                 return;
             }
-
-            // For button events, we only report if we moved cells
-            if (self.terminal.modes.mouse_event == .button or
-                self.terminal.modes.mouse_event == .any)
-            {
-                if (self.mouse.event_point.x == viewport_point.x and
-                    self.mouse.event_point.y == viewport_point.y) return;
-
-                // Record our new point
-                self.mouse.event_point = viewport_point;
-            }
-
-            const button_code: u8 = code: {
-                var acc: u8 = if (action == .release or button == null)
-                    3
-                else
-                    @as(u8, switch (button.?) {
-                        .left => 0,
-                        .right => 1,
-                        .middle => 2,
-                        .four => 64,
-                        .five => 65,
-                        else => return, // unsupported
-                    });
-
-                // X10 doesn't have modifiers
-                if (self.terminal.modes.mouse_event != .x10) {
-                    if (mods.shift) acc += 4;
-                    if (mods.super) acc += 8;
-                    if (mods.ctrl) acc += 16;
-                }
-
-                // Motion adds another bit
-                if (action == .motion) acc += 32;
-
-                break :code acc;
-            };
 
             // + 1 below is because our x/y is 0-indexed and proto wants 1
             var buf = [_]u8{ '\x1b', '[', 'M', 0, 0, 0 };
@@ -875,6 +877,24 @@ fn mouseReport(
             buf[4] = 32 + @intCast(u8, viewport_point.x) + 1;
             buf[5] = 32 + @intCast(u8, viewport_point.y) + 1;
             try self.queueWrite(&buf);
+        },
+
+        .utf8 => {
+            // Maximum of 12 because at most we have 2 fully UTF-8 encoded chars
+            var buf: [12]u8 = undefined;
+            buf[0] = '\x1b';
+            buf[1] = '[';
+            buf[2] = 'M';
+
+            // The button code will always fit in a single u8
+            buf[3] = 32 + button_code;
+
+            // UTF-8 encode the x/y
+            var i: usize = 4;
+            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.x + 1), buf[i..]);
+            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.y + 1), buf[i..]);
+
+            try self.queueWrite(buf[0..i]);
         },
 
         else => @panic("TODO"),
@@ -1453,6 +1473,8 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
         .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
         .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
         .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
+
+        .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }

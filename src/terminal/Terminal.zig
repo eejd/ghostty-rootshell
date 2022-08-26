@@ -93,9 +93,9 @@ pub const MouseEvents = enum(u3) {
 /// These are all mutually exclusive (hence in a single enum).
 pub const MouseFormat = enum(u3) {
     x10 = 0,
+    utf8 = 1, // 1005
 
     // TODO:
-    utf8 = 1, // 1005
     sgr = 2, // 1006
     urxvt = 3, // 1015
     sgr_pixels = 4, // 1016
