@@ -86,6 +86,9 @@ pub const Mode = enum(u16) {
     /// Report mouse position in the SGR format.
     mouse_format_sgr = 1006,
 
+    /// Report mouse position in the urxvt format.
+    mouse_format_urxvt = 1015,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 

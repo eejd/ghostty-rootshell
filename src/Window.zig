@@ -920,6 +920,19 @@ fn mouseReport(
             try self.queueWrite(resp);
         },
 
+        .urxvt => {
+            // Response always is at least 4 chars, so this leaves the
+            // remainder for numbers which are very large...
+            var buf: [32]u8 = undefined;
+            const resp = try std.fmt.bufPrint(&buf, "\x1B[{d};{d};{d}M", .{
+                32 + button_code,
+                viewport_point.x + 1,
+                viewport_point.y + 1,
+            });
+
+            try self.queueWrite(resp);
+        },
+
         else => @panic("TODO"),
     }
 }
@@ -1499,6 +1512,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
 
         .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
         .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
+        .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }
