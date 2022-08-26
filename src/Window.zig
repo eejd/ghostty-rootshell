@@ -754,6 +754,27 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // If we're scrolling up or down, then send a mouse event
+    if (yoff != 0) {
+        const pos = window.getCursorPos() catch |err| {
+            log.err("error reading cursor position: {}", .{err});
+            return;
+        };
+
+        // NOTE: a limitation of glfw (perhaps) is that we can't detect
+        // scroll buttons (mouse four/five) WITH modifier state. So we always
+        // report this as a "press" followed immediately by a release with no
+        // modifiers.
+        win.mouseReport(if (yoff < 0) .four else .five, .press, .{}, pos) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
+        win.mouseReport(if (yoff < 0) .four else .five, .release, .{}, pos) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
+    }
+
     //log.info("SCROLL: {} {}", .{ xoff, yoff });
     _ = xoff;
 
@@ -779,12 +800,10 @@ fn mouseReport(
     // TODO: posToViewport currently clamps to the window boundary,
     // do we want to not report mouse events at all outside the window?
 
-    assert(self.terminal.modes.mouse_event != .none);
-
-    _ = mods;
-
     // Depending on the event, we may do nothing at all.
     switch (self.terminal.modes.mouse_event) {
+        .none => return,
+
         // X10 only reports clicks with mouse button 1, 2, 3. We verify
         // the button later.
         .x10 => if (action != .press or
@@ -794,20 +813,21 @@ fn mouseReport(
 
         // Everything
         .normal => {},
+
         else => {},
     }
 
     switch (self.terminal.modes.mouse_format) {
         .x10 => {
             const button_code: u8 = code: {
-                var acc: u8 = if (action == .press) switch (button) {
+                var acc: u8 = if (action == .press) @as(u8, switch (button) {
                     .left => 0,
                     .right => 1,
                     .middle => 2,
                     .four => 64,
                     .five => 65,
                     else => return, // unsupported
-                } else 3; // release is always 3
+                }) else 3; // release is always 3
 
                 // Normal mode adds in modifiers
                 if (self.terminal.modes.mouse_event == .normal) {

@@ -83,10 +83,10 @@ modes: packed struct {
 /// These are all mutually exclusive (hence in a single enum).
 pub const MouseEvents = enum(u3) {
     none = 0,
-
-    // TODO:
     x10 = 1, // 9
     normal = 2, // 1000
+
+    // TODO:
     button = 3, // 1002
     any = 4, // 1003
 };
@@ -94,8 +94,9 @@ pub const MouseEvents = enum(u3) {
 /// The format of mouse events when enabled.
 /// These are all mutually exclusive (hence in a single enum).
 pub const MouseFormat = enum(u3) {
-    // TODO:
     x10 = 0,
+
+    // TODO:
     utf8 = 1, // 1005
     sgr = 2, // 1006
     urxvt = 3, // 1015
