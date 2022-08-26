@@ -83,6 +83,9 @@ pub const Mode = enum(u16) {
     /// Report mouse position in the utf8 format to support larger screens.
     mouse_format_utf8 = 1005,
 
+    /// Report mouse position in the SGR format.
+    mouse_format_sgr = 1006,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 

@@ -839,17 +839,26 @@ fn mouseReport(
 
     // Get the code we'll actually write
     const button_code: u8 = code: {
-        var acc: u8 = if (action == .release or button == null)
-            3
-        else
-            @as(u8, switch (button.?) {
+        var acc: u8 = 0;
+
+        // Determine our initial button value
+        if (button == null) {
+            // Null button means motion without a button pressed
+            acc = 3;
+        } else if (action == .release and self.terminal.modes.mouse_format != .sgr) {
+            // Release is 3. It is NOT 3 in SGR mode because SGR can tell
+            // the application what button was released.
+            acc = 3;
+        } else {
+            acc = switch (button.?) {
                 .left => 0,
                 .right => 1,
                 .middle => 2,
                 .four => 64,
                 .five => 65,
                 else => return, // unsupported
-            });
+            };
+        }
 
         // X10 doesn't have modifiers
         if (self.terminal.modes.mouse_event != .x10) {
@@ -895,6 +904,20 @@ fn mouseReport(
             i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.y + 1), buf[i..]);
 
             try self.queueWrite(buf[0..i]);
+        },
+
+        .sgr => {
+            // Response always is at least 4 chars, so this leaves the
+            // remainder for numbers which are very large...
+            var buf: [32]u8 = undefined;
+            const resp = try std.fmt.bufPrint(&buf, "\x1B[<{d};{d};{d}{c}", .{
+                button_code,
+                viewport_point.x + 1,
+                viewport_point.y + 1,
+                @as(u8, if (action == .release) 'm' else 'M'),
+            });
+
+            try self.queueWrite(resp);
         },
 
         else => @panic("TODO"),
@@ -1475,6 +1498,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
         .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
 
         .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
+        .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }
