@@ -58,6 +58,9 @@ pub const Mode = enum(u16) {
     /// Enable or disable automatic line wrapping.
     autowrap = 7,
 
+    /// Click-only (press) mouse reporting.
+    mouse_event_x10 = 9,
+
     /// Set whether the cursor is visible or not.
     cursor_visible = 25,
 

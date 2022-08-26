@@ -769,6 +769,57 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     win.render_timer.schedule() catch unreachable;
 }
 
+fn mouseReport(
+    self: *Window,
+    button: glfw.MouseButton,
+    action: glfw.Action,
+    mods: glfw.Mods,
+    unscaled_pos: glfw.Window.CursorPos,
+) !void {
+    // TODO: posToViewport currently clamps to the window boundary,
+    // do we want to not report mouse events at all outside the window?
+
+    assert(self.terminal.modes.mouse_event != .none);
+
+    _ = mods;
+
+    // Depending on the event, we may do nothing at all.
+    switch (self.terminal.modes.mouse_event) {
+        // X10 only reports clicks with mouse button 1, 2, 3. We verify
+        // the button later.
+        .x10 => if (action != .press) return,
+        else => {},
+    }
+
+    switch (self.terminal.modes.mouse_format) {
+        .x10 => {
+            const button_code: u8 = switch (button) {
+                .left => 0,
+                .right => 1,
+                .middle => 2,
+                else => return, // unsupported with X10
+            };
+
+            // This format reports X/Y
+            const pos = self.cursorPosToPixels(unscaled_pos);
+            const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
+            if (viewport_point.x > 222 or viewport_point.y > 222) {
+                log.info("X10 mouse format can only encode X/Y up to 223", .{});
+                return;
+            }
+
+            // + 1 below is because our x/y is 0-indexed and proto wants 1
+            var buf = [_]u8{ '\x1b', '[', 'M', 0, 0, 0 };
+            buf[3] = 32 + button_code;
+            buf[4] = 32 + @intCast(u8, viewport_point.x) + 1;
+            buf[5] = 32 + @intCast(u8, viewport_point.y) + 1;
+            try self.queueWrite(&buf);
+        },
+
+        else => @panic("TODO"),
+    }
+}
+
 fn mouseButtonCallback(
     window: glfw.Window,
     button: glfw.MouseButton,
@@ -780,10 +831,24 @@ fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
+    const win = window.getUserPointer(Window) orelse return;
+
+    // Report mouse events if enabled
+    if (win.terminal.modes.mouse_event != .none) {
+        const pos = window.getCursorPos() catch |err| {
+            log.err("error reading cursor position: {}", .{err});
+            return;
+        };
+
+        win.mouseReport(button, action, mods, pos) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
+    }
+
     if (button == .left) {
         switch (action) {
             .press => {
-                const win = window.getUserPointer(Window) orelse return;
                 const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
                     log.err("error reading cursor position: {}", .{err});
                     return;
@@ -810,7 +875,6 @@ fn mouseButtonCallback(
             },
 
             .release => {
-                const win = window.getUserPointer(Window) orelse return;
                 win.mouse.click_state = .none;
                 log.debug("click end", .{});
             },
@@ -1283,6 +1347,8 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.alloc,
             if (enabled) .@"132_cols" else .@"80_cols",
         ),
+
+        .mouse_event_x10 => self.terminal.modes.mouse_event = .x10,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }
