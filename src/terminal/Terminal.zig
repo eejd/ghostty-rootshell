@@ -68,13 +68,39 @@ modes: packed struct {
     deccolm: u1 = 0, // 3,
     deccolm_supported: u1 = 0, // 40
 
+    mouse_event: MouseEvents = .none,
+    mouse_format: MouseFormat = .x10,
+
     test {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
         // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(1, @sizeOf(Self));
+        try std.testing.expectEqual(2, @sizeOf(Self));
     }
 } = .{},
+
+/// The event types that can be reported for mouse-related activities.
+/// These are all mutually exclusive (hence in a single enum).
+pub const MouseEvents = enum(u3) {
+    none = 0,
+
+    // TODO:
+    x10 = 1, // 9
+    normal = 2, // 1000
+    button = 3, // 1002
+    any = 4, // 1003
+};
+
+/// The format of mouse events when enabled.
+/// These are all mutually exclusive (hence in a single enum).
+pub const MouseFormat = enum(u3) {
+    // TODO:
+    x10 = 0,
+    utf8 = 1, // 1005
+    sgr = 2, // 1006
+    urxvt = 3, // 1015
+    sgr_pixels = 4, // 1016
+};
 
 /// Scrolling region is the area of the screen designated where scrolling
 /// occurs. Wen scrolling the screen, only this viewport is scrolled.
