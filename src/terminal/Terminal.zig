@@ -86,8 +86,6 @@ pub const MouseEvents = enum(u3) {
     x10 = 1, // 9
     normal = 2, // 1000
     button = 3, // 1002
-
-    // TODO:
     any = 4, // 1003
 };
 

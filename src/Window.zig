@@ -792,7 +792,7 @@ const MouseReportAction = enum { press, release, motion };
 
 fn mouseReport(
     self: *Window,
-    button: input.MouseButton,
+    button: ?input.MouseButton,
     action: MouseReportAction,
     mods: input.Mods,
     unscaled_pos: glfw.Window.CursorPos,
@@ -807,17 +807,19 @@ fn mouseReport(
         // X10 only reports clicks with mouse button 1, 2, 3. We verify
         // the button later.
         .x10 => if (action != .press or
-            !(button == .left or
-            button == .right or
-            button == .middle)) return,
+            button == null or
+            !(button.? == .left or
+            button.? == .right or
+            button.? == .middle)) return,
 
         // Doesn't report motion
         .normal => if (action == .motion) return,
 
-        // Everything
-        .button => {},
+        // Button must be pressed
+        .button => if (button == null) return,
 
-        else => unreachable,
+        // Everything
+        .any => {},
     }
 
     switch (self.terminal.modes.mouse_format) {
@@ -831,7 +833,9 @@ fn mouseReport(
             }
 
             // For button events, we only report if we moved cells
-            if (self.terminal.modes.mouse_event == .button) {
+            if (self.terminal.modes.mouse_event == .button or
+                self.terminal.modes.mouse_event == .any)
+            {
                 if (self.mouse.event_point.x == viewport_point.x and
                     self.mouse.event_point.y == viewport_point.y) return;
 
@@ -840,14 +844,17 @@ fn mouseReport(
             }
 
             const button_code: u8 = code: {
-                var acc: u8 = if (action == .release) 3 else @as(u8, switch (button) {
-                    .left => 0,
-                    .right => 1,
-                    .middle => 2,
-                    .four => 64,
-                    .five => 65,
-                    else => return, // unsupported
-                });
+                var acc: u8 = if (action == .release or button == null)
+                    3
+                else
+                    @as(u8, switch (button.?) {
+                        .left => 0,
+                        .right => 1,
+                        .middle => 2,
+                        .four => 64,
+                        .five => 65,
+                        else => return, // unsupported
+                    });
 
                 // X10 doesn't have modifiers
                 if (self.terminal.modes.mouse_event != .x10) {
@@ -965,24 +972,23 @@ fn cursorPosCallback(
     const win = window.getUserPointer(Window) orelse return;
 
     // Do a mouse report
-    if (win.terminal.modes.mouse_event == .button) {
+    if (win.terminal.modes.mouse_event == .button or
+        win.terminal.modes.mouse_event == .any)
+    {
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
-        const button_: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
+        const button: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
             if (state == .press)
                 break :button @intToEnum(input.MouseButton, i);
         } else null;
 
-        // A button must be pressed.
-        if (button_) |button| {
-            win.mouseReport(button, .motion, win.mouse.mods, .{
-                .xpos = unscaled_xpos,
-                .ypos = unscaled_ypos,
-            }) catch |err| {
-                log.err("error reporting mouse event: {}", .{err});
-                return;
-            };
-        }
+        win.mouseReport(button, .motion, win.mouse.mods, .{
+            .xpos = unscaled_xpos,
+            .ypos = unscaled_ypos,
+        }) catch |err| {
+            log.err("error reporting mouse event: {}", .{err});
+            return;
+        };
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
@@ -1446,6 +1452,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
         .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
         .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
         .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
+        .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }

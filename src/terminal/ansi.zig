@@ -76,6 +76,10 @@ pub const Mode = enum(u16) {
     /// while the button is pressed when the cell in the grid changes.
     mouse_event_button = 1002,
 
+    /// Same as button mode but doesn't require a button to be pressed
+    /// to track mouse movement.
+    mouse_event_any = 1003,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 
