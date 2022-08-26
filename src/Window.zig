@@ -787,17 +787,36 @@ fn mouseReport(
     switch (self.terminal.modes.mouse_event) {
         // X10 only reports clicks with mouse button 1, 2, 3. We verify
         // the button later.
-        .x10 => if (action != .press) return,
+        .x10 => if (action != .press or
+            !(button == .left or
+            button == .right or
+            button == .middle)) return,
+
+        // Everything
+        .normal => {},
         else => {},
     }
 
     switch (self.terminal.modes.mouse_format) {
         .x10 => {
-            const button_code: u8 = switch (button) {
-                .left => 0,
-                .right => 1,
-                .middle => 2,
-                else => return, // unsupported with X10
+            const button_code: u8 = code: {
+                var acc: u8 = if (action == .press) switch (button) {
+                    .left => 0,
+                    .right => 1,
+                    .middle => 2,
+                    .four => 64,
+                    .five => 65,
+                    else => return, // unsupported
+                } else 3; // release is always 3
+
+                // Normal mode adds in modifiers
+                if (self.terminal.modes.mouse_event == .normal) {
+                    if (mods.shift) acc += 4;
+                    if (mods.super) acc += 8;
+                    if (mods.control) acc += 16;
+                }
+
+                break :code acc;
             };
 
             // This format reports X/Y
@@ -1349,6 +1368,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
         ),
 
         .mouse_event_x10 => self.terminal.modes.mouse_event = .x10,
+        .mouse_event_normal => self.terminal.modes.mouse_event = .normal,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }

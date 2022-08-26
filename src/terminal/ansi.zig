@@ -69,6 +69,9 @@ pub const Mode = enum(u16) {
     /// mode ?3 is set or unset.
     enable_mode_3 = 40,
 
+    /// "Normal" mouse events: click/release, scroll
+    mouse_event_normal = 1000,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 
