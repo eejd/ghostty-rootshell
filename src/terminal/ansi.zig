@@ -72,6 +72,10 @@ pub const Mode = enum(u16) {
     /// "Normal" mouse events: click/release, scroll
     mouse_event_normal = 1000,
 
+    /// Same as normal mode but also send events for mouse motion
+    /// while the button is pressed when the cell in the grid changes.
+    mouse_event_button = 1002,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 

@@ -137,20 +137,26 @@ const Cursor = struct {
 
 /// Mouse state for the window.
 const Mouse = struct {
-    /// The current state of mouse click.
-    click_state: ClickState = .none,
+    /// The last tracked mouse button state by button.
+    click_state: [input.MouseButton.max]input.MouseButtonState = .{.release} ** input.MouseButton.max,
 
-    /// The point at which the mouse click happened. This is in screen
+    /// The last mods state when the last mouse button (whatever it was) was
+    /// pressed or release.
+    mods: input.Mods = .{},
+
+    /// The point at which the left mouse click happened. This is in screen
     /// coordinates so that scrolling preserves the location.
-    click_point: terminal.point.ScreenPoint = .{},
+    left_click_point: terminal.point.ScreenPoint = .{},
 
-    /// The starting xpos/ypos of the click. This is only useful initially.
-    /// As soon as scrolling occurs, these are no longer accurate to calculate
-    /// the screen point.
-    click_xpos: f64 = 0,
-    click_ypos: f64 = 0,
+    /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
+    /// these will point to different "cells", but the xpos/ypos will stay
+    /// stable during scrolling relative to the window.
+    left_click_xpos: f64 = 0,
+    left_click_ypos: f64 = 0,
 
-    const ClickState = enum { none, left };
+    // /// The last
+    // event_cx: usize = 0,
+    // event_cy: usize = 0,
 };
 
 /// Create a new window. This allocates and returns a pointer because we
@@ -761,15 +767,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
             return;
         };
 
-        // NOTE: a limitation of glfw (perhaps) is that we can't detect
-        // scroll buttons (mouse four/five) WITH modifier state. So we always
-        // report this as a "press" followed immediately by a release with no
-        // modifiers.
-        win.mouseReport(if (yoff < 0) .four else .five, .press, .{}, pos) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
-        win.mouseReport(if (yoff < 0) .four else .five, .release, .{}, pos) catch |err| {
+        win.mouseReport(if (yoff < 0) .four else .five, .press, win.mouse.mods, pos) catch |err| {
             log.err("error reporting mouse event: {}", .{err});
             return;
         };
@@ -792,9 +790,9 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
 fn mouseReport(
     self: *Window,
-    button: glfw.MouseButton,
-    action: glfw.Action,
-    mods: glfw.Mods,
+    button: input.MouseButton,
+    action: input.MouseButtonState,
+    mods: input.Mods,
     unscaled_pos: glfw.Window.CursorPos,
 ) !void {
     // TODO: posToViewport currently clamps to the window boundary,
@@ -833,7 +831,7 @@ fn mouseReport(
                 if (self.terminal.modes.mouse_event == .normal) {
                     if (mods.shift) acc += 4;
                     if (mods.super) acc += 8;
-                    if (mods.control) acc += 16;
+                    if (mods.ctrl) acc += 16;
                 }
 
                 break :code acc;
@@ -861,8 +859,8 @@ fn mouseReport(
 
 fn mouseButtonCallback(
     window: glfw.Window,
-    button: glfw.MouseButton,
-    action: glfw.Action,
+    glfw_button: glfw.MouseButton,
+    glfw_action: glfw.Action,
     mods: glfw.Mods,
 ) void {
     _ = mods;
@@ -872,6 +870,27 @@ fn mouseButtonCallback(
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // Convert glfw button to input button
+    const button: input.MouseButton = switch (glfw_button) {
+        .left => .left,
+        .right => .right,
+        .middle => .middle,
+        .four => .four,
+        .five => .five,
+        .six => .six,
+        .seven => .seven,
+        .eight => .eight,
+    };
+    const action: input.MouseButtonState = switch (glfw_action) {
+        .press => .press,
+        .release => .release,
+        else => unreachable,
+    };
+
+    // Always record our latest mouse state
+    win.mouse.click_state[@enumToInt(button)] = action;
+    win.mouse.mods = @bitCast(input.Mods, mods);
+
     // Report mouse events if enabled
     if (win.terminal.modes.mouse_event != .none) {
         const pos = window.getCursorPos() catch |err| {
@@ -879,46 +898,36 @@ fn mouseButtonCallback(
             return;
         };
 
-        win.mouseReport(button, action, mods, pos) catch |err| {
+        win.mouseReport(
+            button,
+            action,
+            win.mouse.mods,
+            pos,
+        ) catch |err| {
             log.err("error reporting mouse event: {}", .{err});
             return;
         };
     }
 
-    if (button == .left) {
-        switch (action) {
-            .press => {
-                const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
-                    log.err("error reading cursor position: {}", .{err});
-                    return;
-                });
+    // For left button clicks we always record some information for
+    // selection/highlighting purposes.
+    if (button == .left and action == .press) {
+        const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
+            log.err("error reading cursor position: {}", .{err});
+            return;
+        });
 
-                // Store it
-                const point = win.posToViewport(pos.xpos, pos.ypos);
-                win.mouse.click_state = .left;
-                win.mouse.click_point = point.toScreen(&win.terminal.screen);
-                win.mouse.click_xpos = pos.xpos;
-                win.mouse.click_ypos = pos.ypos;
-                log.debug("click start state={} viewport={} screen={}", .{
-                    win.mouse.click_state,
-                    point,
-                    win.mouse.click_point,
-                });
+        // Store it
+        const point = win.posToViewport(pos.xpos, pos.ypos);
+        win.mouse.left_click_point = point.toScreen(&win.terminal.screen);
+        win.mouse.left_click_xpos = pos.xpos;
+        win.mouse.left_click_ypos = pos.ypos;
 
-                // Selection is always cleared
-                if (win.terminal.selection != null) {
-                    win.terminal.selection = null;
-                    win.render_timer.schedule() catch |err|
-                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
-                }
-            },
-
-            .release => {
-                win.mouse.click_state = .none;
-                log.debug("click end", .{});
-            },
-
-            .repeat => {},
+        // Selection is always cleared
+        if (win.terminal.selection != null) {
+            win.terminal.selection = null;
+            win.render_timer.schedule() catch |err|
+                log.err("error scheduling render in mouseButtinCallback err={}", .{err});
         }
     }
 }
@@ -934,7 +943,7 @@ fn cursorPosCallback(
     const win = window.getUserPointer(Window) orelse return;
 
     // If the cursor isn't clicked currently, it doesn't matter
-    if (win.mouse.click_state != .left) return;
+    if (win.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
 
     // All roads lead to requiring a re-render at this pont.
     win.render_timer.schedule() catch |err|
@@ -983,13 +992,13 @@ fn cursorPosCallback(
     const cell_xboundary = win.grid.cell_size.width * 0.6;
 
     // first xpos of the clicked cell
-    const cell_xstart = @intToFloat(f32, win.mouse.click_point.x) * win.grid.cell_size.width;
-    const cell_start_xpos = win.mouse.click_xpos - cell_xstart;
+    const cell_xstart = @intToFloat(f32, win.mouse.left_click_point.x) * win.grid.cell_size.width;
+    const cell_start_xpos = win.mouse.left_click_xpos - cell_xstart;
 
     // If this is the same cell, then we only start the selection if weve
     // moved past the boundary point the opposite direction from where we
     // started.
-    if (std.meta.eql(screen_point, win.mouse.click_point)) {
+    if (std.meta.eql(screen_point, win.mouse.left_click_point)) {
         const cell_xpos = xpos - cell_xstart;
         const selected: bool = if (cell_start_xpos < cell_xboundary)
             cell_xpos >= cell_xboundary
@@ -1011,9 +1020,9 @@ fn cursorPosCallback(
         //     the starting cell if we started after the boundary, else
         //     we start selection of the prior cell.
         //   - Inverse logic for a point after the start.
-        const click_point = win.mouse.click_point;
+        const click_point = win.mouse.left_click_point;
         const start: terminal.point.ScreenPoint = if (screen_point.before(click_point)) start: {
-            if (win.mouse.click_xpos > cell_xboundary) {
+            if (win.mouse.left_click_xpos > cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x > 0) terminal.point.ScreenPoint{
@@ -1025,7 +1034,7 @@ fn cursorPosCallback(
                 };
             }
         } else start: {
-            if (win.mouse.click_xpos < cell_xboundary) {
+            if (win.mouse.left_click_xpos < cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x < win.terminal.screen.cols - 1) terminal.point.ScreenPoint{
@@ -1387,8 +1396,9 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             if (enabled) .@"132_cols" else .@"80_cols",
         ),
 
-        .mouse_event_x10 => self.terminal.modes.mouse_event = .x10,
-        .mouse_event_normal => self.terminal.modes.mouse_event = .normal,
+        .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
+        .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
+        .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
 
         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
     }
