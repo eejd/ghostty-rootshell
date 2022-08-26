@@ -96,8 +96,6 @@ pub const MouseFormat = enum(u3) {
     utf8 = 1, // 1005
     sgr = 2, // 1006
     urxvt = 3, // 1015
-
-    // TODO:
     sgr_pixels = 4, // 1016
 };
 
