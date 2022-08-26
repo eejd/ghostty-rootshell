@@ -1069,7 +1069,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         win.grid.background = bg;
         win.grid.foreground = fg;
     }
-    if (win.terminal.modes.reverse_colors == 1) {
+    if (win.terminal.modes.reverse_colors) {
         win.grid.background = fg;
         win.grid.foreground = bg;
     }
@@ -1080,7 +1080,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         g: f32,
         b: f32,
         a: f32,
-    } = if (win.terminal.modes.reverse_colors == 1) .{
+    } = if (win.terminal.modes.reverse_colors) .{
         .r = @intToFloat(f32, fg.r) / 255,
         .g = @intToFloat(f32, fg.g) / 255,
         .b = @intToFloat(f32, fg.b) / 255,
@@ -1167,7 +1167,7 @@ pub fn setCursorCol(self: *Window, col: u16) !void {
 }
 
 pub fn setCursorRow(self: *Window, row: u16) !void {
-    if (self.terminal.modes.origin == 1) {
+    if (self.terminal.modes.origin) {
         // TODO
         log.err("setCursorRow: implement origin mode", .{});
         unreachable;
@@ -1234,19 +1234,19 @@ pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {
 pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
     switch (mode) {
         .reverse_colors => {
-            self.terminal.modes.reverse_colors = @boolToInt(enabled);
+            self.terminal.modes.reverse_colors = enabled;
 
             // Schedule a render since we changed colors
             try self.render_timer.schedule();
         },
 
         .origin => {
-            self.terminal.modes.origin = @boolToInt(enabled);
+            self.terminal.modes.origin = enabled;
             self.terminal.setCursorPos(1, 1);
         },
 
         .autowrap => {
-            self.terminal.modes.autowrap = @boolToInt(enabled);
+            self.terminal.modes.autowrap = enabled;
         },
 
         .cursor_visible => {
@@ -1323,7 +1323,7 @@ pub fn deviceStatusReport(
             const pos: struct {
                 x: usize,
                 y: usize,
-            } = if (self.terminal.modes.origin == 1) .{
+            } = if (self.terminal.modes.origin) .{
                 // TODO: what do we do if cursor is outside scrolling region?
                 .x = self.terminal.screen.cursor.x,
                 .y = self.terminal.screen.cursor.y -| self.terminal.scrolling_region.top,
