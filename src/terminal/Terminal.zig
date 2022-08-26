@@ -324,6 +324,10 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .@"8_bg" => |n| self.screen.cursor.pen.bg = color.default[@enumToInt(n)],
 
+        .reset_fg => self.screen.cursor.pen.fg = null,
+
+        .reset_bg => self.screen.cursor.pen.bg = null,
+
         .@"8_bright_fg" => |n| self.screen.cursor.pen.fg = color.default[@enumToInt(n)],
 
         .@"8_bright_bg" => |n| self.screen.cursor.pen.bg = color.default[@enumToInt(n)],

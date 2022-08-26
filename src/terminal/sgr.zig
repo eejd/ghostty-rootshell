@@ -41,6 +41,10 @@ pub const Attribute = union(enum) {
     @"8_bg": color.Name,
     @"8_fg": color.Name,
 
+    /// Reset the fg/bg to their default values.
+    reset_fg: void,
+    reset_bg: void,
+
     /// Set the background/foreground as a named bright color attribute.
     @"8_bright_bg": color.Name,
     @"8_bright_fg": color.Name,
@@ -118,6 +122,8 @@ pub const Parser = struct {
                 };
             },
 
+            39 => return Attribute{ .reset_fg = {} },
+
             40...47 => return Attribute{
                 .@"8_bg" = @intToEnum(color.Name, slice[0] - 40),
             },
@@ -143,6 +149,8 @@ pub const Parser = struct {
                     .@"256_bg" = @truncate(u8, slice[2]),
                 };
             },
+
+            49 => return Attribute{ .reset_bg = {} },
 
             90...97 => return Attribute{
                 .@"8_bright_fg" = @intToEnum(color.Name, slice[0] - 90),
