@@ -907,6 +907,9 @@ fn mouseReport(
         },
 
         .sgr => {
+            // Final character to send in the CSI
+            const final: u8 = if (action == .release) 'm' else 'M';
+
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
             var buf: [32]u8 = undefined;
@@ -914,7 +917,7 @@ fn mouseReport(
                 button_code,
                 viewport_point.x + 1,
                 viewport_point.y + 1,
-                @as(u8, if (action == .release) 'm' else 'M'),
+                final,
             });
 
             try self.queueWrite(resp);
@@ -934,6 +937,9 @@ fn mouseReport(
         },
 
         .sgr_pixels => {
+            // Final character to send in the CSI
+            const final: u8 = if (action == .release) 'm' else 'M';
+
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
             var buf: [32]u8 = undefined;
@@ -941,7 +947,7 @@ fn mouseReport(
                 button_code,
                 pos.xpos,
                 pos.ypos,
-                @as(u8, if (action == .release) 'm' else 'M'),
+                final,
             });
 
             try self.queueWrite(resp);
@@ -1040,9 +1046,7 @@ fn cursorPosCallback(
     const win = window.getUserPointer(Window) orelse return;
 
     // Do a mouse report
-    if (win.terminal.modes.mouse_event == .button or
-        win.terminal.modes.mouse_event == .any)
-    {
+    if (win.terminal.modes.mouse_event != .none) {
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
         const button: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
