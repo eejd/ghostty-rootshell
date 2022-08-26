@@ -10,7 +10,13 @@ pub const Attribute = union(enum) {
     unset: void,
 
     /// Unknown attribute, the raw CSI command parameters are here.
-    unknown: []const u16,
+    unknown: struct {
+        /// Full is the full SGR input.
+        full: []const u16,
+
+        /// Partial is the remaining, where we got hung up.
+        partial: []const u16,
+    },
 
     /// Bold the text.
     bold: void,
@@ -149,7 +155,7 @@ pub const Parser = struct {
             else => {},
         }
 
-        return Attribute{ .unknown = slice };
+        return Attribute{ .unknown = .{ .full = self.params, .partial = slice } };
     }
 };
 

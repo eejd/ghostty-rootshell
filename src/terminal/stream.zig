@@ -413,6 +413,13 @@ pub fn Stream(comptime Handler: type) type {
             action: Parser.Action.ESC,
         ) !void {
             switch (action.final) {
+                // Charsets
+                'B' => {
+                    // TODO: Charset support. Just ignore this for now because
+                    // every application sets this and it makes our logs SO
+                    // noisy.
+                },
+
                 // DECSC - Save Cursor
                 '7' => if (@hasDecl(T, "saveCursor")) switch (action.intermediates.len) {
                     0 => try self.handler.saveCursor(),

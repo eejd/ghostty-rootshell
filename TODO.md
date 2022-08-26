@@ -38,3 +38,4 @@ Major Features:
 * Kitty keyboard protocol: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 * Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/
 * Mouse events
+* Charsets (i.e. line drawing, `CSI ( B` and so on)
