@@ -526,6 +526,24 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 } else log.warn("unimplemented ESC callback: {}", .{action}),
 
+                // SS2 - Single Shift 2
+                'N' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G2, true),
+                    else => {
+                        log.warn("invalid single shift 2 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // SS3 - Single Shift 3
+                'O' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G3, true),
+                    else => {
+                        log.warn("invalid single shift 3 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
                 else => if (@hasDecl(T, "escUnimplemented"))
                     try self.handler.escUnimplemented(action)
                 else

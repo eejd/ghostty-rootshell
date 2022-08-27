@@ -93,6 +93,9 @@ const CharsetState = struct {
     gl: charsets.Slots = .G0,
     gr: charsets.Slots = .G2,
 
+    /// Single shift where a slot is used for exactly one char.
+    single_shift: ?charsets.Slots = null,
+
     /// An array to map a charset slot to a lookup table.
     const CharsetArray = std.EnumArray(charsets.Slots, charsets.Charset);
 };
@@ -407,7 +410,11 @@ pub fn invokeCharset(
     slot: charsets.Slots,
     single: bool,
 ) void {
-    assert(!single); // TODO
+    if (single) {
+        assert(active == .GL);
+        self.charset.single_shift = slot;
+        return;
+    }
 
     switch (active) {
         .GL => self.charset.gl = slot,
@@ -481,7 +488,11 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
     const c = c: {
         // TODO: non-utf8 handling, gr
 
-        const key = self.charset.gl;
+        // If we're single shifting, then we use the key exactly once.
+        const key = if (self.charset.single_shift) |key_once| blk: {
+            self.charset.single_shift = null;
+            break :blk key_once;
+        } else self.charset.gl;
         const set = self.charset.charsets.get(key);
 
         // UTF-8 or ASCII is used as-is
@@ -1339,6 +1350,24 @@ test "Terminal: print invoke charset" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("`◆◆`", str);
+    }
+}
+
+test "Terminal: print invoke charset single" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    t.configureCharset(.G1, .dec_special);
+
+    // Basic grid writing
+    try t.print('`');
+    t.invokeCharset(.GL, .G1, true);
+    try t.print('`');
+    try t.print('`');
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("`◆`", str);
     }
 }
 
