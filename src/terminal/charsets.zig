@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 
 /// The list of supported character sets and their associated tables.
 pub const Charset = enum {
+    british,
     dec_special,
 
     /// The table for the given charset. This returns a pointer to a
@@ -10,9 +11,17 @@ pub const Charset = enum {
     /// ASCII to the given charset.
     pub fn table(set: Charset) []const u16 {
         return switch (set) {
+            .british => &british,
             .dec_special => &dec_special,
         };
     }
+};
+
+/// https://vt100.net/docs/vt220-rm/chapter2.html
+const british = british: {
+    var table = initTable();
+    table[0x23] = 0x00a3;
+    break :british table;
 };
 
 /// https://en.wikipedia.org/wiki/DEC_Special_Graphics
