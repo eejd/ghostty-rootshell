@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
+const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 const trace = @import("tracy").trace;
@@ -108,8 +109,15 @@ pub fn Stream(comptime Handler: type) type {
                 else
                     log.warn("unimplemented execute: {x}", .{c}),
 
-                // TODO
-                .SO, .SI => log.warn("TODO: Shift out/Shift in", .{}),
+                .SO => if (@hasDecl(T, "invokeCharset"))
+                    try self.handler.invokeCharset(.GL, .G1, false)
+                else
+                    log.warn("unimplemented invokeCharset: {x}", .{c}),
+
+                .SI => if (@hasDecl(T, "invokeCharset"))
+                    try self.handler.invokeCharset(.GL, .G0, false)
+                else
+                    log.warn("unimplemented invokeCharset: {x}", .{c}),
             }
         }
 
@@ -408,17 +416,49 @@ pub fn Stream(comptime Handler: type) type {
             }
         }
 
+        fn configureCharset(
+            self: Self,
+            intermediates: []const u8,
+            set: charsets.Charset,
+        ) !void {
+            if (intermediates.len != 1) {
+                log.warn("invalid charset intermediate: {any}", .{intermediates});
+                return;
+            }
+
+            const slot: charsets.Slots = switch (intermediates[0]) {
+                // TODO: support slots '-', '.', '/'
+
+                '(' => .G0,
+                ')' => .G1,
+                '*' => .G2,
+                '+' => .G3,
+                else => {
+                    log.warn("invalid charset intermediate: {any}", .{intermediates});
+                    return;
+                },
+            };
+
+            if (@hasDecl(T, "configureCharset")) {
+                try self.handler.configureCharset(slot, set);
+                return;
+            }
+
+            log.warn("unimplemented configureCharset callback slot={} set={}", .{
+                slot,
+                set,
+            });
+        }
+
         fn escDispatch(
             self: *Self,
             action: Parser.Action.ESC,
         ) !void {
             switch (action.final) {
                 // Charsets
-                'B' => {
-                    // TODO: Charset support. Just ignore this for now because
-                    // every application sets this and it makes our logs SO
-                    // noisy.
-                },
+                'B' => try self.configureCharset(action.intermediates, .ascii),
+                'A' => try self.configureCharset(action.intermediates, .british),
+                '0' => try self.configureCharset(action.intermediates, .dec_special),
 
                 // DECSC - Save Cursor
                 '7' => if (@hasDecl(T, "saveCursor")) switch (action.intermediates.len) {
@@ -485,6 +525,69 @@ pub fn Stream(comptime Handler: type) type {
                         return;
                     },
                 } else log.warn("unimplemented ESC callback: {}", .{action}),
+
+                // SS2 - Single Shift 2
+                'N' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G2, true),
+                    else => {
+                        log.warn("invalid single shift 2 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // SS3 - Single Shift 3
+                'O' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G3, true),
+                    else => {
+                        log.warn("invalid single shift 3 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS2 - Locking Shift 2
+                'n' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G2, false),
+                    else => {
+                        log.warn("invalid single shift 2 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS3 - Locking Shift 3
+                'o' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G3, false),
+                    else => {
+                        log.warn("invalid single shift 3 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS1R - Locking Shift 1 Right
+                '~' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GR, .G1, false),
+                    else => {
+                        log.warn("invalid locking shift 1 right command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS2R - Locking Shift 2 Right
+                '}' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GR, .G2, false),
+                    else => {
+                        log.warn("invalid locking shift 2 right command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS3R - Locking Shift 3 Right
+                '|' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GR, .G3, false),
+                    else => {
+                        log.warn("invalid locking shift 3 right command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
 
                 else => if (@hasDecl(T, "escUnimplemented"))
                     try self.handler.escUnimplemented(action)

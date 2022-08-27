@@ -1552,7 +1552,8 @@ pub fn deviceAttributes(
     _ = params;
 
     switch (req) {
-        .primary => self.queueWrite("\x1B[?6c") catch |err|
+        // VT220
+        .primary => self.queueWrite("\x1B[?62;c") catch |err|
             log.warn("error queueing device attr response: {}", .{err}),
         else => log.warn("unimplemented device attributes req: {}", .{req}),
     }
@@ -1631,4 +1632,21 @@ pub fn setActiveStatusDisplay(
     req: terminal.StatusDisplay,
 ) !void {
     self.terminal.status_display = req;
+}
+
+pub fn configureCharset(
+    self: *Window,
+    slot: terminal.CharsetSlot,
+    set: terminal.Charset,
+) !void {
+    self.terminal.configureCharset(slot, set);
+}
+
+pub fn invokeCharset(
+    self: *Window,
+    active: terminal.CharsetActiveSlot,
+    slot: terminal.CharsetSlot,
+    single: bool,
+) !void {
+    self.terminal.invokeCharset(active, slot, single);
 }
