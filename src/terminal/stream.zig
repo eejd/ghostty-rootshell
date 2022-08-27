@@ -544,6 +544,51 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 } else log.warn("unimplemented invokeCharset: {}", .{action}),
 
+                // LS2 - Locking Shift 2
+                'n' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G2, false),
+                    else => {
+                        log.warn("invalid single shift 2 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS3 - Locking Shift 3
+                'o' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GL, .G3, false),
+                    else => {
+                        log.warn("invalid single shift 3 command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS1R - Locking Shift 1 Right
+                '~' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GR, .G1, false),
+                    else => {
+                        log.warn("invalid locking shift 1 right command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS2R - Locking Shift 2 Right
+                '}' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GR, .G2, false),
+                    else => {
+                        log.warn("invalid locking shift 2 right command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
+                // LS3R - Locking Shift 3 Right
+                '|' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
+                    0 => try self.handler.invokeCharset(.GR, .G3, false),
+                    else => {
+                        log.warn("invalid locking shift 3 right command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented invokeCharset: {}", .{action}),
+
                 else => if (@hasDecl(T, "escUnimplemented"))
                     try self.handler.escUnimplemented(action)
                 else
