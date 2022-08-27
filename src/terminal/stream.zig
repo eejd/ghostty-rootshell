@@ -109,8 +109,15 @@ pub fn Stream(comptime Handler: type) type {
                 else
                     log.warn("unimplemented execute: {x}", .{c}),
 
-                // TODO
-                .SO, .SI => log.warn("TODO: Shift out/Shift in", .{}),
+                .SO => if (@hasDecl(T, "invokeCharset"))
+                    try self.handler.invokeCharset(.GL, .G1, false)
+                else
+                    log.warn("unimplemented invokeCharset: {x}", .{c}),
+
+                .SI => if (@hasDecl(T, "invokeCharset"))
+                    try self.handler.invokeCharset(.GL, .G0, false)
+                else
+                    log.warn("unimplemented invokeCharset: {x}", .{c}),
             }
         }
 

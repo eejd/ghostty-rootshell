@@ -399,6 +399,22 @@ pub fn configureCharset(self: *Terminal, slot: charsets.Slots, set: charsets.Cha
     self.charset.charsets.set(slot, set);
 }
 
+/// Invoke the charset in slot into the active slot. If single is true,
+/// then this will only be invoked for a single character.
+pub fn invokeCharset(
+    self: *Terminal,
+    active: charsets.ActiveSlot,
+    slot: charsets.Slots,
+    single: bool,
+) void {
+    assert(!single); // TODO
+
+    switch (active) {
+        .GL => self.charset.gl = slot,
+        .GR => self.charset.gr = slot,
+    }
+}
+
 pub fn print(self: *Terminal, c: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -1303,6 +1319,26 @@ test "Terminal: print charset" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("```◆", str);
+    }
+}
+
+test "Terminal: print invoke charset" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    t.configureCharset(.G1, .dec_special);
+
+    // Basic grid writing
+    try t.print('`');
+    t.invokeCharset(.GL, .G1, false);
+    try t.print('`');
+    try t.print('`');
+    t.invokeCharset(.GL, .G0, false);
+    try t.print('`');
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("`◆◆`", str);
     }
 }
 

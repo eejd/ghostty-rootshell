@@ -9,6 +9,9 @@ pub const Slots = enum(u3) {
     G3 = 3,
 };
 
+/// The name of the active slots.
+pub const ActiveSlot = enum { GL, GR };
+
 /// The list of supported character sets and their associated tables.
 pub const Charset = enum {
     utf8,
