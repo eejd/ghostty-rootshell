@@ -158,7 +158,8 @@ pub const Parser = struct {
             49 => return Attribute{ .reset_bg = {} },
 
             90...97 => return Attribute{
-                .@"8_bright_fg" = @intToEnum(color.Name, slice[0] - 90),
+                // 82 instead of 90 to offset to "bright" colors
+                .@"8_bright_fg" = @intToEnum(color.Name, slice[0] - 82),
             },
 
             100...107 => return Attribute{
@@ -228,7 +229,7 @@ test "sgr: inverse" {
 }
 
 test "sgr: 8 color" {
-    var p: Parser = .{ .params = &[_]u16{ 31, 43, 103 } };
+    var p: Parser = .{ .params = &[_]u16{ 31, 43, 90, 103 } };
 
     {
         const v = p.next().?;
@@ -240,6 +241,12 @@ test "sgr: 8 color" {
         const v = p.next().?;
         try testing.expect(v == .@"8_bg");
         try testing.expect(v.@"8_bg" == .yellow);
+    }
+
+    {
+        const v = p.next().?;
+        try testing.expect(v == .@"8_bright_fg");
+        try testing.expect(v.@"8_bright_fg" == .bright_black);
     }
 
     {
