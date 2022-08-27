@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
+const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 const trace = @import("tracy").trace;
@@ -408,17 +409,49 @@ pub fn Stream(comptime Handler: type) type {
             }
         }
 
+        fn configureCharset(
+            self: Self,
+            intermediates: []const u8,
+            set: charsets.Charset,
+        ) !void {
+            if (intermediates.len != 1) {
+                log.warn("invalid charset intermediate: {any}", .{intermediates});
+                return;
+            }
+
+            const slot: charsets.Slots = switch (intermediates[0]) {
+                // TODO: support slots '-', '.', '/'
+
+                '(' => .G0,
+                ')' => .G1,
+                '*' => .G2,
+                '+' => .G3,
+                else => {
+                    log.warn("invalid charset intermediate: {any}", .{intermediates});
+                    return;
+                },
+            };
+
+            if (@hasDecl(T, "configureCharset")) {
+                try self.handler.configureCharset(slot, set);
+                return;
+            }
+
+            log.warn("unimplemented configureCharset callback slot={} set={}", .{
+                slot,
+                set,
+            });
+        }
+
         fn escDispatch(
             self: *Self,
             action: Parser.Action.ESC,
         ) !void {
             switch (action.final) {
                 // Charsets
-                'B' => {
-                    // TODO: Charset support. Just ignore this for now because
-                    // every application sets this and it makes our logs SO
-                    // noisy.
-                },
+                'B' => try self.configureCharset(action.intermediates, .ascii),
+                'A' => try self.configureCharset(action.intermediates, .british),
+                '0' => try self.configureCharset(action.intermediates, .dec_special),
 
                 // DECSC - Save Cursor
                 '7' => if (@hasDecl(T, "saveCursor")) switch (action.intermediates.len) {

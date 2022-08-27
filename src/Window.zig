@@ -1632,3 +1632,11 @@ pub fn setActiveStatusDisplay(
 ) !void {
     self.terminal.status_display = req;
 }
+
+pub fn configureCharset(
+    self: *Window,
+    slot: terminal.CharsetSlot,
+    set: terminal.Charset,
+) !void {
+    self.terminal.configureCharset(slot, set);
+}

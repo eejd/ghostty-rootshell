@@ -1,8 +1,18 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+/// The available charset slots for a terminal.
+pub const Slots = enum(u3) {
+    G0 = 0,
+    G1 = 1,
+    G2 = 2,
+    G3 = 3,
+};
+
 /// The list of supported character sets and their associated tables.
 pub const Charset = enum {
+    utf8,
+    ascii,
     british,
     dec_special,
 
@@ -13,9 +23,20 @@ pub const Charset = enum {
         return switch (set) {
             .british => &british,
             .dec_special => &dec_special,
+
+            // utf8 is not a table, callers should double-check if the
+            // charset is utf8 and NOT use tables.
+            .utf8 => unreachable,
+
+            // recommended that callers just map ascii directly but we can
+            // support a table
+            .ascii => &ascii,
         };
     }
 };
+
+/// Just a basic c => c ascii table
+const ascii = initTable();
 
 /// https://vt100.net/docs/vt220-rm/chapter2.html
 const british = british: {
@@ -76,6 +97,9 @@ test {
     const testing = std.testing;
     const info = @typeInfo(Charset).Enum;
     inline for (info.fields) |field| {
+        // utf8 has no table
+        if (@field(Charset, field.name) == .utf8) continue;
+
         const table = @field(Charset, field.name).table();
 
         // Yes, I could use `max_u8` here, but I want to explicitly use a

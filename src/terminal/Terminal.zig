@@ -12,6 +12,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const ansi = @import("ansi.zig");
+const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 const Selection = @import("Selection.zig");
@@ -56,6 +57,9 @@ cols: usize,
 /// The current scrolling region.
 scrolling_region: ScrollingRegion,
 
+/// The charset state
+charset: CharsetState = .{},
+
 /// Modes - This isn't exhaustive, since some modes (i.e. cursor origin)
 /// are applied to the cursor and others aren't boolean yes/no.
 modes: packed struct {
@@ -78,6 +82,20 @@ modes: packed struct {
         try std.testing.expectEqual(2, @sizeOf(Self));
     }
 } = .{},
+
+/// State required for all charset operations.
+const CharsetState = struct {
+    /// The list of graphical charsets by slot
+    charsets: CharsetArray = CharsetArray.initFill(charsets.Charset.utf8),
+
+    /// GL is the slot to use when using a 7-bit printable char (up to 127)
+    /// GR used for 8-bit printable chars.
+    gl: charsets.Slots = .G0,
+    gr: charsets.Slots = .G2,
+
+    /// An array to map a charset slot to a lookup table.
+    const CharsetArray = std.EnumArray(charsets.Slots, charsets.Charset);
+};
 
 /// The event types that can be reported for mouse-related activities.
 /// These are all mutually exclusive (hence in a single enum).
@@ -376,6 +394,11 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
     }
 }
 
+/// Set the charset into the given slot.
+pub fn configureCharset(self: *Terminal, slot: charsets.Slots, set: charsets.Charset) void {
+    self.charset.charsets.set(slot, set);
+}
+
 pub fn print(self: *Terminal, c: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -438,7 +461,21 @@ pub fn print(self: *Terminal, c: u21) !void {
     }
 }
 
-fn printCell(self: *Terminal, c: u21) *Screen.Cell {
+fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
+    const c = c: {
+        // TODO: non-utf8 handling, gr
+
+        const key = self.charset.gl;
+        const set = self.charset.charsets.get(key);
+
+        // UTF-8 or ASCII is used as-is
+        if (set == .utf8 or set == .ascii) break :c unmapped_c;
+
+        // Get our lookup table and map it
+        const table = set.table();
+        break :c @intCast(u21, table[@intCast(u8, unmapped_c)]);
+    };
+
     const cell = self.screen.getCell(
         self.screen.cursor.y,
         self.screen.cursor.x,
@@ -1242,6 +1279,30 @@ test "Terminal: print writes to bottom if scrolled" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\nA", str);
+    }
+}
+
+test "Terminal: print charset" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // G1 should have no effect
+    t.configureCharset(.G1, .dec_special);
+    t.configureCharset(.G2, .dec_special);
+    t.configureCharset(.G3, .dec_special);
+
+    // Basic grid writing
+    try t.print('`');
+    t.configureCharset(.G0, .utf8);
+    try t.print('`');
+    t.configureCharset(.G0, .ascii);
+    try t.print('`');
+    t.configureCharset(.G0, .dec_special);
+    try t.print('`');
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("```◆", str);
     }
 }
 

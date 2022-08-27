@@ -9,6 +9,7 @@ pub const point = @import("point.zig");
 pub const color = @import("color.zig");
 
 pub const Charset = charsets.Charset;
+pub const CharsetSlot = charsets.Slots;
 pub const Terminal = @import("Terminal.zig");
 pub const Parser = @import("Parser.zig");
 pub const Selection = @import("Selection.zig");
