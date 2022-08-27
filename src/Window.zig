@@ -1627,6 +1627,14 @@ pub fn enquiry(self: *Window) !void {
     try self.queueWrite("");
 }
 
+pub fn scrollDown(self: *Window, count: usize) !void {
+    self.terminal.scrollDown(count);
+}
+
+pub fn scrollUp(self: *Window, count: usize) !void {
+    self.terminal.scrollUp(count);
+}
+
 pub fn setActiveStatusDisplay(
     self: *Window,
     req: terminal.StatusDisplay,

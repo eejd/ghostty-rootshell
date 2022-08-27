@@ -275,6 +275,30 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
+                // Scroll Up (SD)
+                'S' => if (@hasDecl(T, "scrollUp")) try self.handler.scrollUp(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid scroll up command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                // Scroll Down (SD)
+                'T' => if (@hasDecl(T, "scrollDown")) try self.handler.scrollDown(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid scroll down command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
                 // Erase Characters (ECH)
                 'X' => if (@hasDecl(T, "eraseChars")) try self.handler.eraseChars(
                     switch (action.params.len) {
