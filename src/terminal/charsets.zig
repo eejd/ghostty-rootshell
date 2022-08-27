@@ -1,0 +1,77 @@
+const std = @import("std");
+const assert = std.debug.assert;
+
+/// The list of supported character sets and their associated tables.
+pub const Charset = enum {
+    dec_special,
+
+    /// The table for the given charset. This returns a pointer to a
+    /// slice that is guaranteed to be 255 chars that can be used to map
+    /// ASCII to the given charset.
+    pub fn table(set: Charset) []const u16 {
+        return switch (set) {
+            .dec_special => &dec_special,
+        };
+    }
+};
+
+/// https://en.wikipedia.org/wiki/DEC_Special_Graphics
+const dec_special = tech: {
+    var table = initTable();
+    table[0x60] = 0x25C6;
+    table[0x61] = 0x2592;
+    table[0x62] = 0x2409;
+    table[0x63] = 0x240C;
+    table[0x64] = 0x240D;
+    table[0x65] = 0x240A;
+    table[0x66] = 0x00B0;
+    table[0x67] = 0x00B1;
+    table[0x68] = 0x2424;
+    table[0x69] = 0x240B;
+    table[0x6a] = 0x2518;
+    table[0x6b] = 0x2510;
+    table[0x6c] = 0x250C;
+    table[0x6d] = 0x2514;
+    table[0x6e] = 0x253C;
+    table[0x6f] = 0x23BA;
+    table[0x70] = 0x23BB;
+    table[0x71] = 0x2500;
+    table[0x72] = 0x23BC;
+    table[0x73] = 0x23BD;
+    table[0x74] = 0x251C;
+    table[0x75] = 0x2524;
+    table[0x76] = 0x2534;
+    table[0x77] = 0x252C;
+    table[0x78] = 0x2502;
+    table[0x79] = 0x2264;
+    table[0x7a] = 0x2265;
+    table[0x7b] = 0x03C0;
+    table[0x7c] = 0x2260;
+    table[0x7d] = 0x00A3;
+    table[0x7e] = 0x00B7;
+    break :tech table;
+};
+
+const max_u8 = std.math.maxInt(u8);
+
+/// Creates a table that maps ASCII to ASCII as a getting started point.
+fn initTable() [max_u8]u16 {
+    var result: [max_u8]u16 = undefined;
+    var i: usize = 0;
+    while (i < max_u8) : (i += 1) result[i] = @intCast(u16, i);
+    assert(i == max_u8);
+    return result;
+}
+
+test {
+    const testing = std.testing;
+    const info = @typeInfo(Charset).Enum;
+    inline for (info.fields) |field| {
+        const table = @field(Charset, field.name).table();
+
+        // Yes, I could use `max_u8` here, but I want to explicitly use a
+        // hardcoded constant so that if there are miscompilations or a comptime
+        // issue, we catch it.
+        try testing.expectEqual(@as(usize, 255), table.len);
+    }
+}

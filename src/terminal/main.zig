@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 
+const charsets = @import("charsets.zig");
 const stream = @import("stream.zig");
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
@@ -7,6 +8,7 @@ const sgr = @import("sgr.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
 
+pub const Charset = charsets.Charset;
 pub const Terminal = @import("Terminal.zig");
 pub const Parser = @import("Parser.zig");
 pub const Selection = @import("Selection.zig");
@@ -25,6 +27,7 @@ pub const Attribute = sgr.Attribute;
 
 test {
     _ = ansi;
+    _ = charsets;
     _ = color;
     _ = csi;
     _ = point;
