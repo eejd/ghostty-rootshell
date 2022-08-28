@@ -2,7 +2,7 @@ const std = @import("std");
 
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/harfbuzz/";
-const include_path = root ++ "include";
+const include_path = root ++ "src/";
 
 pub const include_paths = .{include_path};
 
