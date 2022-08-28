@@ -5,6 +5,13 @@ const Face = @import("face.zig").Face;
 const Font = @import("font.zig").Font;
 const Error = @import("errors.zig").Error;
 
+// Use custom extern functions so that the proper freetype structs are used
+// without a ptrcast. These are only needed when interacting with freetype
+// C structs.
+extern fn hb_ft_face_create_referenced(ft_face: freetype.c.FT_Face) ?*c.hb_face_t;
+extern fn hb_ft_font_create_referenced(ft_face: freetype.c.FT_Face) ?*c.hb_font_t;
+extern fn hb_ft_font_get_face(font: ?*c.hb_font_t) freetype.c.FT_Face;
+
 /// Creates an hb_face_t face object from the specified FT_Face.
 ///
 /// This is the preferred variant of the hb_ft_face_create* function
@@ -15,17 +22,13 @@ const Error = @import("errors.zig").Error;
 ///
 /// Use this version unless you know you have good reasons not to.
 pub fn createFace(face: freetype.c.FT_Face) Error!Face {
-    const handle = c.hb_ft_face_create_referenced(
-        @ptrCast(c.FT_Face, face),
-    ) orelse return Error.HarfbuzzFailed;
+    const handle = hb_ft_face_create_referenced(face) orelse return Error.HarfbuzzFailed;
     return Face{ .handle = handle };
 }
 
 /// Creates an hb_font_t font object from the specified FT_Face.
 pub fn createFont(face: freetype.c.FT_Face) Error!Font {
-    const handle = c.hb_ft_font_create_referenced(
-        @ptrCast(c.FT_Face, face),
-    ) orelse return Error.HarfbuzzFailed;
+    const handle = hb_ft_font_create_referenced(face) orelse return Error.HarfbuzzFailed;
     return Font{ .handle = handle };
 }
 
