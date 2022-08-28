@@ -214,3 +214,32 @@ pub const Language = struct {
         return .{ .handle = c.hb_language_get_default() };
     }
 };
+
+/// The hb_feature_t is the structure that holds information about requested
+/// feature application. The feature will be applied with the given value to
+/// all glyphs which are in clusters between start (inclusive) and end
+/// (exclusive). Setting start to HB_FEATURE_GLOBAL_START and end to
+/// HB_FEATURE_GLOBAL_END specifies that the feature always applies to the
+/// entire buffer.
+pub const Feature = extern struct {
+    tag: c.hb_tag_t,
+    value: u32,
+    start: c_uint,
+    end: c_uint,
+
+    pub fn fromString(str: []const u8) ?Feature {
+        var f: Feature = undefined;
+        return if (c.hb_feature_from_string(
+            str.ptr,
+            @intCast(c_int, str.len),
+            &f,
+        ) > 1)
+            f
+        else
+            null;
+    }
+
+    pub fn toString(self: *Feature, buf: []u8) void {
+        c.hb_feature_to_string(self, buf.ptr, @intCast(c_uint, buf.len));
+    }
+};
