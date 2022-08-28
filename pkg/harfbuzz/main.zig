@@ -1,5 +1,6 @@
 pub const c = @import("c.zig");
 pub usingnamespace @import("blob.zig");
+pub usingnamespace @import("buffer.zig");
 pub usingnamespace @import("errors.zig");
 pub usingnamespace @import("face.zig");
 pub usingnamespace @import("font.zig");
