@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 const options = @import("build_options");
 const std = @import("std");
 const glfw = @import("glfw");
+const harfbuzz = @import("harfbuzz");
 const tracy = @import("tracy");
 
 const App = @import("App.zig");
@@ -11,6 +12,11 @@ const Config = @import("config.zig").Config;
 const log = std.log.scoped(.main);
 
 pub fn main() !void {
+    // Output some debug information right away
+    log.info("dependency versions harfbuzz={s}", .{
+        harfbuzz.versionString(),
+    });
+
     const gpa = gpa: {
         // Use the libc allocator if it is available beacuse it is WAY
         // faster than GPA. We only do this in release modes so that we
