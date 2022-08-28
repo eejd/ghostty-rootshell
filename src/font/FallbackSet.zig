@@ -7,14 +7,12 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-const ftc = @import("freetype").c;
 const Atlas = @import("../Atlas.zig");
 const Family = @import("main.zig").Family;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const codepoint = @import("main.zig").codepoint;
 
-const ftok = ftc.FT_Err_Ok;
 const log = std.log.scoped(.font_fallback);
 
 /// The families to look for in order. This should be managed directly
