@@ -22,3 +22,6 @@
 [submodule "vendor/utf8proc"]
 	path = vendor/utf8proc
 	url = https://github.com/JuliaStrings/utf8proc.git
+[submodule "vendor/harfbuzz"]
+	path = vendor/harfbuzz
+	url = https://github.com/harfbuzz/harfbuzz.git

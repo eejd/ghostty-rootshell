@@ -5,6 +5,8 @@ const root = thisDir() ++ "../../../vendor/freetype/";
 const include_path = root ++ "include";
 pub const include_path_self = thisDir();
 
+pub const include_paths = .{ include_path, include_path_self };
+
 pub const pkg = std.build.Pkg{
     .name = "freetype",
     .source = .{ .path = thisDir() ++ "/main.zig" },

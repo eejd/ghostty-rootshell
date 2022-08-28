@@ -4,6 +4,7 @@ const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
 const glfw = @import("vendor/mach/glfw/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
+const harfbuzz = @import("pkg/harfbuzz/build.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
@@ -156,6 +157,7 @@ fn addDeps(
 ) !void {
     // We always need the Zig packages
     step.addPackage(freetype.pkg);
+    step.addPackage(harfbuzz.pkg);
     step.addPackage(glfw.pkg);
     step.addPackage(libuv.pkg);
     step.addPackage(utf8proc.pkg);
@@ -185,6 +187,7 @@ fn addDeps(
         step.addIncludePath(freetype.include_path_self);
         step.linkSystemLibrary("bzip2");
         step.linkSystemLibrary("freetype2");
+        step.linkSystemLibrary("harfbuzz");
         step.linkSystemLibrary("libpng");
         step.linkSystemLibrary("libuv");
         step.linkSystemLibrary("zlib");
@@ -201,7 +204,7 @@ fn addDeps(
         });
 
         // Freetype
-        _ = try freetype.link(b, step, .{
+        const freetype_step = try freetype.link(b, step, .{
             .libpng = freetype.Options.Libpng{
                 .enabled = true,
                 .step = libpng_step,
@@ -215,8 +218,17 @@ fn addDeps(
             },
         });
 
+        // Harfbuzz
+        _ = try harfbuzz.link(b, step, .{
+            .freetype = .{
+                .enabled = true,
+                .step = freetype_step,
+                .include = &freetype.include_paths,
+            },
+        });
+
         // Libuv
-        var libuv_step = try libuv.link(b, step);
+        const libuv_step = try libuv.link(b, step);
         system_sdk.include(b, libuv_step, .{});
     }
 }

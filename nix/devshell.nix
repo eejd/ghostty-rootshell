@@ -17,6 +17,7 @@
 , bzip2
 , fontconfig
 , freetype
+, harfbuzz
 , libpng
 , libGL
 , libuv
@@ -35,6 +36,7 @@ let
   ] ++ lib.optionals stdenv.isLinux [
     bzip2
     freetype
+    harfbuzz
     libpng
     libuv
     zlib
@@ -71,6 +73,7 @@ in mkShell rec {
   ] ++ lib.optionals stdenv.isLinux [
     bzip2
     freetype
+    harfbuzz
     libpng
     libuv
     zlib
