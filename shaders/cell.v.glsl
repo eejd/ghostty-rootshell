@@ -129,9 +129,11 @@ void main() {
     case MODE_FG_COLOR:
         vec2 glyph_offset_calc = glyph_offset;
 
-        // If the glyph is larger than our cell, we need to downsample it
+        // If the glyph is larger than our cell, we need to downsample it.
+        // The "+ 3" here is to give some wiggle room for fonts that are
+        // BARELY over it.
         vec2 glyph_size_downsampled = glyph_size;
-        if (glyph_size.x > cell_size.x) {
+        if (glyph_size.x > (cell_size.x + 3)) {
             glyph_size_downsampled.x = cell_size_scaled.x;
             glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
             glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.x / glyph_size.x);
