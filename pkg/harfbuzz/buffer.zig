@@ -1,6 +1,10 @@
 const std = @import("std");
 const c = @import("c.zig");
+const common = @import("common.zig");
 const Error = @import("errors.zig").Error;
+const Direction = common.Direction;
+const Script = common.Script;
+const Language = common.Language;
 
 /// Buffers serve a dual role in HarfBuzz; before shaping, they hold the
 /// input characters that are passed to hb_shape(), and after shaping they
@@ -126,6 +130,58 @@ pub const Buffer = struct {
             @intCast(c_int, text.len),
         );
     }
+
+    /// Set the text flow direction of the buffer. No shaping can happen
+    /// without setting buffer direction, and it controls the visual direction
+    /// for the output glyphs; for RTL direction the glyphs will be reversed.
+    /// Many layout features depend on the proper setting of the direction,
+    /// for example, reversing RTL text before shaping, then shaping with LTR
+    /// direction is not the same as keeping the text in logical order and
+    /// shaping with RTL direction.
+    pub fn setDirection(self: Buffer, dir: Direction) void {
+        c.hb_buffer_set_direction(self.handle, @enumToInt(dir));
+    }
+
+    /// See hb_buffer_set_direction()
+    pub fn getDirection(self: Buffer) Direction {
+        return @intToEnum(Direction, c.hb_buffer_get_direction(self.handle));
+    }
+
+    /// Sets the script of buffer to script.
+    ///
+    /// Script is crucial for choosing the proper shaping behaviour for
+    /// scripts that require it (e.g. Arabic) and the which OpenType features
+    /// defined in the font to be applied.
+    ///
+    /// You can pass one of the predefined hb_script_t values, or use
+    /// hb_script_from_string() or hb_script_from_iso15924_tag() to get the
+    /// corresponding script from an ISO 15924 script tag.
+    pub fn setScript(self: Buffer, script: Script) void {
+        c.hb_buffer_set_script(self.handle, @enumToInt(script));
+    }
+
+    /// See hb_buffer_set_script()
+    pub fn getScript(self: Buffer) Script {
+        return @intToEnum(Script, c.hb_buffer_get_script(self.handle));
+    }
+
+    /// Sets the language of buffer to language .
+    ///
+    /// Languages are crucial for selecting which OpenType feature to apply to
+    /// the buffer which can result in applying language-specific behaviour.
+    /// Languages are orthogonal to the scripts, and though they are related,
+    /// they are different concepts and should not be confused with each other.
+    ///
+    /// Use hb_language_from_string() to convert from BCP 47 language tags to
+    /// hb_language_t.
+    pub fn setLanguage(self: Buffer, language: Language) void {
+        c.hb_buffer_set_language(self.handle, language.handle);
+    }
+
+    /// See hb_buffer_set_language()
+    pub fn getLanguage(self: Buffer) Language {
+        return Language{ .handle = c.hb_buffer_get_language(self.handle) };
+    }
 };
 
 /// The type of hb_buffer_t contents.
@@ -161,4 +217,13 @@ test "create" {
     buffer.addUTF16(&utf16);
     buffer.addUTF8(&utf8);
     buffer.addLatin1(&utf8);
+
+    // Try to set properties
+    buffer.setDirection(.ltr);
+    try testing.expectEqual(Direction.ltr, buffer.getDirection());
+
+    buffer.setScript(.arabic);
+    try testing.expectEqual(Script.arabic, buffer.getScript());
+
+    buffer.setLanguage(Language.fromString("en"));
 }
