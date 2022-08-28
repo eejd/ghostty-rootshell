@@ -182,6 +182,32 @@ pub const Buffer = struct {
     pub fn getLanguage(self: Buffer) Language {
         return Language{ .handle = c.hb_buffer_get_language(self.handle) };
     }
+
+    /// Returns buffer glyph information array. Returned pointer is valid as
+    /// long as buffer contents are not modified.
+    pub fn getGlyphInfos(self: Buffer) []GlyphInfo {
+        var length: u32 = 0;
+        const ptr = c.hb_buffer_get_glyph_infos(self.handle, &length);
+        return ptr[0..length];
+    }
+
+    /// Returns buffer glyph position array. Returned pointer is valid as
+    /// long as buffer contents are not modified.
+    ///
+    /// If buffer did not have positions before, the positions will be
+    /// initialized to zeros, unless this function is called from within a
+    /// buffer message callback (see hb_buffer_set_message_func()), in which
+    /// case NULL is returned.
+    pub fn getGlyphPositions(self: Buffer) ?[]GlyphPosition {
+        var length: u32 = 0;
+
+        if (c.hb_buffer_get_glyph_positions(self.handle, &length)) |positions| {
+            const ptr = @ptrCast([*]GlyphPosition, positions);
+            return ptr[0..length];
+        }
+
+        return null;
+    }
 };
 
 /// The type of hb_buffer_t contents.
@@ -194,6 +220,51 @@ pub const ContentType = enum(u2) {
 
     /// The buffer contains output glyphs (after shaping).
     glyphs = c.HB_BUFFER_CONTENT_TYPE_GLYPHS,
+};
+
+/// The hb_glyph_info_t is the structure that holds information about the
+/// glyphs and their relation to input text.
+pub const GlyphInfo = extern struct {
+    /// either a Unicode code point (before shaping) or a glyph index (after shaping).
+    codepoint: u32,
+    _mask: u32,
+
+    /// the index of the character in the original text that corresponds to
+    /// this hb_glyph_info_t, or whatever the client passes to hb_buffer_add().
+    /// More than one hb_glyph_info_t can have the same cluster value, if they
+    /// resulted from the same character (e.g. one to many glyph substitution),
+    /// and when more than one character gets merged in the same glyph (e.g.
+    /// many to one glyph substitution) the hb_glyph_info_t will have the
+    /// smallest cluster value of them. By default some characters are merged
+    /// into the same cluster (e.g. combining marks have the same cluster as
+    /// their bases) even if they are separate glyphs, hb_buffer_set_cluster_level()
+    /// allow selecting more fine-grained cluster handling.
+    cluster: u32,
+    _var1: u32,
+    _var2: u32,
+};
+
+/// The hb_glyph_position_t is the structure that holds the positions of the
+/// glyph in both horizontal and vertical directions. All positions in
+/// hb_glyph_position_t are relative to the current point.
+pub const GlyphPosition = extern struct {
+    /// how much the line advances after drawing this glyph when setting text
+    /// in horizontal direction.
+    x_advance: i32,
+
+    /// how much the line advances after drawing this glyph when setting text
+    /// in vertical direction.
+    y_advance: i32,
+
+    /// how much the glyph moves on the X-axis before drawing it, this should
+    /// not affect how much the line advances.
+    x_offset: i32,
+
+    /// how much the glyph moves on the Y-axis before drawing it, this should
+    /// not affect how much the line advances.
+    y_offset: i32,
+
+    _var: u32,
 };
 
 test "create" {
