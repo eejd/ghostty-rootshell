@@ -17,9 +17,6 @@ const Library = @import("main.zig").Library;
 
 const log = std.log.scoped(.font_face);
 
-/// The core library
-library: Library,
-
 /// Our font face.
 face: freetype.Face,
 
@@ -51,10 +48,7 @@ pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
     try face.selectCharmap(.unicode);
     try setSize_(face, size);
 
-    return Face{
-        .library = lib,
-        .face = face,
-    };
+    return Face{ .face = face };
 }
 
 pub fn deinit(self: *Face) void {
@@ -102,13 +96,21 @@ pub fn glyphIndex(self: Face, cp: u32) ?u32 {
     return self.face.getCharIndex(cp);
 }
 
+/// Returns true if this font is colored. This can be used by callers to
+/// determine what kind of atlas to pass in.
+pub fn hasColor(self: Face) bool {
+    return self.face.hasColor();
+}
+
 /// Load a glyph for this face. The codepoint can be either a u8 or
 /// []const u8 depending on if you know it is ASCII or must be UTF-8 decoded.
 pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
     // We need a UTF32 codepoint for freetype
     const glyph_index = self.glyphIndex(cp) orelse return error.GlyphNotFound;
-    //log.warn("glyph index: {}", .{glyph_index});
+    return self.renderGlyph(alloc, atlas, glyph_index);
+}
 
+pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32) !Glyph {
     // If our glyph has color, we want to render the color
     try self.face.loadGlyph(glyph_index, .{
         .render = true,

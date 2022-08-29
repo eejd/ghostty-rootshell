@@ -2,16 +2,17 @@ const std = @import("std");
 
 pub const Face = @import("Face.zig");
 pub const Family = @import("Family.zig");
+pub const Group = @import("Group.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const FallbackSet = @import("FallbackSet.zig");
 pub const Library = @import("Library.zig");
 
 /// The styles that a family can take.
-pub const Style = enum {
-    regular,
-    bold,
-    italic,
-    bold_italic,
+pub const Style = enum(u2) {
+    regular = 0,
+    bold = 1,
+    italic = 2,
+    bold_italic = 3,
 };
 
 /// Returns the UTF-32 codepoint for the given value.
