@@ -9,6 +9,7 @@ const Allocator = std.mem.Allocator;
 
 const Atlas = @import("../Atlas.zig");
 const Family = @import("main.zig").Family;
+const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const codepoint = @import("main.zig").codepoint;
@@ -123,14 +124,17 @@ test {
     const testing = std.testing;
     const alloc = testing.allocator;
 
+    var lib = try Library.init();
+    defer lib.deinit();
+
     var set: FallbackSet = .{};
     try set.families.append(alloc, fam: {
-        var fam = try Family.init(try Atlas.init(alloc, 512, .greyscale));
+        var fam = Family.init(lib, try Atlas.init(alloc, 512, .greyscale));
         try fam.loadFaceFromMemory(.regular, fontRegular, .{ .points = 48 });
         break :fam fam;
     });
     try set.families.append(alloc, fam: {
-        var fam = try Family.init(try Atlas.init(alloc, 512, .rgba));
+        var fam = Family.init(lib, try Atlas.init(alloc, 512, .rgba));
         try fam.loadFaceFromMemory(.regular, fontEmoji, .{ .points = 48 });
         break :fam fam;
     });

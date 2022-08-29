@@ -4,10 +4,7 @@ pub const Face = @import("Face.zig");
 pub const Family = @import("Family.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const FallbackSet = @import("FallbackSet.zig");
-
-/// Embedded fonts (for now)
-pub const fontRegular = @import("test.zig").fontRegular;
-pub const fontBold = @import("test.zig").fontBold;
+pub const Library = @import("Library.zig");
 
 /// The styles that a family can take.
 pub const Style = enum {
@@ -29,8 +26,5 @@ pub fn codepoint(v: anytype) u32 {
 }
 
 test {
-    _ = Face;
-    _ = Family;
-    _ = Glyph;
-    _ = FallbackSet;
+    @import("std").testing.refAllDecls(@This());
 }

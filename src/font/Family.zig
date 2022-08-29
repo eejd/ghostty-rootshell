@@ -5,27 +5,22 @@ const Family = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Atlas = @import("../Atlas.zig");
-const ftc = @import("freetype").c;
-const ftok = ftc.FT_Err_Ok;
 const Face = @import("main.zig").Face;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const testFont = @import("test.zig").fontRegular;
 const codepoint = @import("main.zig").codepoint;
+const Library = @import("main.zig").Library;
 
 const log = std.log.scoped(.font_family);
-
-// NOTE(mitchellh): I think eventually atlas and the freetype lib fields
-// move even higher up into another struct that manages sets of font families
-// in order to support fallback and so on.
 
 /// The texture atlas where all the font glyphs are rendered.
 /// This is NOT owned by the Family, deinitialization must
 /// be manually done.
 atlas: Atlas,
 
-/// The FreeType library, initialized by this init func.
-ft_library: ftc.FT_Library,
+/// The library shared state.
+lib: Library,
 
 /// The glyphs that are loaded into the atlas, keyed by codepoint.
 glyphs: std.AutoHashMapUnmanaged(GlyphKey, Glyph) = .{},
@@ -41,16 +36,11 @@ const GlyphKey = struct {
     codepoint: u32,
 };
 
-pub fn init(atlas: Atlas) !Family {
-    var res = Family{
+pub fn init(lib: Library, atlas: Atlas) Family {
+    return .{
+        .lib = lib,
         .atlas = atlas,
-        .ft_library = undefined,
     };
-
-    if (ftc.FT_Init_FreeType(&res.ft_library) != ftok)
-        return error.FreeTypeInitFailed;
-
-    return res;
 }
 
 pub fn deinit(self: *Family, alloc: Allocator) void {
@@ -58,9 +48,6 @@ pub fn deinit(self: *Family, alloc: Allocator) void {
 
     if (self.regular) |*face| face.deinit();
     if (self.bold) |*face| face.deinit();
-
-    if (ftc.FT_Done_FreeType(self.ft_library) != ftok)
-        log.err("failed to clean up FreeType", .{});
 
     self.* = undefined;
 }
@@ -74,7 +61,7 @@ pub fn loadFaceFromMemory(
     source: [:0]const u8,
     size: Face.DesiredSize,
 ) !void {
-    var face = try Face.init(self.ft_library);
+    var face = try Face.init(self.lib);
     errdefer face.deinit();
     try face.loadFaceFromMemory(source, size);
 
@@ -145,7 +132,11 @@ pub fn addGlyph(self: *Family, alloc: Allocator, v: anytype, style: Style) !*Gly
 test {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var fam = try init(try Atlas.init(alloc, 512, .greyscale));
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var fam = init(lib, try Atlas.init(alloc, 512, .greyscale));
     defer fam.deinit(alloc);
     defer fam.atlas.deinit(alloc);
     try fam.loadFaceFromMemory(.regular, testFont, .{ .points = 12 });

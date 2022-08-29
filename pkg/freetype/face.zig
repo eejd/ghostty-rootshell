@@ -106,6 +106,7 @@ pub const LoadFlags = packed struct {
     monochrome: bool = false,
     linear_design: bool = false,
     no_autohint: bool = false,
+    _padding1: u1 = 0,
     target_normal: bool = false,
     target_light: bool = false,
     target_mono: bool = false,
@@ -114,7 +115,7 @@ pub const LoadFlags = packed struct {
     color: bool = false,
     compute_metrics: bool = false,
     bitmap_metrics_only: bool = false,
-    _padding: u10 = 0,
+    _padding2: u9 = 0,
 
     test {
         // This must always be an i32 size so we can bitcast directly.
@@ -124,11 +125,12 @@ pub const LoadFlags = packed struct {
 
     test "bitcast" {
         const testing = std.testing;
-        const cval: i32 = c.FT_LOAD_RENDER | c.FT_LOAD_PEDANTIC;
+        const cval: i32 = c.FT_LOAD_RENDER | c.FT_LOAD_PEDANTIC | c.FT_LOAD_COLOR;
         const flags = @bitCast(LoadFlags, cval);
         try testing.expect(!flags.no_hinting);
         try testing.expect(flags.render);
         try testing.expect(flags.pedantic);
+        try testing.expect(flags.color);
     }
 };
 

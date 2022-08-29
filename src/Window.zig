@@ -240,8 +240,8 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     const window_size = try window.getSize();
     var grid = try Grid.init(alloc, .{
         .points = config.@"font-size",
-        .xdpi = @floatToInt(u32, x_dpi),
-        .ydpi = @floatToInt(u32, y_dpi),
+        .xdpi = @floatToInt(u16, x_dpi),
+        .ydpi = @floatToInt(u16, y_dpi),
     });
     try grid.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
     grid.background = .{

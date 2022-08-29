@@ -7,53 +7,49 @@ const Face = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const freetype = @import("freetype");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const ftc = @import("freetype").c;
 const Atlas = @import("../Atlas.zig");
 const Glyph = @import("main.zig").Glyph;
+const Library = @import("main.zig").Library;
 
-const ftok = ftc.FT_Err_Ok;
 const log = std.log.scoped(.font_face);
 
-/// The FreeType library
-ft_library: ftc.FT_Library,
+/// The core library
+library: Library,
 
 /// Our font face.
-ft_face: ftc.FT_Face = null,
+face: ?freetype.Face = null,
 
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
 /// using whatever platform method you can.
 pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
 
-pub fn init(lib: ftc.FT_Library) !Face {
+pub fn init(lib: Library) !Face {
     return Face{
-        .ft_library = lib,
+        .library = lib,
     };
 }
 
 pub fn deinit(self: *Face) void {
-    if (self.ft_face != null) {
-        if (ftc.FT_Done_Face(self.ft_face) != ftok)
-            log.err("failed to clean up font face", .{});
-    }
-
+    if (self.face) |face| face.deinit();
     self.* = undefined;
 }
 
 /// The desired size for loading a font.
 pub const DesiredSize = struct {
     // Desired size in points
-    points: u32,
+    points: u16,
 
     // The DPI of the screen so we can convert points to pixels.
-    xdpi: u32 = default_dpi,
-    ydpi: u32 = default_dpi,
+    xdpi: u16 = default_dpi,
+    ydpi: u16 = default_dpi,
 
     // Converts points to pixels
-    pub fn pixels(self: DesiredSize) u32 {
+    pub fn pixels(self: DesiredSize) u16 {
         // 1 point = 1/72 inch
         return (self.points * self.ydpi) / 72;
     }
@@ -65,86 +61,66 @@ pub fn loadFaceFromMemory(
     source: [:0]const u8,
     size: DesiredSize,
 ) !void {
-    assert(self.ft_face == null);
+    assert(self.face == null);
 
-    if (ftc.FT_New_Memory_Face(
-        self.ft_library,
-        source.ptr,
-        @intCast(c_long, source.len),
-        0,
-        &self.ft_face,
-    ) != ftok) return error.FaceLoadFailed;
-    errdefer {
-        _ = ftc.FT_Done_Face(self.ft_face);
-        self.ft_face = null;
-    }
+    const face = try self.library.lib.initMemoryFace(source, 0);
+    errdefer face.deinit();
 
-    if (ftc.FT_Select_Charmap(self.ft_face, ftc.FT_ENCODING_UNICODE) != ftok)
-        return error.FaceLoadFailed;
+    try face.selectCharmap(.unicode);
 
     // If we have fixed sizes, we just have to try to pick the one closest
     // to what the user requested. Otherwise, we can choose an arbitrary
     // pixel size.
-    if (!ftc.FT_HAS_FIXED_SIZES(self.ft_face)) {
-        const size_26dot6 = size.points << 6; // mult by 64
-        if (ftc.FT_Set_Char_Size(self.ft_face, 0, size_26dot6, size.xdpi, size.ydpi) != ftok)
-            return error.FaceLoadFailed;
-    } else try self.selectSizeNearest(size.pixels());
+    if (!face.hasFixedSizes()) {
+        const size_26dot6 = @intCast(i32, size.points << 6); // mult by 64
+        try face.setCharSize(0, size_26dot6, size.xdpi, size.ydpi);
+    } else try selectSizeNearest(face, size.pixels());
+
+    // Success, persist
+    self.face = face;
 }
 
 /// Selects the fixed size in the loaded face that is closest to the
 /// requested pixel size.
-fn selectSizeNearest(self: *Face, size: u32) !void {
-    var i: usize = 0;
-    var best_i: usize = 0;
+fn selectSizeNearest(face: freetype.Face, size: u32) !void {
+    var i: i32 = 0;
+    var best_i: i32 = 0;
     var best_diff: i32 = 0;
-    while (i < self.ft_face.*.num_fixed_sizes) : (i += 1) {
-        const diff = @intCast(i32, size) - @intCast(i32, self.ft_face.*.available_sizes[i].width);
+    while (i < face.handle.*.num_fixed_sizes) : (i += 1) {
+        const width = face.handle.*.available_sizes[@intCast(usize, i)].width;
+        const diff = @intCast(i32, size) - @intCast(i32, width);
         if (i == 0 or diff < best_diff) {
             best_diff = diff;
             best_i = i;
         }
     }
 
-    if (ftc.FT_Select_Size(self.ft_face, @intCast(c_int, best_i)) != ftok)
-        return error.FaceSelectSizeFailed;
+    try face.selectSize(best_i);
 }
 
 /// Load a glyph for this face. The codepoint can be either a u8 or
 /// []const u8 depending on if you know it is ASCII or must be UTF-8 decoded.
 pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
-    assert(self.ft_face != null);
+    const face = self.face.?;
 
     // We need a UTF32 codepoint for freetype
-    const glyph_index = glyph_index: {
-        //log.warn("glyph load: {x}", .{cp});
-        const idx = ftc.FT_Get_Char_Index(self.ft_face, cp);
-        if (idx > 0) break :glyph_index idx;
-
-        // Unknown glyph.
-        //log.warn("glyph not found: {x}", .{cp});
-        return error.GlyphNotFound;
-    };
+    const glyph_index = face.getCharIndex(cp) orelse return error.GlyphNotFound;
     //log.warn("glyph index: {}", .{glyph_index});
 
     // If our glyph has color, we want to render the color
-    var load_flags: c_int = ftc.FT_LOAD_RENDER;
-    if (ftc.FT_HAS_COLOR(self.ft_face)) load_flags |= @intCast(c_int, ftc.FT_LOAD_COLOR);
+    try face.loadGlyph(glyph_index, .{
+        .render = true,
+        .color = face.hasColor(),
+    });
 
-    if (ftc.FT_Load_Glyph(
-        self.ft_face,
-        glyph_index,
-        load_flags,
-    ) != ftok) return error.LoadGlyphFailed;
-
-    const glyph = self.ft_face.*.glyph;
+    const glyph = face.handle.*.glyph;
     const bitmap = glyph.*.bitmap;
 
     // Ensure we know how to work with the font format. And assure that
     // or color depth is as expected on the texture atlas.
     const format: Atlas.Format = switch (bitmap.pixel_mode) {
-        ftc.FT_PIXEL_MODE_GRAY => .greyscale,
-        ftc.FT_PIXEL_MODE_BGRA => .rgba,
+        freetype.c.FT_PIXEL_MODE_GRAY => .greyscale,
+        freetype.c.FT_PIXEL_MODE_BGRA => .rgba,
         else => {
             log.warn("pixel mode={}", .{bitmap.pixel_mode});
             @panic("unsupported pixel mode");
@@ -204,27 +180,28 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 /// Convert 16.6 pixel format to pixels based on the scale factor of the
 /// current font size.
 pub fn unitsToPxY(self: Face, units: i32) i32 {
-    return @intCast(i32, ftc.FT_MulFix(units, self.ft_face.*.size.*.metrics.y_scale) >> 6);
+    return @intCast(i32, freetype.mulFix(
+        units,
+        @intCast(i32, self.face.?.handle.*.size.*.metrics.y_scale),
+    ) >> 6);
 }
 
 /// Convert 26.6 pixel format to f32
-fn f26dot6ToFloat(v: ftc.FT_F26Dot6) f32 {
+fn f26dot6ToFloat(v: freetype.c.FT_F26Dot6) f32 {
     return @intToFloat(f32, v >> 6);
 }
 
 test {
     const testFont = @import("test.zig").fontRegular;
-
-    var ft_lib: ftc.FT_Library = undefined;
-    if (ftc.FT_Init_FreeType(&ft_lib) != ftok)
-        return error.FreeTypeInitFailed;
-    defer _ = ftc.FT_Done_FreeType(ft_lib);
-
     const alloc = testing.allocator;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
     var atlas = try Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
-    var font = try init(ft_lib);
+    var font = try init(lib);
     defer font.deinit();
 
     try font.loadFaceFromMemory(testFont, .{ .points = 12 });
@@ -237,18 +214,16 @@ test {
 }
 
 test "color emoji" {
+    const alloc = testing.allocator;
     const testFont = @import("test.zig").fontEmoji;
 
-    var ft_lib: ftc.FT_Library = undefined;
-    if (ftc.FT_Init_FreeType(&ft_lib) != ftok)
-        return error.FreeTypeInitFailed;
-    defer _ = ftc.FT_Done_FreeType(ft_lib);
+    var lib = try Library.init();
+    defer lib.deinit();
 
-    const alloc = testing.allocator;
     var atlas = try Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
-    var font = try init(ft_lib);
+    var font = try init(lib);
     defer font.deinit();
 
     try font.loadFaceFromMemory(testFont, .{ .points = 12 });

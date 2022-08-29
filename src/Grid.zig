@@ -44,6 +44,7 @@ texture: gl.Texture,
 texture_color: gl.Texture,
 
 /// The font atlas.
+font_lib: font.Library,
 font_set: font.FallbackSet,
 
 /// Whether the cursor is visible or not. This is used to control cursor
@@ -151,9 +152,12 @@ pub fn init(
     try font_set.families.ensureTotalCapacity(alloc, 2);
     errdefer font_set.deinit(alloc);
 
+    var font_lib = try font.Library.init();
+    errdefer font_lib.deinit();
+
     // Regular text
     font_set.families.appendAssumeCapacity(fam: {
-        var fam = try font.Family.init(atlas);
+        var fam = font.Family.init(font_lib, atlas);
         errdefer fam.deinit(alloc);
         try fam.loadFaceFromMemory(.regular, face_ttf, font_size);
         try fam.loadFaceFromMemory(.bold, face_bold_ttf, font_size);
@@ -162,7 +166,7 @@ pub fn init(
 
     // Emoji
     font_set.families.appendAssumeCapacity(fam: {
-        var fam_emoji = try font.Family.init(atlas_color);
+        var fam_emoji = font.Family.init(font_lib, atlas_color);
         errdefer fam_emoji.deinit(alloc);
         try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, font_size);
         break :fam fam_emoji;
@@ -189,11 +193,11 @@ pub fn init(
         const fam = &font_set.families.items[0];
 
         // This is the height reported by the font face
-        const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.height);
+        const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.?.handle.*.height);
 
         // Determine the height of the underscore char
         const glyph = font_set.families.items[0].getGlyph('_', .regular).?;
-        var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender);
+        var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.?.handle.*.ascender);
         res -= glyph.offset_y;
         res += @intCast(i32, glyph.height);
 
@@ -207,7 +211,7 @@ pub fn init(
         const fam = &font_set.families.items[0];
         break :cell_baseline cell_height - @intToFloat(
             f32,
-            fam.regular.?.unitsToPxY(fam.regular.?.ft_face.*.ascender),
+            fam.regular.?.unitsToPxY(fam.regular.?.face.?.handle.*.ascender),
         );
     };
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
@@ -331,6 +335,7 @@ pub fn init(
         .vbo = vbo,
         .texture = tex,
         .texture_color = tex_color,
+        .font_lib = font_lib,
         .font_set = font_set,
         .cursor_visible = true,
         .cursor_style = .box,
@@ -345,6 +350,7 @@ pub fn deinit(self: *Grid) void {
         family.deinit(self.alloc);
     }
     self.font_set.deinit(self.alloc);
+    self.font_lib.deinit();
 
     self.texture.destroy();
     self.texture_color.destroy();
