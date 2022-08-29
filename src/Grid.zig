@@ -166,56 +166,12 @@ pub fn init(
 
         break :group group;
     });
+    errdefer font_group.deinit(alloc);
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
-    const cell_width: f32 = cell_width: {
-        var cell_width: f32 = 0;
-        var i: u32 = 32;
-        while (i <= 126) : (i += 1) {
-            const index = (try font_group.indexForCodepoint(alloc, .regular, i)).?;
-            const face = font_group.group.faceFromIndex(index);
-            const glyph_index = face.glyphIndex(i).?;
-            const glyph = try font_group.renderGlyph(alloc, index, glyph_index);
-            if (glyph.advance_x > cell_width) {
-                cell_width = @ceil(glyph.advance_x);
-            }
-        }
-
-        break :cell_width cell_width;
-    };
-
-    // The cell height is the vertical height required to render underscore
-    // '_' which should live at the bottom of a cell.
-    const cell_height: f32 = cell_height: {
-        // Get the '_' char for height
-        const index = (try font_group.indexForCodepoint(alloc, .regular, '_')).?;
-        const face = font_group.group.faceFromIndex(index);
-        const glyph_index = face.glyphIndex('_').?;
-        const glyph = try font_group.renderGlyph(alloc, index, glyph_index);
-
-        // This is the height reported by the font face
-        const face_height: i32 = face.unitsToPxY(face.face.handle.*.height);
-
-        // Determine the height of the underscore char
-        var res: i32 = face.unitsToPxY(face.face.handle.*.ascender);
-        res -= glyph.offset_y;
-        res += @intCast(i32, glyph.height);
-
-        // We take whatever is larger to account for some fonts that
-        // put the underscore outside f the rectangle.
-        if (res < face_height) res = face_height;
-
-        break :cell_height @intToFloat(f32, res);
-    };
-    const cell_baseline = cell_baseline: {
-        const face = font_group.group.faces.get(.regular).items[0];
-        break :cell_baseline cell_height - @intToFloat(
-            f32,
-            face.unitsToPxY(face.face.handle.*.ascender),
-        );
-    };
-    log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
+    const metrics = try font_group.metrics(alloc);
+    log.debug("cell dimensions={}", .{metrics});
 
     // Create our shader
     const program = try gl.Program.createVF(
@@ -226,8 +182,8 @@ pub fn init(
     // Set our cell dimensions
     const pbind = try program.use();
     defer pbind.unbind();
-    try program.setUniform("cell_size", @Vector(2, f32){ cell_width, cell_height });
-    try program.setUniform("glyph_baseline", cell_baseline);
+    try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
+    try program.setUniform("glyph_baseline", metrics.cell_baseline);
 
     // Set all of our texture indexes
     try program.setUniform("text", 0);
@@ -328,7 +284,7 @@ pub fn init(
     return Grid{
         .alloc = alloc,
         .cells = .{},
-        .cell_size = .{ .width = cell_width, .height = cell_height },
+        .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .size = .{ .rows = 0, .columns = 0 },
         .program = program,
         .vao = vao,

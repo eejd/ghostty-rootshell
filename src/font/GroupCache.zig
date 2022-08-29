@@ -11,6 +11,7 @@ const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const Group = @import("main.zig").Group;
+const Metrics = @import("main.zig").Metrics;
 
 const log = std.log.scoped(.font_groupcache);
 
@@ -78,6 +79,66 @@ pub fn deinit(self: *GroupCache, alloc: Allocator) void {
 pub fn reset(self: *GroupCache) void {
     self.codepoints.clearRetainingCapacity();
     self.glyphs.clearRetainingCapacity();
+}
+
+/// Calculate the metrics for this group. This also warms the cache
+/// since this preloads all the ASCII characters.
+pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
+    // Load all visible ASCII characters and build our cell width based on
+    // the widest character that we see.
+    const cell_width: f32 = cell_width: {
+        var cell_width: f32 = 0;
+        var i: u32 = 32;
+        while (i <= 126) : (i += 1) {
+            const index = (try self.indexForCodepoint(alloc, .regular, i)).?;
+            const face = self.group.faceFromIndex(index);
+            const glyph_index = face.glyphIndex(i).?;
+            const glyph = try self.renderGlyph(alloc, index, glyph_index);
+            if (glyph.advance_x > cell_width) {
+                cell_width = @ceil(glyph.advance_x);
+            }
+        }
+
+        break :cell_width cell_width;
+    };
+
+    // The cell height is the vertical height required to render underscore
+    // '_' which should live at the bottom of a cell.
+    const cell_height: f32 = cell_height: {
+        // Get the '_' char for height
+        const index = (try self.indexForCodepoint(alloc, .regular, '_')).?;
+        const face = self.group.faceFromIndex(index);
+        const glyph_index = face.glyphIndex('_').?;
+        const glyph = try self.renderGlyph(alloc, index, glyph_index);
+
+        // This is the height reported by the font face
+        const face_height: i32 = face.unitsToPxY(face.face.handle.*.height);
+
+        // Determine the height of the underscore char
+        var res: i32 = face.unitsToPxY(face.face.handle.*.ascender);
+        res -= glyph.offset_y;
+        res += @intCast(i32, glyph.height);
+
+        // We take whatever is larger to account for some fonts that
+        // put the underscore outside f the rectangle.
+        if (res < face_height) res = face_height;
+
+        break :cell_height @intToFloat(f32, res);
+    };
+
+    const cell_baseline = cell_baseline: {
+        const face = self.group.faces.get(.regular).items[0];
+        break :cell_baseline cell_height - @intToFloat(
+            f32,
+            face.unitsToPxY(face.face.handle.*.ascender),
+        );
+    };
+
+    return Metrics{
+        .cell_width = cell_width,
+        .cell_height = cell_height,
+        .cell_baseline = cell_baseline,
+    };
 }
 
 /// Get the font index for a given codepoint. This is cached.

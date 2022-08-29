@@ -14,16 +14,15 @@ pub const Style = enum(u2) {
     bold_italic = 3,
 };
 
-/// Returns the UTF-32 codepoint for the given value.
-pub fn codepoint(v: anytype) u32 {
-    // We need a UTF32 codepoint for freetype
-    return switch (@TypeOf(v)) {
-        u32 => v,
-        comptime_int, u8 => @intCast(u32, v),
-        []const u8 => @intCast(u32, try std.unicode.utfDecode(v)),
-        else => @compileError("invalid codepoint type"),
-    };
-}
+/// Font metrics useful for things such as grid calculation.
+pub const Metrics = struct {
+    /// The width and height of a monospace cell.
+    cell_width: f32,
+    cell_height: f32,
+
+    /// The baseline offset that can be used to place underlines.
+    cell_baseline: f32,
+};
 
 test {
     @import("std").testing.refAllDecls(@This());
