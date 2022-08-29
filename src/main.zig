@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 const options = @import("build_options");
 const std = @import("std");
 const glfw = @import("glfw");
+const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
 const tracy = @import("tracy");
 

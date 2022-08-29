@@ -48,7 +48,7 @@ pub fn setFontFuncs(font: Font) void {
 
 test {
     const testing = std.testing;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = freetype.testing.font_regular;
     const ftc = freetype.c;
     const ftok = ftc.FT_Err_Ok;
 
