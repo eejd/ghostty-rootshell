@@ -8,6 +8,7 @@ const Face = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const freetype = @import("freetype");
+const harfbuzz = @import("harfbuzz");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
@@ -19,6 +20,9 @@ const log = std.log.scoped(.font_face);
 
 /// Our font face.
 face: freetype.Face,
+
+/// Harfbuzz font corresponding to this face.
+hb_font: harfbuzz.Font,
 
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
@@ -48,11 +52,15 @@ pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
     try face.selectCharmap(.unicode);
     try setSize_(face, size);
 
-    return Face{ .face = face };
+    const hb_font = try harfbuzz.freetype.createFont(face.handle);
+    errdefer hb_font.destroy();
+
+    return Face{ .face = face, .hb_font = hb_font };
 }
 
 pub fn deinit(self: *Face) void {
     self.face.deinit();
+    self.hb_font.destroy();
     self.* = undefined;
 }
 

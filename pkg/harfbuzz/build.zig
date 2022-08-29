@@ -1,4 +1,5 @@
 const std = @import("std");
+const freetypepkg = @import("../freetype/build.zig");
 
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/harfbuzz/";
@@ -9,6 +10,7 @@ pub const include_paths = .{include_path};
 pub const pkg = std.build.Pkg{
     .name = "harfbuzz",
     .source = .{ .path = thisDir() ++ "/main.zig" },
+    .dependencies = &.{freetypepkg.pkg},
 };
 
 fn thisDir() []const u8 {

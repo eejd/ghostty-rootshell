@@ -128,7 +128,6 @@ test "run iterator" {
             count += 1;
 
             // All runs should be exactly length 1
-            std.log.warn("YES", .{});
             try testing.expectEqual(@as(u32, 1), shaper.hb_buf.getLength());
         }
         try testing.expectEqual(@as(usize, 3), count);

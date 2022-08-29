@@ -7,7 +7,7 @@ pub usingnamespace @import("face.zig");
 pub usingnamespace @import("font.zig");
 pub usingnamespace @import("shape.zig");
 pub usingnamespace @import("version.zig");
-pub const Freetype = @import("freetype.zig");
+pub const freetype = @import("freetype.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
