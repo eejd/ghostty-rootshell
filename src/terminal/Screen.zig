@@ -1093,7 +1093,7 @@ pub fn testString(self: Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
 /// each row. If a line is longer than the available columns, soft-wrapping
 /// will occur.
-fn testWriteString(self: *Screen, text: []const u8) void {
+pub fn testWriteString(self: *Screen, text: []const u8) void {
     var y: usize = 0;
     var x: usize = 0;
 

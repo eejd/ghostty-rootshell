@@ -63,11 +63,16 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: Face) !void {
 /// This represents a specific font in the group.
 pub const FontIndex = packed struct {
     /// The number of bits we use for the index.
-    const idx_bits = 8 - StyleArray.len;
+    const idx_bits = 8 - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
     pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
 
-    style: Style,
-    idx: IndexInt,
+    style: Style = .regular,
+    idx: IndexInt = 0,
+
+    /// Convert to int
+    pub fn int(self: FontIndex) u8 {
+        return @bitCast(u8, self);
+    }
 
     test {
         // We never want to take up more than a byte since font indexes are

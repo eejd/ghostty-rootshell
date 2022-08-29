@@ -31,6 +31,11 @@ pub const Buffer = struct {
         c.hb_buffer_reset(self.handle);
     }
 
+    /// Returns the number of items in the buffer.
+    pub fn getLength(self: Buffer) u32 {
+        return c.hb_buffer_get_length(self.handle);
+    }
+
     /// Sets the type of buffer contents. Buffers are either empty, contain
     /// characters (before shaping), or contain glyphs (the result of shaping).
     pub fn setContentType(self: Buffer, ct: ContentType) void {

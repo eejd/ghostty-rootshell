@@ -5,6 +5,7 @@ pub const Group = @import("Group.zig");
 pub const GroupCache = @import("GroupCache.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const Library = @import("Library.zig");
+pub const Shaper = @import("Shaper.zig");
 
 /// The styles that a family can take.
 pub const Style = enum(u2) {
