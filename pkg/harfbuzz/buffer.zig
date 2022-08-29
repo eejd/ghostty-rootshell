@@ -208,6 +208,31 @@ pub const Buffer = struct {
 
         return null;
     }
+
+    /// Sets unset buffer segment properties based on buffer Unicode contents.
+    /// If buffer is not empty, it must have content type
+    /// HB_BUFFER_CONTENT_TYPE_UNICODE.
+    ///
+    /// If buffer script is not set (ie. is HB_SCRIPT_INVALID), it will be set
+    /// to the Unicode script of the first character in the buffer that has a
+    /// script other than HB_SCRIPT_COMMON, HB_SCRIPT_INHERITED, and
+    /// HB_SCRIPT_UNKNOWN.
+    ///
+    /// Next, if buffer direction is not set (ie. is HB_DIRECTION_INVALID), it
+    /// will be set to the natural horizontal direction of the buffer script as
+    /// returned by hb_script_get_horizontal_direction(). If
+    /// hb_script_get_horizontal_direction() returns HB_DIRECTION_INVALID,
+    /// then HB_DIRECTION_LTR is used.
+    ///
+    /// Finally, if buffer language is not set (ie. is HB_LANGUAGE_INVALID), it
+    /// will be set to the process's default language as returned by
+    /// hb_language_get_default(). This may change in the future by taking
+    /// buffer script into consideration when choosing a language. Note that
+    /// hb_language_get_default() is NOT threadsafe the first time it is
+    /// called. See documentation for that function for details.
+    pub fn guessSegmentProperties(self: Buffer) void {
+        c.hb_buffer_guess_segment_properties(self.handle);
+    }
 };
 
 /// The type of hb_buffer_t contents.
@@ -288,6 +313,9 @@ test "create" {
     buffer.addUTF16(&utf16);
     buffer.addUTF8(&utf8);
     buffer.addLatin1(&utf8);
+
+    // Guess properties first
+    buffer.guessSegmentProperties();
 
     // Try to set properties
     buffer.setDirection(.ltr);
