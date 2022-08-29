@@ -2,7 +2,7 @@ const Library = @This();
 
 const std = @import("std");
 const c = @import("c.zig");
-const Face = @import("Face.zig");
+const Face = @import("face.zig").Face;
 const errors = @import("errors.zig");
 const Error = errors.Error;
 const intToError = errors.intToError;
@@ -72,14 +72,4 @@ test "basics" {
 
     var buf: [32]u8 = undefined;
     _ = try vsn.toString(&buf);
-}
-
-test "loading memory font" {
-    const font_data = @import("test.zig").font_regular;
-
-    var lib = try init();
-    defer lib.deinit();
-
-    var face = try lib.initMemoryFace(font_data, 0);
-    defer face.deinit();
 }
