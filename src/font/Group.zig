@@ -15,9 +15,8 @@ const Face = @import("main.zig").Face;
 const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
-const codepoint = @import("main.zig").codepoint;
 
-const log = std.log.scoped(.font_fallback);
+const log = std.log.scoped(.font_group);
 
 /// Packed array to map our styles to a set of faces.
 // Note: this is not the most efficient way to store these, but there is
@@ -65,7 +64,7 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: Face) !void {
 pub const FontIndex = packed struct {
     /// The number of bits we use for the index.
     const idx_bits = 8 - StyleArray.len;
-    const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
+    pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
 
     style: Style,
     idx: IndexInt,
@@ -105,13 +104,6 @@ fn indexForCodepointExact(self: Group, style: Style, cp: u32) ?FontIndex {
 
     // Not found
     return null;
-}
-
-/// Returns true if the glyph pointed to by the index requires color.
-/// This is used to determine the proper atlas to pass in for rendering
-/// the glyph.
-pub fn indexRequiresColor(self: Group, index: FontIndex) bool {
-    return self.faces.get(index.style).items[@intCast(usize, index.idx)].hasColor();
 }
 
 /// Return the Face represented by a given FontIndex.
@@ -165,7 +157,6 @@ test {
         const idx = group.indexForCodepoint(.regular, i).?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
-        try testing.expect(!group.indexRequiresColor(idx));
 
         // Render it
         const face = group.faceFromIndex(idx);
@@ -183,6 +174,5 @@ test {
         const idx = group.indexForCodepoint(.regular, '🥸').?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
-        try testing.expect(group.indexRequiresColor(idx));
     }
 }
