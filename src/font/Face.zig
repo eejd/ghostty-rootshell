@@ -21,23 +21,12 @@ const log = std.log.scoped(.font_face);
 library: Library,
 
 /// Our font face.
-face: ?freetype.Face = null,
+face: freetype.Face,
 
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
 /// using whatever platform method you can.
 pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
-
-pub fn init(lib: Library) !Face {
-    return Face{
-        .library = lib,
-    };
-}
-
-pub fn deinit(self: *Face) void {
-    if (self.face) |face| face.deinit();
-    self.* = undefined;
-}
 
 /// The desired size for loading a font.
 pub const DesiredSize = struct {
@@ -55,19 +44,31 @@ pub const DesiredSize = struct {
     }
 };
 
-/// Loads a font to use. This can only be called if a font is not already loaded.
-pub fn loadFaceFromMemory(
-    self: *Face,
-    source: [:0]const u8,
-    size: DesiredSize,
-) !void {
-    assert(self.face == null);
-
-    const face = try self.library.lib.initMemoryFace(source, 0);
+/// Initialize a new font face with the given source in-memory.
+pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
+    const face = try lib.lib.initMemoryFace(source, 0);
     errdefer face.deinit();
-
     try face.selectCharmap(.unicode);
+    try setSize_(face, size);
 
+    return Face{
+        .library = lib,
+        .face = face,
+    };
+}
+
+pub fn deinit(self: *Face) void {
+    self.face.deinit();
+    self.* = undefined;
+}
+
+/// Change the size of the loaded font face. If you're using a texture
+/// atlas, you should invalidate all the previous values if cached.
+pub fn setSize(self: Face, size: DesiredSize) !void {
+    return try setSize_(self.face, size);
+}
+
+fn setSize_(face: freetype.Face, size: DesiredSize) !void {
     // If we have fixed sizes, we just have to try to pick the one closest
     // to what the user requested. Otherwise, we can choose an arbitrary
     // pixel size.
@@ -75,9 +76,6 @@ pub fn loadFaceFromMemory(
         const size_26dot6 = @intCast(i32, size.points << 6); // mult by 64
         try face.setCharSize(0, size_26dot6, size.xdpi, size.ydpi);
     } else try selectSizeNearest(face, size.pixels());
-
-    // Success, persist
-    self.face = face;
 }
 
 /// Selects the fixed size in the loaded face that is closest to the
@@ -98,22 +96,26 @@ fn selectSizeNearest(face: freetype.Face, size: u32) !void {
     try face.selectSize(best_i);
 }
 
+/// Returns the glyph index for the given Unicode code point. If this
+/// face doesn't support this glyph, null is returned.
+pub fn glyphIndex(self: Face, cp: u32) ?u32 {
+    return self.face.getCharIndex(cp);
+}
+
 /// Load a glyph for this face. The codepoint can be either a u8 or
 /// []const u8 depending on if you know it is ASCII or must be UTF-8 decoded.
 pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
-    const face = self.face.?;
-
     // We need a UTF32 codepoint for freetype
-    const glyph_index = face.getCharIndex(cp) orelse return error.GlyphNotFound;
+    const glyph_index = self.glyphIndex(cp) orelse return error.GlyphNotFound;
     //log.warn("glyph index: {}", .{glyph_index});
 
     // If our glyph has color, we want to render the color
-    try face.loadGlyph(glyph_index, .{
+    try self.face.loadGlyph(glyph_index, .{
         .render = true,
-        .color = face.hasColor(),
+        .color = self.face.hasColor(),
     });
 
-    const glyph = face.handle.*.glyph;
+    const glyph = self.face.handle.*.glyph;
     const bitmap = glyph.*.bitmap;
 
     // Ensure we know how to work with the font format. And assure that
@@ -182,7 +184,7 @@ pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
 pub fn unitsToPxY(self: Face, units: i32) i32 {
     return @intCast(i32, freetype.mulFix(
         units,
-        @intCast(i32, self.face.?.handle.*.size.*.metrics.y_scale),
+        @intCast(i32, self.face.handle.*.size.*.metrics.y_scale),
     ) >> 6);
 }
 
@@ -201,10 +203,8 @@ test {
     var atlas = try Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
-    var font = try init(lib);
+    var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
-
-    try font.loadFaceFromMemory(testFont, .{ .points = 12 });
 
     // Generate all visible ASCII
     var i: u8 = 32;
@@ -223,9 +223,8 @@ test "color emoji" {
     var atlas = try Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
-    var font = try init(lib);
+    var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
 
-    try font.loadFaceFromMemory(testFont, .{ .points = 12 });
     _ = try font.loadGlyph(alloc, &atlas, '🥸');
 }

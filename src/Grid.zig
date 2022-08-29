@@ -193,11 +193,11 @@ pub fn init(
         const fam = &font_set.families.items[0];
 
         // This is the height reported by the font face
-        const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.?.handle.*.height);
+        const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.handle.*.height);
 
         // Determine the height of the underscore char
         const glyph = font_set.families.items[0].getGlyph('_', .regular).?;
-        var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.?.handle.*.ascender);
+        var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.handle.*.ascender);
         res -= glyph.offset_y;
         res += @intCast(i32, glyph.height);
 
@@ -211,7 +211,7 @@ pub fn init(
         const fam = &font_set.families.items[0];
         break :cell_baseline cell_height - @intToFloat(
             f32,
-            fam.regular.?.unitsToPxY(fam.regular.?.face.?.handle.*.ascender),
+            fam.regular.?.unitsToPxY(fam.regular.?.face.handle.*.ascender),
         );
     };
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });

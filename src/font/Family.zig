@@ -61,9 +61,8 @@ pub fn loadFaceFromMemory(
     source: [:0]const u8,
     size: Face.DesiredSize,
 ) !void {
-    var face = try Face.init(self.lib);
+    var face = try Face.init(self.lib, source, size);
     errdefer face.deinit();
-    try face.loadFaceFromMemory(source, size);
 
     @field(self, switch (style) {
         .regular => "regular",
