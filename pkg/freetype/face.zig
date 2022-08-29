@@ -18,6 +18,12 @@ pub const Face = struct {
         return c.FT_HAS_FIXED_SIZES(self.handle);
     }
 
+    /// A macro that returns true whenever a face object contains tables for
+    /// color glyphs.
+    pub fn hasColor(self: Face) bool {
+        return c.FT_HAS_COLOR(self.handle);
+    }
+
     /// Select a given charmap by its encoding tag (as listed in freetype.h).
     pub fn selectCharmap(self: Face, encoding: Encoding) Error!void {
         return intToError(c.FT_Select_Charmap(self.handle, @enumToInt(encoding)));
@@ -37,6 +43,29 @@ pub const Face = struct {
             char_height,
             horz_resolution,
             vert_resolution,
+        ));
+    }
+
+    /// Select a bitmap strike. To be more precise, this function sets the
+    /// scaling factors of the active FT_Size object in a face so that bitmaps
+    /// from this particular strike are taken by FT_Load_Glyph and friends.
+    pub fn selectSize(self: Face, idx: i32) Error!void {
+        return intToError(c.FT_Select_Size(self.handle, idx));
+    }
+
+    /// Return the glyph index of a given character code. This function uses
+    /// the currently selected charmap to do the mapping.
+    pub fn getCharIndex(self: Face, char: u32) ?u32 {
+        const i = c.FT_Get_Char_Index(self.handle, char);
+        return if (i == 0) null else i;
+    }
+
+    /// Load a glyph into the glyph slot of a face object.
+    pub fn loadGlyph(self: Face, glyph_index: u32, load_flags: LoadFlags) Error!void {
+        return intToError(c.FT_Load_Glyph(
+            self.handle,
+            glyph_index,
+            @bitCast(i32, load_flags),
         ));
     }
 };
@@ -60,6 +89,49 @@ pub const Encoding = enum(u31) {
     apple_roman = c.FT_ENCODING_APPLE_ROMAN,
 };
 
+/// A list of bit field constants for FT_Load_Glyph to indicate what kind of
+/// operations to perform during glyph loading.
+pub const LoadFlags = packed struct {
+    no_scale: bool = false,
+    no_hinting: bool = false,
+    render: bool = false,
+    no_bitmap: bool = false,
+    vertical_layout: bool = false,
+    force_autohint: bool = false,
+    crop_bitmap: bool = false,
+    pedantic: bool = false,
+    ignore_global_advance_with: bool = false,
+    no_recurse: bool = false,
+    ignore_transform: bool = false,
+    monochrome: bool = false,
+    linear_design: bool = false,
+    no_autohint: bool = false,
+    target_normal: bool = false,
+    target_light: bool = false,
+    target_mono: bool = false,
+    target_lcd: bool = false,
+    target_lcd_v: bool = false,
+    color: bool = false,
+    compute_metrics: bool = false,
+    bitmap_metrics_only: bool = false,
+    _padding: u10 = 0,
+
+    test {
+        // This must always be an i32 size so we can bitcast directly.
+        const testing = std.testing;
+        try testing.expectEqual(@sizeOf(i32), @sizeOf(LoadFlags));
+    }
+
+    test "bitcast" {
+        const testing = std.testing;
+        const cval: i32 = c.FT_LOAD_RENDER | c.FT_LOAD_PEDANTIC;
+        const flags = @bitCast(LoadFlags, cval);
+        try testing.expect(!flags.no_hinting);
+        try testing.expect(flags.render);
+        try testing.expect(flags.pedantic);
+    }
+};
+
 test "loading memory font" {
     const testing = std.testing;
     const font_data = @import("test.zig").font_regular;
@@ -73,4 +145,8 @@ test "loading memory font" {
     try face.selectCharmap(.unicode);
     try testing.expect(!face.hasFixedSizes());
     try face.setCharSize(12, 0, 0, 0);
+
+    // Try loading
+    const idx = face.getCharIndex('A').?;
+    try face.loadGlyph(idx, .{});
 }
