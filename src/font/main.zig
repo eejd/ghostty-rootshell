@@ -1,11 +1,9 @@
 const std = @import("std");
 
 pub const Face = @import("Face.zig");
-pub const Family = @import("Family.zig");
 pub const Group = @import("Group.zig");
 pub const GroupCache = @import("GroupCache.zig");
 pub const Glyph = @import("Glyph.zig");
-pub const FallbackSet = @import("FallbackSet.zig");
 pub const Library = @import("Library.zig");
 
 /// The styles that a family can take.

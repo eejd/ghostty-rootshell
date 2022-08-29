@@ -40,6 +40,7 @@ const GlyphKey = struct {
     glyph: u32,
 };
 
+/// The GroupCache takes ownership of Group and will free it.
 pub fn init(alloc: Allocator, group: Group) !GroupCache {
     var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
     errdefer atlas_greyscale.deinit(alloc);
@@ -65,6 +66,7 @@ pub fn deinit(self: *GroupCache, alloc: Allocator) void {
     self.glyphs.deinit(alloc);
     self.atlas_greyscale.deinit(alloc);
     self.atlas_color.deinit(alloc);
+    self.group.deinit(alloc);
 }
 
 /// Reset the cache. This should be called:
@@ -146,12 +148,12 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var group = try Group.init(alloc);
-    defer group.deinit(alloc);
-    try group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
-
-    var cache = try init(alloc, group);
+    var cache = try init(alloc, try Group.init(alloc));
     defer cache.deinit(alloc);
+
+    // Setup group
+    try cache.group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
+    const group = cache.group;
 
     // Visible ASCII. Do it twice to verify cache.
     var i: u32 = 32;

@@ -102,14 +102,8 @@ pub fn hasColor(self: Face) bool {
     return self.face.hasColor();
 }
 
-/// Load a glyph for this face. The codepoint can be either a u8 or
-/// []const u8 depending on if you know it is ASCII or must be UTF-8 decoded.
-pub fn loadGlyph(self: Face, alloc: Allocator, atlas: *Atlas, cp: u32) !Glyph {
-    // We need a UTF32 codepoint for freetype
-    const glyph_index = self.glyphIndex(cp) orelse return error.GlyphNotFound;
-    return self.renderGlyph(alloc, atlas, glyph_index);
-}
-
+/// Render a glyph using the glyph index. The rendered glyph is stored in the
+/// given texture atlas.
 pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32) !Glyph {
     // If our glyph has color, we want to render the color
     try self.face.loadGlyph(glyph_index, .{
@@ -211,7 +205,7 @@ test {
     // Generate all visible ASCII
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
-        _ = try font.loadGlyph(alloc, &atlas, i);
+        _ = try font.renderGlyph(alloc, &atlas, font.glyphIndex(i).?);
     }
 }
 
@@ -228,5 +222,5 @@ test "color emoji" {
     var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
 
-    _ = try font.loadGlyph(alloc, &atlas, '🥸');
+    _ = try font.renderGlyph(alloc, &atlas, font.glyphIndex('🥸').?);
 }

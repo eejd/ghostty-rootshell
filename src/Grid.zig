@@ -45,7 +45,7 @@ texture_color: gl.Texture,
 
 /// The font atlas.
 font_lib: font.Library,
-font_set: font.FallbackSet,
+font_group: font.GroupCache,
 
 /// Whether the cursor is visible or not. This is used to control cursor
 /// blinking.
@@ -138,49 +138,47 @@ pub fn init(
     alloc: Allocator,
     font_size: font.Face.DesiredSize,
 ) !Grid {
-    // Initialize our font atlas. We will initially populate the
-    // font atlas with all the visible ASCII characters since they are common.
-    var atlas = try Atlas.init(alloc, 512, .greyscale);
-    errdefer atlas.deinit(alloc);
-
-    // Load our emoji font
-    var atlas_color = try Atlas.init(alloc, 512, .rgba);
-    errdefer atlas_color.deinit(alloc);
-
-    // Build our fallback set so we can look up all codepoints
-    var font_set: font.FallbackSet = .{};
-    try font_set.families.ensureTotalCapacity(alloc, 2);
-    errdefer font_set.deinit(alloc);
-
+    // Build our font group
     var font_lib = try font.Library.init();
     errdefer font_lib.deinit();
+    var font_group = try font.GroupCache.init(alloc, group: {
+        var group = try font.Group.init(alloc);
+        errdefer group.deinit(alloc);
 
-    // Regular text
-    font_set.families.appendAssumeCapacity(fam: {
-        var fam = font.Family.init(font_lib, atlas);
-        errdefer fam.deinit(alloc);
-        try fam.loadFaceFromMemory(.regular, face_ttf, font_size);
-        try fam.loadFaceFromMemory(.bold, face_bold_ttf, font_size);
-        break :fam fam;
-    });
+        // Our regular font
+        try group.addFace(
+            alloc,
+            .regular,
+            try font.Face.init(font_lib, face_ttf, font_size),
+        );
+        try group.addFace(
+            alloc,
+            .bold,
+            try font.Face.init(font_lib, face_bold_ttf, font_size),
+        );
 
-    // Emoji
-    font_set.families.appendAssumeCapacity(fam: {
-        var fam_emoji = font.Family.init(font_lib, atlas_color);
-        errdefer fam_emoji.deinit(alloc);
-        try fam_emoji.loadFaceFromMemory(.regular, face_emoji_ttf, font_size);
-        break :fam fam_emoji;
+        // Emoji
+        try group.addFace(
+            alloc,
+            .regular,
+            try font.Face.init(font_lib, face_emoji_ttf, font_size),
+        );
+
+        break :group group;
     });
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
     const cell_width: f32 = cell_width: {
         var cell_width: f32 = 0;
-        var i: u8 = 32;
+        var i: u32 = 32;
         while (i <= 126) : (i += 1) {
-            const goa = try font_set.getOrAddGlyph(alloc, i, .regular);
-            if (goa.glyph.advance_x > cell_width) {
-                cell_width = @ceil(goa.glyph.advance_x);
+            const index = (try font_group.indexForCodepoint(alloc, .regular, i)).?;
+            const face = font_group.group.faceFromIndex(index);
+            const glyph_index = face.glyphIndex(i).?;
+            const glyph = try font_group.renderGlyph(alloc, index, glyph_index);
+            if (glyph.advance_x > cell_width) {
+                cell_width = @ceil(glyph.advance_x);
             }
         }
 
@@ -190,14 +188,17 @@ pub fn init(
     // The cell height is the vertical height required to render underscore
     // '_' which should live at the bottom of a cell.
     const cell_height: f32 = cell_height: {
-        const fam = &font_set.families.items[0];
+        // Get the '_' char for height
+        const index = (try font_group.indexForCodepoint(alloc, .regular, '_')).?;
+        const face = font_group.group.faceFromIndex(index);
+        const glyph_index = face.glyphIndex('_').?;
+        const glyph = try font_group.renderGlyph(alloc, index, glyph_index);
 
         // This is the height reported by the font face
-        const face_height: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.handle.*.height);
+        const face_height: i32 = face.unitsToPxY(face.face.handle.*.height);
 
         // Determine the height of the underscore char
-        const glyph = font_set.families.items[0].getGlyph('_', .regular).?;
-        var res: i32 = fam.regular.?.unitsToPxY(fam.regular.?.face.handle.*.ascender);
+        var res: i32 = face.unitsToPxY(face.face.handle.*.ascender);
         res -= glyph.offset_y;
         res += @intCast(i32, glyph.height);
 
@@ -208,10 +209,10 @@ pub fn init(
         break :cell_height @intToFloat(f32, res);
     };
     const cell_baseline = cell_baseline: {
-        const fam = &font_set.families.items[0];
+        const face = font_group.group.faces.get(.regular).items[0];
         break :cell_baseline cell_height - @intToFloat(
             f32,
-            fam.regular.?.unitsToPxY(fam.regular.?.face.handle.*.ascender),
+            face.unitsToPxY(face.face.handle.*.ascender),
         );
     };
     log.debug("cell dimensions w={d} h={d} baseline={d}", .{ cell_width, cell_height, cell_baseline });
@@ -294,12 +295,12 @@ pub fn init(
         try texbind.image2D(
             0,
             .Red,
-            @intCast(c_int, atlas.size),
-            @intCast(c_int, atlas.size),
+            @intCast(c_int, font_group.atlas_greyscale.size),
+            @intCast(c_int, font_group.atlas_greyscale.size),
             0,
             .Red,
             .UnsignedByte,
-            atlas.data.ptr,
+            font_group.atlas_greyscale.data.ptr,
         );
     }
 
@@ -315,12 +316,12 @@ pub fn init(
         try texbind.image2D(
             0,
             .RGBA,
-            @intCast(c_int, atlas_color.size),
-            @intCast(c_int, atlas_color.size),
+            @intCast(c_int, font_group.atlas_color.size),
+            @intCast(c_int, font_group.atlas_color.size),
             0,
             .BGRA,
             .UnsignedByte,
-            atlas_color.data.ptr,
+            font_group.atlas_color.data.ptr,
         );
     }
 
@@ -336,7 +337,7 @@ pub fn init(
         .texture = tex,
         .texture_color = tex_color,
         .font_lib = font_lib,
-        .font_set = font_set,
+        .font_group = font_group,
         .cursor_visible = true,
         .cursor_style = .box,
         .background = .{ .r = 0, .g = 0, .b = 0 },
@@ -345,11 +346,7 @@ pub fn init(
 }
 
 pub fn deinit(self: *Grid) void {
-    for (self.font_set.families.items) |*family| {
-        family.atlas.deinit(self.alloc);
-        family.deinit(self.alloc);
-    }
-    self.font_set.deinit(self.alloc);
+    self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
 
     self.texture.destroy();
@@ -565,10 +562,30 @@ pub fn updateCell(
 
         var mode: GPUCellMode = .fg;
 
-        // Get our glyph. Try our normal font atlas first.
-        const goa = try self.font_set.getOrAddGlyph(self.alloc, cell.char, style);
-        if (goa.family == 1) mode = .fg_color;
-        const glyph = goa.glyph;
+        // Get the glyph that we're going to use. We first try what the cell
+        // wants, then the Unicode replacement char, then finally a space.
+        const FontInfo = struct { index: font.Group.FontIndex, ch: u32 };
+        const font_info: FontInfo = font_info: {
+            var chars = [_]u32{ @intCast(u32, cell.char), 0xFFFD, ' ' };
+            for (chars) |char| {
+                if (try self.font_group.indexForCodepoint(self.alloc, style, char)) |idx| {
+                    break :font_info FontInfo{
+                        .index = idx,
+                        .ch = char,
+                    };
+                }
+            }
+
+            @panic("all fonts require at least space");
+        };
+
+        // Render
+        const face = self.font_group.group.faceFromIndex(font_info.index);
+        const glyph_index = face.glyphIndex(font_info.ch).?;
+        const glyph = try self.font_group.renderGlyph(self.alloc, font_info.index, glyph_index);
+
+        // If we're rendering a color font, we use the color atlas
+        if (face.hasColor()) mode = .fg_color;
 
         // If the cell is wide, we need to note that in the mode
         if (cell.attrs.wide) mode = mode.mask(.wide_mask);
@@ -649,7 +666,7 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 /// Updates the font texture atlas if it is dirty.
 fn flushAtlas(self: *Grid) !void {
     {
-        const atlas = &self.font_set.families.items[0].atlas;
+        const atlas = &self.font_group.atlas_greyscale;
         if (atlas.modified) {
             atlas.modified = false;
             var texbind = try self.texture.bind(.@"2D");
@@ -683,7 +700,7 @@ fn flushAtlas(self: *Grid) !void {
     }
 
     {
-        const atlas = &self.font_set.families.items[1].atlas;
+        const atlas = &self.font_group.atlas_color;
         if (atlas.modified) {
             atlas.modified = false;
             var texbind = try self.texture_color.bind(.@"2D");
