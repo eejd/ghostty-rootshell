@@ -6,3 +6,13 @@ pub const c = @import("c.zig");
 pub fn charwidth(codepoint: u21) u8 {
     return @intCast(u8, c.utf8proc_charwidth(@intCast(i32, codepoint)));
 }
+
+/// Given a pair of consecutive codepoints, return whether a grapheme break is
+/// permitted between them (as defined by the extended grapheme clusters in UAX#29).
+pub fn graphemeBreakStateful(cp1: u21, cp2: u21, state: *i32) bool {
+    return c.utf8proc_grapheme_break_stateful(
+        @intCast(i32, cp1),
+        @intCast(i32, cp2),
+        state,
+    );
+}
