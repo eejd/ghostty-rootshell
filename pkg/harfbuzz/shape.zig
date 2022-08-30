@@ -10,10 +10,20 @@ const Feature = @import("common.zig").Feature;
 /// but overlapping ranges the value of the feature with the higher index
 /// takes precedence.
 pub fn shape(font: Font, buf: Buffer, features: ?[]const Feature) void {
+    const hb_feats: [*c]const c.hb_feature_t = feats: {
+        if (features) |fs| {
+            if (fs.len > 0) {
+                break :feats @ptrCast([*]const c.hb_feature_t, fs.ptr);
+            }
+        }
+
+        break :feats null;
+    };
+
     c.hb_shape(
         font.handle,
         buf.handle,
-        if (features) |f| @ptrCast([*]const c.hb_feature_t, f.ptr) else null,
+        hb_feats,
         if (features) |f| @intCast(c_uint, f.len) else 0,
     );
 }

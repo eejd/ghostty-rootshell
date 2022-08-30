@@ -228,13 +228,13 @@ pub const Feature = extern struct {
     end: c_uint,
 
     pub fn fromString(str: []const u8) ?Feature {
-        var f: Feature = undefined;
+        var f: c.hb_feature_t = undefined;
         return if (c.hb_feature_from_string(
             str.ptr,
             @intCast(c_int, str.len),
             &f,
-        ) > 1)
-            f
+        ) > 0)
+            @bitCast(Feature, f)
         else
             null;
     }
@@ -243,3 +243,8 @@ pub const Feature = extern struct {
         c.hb_feature_to_string(self, buf.ptr, @intCast(c_uint, buf.len));
     }
 };
+
+test "feature from string" {
+    const testing = std.testing;
+    try testing.expect(Feature.fromString("dlig") != null);
+}
