@@ -11,7 +11,6 @@ const uint MODE_CURSOR_RECT = 3u;
 const uint MODE_CURSOR_RECT_HOLLOW = 4u;
 const uint MODE_CURSOR_BAR = 5u;
 const uint MODE_UNDERLINE = 6u;
-const uint MODE_WIDE_MASK = 128u; // 0b1000_0000
 
 // The grid coordinates (x, y) where x < columns and y < rows
 layout (location = 0) in vec2 grid_coord;
@@ -81,12 +80,9 @@ uniform float glyph_baseline;
  */
 
 void main() {
-    // Remove any masks from our mode
-    uint mode_unmasked = mode_in & ~MODE_WIDE_MASK;
-
     // We always forward our mode unmasked because the fragment
     // shader doesn't use any of the masks.
-    mode = mode_unmasked;
+    mode = mode_in;
 
     // Top-left cell coordinates converted to world space
     // Example: (1,0) with a 30 wide cell is converted to (30,0)
@@ -113,9 +109,7 @@ void main() {
 
     // Scaled for wide chars
     vec2 cell_size_scaled = cell_size;
-    if ((mode_in & MODE_WIDE_MASK) == MODE_WIDE_MASK) {
-        cell_size_scaled.x = cell_size_scaled.x * 2;
-    }
+    cell_size_scaled.x = cell_size_scaled.x * grid_width;
 
     switch (mode) {
     case MODE_BG:
@@ -136,7 +130,8 @@ void main() {
         // The "+ 3" here is to give some wiggle room for fonts that are
         // BARELY over it.
         vec2 glyph_size_downsampled = glyph_size;
-        if (glyph_size.y > cell_size.y + 2) {
+        if (glyph_size.y > cell_size.y + 2 ||
+            glyph_size.x > cell_size_scaled.x + 2) {
             glyph_size_downsampled.x = cell_size_scaled.x;
             glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
             glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.x / glyph_size.x);

@@ -78,7 +78,9 @@ pub const CursorStyle = enum(u8) {
 };
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
-const GPUCell = struct {
+/// This must be "extern" so that the field order is not reordered by the
+/// Zig compiler.
+const GPUCell = extern struct {
     /// vec2 grid_coord
     grid_col: u16,
     grid_row: u16,
@@ -111,7 +113,7 @@ const GPUCell = struct {
     mode: GPUCellMode,
 
     /// The width in grid cells that a rendering takes.
-    grid_width: u16 = 1,
+    grid_width: u8,
 };
 
 const GPUCellMode = enum(u8) {
@@ -122,8 +124,6 @@ const GPUCellMode = enum(u8) {
     cursor_rect_hollow = 4,
     cursor_bar = 5,
     underline = 6,
-
-    wide_mask = 0b1000_0000,
 
     // Non-exhaustive because masks change it
     _,
@@ -228,7 +228,7 @@ pub fn init(
     offset += 4 * @sizeOf(u8);
     try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
     offset += 1 * @sizeOf(u8);
-    try vbobind.attributeAdvanced(7, 1, gl.c.GL_UNSIGNED_SHORT, false, @sizeOf(GPUCell), offset);
+    try vbobind.attributeIAdvanced(7, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
     try vbobind.enableAttribArray(0);
     try vbobind.enableAttribArray(1);
     try vbobind.enableAttribArray(2);
@@ -413,7 +413,6 @@ fn addCursor(self: *Grid, term: *Terminal) void {
             GPUCellMode,
             @enumToInt(self.cursor_style),
         );
-        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -511,7 +510,6 @@ pub fn updateCell(
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
         var mode: GPUCellMode = .bg;
-        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
@@ -549,9 +547,6 @@ pub fn updateCell(
         var mode: GPUCellMode = .fg;
         if (face.hasColor()) mode = .fg_color;
 
-        // If the cell is wide, we need to note that in the mode
-        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
-
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
             .grid_col = @intCast(u16, x),
@@ -575,11 +570,8 @@ pub fn updateCell(
     }
 
     if (cell.attrs.underline) {
-        var mode: GPUCellMode = .underline;
-        if (cell.attrs.wide) mode = mode.mask(.wide_mask);
-
         self.cells.appendAssumeCapacity(.{
-            .mode = mode,
+            .mode = .underline,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .grid_width = shaper_cell.width,

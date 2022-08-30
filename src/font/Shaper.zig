@@ -54,8 +54,14 @@ pub fn runIterator(self: *Shaper, row: terminal.Screen.Row) RunIterator {
 ///
 /// If there is not enough space in the cell buffer, an error is returned.
 pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
+    // TODO: we do not want to hardcode these
+    const hb_feats = &[_]harfbuzz.Feature{
+        harfbuzz.Feature.fromString("dlig").?,
+        harfbuzz.Feature.fromString("liga").?,
+    };
+
     const face = self.group.group.faceFromIndex(run.font_index);
-    harfbuzz.shape(face.hb_font, self.hb_buf, null);
+    harfbuzz.shape(face.hb_font, self.hb_buf, hb_feats);
 
     // If our buffer is empty, we short-circuit the rest of the work
     // return nothing.
@@ -69,7 +75,7 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
 
     // Convert all our info/pos to cells and set it.
     if (info.len > self.cell_buf.len) return error.OutOfMemory;
-    //     log.debug("info={} pos={}", .{ info.len, pos.len });
+    //log.warn("info={} pos={} run={}", .{ info.len, pos.len, run });
 
     // x is the column that we currently occupy. We start at the offset.
     var x: u16 = run.offset;
@@ -80,7 +86,7 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
         // to detect since we set the cluster number to the column it
         // originated.
         const cp_width = if (i == info.len - 1)
-            run.max_cluster - v.cluster
+            (run.max_cluster - v.cluster) + 1 // + 1 because we're zero indexed
         else width: {
             const next_cluster = info[i + 1].cluster;
             break :width next_cluster - v.cluster;
@@ -89,14 +95,14 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
         self.cell_buf[i] = .{
             .x = x,
             .glyph_index = v.codepoint,
-            .width = if (cp_width > 2) 2 else @intCast(u8, cp_width),
+            .width = @intCast(u8, cp_width),
         };
 
         // Increase x by the amount of codepoints we replaced so that
         // we retain the grid.
         x += @intCast(u16, cp_width);
 
-        // log.debug("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
+        //log.warn("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
     }
 
     return self.cell_buf[0..info.len];
@@ -153,8 +159,15 @@ pub const RunIterator = struct {
         while (j < self.row.lenCells()) : (j += 1) {
             const cell = self.row.getCell(j);
 
-            // Ignore tailing wide spacers, this will get fixed up by the shaper
-            if (cell.empty() or cell.attrs.wide_spacer_tail) continue;
+            // Ignore empty cells
+            if (cell.empty()) continue;
+
+            // If we're a spacer, then we ignore it but increase the max cluster
+            // size so that the width calculation is correct.
+            if (cell.attrs.wide_spacer_tail) {
+                max_cluster = j;
+                continue;
+            }
 
             const style: Style = if (cell.attrs.bold)
                 .bold
@@ -232,6 +245,19 @@ test "run iterator" {
         try testing.expectEqual(@as(usize, 1), count);
     }
 
+    // Spaces should be part of a run
+    {
+        var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+        defer screen.deinit(alloc);
+        screen.testWriteString("ABCD   EFG");
+
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+        var count: usize = 0;
+        while (try it.next(alloc)) |_| count += 1;
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+
     {
         // Make a screen with some data
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
@@ -280,6 +306,76 @@ test "shape" {
         _ = try shaper.shape(run);
     }
     try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "shape inconsolata ligs" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    {
+        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        defer screen.deinit(alloc);
+        screen.testWriteString(">=");
+
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+
+            const cells = try shaper.shape(run);
+            try testing.expectEqual(@as(usize, 1), cells.len);
+            try testing.expectEqual(@as(u8, 2), cells[0].width);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+
+    {
+        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        defer screen.deinit(alloc);
+        screen.testWriteString("===");
+
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+
+            const cells = try shaper.shape(run);
+            try testing.expectEqual(@as(usize, 1), cells.len);
+            try testing.expectEqual(@as(u8, 3), cells[0].width);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+}
+
+test "shape emoji width" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    {
+        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        defer screen.deinit(alloc);
+        screen.testWriteString("👍");
+
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+
+            const cells = try shaper.shape(run);
+            try testing.expectEqual(@as(usize, 1), cells.len);
+            try testing.expectEqual(@as(u8, 2), cells[0].width);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
 }
 
 const TestShaper = struct {
