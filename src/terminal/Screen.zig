@@ -92,9 +92,13 @@ pub const Cell = struct {
     test {
         // We use this test to ensure we always get the right size of the attrs
         const cell: Cell = .{ .char = 0 };
+        _ = @bitCast(u8, cell.attrs);
         try std.testing.expectEqual(1, @sizeOf(@TypeOf(cell.attrs)));
+    }
 
-        log.warn("CELL={}", .{@sizeOf(Cell)});
+    test {
+        //log.warn("CELL={}", .{@sizeOf(Cell)});
+        try std.testing.expectEqual(16, @sizeOf(Cell));
     }
 };
 

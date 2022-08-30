@@ -94,10 +94,14 @@ pub const Name = enum(u8) {
 };
 
 /// RGB
-pub const RGB = struct {
+pub const RGB = packed struct {
     r: u8,
     g: u8,
     b: u8,
+
+    test {
+        try std.testing.expectEqual(@as(usize, 3), @sizeOf(RGB));
+    }
 };
 
 test "palette: default" {
