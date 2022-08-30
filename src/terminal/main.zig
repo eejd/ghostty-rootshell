@@ -40,7 +40,7 @@ test {
     _ = Terminal;
     _ = Screen;
 
-    _ = @import("osc.zig");
-    _ = @import("parse_table.zig");
-    _ = @import("Tabstops.zig");
+test {
+    @import("std").testing.refAllDecls(@This());
+    _ = @import("circ_buf.zig");
 }
