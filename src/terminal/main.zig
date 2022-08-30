@@ -27,18 +27,7 @@ pub const EraseLine = csi.EraseLine;
 pub const TabClear = csi.TabClear;
 pub const Attribute = sgr.Attribute;
 
-test {
-    _ = ansi;
-    _ = charsets;
-    _ = color;
-    _ = csi;
-    _ = point;
-    _ = sgr;
-    _ = stream;
-    _ = Parser;
-    _ = Selection;
-    _ = Terminal;
-    _ = Screen;
+pub const Screen2 = @import("Screen2.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
