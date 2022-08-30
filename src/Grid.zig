@@ -109,6 +109,9 @@ const GPUCell = struct {
 
     /// uint mode
     mode: GPUCellMode,
+
+    /// The width in grid cells that a rendering takes.
+    grid_width: u16 = 1,
 };
 
 const GPUCellMode = enum(u8) {
@@ -224,6 +227,8 @@ pub fn init(
     try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
     offset += 4 * @sizeOf(u8);
     try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
+    offset += 1 * @sizeOf(u8);
+    try vbobind.attributeAdvanced(7, 1, gl.c.GL_UNSIGNED_SHORT, false, @sizeOf(GPUCell), offset);
     try vbobind.enableAttribArray(0);
     try vbobind.enableAttribArray(1);
     try vbobind.enableAttribArray(2);
@@ -231,6 +236,7 @@ pub fn init(
     try vbobind.enableAttribArray(4);
     try vbobind.enableAttribArray(5);
     try vbobind.enableAttribArray(6);
+    try vbobind.enableAttribArray(7);
     try vbobind.attributeDivisor(0, 1);
     try vbobind.attributeDivisor(1, 1);
     try vbobind.attributeDivisor(2, 1);
@@ -238,6 +244,7 @@ pub fn init(
     try vbobind.attributeDivisor(4, 1);
     try vbobind.attributeDivisor(5, 1);
     try vbobind.attributeDivisor(6, 1);
+    try vbobind.attributeDivisor(7, 1);
 
     // Build our texture
     const tex = try gl.Texture.create();
@@ -341,17 +348,31 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
     // We've written no data to the GPU, refresh it all
     self.gl_cells_written = 0;
 
+    // Create a text shaper we'll use for the screen
+    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, term.screen.cols * 2);
+    defer self.alloc.free(shape_buf);
+    var shaper = try font.Shaper.init(&self.font_group, shape_buf);
+    defer shaper.deinit();
+
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
     while (rowIter.next()) |row| {
         defer y += 1;
 
-        var cellIter = row.cellIterator();
-        var x: usize = 0;
-        while (cellIter.next()) |cell| {
-            defer x += 1;
-            assert(try self.updateCell(term, cell, x, y));
+        // Split our row into runs and shape each one.
+        var iter = shaper.runIterator(row);
+        while (try iter.next(self.alloc)) |run| {
+            for (try shaper.shape(run)) |shaper_cell| {
+                assert(try self.updateCell(
+                    term,
+                    row[shaper_cell.x],
+                    shaper_cell,
+                    run,
+                    shaper_cell.x,
+                    y,
+                ));
+            }
         }
     }
 
@@ -398,6 +419,7 @@ fn addCursor(self: *Grid, term: *Terminal) void {
             .mode = mode,
             .grid_col = @intCast(u16, term.screen.cursor.x),
             .grid_row = @intCast(u16, term.screen.cursor.y),
+            .grid_width = if (cell.attrs.wide) 2 else 1,
             .fg_r = 0,
             .fg_g = 0,
             .fg_b = 0,
@@ -417,6 +439,8 @@ pub fn updateCell(
     self: *Grid,
     term: *Terminal,
     cell: terminal.Screen.Cell,
+    shaper_cell: font.Shaper.Cell,
+    shaper_run: font.Shaper.TextRun,
     x: usize,
     y: usize,
 ) !bool {
@@ -471,9 +495,6 @@ pub fn updateCell(
         break :colors res;
     };
 
-    // If we are a trailing spacer, we never render anything.
-    if (cell.attrs.wide_spacer_tail) return true;
-
     // Calculate the amount of space we need in the cells list.
     const needed = needed: {
         var i: usize = 0;
@@ -496,6 +517,7 @@ pub fn updateCell(
             .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
+            .grid_width = shaper_cell.width,
             .glyph_x = 0,
             .glyph_y = 0,
             .glyph_width = 0,
@@ -515,37 +537,16 @@ pub fn updateCell(
 
     // If the cell is empty then we draw nothing in the box.
     if (!cell.empty()) {
-        // Determine our glyph styling
-        const style: font.Style = if (cell.attrs.bold)
-            .bold
-        else
-            .regular;
-
-        var mode: GPUCellMode = .fg;
-
-        // Get the glyph that we're going to use. We first try what the cell
-        // wants, then the Unicode replacement char, then finally a space.
-        const FontInfo = struct { index: font.Group.FontIndex, ch: u32 };
-        const font_info: FontInfo = font_info: {
-            var chars = [_]u32{ @intCast(u32, cell.char), 0xFFFD, ' ' };
-            for (chars) |char| {
-                if (try self.font_group.indexForCodepoint(self.alloc, style, char)) |idx| {
-                    break :font_info FontInfo{
-                        .index = idx,
-                        .ch = char,
-                    };
-                }
-            }
-
-            @panic("all fonts require at least space");
-        };
-
         // Render
-        const face = self.font_group.group.faceFromIndex(font_info.index);
-        const glyph_index = face.glyphIndex(font_info.ch).?;
-        const glyph = try self.font_group.renderGlyph(self.alloc, font_info.index, glyph_index);
+        const face = self.font_group.group.faceFromIndex(shaper_run.font_index);
+        const glyph = try self.font_group.renderGlyph(
+            self.alloc,
+            shaper_run.font_index,
+            shaper_cell.glyph_index,
+        );
 
         // If we're rendering a color font, we use the color atlas
+        var mode: GPUCellMode = .fg;
         if (face.hasColor()) mode = .fg_color;
 
         // If the cell is wide, we need to note that in the mode
@@ -555,6 +556,7 @@ pub fn updateCell(
             .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
+            .grid_width = shaper_cell.width,
             .glyph_x = glyph.atlas_x,
             .glyph_y = glyph.atlas_y,
             .glyph_width = glyph.width,
@@ -580,6 +582,7 @@ pub fn updateCell(
             .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
+            .grid_width = shaper_cell.width,
             .glyph_x = 0,
             .glyph_y = 0,
             .glyph_width = 0,

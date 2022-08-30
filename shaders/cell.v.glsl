@@ -37,6 +37,9 @@ layout (location = 5) in vec4 bg_color_in;
 // the entire terminal grid in a single GPU pass.
 layout (location = 6) in uint mode_in;
 
+// The width in cells of this item.
+layout (location = 7) in uint grid_width;
+
 // The background or foreground color for the fragment, depending on
 // whether this is a background or foreground pass.
 flat out vec4 color;
@@ -133,7 +136,7 @@ void main() {
         // The "+ 3" here is to give some wiggle room for fonts that are
         // BARELY over it.
         vec2 glyph_size_downsampled = glyph_size;
-        if (glyph_size.x > (cell_size.x + 3)) {
+        if (glyph_size.y > cell_size.y + 2) {
             glyph_size_downsampled.x = cell_size_scaled.x;
             glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
             glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.x / glyph_size.x);
