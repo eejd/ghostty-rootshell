@@ -192,7 +192,10 @@ pub const Buffer = struct {
     /// long as buffer contents are not modified.
     pub fn getGlyphInfos(self: Buffer) []GlyphInfo {
         var length: u32 = 0;
-        const ptr = c.hb_buffer_get_glyph_infos(self.handle, &length);
+        const ptr = @ptrCast(
+            [*c]GlyphInfo,
+            c.hb_buffer_get_glyph_infos(self.handle, &length),
+        );
         return ptr[0..length];
     }
 
