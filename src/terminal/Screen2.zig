@@ -27,6 +27,20 @@ const Selection = @import("Selection.zig");
 
 const log = std.log.scoped(.screen);
 
+/// Cursor represents the cursor state.
+pub const Cursor = struct {
+    // x, y where the cursor currently exists (0-indexed). This x/y is
+    // always the offset in the active area.
+    x: usize = 0,
+    y: usize = 0,
+
+    // pen is the current cell styling to apply to new cells.
+    pen: Cell = .{ .char = 0 },
+
+    // The last column flag (LCF) used to do soft wrapping.
+    pending_wrap: bool = false,
+};
+
 /// This is a single item within the storage buffer. We use a union to
 /// have different types of data in a single contiguous buffer.
 ///
@@ -316,6 +330,12 @@ max_scrollback: usize,
 /// The row (offset from the top) where the viewport currently is.
 viewport: usize,
 
+/// Each screen maintains its own cursor state.
+cursor: Cursor = .{},
+
+/// Saved cursor saved with DECSC (ESC 7).
+saved_cursor: Cursor = .{},
+
 /// Initialize a new screen.
 pub fn init(
     alloc: Allocator,
@@ -464,17 +484,6 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
         );
         return;
     }
-
-    // {
-    //     const rows_capacity = self.rowsCapacity();
-    //     const rows_written = self.rowsWritten();
-    //     log.warn("rows_written={} rows_capacity={} vp={} vp_new={}", .{
-    //         rows_written,
-    //         rows_capacity,
-    //         self.viewport,
-    //         self.viewport + @intCast(usize, delta),
-    //     });
-    // }
 
     // Add our delta to our viewport. If we're less than the max currently
     // allowed to scroll to the bottom (the end of the history), then we
