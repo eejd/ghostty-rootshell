@@ -23,6 +23,7 @@ const Allocator = std.mem.Allocator;
 const utf8proc = @import("utf8proc");
 const color = @import("color.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
+const Selection = @import("Selection.zig");
 
 const log = std.log.scoped(.screen);
 
@@ -54,7 +55,7 @@ const StorageCell = extern union {
 
 /// The row header is at the start of every row within the storage buffer.
 /// It can store row-specific data.
-const RowHeader = struct {
+pub const RowHeader = struct {
     dirty: bool,
 
     /// If true, this row is soft-wrapped. The first cell of the next
@@ -131,6 +132,11 @@ pub const Row = struct {
         self.storage[0].header.wrap = v;
     }
 
+    /// Retrieve the header for this row.
+    pub fn header(self: Row) RowHeader {
+        return self.storage[0].header;
+    }
+
     /// Clear the row, making all cells empty.
     pub fn clear(self: Row) void {
         self.fill(.{});
@@ -141,6 +147,12 @@ pub const Row = struct {
         std.mem.set(StorageCell, self.storage[1..], .{ .cell = cell });
     }
 
+    /// Get a single immutable cell.
+    pub fn getCell(self: Row, x: usize) Cell {
+        assert(x < self.storage.len - 1);
+        return self.storage[x + 1].cell;
+    }
+
     /// Get a pointr to the cell at column x (0-indexed). This always
     /// assumes that the cell was modified, notifying the renderer on the
     /// next call to re-render this cell. Any change detection to avoid
@@ -148,6 +160,11 @@ pub const Row = struct {
     pub fn getCellPtr(self: Row, x: usize) *Cell {
         assert(x < self.storage.len - 1);
         return &self.storage[x + 1].cell;
+    }
+
+    /// Copy the row src into this row.
+    pub fn copyRow(self: Row, src: Row) void {
+        std.mem.copy(StorageCell, self.storage[1..], src.storage[1..]);
     }
 
     /// Read-only iterator for the cells in the row.
@@ -352,6 +369,15 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
     return .{ .storage = slices[0] };
 }
 
+/// Copy the row at src to dst.
+pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) void {
+    // One day we can make this more efficient but for now
+    // we do the easy thing.
+    const dst_row = self.getRow(dst);
+    const src_row = self.getRow(src);
+    dst_row.copyRow(src_row);
+}
+
 /// Returns the offset into the storage buffer that the given row can
 /// be found. This assumes valid input and will crash if the input is
 /// invalid.
@@ -481,6 +507,166 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
 
     // If we grew down like this, we must be at the bottom.
     assert(self.viewportIsBottom());
+}
+
+/// Returns the raw text associated with a selection. This will unwrap
+/// soft-wrapped edges. The returned slice is owned by the caller and allocated
+/// using alloc, not the allocator associated with the screen (unless they match).
+pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]const u8 {
+    // Get the slices for the string
+    const slices = self.selectionSlices(sel);
+
+    // We can now know how much space we'll need to store the string. We loop
+    // over and UTF8-encode and calculate the exact size required. We will be
+    // off here by at most "newlines" values in the worst case that every
+    // single line is soft-wrapped.
+    const chars = chars: {
+        var count: usize = 0;
+        const arr = [_][]StorageCell{ slices.top, slices.bot };
+        for (arr) |slice| {
+            for (slice) |cell, i| {
+                // detect row headers
+                if (@mod(i, self.cols + 1) == 0) {
+                    // We use each row header as an opportunity to "count"
+                    // a new row, and therefore count a possible newline.
+                    count += 1;
+                    continue;
+                }
+
+                var buf: [4]u8 = undefined;
+                const char = if (cell.cell.char > 0) cell.cell.char else ' ';
+                count += try std.unicode.utf8Encode(@intCast(u21, char), &buf);
+            }
+        }
+
+        break :chars count;
+    };
+    const buf = try alloc.alloc(u8, chars + 1);
+    errdefer alloc.free(buf);
+
+    // Connect the text from the two slices
+    const arr = [_][]StorageCell{ slices.top, slices.bot };
+    var buf_i: usize = 0;
+    var row_count: usize = 0;
+    for (arr) |slice| {
+        var row_start: usize = row_count;
+        while (row_count < slices.rows) : (row_count += 1) {
+            const row_i = row_count - row_start;
+
+            // Calculate our start index. If we are beyond the length
+            // of this slice, then its time to move on (we exhausted top).
+            const start_idx = row_i * (self.cols + 1);
+            if (start_idx >= slice.len) break;
+
+            // Our end index is usually a full row, but if we're the final
+            // row then we just use the length.
+            const end_idx = @minimum(slice.len, start_idx + self.cols + 1);
+
+            // We may have to skip some cells from the beginning if we're
+            // the first row.
+            var skip: usize = if (row_count == 0) slices.top_offset else 0;
+
+            const row: Row = .{ .storage = slice[start_idx..end_idx] };
+            var it = row.cellIterator();
+            while (it.next()) |cell| {
+                if (skip > 0) {
+                    skip -= 1;
+                    continue;
+                }
+
+                // Skip spacers
+                if (cell.attrs.wide_spacer_head or
+                    cell.attrs.wide_spacer_tail) continue;
+
+                const char = if (cell.char > 0) cell.char else ' ';
+                buf_i += try std.unicode.utf8Encode(@intCast(u21, char), buf[buf_i..]);
+            }
+
+            // If this row is not soft-wrapped, add a newline
+            if (!row.header().wrap) {
+                buf[buf_i] = '\n';
+                buf_i += 1;
+            }
+        }
+    }
+
+    // Remove our trailing newline, its never correct.
+    if (buf[buf_i - 1] == '\n') buf_i -= 1;
+
+    // Add null termination
+    buf[buf_i] = 0;
+
+    // Realloc so our free length is exactly correct
+    const result = try alloc.realloc(buf, buf_i + 1);
+    return result[0..buf_i :0];
+}
+
+/// Returns the slices that make up the selection, in order. There are at most
+/// two parts to handle the ring buffer. If the selection fits in one contiguous
+/// slice, then the second slice will have a length of zero.
+fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
+    rows: usize,
+
+    // Top offset can be used to determine if a newline is required by
+    // seeing if the cell index plus the offset cleanly divides by screen cols.
+    top_offset: usize,
+    top: []StorageCell,
+    bot: []StorageCell,
+} {
+    // Note: this function is tested via selectionString
+
+    assert(sel_raw.start.y < self.rowsWritten());
+    assert(sel_raw.end.y < self.rowsWritten());
+    assert(sel_raw.start.x < self.cols);
+    assert(sel_raw.end.x < self.cols);
+
+    const sel = sel: {
+        var sel = sel_raw;
+
+        // If the end of our selection is a wide char leader, include the
+        // first part of the next line.
+        if (sel.end.x == self.cols - 1) {
+            const row = self.getRow(.{ .screen = sel.end.y });
+            const cell = row.getCell(sel.end.x);
+            if (cell.attrs.wide_spacer_head) {
+                sel.end.y += 1;
+                sel.end.x = 0;
+            }
+        }
+
+        // If the start of our selection is a wide char spacer, include the
+        // wide char.
+        if (sel.start.x > 0) {
+            const row = self.getRow(.{ .screen = sel.start.y });
+            const cell = row.getCell(sel.start.x);
+            if (cell.attrs.wide_spacer_tail) {
+                sel.end.x -= 1;
+            }
+        }
+
+        break :sel sel;
+    };
+
+    // Get the true "top" and "bottom"
+    const sel_top = sel.topLeft();
+    const sel_bot = sel.bottomRight();
+
+    // We get the slices for the full top and bottom (inclusive).
+    const sel_top_offset = self.rowOffset(.{ .screen = sel_top.y });
+    const sel_bot_offset = self.rowOffset(.{ .screen = sel_bot.y });
+    const slices = self.storage.getPtrSlice(
+        sel_top_offset,
+        (sel_bot_offset - sel_top_offset) + (sel_bot.x + 2),
+    );
+
+    // The bottom and top are split into two slices, so we slice to the
+    // bottom of the storage, then from the top.
+    return .{
+        .rows = sel_bot.y - sel_top.y + 1,
+        .top_offset = sel_top.x,
+        .top = slices[0],
+        .bot = slices[1],
+    };
 }
 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
@@ -864,6 +1050,149 @@ test "Screen: history region with scrollback" {
         var contents = try s.testString(alloc, .history);
         defer alloc.free(contents);
         const expected = "1ABCD\n2EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+test "Screen: row copy" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    // Copy
+    s.scroll(.{ .delta = 1 });
+    s.copyRow(.{ .active = 2 }, .{ .active = 0 });
+
+    // Test our contents
+    var contents = try s.testString(alloc, .viewport);
+    defer alloc.free(contents);
+    try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
+}
+
+test "Screen: selectionString" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        });
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH3IJKL";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        });
+        defer alloc.free(contents);
+        const expected = "2EFGH3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString wrap around" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Scroll down, should still be bottom, but should wrap because
+    // we're out of space.
+    s.scroll(.{ .delta = 1 });
+    try testing.expect(s.viewportIsBottom());
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        });
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString wide char" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1A⚡";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 3, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = str;
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 2, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = str;
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 3, .y = 0 },
+            .end = .{ .x = 3, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = "⚡";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString wide char with header" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABC⚡";
+    s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 4, .y = 0 },
+        });
+        defer alloc.free(contents);
+        const expected = str;
         try testing.expectEqualStrings(expected, contents);
     }
 }
