@@ -75,6 +75,7 @@ pub fn CircBuf(comptime T: type) type {
         /// the offset can only be within the size of the buffer.
         pub fn getPtrSlice(self: *Self, offset: usize, slice_len: usize) [2][]T {
             assert(slice_len > 0);
+            assert(offset + slice_len <= self.capacity());
 
             // End offset is the last offset (exclusive) for our slice.
             // We use exclusive because it makes the math easier and it

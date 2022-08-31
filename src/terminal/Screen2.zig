@@ -73,7 +73,7 @@ pub const Cell = struct {
     /// additional codepoints can be looked up in the hash map on the
     /// Screen. Since multi-codepoints graphemes are rare, we don't want to
     /// waste memory for every cell, so we use a side lookup for it.
-    char: u32,
+    char: u32 = 0,
 
     /// Foreground and background color. attrs.has_{bg/fg} must be checked
     /// to see if these are useful values.
@@ -129,6 +129,16 @@ pub const Row = struct {
     /// of this row so the row won't be marked dirty.
     pub fn setWrapped(self: Row, v: bool) void {
         self.storage[0].header.wrap = v;
+    }
+
+    /// Clear the row, making all cells empty.
+    pub fn clear(self: Row) void {
+        self.fill(.{});
+    }
+
+    /// Fill the entire row with a copy of a single cell.
+    pub fn fill(self: Row, cell: Cell) void {
+        std.mem.set(StorageCell, self.storage[1..], .{ .cell = cell });
     }
 
     /// Get a pointr to the cell at column x (0-indexed). This always
@@ -299,7 +309,8 @@ pub fn init(
     // * Our buffer size is preallocated to fit double our visible space
     //   or the maximum scrollback whichever is smaller.
     // * We add +1 to cols to fit the row header
-    const buf_size = (rows + @minimum(max_scrollback, rows)) * (cols + 1);
+    const buf_size = (rows + max_scrollback) * (cols + 1);
+    //const buf_size = (rows + @minimum(max_scrollback, rows)) * (cols + 1);
 
     return Screen{
         .alloc = alloc,
@@ -313,6 +324,11 @@ pub fn init(
 
 pub fn deinit(self: *Screen) void {
     self.storage.deinit(self.alloc);
+}
+
+/// Returns true if the viewport is scrolled to the bottom of the screen.
+pub fn viewportIsBottom(self: Screen) bool {
+    return self.viewport >= RowIndexTag.history.maxLen(&self);
 }
 
 /// Returns an iterator that can be used to iterate over all of the rows
@@ -341,15 +357,130 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
 /// invalid.
 fn rowOffset(self: Screen, index: RowIndex) usize {
     // +1 for row header
-    return index.toScreen().screen * (self.cols + 1);
+    return index.toScreen(&self).screen * (self.cols + 1);
 }
 
+/// Returns the number of rows that have actually been written to the
+/// screen. This assumes a row is "written" if getRow was ever called
+/// on the row.
 fn rowsWritten(self: Screen) usize {
     // The number of rows we've actually written into our buffer
     // This should always be cleanly divisible since we only request
     // data in row chunks from the buffer.
     assert(@mod(self.storage.len(), self.cols + 1) == 0);
     return self.storage.len() / (self.cols + 1);
+}
+
+/// The number of rows our backing storage supports. This should
+/// always be self.rows but we use the backing storage as a source of truth.
+fn rowsCapacity(self: Screen) usize {
+    assert(@mod(self.storage.capacity(), self.cols + 1) == 0);
+    return self.storage.capacity() / (self.cols + 1);
+}
+
+/// Scroll behaviors for the scroll function.
+pub const Scroll = union(enum) {
+    /// Scroll to the top of the scroll buffer. The first line of the
+    /// viewport will be the top line of the scroll buffer.
+    top: void,
+
+    /// Scroll to the bottom, where the last line of the viewport
+    /// will be the last line of the buffer. TODO: are we sure?
+    bottom: void,
+
+    /// Scroll up (negative) or down (positive) some fixed amount.
+    /// Scrolling direction (up/down) describes the direction the viewport
+    /// moves, not the direction text moves. This is the colloquial way that
+    /// scrolling is described: "scroll the page down".
+    delta: isize,
+
+    /// Same as delta but scrolling down will not grow the scrollback.
+    /// Scrolling down at the bottom will do nothing (similar to how
+    /// delta at the top does nothing).
+    delta_no_grow: isize,
+};
+
+/// Scroll the screen by the given behavior. Note that this will always
+/// "move" the screen. It is up to the caller to determine if they actually
+/// want to do that yet (i.e. are they writing to the end of the screen
+/// or not).
+pub fn scroll(self: *Screen, behavior: Scroll) void {
+    switch (behavior) {
+        // Setting viewport offset to zero makes row 0 be at self.top
+        // which is the top!
+        .top => self.viewport = 0,
+
+        // Bottom is the end of the history area (end of history is the
+        // top of the active area).
+        .bottom => self.viewport = RowIndexTag.history.maxLen(self),
+
+        // TODO: deltas greater than the entire scrollback
+        .delta => |delta| self.scrollDelta(delta, true),
+        .delta_no_grow => |delta| self.scrollDelta(delta, false),
+    }
+}
+
+fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
+    // If we're scrolling up, then we just subtract and we're done.
+    // We just clamp at 0 which blocks us from scrolling off the top.
+    if (delta < 0) {
+        self.viewport -|= @intCast(usize, -delta);
+        return;
+    }
+
+    // If we're scrolling down and not growing, then we just
+    // add to the viewport and clamp at the bottom.
+    const viewport_max = RowIndexTag.history.maxLen(self);
+    if (!grow) {
+        self.viewport = @minimum(
+            viewport_max,
+            self.viewport +| @intCast(usize, delta),
+        );
+        return;
+    }
+
+    // {
+    //     const rows_capacity = self.rowsCapacity();
+    //     const rows_written = self.rowsWritten();
+    //     log.warn("rows_written={} rows_capacity={} vp={} vp_new={}", .{
+    //         rows_written,
+    //         rows_capacity,
+    //         self.viewport,
+    //         self.viewport + @intCast(usize, delta),
+    //     });
+    // }
+
+    // Add our delta to our viewport. If we're less than the max currently
+    // allowed to scroll to the bottom (the end of the history), then we
+    // have space and we just return.
+    self.viewport +|= @intCast(usize, delta);
+    if (self.viewport <= viewport_max) return;
+
+    // Our viewport is bigger than our max. The number of new rows we need
+    // in our buffer is our value minus the max.
+    const new_rows_needed = self.viewport - viewport_max;
+
+    // If we can fit this into our existing capacity, then just grow to it.
+    const rows_capacity = self.rowsCapacity();
+    const rows_written = self.rowsWritten();
+    if (rows_written + new_rows_needed <= rows_capacity) {
+        // Ensure we have "written" this data into the circular buffer.
+        _ = self.storage.getPtrSlice(
+            self.viewport * (self.cols + 1),
+            self.cols + 1,
+        );
+        return;
+    }
+
+    // We can't fit our new rows into the capacity, so the amount
+    // between what we need and the capacity needs to be deleted. We
+    // scroll "up" by that much to offset this.
+    const rows_to_delete = (rows_written + new_rows_needed) - rows_capacity;
+    self.viewport -= rows_to_delete;
+    self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
+
+    // If we grew down like this, we must be at the bottom.
+    assert(self.viewportIsBottom());
 }
 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
@@ -372,8 +503,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
         // If we're writing past the end of the active area, scroll.
         if (y >= self.rows) {
             y -= 1;
-            @panic("TODO");
-            //self.scroll(.{ .delta = 1 });
+            self.scroll(.{ .delta = 1 });
         }
 
         // Get our row
@@ -386,8 +516,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
             x = 0;
             if (y >= self.rows) {
                 y -= 1;
-                @panic("TODO");
-                //self.scroll(.{ .delta = 1 });
+                self.scroll(.{ .delta = 1 });
             }
             row = self.getRow(.{ .active = y });
         }
@@ -413,8 +542,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
                     x = 0;
                     if (y >= self.rows) {
                         y -= 1;
-                        @panic("TODO");
-                        //self.scroll(.{ .delta = 1 });
+                        self.scroll(.{ .delta = 1 });
                     }
                     row = self.getRow(.{ .active = y });
                 }
@@ -473,18 +601,269 @@ pub fn testString(self: *Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8
     return try alloc.realloc(buf, str.len);
 }
 
-test {
+test "Screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    try testing.expect(s.rowsWritten() == 0);
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    try testing.expect(s.rowsWritten() == 3);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Test the row iterator
+    var count: usize = 0;
+    var iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| {
+        // Rows should be pointer equivalent to getRow
+        const row_other = s.getRow(.{ .viewport = count });
+        try testing.expectEqual(row.storage.ptr, row_other.storage.ptr);
+        count += 1;
+    }
+
+    // Should go through all rows
+    try testing.expectEqual(@as(usize, 3), count);
+
+    // Should be able to easily clear screen
+    {
+        var it = s.rowIterator(.viewport);
+        while (it.next()) |row| row.fill(.{ .char = 'A' });
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("AAAAA\nAAAAA\nAAAAA", contents);
+    }
+}
+
+test "Screen: scrolling" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
 
+    // Scroll down, should still be bottom
+    s.scroll(.{ .delta = 1 });
+    try testing.expect(s.viewportIsBottom());
+
+    // Test our row index
+    try testing.expectEqual(@as(usize, 0), s.rowOffset(.{ .active = 0 }));
+    try testing.expectEqual(@as(usize, 6), s.rowOffset(.{ .active = 1 }));
+    try testing.expectEqual(@as(usize, 12), s.rowOffset(.{ .active = 2 }));
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling to the bottom does nothing
+    s.scroll(.{ .bottom = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scroll down from 0" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    // Scrolling up does nothing, but allows it
+    s.scroll(.{ .delta = -1 });
+    try testing.expect(s.viewportIsBottom());
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 1);
+    defer s.deinit();
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    s.scroll(.{ .delta = 1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling to the bottom
+    s.scroll(.{ .bottom = {} });
+    try testing.expect(s.viewportIsBottom());
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling back should make it visible again
+    s.scroll(.{ .delta = -1 });
+    try testing.expect(!s.viewportIsBottom());
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling back again should do nothing
+    s.scroll(.{ .delta = -1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling to the bottom
+    s.scroll(.{ .bottom = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling forward with no grow should do nothing
+    s.scroll(.{ .delta_no_grow = 1 });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling to the top should work
+    s.scroll(.{ .top = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Should be able to easily clear active area only
+    var it = s.rowIterator(.active);
+    while (it.next()) |row| row.clear();
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD", contents);
+    }
+
+    // Scrolling to the bottom
+    s.scroll(.{ .bottom = {} });
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+}
+
+test "Screen: scrollback empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 50);
+    defer s.deinit();
+    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    s.scroll(.{ .delta_no_grow = 1 });
+
+    {
+        // Test our contents
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: history region with no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 5, 0);
+    defer s.deinit();
+
+    // Write a bunch that WOULD invoke scrollback if exists
     const str = "1ABCD\n2EFGH\n3IJKL";
     s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Verify no scrollback
+    var it = s.rowIterator(.history);
+    var count: usize = 0;
+    while (it.next()) |_| count += 1;
+    try testing.expect(count == 0);
+}
+
+test "Screen: history region with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 5, 2);
+    defer s.deinit();
+
+    // Write a bunch that WOULD invoke scrollback if exists
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        // Test our contents
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    {
+        var contents = try s.testString(alloc, .history);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH";
+        try testing.expectEqualStrings(expected, contents);
     }
 }
