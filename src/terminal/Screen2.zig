@@ -17,6 +17,7 @@
 const Screen = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
@@ -43,10 +44,7 @@ pub const Cursor = struct {
 
 /// This is a single item within the storage buffer. We use a union to
 /// have different types of data in a single contiguous buffer.
-///
-/// Note: the union is extern so that it follows the same memory layout
-/// semantics as C, which allows us to have a tightly packed union.
-const StorageCell = extern union {
+const StorageCell = union {
     header: RowHeader,
     cell: Cell,
 
@@ -59,22 +57,36 @@ const StorageCell = extern union {
         //     @sizeOf(StorageCell),
         //     @alignOf(StorageCell),
         // });
+    }
 
-        // We want to be at most the size of a cell always. We have WAY
-        // more cells than other fields, so we don't want to pay the cost
-        // of padding due to other fields.
-        try std.testing.expectEqual(@sizeOf(Cell), @sizeOf(StorageCell));
+    comptime {
+        // We only check this during ReleaseFast because safety checks
+        // have to be disabled to get this size.
+        if (builtin.mode == .ReleaseFast) {
+            // We want to be at most the size of a cell always. We have WAY
+            // more cells than other fields, so we don't want to pay the cost
+            // of padding due to other fields.
+            assert(@sizeOf(Cell) == @sizeOf(StorageCell));
+        } else {
+            // Extra u32 for the tag for safety checks. This is subject to
+            // change depending on the Zig compiler...
+            assert((@sizeOf(Cell) + @sizeOf(u32)) == @sizeOf(StorageCell));
+        }
     }
 };
 
 /// The row header is at the start of every row within the storage buffer.
 /// It can store row-specific data.
 pub const RowHeader = struct {
-    dirty: bool,
+    /// Used internally to track if this row has been initialized.
+    init: bool = false,
+
+    /// True if one of the cells in this row has been changed
+    dirty: bool = false,
 
     /// If true, this row is soft-wrapped. The first cell of the next
     /// row is a continuous of this row.
-    wrap: bool,
+    wrap: bool = false,
 };
 
 /// Cell is a single cell within the screen.
@@ -163,6 +175,7 @@ pub const Row = struct {
 
     /// Get a single immutable cell.
     pub fn getCell(self: Row, x: usize) Cell {
+        assert(self.header().init);
         assert(x < self.storage.len - 1);
         return self.storage[x + 1].cell;
     }
@@ -172,18 +185,30 @@ pub const Row = struct {
     /// next call to re-render this cell. Any change detection to avoid
     /// this should be done prior.
     pub fn getCellPtr(self: Row, x: usize) *Cell {
+        assert(self.header().init);
         assert(x < self.storage.len - 1);
         return &self.storage[x + 1].cell;
     }
 
     /// Copy the row src into this row.
     pub fn copyRow(self: Row, src: Row) void {
+        assert(self.header().init);
         std.mem.copy(StorageCell, self.storage[1..], src.storage[1..]);
     }
 
     /// Read-only iterator for the cells in the row.
     pub fn cellIterator(self: Row) CellIterator {
+        assert(self.header().init);
         return .{ .row = self };
+    }
+
+    /// If this row isn't initialized, this sets all our cells to the
+    /// proper union tag so that it is properly zeroed.
+    fn initIfNeeded(self: Row) void {
+        if (!self.storage[0].header.init) {
+            self.fill(.{});
+            self.storage[0].header.init = true;
+        }
     }
 };
 
@@ -311,7 +336,9 @@ pub const RowIndexTag = enum {
     }
 };
 
-const StorageBuf = CircBuf(StorageCell, .{ .cell = .{} });
+// Initialize to header and not a cell so that we can check header.init
+// to know if the remainder of the row has been initialized or not.
+const StorageBuf = CircBuf(StorageCell, .{ .header = .{} });
 
 /// The allocator used for all the storage operations
 alloc: Allocator,
@@ -386,7 +413,9 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
     const slices = self.storage.getPtrSlice(offset, self.cols + 1);
     assert(slices[0].len == self.cols + 1 and slices[1].len == 0);
 
-    return .{ .storage = slices[0] };
+    const row: Row = .{ .storage = slices[0] };
+    row.initIfNeeded();
+    return row;
 }
 
 /// Copy the row at src to dst.
