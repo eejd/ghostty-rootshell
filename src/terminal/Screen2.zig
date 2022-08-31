@@ -311,7 +311,7 @@ pub const RowIndexTag = enum {
     }
 };
 
-const StorageBuf = CircBuf(StorageCell);
+const StorageBuf = CircBuf(StorageCell, .{ .cell = .{} });
 
 /// The allocator used for all the storage operations
 alloc: Allocator,

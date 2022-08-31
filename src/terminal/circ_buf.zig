@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 /// Returns a circular buffer containing type T.
-pub fn CircBuf(comptime T: type) type {
+pub fn CircBuf(comptime T: type, comptime default: T) type {
     return struct {
         const Self = @This();
 
@@ -26,7 +26,7 @@ pub fn CircBuf(comptime T: type) type {
         /// Initialize a new circular buffer that can store size elements.
         pub fn init(alloc: Allocator, size: usize) !Self {
             var buf = try alloc.alloc(T, size);
-            std.mem.set(T, buf, std.mem.zeroes(T));
+            std.mem.set(T, buf, default);
 
             return Self{
                 .storage = buf,
@@ -141,7 +141,7 @@ test {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const Buf = CircBuf(u8);
+    const Buf = CircBuf(u8, 0);
     var buf = try Buf.init(alloc, 12);
     defer buf.deinit(alloc);
 
@@ -153,7 +153,7 @@ test "getPtrSlice fits" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const Buf = CircBuf(u8);
+    const Buf = CircBuf(u8, 0);
     var buf = try Buf.init(alloc, 12);
     defer buf.deinit(alloc);
 
@@ -167,7 +167,7 @@ test "getPtrSlice wraps" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const Buf = CircBuf(u8);
+    const Buf = CircBuf(u8, 0);
     var buf = try Buf.init(alloc, 4);
     defer buf.deinit(alloc);
 
