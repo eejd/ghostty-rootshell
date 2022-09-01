@@ -373,8 +373,7 @@ pub fn init(
     // * Our buffer size is preallocated to fit double our visible space
     //   or the maximum scrollback whichever is smaller.
     // * We add +1 to cols to fit the row header
-    const buf_size = (rows + max_scrollback) * (cols + 1);
-    //const buf_size = (rows + @minimum(max_scrollback, rows)) * (cols + 1);
+    const buf_size = (rows + @minimum(max_scrollback, rows)) * (cols + 1);
 
     return Screen{
         .alloc = alloc,
@@ -453,6 +452,12 @@ fn rowsCapacity(self: Screen) usize {
     return self.storage.capacity() / (self.cols + 1);
 }
 
+/// The maximum possible capacity of the underlying buffer if we reached
+/// the max scrollback.
+fn maxCapacity(self: Screen) usize {
+    return (self.rows + self.max_scrollback) * (self.cols + 1);
+}
+
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
@@ -479,7 +484,7 @@ pub const Scroll = union(enum) {
 /// "move" the screen. It is up to the caller to determine if they actually
 /// want to do that yet (i.e. are they writing to the end of the screen
 /// or not).
-pub fn scroll(self: *Screen, behavior: Scroll) void {
+pub fn scroll(self: *Screen, behavior: Scroll) !void {
     switch (behavior) {
         // Setting viewport offset to zero makes row 0 be at self.top
         // which is the top!
@@ -490,12 +495,12 @@ pub fn scroll(self: *Screen, behavior: Scroll) void {
         .bottom => self.viewport = RowIndexTag.history.maxLen(self),
 
         // TODO: deltas greater than the entire scrollback
-        .delta => |delta| self.scrollDelta(delta, true),
-        .delta_no_grow => |delta| self.scrollDelta(delta, false),
+        .delta => |delta| try self.scrollDelta(delta, true),
+        .delta_no_grow => |delta| try self.scrollDelta(delta, false),
     }
 }
 
-fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
+fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // If we're scrolling up, then we just subtract and we're done.
     // We just clamp at 0 which blocks us from scrolling off the top.
     if (delta < 0) {
@@ -524,10 +529,32 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
     // in our buffer is our value minus the max.
     const new_rows_needed = self.viewport - viewport_max;
 
-    // If we can fit this into our existing capacity, then just grow to it.
-    const rows_capacity = self.rowsCapacity();
+    // If we can't fit into our capacity but we have space, resize the
+    // buffer to allocate more scrollback.
     const rows_written = self.rowsWritten();
-    if (rows_written + new_rows_needed <= rows_capacity) {
+    const rows_final = rows_written + new_rows_needed;
+    if (rows_final > self.rowsCapacity()) {
+        const max_capacity = self.maxCapacity();
+        if (self.storage.capacity() < max_capacity) {
+            // The capacity we want to allocate. We take whatever is greater
+            // of what we actually need and two pages. We don't want to
+            // allocate one row at a time (common for scrolling) so we do this
+            // to chunk it.
+            const needed_capacity = @maximum(
+                rows_final * (self.cols + 1),
+                self.rows * 2,
+            );
+
+            // Allocate what we can.
+            try self.storage.resize(
+                self.alloc,
+                @minimum(max_capacity, needed_capacity),
+            );
+        }
+    }
+
+    // If we can fit into our capacity, then just grow to it.
+    if (rows_final <= self.rowsCapacity()) {
         // Ensure we have "written" this data into the circular buffer.
         _ = self.storage.getPtrSlice(
             self.viewport * (self.cols + 1),
@@ -539,7 +566,7 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
     // We can't fit our new rows into the capacity, so the amount
     // between what we need and the capacity needs to be deleted. We
     // scroll "up" by that much to offset this.
-    const rows_to_delete = (rows_written + new_rows_needed) - rows_capacity;
+    const rows_to_delete = rows_final - self.rowsCapacity();
     self.viewport -= rows_to_delete;
     self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
 
@@ -710,7 +737,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
 /// each row. If a line is longer than the available columns, soft-wrapping
 /// will occur. This will automatically handle basic wide chars.
-pub fn testWriteString(self: *Screen, text: []const u8) void {
+pub fn testWriteString(self: *Screen, text: []const u8) !void {
     var y: usize = 0;
     var x: usize = 0;
 
@@ -727,7 +754,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
         // If we're writing past the end of the active area, scroll.
         if (y >= self.rows) {
             y -= 1;
-            self.scroll(.{ .delta = 1 });
+            try self.scroll(.{ .delta = 1 });
         }
 
         // Get our row
@@ -740,7 +767,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
             x = 0;
             if (y >= self.rows) {
                 y -= 1;
-                self.scroll(.{ .delta = 1 });
+                try self.scroll(.{ .delta = 1 });
             }
             row = self.getRow(.{ .active = y });
         }
@@ -766,7 +793,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
                     x = 0;
                     if (y >= self.rows) {
                         y -= 1;
-                        self.scroll(.{ .delta = 1 });
+                        try self.scroll(.{ .delta = 1 });
                     }
                     row = self.getRow(.{ .active = y });
                 }
@@ -835,7 +862,7 @@ test "Screen" {
 
     // Sanity check that our test helpers work
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     try testing.expect(s.rowsWritten() == 3);
     {
         var contents = try s.testString(alloc, .screen);
@@ -872,11 +899,11 @@ test "Screen: scrolling" {
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     try testing.expect(s.viewportIsBottom());
 
     // Scroll down, should still be bottom
-    s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
 
     // Test our row index
@@ -892,7 +919,7 @@ test "Screen: scrolling" {
     }
 
     // Scrolling to the bottom does nothing
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
@@ -908,10 +935,10 @@ test "Screen: scroll down from 0" {
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     // Scrolling up does nothing, but allows it
-    s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .delta = -1 });
     try testing.expect(s.viewportIsBottom());
 
     {
@@ -928,8 +955,8 @@ test "Screen: scrollback" {
 
     var s = try init(alloc, 3, 5, 1);
     defer s.deinit();
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(.{ .delta = 1 });
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.scroll(.{ .delta = 1 });
 
     {
         // Test our contents rotated
@@ -939,7 +966,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the bottom
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
     try testing.expect(s.viewportIsBottom());
 
     {
@@ -950,7 +977,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling back should make it visible again
-    s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .delta = -1 });
     try testing.expect(!s.viewportIsBottom());
 
     {
@@ -961,7 +988,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling back again should do nothing
-    s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .delta = -1 });
 
     {
         // Test our contents rotated
@@ -971,7 +998,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the bottom
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
@@ -981,7 +1008,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling forward with no grow should do nothing
-    s.scroll(.{ .delta_no_grow = 1 });
+    try s.scroll(.{ .delta_no_grow = 1 });
 
     {
         // Test our contents rotated
@@ -991,7 +1018,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the top should work
-    s.scroll(.{ .top = {} });
+    try s.scroll(.{ .top = {} });
 
     {
         // Test our contents rotated
@@ -1010,7 +1037,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the bottom
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
@@ -1026,8 +1053,8 @@ test "Screen: scrollback empty" {
 
     var s = try init(alloc, 3, 5, 50);
     defer s.deinit();
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(.{ .delta_no_grow = 1 });
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.scroll(.{ .delta_no_grow = 1 });
 
     {
         // Test our contents
@@ -1046,7 +1073,7 @@ test "Screen: history region with no scrollback" {
 
     // Write a bunch that WOULD invoke scrollback if exists
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
@@ -1070,7 +1097,7 @@ test "Screen: history region with scrollback" {
 
     // Write a bunch that WOULD invoke scrollback if exists
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1097,10 +1124,10 @@ test "Screen: row copy" {
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     // Copy
-    s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .delta = 1 });
     s.copyRow(.{ .active = 2 }, .{ .active = 0 });
 
     // Test our contents
@@ -1116,7 +1143,7 @@ test "Screen: selectionString" {
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1136,7 +1163,7 @@ test "Screen: selectionString soft wrap" {
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
     const str = "1ABCD2EFGH3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1155,14 +1182,14 @@ test "Screen: selectionString wrap around" {
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     try testing.expect(s.viewportIsBottom());
 
     // Scroll down, should still be bottom, but should wrap because
     // we're out of space.
-    s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1182,7 +1209,7 @@ test "Screen: selectionString wide char" {
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
     const str = "1A⚡";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1222,7 +1249,7 @@ test "Screen: selectionString wide char with header" {
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
     const str = "1ABC⚡";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
