@@ -27,9 +27,6 @@ pub const EraseLine = csi.EraseLine;
 pub const TabClear = csi.TabClear;
 pub const Attribute = sgr.Attribute;
 
-pub const Screen2 = @import("Screen2.zig");
-
 test {
     @import("std").testing.refAllDecls(@This());
-    _ = @import("circ_buf.zig");
 }

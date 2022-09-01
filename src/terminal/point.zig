@@ -16,7 +16,7 @@ pub const Viewport = struct {
         // get the full offset from the top.
         return .{
             .x = self.x,
-            .y = screen.visible_offset + self.y,
+            .y = screen.viewport + self.y,
         };
     }
 
@@ -25,7 +25,7 @@ pub const Viewport = struct {
         const alloc = testing.allocator;
 
         var s = try Screen.init(alloc, 3, 5, 0);
-        defer s.deinit(alloc);
+        defer s.deinit();
 
         try testing.expectEqual(ScreenPoint{
             .x = 1,
@@ -38,24 +38,24 @@ pub const Viewport = struct {
         const alloc = testing.allocator;
 
         var s = try Screen.init(alloc, 3, 5, 3);
-        defer s.deinit(alloc);
+        defer s.deinit();
 
         // At the bottom
-        s.scroll(.{ .delta = 6 });
+        try s.scroll(.{ .delta = 6 });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
-            .y = 3,
+            .y = 6,
         }, (Viewport{ .x = 0, .y = 0 }).toScreen(&s));
 
         // Move the viewport a bit up
-        s.scroll(.{ .delta = -1 });
+        try s.scroll(.{ .delta = -1 });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
-            .y = 2,
+            .y = 5,
         }, (Viewport{ .x = 0, .y = 0 }).toScreen(&s));
 
         // Move the viewport to top
-        s.scroll(.{ .top = {} });
+        try s.scroll(.{ .top = {} });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
             .y = 0,

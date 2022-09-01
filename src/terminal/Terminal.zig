@@ -149,8 +149,8 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
 
 pub fn deinit(self: *Terminal, alloc: Allocator) void {
     self.tabstops.deinit(alloc);
-    self.screen.deinit(alloc);
-    self.secondary_screen.deinit(alloc);
+    self.screen.deinit();
+    self.secondary_screen.deinit();
     self.* = undefined;
 }
 
@@ -286,11 +286,11 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
 
     // If we're making the screen smaller, dealloc the unused items.
     if (self.active_screen == .primary) {
-        try self.screen.resize(alloc, rows, cols);
-        try self.secondary_screen.resizeWithoutReflow(alloc, rows, cols);
+        try self.screen.resize(rows, cols);
+        try self.secondary_screen.resizeWithoutReflow(rows, cols);
     } else {
-        try self.screen.resizeWithoutReflow(alloc, rows, cols);
-        try self.secondary_screen.resize(alloc, rows, cols);
+        try self.screen.resizeWithoutReflow(rows, cols);
+        try self.secondary_screen.resize(rows, cols);
     }
 
     // Set our size
@@ -308,7 +308,7 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
 /// encoded as "\n". This omits any formatting such as fg/bg.
 ///
 /// The caller must free the string.
-pub fn plainString(self: Terminal, alloc: Allocator) ![]const u8 {
+pub fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
     return try self.screen.testString(alloc, .viewport);
 }
 
@@ -336,8 +336,8 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
     switch (attr) {
         .unset => {
-            self.screen.cursor.pen.fg = null;
-            self.screen.cursor.pen.bg = null;
+            self.screen.cursor.pen.attrs.has_fg = false;
+            self.screen.cursor.pen.attrs.has_bg = false;
             self.screen.cursor.pen.attrs = .{};
         },
 
@@ -362,6 +362,7 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
         },
 
         .direct_color_fg => |rgb| {
+            self.screen.cursor.pen.attrs.has_fg = true;
             self.screen.cursor.pen.fg = .{
                 .r = rgb.r,
                 .g = rgb.g,
@@ -370,6 +371,7 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
         },
 
         .direct_color_bg => |rgb| {
+            self.screen.cursor.pen.attrs.has_bg = true;
             self.screen.cursor.pen.bg = .{
                 .r = rgb.r,
                 .g = rgb.g,
@@ -377,21 +379,39 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             };
         },
 
-        .@"8_fg" => |n| self.screen.cursor.pen.fg = color.default[@enumToInt(n)],
+        .@"8_fg" => |n| {
+            self.screen.cursor.pen.attrs.has_fg = true;
+            self.screen.cursor.pen.fg = color.default[@enumToInt(n)];
+        },
 
-        .@"8_bg" => |n| self.screen.cursor.pen.bg = color.default[@enumToInt(n)],
+        .@"8_bg" => |n| {
+            self.screen.cursor.pen.attrs.has_bg = true;
+            self.screen.cursor.pen.bg = color.default[@enumToInt(n)];
+        },
 
-        .reset_fg => self.screen.cursor.pen.fg = null,
+        .reset_fg => self.screen.cursor.pen.attrs.has_fg = false,
 
-        .reset_bg => self.screen.cursor.pen.bg = null,
+        .reset_bg => self.screen.cursor.pen.attrs.has_bg = false,
 
-        .@"8_bright_fg" => |n| self.screen.cursor.pen.fg = color.default[@enumToInt(n)],
+        .@"8_bright_fg" => |n| {
+            self.screen.cursor.pen.attrs.has_fg = true;
+            self.screen.cursor.pen.fg = color.default[@enumToInt(n)];
+        },
 
-        .@"8_bright_bg" => |n| self.screen.cursor.pen.bg = color.default[@enumToInt(n)],
+        .@"8_bright_bg" => |n| {
+            self.screen.cursor.pen.attrs.has_bg = true;
+            self.screen.cursor.pen.bg = color.default[@enumToInt(n)];
+        },
 
-        .@"256_fg" => |idx| self.screen.cursor.pen.fg = color.default[idx],
+        .@"256_fg" => |idx| {
+            self.screen.cursor.pen.attrs.has_fg = true;
+            self.screen.cursor.pen.fg = color.default[idx];
+        },
 
-        .@"256_bg" => |idx| self.screen.cursor.pen.bg = color.default[idx],
+        .@"256_bg" => |idx| {
+            self.screen.cursor.pen.attrs.has_bg = true;
+            self.screen.cursor.pen.bg = color.default[idx];
+        },
 
         else => return error.InvalidAttribute,
     }
@@ -440,7 +460,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap)
-        _ = self.printWrap();
+        try self.printWrap();
 
     switch (width) {
         // Single cell is very easy: just write in the cell
@@ -457,7 +477,7 @@ pub fn print(self: *Terminal, c: u21) !void {
             if (self.screen.cursor.x == self.cols - 1) {
                 const spacer_head = self.printCell(' ');
                 spacer_head.attrs.wide_spacer_head = true;
-                _ = self.printWrap();
+                try self.printWrap();
             }
 
             const wide_cell = self.printCell(c);
@@ -503,10 +523,8 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         break :c @intCast(u21, table[@intCast(u8, unmapped_c)]);
     };
 
-    const cell = self.screen.getCell(
-        self.screen.cursor.y,
-        self.screen.cursor.x,
-    );
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    const cell = row.getCellPtr(self.screen.cursor.x);
 
     // If this cell is wide char then we need to clear it.
     // We ignore wide spacer HEADS because we can just write
@@ -515,7 +533,7 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         const x = self.screen.cursor.x + 1;
         assert(x < self.cols);
 
-        const spacer_cell = self.screen.getCell(self.screen.cursor.y, x);
+        const spacer_cell = row.getCellPtr(x);
         spacer_cell.attrs.wide_spacer_tail = false;
 
         if (self.screen.cursor.x <= 1) {
@@ -525,7 +543,7 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         assert(self.screen.cursor.x > 0);
         const x = self.screen.cursor.x - 1;
 
-        const wide_cell = self.screen.getCell(self.screen.cursor.y, x);
+        const wide_cell = row.getCellPtr(x);
         wide_cell.attrs.wide = false;
 
         if (self.screen.cursor.x <= 1) {
@@ -539,26 +557,20 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
     return cell;
 }
 
-fn printWrap(self: *Terminal) *Screen.Cell {
-    // Mark that the cell is wrapped, which guarantees that there is
-    // at least one cell after it in the next row.
-    const cell = self.screen.getCell(
-        self.screen.cursor.y,
-        self.screen.cursor.x,
-    );
-    cell.attrs.wrap = true;
+fn printWrap(self: *Terminal) !void {
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    row.setWrapped(true);
 
     // Move to the next line
-    self.index();
+    try self.index();
     self.screen.cursor.x = 0;
-
-    return cell;
 }
 
 fn clearWideSpacerHead(self: *Terminal) void {
     // TODO: handle deleting wide char on row 0 of active
     assert(self.screen.cursor.y >= 1);
-    const cell = self.screen.getCell(
+    const cell = self.screen.getCellPtr(
+        .active,
         self.screen.cursor.y - 1,
         self.cols - 1,
     );
@@ -578,14 +590,11 @@ pub fn decaln(self: *Terminal) void {
     // Fill with Es, does not move cursor. We reset fg/bg so we can just
     // optimize here by doing row copies.
     const filled = self.screen.getRow(.{ .active = 0 });
-    var col: usize = 0;
-    while (col < self.cols) : (col += 1) {
-        filled[col] = .{ .char = 'E' };
-    }
+    filled.fill(.{ .char = 'E' });
 
     var row: usize = 1;
     while (row < self.rows) : (row += 1) {
-        std.mem.copy(Screen.Cell, self.screen.getRow(.{ .active = row }), filled);
+        self.screen.getRow(.{ .active = row }).copyRow(filled);
     }
 }
 
@@ -601,7 +610,7 @@ pub fn decaln(self: *Terminal) void {
 ///     move the cursor one line down
 ///
 /// This unsets the pending wrap state without wrapping.
-pub fn index(self: *Terminal) void {
+pub fn index(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -625,7 +634,7 @@ pub fn index(self: *Terminal) void {
         if (self.scrolling_region.top == 0 and
             self.scrolling_region.bottom == self.rows - 1)
         {
-            self.screen.scroll(.{ .delta = 1 });
+            try self.screen.scroll(.{ .delta = 1 });
         } else {
             // TODO: test
             self.scrollUp(1);
@@ -736,9 +745,8 @@ pub fn eraseDisplay(
 
     switch (mode) {
         .complete => {
-            const region = self.screen.region(.active);
-            std.mem.set(Screen.Cell, region[0], self.screen.cursor.pen);
-            std.mem.set(Screen.Cell, region[1], self.screen.cursor.pen);
+            var it = self.screen.rowIterator(.active);
+            while (it.next()) |row| row.clear(self.screen.cursor.pen);
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
@@ -748,7 +756,7 @@ pub fn eraseDisplay(
             // All lines to the right (including the cursor)
             var x: usize = self.screen.cursor.x;
             while (x < self.cols) : (x += 1) {
-                const cell = self.getOrPutCell(x, self.screen.cursor.y);
+                const cell = self.screen.getCellPtr(.active, self.screen.cursor.y, x);
                 cell.* = self.screen.cursor.pen;
                 cell.char = 0;
             }
@@ -758,7 +766,7 @@ pub fn eraseDisplay(
             while (y < self.rows) : (y += 1) {
                 x = 0;
                 while (x < self.cols) : (x += 1) {
-                    const cell = self.getOrPutCell(x, y);
+                    const cell = self.screen.getCellPtr(.active, y, x);
                     cell.* = self.screen.cursor.pen;
                     cell.char = 0;
                 }
@@ -772,7 +780,7 @@ pub fn eraseDisplay(
             // Erase to the left (including the cursor)
             var x: usize = 0;
             while (x <= self.screen.cursor.x) : (x += 1) {
-                const cell = self.getOrPutCell(x, self.screen.cursor.y);
+                const cell = self.screen.getCellPtr(.active, self.screen.cursor.y, x);
                 cell.* = self.screen.cursor.pen;
                 cell.char = 0;
             }
@@ -782,7 +790,7 @@ pub fn eraseDisplay(
             while (y < self.screen.cursor.y) : (y += 1) {
                 x = 0;
                 while (x < self.cols) : (x += 1) {
-                    const cell = self.getOrPutCell(x, y);
+                    const cell = self.screen.getCellPtr(.active, y, x);
                     cell.* = self.screen.cursor.pen;
                     cell.char = 0;
                 }
@@ -793,14 +801,9 @@ pub fn eraseDisplay(
         },
 
         .scrollback => {
-            const region = self.screen.region(.history);
-            std.mem.set(Screen.Cell, region[0], self.screen.cursor.pen);
-            std.mem.set(Screen.Cell, region[1], self.screen.cursor.pen);
-
-            // TODO: move this logic to the Screen implementation
-            self.screen.top = self.screen.visible_offset;
-            self.screen.bottom = self.screen.bottom - self.screen.visible_offset;
-            self.screen.visible_offset = 0;
+            var it = self.screen.rowIterator(.history);
+            while (it.next()) |row| row.clear(self.screen.cursor.pen);
+            @panic("MOVE TO SCREEN SO CIRC BUF IS CORRECT");
         },
     }
 }
@@ -817,12 +820,12 @@ pub fn eraseLine(
     switch (mode) {
         .right => {
             const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-            std.mem.set(Screen.Cell, row[self.screen.cursor.x..], self.screen.cursor.pen);
+            row.fillSlice(self.screen.cursor.pen, self.screen.cursor.x, self.cols);
         },
 
         .left => {
             const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-            std.mem.set(Screen.Cell, row[0 .. self.screen.cursor.x + 1], self.screen.cursor.pen);
+            row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
@@ -830,7 +833,7 @@ pub fn eraseLine(
 
         .complete => {
             const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-            std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
+            row.fill(self.screen.cursor.pen);
         },
 
         else => {
@@ -864,8 +867,9 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
     var i: usize = self.screen.cursor.x;
     while (i < end) : (i += 1) {
         const j = i + count;
-        line[i] = line[j];
-        line[j].char = 0;
+        const j_cell = line.getCellPtr(j);
+        line.getCellPtr(i).* = j_cell.*;
+        j_cell.char = 0;
     }
 }
 
@@ -879,12 +883,10 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
     const end = @minimum(self.cols, self.screen.cursor.x + count);
 
     // Shift
-    var x: usize = self.screen.cursor.x;
-    while (x < end) : (x += 1) {
-        const cell = self.getOrPutCell(x, self.screen.cursor.y);
-        cell.* = self.screen.cursor.pen;
-        cell.char = 0;
-    }
+    var pen = self.screen.cursor.pen;
+    pen.char = 0;
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    row.fillSlice(pen, self.screen.cursor.x, end);
 }
 
 /// Move the cursor to the left amount cells. If amount is 0, adjust it to 1.
@@ -994,11 +996,11 @@ pub fn carriageReturn(self: *Terminal) void {
 }
 
 /// Linefeed moves the cursor to the next line.
-pub fn linefeed(self: *Terminal) void {
+pub fn linefeed(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.index();
+    try self.index();
 }
 
 /// Inserts spaces at current cursor position moving existing cell contents
@@ -1031,7 +1033,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     // This is the number of spaces we have left to shift existing data.
     // If count is bigger than the available space left after the cursor,
     // we may have no space at all for copying.
-    const copyable = row.len - pivot;
+    const copyable = self.screen.cols - pivot;
     if (copyable > 0) {
         // This is the index of the final copyable value that we need to copy.
         const copyable_end = start + copyable - 1;
@@ -1040,16 +1042,16 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
         // allocated new space, otherwise we'll copy duplicates.
         var i: usize = 0;
         while (i < copyable) : (i += 1) {
-            const to = row.len - 1 - i;
+            const to = self.screen.cols - 1 - i;
             const from = copyable_end - i;
-            row[to] = row[from];
+            row.getCellPtr(to).* = row.getCell(from);
         }
     }
 
     // Insert zero
     var pen = self.screen.cursor.pen;
     pen.char = ' '; // NOTE: this should be 0 but we need space for tests
-    std.mem.set(Screen.Cell, row[start..pivot], pen);
+    row.fillSlice(pen, start, pivot);
 }
 
 /// Insert amount lines at the current cursor row. The contents of the line
@@ -1091,18 +1093,14 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 
     // Ensure we have the lines populated to the end
     while (y > top) : (y -= 1) {
-        self.screen.copyRow(y, y - adjusted_count);
+        self.screen.copyRow(.{ .active = y }, .{ .active = y - adjusted_count });
     }
 
     // Insert count blank lines
     y = self.screen.cursor.y;
     while (y < self.screen.cursor.y + adjusted_count) : (y += 1) {
-        var x: usize = 0;
-        while (x < self.cols) : (x += 1) {
-            const cell = self.getOrPutCell(x, y);
-            cell.* = self.screen.cursor.pen;
-            cell.char = 0;
-        }
+        const row = self.screen.getRow(.{ .active = y });
+        row.clear(self.screen.cursor.pen);
     }
 }
 
@@ -1140,12 +1138,12 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     // Scroll up the count amount.
     var y: usize = self.screen.cursor.y;
     while (y <= self.scrolling_region.bottom - adjusted_count) : (y += 1) {
-        self.screen.copyRow(y, y + adjusted_count);
+        self.screen.copyRow(.{ .active = y }, .{ .active = y + adjusted_count });
     }
 
     while (y <= self.scrolling_region.bottom) : (y += 1) {
         const row = self.screen.getRow(.{ .active = y });
-        std.mem.set(Screen.Cell, row, self.screen.cursor.pen);
+        row.fill(self.screen.cursor.pen);
     }
 }
 
@@ -1194,11 +1192,11 @@ pub const ScrollViewport = union(enum) {
 };
 
 /// Scroll the viewport of the terminal grid.
-pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) void {
+pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.scroll(switch (behavior) {
+    try self.screen.scroll(switch (behavior) {
         .top => .{ .top = {} },
         .bottom => .{ .bottom = {} },
         .delta => |delta| .{ .delta_no_grow = delta },
@@ -1234,13 +1232,6 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
     };
 
     self.setCursorPos(1, 1);
-}
-
-fn getOrPutCell(self: *Terminal, x: usize, y: usize) *Screen.Cell {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    return self.screen.getCell(y, x);
 }
 
 test "Terminal: input with no control characters" {
@@ -1282,9 +1273,9 @@ test "Terminal: print writes to bottom if scrolled" {
 
     // Make newlines so we create scrollback
     // 3 pushes hello off the screen
-    t.index();
-    t.index();
-    t.index();
+    try t.index();
+    try t.index();
+    try t.index();
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -1292,7 +1283,7 @@ test "Terminal: print writes to bottom if scrolled" {
     }
 
     // Scroll to the top
-    t.scrollViewport(.{ .top = {} });
+    try t.scrollViewport(.{ .top = {} });
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -1301,7 +1292,7 @@ test "Terminal: print writes to bottom if scrolled" {
 
     // Type
     try t.print('A');
-    t.scrollViewport(.{ .bottom = {} });
+    try t.scrollViewport(.{ .bottom = {} });
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -1378,7 +1369,7 @@ test "Terminal: linefeed and carriage return" {
     // Basic grid writing
     for ("hello") |c| try t.print(c);
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     for ("world") |c| try t.print(c);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 5), t.screen.cursor.x);
@@ -1396,7 +1387,7 @@ test "Terminal: linefeed unsets pending wrap" {
     // Basic grid writing
     for ("hello") |c| try t.print(c);
     try testing.expect(t.screen.cursor.pending_wrap == true);
-    t.linefeed();
+    try t.linefeed();
     try testing.expect(t.screen.cursor.pending_wrap == false);
 }
 
@@ -1540,13 +1531,13 @@ test "Terminal: deleteLines" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('C');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('D');
 
     t.cursorUp(2);
@@ -1554,7 +1545,7 @@ test "Terminal: deleteLines" {
 
     try t.print('E');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
 
     // We should be
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
@@ -1575,13 +1566,13 @@ test "Terminal: deleteLines with scroll region" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('C');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('D');
 
     t.setScrollingRegion(1, 3);
@@ -1590,7 +1581,7 @@ test "Terminal: deleteLines with scroll region" {
 
     try t.print('E');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
 
     // We should be
     // try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
@@ -1611,16 +1602,16 @@ test "Terminal: insertLines" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('C');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('D');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('E');
 
     // Move to row 2
@@ -1644,16 +1635,16 @@ test "Terminal: insertLines with scroll region" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('C');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('D');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('E');
 
     t.setScrollingRegion(1, 2);
@@ -1677,16 +1668,16 @@ test "Terminal: insertLines more than remaining" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('C');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('D');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('E');
 
     // Move to row 2
@@ -1710,17 +1701,17 @@ test "Terminal: reverseIndex" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('C');
     try t.reverseIndex();
     try t.print('D');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1736,24 +1727,24 @@ test "Terminal: reverseIndex from the top" {
 
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
 
     t.setCursorPos(1, 1);
     try t.reverseIndex();
     try t.print('D');
 
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     t.setCursorPos(1, 1);
     try t.reverseIndex();
     try t.print('E');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1767,7 +1758,7 @@ test "Terminal: index" {
     var t = try init(alloc, 2, 5);
     defer t.deinit(alloc);
 
-    t.index();
+    try t.index();
     try t.print('A');
 
     {
@@ -1784,7 +1775,7 @@ test "Terminal: index from the bottom" {
 
     t.setCursorPos(5, 1);
     try t.print('A');
-    t.index();
+    try t.index();
 
     try t.print('B');
 
@@ -1802,7 +1793,7 @@ test "Terminal: index outside of scrolling region" {
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     t.setScrollingRegion(2, 5);
-    t.index();
+    try t.index();
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
 }
 
@@ -1814,7 +1805,7 @@ test "Terminal: index from the bottom outside of scroll region" {
     t.setScrollingRegion(1, 2);
     t.setCursorPos(5, 1);
     try t.print('A');
-    t.index();
+    try t.index();
     try t.print('B');
 
     {
@@ -1832,7 +1823,7 @@ test "Terminal: DECALN" {
     // Initial value
     try t.print('A');
     t.carriageReturn();
-    t.linefeed();
+    try t.linefeed();
     try t.print('B');
     t.decaln();
 

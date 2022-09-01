@@ -529,7 +529,8 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
 
     // We want to scroll to the bottom
     // TODO: detect if we're at the bottom to avoid the render call here.
-    win.terminal.scrollViewport(.{ .bottom = {} });
+    win.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
+        log.err("error scrolling viewport err={}", .{err});
     win.render_timer.schedule() catch |err|
         log.err("error scheduling render in charCallback err={}", .{err});
 
@@ -785,7 +786,8 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     const sign: isize = if (yoff > 0) -1 else 1;
     const delta: isize = sign * @maximum(@divFloor(win.grid.size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
-    win.terminal.scrollViewport(.{ .delta = delta });
+    win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
+        log.err("error scrolling viewport err={}", .{err});
 
     // Schedule render since scrolling usually does something.
     // TODO(perf): we can only schedule render if we know scrolling
@@ -1338,11 +1340,11 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // For now, rebuild all cells
-    win.grid.rebuildCells(win.terminal) catch |err|
+    win.grid.rebuildCells(&win.terminal) catch |err|
         log.err("error calling rebuildCells in render timer err={}", .{err});
 
     // Finalize the cells prior to render
-    win.grid.finalizeCells(win.terminal) catch |err|
+    win.grid.finalizeCells(&win.terminal) catch |err|
         log.err("error calling updateCells in render timer err={}", .{err});
 
     // Render the grid
@@ -1382,7 +1384,7 @@ pub fn horizontalTab(self: *Window) !void {
 }
 
 pub fn linefeed(self: *Window) !void {
-    self.terminal.linefeed();
+    try self.terminal.linefeed();
 }
 
 pub fn carriageReturn(self: *Window) !void {
@@ -1426,7 +1428,7 @@ pub fn setCursorPos(self: *Window, row: u16, col: u16) !void {
 pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
     if (mode == .complete) {
         // Whenever we erase the full display, scroll to bottom.
-        self.terminal.scrollViewport(.{ .bottom = {} });
+        try self.terminal.scrollViewport(.{ .bottom = {} });
         try self.render_timer.schedule();
     }
 
@@ -1462,12 +1464,12 @@ pub fn reverseIndex(self: *Window) !void {
 }
 
 pub fn index(self: *Window) !void {
-    self.terminal.index();
+    try self.terminal.index();
 }
 
 pub fn nextLine(self: *Window) !void {
     self.terminal.carriageReturn();
-    self.terminal.index();
+    try self.terminal.index();
 }
 
 pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {
