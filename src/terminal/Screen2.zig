@@ -23,6 +23,7 @@ const Allocator = std.mem.Allocator;
 
 const utf8proc = @import("utf8proc");
 const color = @import("color.zig");
+const point = @import("point.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
 
@@ -395,6 +396,13 @@ pub fn viewportIsBottom(self: Screen) bool {
     return self.viewport >= RowIndexTag.history.maxLen(&self);
 }
 
+/// Shortcut for getRow followed by getCell as a quick way to read a cell.
+/// This is particularly useful for quickly reading the cell under a cursor
+/// with `getCell(.active, cursor.y, cursor.x)`.
+pub fn getCell(self: *Screen, tag: RowIndexTag, y: usize, x: usize) Cell {
+    return self.getRow(tag.index(y)).getCell(x);
+}
+
 /// Returns an iterator that can be used to iterate over all of the rows
 /// from index zero of the given row index type. This can therefore iterate
 /// from row 0 of the active area, history, viewport, etc.
@@ -757,10 +765,6 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     errdefer self.storage.deinit(self.alloc);
     defer old.storage.deinit(self.alloc);
 
-    // Move our cursor if we have to so it stays on the screen.
-    self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
-    self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
-
     // Our viewport resets to the top because we're going to rewrite the screen
     self.viewport = 0;
 
@@ -781,6 +785,43 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
         // Next row
         y += 1;
     }
+
+    // Convert our cursor to screen coordinates so we can preserve it.
+    // The cursor is normally in active coordinates, but by converting to
+    // screen we can accomodate keeping it on the same place if we retain
+    // the same scrollback.
+    const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
+    self.cursor.x = @minimum(old.cursor.x, self.cols - 1);
+    self.cursor.y = if (old_cursor_y_screen < RowIndexTag.screen.maxLen(self))
+        old_cursor_y_screen - RowIndexTag.history.maxLen(self)
+    else
+        self.rows - 1;
+}
+
+/// Resize the screen. The rows or cols can be bigger or smaller. This
+/// function can only be used to resize the viewport. The scrollback size
+/// (in lines) can't be changed. But due to the resize, more or less scrollback
+/// "space" becomes available due to the width of lines.
+///
+/// Due to the internal representation of a screen, this usually involves a
+/// significant amount of copying compared to any other operations.
+///
+/// This will trim data if the size is getting smaller. This will reflow the
+/// soft wrapped text.
+pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
+    if (self.cols == cols) {
+        // No resize necessary
+        if (self.rows == rows) return;
+
+        // If we have the same number of columns, text can't possibly
+        // reflow in any way, so we do the quicker thing and do a resize
+        // without reflow checks.
+        try self.resizeWithoutReflow(rows, cols);
+        return;
+    }
+
+    // TODO
+    try self.resizeWithoutReflow(rows, cols);
 }
 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
@@ -1407,5 +1448,116 @@ test "Screen: resize (no reflow) less rows with scrollback" {
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJKL\n4ABCD\n5EFGH";
         try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize more rows no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    const cursor = s.cursor;
+    try s.resize(10, 5);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more rows with empty scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    const cursor = s.cursor;
+    try s.resize(10, 5);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more rows with populated scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Set our cursor to be on the "4"
+    s.cursor.x = 0;
+    s.cursor.y = 1;
+    try testing.expectEqual(@as(u32, '4'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Resize
+    try s.resize(10, 5);
+
+    // Cursor should still be on the "4"
+    try testing.expectEqual(@as(u32, '4'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more cols no reflow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    const cursor = s.cursor;
+    try s.resize(3, 10);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
     }
 }
