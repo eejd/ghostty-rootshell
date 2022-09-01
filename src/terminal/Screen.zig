@@ -570,7 +570,7 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
             // to chunk it.
             const needed_capacity = @maximum(
                 rows_final * (self.cols + 1),
-                self.rows * 2,
+                @minimum(self.storage.capacity() * 2, max_capacity),
             );
 
             // Allocate what we can.
