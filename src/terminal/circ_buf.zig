@@ -41,6 +41,29 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             self.* = undefined;
         }
 
+        /// Rotate the data so that it is zero-aligned.
+        fn rotateToZero(self: *Self, alloc: Allocator) !void {
+            // TODO: this does this in the worst possible way by allocating.
+            // rewrite to not allocate, its possible, I'm just lazy right now.
+
+            var buf = try alloc.alloc(T, self.storage.len);
+            defer {
+                self.head = if (self.full) 0 else self.len();
+                self.tail = 0;
+                alloc.free(self.storage);
+                self.storage = buf;
+            }
+
+            if (!self.full and self.head >= self.tail) {
+                std.mem.copy(T, buf, self.storage[self.tail..self.head]);
+                return;
+            }
+
+            const middle = self.storage.len - self.tail;
+            std.mem.copy(T, buf, self.storage[self.tail..]);
+            std.mem.copy(T, buf[middle..], self.storage[0..self.head]);
+        }
+
         /// Returns if the buffer is currently empty. To check if its
         /// full, just check the "full" attribute.
         pub fn empty(self: Self) bool {
@@ -112,10 +135,10 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             self.head += amount;
 
             // If we exceeded the length of the buffer, wrap around.
-            if (self.head >= self.storage.len) {
-                self.head = self.head - self.storage.len;
-                self.tail = self.head;
-            }
+            if (self.head >= self.storage.len) self.head = self.head - self.storage.len;
+
+            // If we're full, we have to keep tail lined up.
+            if (self.full) self.tail = self.head;
 
             // We're full if the head reached the tail. The head can never
             // pass the tail because advance asserts amount is only in
@@ -216,5 +239,119 @@ test "getPtrSlice wraps" {
         try testing.expectEqual(@as(u8, 2), slices[0][1]);
         try testing.expectEqual(@as(u8, 3), slices[1][0]);
         try testing.expectEqual(@as(u8, 4), slices[1][1]);
+    }
+}
+
+test "rotateToZero" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 12);
+    defer buf.deinit(alloc);
+
+    _ = buf.getPtrSlice(0, 11);
+    try buf.rotateToZero(alloc);
+}
+
+test "rotateToZero offset" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 4);
+    defer buf.deinit(alloc);
+
+    // Fill the buffer
+    _ = buf.getPtrSlice(0, 3);
+    try testing.expectEqual(@as(usize, 3), buf.len());
+
+    // Delete
+    buf.deleteOldest(2);
+    try testing.expect(!buf.full);
+    try testing.expectEqual(@as(usize, 1), buf.len());
+    try testing.expect(buf.tail > 0 and buf.head >= buf.tail);
+
+    // Rotate to zero
+    try buf.rotateToZero(alloc);
+    try testing.expectEqual(@as(usize, 0), buf.tail);
+    try testing.expectEqual(@as(usize, 1), buf.head);
+}
+
+test "rotateToZero wraps" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 4);
+    defer buf.deinit(alloc);
+
+    // Fill the buffer
+    _ = buf.getPtrSlice(0, 3);
+    try testing.expectEqual(@as(usize, 3), buf.len());
+    try testing.expect(buf.tail == 0 and buf.head == 3);
+
+    // Delete all
+    buf.deleteOldest(3);
+    try testing.expectEqual(@as(usize, 0), buf.len());
+    try testing.expect(buf.tail == 3 and buf.head == 3);
+
+    // Refill to force a wrap
+    {
+        const slices = buf.getPtrSlice(0, 3);
+        slices[0][0] = 1;
+        slices[1][0] = 2;
+        slices[1][1] = 3;
+        try testing.expectEqual(@as(usize, 3), buf.len());
+        try testing.expect(buf.tail == 3 and buf.head == 2);
+    }
+
+    // Rotate to zero
+    try buf.rotateToZero(alloc);
+    try testing.expectEqual(@as(usize, 0), buf.tail);
+    try testing.expectEqual(@as(usize, 3), buf.head);
+    {
+        const slices = buf.getPtrSlice(0, 3);
+        try testing.expectEqual(@as(u8, 1), slices[0][0]);
+        try testing.expectEqual(@as(u8, 2), slices[0][1]);
+        try testing.expectEqual(@as(u8, 3), slices[0][2]);
+    }
+}
+
+test "rotateToZero full no wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 4);
+    defer buf.deinit(alloc);
+
+    // Fill the buffer
+    _ = buf.getPtrSlice(0, 3);
+
+    // Delete all
+    buf.deleteOldest(3);
+
+    // Refill to force a wrap
+    {
+        const slices = buf.getPtrSlice(0, 4);
+        try testing.expect(buf.full);
+        slices[0][0] = 1;
+        slices[1][0] = 2;
+        slices[1][1] = 3;
+        slices[1][2] = 4;
+    }
+
+    // Rotate to zero
+    try buf.rotateToZero(alloc);
+    try testing.expect(buf.full);
+    try testing.expectEqual(@as(usize, 0), buf.tail);
+    try testing.expectEqual(@as(usize, 0), buf.head);
+    {
+        const slices = buf.getPtrSlice(0, 4);
+        try testing.expectEqual(@as(u8, 1), slices[0][0]);
+        try testing.expectEqual(@as(u8, 2), slices[0][1]);
+        try testing.expectEqual(@as(u8, 3), slices[0][2]);
+        try testing.expectEqual(@as(u8, 4), slices[0][3]);
     }
 }
