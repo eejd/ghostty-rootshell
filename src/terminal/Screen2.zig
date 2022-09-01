@@ -190,10 +190,11 @@ pub const Row = struct {
         return &self.storage[x + 1].cell;
     }
 
-    /// Copy the row src into this row.
+    /// Copy the row src into this row. The row can be from another screen.
     pub fn copyRow(self: Row, src: Row) void {
         assert(self.header().init);
-        std.mem.copy(StorageCell, self.storage[1..], src.storage[1..]);
+        const end = @minimum(src.storage.len, self.storage.len);
+        std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
     }
 
     /// Read-only iterator for the cells in the row.
@@ -734,6 +735,53 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     };
 }
 
+/// Resize the screen without any reflow. In this mode, columns/rows will
+/// be truncated as they are shrunk. If they are grown, the new space is filled
+/// with zeros.
+pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
+    // Make a copy so we can access the old indexes.
+    var old = self.*;
+    errdefer self.* = old;
+
+    // Change our rows and cols so calculations make sense
+    self.rows = rows;
+    self.cols = cols;
+
+    // Calculate our buffer size. This is going to be either the old data
+    // with scrollback or the max capacity of our new size. We prefer the old
+    // length so we can save all the data (ignoring col truncation).
+    const old_len = old.rowsWritten() * (cols + 1);
+    const new_max_capacity = self.maxCapacity();
+    const buf_size = @minimum(old_len, new_max_capacity);
+
+    // Reallocate the storage
+    self.storage = try StorageBuf.init(self.alloc, buf_size);
+    errdefer self.storage.deinit(self.alloc);
+    defer old.storage.deinit(self.alloc);
+
+    // Move our cursor if we have to so it stays on the screen.
+    self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
+    self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
+
+    // Rewrite all our rows
+    var y: usize = 0;
+    var row_it = old.rowIterator(.screen);
+    while (row_it.next()) |old_row| {
+        // If we're past the end, scroll
+        if (y >= self.rows) {
+            y -= 1;
+            try self.scroll(.{ .delta = 1 });
+        }
+
+        // Get this row
+        const new_row = self.getRow(.{ .active = y });
+        new_row.copyRow(old_row);
+
+        // Next row
+        y += 1;
+    }
+}
+
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
 /// each row. If a line is longer than the available columns, soft-wrapping
 /// will occur. This will automatically handle basic wide chars.
@@ -1258,6 +1306,75 @@ test "Screen: selectionString wide char with header" {
         });
         defer alloc.free(contents);
         const expected = str;
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize (no reflow) more rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize (no reflow) less rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(2, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: resize (no reflow) more cols" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(3, 10);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize (no reflow) less cols" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(3, 4);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABC\n2EFG\n3IJK";
         try testing.expectEqualStrings(expected, contents);
     }
 }
