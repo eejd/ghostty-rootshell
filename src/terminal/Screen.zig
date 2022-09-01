@@ -775,7 +775,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // Calculate our buffer size. This is going to be either the old data
     // with scrollback or the max capacity of our new size. We prefer the old
     // length so we can save all the data (ignoring col truncation).
-    const old_len = old.rowsWritten() * (cols + 1);
+    const old_len = @maximum(old.rowsWritten(), rows) * (cols + 1);
     const new_max_capacity = self.maxCapacity();
     const buf_size = @minimum(old_len, new_max_capacity);
 
@@ -1503,6 +1503,23 @@ test "Screen: resize (no reflow) less rows with scrollback" {
         const expected = "2EFGH\n3IJKL\n4ABCD\n5EFGH";
         try testing.expectEqualStrings(expected, contents);
     }
+}
+
+test "Screen: resize (no reflow) empty screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    try testing.expect(s.rowsWritten() == 0);
+    try testing.expectEqual(@as(usize, 5), s.rowsCapacity());
+
+    try s.resizeWithoutReflow(10, 10);
+    try testing.expect(s.rowsWritten() == 0);
+
+    // This is the primary test for this test, we want to ensure we
+    // always have at least enough capacity for our rows.
+    try testing.expectEqual(@as(usize, 10), s.rowsCapacity());
 }
 
 test "Screen: resize more rows no scrollback" {
