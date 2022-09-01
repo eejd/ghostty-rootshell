@@ -41,6 +41,30 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             self.* = undefined;
         }
 
+        /// Resize the buffer to the given size (larger or smaller).
+        /// If larger, new values will be set to the default value.
+        pub fn resize(self: *Self, alloc: Allocator, size: usize) !void {
+            // Rotate to zero so it is aligned.
+            try self.rotateToZero(alloc);
+
+            // Reallocate, this adds to the end so we're ready to go.
+            const prev_len = self.len();
+            const prev_cap = self.storage.len;
+            self.storage = try alloc.realloc(self.storage, size);
+
+            // If we grew, we need to set our new defaults. We can add it
+            // at the end since we rotated to start.
+            if (size > prev_cap) {
+                std.mem.set(T, self.storage[prev_cap..], default);
+
+                // Fix up our head/tail
+                if (self.full) {
+                    self.head = prev_len;
+                    self.full = false;
+                }
+            }
+        }
+
         /// Rotate the data so that it is zero-aligned.
         fn rotateToZero(self: *Self, alloc: Allocator) !void {
             // TODO: this does this in the worst possible way by allocating.
@@ -353,5 +377,70 @@ test "rotateToZero full no wrap" {
         try testing.expectEqual(@as(u8, 2), slices[0][1]);
         try testing.expectEqual(@as(u8, 3), slices[0][2]);
         try testing.expectEqual(@as(u8, 4), slices[0][3]);
+    }
+}
+
+test "resize grow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 4);
+    defer buf.deinit(alloc);
+
+    // Fill and write
+    {
+        const slices = buf.getPtrSlice(0, 4);
+        try testing.expect(buf.full);
+        slices[0][0] = 1;
+        slices[0][1] = 2;
+        slices[0][2] = 3;
+        slices[0][3] = 4;
+    }
+
+    // Resize
+    try buf.resize(alloc, 6);
+    try testing.expect(!buf.full);
+    try testing.expectEqual(@as(usize, 4), buf.len());
+    try testing.expectEqual(@as(usize, 6), buf.capacity());
+
+    {
+        const slices = buf.getPtrSlice(0, 4);
+        try testing.expectEqual(@as(u8, 1), slices[0][0]);
+        try testing.expectEqual(@as(u8, 2), slices[0][1]);
+        try testing.expectEqual(@as(u8, 3), slices[0][2]);
+        try testing.expectEqual(@as(u8, 4), slices[0][3]);
+    }
+}
+
+test "resize shrink" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 4);
+    defer buf.deinit(alloc);
+
+    // Fill and write
+    {
+        const slices = buf.getPtrSlice(0, 4);
+        try testing.expect(buf.full);
+        slices[0][0] = 1;
+        slices[0][1] = 2;
+        slices[0][2] = 3;
+        slices[0][3] = 4;
+    }
+
+    // Resize
+    try buf.resize(alloc, 3);
+    try testing.expect(buf.full);
+    try testing.expectEqual(@as(usize, 3), buf.len());
+    try testing.expectEqual(@as(usize, 3), buf.capacity());
+
+    {
+        const slices = buf.getPtrSlice(0, 3);
+        try testing.expectEqual(@as(u8, 1), slices[0][0]);
+        try testing.expectEqual(@as(u8, 2), slices[0][1]);
+        try testing.expectEqual(@as(u8, 3), slices[0][2]);
     }
 }
