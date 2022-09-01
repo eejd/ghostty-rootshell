@@ -112,6 +112,10 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// Delete the oldest n values from the buffer. If there are less
         /// than n values in the buffer, it'll delete everything.
         pub fn deleteOldest(self: *Self, n: usize) void {
+            // Clear the values back to default
+            const slices = self.getPtrSlice(0, n);
+            for (slices) |slice| std.mem.set(T, slice, default);
+
             // If we're not full, we can just advance the tail. We know
             // it'll be less than the length because otherwise we'd be full.
             self.tail += @minimum(self.len(), n);

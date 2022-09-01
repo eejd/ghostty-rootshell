@@ -554,25 +554,23 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         }
     }
 
-    // If we can fit into our capacity, then just grow to it.
-    if (rows_final <= self.rowsCapacity()) {
-        // Ensure we have "written" this data into the circular buffer.
-        _ = self.storage.getPtrSlice(
-            self.viewport * (self.cols + 1),
-            self.cols + 1,
-        );
-        return;
-    }
+    // If we can't fit our rows into our capacity, we delete some scrollback.
+    const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
+        const rows_to_delete = rows_final - self.rowsCapacity();
+        self.viewport -= rows_to_delete;
+        self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
 
-    // We can't fit our new rows into the capacity, so the amount
-    // between what we need and the capacity needs to be deleted. We
-    // scroll "up" by that much to offset this.
-    const rows_to_delete = rows_final - self.rowsCapacity();
-    self.viewport -= rows_to_delete;
-    self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
+        // If we grew down like this, we must be at the bottom.
+        assert(self.viewportIsBottom());
 
-    // If we grew down like this, we must be at the bottom.
-    assert(self.viewportIsBottom());
+        break :deleted rows_to_delete;
+    } else 0;
+
+    // Ensure we have "written" our last row so that it shows up
+    _ = self.storage.getPtrSlice(
+        (rows_final - rows_deleted - 1) * (self.cols + 1),
+        self.cols + 1,
+    );
 }
 
 /// Returns the raw text associated with a selection. This will unwrap
@@ -762,6 +760,9 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // Move our cursor if we have to so it stays on the screen.
     self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
     self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
+
+    // Our viewport resets to the top because we're going to rewrite the screen
+    self.viewport = 0;
 
     // Rewrite all our rows
     var y: usize = 0;
@@ -953,11 +954,6 @@ test "Screen: scrolling" {
     // Scroll down, should still be bottom
     try s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
-
-    // Test our row index
-    try testing.expectEqual(@as(usize, 0), s.rowOffset(.{ .active = 0 }));
-    try testing.expectEqual(@as(usize, 6), s.rowOffset(.{ .active = 1 }));
-    try testing.expectEqual(@as(usize, 12), s.rowOffset(.{ .active = 2 }));
 
     {
         // Test our contents rotated
@@ -1375,6 +1371,41 @@ test "Screen: resize (no reflow) less cols" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         const expected = "1ABC\n2EFG\n3IJK";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize (no reflow) more rows with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 2);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize (no reflow) less rows with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 2);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(2, 5);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJKL\n4ABCD\n5EFGH";
         try testing.expectEqualStrings(expected, contents);
     }
 }
