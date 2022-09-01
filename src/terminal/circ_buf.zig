@@ -70,6 +70,9 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             // TODO: this does this in the worst possible way by allocating.
             // rewrite to not allocate, its possible, I'm just lazy right now.
 
+            // If we're already at zero then do nothing.
+            if (self.tail == 0) return;
+
             var buf = try alloc.alloc(T, self.storage.len);
             defer {
                 self.head = if (self.full) 0 else self.len();
