@@ -296,7 +296,7 @@ pub const RowIndex = union(RowIndexTag) {
 
             .active => |y| y: {
                 assert(y < RowIndexTag.active.maxLen(screen));
-                break :y RowIndexTag.history.maxLen(screen) + y;
+                break :y screen.history + y;
             },
 
             .history => |y| y: {
@@ -320,6 +320,9 @@ pub const RowIndexTag = enum {
     /// so it is 1-indexed. If the value is zero, it means that this
     /// section of the screen is empty or disabled.
     pub inline fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
+        const tracy = trace(@src());
+        defer tracy.end();
+
         return switch (self) {
             // Screen can be any of the written rows
             .screen => screen.rowsWritten(),
@@ -330,10 +333,7 @@ pub const RowIndexTag = enum {
 
             // History is all the way up to the top of our active area. If
             // we haven't filled our active area, there is no history.
-            .history => history: {
-                const rows_written = screen.rowsWritten();
-                break :history if (rows_written > screen.rows) rows_written - screen.rows else 0;
-            },
+            .history => screen.history,
 
             // Active area can be any number of rows. We ignore rows
             // written here because this is the only row index that can
@@ -375,6 +375,13 @@ max_scrollback: usize,
 /// The row (offset from the top) where the viewport currently is.
 viewport: usize,
 
+/// The amount of history (scrollback) that has been written so far. This
+/// can be calculated dynamically using the storage buffer but its an
+/// extremely hot piece of data so we cache it. Empirically this eliminates
+/// millions of function calls and saves seconds under high scroll scenarios
+/// (i.e. reading a large file).
+history: usize,
+
 /// Each screen maintains its own cursor state.
 cursor: Cursor = .{},
 
@@ -400,6 +407,7 @@ pub fn init(
         .cols = cols,
         .max_scrollback = max_scrollback,
         .viewport = 0,
+        .history = 0,
     };
 }
 
@@ -409,7 +417,7 @@ pub fn deinit(self: *Screen) void {
 
 /// Returns true if the viewport is scrolled to the bottom of the screen.
 pub fn viewportIsBottom(self: Screen) bool {
-    return self.viewport >= RowIndexTag.history.maxLen(&self);
+    return self.viewport >= self.history;
 }
 
 /// Shortcut for getRow followed by getCell as a quick way to read a cell.
@@ -525,7 +533,7 @@ pub fn scroll(self: *Screen, behavior: Scroll) !void {
 
         // Bottom is the end of the history area (end of history is the
         // top of the active area).
-        .bottom => self.viewport = RowIndexTag.history.maxLen(self),
+        .bottom => self.viewport = self.history,
 
         // TODO: deltas greater than the entire scrollback
         .delta => |delta| try self.scrollDelta(delta, true),
@@ -543,10 +551,9 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
 
     // If we're scrolling down and not growing, then we just
     // add to the viewport and clamp at the bottom.
-    const viewport_max = RowIndexTag.history.maxLen(self);
     if (!grow) {
         self.viewport = @minimum(
-            viewport_max,
+            self.history,
             self.viewport +| @intCast(usize, delta),
         );
         return;
@@ -556,11 +563,11 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // allowed to scroll to the bottom (the end of the history), then we
     // have space and we just return.
     self.viewport +|= @intCast(usize, delta);
-    if (self.viewport <= viewport_max) return;
+    if (self.viewport <= self.history) return;
 
     // Our viewport is bigger than our max. The number of new rows we need
     // in our buffer is our value minus the max.
-    const new_rows_needed = self.viewport - viewport_max;
+    const new_rows_needed = self.viewport - self.history;
 
     // If we can't fit into our capacity but we have space, resize the
     // buffer to allocate more scrollback.
@@ -598,9 +605,16 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         break :deleted rows_to_delete;
     } else 0;
 
+    // If we have more rows than what shows on our screen, we have a
+    // history boundary.
+    const rows_written_final = rows_final - rows_deleted;
+    if (rows_written_final > self.rows) {
+        self.history = rows_written_final - self.rows;
+    }
+
     // Ensure we have "written" our last row so that it shows up
     _ = self.storage.getPtrSlice(
-        (rows_final - rows_deleted - 1) * (self.cols + 1),
+        (rows_written_final - 1) * (self.cols + 1),
         self.cols + 1,
     );
 }
@@ -789,8 +803,10 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     errdefer self.storage.deinit(self.alloc);
     defer old.storage.deinit(self.alloc);
 
-    // Our viewport resets to the top because we're going to rewrite the screen
+    // Our viewport and history resets to the top because we're going to
+    // rewrite the screen
     self.viewport = 0;
+    self.history = 0;
 
     // Rewrite all our rows
     var y: usize = 0;
@@ -817,7 +833,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
     self.cursor.x = @minimum(old.cursor.x, self.cols - 1);
     self.cursor.y = if (old_cursor_y_screen < RowIndexTag.screen.maxLen(self))
-        old_cursor_y_screen - RowIndexTag.history.maxLen(self)
+        old_cursor_y_screen - self.history
     else
         self.rows - 1;
 }
