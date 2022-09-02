@@ -286,22 +286,26 @@ pub const RowIndex = union(RowIndexTag) {
     pub fn toScreen(self: RowIndex, screen: *const Screen) RowIndex {
         const y = switch (self) {
             .screen => |y| y: {
-                assert(y < RowIndexTag.screen.maxLen(screen));
+                // NOTE for this and others below: Zig is supposed to optimize
+                // away assert in releasefast but for some reason these were
+                // not being optimized away. I don't know why. For these asserts
+                // only, I comptime gate them.
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.screen.maxLen(screen));
                 break :y y;
             },
 
             .viewport => |y| y: {
-                assert(y < RowIndexTag.viewport.maxLen(screen));
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.viewport.maxLen(screen));
                 break :y y + screen.viewport;
             },
 
             .active => |y| y: {
-                assert(y < RowIndexTag.active.maxLen(screen));
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.active.maxLen(screen));
                 break :y screen.history + y;
             },
 
             .history => |y| y: {
-                assert(y < RowIndexTag.history.maxLen(screen));
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.history.maxLen(screen));
                 break :y y;
             },
         };
