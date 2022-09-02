@@ -15,6 +15,9 @@ pub usingnamespace if (enabled) Impl else Noop;
 
 const Impl = struct {
     const c = @cImport({
+        //uncomment to enable callstacks, very slow
+        //@cDefine("TRACY_CALLSTACK", "");
+
         @cDefine("TRACY_ENABLE", "");
         @cInclude("TracyC.h");
     });

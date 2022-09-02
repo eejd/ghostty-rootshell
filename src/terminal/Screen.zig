@@ -232,10 +232,11 @@ pub const Row = struct {
 pub const RowIterator = struct {
     screen: *Screen,
     tag: RowIndexTag,
+    max: usize,
     value: usize = 0,
 
     pub fn next(self: *RowIterator) ?Row {
-        if (self.value >= self.tag.maxLen(self.screen)) return null;
+        if (self.value >= self.max) return null;
         const idx = self.tag.index(self.value);
         const res = self.screen.getRow(idx);
         self.value += 1;
@@ -436,7 +437,14 @@ pub fn getCellPtr(self: *Screen, tag: RowIndexTag, y: usize, x: usize) *Cell {
 /// from index zero of the given row index type. This can therefore iterate
 /// from row 0 of the active area, history, viewport, etc.
 pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
-    return .{ .screen = self, .tag = tag };
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    return .{
+        .screen = self,
+        .tag = tag,
+        .max = tag.maxLen(self),
+    };
 }
 
 /// Returns the row at the given index. This row is writable, although
@@ -783,6 +791,9 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
 /// be truncated as they are shrunk. If they are grown, the new space is filled
 /// with zeros.
 pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     // Make a copy so we can access the old indexes.
     var old = self.*;
     errdefer self.* = old;
