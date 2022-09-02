@@ -1291,11 +1291,13 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
 
                 // C0 execute, let our stream handle this one but otherwise
                 // continue since we're guaranteed to be back in ground.
-                .execute => win.terminal_stream.next(c) catch |err|
+                .execute => win.terminal_stream.execute(c) catch |err|
                     log.err("error processing terminal data: {}", .{err}),
 
                 // Otherwise, break out and go the slow path until we're
-                // back in ground.
+                // back in ground. There is a slight optimization here where
+                // could try to find the next transition to ground but when
+                // I implemented that it didn't materially change performance.
                 else => break,
             }
 
@@ -1304,7 +1306,6 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     }
 
     if (i < end) {
-        //log.warn("SLOW={}", .{end - i});
         win.terminal_stream.nextSlice(buf[i..end]) catch |err|
             log.err("error processing terminal data: {}", .{err});
     }
@@ -1418,7 +1419,9 @@ pub fn horizontalTab(self: *Window) !void {
 }
 
 pub fn linefeed(self: *Window) !void {
-    try self.terminal.linefeed();
+    // Small optimization: call index instead of linefeed because they're
+    // identical and this avoids one layer of function call overhead.
+    try self.terminal.index();
 }
 
 pub fn carriageReturn(self: *Window) !void {

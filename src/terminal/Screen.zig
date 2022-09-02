@@ -319,20 +319,21 @@ pub const RowIndexTag = enum {
     /// The max length for a given tag. This is a length, not an index,
     /// so it is 1-indexed. If the value is zero, it means that this
     /// section of the screen is empty or disabled.
-    pub fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
-        const rows_written = screen.rowsWritten();
-
+    pub inline fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
         return switch (self) {
             // Screen can be any of the written rows
-            .screen => rows_written,
+            .screen => screen.rowsWritten(),
 
             // Viewport can be any of the written rows or the max size
             // of a viewport.
-            .viewport => @minimum(screen.rows, rows_written),
+            .viewport => @minimum(screen.rows, screen.rowsWritten()),
 
             // History is all the way up to the top of our active area. If
             // we haven't filled our active area, there is no history.
-            .history => if (rows_written > screen.rows) rows_written - screen.rows else 0,
+            .history => history: {
+                const rows_written = screen.rowsWritten();
+                break :history if (rows_written > screen.rows) rows_written - screen.rows else 0;
+            },
 
             // Active area can be any number of rows. We ignore rows
             // written here because this is the only row index that can
