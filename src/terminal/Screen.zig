@@ -22,6 +22,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const utf8proc = @import("utf8proc");
+const trace = @import("tracy").trace;
 const color = @import("color.zig");
 const point = @import("point.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
@@ -432,6 +433,9 @@ pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
 /// Returns the row at the given index. This row is writable, although
 /// only the active area should probably be written to.
 pub fn getRow(self: *Screen, index: RowIndex) Row {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     // Get our offset into storage
     const offset = index.toScreen(self).screen * (self.cols + 1);
 

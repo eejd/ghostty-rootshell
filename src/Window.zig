@@ -1271,9 +1271,43 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     // Schedule a render
     win.render_timer.schedule() catch unreachable;
 
-    // Process the terminal data
-    win.terminal_stream.nextSlice(buf[0..@intCast(usize, n)]) catch |err|
-        log.err("error processing terminal data: {}", .{err});
+    // Process the terminal data. This is an extremely hot part of the
+    // terminal emulator, so we do some abstraction leakage to avoid
+    // function calls and unnecessary logic.
+    //
+    // The ground state is the only state that we can see and print/execute
+    // ASCII, so we only execute this hot path if we're already in the ground
+    // state.
+    //
+    // Empirically, this alone improved throughput of large text output by ~20%.
+    var i: usize = 0;
+    const end = @intCast(usize, n);
+    if (win.terminal_stream.parser.state == .ground) {
+        for (buf[i..end]) |c| {
+            switch (terminal.parse_table.table[c][@enumToInt(terminal.Parser.State.ground)].action) {
+                // Print, call directly.
+                .print => win.print(@intCast(u21, c)) catch |err|
+                    log.err("error processing terminal data: {}", .{err}),
+
+                // C0 execute, let our stream handle this one but otherwise
+                // continue since we're guaranteed to be back in ground.
+                .execute => win.terminal_stream.next(c) catch |err|
+                    log.err("error processing terminal data: {}", .{err}),
+
+                // Otherwise, break out and go the slow path until we're
+                // back in ground.
+                else => break,
+            }
+
+            i += 1;
+        }
+    }
+
+    if (i < end) {
+        //log.warn("SLOW={}", .{end - i});
+        win.terminal_stream.nextSlice(buf[i..end]) catch |err|
+            log.err("error processing terminal data: {}", .{err});
+    }
 }
 
 fn ttyWrite(req: *libuv.WriteReq, status: i32) void {

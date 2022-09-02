@@ -464,7 +464,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     switch (width) {
         // Single cell is very easy: just write in the cell
-        1 => _ = self.printCell(c),
+        1 => _ = @call(.{ .modifier = .always_inline }, self.printCell, .{c}),
 
         // Wide character requires a spacer. We print this by
         // using two cells: the first is flagged "wide" and has the
@@ -505,6 +505,9 @@ pub fn print(self: *Terminal, c: u21) !void {
 }
 
 fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
+    // const tracy = trace(@src());
+    // defer tracy.end();
+
     const c = c: {
         // TODO: non-utf8 handling, gr
 
@@ -558,6 +561,9 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
 }
 
 fn printWrap(self: *Terminal) !void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
     row.setWrapped(true);
 

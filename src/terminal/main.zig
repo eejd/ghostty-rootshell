@@ -7,6 +7,7 @@ const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
+pub const parse_table = @import("parse_table.zig");
 
 pub const Charset = charsets.Charset;
 pub const CharsetSlot = charsets.Slots;
