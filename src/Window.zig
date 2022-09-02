@@ -33,6 +33,7 @@ const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
 /// Allocator
 alloc: Allocator,
+alloc_io_arena: std.heap.ArenaAllocator,
 
 /// The glfw window handle.
 window: glfw.Window,
@@ -323,8 +324,15 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     errdefer cursor.destroy();
     try window.setCursor(cursor);
 
+    // Create our IO allocator arena. Libuv appears to guarantee (in code,
+    // not in docs) that read_alloc is called directly before a read so
+    // we can use an arena to make allocation faster.
+    var io_arena = std.heap.ArenaAllocator.init(alloc);
+    errdefer io_arena.deinit();
+
     self.* = .{
         .alloc = alloc,
+        .alloc_io_arena = io_arena,
         .window = window,
         .cursor = cursor,
         .focused = false,
@@ -410,6 +418,8 @@ pub fn destroy(self: *Window) void {
     // We can destroy the cursor right away. glfw will just revert any
     // windows using it to the default.
     self.cursor.destroy();
+
+    self.alloc_io_arena.deinit();
 }
 
 pub fn shouldClose(self: Window) bool {
@@ -1235,7 +1245,8 @@ fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
     const tracy = trace(@src());
     defer tracy.end();
 
-    const alloc = t.loop().getData(Allocator).?.*;
+    const win = t.getData(Window) orelse return null;
+    const alloc = win.alloc_io_arena.allocator();
     return alloc.alloc(u8, size) catch null;
 }
 
@@ -1245,7 +1256,10 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     defer tracy.end();
 
     const win = t.getData(Window).?;
-    defer win.alloc.free(buf);
+    defer {
+        const alloc = win.alloc_io_arena.allocator();
+        alloc.free(buf);
+    }
 
     // log.info("DATA: {d}", .{n});
     // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
