@@ -112,6 +112,8 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// Delete the oldest n values from the buffer. If there are less
         /// than n values in the buffer, it'll delete everything.
         pub fn deleteOldest(self: *Self, n: usize) void {
+            assert(n <= self.storage.len);
+
             // Clear the values back to default
             const slices = self.getPtrSlice(0, n);
             for (slices) |slice| std.mem.set(T, slice, default);
@@ -128,7 +130,8 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// the end of our buffer. This never "rotates" the buffer because
         /// the offset can only be within the size of the buffer.
         pub fn getPtrSlice(self: *Self, offset: usize, slice_len: usize) [2][]T {
-            assert(slice_len > 0);
+            // Note: this assertion is very important, it hints the compiler
+            // which generates ~10% faster code than without it.
             assert(offset + slice_len <= self.capacity());
 
             // End offset is the last offset (exclusive) for our slice.

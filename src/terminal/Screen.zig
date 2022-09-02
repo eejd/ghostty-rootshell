@@ -566,7 +566,7 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     if (!grow) {
         self.viewport = @minimum(
             self.history,
-            self.viewport +| @intCast(usize, delta),
+            self.viewport + @intCast(usize, delta),
         );
         return;
     }
@@ -574,7 +574,7 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // Add our delta to our viewport. If we're less than the max currently
     // allowed to scroll to the bottom (the end of the history), then we
     // have space and we just return.
-    self.viewport +|= @intCast(usize, delta);
+    self.viewport += @intCast(usize, delta);
     if (self.viewport <= self.history) return;
 
     // Our viewport is bigger than our max. The number of new rows we need
@@ -610,10 +610,6 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         const rows_to_delete = rows_final - self.rowsCapacity();
         self.viewport -= rows_to_delete;
         self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
-
-        // If we grew down like this, we must be at the bottom.
-        assert(self.viewportIsBottom());
-
         break :deleted rows_to_delete;
     } else 0;
 
