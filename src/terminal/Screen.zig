@@ -849,7 +849,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // the same scrollback.
     const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
     self.cursor.x = @minimum(old.cursor.x, self.cols - 1);
-    self.cursor.y = if (old_cursor_y_screen < RowIndexTag.screen.maxLen(self))
+    self.cursor.y = if (old_cursor_y_screen <= RowIndexTag.screen.maxLen(self))
         old_cursor_y_screen - self.history
     else
         self.rows - 1;
