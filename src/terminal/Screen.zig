@@ -422,7 +422,7 @@ pub fn deinit(self: *Screen) void {
 
 /// Returns true if the viewport is scrolled to the bottom of the screen.
 pub fn viewportIsBottom(self: Screen) bool {
-    return self.viewport >= self.history;
+    return self.viewport == self.history;
 }
 
 /// Shortcut for getRow followed by getCell as a quick way to read a cell.
@@ -577,54 +577,60 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     self.viewport += @intCast(usize, delta);
     if (self.viewport <= self.history) return;
 
-    // Our viewport is bigger than our max. The number of new rows we need
-    // in our buffer is our value minus the max.
-    const new_rows_needed = self.viewport - self.history;
-
-    // If we can't fit into our capacity but we have space, resize the
-    // buffer to allocate more scrollback.
+    // If our viewport is past the top of our history then we potentially need
+    // to write more blank rows. If our viewport is more than our rows written
+    // then we expand out to there.
     const rows_written = self.rowsWritten();
-    const rows_final = rows_written + new_rows_needed;
-    if (rows_final > self.rowsCapacity()) {
-        const max_capacity = self.maxCapacity();
-        if (self.storage.capacity() < max_capacity) {
-            // The capacity we want to allocate. We take whatever is greater
-            // of what we actually need and two pages. We don't want to
-            // allocate one row at a time (common for scrolling) so we do this
-            // to chunk it.
-            const needed_capacity = @maximum(
-                rows_final * (self.cols + 1),
-                @minimum(self.storage.capacity() * 2, max_capacity),
-            );
+    const viewport_bottom = self.viewport + self.rows;
+    if (viewport_bottom > rows_written) {
+        // The number of new rows we need is the number of rows off our
+        // previous bottom we are growing.
+        const new_rows_needed = viewport_bottom - rows_written;
 
-            // Allocate what we can.
-            try self.storage.resize(
-                self.alloc,
-                @minimum(max_capacity, needed_capacity),
-            );
+        // If we can't fit into our capacity but we have space, resize the
+        // buffer to allocate more scrollback.
+        const rows_final = rows_written + new_rows_needed;
+        if (rows_final > self.rowsCapacity()) {
+            const max_capacity = self.maxCapacity();
+            if (self.storage.capacity() < max_capacity) {
+                // The capacity we want to allocate. We take whatever is greater
+                // of what we actually need and two pages. We don't want to
+                // allocate one row at a time (common for scrolling) so we do this
+                // to chunk it.
+                const needed_capacity = @maximum(
+                    rows_final * (self.cols + 1),
+                    @minimum(self.storage.capacity() * 2, max_capacity),
+                );
+
+                // Allocate what we can.
+                try self.storage.resize(
+                    self.alloc,
+                    @minimum(max_capacity, needed_capacity),
+                );
+            }
         }
+
+        // If we can't fit our rows into our capacity, we delete some scrollback.
+        const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
+            const rows_to_delete = rows_final - self.rowsCapacity();
+            self.viewport -= rows_to_delete;
+            self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
+            break :deleted rows_to_delete;
+        } else 0;
+
+        // If we have more rows than what shows on our screen, we have a
+        // history boundary.
+        const rows_written_final = rows_final - rows_deleted;
+        if (rows_written_final > self.rows) {
+            self.history = rows_written_final - self.rows;
+        }
+
+        // Ensure we have "written" our last row so that it shows up
+        _ = self.storage.getPtrSlice(
+            (rows_written_final - 1) * (self.cols + 1),
+            self.cols + 1,
+        );
     }
-
-    // If we can't fit our rows into our capacity, we delete some scrollback.
-    const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
-        const rows_to_delete = rows_final - self.rowsCapacity();
-        self.viewport -= rows_to_delete;
-        self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
-        break :deleted rows_to_delete;
-    } else 0;
-
-    // If we have more rows than what shows on our screen, we have a
-    // history boundary.
-    const rows_written_final = rows_final - rows_deleted;
-    if (rows_written_final > self.rows) {
-        self.history = rows_written_final - self.rows;
-    }
-
-    // Ensure we have "written" our last row so that it shows up
-    _ = self.storage.getPtrSlice(
-        (rows_written_final - 1) * (self.cols + 1),
-        self.cols + 1,
-    );
 }
 
 /// Returns the raw text associated with a selection. This will unwrap
@@ -1202,19 +1208,13 @@ test "Screen: scrollback with large delta" {
     }
 
     // Scroll down a ton
-    try s.scroll(.{ .delta = 5 });
+    try s.scroll(.{ .delta_no_grow = 5 });
     try testing.expect(s.viewportIsBottom());
-    {
-        // Test our contents rotated
-        var contents = try s.testString(alloc, .screen);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("3IJKL\n4ABCD\n5EFGH\n6IJKL", contents);
-    }
     {
         // Test our contents rotated
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("6IJKL", contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
     }
 }
 
