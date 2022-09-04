@@ -83,9 +83,6 @@ pub const RowHeader = struct {
     /// Used internally to track if this row has been initialized.
     init: bool = false,
 
-    /// True if one of the cells in this row has been changed
-    dirty: bool = false,
-
     /// If true, this row is soft-wrapped. The first cell of the next
     /// row is a continuous of this row.
     wrap: bool = false,
