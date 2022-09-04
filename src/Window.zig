@@ -346,7 +346,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
             .timer = timer,
             .style = .blinking_block,
         },
-        .render_timer = try RenderTimer.init(loop, self, 16, 64),
+        .render_timer = try RenderTimer.init(loop, self, 6, 12),
         .pty_stream = stream,
         .config = config,
         .bg_r = @intToFloat(f32, config.background.r) / 255.0,
