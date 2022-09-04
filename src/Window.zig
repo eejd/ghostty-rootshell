@@ -33,6 +33,7 @@ const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
 /// Allocator
 alloc: Allocator,
+alloc_io_arena: std.heap.ArenaAllocator,
 
 /// The glfw window handle.
 window: glfw.Window,
@@ -323,8 +324,15 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     errdefer cursor.destroy();
     try window.setCursor(cursor);
 
+    // Create our IO allocator arena. Libuv appears to guarantee (in code,
+    // not in docs) that read_alloc is called directly before a read so
+    // we can use an arena to make allocation faster.
+    var io_arena = std.heap.ArenaAllocator.init(alloc);
+    errdefer io_arena.deinit();
+
     self.* = .{
         .alloc = alloc,
+        .alloc_io_arena = io_arena,
         .window = window,
         .cursor = cursor,
         .focused = false,
@@ -410,6 +418,8 @@ pub fn destroy(self: *Window) void {
     // We can destroy the cursor right away. glfw will just revert any
     // windows using it to the default.
     self.cursor.destroy();
+
+    self.alloc_io_arena.deinit();
 }
 
 pub fn shouldClose(self: Window) bool {
@@ -529,7 +539,8 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
 
     // We want to scroll to the bottom
     // TODO: detect if we're at the bottom to avoid the render call here.
-    win.terminal.scrollViewport(.{ .bottom = {} });
+    win.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
+        log.err("error scrolling viewport err={}", .{err});
     win.render_timer.schedule() catch |err|
         log.err("error scheduling render in charCallback err={}", .{err});
 
@@ -785,7 +796,8 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     const sign: isize = if (yoff > 0) -1 else 1;
     const delta: isize = sign * @maximum(@divFloor(win.grid.size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
-    win.terminal.scrollViewport(.{ .delta = delta });
+    win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
+        log.err("error scrolling viewport err={}", .{err});
 
     // Schedule render since scrolling usually does something.
     // TODO(perf): we can only schedule render if we know scrolling
@@ -1233,7 +1245,8 @@ fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
     const tracy = trace(@src());
     defer tracy.end();
 
-    const alloc = t.loop().getData(Allocator).?.*;
+    const win = t.getData(Window) orelse return null;
+    const alloc = win.alloc_io_arena.allocator();
     return alloc.alloc(u8, size) catch null;
 }
 
@@ -1243,7 +1256,10 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     defer tracy.end();
 
     const win = t.getData(Window).?;
-    defer win.alloc.free(buf);
+    defer {
+        const alloc = win.alloc_io_arena.allocator();
+        alloc.free(buf);
+    }
 
     // log.info("DATA: {d}", .{n});
     // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
@@ -1269,9 +1285,44 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     // Schedule a render
     win.render_timer.schedule() catch unreachable;
 
-    // Process the terminal data
-    win.terminal_stream.nextSlice(buf[0..@intCast(usize, n)]) catch |err|
-        log.err("error processing terminal data: {}", .{err});
+    // Process the terminal data. This is an extremely hot part of the
+    // terminal emulator, so we do some abstraction leakage to avoid
+    // function calls and unnecessary logic.
+    //
+    // The ground state is the only state that we can see and print/execute
+    // ASCII, so we only execute this hot path if we're already in the ground
+    // state.
+    //
+    // Empirically, this alone improved throughput of large text output by ~20%.
+    var i: usize = 0;
+    const end = @intCast(usize, n);
+    if (win.terminal_stream.parser.state == .ground) {
+        for (buf[i..end]) |c| {
+            switch (terminal.parse_table.table[c][@enumToInt(terminal.Parser.State.ground)].action) {
+                // Print, call directly.
+                .print => win.print(@intCast(u21, c)) catch |err|
+                    log.err("error processing terminal data: {}", .{err}),
+
+                // C0 execute, let our stream handle this one but otherwise
+                // continue since we're guaranteed to be back in ground.
+                .execute => win.terminal_stream.execute(c) catch |err|
+                    log.err("error processing terminal data: {}", .{err}),
+
+                // Otherwise, break out and go the slow path until we're
+                // back in ground. There is a slight optimization here where
+                // could try to find the next transition to ground but when
+                // I implemented that it didn't materially change performance.
+                else => break,
+            }
+
+            i += 1;
+        }
+    }
+
+    if (i < end) {
+        win.terminal_stream.nextSlice(buf[i..end]) catch |err|
+            log.err("error processing terminal data: {}", .{err});
+    }
 }
 
 fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
@@ -1338,11 +1389,11 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // For now, rebuild all cells
-    win.grid.rebuildCells(win.terminal) catch |err|
+    win.grid.rebuildCells(&win.terminal) catch |err|
         log.err("error calling rebuildCells in render timer err={}", .{err});
 
     // Finalize the cells prior to render
-    win.grid.finalizeCells(win.terminal) catch |err|
+    win.grid.finalizeCells(&win.terminal) catch |err|
         log.err("error calling updateCells in render timer err={}", .{err});
 
     // Render the grid
@@ -1382,7 +1433,9 @@ pub fn horizontalTab(self: *Window) !void {
 }
 
 pub fn linefeed(self: *Window) !void {
-    self.terminal.linefeed();
+    // Small optimization: call index instead of linefeed because they're
+    // identical and this avoids one layer of function call overhead.
+    try self.terminal.index();
 }
 
 pub fn carriageReturn(self: *Window) !void {
@@ -1426,7 +1479,7 @@ pub fn setCursorPos(self: *Window, row: u16, col: u16) !void {
 pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
     if (mode == .complete) {
         // Whenever we erase the full display, scroll to bottom.
-        self.terminal.scrollViewport(.{ .bottom = {} });
+        try self.terminal.scrollViewport(.{ .bottom = {} });
         try self.render_timer.schedule();
     }
 
@@ -1462,12 +1515,12 @@ pub fn reverseIndex(self: *Window) !void {
 }
 
 pub fn index(self: *Window) !void {
-    self.terminal.index();
+    try self.terminal.index();
 }
 
 pub fn nextLine(self: *Window) !void {
     self.terminal.carriageReturn();
-    self.terminal.index();
+    try self.terminal.index();
 }
 
 pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {

@@ -14,29 +14,54 @@
 //!   * Viewport - The area that is currently visible to the user. This
 //!       can be thought of as the current window into the screen.
 //!
+//! The internal storage of the screen is stored in a circular buffer
+//! with roughly the following format:
+//!
+//!      Storage (Circular Buffer)
+//!   ┌─────────────────────────────────────┐
+//!   │ ┌─────┐┌─────┐┌─────┐       ┌─────┐ │
+//!   │ │ Hdr ││Cell ││Cell │  ...  │Cell │ │
+//!   │ │     ││  0  ││  1  │       │ N-1 │ │
+//!   │ └─────┘└─────┘└─────┘       └─────┘ │
+//!   │ ┌─────┐┌─────┐┌─────┐       ┌─────┐ │
+//!   │ │ Hdr ││Cell ││Cell │  ...  │Cell │ │
+//!   │ │     ││  0  ││  1  │       │ N-1 │ │
+//!   │ └─────┘└─────┘└─────┘       └─────┘ │
+//!   │ ┌─────┐┌─────┐┌─────┐       ┌─────┐ │
+//!   │ │ Hdr ││Cell ││Cell │  ...  │Cell │ │
+//!   │ │     ││  0  ││  1  │       │ N-1 │ │
+//!   │ └─────┘└─────┘└─────┘       └─────┘ │
+//!   └─────────────────────────────────────┘
+//!
+//! There are R rows with N columns. Each row has an extra "cell" which is
+//! the row header. The row header is used to track metadata about the row.
+//! Each cell itself is a union (see StorageCell) of either the header or
+//! the cell.
+//!
+//! The storage is in a circular buffer so that scrollback can be handled
+//! without copying rows. The circular buffer is implemented in circ_buf.zig.
+//! The top of the circular buffer (index 0) is the top of the screen,
+//! i.e. the scrollback if there is a lot of data.
+//!
+//! The top of the active area (or end of the history area, same thing) is
+//! cached in `self.history` and is an offset in rows. This could always be
+//! calculated but profiling showed that caching it saves a lot of time in
+//! hot loops for minimal memory cost.
 const Screen = @This();
 
-// FUTURE: Today this is implemented as a single contiguous ring buffer.
-// If we increase the scrollback, we perform a full memory copy. For small
-// scrollback, this is pretty cheap. For large (or infinite) scrollback,
-// this starts to get pretty nasty. We should change this in the future to
-// use a segmented list or something similar. I want to keep all the visible
-// area contiguous so its not a simple drop-in. We can take a look at this
-// one day.
-
 const std = @import("std");
-const utf8proc = @import("utf8proc");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const utf8proc = @import("utf8proc");
+const trace = @import("tracy").trace;
 const color = @import("color.zig");
 const point = @import("point.zig");
+const CircBuf = @import("circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
 
 const log = std.log.scoped(.screen);
-
-/// A row is a set of cells.
-pub const Row = []Cell;
 
 /// Cursor represents the cursor state.
 pub const Cursor = struct {
@@ -52,27 +77,77 @@ pub const Cursor = struct {
     pending_wrap: bool = false,
 };
 
+/// This is a single item within the storage buffer. We use a union to
+/// have different types of data in a single contiguous buffer.
+const StorageCell = union {
+    header: RowHeader,
+    cell: Cell,
+
+    test {
+        // log.warn("header={}@{} cell={}@{} storage={}@{}", .{
+        //     @sizeOf(RowHeader),
+        //     @alignOf(RowHeader),
+        //     @sizeOf(Cell),
+        //     @alignOf(Cell),
+        //     @sizeOf(StorageCell),
+        //     @alignOf(StorageCell),
+        // });
+    }
+
+    comptime {
+        // We only check this during ReleaseFast because safety checks
+        // have to be disabled to get this size.
+        if (builtin.mode == .ReleaseFast) {
+            // We want to be at most the size of a cell always. We have WAY
+            // more cells than other fields, so we don't want to pay the cost
+            // of padding due to other fields.
+            assert(@sizeOf(Cell) == @sizeOf(StorageCell));
+        } else {
+            // Extra u32 for the tag for safety checks. This is subject to
+            // change depending on the Zig compiler...
+            assert((@sizeOf(Cell) + @sizeOf(u32)) == @sizeOf(StorageCell));
+        }
+    }
+};
+
+/// The row header is at the start of every row within the storage buffer.
+/// It can store row-specific data.
+pub const RowHeader = struct {
+    /// Used internally to track if this row has been initialized.
+    init: bool = false,
+
+    /// If true, this row is soft-wrapped. The first cell of the next
+    /// row is a continuous of this row.
+    wrap: bool = false,
+};
+
 /// Cell is a single cell within the screen.
 pub const Cell = struct {
-    /// Each cell contains exactly one character. The character is UTF-32
-    /// encoded (just the Unicode codepoint).
-    char: u32,
+    /// The primary unicode codepoint for this cell. Most cells (almost all)
+    /// contain exactly one unicode codepoint. However, it is possible for
+    /// cells to contain multiple if multiple codepoints are used to create
+    /// a single grapheme cluster.
+    ///
+    /// In the case multiple codepoints make up a single grapheme, the
+    /// additional codepoints can be looked up in the hash map on the
+    /// Screen. Since multi-codepoints graphemes are rare, we don't want to
+    /// waste memory for every cell, so we use a side lookup for it.
+    char: u32 = 0,
 
-    /// Foreground and background color. null means to use the default.
-    fg: ?color.RGB = null,
-    bg: ?color.RGB = null,
+    /// Foreground and background color. attrs.has_{bg/fg} must be checked
+    /// to see if these are useful values.
+    fg: color.RGB = undefined,
+    bg: color.RGB = undefined,
 
     /// On/off attributes that can be set
     attrs: packed struct {
+        has_bg: bool = false,
+        has_fg: bool = false,
+
         bold: bool = false,
         faint: bool = false,
         underline: bool = false,
         inverse: bool = false,
-
-        /// If 1, this line is soft-wrapped. Only the last cell in a row
-        /// should have this set. The first cell of the next row is actually
-        /// part of this row in raw input.
-        wrap: bool = false,
 
         /// True if this is a wide character. This char takes up
         /// two cells. The following cell ALWAYS is a space.
@@ -91,27 +166,123 @@ pub const Cell = struct {
 
     test {
         // We use this test to ensure we always get the right size of the attrs
-        const cell: Cell = .{ .char = 0 };
-        _ = @bitCast(u8, cell.attrs);
-        try std.testing.expectEqual(1, @sizeOf(@TypeOf(cell.attrs)));
+        // const cell: Cell = .{ .char = 0 };
+        // _ = @bitCast(u8, cell.attrs);
+        // try std.testing.expectEqual(1, @sizeOf(@TypeOf(cell.attrs)));
     }
 
     test {
-        //log.warn("CELL={}", .{@sizeOf(Cell)});
-        try std.testing.expectEqual(16, @sizeOf(Cell));
+        //log.warn("CELL={} {}", .{ @sizeOf(Cell), @alignOf(Cell) });
+        try std.testing.expectEqual(12, @sizeOf(Cell));
     }
 };
 
+/// A row is a single row in the screen.
+pub const Row = struct {
+    /// Raw internal storage, do NOT write to this, use only the
+    /// helpers. Writing directly to this can easily mess up state
+    /// causing future crashes or misrendering.
+    storage: []StorageCell,
+
+    /// Set that this row is soft-wrapped. This doesn't change the contents
+    /// of this row so the row won't be marked dirty.
+    pub fn setWrapped(self: Row, v: bool) void {
+        self.storage[0].header.wrap = v;
+    }
+
+    /// Retrieve the header for this row.
+    pub fn header(self: Row) RowHeader {
+        return self.storage[0].header;
+    }
+
+    /// Returns the number of cells in this row.
+    pub fn lenCells(self: Row) usize {
+        return self.storage.len - 1;
+    }
+
+    /// Clear the row, making all cells empty.
+    pub fn clear(self: Row, pen: Cell) void {
+        var empty_pen = pen;
+        empty_pen.char = 0;
+        self.fill(empty_pen);
+    }
+
+    /// Fill the entire row with a copy of a single cell.
+    pub fn fill(self: Row, cell: Cell) void {
+        std.mem.set(StorageCell, self.storage[1..], .{ .cell = cell });
+    }
+
+    /// Fill a slice of a row.
+    pub fn fillSlice(self: Row, cell: Cell, start: usize, len: usize) void {
+        assert(len <= self.storage.len - 1);
+        std.mem.set(StorageCell, self.storage[start + 1 .. len + 1], .{ .cell = cell });
+    }
+
+    /// Get a single immutable cell.
+    pub fn getCell(self: Row, x: usize) Cell {
+        assert(self.header().init);
+        assert(x < self.storage.len - 1);
+        return self.storage[x + 1].cell;
+    }
+
+    /// Get a pointr to the cell at column x (0-indexed). This always
+    /// assumes that the cell was modified, notifying the renderer on the
+    /// next call to re-render this cell. Any change detection to avoid
+    /// this should be done prior.
+    pub fn getCellPtr(self: Row, x: usize) *Cell {
+        assert(self.header().init);
+        assert(x < self.storage.len - 1);
+        return &self.storage[x + 1].cell;
+    }
+
+    /// Copy the row src into this row. The row can be from another screen.
+    pub fn copyRow(self: Row, src: Row) void {
+        assert(self.header().init);
+        const end = @minimum(src.storage.len, self.storage.len);
+        std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
+    }
+
+    /// Read-only iterator for the cells in the row.
+    pub fn cellIterator(self: Row) CellIterator {
+        assert(self.header().init);
+        return .{ .row = self };
+    }
+
+    /// If this row isn't initialized, this sets all our cells to the
+    /// proper union tag so that it is properly zeroed.
+    fn initIfNeeded(self: Row) void {
+        if (!self.storage[0].header.init) {
+            self.fill(.{});
+            self.storage[0].header.init = true;
+        }
+    }
+};
+
+/// Used to iterate through the rows of a specific region.
 pub const RowIterator = struct {
-    screen: *const Screen,
+    screen: *Screen,
     tag: RowIndexTag,
+    max: usize,
     value: usize = 0,
 
     pub fn next(self: *RowIterator) ?Row {
-        if (self.value >= self.tag.maxLen(self.screen)) return null;
+        if (self.value >= self.max) return null;
         const idx = self.tag.index(self.value);
         const res = self.screen.getRow(idx);
         self.value += 1;
+        return res;
+    }
+};
+
+/// Used to iterate through the rows of a specific region.
+pub const CellIterator = struct {
+    row: Row,
+    i: usize = 0,
+
+    pub fn next(self: *CellIterator) ?Cell {
+        if (self.i >= self.row.storage.len - 1) return null;
+        const res = self.row.storage[self.i + 1].cell;
+        self.i += 1;
         return res;
     }
 };
@@ -139,6 +310,38 @@ pub const RowIndex = union(RowIndexTag) {
     /// The index is from the top of the history (scrollback) to just
     /// prior to the active area.
     history: usize,
+
+    /// Convert this row index into a screen offset. This will validate
+    /// the value so even if it is already a screen value, this may error.
+    pub fn toScreen(self: RowIndex, screen: *const Screen) RowIndex {
+        const y = switch (self) {
+            .screen => |y| y: {
+                // NOTE for this and others below: Zig is supposed to optimize
+                // away assert in releasefast but for some reason these were
+                // not being optimized away. I don't know why. For these asserts
+                // only, I comptime gate them.
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.screen.maxLen(screen));
+                break :y y;
+            },
+
+            .viewport => |y| y: {
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.viewport.maxLen(screen));
+                break :y y + screen.viewport;
+            },
+
+            .active => |y| y: {
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.active.maxLen(screen));
+                break :y screen.history + y;
+            },
+
+            .history => |y| y: {
+                if (std.debug.runtime_safety) assert(y < RowIndexTag.history.maxLen(screen));
+                break :y y;
+            },
+        };
+
+        return .{ .screen = y };
+    }
 };
 
 /// The tags of RowIndex
@@ -151,14 +354,27 @@ pub const RowIndexTag = enum {
     /// The max length for a given tag. This is a length, not an index,
     /// so it is 1-indexed. If the value is zero, it means that this
     /// section of the screen is empty or disabled.
-    pub fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
+    pub inline fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
+        const tracy = trace(@src());
+        defer tracy.end();
+
         return switch (self) {
-            // The max of the screen is "bottom" so that we don't read
-            // past the pre-allocated space.
-            .screen => screen.bottom,
-            .viewport => screen.rows,
+            // Screen can be any of the written rows
+            .screen => screen.rowsWritten(),
+
+            // Viewport can be any of the written rows or the max size
+            // of a viewport.
+            .viewport => @minimum(screen.rows, screen.rowsWritten()),
+
+            // History is all the way up to the top of our active area. If
+            // we haven't filled our active area, there is no history.
+            .history => screen.history,
+
+            // Active area can be any number of rows. We ignore rows
+            // written here because this is the only row index that can
+            // actively grow our rows.
             .active => screen.rows,
-            .history => screen.bottomOffset(),
+            //TODO .active => @minimum(rows_written, screen.rows),
         };
     }
 
@@ -173,33 +389,39 @@ pub const RowIndexTag = enum {
     }
 };
 
-/// Each screen maintains its own cursor state.
-cursor: Cursor = .{},
+// Initialize to header and not a cell so that we can check header.init
+// to know if the remainder of the row has been initialized or not.
+const StorageBuf = CircBuf(StorageCell, .{ .header = .{} });
 
-/// Saved cursor saved with DECSC (ESC 7).
-saved_cursor: Cursor = .{},
+/// The allocator used for all the storage operations
+alloc: Allocator,
 
-/// The full list of rows, including any scrollback.
-storage: []Cell,
+/// The full set of storage.
+storage: StorageBuf,
 
-/// The top and bottom of the scroll area. The first visible row if the terminal
-/// window were scrolled all the way to the top. The last visible row if the
-/// terminal were scrolled all the way to the bottom.
-top: usize,
-bottom: usize,
-
-/// The offset of the visible area within the storage. This is from the
-/// "top" field. So the actual index of the first row is
-/// `storage[top + visible_offset]`.
-visible_offset: usize,
+/// The number of rows and columns in the visible space.
+rows: usize,
+cols: usize,
 
 /// The maximum number of lines that are available in scrollback. This
 /// is in addition to the number of visible rows.
 max_scrollback: usize,
 
-/// The number of rows and columns in the visible space.
-rows: usize,
-cols: usize,
+/// The row (offset from the top) where the viewport currently is.
+viewport: usize,
+
+/// The amount of history (scrollback) that has been written so far. This
+/// can be calculated dynamically using the storage buffer but its an
+/// extremely hot piece of data so we cache it. Empirically this eliminates
+/// millions of function calls and saves seconds under high scroll scenarios
+/// (i.e. reading a large file).
+history: usize,
+
+/// Each screen maintains its own cursor state.
+cursor: Cursor = .{},
+
+/// Saved cursor saved with DECSC (ESC 7).
+saved_cursor: Cursor = .{},
 
 /// Initialize a new screen.
 pub fn init(
@@ -208,128 +430,128 @@ pub fn init(
     cols: usize,
     max_scrollback: usize,
 ) !Screen {
-    // Allocate enough storage to cover every row and column in the visible
-    // area. This wastes some up front memory but saves allocations later.
-    // TODO: dynamically allocate scrollback
-    const buf = try alloc.alloc(Cell, (rows + max_scrollback) * cols);
-    std.mem.set(Cell, buf, .{ .char = 0 });
+    // * Our buffer size is preallocated to fit double our visible space
+    //   or the maximum scrollback whichever is smaller.
+    // * We add +1 to cols to fit the row header
+    const buf_size = (rows + @minimum(max_scrollback, rows)) * (cols + 1);
 
     return Screen{
-        .cursor = .{},
-        .storage = buf,
-        .top = 0,
-        .bottom = rows,
-        .visible_offset = 0,
-        .max_scrollback = max_scrollback,
+        .alloc = alloc,
+        .storage = try StorageBuf.init(alloc, buf_size),
         .rows = rows,
         .cols = cols,
+        .max_scrollback = max_scrollback,
+        .viewport = 0,
+        .history = 0,
     };
 }
 
-pub fn deinit(self: *Screen, alloc: Allocator) void {
-    alloc.free(self.storage);
-    self.* = undefined;
+pub fn deinit(self: *Screen) void {
+    self.storage.deinit(self.alloc);
 }
 
-/// This returns true if the viewport is anchored at the bottom currently.
+/// Returns true if the viewport is scrolled to the bottom of the screen.
 pub fn viewportIsBottom(self: Screen) bool {
-    return self.visible_offset == self.bottomOffset();
+    return self.viewport == self.history;
 }
 
-fn bottomOffset(self: Screen) usize {
-    return self.bottom - self.rows;
+/// Shortcut for getRow followed by getCell as a quick way to read a cell.
+/// This is particularly useful for quickly reading the cell under a cursor
+/// with `getCell(.active, cursor.y, cursor.x)`.
+pub fn getCell(self: *Screen, tag: RowIndexTag, y: usize, x: usize) Cell {
+    return self.getRow(tag.index(y)).getCell(x);
+}
+
+/// Shortcut for getRow followed by getCellPtr as a quick way to read a cell.
+pub fn getCellPtr(self: *Screen, tag: RowIndexTag, y: usize, x: usize) *Cell {
+    return self.getRow(tag.index(y)).getCellPtr(x);
 }
 
 /// Returns an iterator that can be used to iterate over all of the rows
 /// from index zero of the given row index type. This can therefore iterate
 /// from row 0 of the active area, history, viewport, etc.
-pub fn rowIterator(self: *const Screen, tag: RowIndexTag) RowIterator {
-    return .{ .screen = self, .tag = tag };
-}
+pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
+    const tracy = trace(@src());
+    defer tracy.end();
 
-/// Region gets the contiguous portions of memory that constitute an
-/// entire region. This is an efficient way to clear regions, for example
-/// since you can memcpy directly into it.
-///
-/// This has two elements because internally we use a ring buffer and
-/// so any region can be split into two if it crosses the ring buffer
-/// boundary.
-pub fn region(self: *const Screen, tag: RowIndexTag) [2][]Cell {
-    const max_len = tag.maxLen(self);
-    if (max_len == 0) {
-        // This region is disabled or empty
-        return .{ self.storage[0..0], self.storage[0..0] };
-    }
-
-    const top = self.rowIndex(tag.index(0));
-    const bot = self.rowIndex(tag.index(max_len - 1));
-
-    // The bottom and top are available in one contiguous slice.
-    if (bot >= top) {
-        return .{
-            self.storage[top .. bot + self.cols],
-            self.storage[0..0], // just so its a valid slice, but zero length
-        };
-    }
-
-    // The bottom and top are split into two slices, so we slice to the
-    // bottom of the storage, then from the top.
     return .{
-        self.storage[top..self.storage.len],
-        self.storage[0 .. bot + self.cols],
+        .screen = self,
+        .tag = tag,
+        .max = tag.maxLen(self),
     };
 }
 
-/// Get a single row in the active area by index (0-indexed).
-pub fn getRow(self: Screen, idx: RowIndex) Row {
-    // Get the index of the first byte of the the row at index.
-    const real_idx = self.rowIndex(idx);
+/// Returns the row at the given index. This row is writable, although
+/// only the active area should probably be written to.
+pub fn getRow(self: *Screen, index: RowIndex) Row {
+    const tracy = trace(@src());
+    defer tracy.end();
 
-    // The storage is sliced to return exactly the number of columns.
-    return self.storage[real_idx .. real_idx + self.cols];
+    // Get our offset into storage
+    const offset = index.toScreen(self).screen * (self.cols + 1);
+
+    // Get the slices into the storage. This should never wrap because
+    // we're perfectly aligned on row boundaries.
+    const slices = self.storage.getPtrSlice(offset, self.cols + 1);
+    assert(slices[0].len == self.cols + 1 and slices[1].len == 0);
+
+    const row: Row = .{ .storage = slices[0] };
+    row.initIfNeeded();
+    return row;
 }
 
-/// Get a single cell in the active area. row and col are 0-indexed.
-pub fn getCell(self: Screen, row: usize, col: usize) *Cell {
-    assert(row < self.rows);
-    assert(col < self.cols);
-    const row_idx = self.rowIndex(.{ .active = row });
-    return &self.storage[row_idx + col];
+/// Copy the row at src to dst.
+pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) void {
+    // One day we can make this more efficient but for now
+    // we do the easy thing.
+    const dst_row = self.getRow(dst);
+    const src_row = self.getRow(src);
+    dst_row.copyRow(src_row);
 }
 
-/// Returns the index for the given row (0-indexed) into the underlying
-/// storage array. The row is 0-indexed from the top of the screen.
-fn rowIndex(self: *const Screen, idx: RowIndex) usize {
-    const y = switch (idx) {
-        .screen => |y| y: {
-            assert(y < RowIndexTag.screen.maxLen(self));
-            break :y y;
-        },
-
-        .viewport => |y| y: {
-            assert(y < RowIndexTag.viewport.maxLen(self));
-            break :y y + self.visible_offset;
-        },
-
-        .active => |y| y: {
-            assert(y < RowIndexTag.active.maxLen(self));
-            break :y self.bottomOffset() + y;
-        },
-
-        .history => |y| y: {
-            assert(y < RowIndexTag.history.maxLen(self));
-            break :y y;
-        },
-    };
-
-    const val = (self.top + y) * self.cols;
-    if (val < self.storage.len) return val;
-    return val - self.storage.len;
+/// Returns the offset into the storage buffer that the given row can
+/// be found. This assumes valid input and will crash if the input is
+/// invalid.
+fn rowOffset(self: Screen, index: RowIndex) usize {
+    // +1 for row header
+    return index.toScreen(&self).screen * (self.cols + 1);
 }
 
-/// Returns the total number of rows in the screen.
-inline fn totalRows(self: Screen) usize {
-    return self.storage.len / self.cols;
+/// Returns the number of rows that have actually been written to the
+/// screen. This assumes a row is "written" if getRow was ever called
+/// on the row.
+fn rowsWritten(self: Screen) usize {
+    // The number of rows we've actually written into our buffer
+    // This should always be cleanly divisible since we only request
+    // data in row chunks from the buffer.
+    assert(@mod(self.storage.len(), self.cols + 1) == 0);
+    return self.storage.len() / (self.cols + 1);
+}
+
+/// The number of rows our backing storage supports. This should
+/// always be self.rows but we use the backing storage as a source of truth.
+fn rowsCapacity(self: Screen) usize {
+    assert(@mod(self.storage.capacity(), self.cols + 1) == 0);
+    return self.storage.capacity() / (self.cols + 1);
+}
+
+/// The maximum possible capacity of the underlying buffer if we reached
+/// the max scrollback.
+fn maxCapacity(self: Screen) usize {
+    return (self.rows + self.max_scrollback) * (self.cols + 1);
+}
+
+/// Clear all the history. This moves the viewport back to the "top", too.
+pub fn clearHistory(self: *Screen) void {
+    // If there is no history, do nothing.
+    if (self.history == 0) return;
+
+    // Delete all our history
+    self.storage.deleteOldest(self.history * (self.cols + 1));
+    self.history = 0;
+
+    // Back to the top
+    self.viewport = 0;
 }
 
 /// Scroll behaviors for the scroll function.
@@ -358,119 +580,325 @@ pub const Scroll = union(enum) {
 /// "move" the screen. It is up to the caller to determine if they actually
 /// want to do that yet (i.e. are they writing to the end of the screen
 /// or not).
-pub fn scroll(self: *Screen, behavior: Scroll) void {
+pub fn scroll(self: *Screen, behavior: Scroll) !void {
     switch (behavior) {
         // Setting viewport offset to zero makes row 0 be at self.top
         // which is the top!
-        .top => self.visible_offset = 0,
+        .top => self.viewport = 0,
 
-        // Calc the bottom by going from top of scrollback (self.top)
-        // to the end of the storage, then subtract the number of visible
-        // rows.
-        .bottom => self.visible_offset = self.bottom - self.rows,
+        // Bottom is the end of the history area (end of history is the
+        // top of the active area).
+        .bottom => self.viewport = self.history,
 
         // TODO: deltas greater than the entire scrollback
-        .delta => |delta| self.scrollDelta(delta, true),
-        .delta_no_grow => |delta| self.scrollDelta(delta, false),
+        .delta => |delta| try self.scrollDelta(delta, true),
+        .delta_no_grow => |delta| try self.scrollDelta(delta, false),
     }
 }
 
-fn scrollDelta(self: *Screen, delta: isize, grow: bool) void {
-    // log.info("offsets before: top={} bottom={} visible={}", .{
-    //     self.top,
-    //     self.bottom,
-    //     self.visible_offset,
-    // });
-    // defer {
-    //     log.info("offsets after: top={} bottom={} visible={}", .{
-    //         self.top,
-    //         self.bottom,
-    //         self.visible_offset,
-    //     });
-    // }
-
+fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // If we're scrolling up, then we just subtract and we're done.
+    // We just clamp at 0 which blocks us from scrolling off the top.
     if (delta < 0) {
-        self.visible_offset -|= @intCast(usize, -delta);
+        self.viewport -|= @intCast(usize, -delta);
         return;
     }
 
-    // If we're scrolling down, we have more work to do beacuse we
-    // need to determine if we're overwriting our scrollback.
-    self.visible_offset +|= @intCast(usize, delta);
-    if (grow) {
-        self.bottom +|= @intCast(usize, delta);
-    } else {
-        // If we're not growing, then we want to ensure we don't scroll
-        // off the bottom. Calculate the number of rows we can see. If we
-        // can see less than the number of rows we have available, then scroll
-        // back a bit.
-        const visible_bottom = self.visible_offset + self.rows;
-        if (visible_bottom > self.bottom) {
-            self.visible_offset = self.bottom - self.rows;
+    // If we're scrolling down and not growing, then we just
+    // add to the viewport and clamp at the bottom.
+    if (!grow) {
+        self.viewport = @minimum(
+            self.history,
+            self.viewport + @intCast(usize, delta),
+        );
+        return;
+    }
 
-            // We can also fast-track this case because we know we won't
-            // be overlapping at all so we can return immediately.
-            return;
+    // Add our delta to our viewport. If we're less than the max currently
+    // allowed to scroll to the bottom (the end of the history), then we
+    // have space and we just return.
+    self.viewport += @intCast(usize, delta);
+    if (self.viewport <= self.history) return;
+
+    // If our viewport is past the top of our history then we potentially need
+    // to write more blank rows. If our viewport is more than our rows written
+    // then we expand out to there.
+    const rows_written = self.rowsWritten();
+    const viewport_bottom = self.viewport + self.rows;
+    if (viewport_bottom > rows_written) {
+        // The number of new rows we need is the number of rows off our
+        // previous bottom we are growing.
+        const new_rows_needed = viewport_bottom - rows_written;
+
+        // If we can't fit into our capacity but we have space, resize the
+        // buffer to allocate more scrollback.
+        const rows_final = rows_written + new_rows_needed;
+        if (rows_final > self.rowsCapacity()) {
+            const max_capacity = self.maxCapacity();
+            if (self.storage.capacity() < max_capacity) {
+                // The capacity we want to allocate. We take whatever is greater
+                // of what we actually need and two pages. We don't want to
+                // allocate one row at a time (common for scrolling) so we do this
+                // to chunk it.
+                const needed_capacity = @maximum(
+                    rows_final * (self.cols + 1),
+                    @minimum(self.storage.capacity() * 2, max_capacity),
+                );
+
+                // Allocate what we can.
+                try self.storage.resize(
+                    self.alloc,
+                    @minimum(max_capacity, needed_capacity),
+                );
+            }
+        }
+
+        // If we can't fit our rows into our capacity, we delete some scrollback.
+        const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
+            const rows_to_delete = rows_final - self.rowsCapacity();
+            self.viewport -= rows_to_delete;
+            self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
+            break :deleted rows_to_delete;
+        } else 0;
+
+        // If we have more rows than what shows on our screen, we have a
+        // history boundary.
+        const rows_written_final = rows_final - rows_deleted;
+        if (rows_written_final > self.rows) {
+            self.history = rows_written_final - self.rows;
+        }
+
+        // Ensure we have "written" our last row so that it shows up
+        _ = self.storage.getPtrSlice(
+            (rows_written_final - 1) * (self.cols + 1),
+            self.cols + 1,
+        );
+    }
+}
+
+/// Returns the raw text associated with a selection. This will unwrap
+/// soft-wrapped edges. The returned slice is owned by the caller and allocated
+/// using alloc, not the allocator associated with the screen (unless they match).
+pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]const u8 {
+    // Get the slices for the string
+    const slices = self.selectionSlices(sel);
+
+    // We can now know how much space we'll need to store the string. We loop
+    // over and UTF8-encode and calculate the exact size required. We will be
+    // off here by at most "newlines" values in the worst case that every
+    // single line is soft-wrapped.
+    const chars = chars: {
+        var count: usize = 0;
+        const arr = [_][]StorageCell{ slices.top, slices.bot };
+        for (arr) |slice| {
+            for (slice) |cell, i| {
+                // detect row headers
+                if (@mod(i, self.cols + 1) == 0) {
+                    // We use each row header as an opportunity to "count"
+                    // a new row, and therefore count a possible newline.
+                    count += 1;
+                    continue;
+                }
+
+                var buf: [4]u8 = undefined;
+                const char = if (cell.cell.char > 0) cell.cell.char else ' ';
+                count += try std.unicode.utf8Encode(@intCast(u21, char), &buf);
+            }
+        }
+
+        break :chars count;
+    };
+    const buf = try alloc.alloc(u8, chars + 1);
+    errdefer alloc.free(buf);
+
+    // Connect the text from the two slices
+    const arr = [_][]StorageCell{ slices.top, slices.bot };
+    var buf_i: usize = 0;
+    var row_count: usize = 0;
+    for (arr) |slice| {
+        var row_start: usize = row_count;
+        while (row_count < slices.rows) : (row_count += 1) {
+            const row_i = row_count - row_start;
+
+            // Calculate our start index. If we are beyond the length
+            // of this slice, then its time to move on (we exhausted top).
+            const start_idx = row_i * (self.cols + 1);
+            if (start_idx >= slice.len) break;
+
+            // Our end index is usually a full row, but if we're the final
+            // row then we just use the length.
+            const end_idx = @minimum(slice.len, start_idx + self.cols + 1);
+
+            // We may have to skip some cells from the beginning if we're
+            // the first row.
+            var skip: usize = if (row_count == 0) slices.top_offset else 0;
+
+            const row: Row = .{ .storage = slice[start_idx..end_idx] };
+            var it = row.cellIterator();
+            while (it.next()) |cell| {
+                if (skip > 0) {
+                    skip -= 1;
+                    continue;
+                }
+
+                // Skip spacers
+                if (cell.attrs.wide_spacer_head or
+                    cell.attrs.wide_spacer_tail) continue;
+
+                const char = if (cell.char > 0) cell.char else ' ';
+                buf_i += try std.unicode.utf8Encode(@intCast(u21, char), buf[buf_i..]);
+            }
+
+            // If this row is not soft-wrapped, add a newline
+            if (!row.header().wrap) {
+                buf[buf_i] = '\n';
+                buf_i += 1;
+            }
         }
     }
 
-    // TODO: can optimize scrollback = 0
+    // Remove our trailing newline, its never correct.
+    if (buf[buf_i - 1] == '\n') buf_i -= 1;
 
-    // Determine if we need to clear rows.
-    assert(@mod(self.storage.len, self.cols) == 0);
-    const storage_rows = self.storage.len / self.cols;
-    const visible_zero = self.top + self.visible_offset;
-    const rows_overlapped = if (visible_zero >= storage_rows) overlap: {
-        // We're wrapping from the top of the visible area. In this
-        // scenario, we just check that we have enough space from
-        // our true visible top to zero.
-        const visible_top = visible_zero - storage_rows;
-        const rows_available = self.top - visible_top;
-        if (rows_available >= self.rows) return;
+    // Add null termination
+    buf[buf_i] = 0;
 
-        // We overlap our missing rows
-        break :overlap self.rows - rows_available;
-    } else overlap: {
-        // First check: if we have enough space in the storage buffer
-        // FORWARD to accomodate all our rows, then we're fine.
-        const rows_forward = storage_rows - (self.top + self.visible_offset);
-        if (rows_forward >= self.rows) return;
-
-        // Second check: if we have enough space PRIOR to zero when
-        // wrapped, then we're fine.
-        const rows_wrapped = self.rows - rows_forward;
-        if (rows_wrapped < self.top) return;
-
-        // We need to clear the rows in the overlap and move the top
-        // of the scrollback buffer.
-        break :overlap rows_wrapped - self.top;
-    };
-
-    // If we are growing, then we clear the overlap and reset zero
-    if (grow) {
-        // Clear our overlap
-        const clear_start = self.top * self.cols;
-        const clear_end = clear_start + (rows_overlapped * self.cols);
-        std.mem.set(Cell, self.storage[clear_start..clear_end], .{ .char = 0 });
-
-        // Move to accomodate overlap. This deletes scrollback.
-        self.top = @mod(self.top + rows_overlapped, storage_rows);
-
-        // The new bottom is right up against the new top since we're using
-        // the full buffer. The bottom is therefore the full size of the storage.
-        self.bottom = storage_rows;
-    }
-
-    // Move back the number of overlapped
-    self.visible_offset -= rows_overlapped;
+    // Realloc so our free length is exactly correct
+    const result = try alloc.realloc(buf, buf_i + 1);
+    return result[0..buf_i :0];
 }
 
-/// Copy row at src to dst.
-pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
-    const src_row = self.getRow(.{ .active = src });
-    const dst_row = self.getRow(.{ .active = dst });
-    std.mem.copy(Cell, dst_row, src_row);
+/// Returns the slices that make up the selection, in order. There are at most
+/// two parts to handle the ring buffer. If the selection fits in one contiguous
+/// slice, then the second slice will have a length of zero.
+fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
+    rows: usize,
+
+    // Top offset can be used to determine if a newline is required by
+    // seeing if the cell index plus the offset cleanly divides by screen cols.
+    top_offset: usize,
+    top: []StorageCell,
+    bot: []StorageCell,
+} {
+    // Note: this function is tested via selectionString
+
+    assert(sel_raw.start.y < self.rowsWritten());
+    assert(sel_raw.end.y < self.rowsWritten());
+    assert(sel_raw.start.x < self.cols);
+    assert(sel_raw.end.x < self.cols);
+
+    const sel = sel: {
+        var sel = sel_raw;
+
+        // If the end of our selection is a wide char leader, include the
+        // first part of the next line.
+        if (sel.end.x == self.cols - 1) {
+            const row = self.getRow(.{ .screen = sel.end.y });
+            const cell = row.getCell(sel.end.x);
+            if (cell.attrs.wide_spacer_head) {
+                sel.end.y += 1;
+                sel.end.x = 0;
+            }
+        }
+
+        // If the start of our selection is a wide char spacer, include the
+        // wide char.
+        if (sel.start.x > 0) {
+            const row = self.getRow(.{ .screen = sel.start.y });
+            const cell = row.getCell(sel.start.x);
+            if (cell.attrs.wide_spacer_tail) {
+                sel.end.x -= 1;
+            }
+        }
+
+        break :sel sel;
+    };
+
+    // Get the true "top" and "bottom"
+    const sel_top = sel.topLeft();
+    const sel_bot = sel.bottomRight();
+
+    // We get the slices for the full top and bottom (inclusive).
+    const sel_top_offset = self.rowOffset(.{ .screen = sel_top.y });
+    const sel_bot_offset = self.rowOffset(.{ .screen = sel_bot.y });
+    const slices = self.storage.getPtrSlice(
+        sel_top_offset,
+        (sel_bot_offset - sel_top_offset) + (sel_bot.x + 2),
+    );
+
+    // The bottom and top are split into two slices, so we slice to the
+    // bottom of the storage, then from the top.
+    return .{
+        .rows = sel_bot.y - sel_top.y + 1,
+        .top_offset = sel_top.x,
+        .top = slices[0],
+        .bot = slices[1],
+    };
+}
+
+/// Resize the screen without any reflow. In this mode, columns/rows will
+/// be truncated as they are shrunk. If they are grown, the new space is filled
+/// with zeros.
+pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    // If we're resizing to the same size, do nothing.
+    if (self.cols == cols and self.rows == rows) return;
+
+    // Make a copy so we can access the old indexes.
+    var old = self.*;
+    errdefer self.* = old;
+
+    // Change our rows and cols so calculations make sense
+    self.rows = rows;
+    self.cols = cols;
+
+    // Calculate our buffer size. This is going to be either the old data
+    // with scrollback or the max capacity of our new size. We prefer the old
+    // length so we can save all the data (ignoring col truncation).
+    const old_len = @maximum(old.rowsWritten(), rows) * (cols + 1);
+    const new_max_capacity = self.maxCapacity();
+    const buf_size = @minimum(old_len, new_max_capacity);
+
+    // Reallocate the storage
+    self.storage = try StorageBuf.init(self.alloc, buf_size);
+    errdefer self.storage.deinit(self.alloc);
+    defer old.storage.deinit(self.alloc);
+
+    // Our viewport and history resets to the top because we're going to
+    // rewrite the screen
+    self.viewport = 0;
+    self.history = 0;
+
+    // Rewrite all our rows
+    var y: usize = 0;
+    var row_it = old.rowIterator(.screen);
+    while (row_it.next()) |old_row| {
+        // If we're past the end, scroll
+        if (y >= self.rows) {
+            y -= 1;
+            try self.scroll(.{ .delta = 1 });
+        }
+
+        // Get this row
+        const new_row = self.getRow(.{ .active = y });
+        new_row.copyRow(old_row);
+
+        // Next row
+        y += 1;
+    }
+
+    // Convert our cursor to screen coordinates so we can preserve it.
+    // The cursor is normally in active coordinates, but by converting to
+    // screen we can accomodate keeping it on the same place if we retain
+    // the same scrollback.
+    const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
+    self.cursor.x = @minimum(old.cursor.x, self.cols - 1);
+    self.cursor.y = if (old_cursor_y_screen <= RowIndexTag.screen.maxLen(self))
+        old_cursor_y_screen -| self.history
+    else
+        self.rows - 1;
 }
 
 /// Resize the screen. The rows or cols can be bigger or smaller. This
@@ -483,100 +911,68 @@ pub fn copyRow(self: *Screen, dst: usize, src: usize) void {
 ///
 /// This will trim data if the size is getting smaller. This will reflow the
 /// soft wrapped text.
-pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
-    defer {
-        assert(self.cursor.x < self.cols);
-        assert(self.cursor.y < self.rows);
-        assert(self.rows == rows);
-        assert(self.cols == cols);
-    }
+pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
+    if (self.cols == cols) {
+        // No resize necessary
+        if (self.rows == rows) return;
 
-    // If the rows increased, we alloc space for the new rows (w/ existing cols)
-    // and move the viewport such that the bottom is in view.
-    if (rows > self.rows) {
-        var storage = try alloc.alloc(
-            Cell,
-            (rows + self.max_scrollback) * self.cols,
-        );
-
-        // Copy our screen into the new storage area. Since we're growing
-        // rows, we know that the full buffer will fit so we copy it in
-        // order.
-        const reg = self.region(.screen);
-        std.mem.copy(Cell, storage, reg[0]);
-        std.mem.copy(Cell, storage[reg[0].len..], reg[1]);
-        std.mem.set(Cell, storage[reg[0].len + reg[1].len ..], .{ .char = 0 });
-
-        // Modify our storage, our lines have grown
-        alloc.free(self.storage);
-        self.storage = storage;
-
-        // Fix our row count
-        self.rows = rows;
-
-        // Store our visible offset so we can move our cursor accordingly.
-        const old_offset = self.visible_offset;
-
-        // Top is now 0 because we reoriented the ring buffer to be ordered.
-        // Bottom must be at least "rows" since we always show at least that
-        // much in the viewport.
-        self.top = 0;
-        self.bottom = @maximum(rows, self.bottom);
-        self.scroll(.{ .bottom = {} });
-
-        // Move our cursor to account for the new rows. The old offset
-        // should always be bigger (or the same) than the new offset since
-        // we are adding rows.
-        self.cursor.y += old_offset - self.visible_offset;
+        // If we have the same number of columns, text can't possibly
+        // reflow in any way, so we do the quicker thing and do a resize
+        // without reflow checks.
+        try self.resizeWithoutReflow(rows, cols);
+        return;
     }
 
     // If our columns increased, we alloc space for the new column width
     // and go through each row and reflow if necessary.
     if (cols > self.cols) {
-        var storage = try alloc.alloc(
-            Cell,
-            (self.rows + self.max_scrollback) * cols,
-        );
-        std.mem.set(Cell, storage, .{ .char = 0 });
+        var old = self.*;
+        errdefer self.* = old;
+
+        // Allocate enough to store our screen plus history.
+        const buf_size = (self.rows + @maximum(self.history, self.max_scrollback)) * (cols + 1);
+        self.storage = try StorageBuf.init(self.alloc, buf_size);
+        errdefer self.storage.deinit(self.alloc);
+        defer old.storage.deinit(self.alloc);
 
         // Convert our cursor coordinates to screen coordinates because
         // we may have to reflow the cursor if the line it is on is unwrapped.
         const cursor_pos = (point.Viewport{
-            .x = self.cursor.x,
-            .y = self.cursor.y,
-        }).toScreen(self);
-
-        // Nothing can fail from this point forward (no "try" expressions)
-        // so replace our storage. We defer freeing the "old" value because
-        // we need to access the old screen to copy.
-        var old = self.*;
-        defer {
-            assert(old.storage.ptr != self.storage.ptr);
-            alloc.free(old.storage);
-        }
-        self.storage = storage;
-        self.cols = cols;
+            .x = old.cursor.x,
+            .y = old.cursor.y,
+        }).toScreen(&old);
 
         // Whether we need to move the cursor or not
         var new_cursor: ?point.ScreenPoint = null;
 
+        // Reset our variables because we're going to reprint the screen.
+        self.cols = cols;
+        self.viewport = 0;
+        self.history = 0;
+
         // Iterate over the screen since we need to check for reflow.
         var iter = old.rowIterator(.screen);
         var y: usize = 0;
-        while (iter.next()) |row| {
-            // No matter what we copy this row
-            var new_row = self.getRow(.{ .screen = y });
-            std.mem.copy(Cell, new_row, row);
+        while (iter.next()) |old_row| {
+            // If we're past the end, scroll
+            if (y >= self.rows) {
+                y -= 1;
+                try self.scroll(.{ .delta = 1 });
+            }
 
-            // We need to check if our cursor was on this line
-            // and in the part that WAS copied. If so, we need to move it.
+            // Get this row
+            var new_row = self.getRow(.{ .active = y });
+            new_row.copyRow(old_row);
+
+            // We need to check if our cursor was on this line. If so,
+            // we set the new cursor.
             if (cursor_pos.y == iter.value - 1) {
                 assert(new_cursor == null); // should only happen once
-                new_cursor = .{ .y = y, .x = cursor_pos.x };
+                new_cursor = .{ .y = self.rowsWritten() - 1, .x = cursor_pos.x };
             }
 
             // If no reflow, just keep going
-            if (!row[row.len - 1].attrs.wrap) {
+            if (!old_row.header().wrap) {
                 y += 1;
                 continue;
             }
@@ -586,80 +982,83 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             // only reloop when we're back to clean non-wrapped lines.
 
             // Mark the last element as not wrapped
-            new_row[row.len - 1].attrs.wrap = false;
+            new_row.setWrapped(false);
 
             // We maintain an x coord so that we can set cursors properly
-            var x: usize = row.len;
-            new_row = new_row[x..];
+            var x: usize = old.cols;
             wrapping: while (iter.next()) |wrapped_row| {
                 // Trim the row from the right so that we ignore all trailing
                 // empty chars and don't wrap them.
-                const trimmed_row = trim: {
-                    var i: usize = wrapped_row.len;
-                    while (i > 0) : (i -= 1) if (!wrapped_row[i - 1].empty()) break;
-                    break :trim wrapped_row[0..i];
+                const wrapped_cells = trim: {
+                    var i: usize = old.cols;
+                    while (i > 0) : (i -= 1) if (!wrapped_row.getCell(i - 1).empty()) break;
+                    break :trim wrapped_row.storage[1 .. i + 1];
                 };
 
-                var wrapped_rem = trimmed_row;
-                while (wrapped_rem.len > 0) {
-                    // If the wrapped row fits nicely...
-                    if (wrapped_rem.len <= new_row.len) {
-                        // Copy the row
-                        std.mem.copy(Cell, new_row, wrapped_rem);
+                var wrapped_i: usize = 0;
+                while (wrapped_i < wrapped_cells.len) {
+                    // Remaining space in our new row
+                    const new_row_rem = self.cols - x;
 
-                        // If our cursor is in this line, then we have to move it
-                        // onto the new line because it got unwrapped.
-                        if (cursor_pos.y == iter.value - 1 and new_cursor == null) {
-                            new_cursor = .{ .y = y, .x = cursor_pos.x + x };
-                        }
+                    // Remaining cells in our wrapped row
+                    const wrapped_cells_rem = wrapped_cells.len - wrapped_i;
 
-                        // If this row isn't also wrapped, we're done!
-                        if (!wrapped_rem[wrapped_rem.len - 1].attrs.wrap) {
-                            y += 1;
-
-                            // If we were able to copy the entire row then
-                            // we shortened the screen by one. We need to reflect
-                            // this in our viewport.
-                            if (wrapped_rem.len == trimmed_row.len and
-                                self.visible_offset > 0)
-                            {
-                                self.visible_offset -= 1;
-                                self.bottom -= 1;
-                            }
-
-                            break :wrapping;
-                        }
-
-                        // Wrapped again!
-                        new_row[wrapped_rem.len - 1].attrs.wrap = false;
-                        new_row = new_row[wrapped_rem.len..];
-                        x += wrapped_rem.len;
-                        break;
-                    }
+                    // We copy as much as we can into our new row
+                    const copy_len = @minimum(new_row_rem, wrapped_cells_rem);
 
                     // The row doesn't fit, meaning we have to soft-wrap the
                     // new row but probably at a diff boundary.
-                    std.mem.copy(Cell, new_row, wrapped_rem[0..new_row.len]);
-                    new_row[new_row.len - 1].attrs.wrap = true;
-
-                    // We still need to copy the remainder
-                    wrapped_rem = wrapped_rem[new_row.len..];
+                    std.mem.copy(
+                        StorageCell,
+                        new_row.storage[x + 1 ..],
+                        wrapped_cells[wrapped_i .. wrapped_i + copy_len],
+                    );
 
                     // We need to check if our cursor was on this line
                     // and in the part that WAS copied. If so, we need to move it.
                     if (cursor_pos.y == iter.value - 1 and
-                        cursor_pos.x < new_row.len)
+                        cursor_pos.x < copy_len and
+                        new_cursor == null)
                     {
-                        assert(new_cursor == null); // should only happen once
-                        new_cursor = .{ .y = y, .x = x + cursor_pos.x };
+                        new_cursor = .{ .y = self.rowsWritten() - 1, .x = x + cursor_pos.x };
                     }
 
+                    // We copied the full amount left in this wrapped row.
+                    if (copy_len == wrapped_cells_rem) {
+                        // If this row isn't also wrapped, we're done!
+                        if (!wrapped_row.header().wrap) {
+                            // If we were able to copy the entire row then
+                            // we shortened the screen by one. We need to reflect
+                            // this in our viewport.
+                            if (wrapped_i == 0 and old.viewport > 0) old.viewport -= 1;
+
+                            y += 1;
+                            break :wrapping;
+                        }
+
+                        // Wrapped again!
+                        x += wrapped_cells_rem;
+                        break;
+                    }
+
+                    // We still need to copy the remainder
+                    wrapped_i += copy_len;
+
                     // Move to a new line in our new screen
+                    new_row.setWrapped(true);
                     y += 1;
                     x = 0;
-                    new_row = self.getRow(.{ .screen = y });
+
+                    // If we're past the end, scroll
+                    if (y >= self.rows) {
+                        y -= 1;
+                        try self.scroll(.{ .delta = 1 });
+                    }
+                    new_row = self.getRow(.{ .active = y });
                 }
             }
+
+            self.viewport = old.viewport;
         }
 
         // If we have a new cursor, we need to convert that to a viewport
@@ -671,146 +1070,67 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
         }
     }
 
-    // If our rows got smaller, we trim the scrollback.
-    if (rows < self.rows) {
-        var storage = try alloc.alloc(
-            Cell,
-            (rows + self.max_scrollback) * self.cols,
-        );
-
-        // Get the slices for our full screen. We only copy the end of it
-        // that fits into our new memory region. We know we have the same
-        // number of columns in this block so we can just copy as-is.
-        const reg = self.region(.screen);
-
-        // Trim the empty space off the end. The "end" might go into
-        // "top" since bottom may be empty or only implies the wraparound
-        // on the ring buffer.
-        const top = reg[0];
-        const bot = reg[1];
-        const bot_trimmed = trim: {
-            var i: usize = bot.len;
-            while (i > 0) : (i -= 1) if (!bot[i - 1].empty()) break;
-            i += self.cols - @mod(i, self.cols);
-            i = @minimum(bot.len, i);
-            break :trim bot[0..i];
-        };
-        const top_trimmed = if (bot.len > 0 and bot_trimmed.len == bot.len) noop: {
-            // We do nothing here because it means that we hit real content
-            // in the "bottom" so we don't want to trim zeros off the top
-            // when they might actually be useful.
-            break :noop top;
-        } else trim: {
-            var i: usize = top.len;
-            while (i > 0) : (i -= 1) if (!top[i - 1].empty()) break;
-            i += self.cols - @mod(i, self.cols);
-            i = @minimum(top.len, i);
-            break :trim top[0..i];
-        };
-
-        // The trimmed also have to be cleanly divisible by rows since
-        // the copy and other math below depends on this invariant.
-        assert(@mod(bot_trimmed.len, self.cols) == 0);
-        assert(@mod(top_trimmed.len, self.cols) == 0);
-
-        // Copy the top and bottom into the storage
-        const bot_len = @minimum(bot_trimmed.len, storage.len);
-        const top_len = @minimum(top_trimmed.len, storage.len - bot_len);
-        std.mem.copy(Cell, storage, top_trimmed[top_trimmed.len - top_len ..]);
-        std.mem.copy(Cell, storage[top_len..], bot_trimmed[bot_trimmed.len - bot_len ..]);
-        std.mem.set(Cell, storage[top_len + bot_len ..], .{ .char = 0 });
-
-        // Calculate the number of rows we copied since this will be
-        // our new "bottom". This should always divide cleanly because
-        // our cols haven't changed.
-        assert(@mod(top_len + bot_len, self.cols) == 0);
-        const copied_rows = (top_len + bot_len) / self.cols;
-
-        // Modify our storage
-        alloc.free(self.storage);
-        self.storage = storage;
-
-        // If our cursor was past the end of our old value, we pull it back.
-        if (self.cursor.y >= rows) {
-            self.cursor.y -= self.rows - rows;
-        }
-
-        // Fix our row count
-        self.rows = rows;
-
-        // Top is now 0 because we reoriented the ring buffer to be ordered.
-        // Bottom must be at least "rows" since we always show at least that
-        // much in the viewport.
-        self.top = 0;
-        self.bottom = @maximum(rows, copied_rows);
-        //log.warn("bot={} top={} copied={}", .{ bot_len, top_len, copied_rows });
-        //log.warn("BOTTOM={}", .{self.bottom});
-        self.scroll(.{ .bottom = {} });
-    }
+    // If our rows got smaller, we trim the scrollback. We do this after
+    // handling cols growing so that we can save as many lines as we can.
+    // We do it before cols shrinking so we can save compute on that operation.
+    if (rows < self.rows) try self.resizeWithoutReflow(rows, cols);
 
     // If our cols got smaller, we have to reflow text. This is the worst
     // possible case because we can't do any easy trick sto get reflow,
     // we just have to iterate over the screen and "print", wrapping as
     // needed.
     if (cols < self.cols) {
-        var storage = try alloc.alloc(
-            Cell,
-            (self.rows + self.max_scrollback) * cols,
-        );
-        std.mem.set(Cell, storage, .{ .char = 0 });
+        var old = self.*;
+        errdefer self.* = old;
+
+        // Allocate enough to store our screen plus history.
+        const buf_size = (self.rows + @maximum(self.history, self.max_scrollback)) * (cols + 1);
+        self.storage = try StorageBuf.init(self.alloc, buf_size);
+        errdefer self.storage.deinit(self.alloc);
+        defer old.storage.deinit(self.alloc);
 
         // Convert our cursor coordinates to screen coordinates because
         // we may have to reflow the cursor if the line it is on is moved.
         var cursor_pos = (point.Viewport{
-            .x = self.cursor.x,
-            .y = self.cursor.y,
-        }).toScreen(self);
-
-        // Nothing can fail from this point forward (no "try" expressions)
-        // so replace our storage. We defer freeing the "old" value because
-        // we need to access the old screen to copy.
-        var old = self.*;
-        defer {
-            assert(old.storage.ptr != self.storage.ptr);
-            alloc.free(old.storage);
-        }
-        self.storage = storage;
-        self.cols = cols;
+            .x = old.cursor.x,
+            .y = old.cursor.y,
+        }).toScreen(&old);
 
         // Whether we need to move the cursor or not
         var new_cursor: ?point.ScreenPoint = null;
+
+        // Reset our variables because we're going to reprint the screen.
+        self.cols = cols;
+        self.viewport = 0;
+        self.history = 0;
 
         // Iterate over the screen since we need to check for reflow.
         var iter = old.rowIterator(.screen);
         var x: usize = 0;
         var y: usize = 0;
-        while (iter.next()) |row| {
+        while (iter.next()) |old_row| {
             // Trim the row from the right so that we ignore all trailing
             // empty chars and don't wrap them.
             const trimmed_row = trim: {
-                var i: usize = row.len;
-                while (i > 0) {
-                    if (!row[i - 1].empty()) break;
-                    i -= 1;
-                }
-
-                break :trim row[0..i];
+                var i: usize = old.cols;
+                while (i > 0) : (i -= 1) if (!old_row.getCell(i - 1).empty()) break;
+                break :trim old_row.storage[1 .. i + 1];
             };
 
             // Copy all the cells into our row.
             for (trimmed_row) |cell, i| {
                 // Soft wrap if we have to
                 if (x == self.cols) {
-                    var last_cell = self.getCell(y, x - 1);
-                    last_cell.attrs.wrap = true;
+                    var row = self.getRow(.{ .active = y });
+                    row.setWrapped(true);
                     x = 0;
                     y += 1;
                 }
 
                 // If our y is more than our rows, we need to scroll
                 if (y >= self.rows) {
-                    self.scroll(.{ .delta = 1 });
-                    y = self.rows - 1;
+                    try self.scroll(.{ .delta = 1 });
+                    y -= 1;
                     x = 0;
                 }
 
@@ -819,14 +1139,13 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                     cursor_pos.x == i)
                 {
                     assert(new_cursor == null);
-                    new_cursor = .{ .x = x, .y = self.visible_offset + y };
+                    new_cursor = .{ .x = x, .y = self.viewport + y };
                 }
 
                 // Copy the old cell, unset the old wrap state
                 // log.warn("y={} x={} rows={}", .{ y, x, self.rows });
-                var new_cell = self.getCell(y, x);
-                new_cell.* = cell;
-                new_cell.attrs.wrap = false;
+                var new_cell = self.getCellPtr(.active, y, x);
+                new_cell.* = cell.cell;
 
                 // Next
                 x += 1;
@@ -840,13 +1159,13 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
                 assert(new_cursor == null);
                 new_cursor = .{
                     .x = @minimum(cursor_pos.x, self.cols - 1),
-                    .y = self.visible_offset + y,
+                    .y = self.viewport + y,
                 };
             }
 
             // If we aren't wrapping, then move to the next row
             if (trimmed_row.len == 0 or
-                !trimmed_row[trimmed_row.len - 1].attrs.wrap)
+                !old_row.header().wrap)
             {
                 y += 1;
                 x = 0;
@@ -861,243 +1180,18 @@ pub fn resize(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
             self.cursor.y = viewport_pos.y;
         } else {
             // TODO: why is this necessary? Without this, neovim will
-            // crash when we shrink the window to the smallest size
+            // crash when we shrink the window to the smallest size. We
+            // never got a test case to cover this.
             self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
             self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
         }
     }
 }
 
-/// Resize the screen without any reflow. In this mode, columns/rows will
-/// be truncated as they are shrunk. If they are grown, the new space is filled
-/// with zeros.
-pub fn resizeWithoutReflow(self: *Screen, alloc: Allocator, rows: usize, cols: usize) !void {
-    // Resize without reflow not supported for now with scrollback.
-    assert(self.max_scrollback == 0);
-
-    // Make a copy so we can access the old indexes.
-    const old = self.*;
-
-    // Reallocate the storage
-    self.storage = try alloc.alloc(Cell, (rows + self.max_scrollback) * cols);
-    defer alloc.free(old.storage);
-    std.mem.set(Cell, self.storage, .{ .char = 0 });
-    self.top = 0;
-    self.bottom = rows;
-    self.rows = rows;
-    self.cols = cols;
-
-    // Move our cursor if we have to so it stays on the screen.
-    self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
-    self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
-
-    // If we're increasing height, then copy all rows (start at 0).
-    // Otherwise start at the latest row that includes the bottom row,
-    // aka strip the top.
-    var y: usize = if (rows >= old.rows) 0 else old.rows - rows;
-    const start = y;
-    const col_end = @minimum(old.cols, cols);
-    while (y < old.rows) : (y += 1) {
-        // Copy the old row into the new row, just losing the columsn
-        // if we got thinner.
-        const old_row = old.getRow(.{ .viewport = y });
-        const new_row = self.getRow(.{ .viewport = y - start });
-        std.mem.copy(Cell, new_row, old_row[0..col_end]);
-
-        // If our new row is wider, then we copy zeroes into the rest.
-        if (new_row.len > old_row.len) {
-            std.mem.set(Cell, new_row[old_row.len..], .{ .char = 0 });
-        }
-    }
-
-    // If we grew rows, then set the remaining data to zero.
-    if (rows > old.rows) {
-        std.mem.set(Cell, self.storage[self.rowIndex(.{ .viewport = old.rows })..], .{ .char = 0 });
-    }
-}
-
-/// Returns the raw text associated with a selection. This will unwrap
-/// soft-wrapped edges. The returned slice is owned by the caller.
-pub fn selectionString(self: Screen, alloc: Allocator, sel: Selection) ![:0]const u8 {
-    // Get the slices for the string
-    const slices = self.selectionSlices(sel);
-
-    // We can now know how much space we'll need to store the string. We loop
-    // over and UTF8-encode and calculate the exact size required. We will be
-    // off here by at most "newlines" values in the worst case that every
-    // single line is soft-wrapped.
-    const newlines = @divFloor(slices.top.len + slices.bot.len, self.cols) + 1;
-    const chars = chars: {
-        var count: usize = 0;
-        const arr = [_][]Cell{ slices.top, slices.bot };
-        for (arr) |slice| {
-            for (slice) |cell| {
-                var buf: [4]u8 = undefined;
-                const char = if (cell.char > 0) cell.char else ' ';
-                count += try std.unicode.utf8Encode(@intCast(u21, char), &buf);
-            }
-        }
-
-        break :chars count;
-    };
-    const buf = try alloc.alloc(u8, chars + newlines + 1);
-    errdefer alloc.free(buf);
-
-    var i: usize = 0;
-    for (slices.top) |cell, idx| {
-        // If our index cleanly divides into the col count then we're
-        // at a newline and we add it.
-        if (idx > 0 and
-            @mod(idx + slices.top_offset, self.cols) == 0 and
-            !slices.top[idx - 1].attrs.wrap)
-        {
-            buf[i] = '\n';
-            i += 1;
-        }
-
-        // Skip spacers
-        if (cell.attrs.wide_spacer_head or
-            cell.attrs.wide_spacer_tail) continue;
-
-        const char = if (cell.char > 0) cell.char else ' ';
-        i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
-    }
-
-    for (slices.bot) |cell, idx| {
-        // We don't use "top_offset" here because the bot by definition
-        // is never offset, it always starts at index 0 so we can just check
-        // the index directly.
-        if (@mod(idx, self.cols) == 0) {
-            // Determine if we soft-wrapped. For the bottom slice this is
-            // a bit unique because if we're at idx 0, we actually need to
-            // check the end of the top.
-            const wrapped = if (idx > 0)
-                slices.bot[idx - 1].attrs.wrap
-            else
-                slices.top[slices.top.len - 1].attrs.wrap;
-
-            if (!wrapped) {
-                buf[i] = '\n';
-                i += 1;
-            }
-        }
-
-        // Skip spacers
-        if (cell.attrs.wide_spacer_head or
-            cell.attrs.wide_spacer_tail) continue;
-
-        const char = if (cell.char > 0) cell.char else ' ';
-        i += try std.unicode.utf8Encode(@intCast(u21, char), buf[i..]);
-    }
-
-    // Add null termination
-    buf[i] = 0;
-
-    // Realloc so our free length is exactly correct
-    const result = try alloc.realloc(buf, i + 1);
-    return result[0..i :0];
-}
-
-/// Returns the slices that make up the selection, in order. There are at most
-/// two parts to handle the ring buffer. If the selection fits in one contiguous
-/// slice, then the second slice will have a length of zero.
-fn selectionSlices(self: Screen, sel_raw: Selection) struct {
-    // Top offset can be used to determine if a newline is required by
-    // seeing if the cell index plus the offset cleanly divides by screen cols.
-    top_offset: usize,
-    top: []Cell,
-    bot: []Cell,
-} {
-    // Note: this function is tested via selectionString
-
-    assert(sel_raw.start.y < self.totalRows());
-    assert(sel_raw.end.y < self.totalRows());
-    assert(sel_raw.start.x < self.cols);
-    assert(sel_raw.end.x < self.cols);
-
-    const sel = sel: {
-        var sel = sel_raw;
-
-        // If the end of our selection is a wide char leader, include the
-        // first part of the next line.
-        if (sel.end.x == self.cols - 1) {
-            const row = self.getRow(.{ .screen = sel.end.y });
-            if (row[sel.end.x].attrs.wide_spacer_head) {
-                sel.end.y += 1;
-                sel.end.x = 0;
-            }
-        }
-
-        // If the start of our selection is a wide char spacer, include the
-        // wide char.
-        if (sel.start.x > 0) {
-            const row = self.getRow(.{ .screen = sel.start.y });
-            if (row[sel.start.x].attrs.wide_spacer_tail) {
-                sel.end.x -= 1;
-            }
-        }
-
-        break :sel sel;
-    };
-
-    // Get the true "top" and "bottom"
-    const sel_top = sel.topLeft();
-    const sel_bot = sel.bottomRight();
-    const top = self.rowIndex(.{ .screen = sel_top.y });
-    const bot = self.rowIndex(.{ .screen = sel_bot.y });
-
-    // The bottom and top are available in one contiguous slice.
-    if (bot >= top) {
-        return .{
-            .top_offset = sel_top.x,
-            .top = self.storage[top + sel_top.x .. bot + sel_bot.x + 1],
-            .bot = self.storage[0..0], // just so its a valid slice, but zero length
-        };
-    }
-
-    // The bottom and top are split into two slices, so we slice to the
-    // bottom of the storage, then from the top.
-    return .{
-        .top_offset = sel_top.x,
-        .top = self.storage[top + sel_top.x .. self.storage.len],
-        .bot = self.storage[0 .. bot + sel_bot.x + 1],
-    };
-}
-
-/// Turns the screen into a string. Different regions of the screen can
-/// be selected using the "tag", i.e. if you want to output the viewport,
-/// the scrollback, the full screen, etc.
-pub fn testString(self: Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 {
-    const buf = try alloc.alloc(u8, self.storage.len + self.rows + 1);
-
-    var i: usize = 0;
-    var y: usize = 0;
-    var rows = self.rowIterator(tag);
-    while (rows.next()) |row| {
-        defer y += 1;
-
-        if (y > 0) {
-            buf[i] = '\n';
-            i += 1;
-        }
-
-        for (row) |cell| {
-            // TODO: handle character after null
-            if (cell.char > 0) {
-                i += try std.unicode.utf8Encode(@intCast(u21, cell.char), buf[i..]);
-            }
-        }
-    }
-
-    // Never render the final newline
-    const str = std.mem.trimRight(u8, buf[0..i], "\n");
-    return try alloc.realloc(buf, str.len);
-}
-
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
 /// each row. If a line is longer than the available columns, soft-wrapping
-/// will occur.
-pub fn testWriteString(self: *Screen, text: []const u8) void {
+/// will occur. This will automatically handle basic wide chars.
+pub fn testWriteString(self: *Screen, text: []const u8) !void {
     var y: usize = 0;
     var x: usize = 0;
 
@@ -1114,7 +1208,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
         // If we're writing past the end of the active area, scroll.
         if (y >= self.rows) {
             y -= 1;
-            self.scroll(.{ .delta = 1 });
+            try self.scroll(.{ .delta = 1 });
         }
 
         // Get our row
@@ -1122,12 +1216,12 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
 
         // If we're writing past the end, we need to soft wrap.
         if (x == self.cols) {
-            row[x - 1].attrs.wrap = true;
+            row.setWrapped(true);
             y += 1;
             x = 0;
             if (y >= self.rows) {
                 y -= 1;
-                self.scroll(.{ .delta = 1 });
+                try self.scroll(.{ .delta = 1 });
             }
             row = self.getRow(.{ .active = y });
         }
@@ -1136,30 +1230,40 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
         const width = utf8proc.charwidth(c);
         assert(width == 1 or width == 2);
         switch (width) {
-            1 => row[x].char = @intCast(u32, c),
+            1 => {
+                const cell = row.getCellPtr(x);
+                cell.char = @intCast(u32, c);
+            },
 
             2 => {
                 if (x == self.cols - 1) {
-                    row[x].char = ' ';
-                    row[x].attrs.wide_spacer_head = true;
+                    const cell = row.getCellPtr(x);
+                    cell.char = ' ';
+                    cell.attrs.wide_spacer_head = true;
 
                     // wrap
-                    row[x].attrs.wrap = true;
+                    row.setWrapped(true);
                     y += 1;
                     x = 0;
                     if (y >= self.rows) {
                         y -= 1;
-                        self.scroll(.{ .delta = 1 });
+                        try self.scroll(.{ .delta = 1 });
                     }
                     row = self.getRow(.{ .active = y });
                 }
 
-                row[x].char = @intCast(u32, c);
-                row[x].attrs.wide = true;
+                {
+                    const cell = row.getCellPtr(x);
+                    cell.char = @intCast(u32, c);
+                    cell.attrs.wide = true;
+                }
 
-                x += 1;
-                row[x].char = ' ';
-                row[x].attrs.wide_spacer_tail = true;
+                {
+                    x += 1;
+                    const cell = row.getCellPtr(x);
+                    cell.char = ' ';
+                    cell.attrs.wide_spacer_tail = true;
+                }
             },
 
             else => unreachable,
@@ -1169,16 +1273,51 @@ pub fn testWriteString(self: *Screen, text: []const u8) void {
     }
 }
 
+/// Turns the screen into a string. Different regions of the screen can
+/// be selected using the "tag", i.e. if you want to output the viewport,
+/// the scrollback, the full screen, etc.
+///
+/// This is only useful for testing.
+pub fn testString(self: *Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 {
+    const buf = try alloc.alloc(u8, self.storage.len() * 4);
+
+    var i: usize = 0;
+    var y: usize = 0;
+    var rows = self.rowIterator(tag);
+    while (rows.next()) |row| {
+        defer y += 1;
+
+        if (y > 0) {
+            buf[i] = '\n';
+            i += 1;
+        }
+
+        var cells = row.cellIterator();
+        while (cells.next()) |cell| {
+            // TODO: handle character after null
+            if (cell.char > 0) {
+                i += try std.unicode.utf8Encode(@intCast(u21, cell.char), buf[i..]);
+            }
+        }
+    }
+
+    // Never render the final newline
+    const str = std.mem.trimRight(u8, buf[0..i], "\n");
+    return try alloc.realloc(buf, str.len);
+}
+
 test "Screen" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    try testing.expect(s.rowsWritten() == 0);
 
     // Sanity check that our test helpers work
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
+    try testing.expect(s.rowsWritten() == 3);
     {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
@@ -1191,7 +1330,7 @@ test "Screen" {
     while (iter.next()) |row| {
         // Rows should be pointer equivalent to getRow
         const row_other = s.getRow(.{ .viewport = count });
-        try testing.expectEqual(row.ptr, row_other.ptr);
+        try testing.expectEqual(row.storage.ptr, row_other.storage.ptr);
         count += 1;
     }
 
@@ -1199,10 +1338,9 @@ test "Screen" {
     try testing.expectEqual(@as(usize, 3), count);
 
     // Should be able to easily clear screen
-    const reg = s.region(.viewport);
-    std.mem.set(Cell, reg[0], .{ .char = 'A' });
-    std.mem.set(Cell, reg[1], .{ .char = 'A' });
     {
+        var it = s.rowIterator(.viewport);
+        while (it.next()) |row| row.fill(.{ .char = 'A' });
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings("AAAAA\nAAAAA\nAAAAA", contents);
@@ -1214,19 +1352,13 @@ test "Screen: scrolling" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     try testing.expect(s.viewportIsBottom());
 
     // Scroll down, should still be bottom
-    s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
-
-    // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .active = 0 }));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .active = 1 }));
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .active = 2 }));
 
     {
         // Test our contents rotated
@@ -1236,7 +1368,7 @@ test "Screen: scrolling" {
     }
 
     // Scrolling to the bottom does nothing
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
@@ -1246,35 +1378,16 @@ test "Screen: scrolling" {
     }
 }
 
-// TODO
-// test "Screen: scrolling more than size" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     var s = try init(alloc, 3, 5, 3);
-//     defer s.deinit(alloc);
-//     s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-//
-//     try testing.expect(s.viewportIsBottom());
-//
-//     // Scroll down, should still be bottom
-//     s.scroll(.{ .delta = 7 });
-//     try testing.expect(s.viewportIsBottom());
-//
-//     // Test our row index
-//     try testing.expectEqual(@as(usize, 5), s.rowIndex(0));
-//     try testing.expectEqual(@as(usize, 10), s.rowIndex(1));
-//     try testing.expectEqual(@as(usize, 15), s.rowIndex(2));
-// }
-
 test "Screen: scroll down from 0" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(.{ .delta = -1 });
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    // Scrolling up does nothing, but allows it
+    try s.scroll(.{ .delta = -1 });
     try testing.expect(s.viewportIsBottom());
 
     {
@@ -1290,14 +1403,9 @@ test "Screen: scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 1);
-    defer s.deinit(alloc);
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(.{ .delta = 1 });
-
-    // Test our row index
-    try testing.expectEqual(@as(usize, 5), s.rowIndex(.{ .active = 0 }));
-    try testing.expectEqual(@as(usize, 10), s.rowIndex(.{ .active = 1 }));
-    try testing.expectEqual(@as(usize, 15), s.rowIndex(.{ .active = 2 }));
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.scroll(.{ .delta = 1 });
 
     {
         // Test our contents rotated
@@ -1307,7 +1415,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the bottom
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
     try testing.expect(s.viewportIsBottom());
 
     {
@@ -1318,7 +1426,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling back should make it visible again
-    s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .delta = -1 });
     try testing.expect(!s.viewportIsBottom());
 
     {
@@ -1329,7 +1437,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling back again should do nothing
-    s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .delta = -1 });
 
     {
         // Test our contents rotated
@@ -1339,7 +1447,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the bottom
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
@@ -1349,7 +1457,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling forward with no grow should do nothing
-    s.scroll(.{ .delta_no_grow = 1 });
+    try s.scroll(.{ .delta_no_grow = 1 });
 
     {
         // Test our contents rotated
@@ -1359,7 +1467,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the top should work
-    s.scroll(.{ .top = {} });
+    try s.scroll(.{ .top = {} });
 
     {
         // Test our contents rotated
@@ -1369,9 +1477,8 @@ test "Screen: scrollback" {
     }
 
     // Should be able to easily clear active area only
-    const reg = s.region(.active);
-    std.mem.set(Cell, reg[0], .{ .char = 0 });
-    std.mem.set(Cell, reg[1], .{ .char = 0 });
+    var it = s.rowIterator(.active);
+    while (it.next()) |row| row.clear(.{});
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1379,7 +1486,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling to the bottom
-    s.scroll(.{ .bottom = {} });
+    try s.scroll(.{ .bottom = {} });
 
     {
         // Test our contents rotated
@@ -1389,14 +1496,43 @@ test "Screen: scrollback" {
     }
 }
 
+test "Screen: scrollback with large delta" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Scroll to top
+    try s.scroll(.{ .top = {} });
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Scroll down a ton
+    try s.scroll(.{ .delta_no_grow = 5 });
+    try testing.expect(s.viewportIsBottom());
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+}
+
 test "Screen: scrollback empty" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 50);
-    defer s.deinit(alloc);
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    s.scroll(.{ .delta_no_grow = 1 });
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.scroll(.{ .delta_no_grow = 1 });
 
     {
         // Test our contents
@@ -1406,16 +1542,16 @@ test "Screen: scrollback empty" {
     }
 }
 
-test "Screen: history region with scrollback" {
+test "Screen: history region with no scrollback" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 1, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
 
     // Write a bunch that WOULD invoke scrollback if exists
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
@@ -1424,9 +1560,10 @@ test "Screen: history region with scrollback" {
     }
 
     // Verify no scrollback
-    const reg = s.region(.history);
-    try testing.expect(reg[0].len == 0);
-    try testing.expect(reg[1].len == 0);
+    var it = s.rowIterator(.history);
+    var count: usize = 0;
+    while (it.next()) |_| count += 1;
+    try testing.expect(count == 0);
 }
 
 test "Screen: history region with scrollback" {
@@ -1434,11 +1571,11 @@ test "Screen: history region with scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 1, 5, 2);
-    defer s.deinit(alloc);
+    defer s.deinit();
 
     // Write a bunch that WOULD invoke scrollback if exists
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1452,11 +1589,6 @@ test "Screen: history region with scrollback" {
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
 
-    // Verify history region
-    const reg = s.region(.history);
-    try testing.expect(reg[0].len > 0);
-    try testing.expect(reg[1].len >= 0);
-
     {
         var contents = try s.testString(alloc, .history);
         defer alloc.free(contents);
@@ -1464,18 +1596,17 @@ test "Screen: history region with scrollback" {
         try testing.expectEqualStrings(expected, contents);
     }
 }
-
 test "Screen: row copy" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     // Copy
-    s.scroll(.{ .delta = 1 });
-    s.copyRow(2, 0);
+    try s.scroll(.{ .delta = 1 });
+    s.copyRow(.{ .active = 2 }, .{ .active = 0 });
 
     // Test our contents
     var contents = try s.testString(alloc, .viewport);
@@ -1483,14 +1614,72 @@ test "Screen: row copy" {
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
 }
 
+test "Screen: clear history with no history" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+    s.clearHistory();
+    try testing.expect(s.viewportIsBottom());
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+}
+
+test "Screen: clear history" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Scroll to top
+    try s.scroll(.{ .top = {} });
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    s.clearHistory();
+    try testing.expect(s.viewportIsBottom());
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+}
+
 test "Screen: selectionString" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1508,9 +1697,9 @@ test "Screen: selectionString soft wrap" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD2EFGH3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1528,16 +1717,15 @@ test "Screen: selectionString wrap around" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     try testing.expect(s.viewportIsBottom());
 
     // Scroll down, should still be bottom, but should wrap because
     // we're out of space.
-    s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .delta = 1 });
     try testing.expect(s.viewportIsBottom());
-    try testing.expectEqual(@as(usize, 0), s.rowIndex(.{ .active = 2 }));
-    s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1555,9 +1743,9 @@ test "Screen: selectionString wide char" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1A⚡";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1595,9 +1783,9 @@ test "Screen: selectionString wide char with header" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABC⚡";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     {
         var contents = try s.selectionString(alloc, .{
@@ -1610,16 +1798,137 @@ test "Screen: selectionString wide char with header" {
     }
 }
 
+test "Screen: resize (no reflow) more rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize (no reflow) less rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(2, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: resize (no reflow) more cols" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(3, 10);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize (no reflow) less cols" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(3, 4);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABC\n2EFG\n3IJK";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize (no reflow) more rows with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 2);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(10, 5);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize (no reflow) less rows with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 2);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    try s.resizeWithoutReflow(2, 5);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize (no reflow) empty screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    try testing.expect(s.rowsWritten() == 0);
+    try testing.expectEqual(@as(usize, 5), s.rowsCapacity());
+
+    try s.resizeWithoutReflow(10, 10);
+    try testing.expect(s.rowsWritten() == 0);
+
+    // This is the primary test for this test, we want to ensure we
+    // always have at least enough capacity for our rows.
+    try testing.expectEqual(@as(usize, 10), s.rowsCapacity());
+}
+
 test "Screen: resize more rows no scrollback" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     const cursor = s.cursor;
-    try s.resize(alloc, 10, 5);
+    try s.resize(10, 5);
 
     // Cursor should not move
     try testing.expectEqual(cursor, s.cursor);
@@ -1641,12 +1950,11 @@ test "Screen: resize more rows with empty scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 10);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     const cursor = s.cursor;
-    try s.resize(alloc, 10, 5);
-    try testing.expectEqual(@as(usize, 20), s.totalRows());
+    try s.resize(10, 5);
 
     // Cursor should not move
     try testing.expectEqual(cursor, s.cursor);
@@ -1668,9 +1976,9 @@ test "Screen: resize more rows with populated scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 5);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1681,17 +1989,13 @@ test "Screen: resize more rows with populated scrollback" {
     // Set our cursor to be on the "4"
     s.cursor.x = 0;
     s.cursor.y = 1;
-    try testing.expectEqual(@as(u32, '4'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '4'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Resize
-    try s.resize(alloc, 10, 5);
-    try testing.expectEqual(@as(usize, 15), s.totalRows());
+    try s.resize(10, 5);
 
     // Cursor should still be on the "4"
-    try testing.expectEqual(@as(u32, '4'), s.getCell(s.cursor.y, s.cursor.x).char);
-    // s.cursor.x = 0;
-    // s.cursor.y = 1;
-    //try testing.expectEqual(cursor, s.cursor);
+    try testing.expectEqual(@as(u32, '4'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1705,11 +2009,11 @@ test "Screen: resize more cols no reflow" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     const cursor = s.cursor;
-    try s.resize(alloc, 3, 10);
+    try s.resize(3, 10);
 
     // Cursor should not move
     try testing.expectEqual(cursor, s.cursor);
@@ -1731,9 +2035,9 @@ test "Screen: resize more cols with reflow that fits full width" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Verify we soft wrapped
     {
@@ -1746,10 +2050,10 @@ test "Screen: resize more cols with reflow that fits full width" {
     // Let's put our cursor on row 2, where the soft wrap is
     s.cursor.x = 0;
     s.cursor.y = 1;
-    try testing.expectEqual(@as(u32, '2'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '2'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize(alloc, 3, 10);
+    try s.resize(3, 10);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1766,9 +2070,9 @@ test "Screen: resize more cols with reflow that ends in newline" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 6, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Verify we soft wrapped
     {
@@ -1781,10 +2085,10 @@ test "Screen: resize more cols with reflow that ends in newline" {
     // Let's put our cursor on the last row
     s.cursor.x = 0;
     s.cursor.y = 2;
-    try testing.expectEqual(@as(u32, '3'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '3'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize(alloc, 3, 10);
+    try s.resize(3, 10);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1792,7 +2096,7 @@ test "Screen: resize more cols with reflow that ends in newline" {
     }
 
     // Our cursor should still be on the 3
-    try testing.expectEqual(@as(u32, '3'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '3'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 }
 
 test "Screen: resize more cols with reflow that forces more wrapping" {
@@ -1800,14 +2104,14 @@ test "Screen: resize more cols with reflow that forces more wrapping" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Let's put our cursor on row 2, where the soft wrap is
     s.cursor.x = 0;
     s.cursor.y = 1;
-    try testing.expectEqual(@as(u32, '2'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '2'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Verify we soft wrapped
     {
@@ -1818,7 +2122,7 @@ test "Screen: resize more cols with reflow that forces more wrapping" {
     }
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize(alloc, 3, 7);
+    try s.resize(3, 7);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1836,14 +2140,14 @@ test "Screen: resize more cols with reflow that unwraps multiple times" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD2EFGH3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Let's put our cursor on row 2, where the soft wrap is
     s.cursor.x = 0;
     s.cursor.y = 2;
-    try testing.expectEqual(@as(u32, '3'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '3'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Verify we soft wrapped
     {
@@ -1854,7 +2158,7 @@ test "Screen: resize more cols with reflow that unwraps multiple times" {
     }
 
     // Resize and verify we undid the soft wrap because we have space now
-    try s.resize(alloc, 3, 15);
+    try s.resize(3, 15);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1872,9 +2176,9 @@ test "Screen: resize more cols with populated scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 5);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD5EFGH";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -1885,14 +2189,14 @@ test "Screen: resize more cols with populated scrollback" {
     // // Set our cursor to be on the "5"
     s.cursor.x = 0;
     s.cursor.y = 2;
-    try testing.expectEqual(@as(u32, '5'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '5'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Resize
-    try s.resize(alloc, 3, 10);
+    try s.resize(3, 10);
 
     // Cursor should still be on the "5"
     log.warn("cursor={}", .{s.cursor});
-    try testing.expectEqual(@as(u32, '5'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, '5'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -1907,11 +2211,11 @@ test "Screen: resize less rows no scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     const cursor = s.cursor;
-    try s.resize(alloc, 1, 5);
+    try s.resize(1, 5);
 
     // Cursor should not move
     try testing.expectEqual(cursor, s.cursor);
@@ -1935,17 +2239,17 @@ test "Screen: resize less rows moving cursor" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Put our cursor on the last line
     s.cursor.x = 1;
     s.cursor.y = 2;
-    try testing.expectEqual(@as(u32, 'I'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, 'I'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     // Resize
-    try s.resize(alloc, 1, 5);
+    try s.resize(1, 5);
 
     // Cursor should be on the last line
     try testing.expectEqual(@as(usize, 1), s.cursor.x);
@@ -1970,10 +2274,10 @@ test "Screen: resize less rows with empty scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 10);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resize(alloc, 1, 5);
+    try s.testWriteString(str);
+    try s.resize(1, 5);
 
     {
         var contents = try s.testString(alloc, .screen);
@@ -1993,9 +2297,9 @@ test "Screen: resize less rows with populated scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 5);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -2004,7 +2308,7 @@ test "Screen: resize less rows with populated scrollback" {
     }
 
     // Resize
-    try s.resize(alloc, 1, 5);
+    try s.resize(1, 5);
 
     {
         var contents = try s.testString(alloc, .screen);
@@ -2024,11 +2328,11 @@ test "Screen: resize less cols no reflow" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1AB\n2EF\n3IJ";
-    s.testWriteString(str);
+    try s.testWriteString(str);
     const cursor = s.cursor;
-    try s.resize(alloc, 3, 3);
+    try s.resize(3, 3);
 
     // Cursor should not move
     try testing.expectEqual(cursor, s.cursor);
@@ -2050,16 +2354,16 @@ test "Screen: resize less cols with reflow but row space" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABCD";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Put our cursor on the end
     s.cursor.x = 4;
     s.cursor.y = 0;
-    try testing.expectEqual(@as(u32, 'D'), s.getCell(s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(u32, 'D'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
-    try s.resize(alloc, 3, 3);
+    try s.resize(3, 3);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -2083,10 +2387,10 @@ test "Screen: resize less cols with reflow with trimmed rows" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "3IJKL\n4ABCD\n5EFGH";
-    s.testWriteString(str);
-    try s.resize(alloc, 3, 3);
+    try s.testWriteString(str);
+    try s.resize(3, 3);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -2107,10 +2411,10 @@ test "Screen: resize less cols with reflow with trimmed rows and scrollback" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 1);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "3IJKL\n4ABCD\n5EFGH";
-    s.testWriteString(str);
-    try s.resize(alloc, 3, 3);
+    try s.testWriteString(str);
+    try s.resize(3, 3);
 
     {
         var contents = try s.testString(alloc, .viewport);
@@ -2134,12 +2438,12 @@ test "Screen: resize more rows then shrink again" {
     const alloc = testing.allocator;
 
     var s = try init(alloc, 3, 5, 10);
-    defer s.deinit(alloc);
+    defer s.deinit();
     const str = "1ABC";
-    s.testWriteString(str);
+    try s.testWriteString(str);
 
     // Grow
-    try s.resize(alloc, 10, 5);
+    try s.resize(10, 5);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -2152,7 +2456,7 @@ test "Screen: resize more rows then shrink again" {
     }
 
     // Shrink
-    try s.resize(alloc, 3, 5);
+    try s.resize(3, 5);
     {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
@@ -2165,7 +2469,7 @@ test "Screen: resize more rows then shrink again" {
     }
 
     // Grow again
-    try s.resize(alloc, 10, 5);
+    try s.resize(10, 5);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
@@ -2175,74 +2479,5 @@ test "Screen: resize more rows then shrink again" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
-    }
-}
-
-test "Screen: resize (no reflow) more rows" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resizeWithoutReflow(alloc, 10, 5);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
-    }
-}
-
-test "Screen: resize (no reflow) less rows" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resizeWithoutReflow(alloc, 2, 5);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
-    }
-}
-
-test "Screen: resize (no reflow) more cols" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resizeWithoutReflow(alloc, 3, 10);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
-    }
-}
-
-test "Screen: resize (no reflow) less cols" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit(alloc);
-    const str = "1ABCD\n2EFGH\n3IJKL";
-    s.testWriteString(str);
-    try s.resizeWithoutReflow(alloc, 3, 4);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        const expected = "1ABC\n2EFG\n3IJK";
-        try testing.expectEqualStrings(expected, contents);
     }
 }

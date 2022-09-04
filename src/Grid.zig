@@ -322,7 +322,7 @@ pub fn deinit(self: *Grid) void {
 ///
 /// Note this doesn't have to typically be manually called. Internally,
 /// the renderer will do this when it needs more memory space.
-pub fn rebuildCells(self: *Grid, term: Terminal) !void {
+pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -344,9 +344,13 @@ pub fn rebuildCells(self: *Grid, term: Terminal) !void {
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
-    while (rowIter.next()) |line| {
+    while (rowIter.next()) |row| {
         defer y += 1;
-        for (line) |cell, x| {
+
+        var cellIter = row.cellIterator();
+        var x: usize = 0;
+        while (cellIter.next()) |cell| {
+            defer x += 1;
             assert(try self.updateCell(term, cell, x, y));
         }
     }
@@ -358,7 +362,7 @@ pub fn rebuildCells(self: *Grid, term: Terminal) !void {
 /// This should be called prior to render to finalize the cells and prepare
 /// for render. This performs tasks such as preparing the cursor, refreshing
 /// the cells if necessary, etc.
-pub fn finalizeCells(self: *Grid, term: Terminal) !void {
+pub fn finalizeCells(self: *Grid, term: *Terminal) !void {
     // Add the cursor
     // TODO: only add cursor if it changed
     if (self.cells.items.len < self.cells.capacity)
@@ -375,10 +379,11 @@ pub fn finalizeCells(self: *Grid, term: Terminal) !void {
     try self.flushAtlas();
 }
 
-fn addCursor(self: *Grid, term: Terminal) void {
+fn addCursor(self: *Grid, term: *Terminal) void {
     // Add the cursor
     if (self.cursor_visible and term.screen.viewportIsBottom()) {
         const cell = term.screen.getCell(
+            .active,
             term.screen.cursor.y,
             term.screen.cursor.x,
         );
@@ -410,7 +415,7 @@ fn addCursor(self: *Grid, term: Terminal) void {
 /// needed.
 pub fn updateCell(
     self: *Grid,
-    term: Terminal,
+    term: *Terminal,
     cell: terminal.Screen.Cell,
     x: usize,
     y: usize,
@@ -454,14 +459,14 @@ pub fn updateCell(
         const res: BgFg = if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
-            .bg = cell.bg,
-            .fg = cell.fg orelse self.foreground,
+            .bg = if (cell.attrs.has_bg) cell.bg else null,
+            .fg = if (cell.attrs.has_fg) cell.fg else self.foreground,
         } else .{
             // In inverted mode, the background MUST be set to something
             // (is never null) so it is either the fg or default fg. The
             // fg is either the bg or default background.
-            .bg = cell.fg orelse self.foreground,
-            .fg = cell.bg orelse self.background,
+            .bg = if (cell.attrs.has_fg) cell.fg else self.foreground,
+            .fg = if (cell.attrs.has_bg) cell.bg else self.background,
         };
         break :colors res;
     };

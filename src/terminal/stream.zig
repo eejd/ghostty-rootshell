@@ -68,7 +68,7 @@ pub fn Stream(comptime Handler: type) type {
             }
         }
 
-        fn execute(self: *Self, c: u8) !void {
+        pub fn execute(self: *Self, c: u8) !void {
             // log.warn("C0: {}", .{c});
             switch (@intToEnum(ansi.C0, c)) {
                 .NUL => {},

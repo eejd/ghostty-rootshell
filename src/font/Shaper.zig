@@ -74,7 +74,7 @@ pub const RunIterator = struct {
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
-        if (self.i >= self.row.len) return null;
+        if (self.i >= self.row.lenCells()) return null;
 
         // Track the font for our curent run
         var current_font: Group.FontIndex = .{};
@@ -85,8 +85,8 @@ pub const RunIterator = struct {
 
         // Go through cell by cell and accumulate while we build our run.
         var j: usize = self.i;
-        while (j < self.row.len) : (j += 1) {
-            const cell = self.row[j];
+        while (j < self.row.lenCells()) : (j += 1) {
+            const cell = self.row.getCell(j);
 
             // Ignore tailing wide spacers, this will get fixed up by the shaper
             if (cell.empty() or cell.attrs.wide_spacer_tail) continue;
@@ -129,8 +129,8 @@ test "run iterator" {
     {
         // Make a screen with some data
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
-        defer screen.deinit(alloc);
-        screen.testWriteString("ABCD");
+        defer screen.deinit();
+        try screen.testWriteString("ABCD");
 
         // Get our run iterator
         var shaper = testdata.shaper;
@@ -143,8 +143,8 @@ test "run iterator" {
     {
         // Make a screen with some data
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
-        defer screen.deinit(alloc);
-        screen.testWriteString("A😃D");
+        defer screen.deinit();
+        try screen.testWriteString("A😃D");
 
         // Get our run iterator
         var shaper = testdata.shaper;
@@ -175,8 +175,8 @@ test "shape" {
 
     // Make a screen with some data
     var screen = try terminal.Screen.init(alloc, 3, 10, 0);
-    defer screen.deinit(alloc);
-    screen.testWriteString(buf[0..buf_idx]);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = testdata.shaper;

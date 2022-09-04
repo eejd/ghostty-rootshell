@@ -7,6 +7,7 @@ const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
+pub const parse_table = @import("parse_table.zig");
 
 pub const Charset = charsets.Charset;
 pub const CharsetSlot = charsets.Slots;
@@ -28,19 +29,5 @@ pub const TabClear = csi.TabClear;
 pub const Attribute = sgr.Attribute;
 
 test {
-    _ = ansi;
-    _ = charsets;
-    _ = color;
-    _ = csi;
-    _ = point;
-    _ = sgr;
-    _ = stream;
-    _ = Parser;
-    _ = Selection;
-    _ = Terminal;
-    _ = Screen;
-
-    _ = @import("osc.zig");
-    _ = @import("parse_table.zig");
-    _ = @import("Tabstops.zig");
+    @import("std").testing.refAllDecls(@This());
 }

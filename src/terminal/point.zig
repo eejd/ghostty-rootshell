@@ -16,7 +16,7 @@ pub const Viewport = struct {
         // get the full offset from the top.
         return .{
             .x = self.x,
-            .y = screen.visible_offset + self.y,
+            .y = screen.viewport + self.y,
         };
     }
 
@@ -25,7 +25,7 @@ pub const Viewport = struct {
         const alloc = testing.allocator;
 
         var s = try Screen.init(alloc, 3, 5, 0);
-        defer s.deinit(alloc);
+        defer s.deinit();
 
         try testing.expectEqual(ScreenPoint{
             .x = 1,
@@ -38,24 +38,24 @@ pub const Viewport = struct {
         const alloc = testing.allocator;
 
         var s = try Screen.init(alloc, 3, 5, 3);
-        defer s.deinit(alloc);
+        defer s.deinit();
 
         // At the bottom
-        s.scroll(.{ .delta = 6 });
+        try s.scroll(.{ .delta = 6 });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
             .y = 3,
         }, (Viewport{ .x = 0, .y = 0 }).toScreen(&s));
 
         // Move the viewport a bit up
-        s.scroll(.{ .delta = -1 });
+        try s.scroll(.{ .delta = -1 });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
             .y = 2,
         }, (Viewport{ .x = 0, .y = 0 }).toScreen(&s));
 
         // Move the viewport to top
-        s.scroll(.{ .top = {} });
+        try s.scroll(.{ .top = {} });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
             .y = 0,
@@ -83,15 +83,15 @@ pub const ScreenPoint = struct {
         // TODO: test
 
         // Before viewport
-        if (self.y < screen.visible_offset) return .{ .x = 0, .y = 0 };
+        if (self.y < screen.viewport) return .{ .x = 0, .y = 0 };
 
         // After viewport
-        if (self.y > screen.visible_offset + screen.rows) return .{
+        if (self.y > screen.viewport + screen.rows) return .{
             .x = screen.cols - 1,
             .y = screen.rows - 1,
         };
 
-        return .{ .x = self.x, .y = self.y - screen.visible_offset };
+        return .{ .x = self.x, .y = self.y - screen.viewport };
     }
 
     test "before" {
