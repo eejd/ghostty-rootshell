@@ -1079,7 +1079,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
     if (rows < self.rows) try self.resizeWithoutReflow(rows, cols);
 
     // If our cols got smaller, we have to reflow text. This is the worst
-    // possible case because we can't do any easy trick sto get reflow,
+    // possible case because we can't do any easy tricks to get reflow,
     // we just have to iterate over the screen and "print", wrapping as
     // needed.
     if (cols < self.cols) {
@@ -1133,7 +1133,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                 // If our y is more than our rows, we need to scroll
                 if (y >= self.rows) {
                     try self.scroll(.{ .delta = 1 });
-                    y -= 1;
+                    y = self.rows - 1;
                     x = 0;
                 }
 
@@ -1179,8 +1179,8 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         // point and set it up.
         if (new_cursor) |pos| {
             const viewport_pos = pos.toViewport(self);
-            self.cursor.x = viewport_pos.x;
-            self.cursor.y = viewport_pos.y;
+            self.cursor.x = @minimum(viewport_pos.x, self.cols - 1);
+            self.cursor.y = @minimum(viewport_pos.y, self.rows - 1);
         } else {
             // TODO: why is this necessary? Without this, neovim will
             // crash when we shrink the window to the smallest size. We
