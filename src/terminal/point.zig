@@ -83,15 +83,15 @@ pub const ScreenPoint = struct {
         // TODO: test
 
         // Before viewport
-        if (self.y < screen.visible_offset) return .{ .x = 0, .y = 0 };
+        if (self.y < screen.viewport) return .{ .x = 0, .y = 0 };
 
         // After viewport
-        if (self.y > screen.visible_offset + screen.rows) return .{
+        if (self.y > screen.viewport + screen.rows) return .{
             .x = screen.cols - 1,
             .y = screen.rows - 1,
         };
 
-        return .{ .x = self.x, .y = self.y - screen.visible_offset };
+        return .{ .x = self.x, .y = self.y - screen.viewport };
     }
 
     test "before" {

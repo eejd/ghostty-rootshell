@@ -800,6 +800,9 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If we're resizing to the same size, do nothing.
+    if (self.cols == cols and self.rows == rows) return;
+
     // Make a copy so we can access the old indexes.
     var old = self.*;
     errdefer self.* = old;
@@ -875,6 +878,159 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         // without reflow checks.
         try self.resizeWithoutReflow(rows, cols);
         return;
+    }
+
+    // If our columns increased, we alloc space for the new column width
+    // and go through each row and reflow if necessary.
+    if (cols > self.cols) {
+        var old = self.*;
+        errdefer self.* = old;
+
+        // Allocate enough to store our screen plus history.
+        const buf_size = (self.rows + @maximum(self.history, self.max_scrollback)) * (cols + 1);
+        self.storage = try StorageBuf.init(self.alloc, buf_size);
+        errdefer self.storage.deinit(self.alloc);
+        defer old.storage.deinit(self.alloc);
+
+        // Convert our cursor coordinates to screen coordinates because
+        // we may have to reflow the cursor if the line it is on is unwrapped.
+        const cursor_pos = (point.Viewport{
+            .x = old.cursor.x,
+            .y = old.cursor.y,
+        }).toScreen(&old);
+
+        // Whether we need to move the cursor or not
+        var new_cursor: ?point.ScreenPoint = null;
+
+        // Reset our variables because we're going to reprint the screen.
+        self.cols = cols;
+        self.viewport = 0;
+        self.history = 0;
+
+        // Iterate over the screen since we need to check for reflow.
+        var iter = old.rowIterator(.screen);
+        var y: usize = 0;
+        while (iter.next()) |old_row| {
+            // If we're past the end, scroll
+            if (y >= self.rows) {
+                y -= 1;
+                try self.scroll(.{ .delta = 1 });
+            }
+
+            // Get this row
+            var new_row = self.getRow(.{ .active = y });
+            new_row.copyRow(old_row);
+
+            // We need to check if our cursor was on this line
+            // and in the part that WAS copied. If so, we need to move it.
+            if (cursor_pos.y == iter.value - 1) {
+                assert(new_cursor == null); // should only happen once
+                new_cursor = .{ .y = self.rowsWritten() - 1, .x = cursor_pos.x };
+            }
+
+            // If no reflow, just keep going
+            if (!old_row.header().wrap) {
+                y += 1;
+                continue;
+            }
+
+            // We need to reflow. At this point things get a bit messy.
+            // The goal is to keep the messiness of reflow down here and
+            // only reloop when we're back to clean non-wrapped lines.
+
+            // Mark the last element as not wrapped
+            new_row.setWrapped(false);
+
+            // We maintain an x coord so that we can set cursors properly
+            var x: usize = old.cols;
+            wrapping: while (iter.next()) |wrapped_row| {
+                // Trim the row from the right so that we ignore all trailing
+                // empty chars and don't wrap them.
+                const trimmed_row = trim: {
+                    var i: usize = old.cols;
+                    while (i > 0) : (i -= 1) if (!wrapped_row.getCell(i - 1).empty()) break;
+                    break :trim wrapped_row.storage[1 .. i + 1];
+                };
+
+                var wrapped_rem = trimmed_row;
+                while (wrapped_rem.len > 0) {
+                    // If the wrapped row fits nicely...
+                    const new_row_rem = self.cols - x;
+                    if (wrapped_rem.len <= new_row_rem) {
+                        // Copy the row
+                        std.mem.copy(StorageCell, new_row.storage[x + 1 ..], wrapped_rem);
+
+                        // If our cursor is in this line, then we have to move it
+                        // onto the new line because it got unwrapped.
+                        if (cursor_pos.y == iter.value - 1 and new_cursor == null) {
+                            new_cursor = .{ .y = self.rowsWritten() - 1, .x = cursor_pos.x + x };
+                        }
+
+                        // If this row isn't also wrapped, we're done!
+                        if (!wrapped_row.header().wrap) {
+                            y += 1;
+
+                            // If we were able to copy the entire row then
+                            // we shortened the screen by one. We need to reflect
+                            // this in our viewport.
+                            if (wrapped_rem.len == trimmed_row.len and old.viewport > 0) {
+                                old.viewport -= 1;
+                            }
+
+                            break :wrapping;
+                        }
+
+                        // Wrapped again!
+                        x += wrapped_rem.len;
+                        break;
+                    }
+
+                    // The row doesn't fit, meaning we have to soft-wrap the
+                    // new row but probably at a diff boundary.
+                    std.mem.copy(
+                        StorageCell,
+                        new_row.storage[x + 1 ..],
+                        wrapped_rem[0..new_row_rem],
+                    );
+                    new_row.setWrapped(true);
+
+                    // We still need to copy the remainder
+                    wrapped_rem = wrapped_rem[new_row_rem..];
+
+                    // We need to check if our cursor was on this line
+                    // and in the part that WAS copied. If so, we need to move it.
+                    if (cursor_pos.y == iter.value - 1 and
+                        cursor_pos.x < new_row_rem)
+                    {
+                        assert(new_cursor == null); // should only happen once
+                        new_cursor = .{ .y = self.rowsWritten() - 1, .x = x + cursor_pos.x };
+                    }
+
+                    // Move to a new line in our new screen
+                    y += 1;
+                    x = 0;
+
+                    // If we're past the end, scroll
+                    if (y >= self.rows) {
+                        y -= 1;
+                        try self.scroll(.{ .delta = 1 });
+                    }
+
+                    // Get this row
+                    new_row = self.getRow(.{ .active = y });
+                }
+            }
+
+            self.viewport = old.viewport;
+        }
+
+        // If we have a new cursor, we need to convert that to a viewport
+        // point and set it up.
+        if (new_cursor) |pos| {
+            const viewport_pos = pos.toViewport(self);
+            self.cursor.x = viewport_pos.x;
+            self.cursor.y = viewport_pos.y;
+        }
     }
 
     // TODO
@@ -1662,5 +1818,181 @@ test "Screen: resize more cols no reflow" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more cols with reflow that fits full width" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Let's put our cursor on row 2, where the soft wrap is
+    s.cursor.x = 0;
+    s.cursor.y = 1;
+    try testing.expectEqual(@as(u32, '2'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize(3, 10);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Our cursor should've moved
+    try testing.expectEqual(@as(usize, 5), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
+}
+
+test "Screen: resize more cols with reflow that ends in newline" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 6, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD2\nEFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Let's put our cursor on the last row
+    s.cursor.x = 0;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, '3'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize(3, 10);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Our cursor should still be on the 3
+    try testing.expectEqual(@as(u32, '3'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+}
+
+test "Screen: resize more cols with reflow that forces more wrapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Let's put our cursor on row 2, where the soft wrap is
+    s.cursor.x = 0;
+    s.cursor.y = 1;
+    try testing.expectEqual(@as(u32, '2'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize(3, 7);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD2E\nFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Our cursor should've moved
+    try testing.expectEqual(@as(usize, 5), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
+}
+
+test "Screen: resize more cols with reflow that unwraps multiple times" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH3IJKL";
+    try s.testWriteString(str);
+
+    // Let's put our cursor on row 2, where the soft wrap is
+    s.cursor.x = 0;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, '3'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize(3, 15);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1ABCD2EFGH3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Our cursor should've moved
+    try testing.expectEqual(@as(usize, 10), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
+}
+
+test "Screen: resize more cols with populated scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD5EFGH";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // // Set our cursor to be on the "5"
+    s.cursor.x = 0;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, '5'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Resize
+    try s.resize(3, 10);
+
+    // Cursor should still be on the "5"
+    log.warn("cursor={}", .{s.cursor});
+    try testing.expectEqual(@as(u32, '5'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJKL\n4ABCD5EFGH";
+        try testing.expectEqualStrings(expected, contents);
     }
 }
