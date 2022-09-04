@@ -921,8 +921,8 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             var new_row = self.getRow(.{ .active = y });
             new_row.copyRow(old_row);
 
-            // We need to check if our cursor was on this line
-            // and in the part that WAS copied. If so, we need to move it.
+            // We need to check if our cursor was on this line. If so,
+            // we set the new cursor.
             if (cursor_pos.y == iter.value - 1) {
                 assert(new_cursor == null); // should only happen once
                 new_cursor = .{ .y = self.rowsWritten() - 1, .x = cursor_pos.x };
@@ -946,67 +946,63 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             wrapping: while (iter.next()) |wrapped_row| {
                 // Trim the row from the right so that we ignore all trailing
                 // empty chars and don't wrap them.
-                const trimmed_row = trim: {
+                const wrapped_cells = trim: {
                     var i: usize = old.cols;
                     while (i > 0) : (i -= 1) if (!wrapped_row.getCell(i - 1).empty()) break;
                     break :trim wrapped_row.storage[1 .. i + 1];
                 };
 
-                var wrapped_rem = trimmed_row;
-                while (wrapped_rem.len > 0) {
-                    // If the wrapped row fits nicely...
+                var wrapped_i: usize = 0;
+                while (wrapped_i < wrapped_cells.len) {
+                    // Remaining space in our new row
                     const new_row_rem = self.cols - x;
-                    if (wrapped_rem.len <= new_row_rem) {
-                        // Copy the row
-                        std.mem.copy(StorageCell, new_row.storage[x + 1 ..], wrapped_rem);
 
-                        // If our cursor is in this line, then we have to move it
-                        // onto the new line because it got unwrapped.
-                        if (cursor_pos.y == iter.value - 1 and new_cursor == null) {
-                            new_cursor = .{ .y = self.rowsWritten() - 1, .x = cursor_pos.x + x };
-                        }
+                    // Remaining cells in our wrapped row
+                    const wrapped_cells_rem = wrapped_cells.len - wrapped_i;
 
-                        // If this row isn't also wrapped, we're done!
-                        if (!wrapped_row.header().wrap) {
-                            y += 1;
-
-                            // If we were able to copy the entire row then
-                            // we shortened the screen by one. We need to reflect
-                            // this in our viewport.
-                            if (wrapped_rem.len == trimmed_row.len and old.viewport > 0) {
-                                old.viewport -= 1;
-                            }
-
-                            break :wrapping;
-                        }
-
-                        // Wrapped again!
-                        x += wrapped_rem.len;
-                        break;
-                    }
+                    // We copy as much as we can into our new row
+                    const copy_len = @minimum(new_row_rem, wrapped_cells_rem);
 
                     // The row doesn't fit, meaning we have to soft-wrap the
                     // new row but probably at a diff boundary.
                     std.mem.copy(
                         StorageCell,
                         new_row.storage[x + 1 ..],
-                        wrapped_rem[0..new_row_rem],
+                        wrapped_cells[wrapped_i .. wrapped_i + copy_len],
                     );
-                    new_row.setWrapped(true);
-
-                    // We still need to copy the remainder
-                    wrapped_rem = wrapped_rem[new_row_rem..];
 
                     // We need to check if our cursor was on this line
                     // and in the part that WAS copied. If so, we need to move it.
                     if (cursor_pos.y == iter.value - 1 and
-                        cursor_pos.x < new_row_rem)
+                        cursor_pos.x < copy_len and
+                        new_cursor == null)
                     {
-                        assert(new_cursor == null); // should only happen once
                         new_cursor = .{ .y = self.rowsWritten() - 1, .x = x + cursor_pos.x };
                     }
 
+                    // We copied the full amount left in this wrapped row.
+                    if (copy_len == wrapped_cells_rem) {
+                        // If this row isn't also wrapped, we're done!
+                        if (!wrapped_row.header().wrap) {
+                            // If we were able to copy the entire row then
+                            // we shortened the screen by one. We need to reflect
+                            // this in our viewport.
+                            if (wrapped_i == 0 and old.viewport > 0) old.viewport -= 1;
+
+                            y += 1;
+                            break :wrapping;
+                        }
+
+                        // Wrapped again!
+                        x += wrapped_cells_rem;
+                        break;
+                    }
+
+                    // We still need to copy the remainder
+                    wrapped_i += copy_len;
+
                     // Move to a new line in our new screen
+                    new_row.setWrapped(true);
                     y += 1;
                     x = 0;
 
@@ -1015,8 +1011,6 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         y -= 1;
                         try self.scroll(.{ .delta = 1 });
                     }
-
-                    // Get this row
                     new_row = self.getRow(.{ .active = y });
                 }
             }
