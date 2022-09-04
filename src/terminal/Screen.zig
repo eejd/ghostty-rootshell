@@ -1027,8 +1027,122 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         }
     }
 
-    // TODO
-    try self.resizeWithoutReflow(rows, cols);
+    // If our rows got smaller, we trim the scrollback. We do this after
+    // handling cols growing so that we can save as many lines as we can.
+    // We do it before cols shrinking so we can save compute on that operation.
+    if (rows < self.rows) try self.resizeWithoutReflow(rows, cols);
+
+    // If our cols got smaller, we have to reflow text. This is the worst
+    // possible case because we can't do any easy trick sto get reflow,
+    // we just have to iterate over the screen and "print", wrapping as
+    // needed.
+    if (cols < self.cols) {
+        var old = self.*;
+        errdefer self.* = old;
+
+        // Allocate enough to store our screen plus history.
+        const buf_size = (self.rows + @maximum(self.history, self.max_scrollback)) * (cols + 1);
+        self.storage = try StorageBuf.init(self.alloc, buf_size);
+        errdefer self.storage.deinit(self.alloc);
+        defer old.storage.deinit(self.alloc);
+
+        // Convert our cursor coordinates to screen coordinates because
+        // we may have to reflow the cursor if the line it is on is moved.
+        var cursor_pos = (point.Viewport{
+            .x = old.cursor.x,
+            .y = old.cursor.y,
+        }).toScreen(&old);
+
+        // Whether we need to move the cursor or not
+        var new_cursor: ?point.ScreenPoint = null;
+
+        // Reset our variables because we're going to reprint the screen.
+        self.cols = cols;
+        self.viewport = 0;
+        self.history = 0;
+
+        // Iterate over the screen since we need to check for reflow.
+        var iter = old.rowIterator(.screen);
+        var x: usize = 0;
+        var y: usize = 0;
+        while (iter.next()) |old_row| {
+            // Trim the row from the right so that we ignore all trailing
+            // empty chars and don't wrap them.
+            const trimmed_row = trim: {
+                var i: usize = old.cols;
+                while (i > 0) : (i -= 1) if (!old_row.getCell(i - 1).empty()) break;
+                break :trim old_row.storage[1 .. i + 1];
+            };
+
+            // Copy all the cells into our row.
+            for (trimmed_row) |cell, i| {
+                // Soft wrap if we have to
+                if (x == self.cols) {
+                    var row = self.getRow(.{ .active = y });
+                    row.setWrapped(true);
+                    x = 0;
+                    y += 1;
+                }
+
+                // If our y is more than our rows, we need to scroll
+                if (y >= self.rows) {
+                    try self.scroll(.{ .delta = 1 });
+                    y -= 1;
+                    x = 0;
+                }
+
+                // If our cursor is on this point, we need to move it.
+                if (cursor_pos.y == iter.value - 1 and
+                    cursor_pos.x == i)
+                {
+                    assert(new_cursor == null);
+                    new_cursor = .{ .x = x, .y = self.viewport + y };
+                }
+
+                // Copy the old cell, unset the old wrap state
+                // log.warn("y={} x={} rows={}", .{ y, x, self.rows });
+                var new_cell = self.getCellPtr(.active, y, x);
+                new_cell.* = cell.cell;
+
+                // Next
+                x += 1;
+            }
+
+            // If our cursor is on this line but not in a content area,
+            // then we just set it to be at the end.
+            if (cursor_pos.y == iter.value - 1 and
+                cursor_pos.x >= trimmed_row.len)
+            {
+                assert(new_cursor == null);
+                new_cursor = .{
+                    .x = @minimum(cursor_pos.x, self.cols - 1),
+                    .y = self.viewport + y,
+                };
+            }
+
+            // If we aren't wrapping, then move to the next row
+            if (trimmed_row.len == 0 or
+                !old_row.header().wrap)
+            {
+                y += 1;
+                x = 0;
+            }
+        }
+
+        // If we have a new cursor, we need to convert that to a viewport
+        // point and set it up.
+        if (new_cursor) |pos| {
+            const viewport_pos = pos.toViewport(self);
+            self.cursor.x = viewport_pos.x;
+            self.cursor.y = viewport_pos.y;
+        } else {
+            // TODO: why is this necessary? Without this, neovim will
+            // crash when we shrink the window to the smallest size. We
+            // never got a test case to cover this.
+            self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
+            self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
+        }
+    }
 }
 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
@@ -2105,5 +2219,164 @@ test "Screen: resize less rows with populated scrollback" {
         defer alloc.free(contents);
         const expected = "5EFGH";
         try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less cols no reflow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1AB\n2EF\n3IJ";
+    try s.testWriteString(str);
+    const cursor = s.cursor;
+    try s.resize(3, 3);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize less cols with reflow but row space" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD";
+    try s.testWriteString(str);
+
+    // Put our cursor on the end
+    s.cursor.x = 4;
+    s.cursor.y = 0;
+    try testing.expectEqual(@as(u32, 'D'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    try s.resize(3, 3);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1AB\nCD";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "1AB\nCD";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Cursor should be on the last line
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 1), s.cursor.y);
+}
+
+test "Screen: resize less cols with reflow with trimmed rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    try s.resize(3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "CD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "CD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less cols with reflow with trimmed rows and scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 1);
+    defer s.deinit();
+    const str = "3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    try s.resize(3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "CD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "4AB\nCD\n5EF\nGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+// This seems like it should work fine but for some reason in practice
+// in the initial implementation I found this bug! This is a regression
+// test for that.
+test "Screen: resize more rows then shrink again" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit();
+    const str = "1ABC";
+    try s.testWriteString(str);
+
+    // Grow
+    try s.resize(10, 5);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Shrink
+    try s.resize(3, 5);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Grow again
+    try s.resize(10, 5);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
     }
 }
