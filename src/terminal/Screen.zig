@@ -14,6 +14,39 @@
 //!   * Viewport - The area that is currently visible to the user. This
 //!       can be thought of as the current window into the screen.
 //!
+//! The internal storage of the screen is stored in a circular buffer
+//! with roughly the following format:
+//!
+//!      Storage (Circular Buffer)
+//!   ┌─────────────────────────────────────┐
+//!   │ ┌─────┐┌─────┐┌─────┐       ┌─────┐ │
+//!   │ │ Hdr ││Cell ││Cell │  ...  │Cell │ │
+//!   │ │     ││  0  ││  1  │       │ N-1 │ │
+//!   │ └─────┘└─────┘└─────┘       └─────┘ │
+//!   │ ┌─────┐┌─────┐┌─────┐       ┌─────┐ │
+//!   │ │ Hdr ││Cell ││Cell │  ...  │Cell │ │
+//!   │ │     ││  0  ││  1  │       │ N-1 │ │
+//!   │ └─────┘└─────┘└─────┘       └─────┘ │
+//!   │ ┌─────┐┌─────┐┌─────┐       ┌─────┐ │
+//!   │ │ Hdr ││Cell ││Cell │  ...  │Cell │ │
+//!   │ │     ││  0  ││  1  │       │ N-1 │ │
+//!   │ └─────┘└─────┘└─────┘       └─────┘ │
+//!   └─────────────────────────────────────┘
+//!
+//! There are R rows with N columns. Each row has an extra "cell" which is
+//! the row header. The row header is used to track metadata about the row.
+//! Each cell itself is a union (see StorageCell) of either the header or
+//! the cell.
+//!
+//! The storage is in a circular buffer so that scrollback can be handled
+//! without copying rows. The circular buffer is implemented in circ_buf.zig.
+//! The top of the circular buffer (index 0) is the top of the screen,
+//! i.e. the scrollback if there is a lot of data.
+//!
+//! The top of the active area (or end of the history area, same thing) is
+//! cached in `self.history` and is an offset in rows. This could always be
+//! calculated but profiling showed that caching it saves a lot of time in
+//! hot loops for minimal memory cost.
 const Screen = @This();
 
 const std = @import("std");
