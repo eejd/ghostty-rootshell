@@ -806,11 +806,7 @@ pub fn eraseDisplay(
             self.screen.cursor.pending_wrap = false;
         },
 
-        .scrollback => {
-            var it = self.screen.rowIterator(.history);
-            while (it.next()) |row| row.clear(self.screen.cursor.pen);
-            @panic("MOVE TO SCREEN SO CIRC BUF IS CORRECT");
-        },
+        .scrollback => self.screen.clearHistory(),
     }
 }
 

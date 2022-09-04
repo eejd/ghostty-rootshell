@@ -541,6 +541,19 @@ fn maxCapacity(self: Screen) usize {
     return (self.rows + self.max_scrollback) * (self.cols + 1);
 }
 
+/// Clear all the history. This moves the viewport back to the "top", too.
+pub fn clearHistory(self: *Screen) void {
+    // If there is no history, do nothing.
+    if (self.history == 0) return;
+
+    // Delete all our history
+    self.storage.deleteOldest(self.history * (self.cols + 1));
+    self.history = 0;
+
+    // Back to the top
+    self.viewport = 0;
+}
+
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
@@ -1599,6 +1612,64 @@ test "Screen: row copy" {
     var contents = try s.testString(alloc, .viewport);
     defer alloc.free(contents);
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
+}
+
+test "Screen: clear history with no history" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+    s.clearHistory();
+    try testing.expect(s.viewportIsBottom());
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+}
+
+test "Screen: clear history" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Scroll to top
+    try s.scroll(.{ .top = {} });
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    s.clearHistory();
+    try testing.expect(s.viewportIsBottom());
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
+    }
 }
 
 test "Screen: selectionString" {
