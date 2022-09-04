@@ -923,6 +923,9 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         return;
     }
 
+    // We grow rows first so we can make space for more reflow
+    if (rows > self.rows) try self.resizeWithoutReflow(rows, cols);
+
     // If our columns increased, we alloc space for the new column width
     // and go through each row and reflow if necessary.
     if (cols > self.cols) {
