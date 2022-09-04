@@ -853,7 +853,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
     self.cursor.x = @minimum(old.cursor.x, self.cols - 1);
     self.cursor.y = if (old_cursor_y_screen <= RowIndexTag.screen.maxLen(self))
-        old_cursor_y_screen - self.history
+        old_cursor_y_screen -| self.history
     else
         self.rows - 1;
 }
@@ -1987,6 +1987,123 @@ test "Screen: resize more cols with populated scrollback" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJKL\n4ABCD5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less rows no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    const cursor = s.cursor;
+    try s.resize(1, 5);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less rows moving cursor" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Put our cursor on the last line
+    s.cursor.x = 1;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, 'I'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Resize
+    try s.resize(1, 5);
+
+    // Cursor should be on the last line
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less rows with empty scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+    try s.resize(1, 5);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less rows with populated scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize
+    try s.resize(1, 5);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "5EFGH";
         try testing.expectEqualStrings(expected, contents);
     }
 }
