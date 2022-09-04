@@ -97,7 +97,7 @@ const StorageCell = union {
     comptime {
         // We only check this during ReleaseFast because safety checks
         // have to be disabled to get this size.
-        if (builtin.mode == .ReleaseFast) {
+        if (!std.debug.runtime_safety) {
             // We want to be at most the size of a cell always. We have WAY
             // more cells than other fields, so we don't want to pay the cost
             // of padding due to other fields.
@@ -113,12 +113,23 @@ const StorageCell = union {
 /// The row header is at the start of every row within the storage buffer.
 /// It can store row-specific data.
 pub const RowHeader = struct {
-    /// Used internally to track if this row has been initialized.
-    init: bool = false,
+    const Id = u32;
 
-    /// If true, this row is soft-wrapped. The first cell of the next
-    /// row is a continuous of this row.
-    wrap: bool = false,
+    /// The ID of this row, used to uniquely identify this row. The cells
+    /// are also ID'd by id + cell index (0-indexed). This will wrap around
+    /// when it reaches the maximum value for the type. For caching purposes,
+    /// when wrapping happens, all rows in the screen will be marked dirty.
+    id: Id = 0,
+
+    // Packed flags
+    flags: packed struct {
+        /// If true, this row is soft-wrapped. The first cell of the next
+        /// row is a continuous of this row.
+        wrap: bool = false,
+
+        /// True if any cell in this row has a grapheme associated with it.
+        grapheme: bool = false,
+    } = .{},
 };
 
 /// Cell is a single cell within the screen.
@@ -136,8 +147,8 @@ pub const Cell = struct {
 
     /// Foreground and background color. attrs.has_{bg/fg} must be checked
     /// to see if these are useful values.
-    fg: color.RGB = undefined,
-    bg: color.RGB = undefined,
+    fg: color.RGB = .{},
+    bg: color.RGB = .{},
 
     /// On/off attributes that can be set
     attrs: packed struct {
@@ -157,6 +168,12 @@ pub const Cell = struct {
         /// wide character (tail) or following (head).
         wide_spacer_tail: bool = false,
         wide_spacer_head: bool = false,
+
+        /// True if this cell has additional codepoints to form a complete
+        /// grapheme cluster. If this is true, then the row grapheme flag must
+        /// also be true. The grapheme code points can be looked up in the
+        /// screen grapheme map.
+        grapheme: bool = false,
     } = .{},
 
     /// True if the cell should be skipped for drawing
@@ -187,7 +204,7 @@ pub const Row = struct {
     /// Set that this row is soft-wrapped. This doesn't change the contents
     /// of this row so the row won't be marked dirty.
     pub fn setWrapped(self: Row, v: bool) void {
-        self.storage[0].header.wrap = v;
+        self.storage[0].header.flags.wrap = v;
     }
 
     /// Retrieve the header for this row.
@@ -220,7 +237,6 @@ pub const Row = struct {
 
     /// Get a single immutable cell.
     pub fn getCell(self: Row, x: usize) Cell {
-        assert(self.header().init);
         assert(x < self.storage.len - 1);
         return self.storage[x + 1].cell;
     }
@@ -230,31 +246,19 @@ pub const Row = struct {
     /// next call to re-render this cell. Any change detection to avoid
     /// this should be done prior.
     pub fn getCellPtr(self: Row, x: usize) *Cell {
-        assert(self.header().init);
         assert(x < self.storage.len - 1);
         return &self.storage[x + 1].cell;
     }
 
     /// Copy the row src into this row. The row can be from another screen.
     pub fn copyRow(self: Row, src: Row) void {
-        assert(self.header().init);
         const end = @minimum(src.storage.len, self.storage.len);
         std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
     }
 
     /// Read-only iterator for the cells in the row.
     pub fn cellIterator(self: Row) CellIterator {
-        assert(self.header().init);
         return .{ .row = self };
-    }
-
-    /// If this row isn't initialized, this sets all our cells to the
-    /// proper union tag so that it is properly zeroed.
-    fn initIfNeeded(self: Row) void {
-        if (!self.storage[0].header.init) {
-            self.fill(.{});
-            self.storage[0].header.init = true;
-        }
     }
 };
 
@@ -389,15 +393,52 @@ pub const RowIndexTag = enum {
     }
 };
 
+/// Stores the extra unicode codepoints that form a complete grapheme
+/// cluster alongside a cell. We store this separately from a Cell because
+/// grapheme clusters are relatively rare (depending on the language) and
+/// we don't want to pay for the full cost all the time.
+pub const GraphemeData = union(enum) {
+    // The named counts allow us to avoid allocators. We do this because
+    // []u21 is sizeof([4]u21) anyways so if we can store avoid small allocations
+    // we prefer it. Grapheme clusters are almost always <= 4 codepoints.
+
+    one: u21,
+    two: [2]u21,
+    three: [3]u21,
+    four: [4]u21,
+    many: []u21,
+
+    test {
+        //log.warn("Grapheme={}", .{@sizeOf(GraphemeData)});
+    }
+
+    comptime {
+        // We want to keep this at most the size of the tag + []u21 so that
+        // at most we're paying for the cost of a slice.
+        assert(@sizeOf(GraphemeData) == 24);
+    }
+};
+
 // Initialize to header and not a cell so that we can check header.init
 // to know if the remainder of the row has been initialized or not.
 const StorageBuf = CircBuf(StorageCell, .{ .header = .{} });
+
+/// Stores a mapping of cell ID (row ID + cell offset + 1) to
+/// graphemes associated with a cell. To know if a cell has graphemes,
+/// check the "grapheme" flag of a cell.
+const GraphemeMap = std.AutoHashMapUnmanaged(usize, GraphemeData);
 
 /// The allocator used for all the storage operations
 alloc: Allocator,
 
 /// The full set of storage.
 storage: StorageBuf,
+
+/// Graphemes associated with our current screen.
+graphemes: GraphemeMap = .{},
+
+/// The next ID to assign to a row. The value of this is NOT assigned.
+next_row_id: RowHeader.Id = 1,
 
 /// The number of rows and columns in the visible space.
 rows: usize,
@@ -448,6 +489,10 @@ pub fn init(
 
 pub fn deinit(self: *Screen) void {
     self.storage.deinit(self.alloc);
+
+    var grapheme_it = self.graphemes.valueIterator();
+    while (grapheme_it.next()) |data| if (data.* == .many) self.alloc.free(data.many);
+    self.graphemes.deinit(self.alloc);
 }
 
 /// Returns true if the viewport is scrolled to the bottom of the screen.
@@ -496,7 +541,18 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
     assert(slices[0].len == self.cols + 1 and slices[1].len == 0);
 
     const row: Row = .{ .storage = slices[0] };
-    row.initIfNeeded();
+    if (row.storage[0].header.id == 0) {
+        const Id = @TypeOf(self.next_row_id);
+        const id = self.next_row_id;
+        self.next_row_id +%= @intCast(Id, self.cols);
+
+        // Store the header
+        row.storage[0].header.id = id;
+
+        // We only need to fill with runtime safety because unions are
+        // tag-checked. Otherwise, the default value of zero will be valid.
+        if (std.debug.runtime_safety) row.fill(.{});
+    }
     return row;
 }
 
@@ -750,7 +806,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
             }
 
             // If this row is not soft-wrapped, add a newline
-            if (!row.header().wrap) {
+            if (!row.header().flags.wrap) {
                 buf[buf_i] = '\n';
                 buf_i += 1;
             }
@@ -975,7 +1031,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             }
 
             // If no reflow, just keep going
-            if (!old_row.header().wrap) {
+            if (!old_row.header().flags.wrap) {
                 y += 1;
                 continue;
             }
@@ -1029,7 +1085,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     // We copied the full amount left in this wrapped row.
                     if (copy_len == wrapped_cells_rem) {
                         // If this row isn't also wrapped, we're done!
-                        if (!wrapped_row.header().wrap) {
+                        if (!wrapped_row.header().flags.wrap) {
                             // If we were able to copy the entire row then
                             // we shortened the screen by one. We need to reflect
                             // this in our viewport.
@@ -1168,7 +1224,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
             // If we aren't wrapping, then move to the next row
             if (trimmed_row.len == 0 or
-                !old_row.header().wrap)
+                !old_row.header().flags.wrap)
             {
                 y += 1;
                 x = 0;

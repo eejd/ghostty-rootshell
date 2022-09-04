@@ -95,9 +95,9 @@ pub const Name = enum(u8) {
 
 /// RGB
 pub const RGB = packed struct {
-    r: u8,
-    g: u8,
-    b: u8,
+    r: u8 = 0,
+    g: u8 = 0,
+    b: u8 = 0,
 
     test {
         try std.testing.expectEqual(@as(usize, 3), @sizeOf(RGB));
