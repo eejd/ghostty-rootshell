@@ -196,10 +196,19 @@ pub const Cell = struct {
 
 /// A row is a single row in the screen.
 pub const Row = struct {
+    /// The screen this row is part of.
+    screen: *Screen,
+
     /// Raw internal storage, do NOT write to this, use only the
     /// helpers. Writing directly to this can easily mess up state
     /// causing future crashes or misrendering.
     storage: []StorageCell,
+
+    /// Returns the ID for this row. You can turn this into a cell ID
+    /// by adding the cell offset plus 1 (so it is 1-indexed).
+    pub fn getId(self: Row) RowHeader.Id {
+        return self.storage[0].header.id;
+    }
 
     /// Set that this row is soft-wrapped. This doesn't change the contents
     /// of this row so the row won't be marked dirty.
@@ -248,6 +257,39 @@ pub const Row = struct {
     pub fn getCellPtr(self: Row, x: usize) *Cell {
         assert(x < self.storage.len - 1);
         return &self.storage[x + 1].cell;
+    }
+
+    /// Attach a grapheme codepoint to the given cell.
+    pub fn attachGrapheme(self: Row, x: usize, cp: u21) !void {
+        const cell = &self.storage[x + 1].cell;
+        const key = self.getId() + x + 1;
+        const gop = try self.screen.graphemes.getOrPut(self.screen.alloc, key);
+        errdefer if (!gop.found_existing) {
+            _ = self.screen.graphemes.remove(key);
+        };
+
+        // Our row now has a grapheme
+        self.storage[0].header.flags.grapheme = true;
+
+        // If we weren't previously a grapheme and we found an existing value
+        // it means that it is old grapheme data. Just delete that.
+        if (!cell.attrs.grapheme and gop.found_existing) {
+            cell.attrs.grapheme = true;
+            gop.value_ptr.deinit(self.screen.alloc);
+            gop.value_ptr.* = .{ .one = cp };
+            return;
+        }
+
+        // If we didn't have a previous value, attach the single codepoint.
+        if (!gop.found_existing) {
+            cell.attrs.grapheme = true;
+            gop.value_ptr.* = .{ .one = cp };
+            return;
+        }
+
+        // We have an existing value, promote
+        assert(cell.attrs.grapheme);
+        try gop.value_ptr.append(self.screen.alloc, cp);
     }
 
     /// Copy the row src into this row. The row can be from another screen.
@@ -408,14 +450,65 @@ pub const GraphemeData = union(enum) {
     four: [4]u21,
     many: []u21,
 
+    pub fn deinit(self: GraphemeData, alloc: Allocator) void {
+        switch (self) {
+            .many => |v| alloc.free(v),
+            else => {},
+        }
+    }
+
+    /// Append the codepoint cp to the grapheme data.
+    pub fn append(self: *GraphemeData, alloc: Allocator, cp: u21) !void {
+        switch (self.*) {
+            .one => |v| self.* = .{ .two = .{ v, cp } },
+            .two => |v| self.* = .{ .three = .{ v[0], v[1], cp } },
+            .three => |v| self.* = .{ .four = .{ v[0], v[1], v[2], cp } },
+            .four => |v| {
+                const many = try alloc.alloc(u21, 5);
+                std.mem.copy(u21, many, &v);
+                many[4] = cp;
+                self.* = .{ .many = many };
+            },
+
+            .many => |v| {
+                // Note: this is super inefficient, we should use an arraylist
+                // or something so we have extra capacity.
+                const many = try alloc.realloc(v, v.len + 1);
+                many[v.len] = cp;
+                self.* = .{ .many = many };
+            },
+        }
+    }
+
     test {
-        //log.warn("Grapheme={}", .{@sizeOf(GraphemeData)});
+        log.warn("Grapheme={}", .{@sizeOf(GraphemeData)});
+    }
+
+    test "append" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var data: GraphemeData = .{ .one = 1 };
+        defer data.deinit(alloc);
+
+        try data.append(alloc, 2);
+        try testing.expectEqual(GraphemeData{ .two = .{ 1, 2 } }, data);
+        try data.append(alloc, 3);
+        try testing.expectEqual(GraphemeData{ .three = .{ 1, 2, 3 } }, data);
+        try data.append(alloc, 4);
+        try testing.expectEqual(GraphemeData{ .four = .{ 1, 2, 3, 4 } }, data);
+        try data.append(alloc, 5);
+        try testing.expect(data == .many);
+        try testing.expectEqualSlices(u21, &[_]u21{ 1, 2, 3, 4, 5 }, data.many);
+        try data.append(alloc, 6);
+        try testing.expect(data == .many);
+        try testing.expectEqualSlices(u21, &[_]u21{ 1, 2, 3, 4, 5, 6 }, data.many);
     }
 
     comptime {
         // We want to keep this at most the size of the tag + []u21 so that
         // at most we're paying for the cost of a slice.
-        assert(@sizeOf(GraphemeData) == 24);
+        //assert(@sizeOf(GraphemeData) == 24);
     }
 };
 
@@ -540,7 +633,7 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
     const slices = self.storage.getPtrSlice(offset, self.cols + 1);
     assert(slices[0].len == self.cols + 1 and slices[1].len == 0);
 
-    const row: Row = .{ .storage = slices[0] };
+    const row: Row = .{ .screen = self, .storage = slices[0] };
     if (row.storage[0].header.id == 0) {
         const Id = @TypeOf(self.next_row_id);
         const id = self.next_row_id;
@@ -789,7 +882,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
             // the first row.
             var skip: usize = if (row_count == 0) slices.top_offset else 0;
 
-            const row: Row = .{ .storage = slice[start_idx..end_idx] };
+            const row: Row = .{ .screen = self, .storage = slice[start_idx..end_idx] };
             var it = row.cellIterator();
             while (it.next()) |cell| {
                 if (skip > 0) {

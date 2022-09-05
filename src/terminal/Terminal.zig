@@ -449,6 +449,60 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
+    // Get the previous cell so we can detect grapheme clusters. We only
+    // do this if c is outside of Latin-1 because characters in the Latin-1
+    // range cannot possibly be grapheme joiners. This helps keep non-graphemes
+    // extremely fast and we take this much slower path for graphemes. No hate
+    // on graphemes, I'd love to make them much faster, but I wanted to focus
+    // on correctness first.
+    if (c > 255 and self.screen.cursor.x > 0) {
+        // TODO: test this!
+
+        const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+        const Prev = struct { cell: *Screen.Cell, x: usize };
+        const prev: Prev = prev: {
+            const x = self.screen.cursor.x - 1;
+            const immediate = row.getCellPtr(x);
+            if (!immediate.attrs.wide_spacer_tail) break :prev .{
+                .cell = immediate,
+                .x = x,
+            };
+
+            break :prev .{
+                .cell = row.getCellPtr(x - 1),
+                .x = x - 1,
+            };
+        };
+
+        var state: i32 = 0;
+        const grapheme_break = if (!prev.cell.attrs.grapheme)
+            utf8proc.graphemeBreakStateful(@intCast(u21, prev.cell.char), c, &state)
+        else brk: {
+            // We need to rebuild the state by processing the grapheme breaks
+            // for all the codepoints up to this point. This MUST exist because
+            // grapheme is only true iff this exists.
+            const points = self.screen.graphemes.getEntry(row.getId() + prev.x + 1).?;
+            const cp1 = switch (points.value_ptr.*) {
+                .one => |v| one: {
+                    assert(!utf8proc.graphemeBreakStateful(@intCast(u21, prev.cell.char), v, &state));
+                    break :one v;
+                },
+
+                else => @panic("NO"),
+            };
+
+            break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+        };
+
+        // If we can NOT break, this means that "c" is part of a grapheme
+        // with the previous char.
+        if (!grapheme_break) {
+            log.debug("c={x} grapheme attach to x={}", .{ c, prev.x });
+            try row.attachGrapheme(prev.x, c);
+            return;
+        }
+    }
+
     // Determine the width of this character so we can handle
     // non-single-width characters properly.
     const width = utf8proc.charwidth(c);
