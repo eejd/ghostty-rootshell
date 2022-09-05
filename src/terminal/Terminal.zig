@@ -449,14 +449,83 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
+    // Get the previous cell so we can detect grapheme clusters. We only
+    // do this if c is outside of Latin-1 because characters in the Latin-1
+    // range cannot possibly be grapheme joiners. This helps keep non-graphemes
+    // extremely fast and we take this much slower path for graphemes. No hate
+    // on graphemes, I'd love to make them much faster, but I wanted to focus
+    // on correctness first.
+    //
+    // NOTE: This is disabled because no shells handle this correctly. We'll
+    // need to work with shells and other emulators to probably figure out
+    // a way to support this. In the mean time, I'm going to keep all the
+    // grapheme detection and keep it up to date so we're ready to go.
+    if (false and c > 255 and self.screen.cursor.x > 0) {
+        // TODO: test this!
+
+        const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+        const Prev = struct { cell: *Screen.Cell, x: usize };
+        const prev: Prev = prev: {
+            const x = self.screen.cursor.x - 1;
+            const immediate = row.getCellPtr(x);
+            if (!immediate.attrs.wide_spacer_tail) break :prev .{
+                .cell = immediate,
+                .x = x,
+            };
+
+            break :prev .{
+                .cell = row.getCellPtr(x - 1),
+                .x = x - 1,
+            };
+        };
+
+        const grapheme_break = brk: {
+            var state: i32 = 0;
+            var cp1 = @intCast(u21, prev.cell.char);
+            if (prev.cell.attrs.grapheme) {
+                var it = row.codepointIterator(prev.x);
+                while (it.next()) |cp2| {
+                    assert(!utf8proc.graphemeBreakStateful(
+                        cp1,
+                        cp2,
+                        &state,
+                    ));
+
+                    cp1 = cp2;
+                }
+            }
+
+            break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+        };
+
+        // If we can NOT break, this means that "c" is part of a grapheme
+        // with the previous char.
+        if (!grapheme_break) {
+            log.debug("c={x} grapheme attach to x={}", .{ c, prev.x });
+            try row.attachGrapheme(prev.x, c);
+            return;
+        }
+    }
+
     // Determine the width of this character so we can handle
     // non-single-width characters properly.
     const width = utf8proc.charwidth(c);
     assert(width <= 2);
 
-    // For now, we ignore zero-width characters. When we support ligatures,
-    // this will have to change.
-    if (width == 0) return;
+    // Attach zero-width characters to our cell as grapheme data.
+    if (width == 0) {
+        // Find our previous cell
+        const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+        const prev: usize = prev: {
+            const x = self.screen.cursor.x - 1;
+            const immediate = row.getCellPtr(x);
+            if (!immediate.attrs.wide_spacer_tail) break :prev x;
+            break :prev x - 1;
+        };
+
+        try row.attachGrapheme(prev, c);
+        return;
+    }
 
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap)
@@ -554,6 +623,9 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         }
     }
 
+    // If the prior value had graphemes, clear those
+    if (cell.attrs.grapheme) row.clearGraphemes(self.screen.cursor.x);
+
     // Write
     cell.* = self.screen.cursor.pen;
     cell.char = @intCast(u32, c);
@@ -586,7 +658,7 @@ fn clearWideSpacerHead(self: *Terminal) void {
 /// Resets all margins and fills the whole screen with the character 'E'
 ///
 /// Sets the cursor to the top left corner.
-pub fn decaln(self: *Terminal) void {
+pub fn decaln(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -600,7 +672,7 @@ pub fn decaln(self: *Terminal) void {
 
     var row: usize = 1;
     while (row < self.rows) : (row += 1) {
-        self.screen.getRow(.{ .active = row }).copyRow(filled);
+        try self.screen.getRow(.{ .active = row }).copyRow(filled);
     }
 }
 
@@ -643,7 +715,7 @@ pub fn index(self: *Terminal) !void {
             try self.screen.scroll(.{ .delta = 1 });
         } else {
             // TODO: test
-            self.scrollUp(1);
+            try self.scrollUp(1);
         }
 
         return;
@@ -672,7 +744,7 @@ pub fn reverseIndex(self: *Terminal) !void {
     // TODO: scrolling region
 
     if (self.screen.cursor.y == 0) {
-        self.scrollDown(1);
+        try self.scrollDown(1);
     } else {
         self.screen.cursor.y -|= 1;
     }
@@ -1074,7 +1146,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 /// All cleared space is colored according to the current SGR state.
 ///
 /// Moves the cursor to the left margin.
-pub fn insertLines(self: *Terminal, count: usize) void {
+pub fn insertLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1095,7 +1167,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 
     // Ensure we have the lines populated to the end
     while (y > top) : (y -= 1) {
-        self.screen.copyRow(.{ .active = y }, .{ .active = y - adjusted_count });
+        try self.screen.copyRow(.{ .active = y }, .{ .active = y - adjusted_count });
     }
 
     // Insert count blank lines
@@ -1122,7 +1194,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 /// cleared space is colored according to the current SGR state.
 ///
 /// Moves the cursor to the left margin.
-pub fn deleteLines(self: *Terminal, count: usize) void {
+pub fn deleteLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1140,7 +1212,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     // Scroll up the count amount.
     var y: usize = self.screen.cursor.y;
     while (y <= self.scrolling_region.bottom - adjusted_count) : (y += 1) {
-        self.screen.copyRow(.{ .active = y }, .{ .active = y + adjusted_count });
+        try self.screen.copyRow(.{ .active = y }, .{ .active = y + adjusted_count });
     }
 
     while (y <= self.scrolling_region.bottom) : (y += 1) {
@@ -1151,7 +1223,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
 
 /// Scroll the text down by one row.
 /// TODO: test
-pub fn scrollDown(self: *Terminal, count: usize) void {
+pub fn scrollDown(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1161,7 +1233,7 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
 
     // Move to the top of the scroll region
     self.screen.cursor.y = self.scrolling_region.top;
-    self.insertLines(count);
+    try self.insertLines(count);
 }
 
 /// Removes amount lines from the top of the scroll region. The remaining lines
@@ -1172,14 +1244,14 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
 ///
 /// Does not change the (absolute) cursor position.
 // TODO: test
-pub fn scrollUp(self: *Terminal, count: usize) void {
+pub fn scrollUp(self: *Terminal, count: usize) !void {
     // Preserve the cursor
     const cursor = self.screen.cursor;
     defer self.screen.cursor = cursor;
 
     // Move to the top of the scroll region
     self.screen.cursor.y = self.scrolling_region.top;
-    self.deleteLines(count);
+    try self.deleteLines(count);
 }
 
 /// Options for scrolling the viewport of the terminal grid.
@@ -1543,7 +1615,7 @@ test "Terminal: deleteLines" {
     try t.print('D');
 
     t.cursorUp(2);
-    t.deleteLines(1);
+    try t.deleteLines(1);
 
     try t.print('E');
     t.carriageReturn();
@@ -1579,7 +1651,7 @@ test "Terminal: deleteLines with scroll region" {
 
     t.setScrollingRegion(1, 3);
     t.setCursorPos(1, 1);
-    t.deleteLines(1);
+    try t.deleteLines(1);
 
     try t.print('E');
     t.carriageReturn();
@@ -1620,7 +1692,7 @@ test "Terminal: insertLines" {
     t.setCursorPos(2, 1);
 
     // Insert two lines
-    t.insertLines(2);
+    try t.insertLines(2);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1651,7 +1723,7 @@ test "Terminal: insertLines with scroll region" {
 
     t.setScrollingRegion(1, 2);
     t.setCursorPos(1, 1);
-    t.insertLines(1);
+    try t.insertLines(1);
 
     try t.print('X');
 
@@ -1686,7 +1758,7 @@ test "Terminal: insertLines more than remaining" {
     t.setCursorPos(2, 1);
 
     // Insert a bunch of  lines
-    t.insertLines(20);
+    try t.insertLines(20);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1827,7 +1899,7 @@ test "Terminal: DECALN" {
     t.carriageReturn();
     try t.linefeed();
     try t.print('B');
-    t.decaln();
+    try t.decaln();
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);

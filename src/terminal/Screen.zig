@@ -97,7 +97,7 @@ const StorageCell = union {
     comptime {
         // We only check this during ReleaseFast because safety checks
         // have to be disabled to get this size.
-        if (builtin.mode == .ReleaseFast) {
+        if (!std.debug.runtime_safety) {
             // We want to be at most the size of a cell always. We have WAY
             // more cells than other fields, so we don't want to pay the cost
             // of padding due to other fields.
@@ -113,12 +113,23 @@ const StorageCell = union {
 /// The row header is at the start of every row within the storage buffer.
 /// It can store row-specific data.
 pub const RowHeader = struct {
-    /// Used internally to track if this row has been initialized.
-    init: bool = false,
+    const Id = u32;
 
-    /// If true, this row is soft-wrapped. The first cell of the next
-    /// row is a continuous of this row.
-    wrap: bool = false,
+    /// The ID of this row, used to uniquely identify this row. The cells
+    /// are also ID'd by id + cell index (0-indexed). This will wrap around
+    /// when it reaches the maximum value for the type. For caching purposes,
+    /// when wrapping happens, all rows in the screen will be marked dirty.
+    id: Id = 0,
+
+    // Packed flags
+    flags: packed struct {
+        /// If true, this row is soft-wrapped. The first cell of the next
+        /// row is a continuous of this row.
+        wrap: bool = false,
+
+        /// True if any cell in this row has a grapheme associated with it.
+        grapheme: bool = false,
+    } = .{},
 };
 
 /// Cell is a single cell within the screen.
@@ -136,8 +147,8 @@ pub const Cell = struct {
 
     /// Foreground and background color. attrs.has_{bg/fg} must be checked
     /// to see if these are useful values.
-    fg: color.RGB = undefined,
-    bg: color.RGB = undefined,
+    fg: color.RGB = .{},
+    bg: color.RGB = .{},
 
     /// On/off attributes that can be set
     attrs: packed struct {
@@ -157,6 +168,12 @@ pub const Cell = struct {
         /// wide character (tail) or following (head).
         wide_spacer_tail: bool = false,
         wide_spacer_head: bool = false,
+
+        /// True if this cell has additional codepoints to form a complete
+        /// grapheme cluster. If this is true, then the row grapheme flag must
+        /// also be true. The grapheme code points can be looked up in the
+        /// screen grapheme map.
+        grapheme: bool = false,
     } = .{},
 
     /// True if the cell should be skipped for drawing
@@ -179,15 +196,24 @@ pub const Cell = struct {
 
 /// A row is a single row in the screen.
 pub const Row = struct {
+    /// The screen this row is part of.
+    screen: *Screen,
+
     /// Raw internal storage, do NOT write to this, use only the
     /// helpers. Writing directly to this can easily mess up state
     /// causing future crashes or misrendering.
     storage: []StorageCell,
 
+    /// Returns the ID for this row. You can turn this into a cell ID
+    /// by adding the cell offset plus 1 (so it is 1-indexed).
+    pub fn getId(self: Row) RowHeader.Id {
+        return self.storage[0].header.id;
+    }
+
     /// Set that this row is soft-wrapped. This doesn't change the contents
     /// of this row so the row won't be marked dirty.
     pub fn setWrapped(self: Row, v: bool) void {
-        self.storage[0].header.wrap = v;
+        self.storage[0].header.flags.wrap = v;
     }
 
     /// Retrieve the header for this row.
@@ -209,18 +235,36 @@ pub const Row = struct {
 
     /// Fill the entire row with a copy of a single cell.
     pub fn fill(self: Row, cell: Cell) void {
-        std.mem.set(StorageCell, self.storage[1..], .{ .cell = cell });
+        self.fillSlice(cell, 0, self.storage.len - 1);
     }
 
     /// Fill a slice of a row.
     pub fn fillSlice(self: Row, cell: Cell, start: usize, len: usize) void {
         assert(len <= self.storage.len - 1);
-        std.mem.set(StorageCell, self.storage[start + 1 .. len + 1], .{ .cell = cell });
+        assert(!cell.attrs.grapheme); // you can't fill with graphemes
+
+        // If our row has no graphemes, then this is a fast copy
+        if (!self.storage[0].header.flags.grapheme) {
+            std.mem.set(StorageCell, self.storage[start + 1 .. len + 1], .{ .cell = cell });
+            return;
+        }
+
+        // We have graphemes, so we have to clear those first.
+        for (self.storage[start + 1 .. len + 1]) |*storage_cell, x| {
+            if (storage_cell.cell.attrs.grapheme) self.clearGraphemes(x);
+            storage_cell.* = .{ .cell = cell };
+        }
+
+        // We only reset the grapheme flag if we fill the whole row, for now.
+        // We can improve performance by more correctly setting this but I'm
+        // going to defer that until we can measure.
+        if (start == 0 and len == self.storage.len - 1) {
+            self.storage[0].header.flags.grapheme = false;
+        }
     }
 
     /// Get a single immutable cell.
     pub fn getCell(self: Row, x: usize) Cell {
-        assert(self.header().init);
         assert(x < self.storage.len - 1);
         return self.storage[x + 1].cell;
     }
@@ -230,31 +274,96 @@ pub const Row = struct {
     /// next call to re-render this cell. Any change detection to avoid
     /// this should be done prior.
     pub fn getCellPtr(self: Row, x: usize) *Cell {
-        assert(self.header().init);
         assert(x < self.storage.len - 1);
         return &self.storage[x + 1].cell;
     }
 
+    /// Attach a grapheme codepoint to the given cell.
+    pub fn attachGrapheme(self: Row, x: usize, cp: u21) !void {
+        const cell = &self.storage[x + 1].cell;
+        const key = self.getId() + x + 1;
+        const gop = try self.screen.graphemes.getOrPut(self.screen.alloc, key);
+        errdefer if (!gop.found_existing) {
+            _ = self.screen.graphemes.remove(key);
+        };
+
+        // Our row now has a grapheme
+        self.storage[0].header.flags.grapheme = true;
+
+        // If we weren't previously a grapheme and we found an existing value
+        // it means that it is old grapheme data. Just delete that.
+        if (!cell.attrs.grapheme and gop.found_existing) {
+            cell.attrs.grapheme = true;
+            gop.value_ptr.deinit(self.screen.alloc);
+            gop.value_ptr.* = .{ .one = cp };
+            return;
+        }
+
+        // If we didn't have a previous value, attach the single codepoint.
+        if (!gop.found_existing) {
+            cell.attrs.grapheme = true;
+            gop.value_ptr.* = .{ .one = cp };
+            return;
+        }
+
+        // We have an existing value, promote
+        assert(cell.attrs.grapheme);
+        try gop.value_ptr.append(self.screen.alloc, cp);
+    }
+
+    /// Removes all graphemes associated with a cell.
+    pub fn clearGraphemes(self: Row, x: usize) void {
+        const cell = &self.storage[x + 1].cell;
+        const key = self.getId() + x + 1;
+        cell.attrs.grapheme = false;
+        _ = self.screen.graphemes.remove(key);
+    }
+
     /// Copy the row src into this row. The row can be from another screen.
-    pub fn copyRow(self: Row, src: Row) void {
-        assert(self.header().init);
+    pub fn copyRow(self: Row, src: Row) !void {
+        // If we have graphemes, clear first to unset them.
+        if (self.storage[0].header.flags.grapheme) self.clear(.{});
+
+        // If the source has no graphemes (likely) then this is fast.
         const end = @minimum(src.storage.len, self.storage.len);
-        std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
+        if (!src.storage[0].header.flags.grapheme) {
+            std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
+            return;
+        }
+
+        // Source has graphemes, this is slow.
+        for (src.storage[1..end]) |storage, x| {
+            self.storage[x + 1] = .{ .cell = storage.cell };
+
+            // Copy grapheme data if it exists
+            if (storage.cell.attrs.grapheme) {
+                const src_key = src.getId() + x + 1;
+                const src_data = src.screen.graphemes.get(src_key) orelse continue;
+
+                const dst_key = self.getId() + x + 1;
+                const dst_gop = try self.screen.graphemes.getOrPut(self.screen.alloc, dst_key);
+                dst_gop.value_ptr.* = try src_data.copy(self.screen.alloc);
+
+                self.storage[0].header.flags.grapheme = true;
+            }
+        }
     }
 
     /// Read-only iterator for the cells in the row.
     pub fn cellIterator(self: Row) CellIterator {
-        assert(self.header().init);
         return .{ .row = self };
     }
 
-    /// If this row isn't initialized, this sets all our cells to the
-    /// proper union tag so that it is properly zeroed.
-    fn initIfNeeded(self: Row) void {
-        if (!self.storage[0].header.init) {
-            self.fill(.{});
-            self.storage[0].header.init = true;
-        }
+    /// Read-only iterator for the grapheme codepoints in a cell. This only
+    /// iterates over the EXTRA GRAPHEME codepoints and not the primary
+    /// codepoint in cell.char.
+    pub fn codepointIterator(self: Row, x: usize) CodepointIterator {
+        const cell = &self.storage[x + 1].cell;
+        assert(cell.attrs.grapheme);
+
+        const key = self.getId() + x + 1;
+        const data = self.screen.graphemes.get(key).?;
+        return .{ .data = data };
     }
 };
 
@@ -284,6 +393,47 @@ pub const CellIterator = struct {
         const res = self.row.storage[self.i + 1].cell;
         self.i += 1;
         return res;
+    }
+};
+
+/// Used to iterate through the codepoints of a cell. This only iterates
+/// over the extra grapheme codepoints and not the primary codepoint.
+pub const CodepointIterator = struct {
+    data: GraphemeData,
+    i: usize = 0,
+
+    pub fn next(self: *CodepointIterator) ?u21 {
+        switch (self.data) {
+            .one => |v| {
+                if (self.i >= 1) return null;
+                self.i += 1;
+                return v;
+            },
+
+            .two => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+
+            .three => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+
+            .four => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+
+            .many => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+        }
     }
 };
 
@@ -389,15 +539,111 @@ pub const RowIndexTag = enum {
     }
 };
 
+/// Stores the extra unicode codepoints that form a complete grapheme
+/// cluster alongside a cell. We store this separately from a Cell because
+/// grapheme clusters are relatively rare (depending on the language) and
+/// we don't want to pay for the full cost all the time.
+pub const GraphemeData = union(enum) {
+    // The named counts allow us to avoid allocators. We do this because
+    // []u21 is sizeof([4]u21) anyways so if we can store avoid small allocations
+    // we prefer it. Grapheme clusters are almost always <= 4 codepoints.
+
+    one: u21,
+    two: [2]u21,
+    three: [3]u21,
+    four: [4]u21,
+    many: []u21,
+
+    pub fn deinit(self: GraphemeData, alloc: Allocator) void {
+        switch (self) {
+            .many => |v| alloc.free(v),
+            else => {},
+        }
+    }
+
+    /// Append the codepoint cp to the grapheme data.
+    pub fn append(self: *GraphemeData, alloc: Allocator, cp: u21) !void {
+        switch (self.*) {
+            .one => |v| self.* = .{ .two = .{ v, cp } },
+            .two => |v| self.* = .{ .three = .{ v[0], v[1], cp } },
+            .three => |v| self.* = .{ .four = .{ v[0], v[1], v[2], cp } },
+            .four => |v| {
+                const many = try alloc.alloc(u21, 5);
+                std.mem.copy(u21, many, &v);
+                many[4] = cp;
+                self.* = .{ .many = many };
+            },
+
+            .many => |v| {
+                // Note: this is super inefficient, we should use an arraylist
+                // or something so we have extra capacity.
+                const many = try alloc.realloc(v, v.len + 1);
+                many[v.len] = cp;
+                self.* = .{ .many = many };
+            },
+        }
+    }
+
+    pub fn copy(self: GraphemeData, alloc: Allocator) !GraphemeData {
+        // If we're not many we're not allocated so just copy on stack.
+        if (self != .many) return self;
+
+        // Heap allocated
+        return GraphemeData{ .many = try alloc.dupe(u21, self.many) };
+    }
+
+    test {
+        log.warn("Grapheme={}", .{@sizeOf(GraphemeData)});
+    }
+
+    test "append" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var data: GraphemeData = .{ .one = 1 };
+        defer data.deinit(alloc);
+
+        try data.append(alloc, 2);
+        try testing.expectEqual(GraphemeData{ .two = .{ 1, 2 } }, data);
+        try data.append(alloc, 3);
+        try testing.expectEqual(GraphemeData{ .three = .{ 1, 2, 3 } }, data);
+        try data.append(alloc, 4);
+        try testing.expectEqual(GraphemeData{ .four = .{ 1, 2, 3, 4 } }, data);
+        try data.append(alloc, 5);
+        try testing.expect(data == .many);
+        try testing.expectEqualSlices(u21, &[_]u21{ 1, 2, 3, 4, 5 }, data.many);
+        try data.append(alloc, 6);
+        try testing.expect(data == .many);
+        try testing.expectEqualSlices(u21, &[_]u21{ 1, 2, 3, 4, 5, 6 }, data.many);
+    }
+
+    comptime {
+        // We want to keep this at most the size of the tag + []u21 so that
+        // at most we're paying for the cost of a slice.
+        //assert(@sizeOf(GraphemeData) == 24);
+    }
+};
+
 // Initialize to header and not a cell so that we can check header.init
 // to know if the remainder of the row has been initialized or not.
 const StorageBuf = CircBuf(StorageCell, .{ .header = .{} });
+
+/// Stores a mapping of cell ID (row ID + cell offset + 1) to
+/// graphemes associated with a cell. To know if a cell has graphemes,
+/// check the "grapheme" flag of a cell.
+const GraphemeMap = std.AutoHashMapUnmanaged(usize, GraphemeData);
 
 /// The allocator used for all the storage operations
 alloc: Allocator,
 
 /// The full set of storage.
 storage: StorageBuf,
+
+/// Graphemes associated with our current screen.
+graphemes: GraphemeMap = .{},
+
+/// The next ID to assign to a row. The value of this is NOT assigned.
+next_row_id: RowHeader.Id = 1,
 
 /// The number of rows and columns in the visible space.
 rows: usize,
@@ -448,6 +694,10 @@ pub fn init(
 
 pub fn deinit(self: *Screen) void {
     self.storage.deinit(self.alloc);
+
+    var grapheme_it = self.graphemes.valueIterator();
+    while (grapheme_it.next()) |data| if (data.* == .many) self.alloc.free(data.many);
+    self.graphemes.deinit(self.alloc);
 }
 
 /// Returns true if the viewport is scrolled to the bottom of the screen.
@@ -495,18 +745,29 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
     const slices = self.storage.getPtrSlice(offset, self.cols + 1);
     assert(slices[0].len == self.cols + 1 and slices[1].len == 0);
 
-    const row: Row = .{ .storage = slices[0] };
-    row.initIfNeeded();
+    const row: Row = .{ .screen = self, .storage = slices[0] };
+    if (row.storage[0].header.id == 0) {
+        const Id = @TypeOf(self.next_row_id);
+        const id = self.next_row_id;
+        self.next_row_id +%= @intCast(Id, self.cols);
+
+        // Store the header
+        row.storage[0].header.id = id;
+
+        // We only need to fill with runtime safety because unions are
+        // tag-checked. Otherwise, the default value of zero will be valid.
+        if (std.debug.runtime_safety) row.fill(.{});
+    }
     return row;
 }
 
 /// Copy the row at src to dst.
-pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) void {
+pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) !void {
     // One day we can make this more efficient but for now
     // we do the easy thing.
     const dst_row = self.getRow(dst);
     const src_row = self.getRow(src);
-    dst_row.copyRow(src_row);
+    try dst_row.copyRow(src_row);
 }
 
 /// Returns the offset into the storage buffer that the given row can
@@ -656,6 +917,19 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         // If we can't fit our rows into our capacity, we delete some scrollback.
         const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
             const rows_to_delete = rows_final - self.rowsCapacity();
+
+            // Fast-path: we have no graphemes.
+            // Slow-path: we have graphemes, we have to check each row
+            // we're going to delete to see if they contain graphemes and
+            // clear the ones that do so we clear memory properly.
+            if (self.graphemes.count() > 0) {
+                var y: usize = 0;
+                while (y < rows_to_delete) : (y += 1) {
+                    const row = self.getRow(.{ .active = y });
+                    if (row.storage[0].header.flags.grapheme) row.clear(.{});
+                }
+            }
+
             self.viewport -= rows_to_delete;
             self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
             break :deleted rows_to_delete;
@@ -733,7 +1007,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
             // the first row.
             var skip: usize = if (row_count == 0) slices.top_offset else 0;
 
-            const row: Row = .{ .storage = slice[start_idx..end_idx] };
+            const row: Row = .{ .screen = self, .storage = slice[start_idx..end_idx] };
             var it = row.cellIterator();
             while (it.next()) |cell| {
                 if (skip > 0) {
@@ -750,7 +1024,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
             }
 
             // If this row is not soft-wrapped, add a newline
-            if (!row.header().wrap) {
+            if (!row.header().flags.wrap) {
                 buf[buf_i] = '\n';
                 buf_i += 1;
             }
@@ -883,7 +1157,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
 
         // Get this row
         const new_row = self.getRow(.{ .active = y });
-        new_row.copyRow(old_row);
+        try new_row.copyRow(old_row);
 
         // Next row
         y += 1;
@@ -965,7 +1239,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
             // Get this row
             var new_row = self.getRow(.{ .active = y });
-            new_row.copyRow(old_row);
+            try new_row.copyRow(old_row);
 
             // We need to check if our cursor was on this line. If so,
             // we set the new cursor.
@@ -975,7 +1249,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             }
 
             // If no reflow, just keep going
-            if (!old_row.header().wrap) {
+            if (!old_row.header().flags.wrap) {
                 y += 1;
                 continue;
             }
@@ -1029,7 +1303,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     // We copied the full amount left in this wrapped row.
                     if (copy_len == wrapped_cells_rem) {
                         // If this row isn't also wrapped, we're done!
-                        if (!wrapped_row.header().wrap) {
+                        if (!wrapped_row.header().flags.wrap) {
                             // If we were able to copy the entire row then
                             // we shortened the screen by one. We need to reflect
                             // this in our viewport.
@@ -1168,7 +1442,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
             // If we aren't wrapping, then move to the next row
             if (trimmed_row.len == 0 or
-                !old_row.header().wrap)
+                !old_row.header().flags.wrap)
             {
                 y += 1;
                 x = 0;
@@ -1195,8 +1469,13 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 /// each row. If a line is longer than the available columns, soft-wrapping
 /// will occur. This will automatically handle basic wide chars.
 pub fn testWriteString(self: *Screen, text: []const u8) !void {
-    var y: usize = 0;
-    var x: usize = 0;
+    var y: usize = self.cursor.y;
+    var x: usize = self.cursor.x;
+
+    var grapheme: struct {
+        x: usize = 0,
+        cell: ?*Cell = null,
+    } = .{};
 
     const view = std.unicode.Utf8View.init(text) catch unreachable;
     var iter = view.iterator();
@@ -1205,6 +1484,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         if (c == '\n') {
             y += 1;
             x = 0;
+            grapheme = .{};
             continue;
         }
 
@@ -1216,6 +1496,33 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
 
         // Get our row
         var row = self.getRow(.{ .active = y });
+
+        // If we have a previous cell, we check if we're part of a grapheme.
+        if (grapheme.cell) |prev_cell| {
+            const grapheme_break = brk: {
+                var state: i32 = 0;
+                var cp1 = @intCast(u21, prev_cell.char);
+                if (prev_cell.attrs.grapheme) {
+                    var it = row.codepointIterator(grapheme.x);
+                    while (it.next()) |cp2| {
+                        assert(!utf8proc.graphemeBreakStateful(
+                            cp1,
+                            cp2,
+                            &state,
+                        ));
+
+                        cp1 = cp2;
+                    }
+                }
+
+                break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+            };
+
+            if (!grapheme_break) {
+                try row.attachGrapheme(grapheme.x, c);
+                continue;
+            }
+        }
 
         // If we're writing past the end, we need to soft wrap.
         if (x == self.cols) {
@@ -1236,6 +1543,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
             1 => {
                 const cell = row.getCellPtr(x);
                 cell.char = @intCast(u32, c);
+
+                grapheme.x = x;
+                grapheme.cell = cell;
             },
 
             2 => {
@@ -1259,6 +1569,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     const cell = row.getCellPtr(x);
                     cell.char = @intCast(u32, c);
                     cell.attrs.wide = true;
+
+                    grapheme.x = x;
+                    grapheme.cell = cell;
                 }
 
                 {
@@ -1274,6 +1587,10 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
 
         x += 1;
     }
+
+    // So the cursor doesn't go off screen
+    self.cursor.x = @minimum(x, self.cols - 1);
+    self.cursor.y = y;
 }
 
 /// Turns the screen into a string. Different regions of the screen can
@@ -1307,6 +1624,93 @@ pub fn testString(self: *Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8
     // Never render the final newline
     const str = std.mem.trimRight(u8, buf[0..i], "\n");
     return try alloc.realloc(buf, str.len);
+}
+
+test "Row: clear with graphemes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    const row = s.getRow(.{ .active = 0 });
+    try testing.expect(row.getId() > 0);
+    try testing.expectEqual(@as(usize, 5), row.lenCells());
+    try testing.expect(!row.header().flags.grapheme);
+
+    // Lets add a cell with a grapheme
+    {
+        const cell = row.getCellPtr(2);
+        cell.*.char = 'A';
+        try row.attachGrapheme(2, 'B');
+        try testing.expect(cell.attrs.grapheme);
+        try testing.expect(row.header().flags.grapheme);
+        try testing.expect(s.graphemes.count() == 1);
+    }
+
+    // Clear the row
+    row.clear(.{});
+    try testing.expect(!row.header().flags.grapheme);
+    try testing.expect(s.graphemes.count() == 0);
+}
+
+test "Row: copy row with graphemes in destination" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Source row does NOT have graphemes
+    const row_src = s.getRow(.{ .active = 0 });
+    {
+        const cell = row_src.getCellPtr(2);
+        cell.*.char = 'A';
+    }
+
+    // Destination has graphemes
+    const row = s.getRow(.{ .active = 1 });
+    {
+        const cell = row.getCellPtr(1);
+        cell.*.char = 'B';
+        try row.attachGrapheme(1, 'C');
+        try testing.expect(cell.attrs.grapheme);
+        try testing.expect(row.header().flags.grapheme);
+        try testing.expect(s.graphemes.count() == 1);
+    }
+
+    // Copy
+    try row.copyRow(row_src);
+    try testing.expect(!row.header().flags.grapheme);
+    try testing.expect(s.graphemes.count() == 0);
+}
+
+test "Row: copy row with graphemes in source" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Source row does NOT have graphemes
+    const row_src = s.getRow(.{ .active = 0 });
+    {
+        const cell = row_src.getCellPtr(2);
+        cell.*.char = 'A';
+        try row_src.attachGrapheme(2, 'B');
+        try testing.expect(cell.attrs.grapheme);
+        try testing.expect(row_src.header().flags.grapheme);
+        try testing.expect(s.graphemes.count() == 1);
+    }
+
+    // Destination has no graphemes
+    const row = s.getRow(.{ .active = 1 });
+    try row.copyRow(row_src);
+    try testing.expect(row.header().flags.grapheme);
+    try testing.expect(s.graphemes.count() == 2);
+
+    row_src.clear(.{});
+    try testing.expect(s.graphemes.count() == 1);
 }
 
 test "Screen" {
@@ -1348,6 +1752,25 @@ test "Screen" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("AAAAA\nAAAAA\nAAAAA", contents);
     }
+}
+
+test "Screen: write graphemes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x1F44D, buf[buf_idx..]); // Thumbs up plain
+    buf_idx += try std.unicode.utf8Encode(0x1F44D, buf[buf_idx..]); // Thumbs up plain
+    buf_idx += try std.unicode.utf8Encode(0x1F3FD, buf[buf_idx..]); // Medium skin tone
+
+    try s.testWriteString(buf[0..buf_idx]);
+    try testing.expect(s.rowsWritten() == 1);
+    try testing.expectEqual(@as(usize, 4), s.cursor.x);
 }
 
 test "Screen: scrolling" {
@@ -1609,7 +2032,7 @@ test "Screen: row copy" {
 
     // Copy
     try s.scroll(.{ .delta = 1 });
-    s.copyRow(.{ .active = 2 }, .{ .active = 0 });
+    try s.copyRow(.{ .active = 2 }, .{ .active = 0 });
 
     // Test our contents
     var contents = try s.testString(alloc, .viewport);
@@ -2217,6 +2640,8 @@ test "Screen: resize less rows no scrollback" {
     defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
     try s.testWriteString(str);
+    s.cursor.x = 0;
+    s.cursor.y = 0;
     const cursor = s.cursor;
     try s.resize(1, 5);
 
@@ -2334,6 +2759,8 @@ test "Screen: resize less cols no reflow" {
     defer s.deinit();
     const str = "1AB\n2EF\n3IJ";
     try s.testWriteString(str);
+    s.cursor.x = 0;
+    s.cursor.y = 0;
     const cursor = s.cursor;
     try s.resize(3, 3);
 

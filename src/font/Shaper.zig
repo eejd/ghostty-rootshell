@@ -107,6 +107,15 @@ pub const RunIterator = struct {
 
             // Continue with our run
             self.shaper.hb_buf.add(cell.char, @intCast(u32, j));
+
+            // If this cell is part of a grapheme cluster, add all the grapheme
+            // data points.
+            if (cell.attrs.grapheme) {
+                var it = self.row.codepointIterator(j);
+                while (it.next()) |cp| {
+                    self.shaper.hb_buf.add(cp, @intCast(u32, j));
+                }
+            }
         }
 
         // Finalize our buffer
