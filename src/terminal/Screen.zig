@@ -235,13 +235,32 @@ pub const Row = struct {
 
     /// Fill the entire row with a copy of a single cell.
     pub fn fill(self: Row, cell: Cell) void {
-        std.mem.set(StorageCell, self.storage[1..], .{ .cell = cell });
+        self.fillSlice(cell, 0, self.storage.len - 1);
     }
 
     /// Fill a slice of a row.
     pub fn fillSlice(self: Row, cell: Cell, start: usize, len: usize) void {
         assert(len <= self.storage.len - 1);
-        std.mem.set(StorageCell, self.storage[start + 1 .. len + 1], .{ .cell = cell });
+        assert(!cell.attrs.grapheme); // you can't fill with graphemes
+
+        // If our row has no graphemes, then this is a fast copy
+        if (!self.storage[0].header.flags.grapheme) {
+            std.mem.set(StorageCell, self.storage[start + 1 .. len + 1], .{ .cell = cell });
+            return;
+        }
+
+        // We have graphemes, so we have to clear those first.
+        for (self.storage[start + 1 .. len + 1]) |*storage_cell, x| {
+            if (storage_cell.cell.attrs.grapheme) self.clearGraphemes(x);
+            storage_cell.* = .{ .cell = cell };
+        }
+
+        // We only reset the grapheme flag if we fill the whole row, for now.
+        // We can improve performance by more correctly setting this but I'm
+        // going to defer that until we can measure.
+        if (start == 0 and len == self.storage.len - 1) {
+            self.storage[0].header.flags.grapheme = false;
+        }
     }
 
     /// Get a single immutable cell.
@@ -292,10 +311,42 @@ pub const Row = struct {
         try gop.value_ptr.append(self.screen.alloc, cp);
     }
 
+    /// Removes all graphemes associated with a cell.
+    pub fn clearGraphemes(self: Row, x: usize) void {
+        const cell = &self.storage[x + 1].cell;
+        const key = self.getId() + x + 1;
+        cell.attrs.grapheme = false;
+        _ = self.screen.graphemes.remove(key);
+    }
+
     /// Copy the row src into this row. The row can be from another screen.
-    pub fn copyRow(self: Row, src: Row) void {
+    pub fn copyRow(self: Row, src: Row) !void {
+        // If we have graphemes, clear first to unset them.
+        if (self.storage[0].header.flags.grapheme) self.clear(.{});
+
+        // If the source has no graphemes (likely) then this is fast.
         const end = @minimum(src.storage.len, self.storage.len);
-        std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
+        if (!src.storage[0].header.flags.grapheme) {
+            std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
+            return;
+        }
+
+        // Source has graphemes, this is slow.
+        for (src.storage[1..end]) |storage, x| {
+            self.storage[x + 1] = .{ .cell = storage.cell };
+
+            // Copy grapheme data if it exists
+            if (storage.cell.attrs.grapheme) {
+                const src_key = src.getId() + x + 1;
+                const src_data = src.screen.graphemes.get(src_key) orelse continue;
+
+                const dst_key = self.getId() + x + 1;
+                const dst_gop = try self.screen.graphemes.getOrPut(self.screen.alloc, dst_key);
+                dst_gop.value_ptr.* = try src_data.copy(self.screen.alloc);
+
+                self.storage[0].header.flags.grapheme = true;
+            }
+        }
     }
 
     /// Read-only iterator for the cells in the row.
@@ -480,6 +531,14 @@ pub const GraphemeData = union(enum) {
         }
     }
 
+    pub fn copy(self: GraphemeData, alloc: Allocator) !GraphemeData {
+        // If we're not many we're not allocated so just copy on stack.
+        if (self != .many) return self;
+
+        // Heap allocated
+        return GraphemeData{ .many = try alloc.dupe(u21, self.many) };
+    }
+
     test {
         log.warn("Grapheme={}", .{@sizeOf(GraphemeData)});
     }
@@ -650,12 +709,12 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
 }
 
 /// Copy the row at src to dst.
-pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) void {
+pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) !void {
     // One day we can make this more efficient but for now
     // we do the easy thing.
     const dst_row = self.getRow(dst);
     const src_row = self.getRow(src);
-    dst_row.copyRow(src_row);
+    try dst_row.copyRow(src_row);
 }
 
 /// Returns the offset into the storage buffer that the given row can
@@ -1032,7 +1091,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
 
         // Get this row
         const new_row = self.getRow(.{ .active = y });
-        new_row.copyRow(old_row);
+        try new_row.copyRow(old_row);
 
         // Next row
         y += 1;
@@ -1114,7 +1173,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
             // Get this row
             var new_row = self.getRow(.{ .active = y });
-            new_row.copyRow(old_row);
+            try new_row.copyRow(old_row);
 
             // We need to check if our cursor was on this line. If so,
             // we set the new cursor.
@@ -1458,6 +1517,93 @@ pub fn testString(self: *Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8
     return try alloc.realloc(buf, str.len);
 }
 
+test "Row: clear with graphemes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    const row = s.getRow(.{ .active = 0 });
+    try testing.expect(row.getId() > 0);
+    try testing.expectEqual(@as(usize, 5), row.lenCells());
+    try testing.expect(!row.header().flags.grapheme);
+
+    // Lets add a cell with a grapheme
+    {
+        const cell = row.getCellPtr(2);
+        cell.*.char = 'A';
+        try row.attachGrapheme(2, 'B');
+        try testing.expect(cell.attrs.grapheme);
+        try testing.expect(row.header().flags.grapheme);
+        try testing.expect(s.graphemes.count() == 1);
+    }
+
+    // Clear the row
+    row.clear(.{});
+    try testing.expect(!row.header().flags.grapheme);
+    try testing.expect(s.graphemes.count() == 0);
+}
+
+test "Row: copy row with graphemes in destination" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Source row does NOT have graphemes
+    const row_src = s.getRow(.{ .active = 0 });
+    {
+        const cell = row_src.getCellPtr(2);
+        cell.*.char = 'A';
+    }
+
+    // Destination has graphemes
+    const row = s.getRow(.{ .active = 1 });
+    {
+        const cell = row.getCellPtr(1);
+        cell.*.char = 'B';
+        try row.attachGrapheme(1, 'C');
+        try testing.expect(cell.attrs.grapheme);
+        try testing.expect(row.header().flags.grapheme);
+        try testing.expect(s.graphemes.count() == 1);
+    }
+
+    // Copy
+    try row.copyRow(row_src);
+    try testing.expect(!row.header().flags.grapheme);
+    try testing.expect(s.graphemes.count() == 0);
+}
+
+test "Row: copy row with graphemes in source" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Source row does NOT have graphemes
+    const row_src = s.getRow(.{ .active = 0 });
+    {
+        const cell = row_src.getCellPtr(2);
+        cell.*.char = 'A';
+        try row_src.attachGrapheme(2, 'B');
+        try testing.expect(cell.attrs.grapheme);
+        try testing.expect(row_src.header().flags.grapheme);
+        try testing.expect(s.graphemes.count() == 1);
+    }
+
+    // Destination has no graphemes
+    const row = s.getRow(.{ .active = 1 });
+    try row.copyRow(row_src);
+    try testing.expect(row.header().flags.grapheme);
+    try testing.expect(s.graphemes.count() == 2);
+
+    row_src.clear(.{});
+    try testing.expect(s.graphemes.count() == 1);
+}
+
 test "Screen" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1758,7 +1904,7 @@ test "Screen: row copy" {
 
     // Copy
     try s.scroll(.{ .delta = 1 });
-    s.copyRow(.{ .active = 2 }, .{ .active = 0 });
+    try s.copyRow(.{ .active = 2 }, .{ .active = 0 });
 
     // Test our contents
     var contents = try s.testString(alloc, .viewport);

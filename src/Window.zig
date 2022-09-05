@@ -1499,7 +1499,7 @@ pub fn eraseChars(self: *Window, count: usize) !void {
 }
 
 pub fn insertLines(self: *Window, count: usize) !void {
-    self.terminal.insertLines(count);
+    try self.terminal.insertLines(count);
 }
 
 pub fn insertBlanks(self: *Window, count: usize) !void {
@@ -1507,7 +1507,7 @@ pub fn insertBlanks(self: *Window, count: usize) !void {
 }
 
 pub fn deleteLines(self: *Window, count: usize) !void {
-    self.terminal.deleteLines(count);
+    try self.terminal.deleteLines(count);
 }
 
 pub fn reverseIndex(self: *Window) !void {
@@ -1663,7 +1663,7 @@ pub fn setCursorStyle(
 }
 
 pub fn decaln(self: *Window) !void {
-    self.terminal.decaln();
+    try self.terminal.decaln();
 }
 
 pub fn tabClear(self: *Window, cmd: terminal.TabClear) !void {
@@ -1687,11 +1687,11 @@ pub fn enquiry(self: *Window) !void {
 }
 
 pub fn scrollDown(self: *Window, count: usize) !void {
-    self.terminal.scrollDown(count);
+    try self.terminal.scrollDown(count);
 }
 
 pub fn scrollUp(self: *Window, count: usize) !void {
-    self.terminal.scrollUp(count);
+    try self.terminal.scrollUp(count);
 }
 
 pub fn setActiveStatusDisplay(

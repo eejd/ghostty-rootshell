@@ -608,6 +608,9 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         }
     }
 
+    // If the prior value had graphemes, clear those
+    if (cell.attrs.grapheme) row.clearGraphemes(self.screen.cursor.x);
+
     // Write
     cell.* = self.screen.cursor.pen;
     cell.char = @intCast(u32, c);
@@ -640,7 +643,7 @@ fn clearWideSpacerHead(self: *Terminal) void {
 /// Resets all margins and fills the whole screen with the character 'E'
 ///
 /// Sets the cursor to the top left corner.
-pub fn decaln(self: *Terminal) void {
+pub fn decaln(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -654,7 +657,7 @@ pub fn decaln(self: *Terminal) void {
 
     var row: usize = 1;
     while (row < self.rows) : (row += 1) {
-        self.screen.getRow(.{ .active = row }).copyRow(filled);
+        try self.screen.getRow(.{ .active = row }).copyRow(filled);
     }
 }
 
@@ -697,7 +700,7 @@ pub fn index(self: *Terminal) !void {
             try self.screen.scroll(.{ .delta = 1 });
         } else {
             // TODO: test
-            self.scrollUp(1);
+            try self.scrollUp(1);
         }
 
         return;
@@ -726,7 +729,7 @@ pub fn reverseIndex(self: *Terminal) !void {
     // TODO: scrolling region
 
     if (self.screen.cursor.y == 0) {
-        self.scrollDown(1);
+        try self.scrollDown(1);
     } else {
         self.screen.cursor.y -|= 1;
     }
@@ -1128,7 +1131,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 /// All cleared space is colored according to the current SGR state.
 ///
 /// Moves the cursor to the left margin.
-pub fn insertLines(self: *Terminal, count: usize) void {
+pub fn insertLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1149,7 +1152,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 
     // Ensure we have the lines populated to the end
     while (y > top) : (y -= 1) {
-        self.screen.copyRow(.{ .active = y }, .{ .active = y - adjusted_count });
+        try self.screen.copyRow(.{ .active = y }, .{ .active = y - adjusted_count });
     }
 
     // Insert count blank lines
@@ -1176,7 +1179,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 /// cleared space is colored according to the current SGR state.
 ///
 /// Moves the cursor to the left margin.
-pub fn deleteLines(self: *Terminal, count: usize) void {
+pub fn deleteLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1194,7 +1197,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     // Scroll up the count amount.
     var y: usize = self.screen.cursor.y;
     while (y <= self.scrolling_region.bottom - adjusted_count) : (y += 1) {
-        self.screen.copyRow(.{ .active = y }, .{ .active = y + adjusted_count });
+        try self.screen.copyRow(.{ .active = y }, .{ .active = y + adjusted_count });
     }
 
     while (y <= self.scrolling_region.bottom) : (y += 1) {
@@ -1205,7 +1208,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
 
 /// Scroll the text down by one row.
 /// TODO: test
-pub fn scrollDown(self: *Terminal, count: usize) void {
+pub fn scrollDown(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1215,7 +1218,7 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
 
     // Move to the top of the scroll region
     self.screen.cursor.y = self.scrolling_region.top;
-    self.insertLines(count);
+    try self.insertLines(count);
 }
 
 /// Removes amount lines from the top of the scroll region. The remaining lines
@@ -1226,14 +1229,14 @@ pub fn scrollDown(self: *Terminal, count: usize) void {
 ///
 /// Does not change the (absolute) cursor position.
 // TODO: test
-pub fn scrollUp(self: *Terminal, count: usize) void {
+pub fn scrollUp(self: *Terminal, count: usize) !void {
     // Preserve the cursor
     const cursor = self.screen.cursor;
     defer self.screen.cursor = cursor;
 
     // Move to the top of the scroll region
     self.screen.cursor.y = self.scrolling_region.top;
-    self.deleteLines(count);
+    try self.deleteLines(count);
 }
 
 /// Options for scrolling the viewport of the terminal grid.
@@ -1597,7 +1600,7 @@ test "Terminal: deleteLines" {
     try t.print('D');
 
     t.cursorUp(2);
-    t.deleteLines(1);
+    try t.deleteLines(1);
 
     try t.print('E');
     t.carriageReturn();
@@ -1633,7 +1636,7 @@ test "Terminal: deleteLines with scroll region" {
 
     t.setScrollingRegion(1, 3);
     t.setCursorPos(1, 1);
-    t.deleteLines(1);
+    try t.deleteLines(1);
 
     try t.print('E');
     t.carriageReturn();
@@ -1674,7 +1677,7 @@ test "Terminal: insertLines" {
     t.setCursorPos(2, 1);
 
     // Insert two lines
-    t.insertLines(2);
+    try t.insertLines(2);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1705,7 +1708,7 @@ test "Terminal: insertLines with scroll region" {
 
     t.setScrollingRegion(1, 2);
     t.setCursorPos(1, 1);
-    t.insertLines(1);
+    try t.insertLines(1);
 
     try t.print('X');
 
@@ -1740,7 +1743,7 @@ test "Terminal: insertLines more than remaining" {
     t.setCursorPos(2, 1);
 
     // Insert a bunch of  lines
-    t.insertLines(20);
+    try t.insertLines(20);
 
     {
         var str = try t.plainString(testing.allocator);
@@ -1881,7 +1884,7 @@ test "Terminal: DECALN" {
     t.carriageReturn();
     try t.linefeed();
     try t.print('B');
-    t.decaln();
+    try t.decaln();
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
