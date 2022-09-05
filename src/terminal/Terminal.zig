@@ -474,22 +474,21 @@ pub fn print(self: *Terminal, c: u21) !void {
             };
         };
 
-        var state: i32 = 0;
-        const grapheme_break = if (!prev.cell.attrs.grapheme)
-            utf8proc.graphemeBreakStateful(@intCast(u21, prev.cell.char), c, &state)
-        else brk: {
-            // We need to rebuild the state by processing the grapheme breaks
-            // for all the codepoints up to this point. This MUST exist because
-            // grapheme is only true iff this exists.
-            const points = self.screen.graphemes.getEntry(row.getId() + prev.x + 1).?;
-            const cp1 = switch (points.value_ptr.*) {
-                .one => |v| one: {
-                    assert(!utf8proc.graphemeBreakStateful(@intCast(u21, prev.cell.char), v, &state));
-                    break :one v;
-                },
+        const grapheme_break = brk: {
+            var state: i32 = 0;
+            var cp1 = @intCast(u21, prev.cell.char);
+            if (prev.cell.attrs.grapheme) {
+                var it = row.codepointIterator(prev.x);
+                while (it.next()) |cp2| {
+                    assert(!utf8proc.graphemeBreakStateful(
+                        cp1,
+                        cp2,
+                        &state,
+                    ));
 
-                else => @panic("NO"),
-            };
+                    cp1 = cp2;
+                }
+            }
 
             break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
         };

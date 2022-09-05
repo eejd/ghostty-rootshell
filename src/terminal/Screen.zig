@@ -1497,6 +1497,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         // Get our row
         var row = self.getRow(.{ .active = y });
 
+        // If we have a previous cell, we check if we're part of a grapheme.
         if (grapheme.cell) |prev_cell| {
             const grapheme_break = brk: {
                 var state: i32 = 0;
