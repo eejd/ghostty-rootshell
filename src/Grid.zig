@@ -366,7 +366,7 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
             for (try shaper.shape(run)) |shaper_cell| {
                 assert(try self.updateCell(
                     term,
-                    row[shaper_cell.x],
+                    row.getCell(shaper_cell.x),
                     shaper_cell,
                     run,
                     shaper_cell.x,

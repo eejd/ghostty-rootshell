@@ -248,8 +248,8 @@ test "run iterator" {
     // Spaces should be part of a run
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
-        defer screen.deinit(alloc);
-        screen.testWriteString("ABCD   EFG");
+        defer screen.deinit();
+        try screen.testWriteString("ABCD   EFG");
 
         var shaper = testdata.shaper;
         var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
@@ -317,8 +317,8 @@ test "shape inconsolata ligs" {
 
     {
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
-        defer screen.deinit(alloc);
-        screen.testWriteString(">=");
+        defer screen.deinit();
+        try screen.testWriteString(">=");
 
         var shaper = testdata.shaper;
         var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
@@ -335,8 +335,8 @@ test "shape inconsolata ligs" {
 
     {
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
-        defer screen.deinit(alloc);
-        screen.testWriteString("===");
+        defer screen.deinit();
+        try screen.testWriteString("===");
 
         var shaper = testdata.shaper;
         var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
@@ -361,8 +361,8 @@ test "shape emoji width" {
 
     {
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
-        defer screen.deinit(alloc);
-        screen.testWriteString("👍");
+        defer screen.deinit();
+        try screen.testWriteString("👍");
 
         var shaper = testdata.shaper;
         var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
