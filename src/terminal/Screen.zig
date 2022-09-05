@@ -353,6 +353,18 @@ pub const Row = struct {
     pub fn cellIterator(self: Row) CellIterator {
         return .{ .row = self };
     }
+
+    /// Read-only iterator for the grapheme codepoints in a cell. This only
+    /// iterates over the EXTRA GRAPHEME codepoints and not the primary
+    /// codepoint in cell.char.
+    pub fn codepointIterator(self: Row, x: usize) CodepointIterator {
+        const cell = &self.storage[x + 1].cell;
+        assert(cell.attrs.grapheme);
+
+        const key = self.getId() + x + 1;
+        const data = self.screen.graphemes.get(key).?;
+        return .{ .data = data };
+    }
 };
 
 /// Used to iterate through the rows of a specific region.
@@ -381,6 +393,47 @@ pub const CellIterator = struct {
         const res = self.row.storage[self.i + 1].cell;
         self.i += 1;
         return res;
+    }
+};
+
+/// Used to iterate through the codepoints of a cell. This only iterates
+/// over the extra grapheme codepoints and not the primary codepoint.
+pub const CodepointIterator = struct {
+    data: GraphemeData,
+    i: usize = 0,
+
+    pub fn next(self: *CodepointIterator) ?u21 {
+        switch (self.data) {
+            .one => |v| {
+                if (self.i >= 1) return null;
+                self.i += 1;
+                return v;
+            },
+
+            .two => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+
+            .three => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+
+            .four => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+
+            .many => |v| {
+                if (self.i >= v.len) return null;
+                defer self.i += 1;
+                return v[self.i];
+            },
+        }
     }
 };
 
@@ -864,6 +917,19 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         // If we can't fit our rows into our capacity, we delete some scrollback.
         const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
             const rows_to_delete = rows_final - self.rowsCapacity();
+
+            // Fast-path: we have no graphemes.
+            // Slow-path: we have graphemes, we have to check each row
+            // we're going to delete to see if they contain graphemes and
+            // clear the ones that do so we clear memory properly.
+            if (self.graphemes.count() > 0) {
+                var y: usize = 0;
+                while (y < rows_to_delete) : (y += 1) {
+                    const row = self.getRow(.{ .active = y });
+                    if (row.storage[0].header.flags.grapheme) row.clear(.{});
+                }
+            }
+
             self.viewport -= rows_to_delete;
             self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
             break :deleted rows_to_delete;
@@ -1403,8 +1469,13 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 /// each row. If a line is longer than the available columns, soft-wrapping
 /// will occur. This will automatically handle basic wide chars.
 pub fn testWriteString(self: *Screen, text: []const u8) !void {
-    var y: usize = 0;
-    var x: usize = 0;
+    var y: usize = self.cursor.y;
+    var x: usize = self.cursor.x;
+
+    var grapheme: struct {
+        x: usize = 0,
+        cell: ?*Cell = null,
+    } = .{};
 
     const view = std.unicode.Utf8View.init(text) catch unreachable;
     var iter = view.iterator();
@@ -1413,6 +1484,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         if (c == '\n') {
             y += 1;
             x = 0;
+            grapheme = .{};
             continue;
         }
 
@@ -1424,6 +1496,32 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
 
         // Get our row
         var row = self.getRow(.{ .active = y });
+
+        if (grapheme.cell) |prev_cell| {
+            const grapheme_break = brk: {
+                var state: i32 = 0;
+                var cp1 = @intCast(u21, prev_cell.char);
+                if (prev_cell.attrs.grapheme) {
+                    var it = row.codepointIterator(grapheme.x);
+                    while (it.next()) |cp2| {
+                        assert(!utf8proc.graphemeBreakStateful(
+                            cp1,
+                            cp2,
+                            &state,
+                        ));
+
+                        cp1 = cp2;
+                    }
+                }
+
+                break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+            };
+
+            if (!grapheme_break) {
+                try row.attachGrapheme(grapheme.x, c);
+                continue;
+            }
+        }
 
         // If we're writing past the end, we need to soft wrap.
         if (x == self.cols) {
@@ -1444,6 +1542,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
             1 => {
                 const cell = row.getCellPtr(x);
                 cell.char = @intCast(u32, c);
+
+                grapheme.x = x;
+                grapheme.cell = cell;
             },
 
             2 => {
@@ -1467,6 +1568,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     const cell = row.getCellPtr(x);
                     cell.char = @intCast(u32, c);
                     cell.attrs.wide = true;
+
+                    grapheme.x = x;
+                    grapheme.cell = cell;
                 }
 
                 {
@@ -1482,6 +1586,10 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
 
         x += 1;
     }
+
+    // So the cursor doesn't go off screen
+    self.cursor.x = @minimum(x, self.cols - 1);
+    self.cursor.y = y;
 }
 
 /// Turns the screen into a string. Different regions of the screen can
@@ -1643,6 +1751,25 @@ test "Screen" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("AAAAA\nAAAAA\nAAAAA", contents);
     }
+}
+
+test "Screen: write graphemes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x1F44D, buf[buf_idx..]); // Thumbs up plain
+    buf_idx += try std.unicode.utf8Encode(0x1F44D, buf[buf_idx..]); // Thumbs up plain
+    buf_idx += try std.unicode.utf8Encode(0x1F3FD, buf[buf_idx..]); // Medium skin tone
+
+    try s.testWriteString(buf[0..buf_idx]);
+    try testing.expect(s.rowsWritten() == 1);
+    try testing.expectEqual(@as(usize, 4), s.cursor.x);
 }
 
 test "Screen: scrolling" {
@@ -2512,6 +2639,8 @@ test "Screen: resize less rows no scrollback" {
     defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
     try s.testWriteString(str);
+    s.cursor.x = 0;
+    s.cursor.y = 0;
     const cursor = s.cursor;
     try s.resize(1, 5);
 
@@ -2629,6 +2758,8 @@ test "Screen: resize less cols no reflow" {
     defer s.deinit();
     const str = "1AB\n2EF\n3IJ";
     try s.testWriteString(str);
+    s.cursor.x = 0;
+    s.cursor.y = 0;
     const cursor = s.cursor;
     try s.resize(3, 3);
 
