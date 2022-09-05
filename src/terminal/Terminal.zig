@@ -512,9 +512,20 @@ pub fn print(self: *Terminal, c: u21) !void {
     const width = utf8proc.charwidth(c);
     assert(width <= 2);
 
-    // For now, we ignore zero-width characters. When we support ligatures,
-    // this will have to change.
-    if (width == 0) return;
+    // Attach zero-width characters to our cell as grapheme data.
+    if (width == 0) {
+        // Find our previous cell
+        const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+        const prev: usize = prev: {
+            const x = self.screen.cursor.x - 1;
+            const immediate = row.getCellPtr(x);
+            if (!immediate.attrs.wide_spacer_tail) break :prev x;
+            break :prev x - 1;
+        };
+
+        try row.attachGrapheme(prev, c);
+        return;
+    }
 
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap)
