@@ -455,7 +455,12 @@ pub fn print(self: *Terminal, c: u21) !void {
     // extremely fast and we take this much slower path for graphemes. No hate
     // on graphemes, I'd love to make them much faster, but I wanted to focus
     // on correctness first.
-    if (c > 255 and self.screen.cursor.x > 0) {
+    //
+    // NOTE: This is disabled because no shells handle this correctly. We'll
+    // need to work with shells and other emulators to probably figure out
+    // a way to support this. In the mean time, I'm going to keep all the
+    // grapheme detection and keep it up to date so we're ready to go.
+    if (false and c > 255 and self.screen.cursor.x > 0) {
         // TODO: test this!
 
         const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
