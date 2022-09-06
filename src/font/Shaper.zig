@@ -177,8 +177,10 @@ pub const RunIterator = struct {
 
             // Determine the presentation format for this glyph.
             const presentation: ?Presentation = if (cell.attrs.grapheme) p: {
+                // We only check the FIRST codepoint because I believe the
+                // presentation format must be directly adjacent to the codepoint.
                 var it = self.row.codepointIterator(j);
-                while (it.next()) |cp| {
+                if (it.next()) |cp| {
                     if (cp == 0xFE0E) break :p Presentation.text;
                     if (cp == 0xFE0F) break :p Presentation.emoji;
                 }
