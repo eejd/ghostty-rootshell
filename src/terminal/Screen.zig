@@ -1497,31 +1497,48 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         // Get our row
         var row = self.getRow(.{ .active = y });
 
-        // If we have a previous cell, we check if we're part of a grapheme.
-        if (grapheme.cell) |prev_cell| {
-            const grapheme_break = brk: {
-                var state: i32 = 0;
-                var cp1 = @intCast(u21, prev_cell.char);
-                if (prev_cell.attrs.grapheme) {
-                    var it = row.codepointIterator(grapheme.x);
-                    while (it.next()) |cp2| {
-                        assert(!utf8proc.graphemeBreakStateful(
-                            cp1,
-                            cp2,
-                            &state,
-                        ));
+        // NOTE: graphemes are currently disabled
+        if (false) {
+            // If we have a previous cell, we check if we're part of a grapheme.
+            if (grapheme.cell) |prev_cell| {
+                const grapheme_break = brk: {
+                    var state: i32 = 0;
+                    var cp1 = @intCast(u21, prev_cell.char);
+                    if (prev_cell.attrs.grapheme) {
+                        var it = row.codepointIterator(grapheme.x);
+                        while (it.next()) |cp2| {
+                            assert(!utf8proc.graphemeBreakStateful(
+                                cp1,
+                                cp2,
+                                &state,
+                            ));
 
-                        cp1 = cp2;
+                            cp1 = cp2;
+                        }
                     }
+
+                    break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+                };
+
+                if (!grapheme_break) {
+                    try row.attachGrapheme(grapheme.x, c);
+                    continue;
                 }
-
-                break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
-            };
-
-            if (!grapheme_break) {
-                try row.attachGrapheme(grapheme.x, c);
-                continue;
             }
+        }
+
+        const width = utf8proc.charwidth(c);
+        //log.warn("c={x} width={}", .{ c, width });
+
+        // Zero-width are attached as grapheme data.
+        // NOTE: if/when grapheme clustering is ever enabled (above) this
+        // is not necessary
+        if (width == 0) {
+            if (grapheme.cell != null) {
+                try row.attachGrapheme(grapheme.x, c);
+            }
+
+            continue;
         }
 
         // If we're writing past the end, we need to soft wrap.
@@ -1537,7 +1554,6 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         }
 
         // If our character is double-width, handle it.
-        const width = utf8proc.charwidth(c);
         assert(width == 1 or width == 2);
         switch (width) {
             1 => {
@@ -1768,9 +1784,40 @@ test "Screen: write graphemes" {
     buf_idx += try std.unicode.utf8Encode(0x1F44D, buf[buf_idx..]); // Thumbs up plain
     buf_idx += try std.unicode.utf8Encode(0x1F3FD, buf[buf_idx..]); // Medium skin tone
 
+    // Note the assertions below are NOT the correct way to handle graphemes
+    // in general, but they're "correct" for historical purposes for terminals.
+    // For terminals, all double-wide codepoints are counted as part of the
+    // width.
+
+    try s.testWriteString(buf[0..buf_idx]);
+    try testing.expect(s.rowsWritten() == 2);
+    try testing.expectEqual(@as(usize, 2), s.cursor.x);
+}
+
+test "Screen: write long emoji" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 30, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x1F9D4, buf[buf_idx..]); // man: beard
+    buf_idx += try std.unicode.utf8Encode(0x1F3FB, buf[buf_idx..]); // light skin tone (Fitz 1-2)
+    buf_idx += try std.unicode.utf8Encode(0x200D, buf[buf_idx..]); // ZWJ
+    buf_idx += try std.unicode.utf8Encode(0x2642, buf[buf_idx..]); // male sign
+    buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // emoji representation
+
+    // Note the assertions below are NOT the correct way to handle graphemes
+    // in general, but they're "correct" for historical purposes for terminals.
+    // For terminals, all double-wide codepoints are counted as part of the
+    // width.
+
     try s.testWriteString(buf[0..buf_idx]);
     try testing.expect(s.rowsWritten() == 1);
-    try testing.expectEqual(@as(usize, 4), s.cursor.x);
+    try testing.expectEqual(@as(usize, 5), s.cursor.x);
 }
 
 test "Screen: scrolling" {
