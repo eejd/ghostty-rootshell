@@ -392,6 +392,41 @@ test "shape emoji width" {
     }
 }
 
+test "shape emoji width long" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x1F9D4, buf[buf_idx..]); // man: beard
+    buf_idx += try std.unicode.utf8Encode(0x1F3FB, buf[buf_idx..]); // light skin tone (Fitz 1-2)
+    buf_idx += try std.unicode.utf8Encode(0x200D, buf[buf_idx..]); // ZWJ
+    buf_idx += try std.unicode.utf8Encode(0x2642, buf[buf_idx..]); // male sign
+    buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // emoji representation
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 30, 0);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
+
+    // Get our run iterator
+    var shaper = testdata.shaper;
+    var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+        try testing.expectEqual(@as(u32, 5), shaper.hb_buf.getLength());
+
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 1), cells.len);
+        try testing.expectEqual(@as(u8, 5), cells[0].width);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
 test "shape variation selector VS15" {
     const testing = std.testing;
     const alloc = testing.allocator;
