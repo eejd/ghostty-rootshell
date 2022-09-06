@@ -48,10 +48,18 @@ modified: bool = false,
 /// updated in-place.
 resized: bool = false,
 
-pub const Format = enum(u3) {
-    greyscale = 1,
-    rgb = 3,
-    rgba = 4,
+pub const Format = enum {
+    greyscale,
+    rgb,
+    rgba,
+
+    pub fn depth(self: Format) u8 {
+        return switch (self) {
+            .greyscale => 1,
+            .rgb => 3,
+            .rgba => 4,
+        };
+    }
 };
 
 const Node = struct {
@@ -76,7 +84,7 @@ pub const Region = struct {
 
 pub fn init(alloc: Allocator, size: u32, format: Format) !Atlas {
     var result = Atlas{
-        .data = try alloc.alloc(u8, size * size * @enumToInt(format)),
+        .data = try alloc.alloc(u8, size * size * format.depth()),
         .size = size,
         .nodes = .{},
         .format = format,
@@ -220,7 +228,7 @@ pub fn set(self: *Atlas, reg: Region, data: []const u8) void {
     assert(reg.y < (self.size - 1));
     assert((reg.y + reg.height) <= (self.size - 1));
 
-    const depth = @enumToInt(self.format);
+    const depth = self.format.depth();
     var i: u32 = 0;
     while (i < reg.height) : (i += 1) {
         const tex_offset = (((reg.y + i) * self.size) + reg.x) * depth;
@@ -245,7 +253,7 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
     const size_old = self.size;
 
     // Allocate our new data
-    self.data = try alloc.alloc(u8, size_new * size_new * @enumToInt(self.format));
+    self.data = try alloc.alloc(u8, size_new * size_new * self.format.depth());
     defer alloc.free(data_old);
     errdefer {
         alloc.free(self.data);
@@ -270,7 +278,7 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
         .y = 1, // skip the first border row
         .width = size_old,
         .height = size_old - 2, // skip the last border row
-    }, data_old[size_old * @enumToInt(self.format) ..]);
+    }, data_old[size_old * self.format.depth() ..]);
 
     // We are both modified and resized
     self.modified = true;
@@ -380,7 +388,7 @@ test "writing RGB data" {
     });
 
     // 33 because of the 1px border and so on
-    const depth = @intCast(usize, @enumToInt(atlas.format));
+    const depth = @intCast(usize, atlas.format.depth());
     try testing.expectEqual(@as(u8, 1), atlas.data[33 * depth]);
     try testing.expectEqual(@as(u8, 2), atlas.data[33 * depth + 1]);
     try testing.expectEqual(@as(u8, 3), atlas.data[33 * depth + 2]);
@@ -410,7 +418,7 @@ test "grow RGB" {
 
     // Our top left skips the first row (size * depth) and the first
     // column (depth) for the 1px border.
-    const depth = @intCast(usize, @enumToInt(atlas.format));
+    const depth = @intCast(usize, atlas.format.depth());
     var tl = (atlas.size * depth) + depth;
     try testing.expectEqual(@as(u8, 10), atlas.data[tl]);
     try testing.expectEqual(@as(u8, 11), atlas.data[tl + 1]);

@@ -27,4 +27,5 @@ pub const Metrics = struct {
 
 test {
     @import("std").testing.refAllDecls(@This());
+    _ = @import("convert.zig");
 }
