@@ -15,6 +15,7 @@ const Face = @import("main.zig").Face;
 const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
+const Presentation = @import("main.zig").Presentation;
 
 const log = std.log.scoped(.font_group);
 
@@ -86,19 +87,34 @@ pub const FontIndex = packed struct {
 /// The font index is valid as long as font faces aren't removed. This
 /// isn't cached; it is expected that downstream users handle caching if
 /// that is important.
-pub fn indexForCodepoint(self: Group, style: Style, cp: u32) ?FontIndex {
+///
+/// Optionally, a presentation format can be specified. This presentation
+/// format will be preferred but if it can't be found in this format,
+/// any text format will be accepted. If presentation is null, any presentation
+/// is allowed. This func will NOT determine the default presentation for
+/// a code point.
+pub fn indexForCodepoint(
+    self: Group,
+    cp: u32,
+    style: Style,
+    p: ?Presentation,
+) ?FontIndex {
     // If we can find the exact value, then return that.
-    if (self.indexForCodepointExact(style, cp)) |value| return value;
+    if (self.indexForCodepointExact(cp, style, p)) |value| return value;
 
     // If this is already regular, we're done falling back.
-    if (style == .regular) return null;
+    if (style == .regular and p == null) return null;
 
     // For non-regular fonts, we fall back to regular.
-    return self.indexForCodepointExact(.regular, cp);
+    return self.indexForCodepointExact(cp, .regular, null);
 }
 
-fn indexForCodepointExact(self: Group, style: Style, cp: u32) ?FontIndex {
+fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) ?FontIndex {
     for (self.faces.get(style).items) |face, i| {
+        // If the presentation is null, we allow the first presentation we
+        // can find. Otherwise, we check for the specific one requested.
+        if (p != null and face.presentation != p.?) continue;
+
         if (face.glyphIndex(cp) != null) {
             return FontIndex{
                 .style = style,
@@ -143,6 +159,7 @@ test {
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
     const testEmoji = @import("test.zig").fontEmoji;
+    const testEmojiText = @import("test.zig").fontEmojiText;
 
     var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
@@ -155,11 +172,12 @@ test {
 
     try group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
     try group.addFace(alloc, .regular, try Face.init(lib, testEmoji, .{ .points = 12 }));
+    try group.addFace(alloc, .regular, try Face.init(lib, testEmojiText, .{ .points = 12 }));
 
     // Should find all visible ASCII
     var i: u32 = 32;
     while (i < 127) : (i += 1) {
-        const idx = group.indexForCodepoint(.regular, i).?;
+        const idx = group.indexForCodepoint(i, .regular, null).?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
 
@@ -176,7 +194,19 @@ test {
 
     // Try emoji
     {
-        const idx = group.indexForCodepoint(.regular, '🥸').?;
+        const idx = group.indexForCodepoint('🥸', .regular, null).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
+    }
+
+    // Try text emoji
+    {
+        const idx = group.indexForCodepoint(0x270C, .regular, .text).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 2), idx.idx);
+    }
+    {
+        const idx = group.indexForCodepoint(0x270C, .regular, .emoji).?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
     }

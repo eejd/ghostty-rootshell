@@ -15,6 +15,7 @@ const Allocator = std.mem.Allocator;
 const Atlas = @import("../Atlas.zig");
 const Glyph = @import("main.zig").Glyph;
 const Library = @import("main.zig").Library;
+const Presentation = @import("main.zig").Presentation;
 const convert = @import("convert.zig");
 
 const log = std.log.scoped(.font_face);
@@ -24,6 +25,10 @@ face: freetype.Face,
 
 /// Harfbuzz font corresponding to this face.
 hb_font: harfbuzz.Font,
+
+/// The presentation for this font. This is a heuristic since fonts don't have
+/// a way to declare this. We just assume a font with color is an emoji font.
+presentation: Presentation,
 
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
@@ -56,7 +61,11 @@ pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
     const hb_font = try harfbuzz.freetype.createFont(face.handle);
     errdefer hb_font.destroy();
 
-    return Face{ .face = face, .hb_font = hb_font };
+    return Face{
+        .face = face,
+        .hb_font = hb_font,
+        .presentation = if (face.hasColor()) .emoji else .text,
+    };
 }
 
 pub fn deinit(self: *Face) void {
@@ -241,6 +250,8 @@ test {
     var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
 
+    try testing.expectEqual(Presentation.text, font.presentation);
+
     // Generate all visible ASCII
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
@@ -260,6 +271,8 @@ test "color emoji" {
 
     var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
+
+    try testing.expectEqual(Presentation.emoji, font.presentation);
 
     _ = try font.renderGlyph(alloc, &atlas, font.glyphIndex('🥸').?);
 }

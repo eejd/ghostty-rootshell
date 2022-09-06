@@ -179,14 +179,16 @@ pub const RunIterator = struct {
             // for unknown glyphs.
             const font_idx_opt = (try self.shaper.group.indexForCodepoint(
                 alloc,
-                style,
                 cell.char,
+                style,
+                null,
             )) orelse (try self.shaper.group.indexForCodepoint(
                 alloc,
-                style,
                 0xFFFD,
+                style,
+                null,
             )) orelse
-                try self.shaper.group.indexForCodepoint(alloc, style, ' ');
+                try self.shaper.group.indexForCodepoint(alloc, ' ', style, null);
             const font_idx = font_idx_opt.?;
             //log.warn("char={x} idx={}", .{ cell.char, font_idx });
             if (j == self.i) current_font = font_idx;
@@ -377,6 +379,40 @@ test "shape emoji width" {
         try testing.expectEqual(@as(usize, 1), count);
     }
 }
+
+// test "shape variation selector VS15" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var testdata = try testShaper(alloc);
+//     defer testdata.deinit();
+//
+//     var buf: [32]u8 = undefined;
+//     var buf_idx: usize = 0;
+//     buf_idx += try std.unicode.utf8Encode(0x263A, buf[buf_idx..]); // White smiling face (text)
+//     buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // ZWJ to force color
+//
+//     // Make a screen with some data
+//     var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+//     defer screen.deinit();
+//     try screen.testWriteString(buf[0..buf_idx]);
+//
+//     // Get our run iterator
+//     var shaper = testdata.shaper;
+//     var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+//     var count: usize = 0;
+//     while (try it.next(alloc)) |run| {
+//         count += 1;
+//         //try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+//
+//         const cells = try shaper.shape(run);
+//         try testing.expectEqual(@as(usize, 2), cells.len);
+//         log.warn("WHAT={}", .{cells[0]});
+//         log.warn("WHAT={}", .{cells[1]});
+//         try testing.expectEqual(@as(u8, 2), cells[0].width);
+//     }
+//     try testing.expectEqual(@as(usize, 1), count);
+// }
 
 const TestShaper = struct {
     alloc: Allocator,

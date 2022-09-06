@@ -166,6 +166,11 @@ pub fn init(
             .regular,
             try font.Face.init(font_lib, face_emoji_ttf, font_size),
         );
+        try group.addFace(
+            alloc,
+            .regular,
+            try font.Face.init(font_lib, face_emoji_text_ttf, font_size),
+        );
 
         break :group group;
     });
@@ -830,3 +835,4 @@ test "GridSize update rounding" {
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
 const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
 const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
+const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");
