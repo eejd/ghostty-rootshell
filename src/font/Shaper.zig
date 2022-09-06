@@ -11,6 +11,7 @@ const Group = @import("main.zig").Group;
 const GroupCache = @import("main.zig").GroupCache;
 const Library = @import("main.zig").Library;
 const Style = @import("main.zig").Style;
+const Presentation = @import("main.zig").Presentation;
 const terminal = @import("../terminal/main.zig");
 
 const log = std.log.scoped(.font_shaper);
@@ -85,12 +86,12 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
         // we're the last cell, this is remaining otherwise we use cluster numbers
         // to detect since we set the cluster number to the column it
         // originated.
-        const cp_width = if (i == info.len - 1)
+        const cp_width = @maximum(1, if (i == info.len - 1)
             (run.max_cluster - v.cluster) + 1 // + 1 because we're zero indexed
         else width: {
             const next_cluster = info[i + 1].cluster;
             break :width next_cluster - v.cluster;
-        };
+        });
 
         self.cell_buf[i] = .{
             .x = x,
@@ -174,6 +175,17 @@ pub const RunIterator = struct {
             else
                 .regular;
 
+            // Determine the presentation format for this glyph.
+            const presentation: ?Presentation = if (cell.attrs.grapheme) p: {
+                var it = self.row.codepointIterator(j);
+                while (it.next()) |cp| {
+                    if (cp == 0xFE0E) break :p Presentation.text;
+                    if (cp == 0xFE0F) break :p Presentation.emoji;
+                }
+
+                break :p null;
+            } else null;
+
             // Determine the font for this cell. We'll use fallbacks
             // manually here to try replacement chars and then a space
             // for unknown glyphs.
@@ -181,14 +193,14 @@ pub const RunIterator = struct {
                 alloc,
                 cell.char,
                 style,
-                null,
+                presentation,
             )) orelse (try self.shaper.group.indexForCodepoint(
                 alloc,
                 0xFFFD,
                 style,
-                null,
+                .text,
             )) orelse
-                try self.shaper.group.indexForCodepoint(alloc, ' ', style, null);
+                try self.shaper.group.indexForCodepoint(alloc, ' ', style, .text);
             const font_idx = font_idx_opt.?;
             //log.warn("char={x} idx={}", .{ cell.char, font_idx });
             if (j == self.i) current_font = font_idx;
@@ -380,39 +392,73 @@ test "shape emoji width" {
     }
 }
 
-// test "shape variation selector VS15" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     var testdata = try testShaper(alloc);
-//     defer testdata.deinit();
-//
-//     var buf: [32]u8 = undefined;
-//     var buf_idx: usize = 0;
-//     buf_idx += try std.unicode.utf8Encode(0x263A, buf[buf_idx..]); // White smiling face (text)
-//     buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // ZWJ to force color
-//
-//     // Make a screen with some data
-//     var screen = try terminal.Screen.init(alloc, 3, 10, 0);
-//     defer screen.deinit();
-//     try screen.testWriteString(buf[0..buf_idx]);
-//
-//     // Get our run iterator
-//     var shaper = testdata.shaper;
-//     var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
-//     var count: usize = 0;
-//     while (try it.next(alloc)) |run| {
-//         count += 1;
-//         //try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
-//
-//         const cells = try shaper.shape(run);
-//         try testing.expectEqual(@as(usize, 2), cells.len);
-//         log.warn("WHAT={}", .{cells[0]});
-//         log.warn("WHAT={}", .{cells[1]});
-//         try testing.expectEqual(@as(u8, 2), cells[0].width);
-//     }
-//     try testing.expectEqual(@as(usize, 1), count);
-// }
+test "shape variation selector VS15" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x270C, buf[buf_idx..]); // Victory sign (default text)
+    buf_idx += try std.unicode.utf8Encode(0xFE0E, buf[buf_idx..]); // ZWJ to force text
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
+
+    // Get our run iterator
+    var shaper = testdata.shaper;
+    var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+        try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 2), cells.len);
+        try testing.expectEqual(@as(u8, 1), cells[0].width);
+        try testing.expectEqual(@as(u8, 1), cells[1].width);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "shape variation selector VS16" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x270C, buf[buf_idx..]); // Victory sign (default text)
+    buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // ZWJ to force color
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
+
+    // Get our run iterator
+    var shaper = testdata.shaper;
+    var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+        try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 1), cells.len);
+
+        // TODO: this should pass, victory sign is width one but
+        // after forcing color it is width 2
+        //try testing.expectEqual(@as(u8, 2), cells[0].width);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
 
 const TestShaper = struct {
     alloc: Allocator,
@@ -434,6 +480,7 @@ const TestShaper = struct {
 fn testShaper(alloc: Allocator) !TestShaper {
     const testFont = @import("test.zig").fontRegular;
     const testEmoji = @import("test.zig").fontEmoji;
+    const testEmojiText = @import("test.zig").fontEmojiText;
 
     var lib = try Library.init();
     errdefer lib.deinit();
@@ -446,6 +493,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
     // Setup group
     try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
     try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testEmoji, .{ .points = 12 }));
+    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testEmojiText, .{ .points = 12 }));
 
     var cell_buf = try alloc.alloc(Cell, 80);
     errdefer alloc.free(cell_buf);

@@ -158,7 +158,7 @@ pub fn indexForCodepoint(
     if (gop.found_existing) return gop.value_ptr.*;
 
     // Load a value and cache it. This even caches negative matches.
-    const value = self.group.indexForCodepoint(cp, style, null);
+    const value = self.group.indexForCodepoint(cp, style, p);
     gop.value_ptr.* = value;
     return value;
 }
