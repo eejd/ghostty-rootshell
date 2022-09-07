@@ -86,12 +86,14 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
         // we're the last cell, this is remaining otherwise we use cluster numbers
         // to detect since we set the cluster number to the column it
         // originated.
-        const cp_width = @maximum(1, if (i == info.len - 1)
-            (run.max_cluster - v.cluster) + 1 // + 1 because we're zero indexed
+        const cp_width = if (i == info.len - 1)
+            run.max_cluster - v.cluster
         else width: {
             const next_cluster = info[i + 1].cluster;
+            //log.warn("next={}", .{next_cluster});
             break :width next_cluster - v.cluster;
-        });
+        };
+        //log.warn("cluster={} max={}", .{ v.cluster, run.max_cluster });
 
         self.cell_buf[i] = .{
             .x = x,
@@ -145,7 +147,15 @@ pub const RunIterator = struct {
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
-        if (self.i >= self.row.lenCells()) return null;
+        // Trim the right side of a row that might be empty
+        const max: usize = max: {
+            var j: usize = self.row.lenCells();
+            while (j > 0) : (j -= 1) if (!self.row.getCell(j - 1).empty()) break;
+            break :max j;
+        };
+
+        // We're over at the max
+        if (self.i >= max) return null;
 
         // Track the font for our curent run
         var current_font: Group.FontIndex = .{};
@@ -154,21 +164,22 @@ pub const RunIterator = struct {
         self.shaper.hb_buf.reset();
         self.shaper.hb_buf.setContentType(.unicode);
 
+        // Harfbuzz lets you assign an arbitrary "cluster value" to each
+        // codepoint in a buffer. We use this to determine character width.
+        // Character width is KIND OF BROKEN with terminals because shells
+        // and client applications tend to use wcswidth(3) and friends to
+        // determine width which is broken for unicode graphemes. However,
+        // we need to match it otherwise things are really broken.
+        var cluster: u16 = 0;
+
         // Go through cell by cell and accumulate while we build our run.
         var j: usize = self.i;
-        var max_cluster: usize = j;
-        while (j < self.row.lenCells()) : (j += 1) {
+        while (j < max) : (j += 1) {
             const cell = self.row.getCell(j);
-
-            // Ignore empty cells
-            if (cell.empty()) continue;
 
             // If we're a spacer, then we ignore it but increase the max cluster
             // size so that the width calculation is correct.
-            if (cell.attrs.wide_spacer_tail) {
-                max_cluster = j;
-                continue;
-            }
+            if (cell.attrs.wide_spacer_tail) continue;
 
             const style: Style = if (cell.attrs.bold)
                 .bold
@@ -193,7 +204,7 @@ pub const RunIterator = struct {
             // for unknown glyphs.
             const font_idx_opt = (try self.shaper.group.indexForCodepoint(
                 alloc,
-                cell.char,
+                if (cell.empty()) ' ' else cell.char,
                 style,
                 presentation,
             )) orelse (try self.shaper.group.indexForCodepoint(
@@ -211,18 +222,20 @@ pub const RunIterator = struct {
             if (font_idx.int() != current_font.int()) break;
 
             // Continue with our run
-            self.shaper.hb_buf.add(cell.char, @intCast(u32, j));
+            self.shaper.hb_buf.add(cell.char, @intCast(u32, cluster));
+
+            // Increase our cluster value by the width of this cell.
+            cluster += cell.widthLegacy();
 
             // If this cell is part of a grapheme cluster, add all the grapheme
             // data points.
             if (cell.attrs.grapheme) {
                 var it = self.row.codepointIterator(j);
                 while (it.next()) |cp| {
-                    self.shaper.hb_buf.add(cp, @intCast(u32, j));
+                    if (cp == 0xFE0E or cp == 0xFE0F) continue;
+                    self.shaper.hb_buf.add(cp, @intCast(u32, cluster));
                 }
             }
-
-            max_cluster = j;
         }
 
         // Finalize our buffer
@@ -234,7 +247,7 @@ pub const RunIterator = struct {
         return TextRun{
             .offset = @intCast(u16, self.i),
             .cells = @intCast(u16, j - self.i),
-            .max_cluster = @intCast(u16, max_cluster),
+            .max_cluster = cluster,
             .font_index = current_font,
         };
     }
@@ -420,7 +433,7 @@ test "shape emoji width long" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        try testing.expectEqual(@as(u32, 5), shaper.hb_buf.getLength());
+        try testing.expectEqual(@as(u32, 4), shaper.hb_buf.getLength());
 
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
@@ -452,12 +465,11 @@ test "shape variation selector VS15" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+        try testing.expectEqual(@as(u32, 1), shaper.hb_buf.getLength());
 
         const cells = try shaper.shape(run);
-        try testing.expectEqual(@as(usize, 2), cells.len);
+        try testing.expectEqual(@as(usize, 1), cells.len);
         try testing.expectEqual(@as(u8, 1), cells[0].width);
-        try testing.expectEqual(@as(u8, 1), cells[1].width);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -485,7 +497,7 @@ test "shape variation selector VS16" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+        try testing.expectEqual(@as(u32, 1), shaper.hb_buf.getLength());
 
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
@@ -493,6 +505,34 @@ test "shape variation selector VS16" {
         // TODO: this should pass, victory sign is width one but
         // after forcing color it is width 2
         //try testing.expectEqual(@as(u8, 2), cells[0].width);
+        try testing.expectEqual(@as(u8, 1), cells[0].width);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "shape with empty cells in between" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 30, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A");
+    screen.cursor.x += 5;
+    try screen.testWriteString("B");
+
+    // Get our run iterator
+    var shaper = testdata.shaper;
+    var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 7), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }

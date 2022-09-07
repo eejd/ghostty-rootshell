@@ -181,6 +181,39 @@ pub const Cell = struct {
         return self.char == 0;
     }
 
+    /// The width of the cell.
+    ///
+    /// This uses the legacy calculation of a per-codepoint width calculation
+    /// to determine the width. This legacy calculation is incorrect because
+    /// it doesn't take into account multi-codepoint graphemes.
+    ///
+    /// The goal of this function is to match the expectation of shells
+    /// that aren't grapheme aware (at the time of writing this comment: none
+    /// are grapheme aware). This means it should match wcswidth.
+    pub fn widthLegacy(self: Cell) u16 {
+        // Wide is always 2
+        if (self.attrs.wide) return 2;
+
+        // Wide spacers are always 0 because their width is accounted for
+        // in the wide char.
+        if (self.attrs.wide_spacer_tail or self.attrs.wide_spacer_head) return 0;
+
+        return 1;
+    }
+
+    test "widthLegacy" {
+        const testing = std.testing;
+
+        var c: Cell = .{};
+        try testing.expectEqual(@as(u16, 1), c.widthLegacy());
+
+        c = .{ .attrs = .{ .wide = true } };
+        try testing.expectEqual(@as(u16, 2), c.widthLegacy());
+
+        c = .{ .attrs = .{ .wide_spacer_tail = true } };
+        try testing.expectEqual(@as(u16, 0), c.widthLegacy());
+    }
+
     test {
         // We use this test to ensure we always get the right size of the attrs
         // const cell: Cell = .{ .char = 0 };
