@@ -36,7 +36,6 @@ Improvements:
 Major Features:
 
 * Strikethrough
-* Ligatures
 * Bell
 * Mac:
   - Switch to raw Cocoa and Metal instead of glfw and libuv (major!)
