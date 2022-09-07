@@ -5,6 +5,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const harfbuzz = @import("harfbuzz");
+const trace = @import("tracy").trace;
 const Atlas = @import("../Atlas.zig");
 const Face = @import("main.zig").Face;
 const Group = @import("main.zig").Group;
@@ -55,6 +56,9 @@ pub fn runIterator(self: *Shaper, row: terminal.Screen.Row) RunIterator {
 ///
 /// If there is not enough space in the cell buffer, an error is returned.
 pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     // TODO: we do not want to hardcode these
     const hb_feats = &[_]harfbuzz.Feature{
         harfbuzz.Feature.fromString("dlig").?,
@@ -147,6 +151,9 @@ pub const RunIterator = struct {
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
+        const tracy = trace(@src());
+        defer tracy.end();
+
         // Trim the right side of a row that might be empty
         const max: usize = max: {
             var j: usize = self.row.lenCells();
