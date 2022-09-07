@@ -12,6 +12,7 @@ const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const Group = @import("main.zig").Group;
 const Metrics = @import("main.zig").Metrics;
+const Presentation = @import("main.zig").Presentation;
 
 const log = std.log.scoped(.font_groupcache);
 
@@ -34,6 +35,7 @@ atlas_color: Atlas,
 const CodepointKey = struct {
     style: Style,
     codepoint: u32,
+    presentation: ?Presentation,
 };
 
 const GlyphKey = struct {
@@ -90,7 +92,7 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
         var cell_width: f32 = 0;
         var i: u32 = 32;
         while (i <= 126) : (i += 1) {
-            const index = (try self.indexForCodepoint(alloc, .regular, i)).?;
+            const index = (try self.indexForCodepoint(alloc, i, .regular, .text)).?;
             const face = self.group.faceFromIndex(index);
             const glyph_index = face.glyphIndex(i).?;
             const glyph = try self.renderGlyph(alloc, index, glyph_index);
@@ -106,7 +108,7 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
     // '_' which should live at the bottom of a cell.
     const cell_height: f32 = cell_height: {
         // Get the '_' char for height
-        const index = (try self.indexForCodepoint(alloc, .regular, '_')).?;
+        const index = (try self.indexForCodepoint(alloc, '_', .regular, .text)).?;
         const face = self.group.faceFromIndex(index);
         const glyph_index = face.glyphIndex('_').?;
         const glyph = try self.renderGlyph(alloc, index, glyph_index);
@@ -142,15 +144,21 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
 }
 
 /// Get the font index for a given codepoint. This is cached.
-pub fn indexForCodepoint(self: *GroupCache, alloc: Allocator, style: Style, cp: u32) !?Group.FontIndex {
-    const key: CodepointKey = .{ .style = style, .codepoint = cp };
+pub fn indexForCodepoint(
+    self: *GroupCache,
+    alloc: Allocator,
+    cp: u32,
+    style: Style,
+    p: ?Presentation,
+) !?Group.FontIndex {
+    const key: CodepointKey = .{ .style = style, .codepoint = cp, .presentation = p };
     const gop = try self.codepoints.getOrPut(alloc, key);
 
     // If it is in the cache, use it.
     if (gop.found_existing) return gop.value_ptr.*;
 
     // Load a value and cache it. This even caches negative matches.
-    const value = self.group.indexForCodepoint(style, cp);
+    const value = self.group.indexForCodepoint(cp, style, p);
     gop.value_ptr.* = value;
     return value;
 }
@@ -219,7 +227,7 @@ test {
     // Visible ASCII. Do it twice to verify cache.
     var i: u32 = 32;
     while (i < 127) : (i += 1) {
-        const idx = (try cache.indexForCodepoint(alloc, .regular, i)).?;
+        const idx = (try cache.indexForCodepoint(alloc, i, .regular, null)).?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(Group.FontIndex.IndexInt, 0), idx.idx);
 
@@ -240,7 +248,7 @@ test {
 
         i = 32;
         while (i < 127) : (i += 1) {
-            const idx = (try cache.indexForCodepoint(alloc, .regular, i)).?;
+            const idx = (try cache.indexForCodepoint(alloc, i, .regular, null)).?;
             try testing.expectEqual(Style.regular, idx.style);
             try testing.expectEqual(@as(Group.FontIndex.IndexInt, 0), idx.idx);
 

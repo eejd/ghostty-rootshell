@@ -15,6 +15,7 @@ const Allocator = std.mem.Allocator;
 const Atlas = @import("../Atlas.zig");
 const Glyph = @import("main.zig").Glyph;
 const Library = @import("main.zig").Library;
+const Presentation = @import("main.zig").Presentation;
 
 const log = std.log.scoped(.font_face);
 
@@ -23,6 +24,10 @@ face: freetype.Face,
 
 /// Harfbuzz font corresponding to this face.
 hb_font: harfbuzz.Font,
+
+/// The presentation for this font. This is a heuristic since fonts don't have
+/// a way to declare this. We just assume a font with color is an emoji font.
+presentation: Presentation,
 
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
@@ -55,7 +60,11 @@ pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
     const hb_font = try harfbuzz.freetype.createFont(face.handle);
     errdefer hb_font.destroy();
 
-    return Face{ .face = face, .hb_font = hb_font };
+    return Face{
+        .face = face,
+        .hb_font = hb_font,
+        .presentation = if (face.hasColor()) .emoji else .text,
+    };
 }
 
 pub fn deinit(self: *Face) void {
@@ -120,30 +129,43 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
     });
 
     const glyph = self.face.handle.*.glyph;
-    const bitmap = glyph.*.bitmap;
+    const bitmap_ft = glyph.*.bitmap;
+
+    // This bitmap is blank. I've seen it happen in a font, I don't know why.
+    // If it is empty, we just return a valid glyph struct that does nothing.
+    if (bitmap_ft.rows == 0) return Glyph{
+        .width = 0,
+        .height = 0,
+        .offset_x = 0,
+        .offset_y = 0,
+        .atlas_x = 0,
+        .atlas_y = 0,
+        .advance_x = 0,
+    };
 
     // Ensure we know how to work with the font format. And assure that
-    // or color depth is as expected on the texture atlas.
-    const format: Atlas.Format = switch (bitmap.pixel_mode) {
+    // or color depth is as expected on the texture atlas. If format is null
+    // it means there is no native color format for our Atlas and we must try
+    // conversion.
+    const format: Atlas.Format = switch (bitmap_ft.pixel_mode) {
         freetype.c.FT_PIXEL_MODE_GRAY => .greyscale,
         freetype.c.FT_PIXEL_MODE_BGRA => .rgba,
         else => {
-            log.warn("pixel mode={}", .{bitmap.pixel_mode});
+            log.warn("glyph={} pixel mode={}", .{ glyph_index, bitmap_ft.pixel_mode });
             @panic("unsupported pixel mode");
         },
     };
     assert(atlas.format == format);
 
-    const src_w = bitmap.width;
-    const src_h = bitmap.rows;
-    const tgt_w = src_w;
-    const tgt_h = src_h;
+    const bitmap = bitmap_ft;
+    const tgt_w = bitmap.width;
+    const tgt_h = bitmap.rows;
 
     const region = try atlas.reserve(alloc, tgt_w, tgt_h);
 
     // If we have data, copy it into the atlas
     if (region.width > 0 and region.height > 0) {
-        const depth = @enumToInt(format);
+        const depth = atlas.format.depth();
 
         // We can avoid a buffer copy if our atlas width and bitmap
         // width match and the bitmap pitch is just the width (meaning
@@ -156,7 +178,7 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
             var dst_ptr = temp;
             var src_ptr = bitmap.buffer;
             var i: usize = 0;
-            while (i < src_h) : (i += 1) {
+            while (i < bitmap.rows) : (i += 1) {
                 std.mem.copy(u8, dst_ptr, src_ptr[0 .. bitmap.width * depth]);
                 dst_ptr = dst_ptr[tgt_w * depth ..];
                 src_ptr += @intCast(usize, bitmap.pitch);
@@ -210,6 +232,8 @@ test {
     var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
 
+    try testing.expectEqual(Presentation.text, font.presentation);
+
     // Generate all visible ASCII
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
@@ -230,5 +254,24 @@ test "color emoji" {
     var font = try init(lib, testFont, .{ .points = 12 });
     defer font.deinit();
 
+    try testing.expectEqual(Presentation.emoji, font.presentation);
+
     _ = try font.renderGlyph(alloc, &atlas, font.glyphIndex('🥸').?);
+}
+
+test "mono to rgba" {
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontEmoji;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var atlas = try Atlas.init(alloc, 512, .rgba);
+    defer atlas.deinit(alloc);
+
+    var font = try init(lib, testFont, .{ .points = 12 });
+    defer font.deinit();
+
+    // glyph 3 is mono in Noto
+    _ = try font.renderGlyph(alloc, &atlas, 3);
 }

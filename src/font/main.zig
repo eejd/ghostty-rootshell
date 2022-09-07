@@ -8,11 +8,17 @@ pub const Library = @import("Library.zig");
 pub const Shaper = @import("Shaper.zig");
 
 /// The styles that a family can take.
-pub const Style = enum(u2) {
+pub const Style = enum(u3) {
     regular = 0,
     bold = 1,
     italic = 2,
     bold_italic = 3,
+};
+
+/// The presentation for a an emoji.
+pub const Presentation = enum(u1) {
+    text = 0, // U+FE0E
+    emoji = 1, // U+FEOF
 };
 
 /// Font metrics useful for things such as grid calculation.
