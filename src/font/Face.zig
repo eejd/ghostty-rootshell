@@ -16,7 +16,6 @@ const Atlas = @import("../Atlas.zig");
 const Glyph = @import("main.zig").Glyph;
 const Library = @import("main.zig").Library;
 const Presentation = @import("main.zig").Presentation;
-const convert = @import("convert.zig");
 
 const log = std.log.scoped(.font_face);
 
@@ -148,7 +147,7 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
     // or color depth is as expected on the texture atlas. If format is null
     // it means there is no native color format for our Atlas and we must try
     // conversion.
-    const format: ?Atlas.Format = switch (bitmap_ft.pixel_mode) {
+    const format: Atlas.Format = switch (bitmap_ft.pixel_mode) {
         freetype.c.FT_PIXEL_MODE_GRAY => .greyscale,
         freetype.c.FT_PIXEL_MODE_BGRA => .rgba,
         else => {
@@ -156,26 +155,9 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
             @panic("unsupported pixel mode");
         },
     };
+    assert(atlas.format == format);
 
-    // If our atlas format doesn't match, look for conversions if possible.
-    const bitmap_converted = if (format == null or atlas.format != format.?) blk: {
-        const func = convert.map[bitmap_ft.pixel_mode].get(atlas.format) orelse {
-            log.warn("glyph={} pixel mode={}", .{ glyph_index, bitmap_ft.pixel_mode });
-            return error.UnsupportedPixelMode;
-        };
-
-        log.warn("converting from pixel_mode={} to atlas_format={}", .{
-            bitmap_ft.pixel_mode,
-            atlas.format,
-        });
-        break :blk try func(alloc, bitmap_ft);
-    } else null;
-    defer if (bitmap_converted) |bm| {
-        const len = bm.width * bm.rows * atlas.format.depth();
-        alloc.free(bm.buffer[0..len]);
-    };
-
-    const bitmap = bitmap_converted orelse bitmap_ft;
+    const bitmap = bitmap_ft;
     const tgt_w = bitmap.width;
     const tgt_h = bitmap.rows;
 
