@@ -130,11 +130,15 @@ void main() {
         // The "+ 3" here is to give some wiggle room for fonts that are
         // BARELY over it.
         vec2 glyph_size_downsampled = glyph_size;
-        if (glyph_size.y > cell_size.y + 2 ||
-            glyph_size.x > cell_size_scaled.x + 2) {
+        if (glyph_size.x > cell_size_scaled.x + 2) {
             glyph_size_downsampled.x = cell_size_scaled.x;
             glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
             glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.x / glyph_size.x);
+        }
+        if (glyph_size_downsampled.y > cell_size_scaled.y + 2) {
+            glyph_size_downsampled.y = cell_size_scaled.y;
+            glyph_size_downsampled.x = glyph_size.x * (glyph_size_downsampled.y / glyph_size.y);
+            glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.y / glyph_size.y);
         }
 
         // The glyph_offset.y is the y bearing, a y value that when added
