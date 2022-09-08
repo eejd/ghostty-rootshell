@@ -43,9 +43,10 @@ vbo: gl.Buffer,
 texture: gl.Texture,
 texture_color: gl.Texture,
 
-/// The font atlas.
+/// The font structures.
 font_lib: font.Library,
 font_group: font.GroupCache,
+font_shaper: font.Shaper,
 
 /// Whether the cursor is visible or not. This is used to control cursor
 /// blinking.
@@ -175,6 +176,12 @@ pub fn init(
         break :group group;
     });
     errdefer font_group.deinit(alloc);
+
+    // Create the initial font shaper
+    var shape_buf = try alloc.alloc(font.Shaper.Cell, 1);
+    errdefer alloc.free(shape_buf);
+    var shaper = try font.Shaper.init(shape_buf);
+    errdefer shaper.deinit();
 
     // Load all visible ASCII characters and build our cell width based on
     // the widest character that we see.
@@ -306,6 +313,7 @@ pub fn init(
         .texture_color = tex_color,
         .font_lib = font_lib,
         .font_group = font_group,
+        .font_shaper = shaper,
         .cursor_visible = true,
         .cursor_style = .box,
         .background = .{ .r = 0, .g = 0, .b = 0 },
@@ -314,6 +322,8 @@ pub fn init(
 }
 
 pub fn deinit(self: *Grid) void {
+    self.font_shaper.deinit();
+    self.alloc.free(self.font_shaper.cell_buf);
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
 
@@ -353,12 +363,6 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
     // We've written no data to the GPU, refresh it all
     self.gl_cells_written = 0;
 
-    // Create a text shaper we'll use for the screen
-    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, term.screen.cols * 2);
-    defer self.alloc.free(shape_buf);
-    var shaper = try font.Shaper.init(&self.font_group, shape_buf);
-    defer shaper.deinit();
-
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
@@ -366,9 +370,9 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
         defer y += 1;
 
         // Split our row into runs and shape each one.
-        var iter = shaper.runIterator(row);
+        var iter = self.font_shaper.runIterator(&self.font_group, row);
         while (try iter.next(self.alloc)) |run| {
-            for (try shaper.shape(run)) |shaper_cell| {
+            for (try self.font_shaper.shape(run)) |shaper_cell| {
                 assert(try self.updateCell(
                     term,
                     row.getCell(shaper_cell.x),
@@ -620,6 +624,12 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 
     // Recalculate the rows/columns.
     self.size.update(dim, self.cell_size);
+
+    // Update our shaper
+    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, self.size.columns * 2);
+    errdefer self.alloc.free(shape_buf);
+    self.alloc.free(self.font_shaper.cell_buf);
+    self.font_shaper.cell_buf = shape_buf;
 
     log.debug("screen size screen={} grid={}, cell={}", .{ dim, self.size, self.cell_size });
 }
