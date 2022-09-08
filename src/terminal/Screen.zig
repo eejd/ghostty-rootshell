@@ -190,7 +190,7 @@ pub const Cell = struct {
     /// The goal of this function is to match the expectation of shells
     /// that aren't grapheme aware (at the time of writing this comment: none
     /// are grapheme aware). This means it should match wcswidth.
-    pub fn widthLegacy(self: Cell) u16 {
+    pub fn widthLegacy(self: Cell) u8 {
         // Wide is always 2
         if (self.attrs.wide) return 2;
 

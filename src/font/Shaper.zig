@@ -82,32 +82,11 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
     if (info.len > self.cell_buf.len) return error.OutOfMemory;
     //log.warn("info={} pos={} run={}", .{ info.len, pos.len, run });
 
-    // x is the column that we currently occupy. We start at the offset.
-    var x: u16 = run.offset;
-
     for (info) |v, i| {
-        // The number of codepoints is used as the cell "width". If
-        // we're the last cell, this is remaining otherwise we use cluster numbers
-        // to detect since we set the cluster number to the column it
-        // originated.
-        const cp_width = if (i == info.len - 1)
-            run.max_cluster - v.cluster
-        else width: {
-            const next_cluster = info[i + 1].cluster;
-            //log.warn("next={}", .{next_cluster});
-            break :width next_cluster - v.cluster;
-        };
-        //log.warn("cluster={} max={}", .{ v.cluster, run.max_cluster });
-
         self.cell_buf[i] = .{
-            .x = x,
+            .x = @intCast(u16, v.cluster),
             .glyph_index = v.codepoint,
-            .width = @intCast(u8, cp_width),
         };
-
-        // Increase x by the amount of codepoints we replaced so that
-        // we retain the grid.
-        x += @intCast(u16, cp_width);
 
         //log.warn("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
     }
@@ -124,9 +103,6 @@ pub const Cell = struct {
     /// The glyph index for this cell. The font index to use alongside
     /// this cell is available in the text run.
     glyph_index: u32,
-
-    /// The width that this cell consumes.
-    width: u8,
 };
 
 /// A single text run. A text run is only valid for one Shaper and
@@ -137,9 +113,6 @@ pub const TextRun = struct {
 
     /// The total number of cells produced by this run.
     cells: u16,
-
-    /// The maximum cluster value used
-    max_cluster: u16,
 
     /// The font index to use for the glyphs of this run.
     font_index: Group.FontIndex,
@@ -171,21 +144,13 @@ pub const RunIterator = struct {
         self.shaper.hb_buf.reset();
         self.shaper.hb_buf.setContentType(.unicode);
 
-        // Harfbuzz lets you assign an arbitrary "cluster value" to each
-        // codepoint in a buffer. We use this to determine character width.
-        // Character width is KIND OF BROKEN with terminals because shells
-        // and client applications tend to use wcswidth(3) and friends to
-        // determine width which is broken for unicode graphemes. However,
-        // we need to match it otherwise things are really broken.
-        var cluster: u16 = 0;
-
         // Go through cell by cell and accumulate while we build our run.
         var j: usize = self.i;
         while (j < max) : (j += 1) {
+            const cluster = j;
             const cell = self.row.getCell(j);
 
-            // If we're a spacer, then we ignore it but increase the max cluster
-            // size so that the width calculation is correct.
+            // If we're a spacer, then we ignore it
             if (cell.attrs.wide_spacer_tail) continue;
 
             const style: Style = if (cell.attrs.bold)
@@ -231,9 +196,6 @@ pub const RunIterator = struct {
             // Continue with our run
             self.shaper.hb_buf.add(cell.char, @intCast(u32, cluster));
 
-            // Increase our cluster value by the width of this cell.
-            cluster += cell.widthLegacy();
-
             // If this cell is part of a grapheme cluster, add all the grapheme
             // data points.
             if (cell.attrs.grapheme) {
@@ -254,7 +216,6 @@ pub const RunIterator = struct {
         return TextRun{
             .offset = @intCast(u16, self.i),
             .cells = @intCast(u16, j - self.i),
-            .max_cluster = cluster,
             .font_index = current_font,
         };
     }
@@ -364,7 +325,6 @@ test "shape inconsolata ligs" {
 
             const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 1), cells.len);
-            try testing.expectEqual(@as(u8, 2), cells[0].width);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -382,7 +342,6 @@ test "shape inconsolata ligs" {
 
             const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 1), cells.len);
-            try testing.expectEqual(@as(u8, 3), cells[0].width);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -408,7 +367,6 @@ test "shape emoji width" {
 
             const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 1), cells.len);
-            try testing.expectEqual(@as(u8, 2), cells[0].width);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -444,7 +402,6 @@ test "shape emoji width long" {
 
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
-        try testing.expectEqual(@as(u8, 5), cells[0].width);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -476,7 +433,6 @@ test "shape variation selector VS15" {
 
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
-        try testing.expectEqual(@as(u8, 1), cells[0].width);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -508,11 +464,6 @@ test "shape variation selector VS16" {
 
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
-
-        // TODO: this should pass, victory sign is width one but
-        // after forcing color it is width 2
-        //try testing.expectEqual(@as(u8, 2), cells[0].width);
-        try testing.expectEqual(@as(u8, 1), cells[0].width);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -540,6 +491,42 @@ test "shape with empty cells in between" {
 
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 7), cells.len);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "shape Chinese characters" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode('n', buf[buf_idx..]); // Combining
+    buf_idx += try std.unicode.utf8Encode(0x0308, buf[buf_idx..]); // Combining
+    buf_idx += try std.unicode.utf8Encode(0x0308, buf[buf_idx..]);
+    buf_idx += try std.unicode.utf8Encode('a', buf[buf_idx..]);
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 30, 0);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
+
+    // Get our run iterator
+    var shaper = testdata.shaper;
+    var it = shaper.runIterator(screen.getRow(.{ .screen = 0 }));
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 4), cells.len);
+        try testing.expectEqual(@as(u16, 0), cells[0].x);
+        try testing.expectEqual(@as(u16, 0), cells[1].x);
+        try testing.expectEqual(@as(u16, 0), cells[2].x);
+        try testing.expectEqual(@as(u16, 1), cells[3].x);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
