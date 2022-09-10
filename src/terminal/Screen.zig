@@ -818,6 +818,9 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
         // Store the header
         row.storage[0].header.id = id;
 
+        // Mark that we're dirty since we're a new row
+        row.storage[0].header.flags.dirty = true;
+
         // We only need to fill with runtime safety because unions are
         // tag-checked. Otherwise, the default value of zero will be valid.
         if (std.debug.runtime_safety) row.fill(.{});
