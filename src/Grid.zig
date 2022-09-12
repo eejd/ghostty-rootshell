@@ -12,8 +12,11 @@ const Terminal = terminal.Terminal;
 const gl = @import("opengl.zig");
 const trace = @import("tracy").trace;
 const math = @import("math.zig");
+const lru = @import("lru.zig");
 
 const log = std.log.scoped(.grid);
+
+const CellsLRU = lru.AutoHashMap(terminal.Screen.RowHeader.Id, std.ArrayListUnmanaged(GPUCell));
 
 alloc: std.mem.Allocator,
 
@@ -25,6 +28,10 @@ cell_size: CellSize,
 
 /// The current set of cells to render.
 cells: std.ArrayListUnmanaged(GPUCell),
+
+/// The LRU that stores our GPU cells cached by row IDs. This is used to
+/// prevent high CPU activity when shaping rows.
+cells_lru: CellsLRU,
 
 /// The size of the cells list that was sent to the GPU. This is used
 /// to detect when the cells array was reallocated/resized and handle that
@@ -303,6 +310,7 @@ pub fn init(
     return Grid{
         .alloc = alloc,
         .cells = .{},
+        .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .size = .{ .rows = 0, .columns = 0 },
         .program = program,
@@ -333,6 +341,7 @@ pub fn deinit(self: *Grid) void {
     self.ebo.destroy();
     self.vao.destroy();
     self.program.destroy();
+    self.cells_lru.deinit(self.alloc);
     self.cells.deinit(self.alloc);
     self.* = undefined;
 }
@@ -369,6 +378,22 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
     while (rowIter.next()) |row| {
         defer y += 1;
 
+        // Get our value from the cache.
+        const gop = try self.cells_lru.getOrPut(self.alloc, row.getId());
+        if (!row.isDirty() and gop.found_existing) {
+            var i: usize = self.cells.items.len;
+            for (gop.value_ptr.items) |cell| {
+                self.cells.appendAssumeCapacity(cell);
+                self.cells.items[i].grid_row = @intCast(u16, y);
+                i += 1;
+            }
+
+            continue;
+        }
+
+        // Get the starting index for our row so we can cache any new GPU cells.
+        const start = self.cells.items.len;
+
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(&self.font_group, row);
         while (try iter.next(self.alloc)) |run| {
@@ -383,6 +408,18 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
                 ));
             }
         }
+
+        // Initialize our list
+        if (!gop.found_existing) gop.value_ptr.* = .{};
+        var row_cells = gop.value_ptr;
+
+        // Get our new length and cache the cells.
+        try row_cells.ensureTotalCapacity(self.alloc, term.screen.cols);
+        row_cells.clearRetainingCapacity();
+        row_cells.appendSliceAssumeCapacity(self.cells.items[start..]);
+
+        // Set row is not dirty anymore
+        row.setDirty(false);
     }
 
     // Add the cursor
@@ -624,6 +661,12 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 
     // Recalculate the rows/columns.
     self.size.update(dim, self.cell_size);
+
+    // Update our LRU. We arbitrarily support a certain number of pages here.
+    // We also always support a minimum number of caching in case a user
+    // is resizing tiny then growing again we can save some of the renders.
+    const evicted = try self.cells_lru.resize(self.alloc, @maximum(80, self.size.rows * 10));
+    if (evicted) |list| for (list) |*value| value.deinit(self.alloc);
 
     // Update our shaper
     var shape_buf = try self.alloc.alloc(font.Shaper.Cell, self.size.columns * 2);

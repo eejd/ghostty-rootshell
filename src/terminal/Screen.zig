@@ -113,7 +113,7 @@ const StorageCell = union {
 /// The row header is at the start of every row within the storage buffer.
 /// It can store row-specific data.
 pub const RowHeader = struct {
-    const Id = u32;
+    pub const Id = u32;
 
     /// The ID of this row, used to uniquely identify this row. The cells
     /// are also ID'd by id + cell index (0-indexed). This will wrap around
@@ -126,6 +126,11 @@ pub const RowHeader = struct {
         /// If true, this row is soft-wrapped. The first cell of the next
         /// row is a continuous of this row.
         wrap: bool = false,
+
+        /// True if this row has had changes. It is up to the caller to
+        /// set this to false. See the methods on Row to see what will set
+        /// this to true.
+        dirty: bool = false,
 
         /// True if any cell in this row has a grapheme associated with it.
         grapheme: bool = false,
@@ -239,7 +244,7 @@ pub const Row = struct {
 
     /// Returns the ID for this row. You can turn this into a cell ID
     /// by adding the cell offset plus 1 (so it is 1-indexed).
-    pub fn getId(self: Row) RowHeader.Id {
+    pub inline fn getId(self: Row) RowHeader.Id {
         return self.storage[0].header.id;
     }
 
@@ -247,6 +252,16 @@ pub const Row = struct {
     /// of this row so the row won't be marked dirty.
     pub fn setWrapped(self: Row, v: bool) void {
         self.storage[0].header.flags.wrap = v;
+    }
+
+    /// Set a row as dirty or not. Generally you only set a row as NOT dirty.
+    /// Various Row functions manage flagging dirty to true.
+    pub fn setDirty(self: Row, v: bool) void {
+        self.storage[0].header.flags.dirty = v;
+    }
+
+    pub inline fn isDirty(self: Row) bool {
+        return self.storage[0].header.flags.dirty;
     }
 
     /// Retrieve the header for this row.
@@ -275,6 +290,9 @@ pub const Row = struct {
     pub fn fillSlice(self: Row, cell: Cell, start: usize, len: usize) void {
         assert(len <= self.storage.len - 1);
         assert(!cell.attrs.grapheme); // you can't fill with graphemes
+
+        // Always mark the row as dirty for this.
+        self.storage[0].header.flags.dirty = true;
 
         // If our row has no graphemes, then this is a fast copy
         if (!self.storage[0].header.flags.grapheme) {
@@ -308,6 +326,10 @@ pub const Row = struct {
     /// this should be done prior.
     pub fn getCellPtr(self: Row, x: usize) *Cell {
         assert(x < self.storage.len - 1);
+
+        // Always mark the row as dirty for this.
+        self.storage[0].header.flags.dirty = true;
+
         return &self.storage[x + 1].cell;
     }
 
@@ -322,6 +344,9 @@ pub const Row = struct {
 
         // Our row now has a grapheme
         self.storage[0].header.flags.grapheme = true;
+
+        // Our row is now dirty
+        self.storage[0].header.flags.dirty = true;
 
         // If we weren't previously a grapheme and we found an existing value
         // it means that it is old grapheme data. Just delete that.
@@ -346,6 +371,9 @@ pub const Row = struct {
 
     /// Removes all graphemes associated with a cell.
     pub fn clearGraphemes(self: Row, x: usize) void {
+        // Our row is now dirty
+        self.storage[0].header.flags.dirty = true;
+
         const cell = &self.storage[x + 1].cell;
         const key = self.getId() + x + 1;
         cell.attrs.grapheme = false;
@@ -356,6 +384,9 @@ pub const Row = struct {
     pub fn copyRow(self: Row, src: Row) !void {
         // If we have graphemes, clear first to unset them.
         if (self.storage[0].header.flags.grapheme) self.clear(.{});
+
+        // Always mark the row as dirty for this.
+        self.storage[0].header.flags.dirty = true;
 
         // If the source has no graphemes (likely) then this is fast.
         const end = @minimum(src.storage.len, self.storage.len);
@@ -786,6 +817,9 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
 
         // Store the header
         row.storage[0].header.id = id;
+
+        // Mark that we're dirty since we're a new row
+        row.storage[0].header.flags.dirty = true;
 
         // We only need to fill with runtime safety because unions are
         // tag-checked. Otherwise, the default value of zero will be valid.
@@ -2304,6 +2338,123 @@ test "Screen: selectionString wide char with header" {
     }
 }
 
+test "Screen: dirty with getCellPtr" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Ensure all are dirty. Clear em.
+    var iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| {
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+
+    // Reset our cursor onto the second row.
+    s.cursor.x = 0;
+    s.cursor.y = 1;
+
+    try s.testWriteString("foo");
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(!row.isDirty());
+    }
+    {
+        const row = s.getRow(.{ .active = 1 });
+        try testing.expect(row.isDirty());
+    }
+    {
+        const row = s.getRow(.{ .active = 2 });
+        try testing.expect(!row.isDirty());
+
+        _ = row.getCell(0);
+        try testing.expect(!row.isDirty());
+    }
+}
+
+test "Screen: dirty with clear, fill, fillSlice, copyRow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Ensure all are dirty. Clear em.
+    var iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| {
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(!row.isDirty());
+        row.clear(.{});
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(!row.isDirty());
+        row.fill(.{ .char = 'A' });
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(!row.isDirty());
+        row.fillSlice(.{ .char = 'A' }, 0, 2);
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+
+    {
+        const src = s.getRow(.{ .active = 0 });
+        const row = s.getRow(.{ .active = 1 });
+        try testing.expect(!row.isDirty());
+        try row.copyRow(src);
+        try testing.expect(!src.isDirty());
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+}
+
+test "Screen: dirty with graphemes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Ensure all are dirty. Clear em.
+    var iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| {
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(!row.isDirty());
+        try row.attachGrapheme(0, 0xFE0F);
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+        row.clearGraphemes(0);
+        try testing.expect(row.isDirty());
+        row.setDirty(false);
+    }
+}
+
 test "Screen: resize (no reflow) more rows" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -2312,13 +2463,22 @@ test "Screen: resize (no reflow) more rows" {
     defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
     try s.testWriteString(str);
-    try s.resizeWithoutReflow(10, 5);
 
+    // Clear dirty rows
+    var iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| row.setDirty(false);
+
+    // Resize
+    try s.resizeWithoutReflow(10, 5);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
+
+    // Everything should be dirty
+    iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| try testing.expect(row.isDirty());
 }
 
 test "Screen: resize (no reflow) less rows" {

@@ -12,7 +12,6 @@ Performance:
   screen data structure.
 * Screen cell structure should be rethought to use some data oriented design,
   also bring it closer to GPU cells, perhaps.
-* Cache text shaping results and only invalidate if the line becomes dirty.
 
 Correctness:
 
