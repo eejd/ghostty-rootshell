@@ -113,7 +113,7 @@ const StorageCell = union {
 /// The row header is at the start of every row within the storage buffer.
 /// It can store row-specific data.
 pub const RowHeader = struct {
-    const Id = u32;
+    pub const Id = u32;
 
     /// The ID of this row, used to uniquely identify this row. The cells
     /// are also ID'd by id + cell index (0-indexed). This will wrap around
@@ -2463,13 +2463,22 @@ test "Screen: resize (no reflow) more rows" {
     defer s.deinit();
     const str = "1ABCD\n2EFGH\n3IJKL";
     try s.testWriteString(str);
-    try s.resizeWithoutReflow(10, 5);
 
+    // Clear dirty rows
+    var iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| row.setDirty(false);
+
+    // Resize
+    try s.resizeWithoutReflow(10, 5);
     {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
+
+    // Everything should be dirty
+    iter = s.rowIterator(.viewport);
+    while (iter.next()) |row| try testing.expect(row.isDirty());
 }
 
 test "Screen: resize (no reflow) less rows" {

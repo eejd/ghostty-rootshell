@@ -164,26 +164,30 @@ pub fn HashMap(
         }
 
         /// Resize the LRU. If this shrinks the LRU then LRU items will be
-        /// deallocated.
-        pub fn resize(self: *Self, alloc: Allocator, capacity: Map.Size) void {
+        /// deallocated. The deallocated items are returned in the slice. This
+        /// slice must be freed by the caller.
+        pub fn resize(self: *Self, alloc: Allocator, capacity: Map.Size) Allocator.Error!?[]V {
             // Fastest
             if (capacity >= self.capacity) {
                 self.capacity = capacity;
-                return;
+                return null;
             }
 
             // If we're shrinking but we're smaller than the new capacity,
             // then we don't have to do anything.
             if (self.map.count() <= capacity) {
                 self.capacity = capacity;
-                return;
+                return null;
             }
 
             // We're shrinking and we have more items than the new capacity
             const delta = self.map.count() - capacity;
+            var evicted = try alloc.alloc(V, delta);
+
             var i: Map.Size = 0;
             while (i < delta) : (i += 1) {
                 var node = self.queue.first.?;
+                evicted[i] = node.data.value;
                 self.queue.remove(node);
                 _ = self.map.remove(node.data.key);
                 alloc.destroy(node);
@@ -191,6 +195,8 @@ pub fn HashMap(
 
             self.capacity = capacity;
             assert(self.map.count() == capacity);
+
+            return evicted;
         }
     };
 }
@@ -281,7 +287,8 @@ test "resize shrink without removal" {
     }
 
     // Shrink
-    m.resize(alloc, 1);
+    const evicted = try m.resize(alloc, 1);
+    try testing.expect(evicted == null);
     {
         const gop = try m.getOrPut(alloc, 1);
         try testing.expect(gop.found_existing);
@@ -311,7 +318,9 @@ test "resize shrink and remove" {
     }
 
     // Shrink
-    m.resize(alloc, 1);
+    const evicted = try m.resize(alloc, 1);
+    defer alloc.free(evicted.?);
+    try testing.expectEqual(@as(usize, 1), evicted.?.len);
     {
         const gop = try m.getOrPut(alloc, 1);
         try testing.expect(!gop.found_existing);
