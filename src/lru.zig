@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 /// Create a HashMap for a key type that can be autoamtically hashed.
@@ -161,6 +162,36 @@ pub fn HashMap(
             const node = self.map.getContext(key, ctx) orelse return null;
             return node.data.value;
         }
+
+        /// Resize the LRU. If this shrinks the LRU then LRU items will be
+        /// deallocated.
+        pub fn resize(self: *Self, alloc: Allocator, capacity: Map.Size) void {
+            // Fastest
+            if (capacity >= self.capacity) {
+                self.capacity = capacity;
+                return;
+            }
+
+            // If we're shrinking but we're smaller than the new capacity,
+            // then we don't have to do anything.
+            if (self.map.count() <= capacity) {
+                self.capacity = capacity;
+                return;
+            }
+
+            // We're shrinking and we have more items than the new capacity
+            const delta = self.map.count() - capacity;
+            var i: Map.Size = 0;
+            while (i < delta) : (i += 1) {
+                var node = self.queue.first.?;
+                self.queue.remove(node);
+                _ = self.map.remove(node.data.key);
+                alloc.destroy(node);
+            }
+
+            self.capacity = capacity;
+            assert(self.map.count() == capacity);
+        }
     };
 }
 
@@ -231,4 +262,60 @@ test "get" {
     try testing.expect(m.get(1) != null);
     try testing.expect(m.get(1).? == 1);
     try testing.expect(m.get(2) == null);
+}
+
+test "resize shrink without removal" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Map = AutoHashMap(u32, u8);
+    var m = Map.init(2);
+    defer m.deinit(alloc);
+
+    // Insert cap values, LRU is 1
+    {
+        const gop = try m.getOrPut(alloc, 1);
+        try testing.expect(!gop.found_existing);
+        try testing.expect(gop.evicted == null);
+        gop.value_ptr.* = 1;
+    }
+
+    // Shrink
+    m.resize(alloc, 1);
+    {
+        const gop = try m.getOrPut(alloc, 1);
+        try testing.expect(gop.found_existing);
+    }
+}
+
+test "resize shrink and remove" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Map = AutoHashMap(u32, u8);
+    var m = Map.init(2);
+    defer m.deinit(alloc);
+
+    // Insert cap values, LRU is 1
+    {
+        const gop = try m.getOrPut(alloc, 1);
+        try testing.expect(!gop.found_existing);
+        try testing.expect(gop.evicted == null);
+        gop.value_ptr.* = 1;
+    }
+    {
+        const gop = try m.getOrPut(alloc, 2);
+        try testing.expect(!gop.found_existing);
+        try testing.expect(gop.evicted == null);
+        gop.value_ptr.* = 2;
+    }
+
+    // Shrink
+    m.resize(alloc, 1);
+    {
+        const gop = try m.getOrPut(alloc, 1);
+        try testing.expect(!gop.found_existing);
+        try testing.expect(gop.evicted.?.value == 2);
+        gop.value_ptr.* = 1;
+    }
 }
