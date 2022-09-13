@@ -183,7 +183,14 @@ pub const Cell = struct {
 
     /// True if the cell should be skipped for drawing
     pub fn empty(self: Cell) bool {
-        return self.char == 0;
+        // Get our backing integer for our packed struct of attributes
+        const AttrInt = @Type(.{ .Int = .{
+            .signedness = .unsigned,
+            .bits = @bitSizeOf(@TypeOf(self.attrs)),
+        } });
+
+        // We're empty if we have no char AND we have no styling
+        return self.char == 0 and @bitCast(AttrInt, self.attrs) == 0;
     }
 
     /// The width of the cell.

@@ -579,8 +579,8 @@ pub fn updateCell(
         });
     }
 
-    // If the cell is empty then we draw nothing in the box.
-    if (!cell.empty()) {
+    // If the cell has a character, draw it
+    if (cell.char > 0) {
         // Render
         const face = self.font_group.group.faceFromIndex(shaper_run.font_index);
         const glyph = try self.font_group.renderGlyph(

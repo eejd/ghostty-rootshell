@@ -276,6 +276,42 @@ test "run iterator" {
     }
 }
 
+test "run iterator: empty cells with background set" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    {
+        // Make a screen with some data
+        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        defer screen.deinit();
+        try screen.testWriteString("A");
+
+        // Get our first row
+        const row = screen.getRow(.{ .active = 0 });
+        row.getCellPtr(1).bg = try terminal.color.Name.cyan.default();
+        row.getCellPtr(1).attrs.has_bg = true;
+        row.getCellPtr(2).fg = try terminal.color.Name.yellow.default();
+        row.getCellPtr(2).attrs.has_fg = true;
+
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+
+            // The run should have length 3 because of the two background
+            // cells.
+            try testing.expectEqual(@as(u32, 3), shaper.hb_buf.getLength());
+            const cells = try shaper.shape(run);
+            try testing.expectEqual(@as(usize, 3), cells.len);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+}
 test "shape" {
     const testing = std.testing;
     const alloc = testing.allocator;
