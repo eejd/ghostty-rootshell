@@ -16,7 +16,13 @@ const lru = @import("lru.zig");
 
 const log = std.log.scoped(.grid);
 
-const CellsLRU = lru.AutoHashMap(terminal.Screen.RowHeader.Id, std.ArrayListUnmanaged(GPUCell));
+// The LRU is keyed by (screen, row_id) since we need to cache rows
+// separately for alt screens. By storing that in the key, we very likely
+// have the cache already for when the primary screen is reactivated.
+const CellsLRU = lru.AutoHashMap(struct {
+    screen: terminal.Terminal.ScreenType,
+    row_id: terminal.Screen.RowHeader.Id,
+}, std.ArrayListUnmanaged(GPUCell));
 
 alloc: std.mem.Allocator,
 
@@ -379,7 +385,10 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
         defer y += 1;
 
         // Get our value from the cache.
-        const gop = try self.cells_lru.getOrPut(self.alloc, row.getId());
+        const gop = try self.cells_lru.getOrPut(self.alloc, .{
+            .screen = term.active_screen,
+            .row_id = row.getId(),
+        });
         if (!row.isDirty() and gop.found_existing) {
             var i: usize = self.cells.items.len;
             for (gop.value_ptr.items) |cell| {

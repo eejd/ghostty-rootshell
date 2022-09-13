@@ -27,7 +27,7 @@ const log = std.log.scoped(.terminal);
 const TABSTOP_INTERVAL = 8;
 
 /// Screen type is an enum that tracks whether a screen is primary or alternate.
-const ScreenType = enum {
+pub const ScreenType = enum {
     primary,
     alternate,
 };
@@ -172,6 +172,8 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    //log.info("alt screen active={} options={} cursor={}", .{ self.active_screen, options, self.screen.cursor });
+
     // TODO: test
     // TODO(mitchellh): what happens if we enter alternate screen multiple times?
     // for now, we ignore...
@@ -198,6 +200,8 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
 pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    //log.info("primary screen active={} options={}", .{ self.active_screen, options });
 
     // TODO: test
     // TODO(mitchellh): what happens if we enter alternate screen multiple times?
