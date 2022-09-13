@@ -3,8 +3,10 @@ const fs = std.fs;
 const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
 const glfw = @import("vendor/mach/glfw/build.zig");
+const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.zig");
+const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
@@ -156,6 +158,7 @@ fn addDeps(
     static: bool,
 ) !void {
     // We always need the Zig packages
+    step.addPackage(fontconfig.pkg);
     step.addPackage(freetype.pkg);
     step.addPackage(harfbuzz.pkg);
     step.addPackage(glfw.pkg);
@@ -186,6 +189,7 @@ fn addDeps(
     if (!static) {
         step.addIncludePath(freetype.include_path_self);
         step.linkSystemLibrary("bzip2");
+        step.linkSystemLibrary("fontconfig");
         step.linkSystemLibrary("freetype2");
         step.linkSystemLibrary("harfbuzz");
         step.linkSystemLibrary("libpng");
@@ -226,6 +230,27 @@ fn addDeps(
                 .include = &freetype.include_paths,
             },
         });
+
+        // Libxml2
+        const libxml2_lib = try libxml2.create(
+            b,
+            step.target,
+            step.build_mode,
+            .{ .lzma = false, .zlib = false },
+        );
+        libxml2_lib.link(step);
+
+        // Fontconfig
+        const fontconfig_step = try fontconfig.link(b, step, .{
+            .freetype = .{
+                .enabled = true,
+                .step = freetype_step,
+                .include = &freetype.include_paths,
+            },
+
+            .libxml2 = true,
+        });
+        libxml2_lib.link(fontconfig_step);
 
         // Libuv
         const libuv_step = try libuv.link(b, step);

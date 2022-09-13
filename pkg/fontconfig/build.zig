@@ -20,6 +20,7 @@ fn thisDir() []const u8 {
 pub const Options = struct {
     freetype: Freetype = .{},
     expat: Expat = .{},
+    libxml2: bool = false,
 
     pub const Freetype = struct {
         enabled: bool = false,
@@ -109,8 +110,8 @@ pub fn buildFontconfig(
         "-DHAVE_MKDTEMP",
         "-DHAVE_GETOPT",
         "-DHAVE_GETOPT_LONG",
-        "-DHAVE_GETPROGNAME",
-        "-DHAVE_GETEXECNAME",
+        //"-DHAVE_GETPROGNAME",
+        //"-DHAVE_GETEXECNAME",
         "-DHAVE_RAND",
         "-DHAVE_RANDOM",
         "-DHAVE_LRAND48",
@@ -158,13 +159,19 @@ pub fn buildFontconfig(
         else => @panic("unsupported arch"),
     }
 
+    if (opt.libxml2) {
+        try flags.appendSlice(&.{
+            "-DENABLE_LIBXML2",
+        });
+    }
+
     if (!target.isWindows()) {
         try flags.appendSlice(&.{
             "-DHAVE_PTHREAD",
 
-            "-DFC_CACHEDIR=\"/usr/local/fontconfig/cache\"",
-            "-DFC_TEMPLATEDIR=\"/usr/local/fontconfig/templates\"",
-            "-DFONTCONFIG_PATH=\"/usr/local/fontconfig/fonts\"",
+            "-DFC_CACHEDIR=\"/var/cache/fontconfig\"",
+            "-DFC_TEMPLATEDIR=\"/usr/share/fontconfig/conf.avail\"",
+            "-DFONTCONFIG_PATH=\"/etc/fonts\"",
             "-DCONFIGDIR=\"/usr/local/fontconfig/conf.d\"",
             "-DFC_DEFAULT_FONTS=\"<dir>/usr/share/fonts</dir><dir>/usr/local/share/fonts</dir>\"",
         });
