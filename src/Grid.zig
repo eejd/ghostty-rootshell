@@ -416,7 +416,7 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
         // Get our new length and cache the cells.
         try row_cells.ensureTotalCapacity(self.alloc, term.screen.cols);
         row_cells.clearRetainingCapacity();
-        row_cells.appendSliceAssumeCapacity(self.cells.items[start..]);
+        try row_cells.appendSlice(self.alloc, self.cells.items[start..]);
 
         // Set row is not dirty anymore
         row.setDirty(false);
