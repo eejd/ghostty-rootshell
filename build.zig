@@ -189,12 +189,13 @@ fn addDeps(
     if (!static) {
         step.addIncludePath(freetype.include_path_self);
         step.linkSystemLibrary("bzip2");
-        step.linkSystemLibrary("fontconfig");
         step.linkSystemLibrary("freetype2");
         step.linkSystemLibrary("harfbuzz");
         step.linkSystemLibrary("libpng");
         step.linkSystemLibrary("libuv");
         step.linkSystemLibrary("zlib");
+
+        if (step.target.isLinux()) step.linkSystemLibrary("fontconfig");
     }
 
     // Other dependencies, we may dynamically link
@@ -231,30 +232,33 @@ fn addDeps(
             },
         });
 
-        // Libxml2
-        const libxml2_lib = try libxml2.create(
-            b,
-            step.target,
-            step.build_mode,
-            .{ .lzma = false, .zlib = false },
-        );
-        libxml2_lib.link(step);
-
-        // Fontconfig
-        const fontconfig_step = try fontconfig.link(b, step, .{
-            .freetype = .{
-                .enabled = true,
-                .step = freetype_step,
-                .include = &freetype.include_paths,
-            },
-
-            .libxml2 = true,
-        });
-        libxml2_lib.link(fontconfig_step);
-
         // Libuv
         const libuv_step = try libuv.link(b, step);
         system_sdk.include(b, libuv_step, .{});
+
+        // Only Linux gets fontconfig
+        if (step.target.isLinux()) {
+            // Libxml2
+            const libxml2_lib = try libxml2.create(
+                b,
+                step.target,
+                step.build_mode,
+                .{ .lzma = false, .zlib = false },
+            );
+            libxml2_lib.link(step);
+
+            // Fontconfig
+            const fontconfig_step = try fontconfig.link(b, step, .{
+                .freetype = .{
+                    .enabled = true,
+                    .step = freetype_step,
+                    .include = &freetype.include_paths,
+                },
+
+                .libxml2 = true,
+            });
+            libxml2_lib.link(fontconfig_step);
+        }
     }
 }
 
