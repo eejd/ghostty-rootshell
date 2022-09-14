@@ -90,8 +90,6 @@ pub fn buildFontconfig(
     defer flags.deinit();
 
     try flags.appendSlice(&.{
-        "-DFT2_BUILD_LIBRARY",
-
         "-DHAVE_DIRENT_H",
         "-DHAVE_FCNTL_H",
         "-DHAVE_STDLIB_H",
@@ -143,6 +141,10 @@ pub fn buildFontconfig(
         "-DHAVE_STDATOMIC_PRIMITIVES",
 
         "-DFC_GPERF_SIZE_T=size_t",
+
+        // https://gitlab.freedesktop.org/fontconfig/fontconfig/-/merge_requests/231
+        "-fno-sanitize=undefined",
+        "-fno-sanitize-trap=undefined",
     });
     const arch = target.cpu_arch orelse builtin.cpu.arch;
     switch (arch.ptrBitWidth()) {

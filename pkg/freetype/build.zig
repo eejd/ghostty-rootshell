@@ -88,6 +88,8 @@ pub fn buildFreetype(
 
         "-DHAVE_UNISTD_H",
         "-DHAVE_FCNTL_H",
+
+        //"-fno-sanitize=undefined",
     });
     if (opt.libpng.enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG=1");
     if (opt.zlib.enabled) try flags.append("-DFT_CONFIG_OPTION_SYSTEM_ZLIB=1");
