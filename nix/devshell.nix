@@ -15,6 +15,7 @@
 , zig
 
 , bzip2
+, expat
 , fontconfig
 , freetype
 , harfbuzz
@@ -35,6 +36,8 @@ let
     libGL
   ] ++ lib.optionals stdenv.isLinux [
     bzip2
+    expat
+    fontconfig
     freetype
     harfbuzz
     libpng
@@ -72,6 +75,8 @@ in mkShell rec {
     # TODO: non-linux
   ] ++ lib.optionals stdenv.isLinux [
     bzip2
+    expat
+    fontconfig
     freetype
     harfbuzz
     libpng

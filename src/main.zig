@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 const options = @import("build_options");
 const std = @import("std");
 const glfw = @import("glfw");
+const fontconfig = @import("fontconfig");
 const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
 const tracy = @import("tracy");
@@ -14,9 +15,10 @@ const log = std.log.scoped(.main);
 
 pub fn main() !void {
     // Output some debug information right away
-    log.info("dependency versions harfbuzz={s}", .{
-        harfbuzz.versionString(),
-    });
+    log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
+    if (builtin.os.tag == .linux) {
+        log.info("dependency fontconfig={d}", .{fontconfig.version()});
+    }
 
     const gpa = gpa: {
         // Use the libc allocator if it is available beacuse it is WAY
