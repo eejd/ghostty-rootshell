@@ -50,5 +50,17 @@ test "fc-match" {
         pat.destroy();
     }
 
-    {}
+    {
+        for (fs.fonts()) |font| {
+            var it = font.objectIterator();
+            while (it.next()) {
+                try testing.expect(it.object().len > 0);
+                try testing.expect(it.valueLen() > 0);
+                var value_it = it.valueIterator();
+                while (value_it.next()) |entry| {
+                    try testing.expect(entry.value != .unknown);
+                }
+            }
+        }
+    }
 }

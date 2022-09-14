@@ -4,6 +4,8 @@ const CharSet = @import("char_set.zig").CharSet;
 const FontSet = @import("font_set.zig").FontSet;
 const ObjectSet = @import("object_set.zig").ObjectSet;
 const Pattern = @import("pattern.zig").Pattern;
+const Result = @import("main.zig").Result;
+const MatchKind = @import("main.zig").MatchKind;
 
 pub const Config = opaque {
     pub fn destroy(self: *Config) void {
@@ -52,18 +54,4 @@ pub const Config = opaque {
 pub const FontSortResult = struct {
     result: Result,
     fs: *FontSet,
-};
-
-pub const Result = enum(c_uint) {
-    match = c.FcResultMatch,
-    no_match = c.FcResultNoMatch,
-    type_mismatch = c.FcResultTypeMismatch,
-    no_id = c.FcResultNoId,
-    out_of_memory = c.FcResultOutOfMemory,
-};
-
-pub const MatchKind = enum(c_uint) {
-    pattern = c.FcMatchPattern,
-    font = c.FcMatchFont,
-    scan = c.FcMatchScan,
 };
