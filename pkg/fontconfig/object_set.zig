@@ -14,7 +14,7 @@ pub const ObjectSet = opaque {
         return c.FcObjectSetAdd(self.cval(), p.cval().ptr) == c.FcTrue;
     }
 
-    fn cval(self: *ObjectSet) *c.struct__FcObjectSet {
+    pub inline fn cval(self: *ObjectSet) *c.struct__FcObjectSet {
         return @ptrCast(
             *c.struct__FcObjectSet,
             @alignCast(@alignOf(c.struct__FcObjectSet), self),

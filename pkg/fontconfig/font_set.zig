@@ -21,7 +21,7 @@ pub const FontSet = opaque {
         return @ptrCast(*Pattern, self.cval().fonts[idx]);
     }
 
-    inline fn cval(self: *FontSet) *c.struct__FcFontSet {
+    pub inline fn cval(self: *FontSet) *c.struct__FcFontSet {
         return @ptrCast(
             *c.struct__FcFontSet,
             @alignCast(@alignOf(c.struct__FcFontSet), self),

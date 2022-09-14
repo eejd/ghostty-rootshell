@@ -8,3 +8,7 @@ pub usingnamespace @import("pattern.zig");
 test {
     @import("std").testing.refAllDecls(@This());
 }
+
+test {
+    _ = @import("test.zig");
+}

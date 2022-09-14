@@ -18,7 +18,7 @@ pub const Pattern = opaque {
         c.FcPatternPrint(self.cval());
     }
 
-    inline fn cval(self: *Pattern) *c.struct__FcPattern {
+    pub inline fn cval(self: *Pattern) *c.struct__FcPattern {
         return @ptrCast(*c.struct__FcPattern, self);
     }
 };
