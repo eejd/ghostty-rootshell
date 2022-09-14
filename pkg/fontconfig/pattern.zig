@@ -11,10 +11,15 @@ pub const Pattern = opaque {
     }
 
     pub fn destroy(self: *Pattern) void {
-        c.FcPatternDestroy(@ptrCast(
-            *c.struct__FcPattern,
-            self,
-        ));
+        c.FcPatternDestroy(self.cval());
+    }
+
+    pub fn print(self: *Pattern) void {
+        c.FcPatternPrint(self.cval());
+    }
+
+    inline fn cval(self: *Pattern) *c.struct__FcPattern {
+        return @ptrCast(*c.struct__FcPattern, self);
     }
 };
 
