@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c.zig");
+const ObjectSet = @import("main.zig").ObjectSet;
 const Result = @import("main.zig").Result;
 const Value = @import("main.zig").Value;
 const ValueBinding = @import("main.zig").ValueBinding;
@@ -20,6 +21,14 @@ pub const Pattern = opaque {
 
     pub fn defaultSubstitute(self: *Pattern) void {
         c.FcDefaultSubstitute(self.cval());
+    }
+
+    pub fn delete(self: *Pattern, obj: [:0]const u8) bool {
+        return c.FcPatternDel(self.cval(), obj.ptr) == c.FcTrue;
+    }
+
+    pub fn filter(self: *Pattern, os: *const ObjectSet) *Pattern {
+        return @ptrCast(*Pattern, c.FcPatternFilter(self.cval(), os.cval()));
     }
 
     pub fn objectIterator(self: *Pattern) ObjectIterator {
