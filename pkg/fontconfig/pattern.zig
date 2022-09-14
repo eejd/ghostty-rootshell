@@ -14,6 +14,10 @@ pub const Pattern = opaque {
         c.FcPatternDestroy(self.cval());
     }
 
+    pub fn defaultSubstitute(self: *Pattern) void {
+        c.FcDefaultSubstitute(self.cval());
+    }
+
     pub fn print(self: *Pattern) void {
         c.FcPatternPrint(self.cval());
     }
@@ -31,4 +35,6 @@ test "create" {
 test "name parse" {
     var pat = Pattern.parse(":monospace");
     defer pat.destroy();
+
+    pat.defaultSubstitute();
 }

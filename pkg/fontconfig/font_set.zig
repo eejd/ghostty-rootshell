@@ -12,13 +12,21 @@ pub const FontSet = opaque {
         c.FcFontSetDestroy(self.cval());
     }
 
-    pub fn len(self: *FontSet) u32 {
-        return @intCast(u32, self.cval().nfont);
+    pub fn fonts(self: *FontSet) []*Pattern {
+        const empty: [0]*Pattern = undefined;
+        const s = self.cval();
+        if (s.fonts == null) return &empty;
+        const ptr = @ptrCast([*]*Pattern, @alignCast(@alignOf(*Pattern), s.fonts));
+        const len = @intCast(usize, s.nfont);
+        return ptr[0..len];
     }
 
-    pub fn get(self: *FontSet, idx: usize) *Pattern {
-        assert(idx < self.len());
-        return @ptrCast(*Pattern, self.cval().fonts[idx]);
+    pub fn add(self: *FontSet, pat: *Pattern) bool {
+        return c.FcFontSetAdd(self.cval(), pat.cval()) == c.FcTrue;
+    }
+
+    pub fn print(self: *FontSet) void {
+        c.FcFontSetPrint(self.cval());
     }
 
     pub inline fn cval(self: *FontSet) *c.struct__FcFontSet {
@@ -35,5 +43,5 @@ test "create" {
     var fs = FontSet.create();
     defer fs.destroy();
 
-    try testing.expectEqual(@as(u32, 0), fs.len());
+    try testing.expectEqual(@as(usize, 0), fs.fonts().len);
 }
