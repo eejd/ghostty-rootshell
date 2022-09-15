@@ -145,6 +145,9 @@ pub fn buildFontconfig(
         // https://gitlab.freedesktop.org/fontconfig/fontconfig/-/merge_requests/231
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",
+
+        "-Wno-int-conversion",
+        "-Wno-implicit-function-declaration",
     });
     const arch = target.cpu_arch orelse builtin.cpu.arch;
     switch (arch.ptrBitWidth()) {
