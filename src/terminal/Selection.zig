@@ -40,6 +40,14 @@ pub fn contains(self: Selection, p: ScreenPoint) bool {
     return p.y > tl.y and p.y < br.y;
 }
 
+/// Returns true if the selection contains the row of the given point,
+/// regardless of the x value.
+pub fn containsRow(self: Selection, p: ScreenPoint) bool {
+    const tl = self.topLeft();
+    const br = self.bottomRight();
+    return p.y >= tl.y and p.y <= br.y;
+}
+
 /// Returns the top left point of the selection.
 pub fn topLeft(self: Selection) ScreenPoint {
     return switch (self.order()) {
@@ -78,6 +86,9 @@ test "Selection: contains" {
         try testing.expect(sel.contains(.{ .x = 1, .y = 2 }));
         try testing.expect(!sel.contains(.{ .x = 1, .y = 1 }));
         try testing.expect(!sel.contains(.{ .x = 5, .y = 2 }));
+        try testing.expect(!sel.containsRow(.{ .x = 1, .y = 3 }));
+        try testing.expect(sel.containsRow(.{ .x = 1, .y = 1 }));
+        try testing.expect(sel.containsRow(.{ .x = 5, .y = 2 }));
     }
 
     // Reverse

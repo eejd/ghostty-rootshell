@@ -20,6 +20,7 @@ const log = std.log.scoped(.grid);
 // separately for alt screens. By storing that in the key, we very likely
 // have the cache already for when the primary screen is reactivated.
 const CellsLRU = lru.AutoHashMap(struct {
+    selection: ?terminal.Selection,
     screen: terminal.Terminal.ScreenType,
     row_id: terminal.Screen.RowHeader.Id,
 }, std.ArrayListUnmanaged(GPUCell));
@@ -384,8 +385,26 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
     while (rowIter.next()) |row| {
         defer y += 1;
 
+        // Our selection value is only non-null if this selection happens
+        // to contain this row. If the selection changes for any reason,
+        // then we invalidate the cache.
+        const selection = sel: {
+            if (term.selection) |sel| {
+                const screen_point = (terminal.point.Viewport{
+                    .x = 0,
+                    .y = y,
+                }).toScreen(&term.screen);
+
+                // If we are selected, we our colors are just inverted fg/bg
+                if (sel.containsRow(screen_point)) break :sel sel;
+            }
+
+            break :sel null;
+        };
+
         // Get our value from the cache.
         const gop = try self.cells_lru.getOrPut(self.alloc, .{
+            .selection = selection,
             .screen = term.active_screen,
             .row_id = row.getId(),
         });

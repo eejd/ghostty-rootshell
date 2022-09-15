@@ -76,6 +76,12 @@ pub const ScreenPoint = struct {
             (self.y == other.y and self.x < other.x);
     }
 
+    /// Returns true if this screen point is currently in the active viewport.
+    pub fn inViewport(self: ScreenPoint, screen: *const Screen) bool {
+        return self.y >= screen.viewport and
+            self.y < screen.viewport + screen.rows;
+    }
+
     /// Converts this to a viewport point. If the point is above the
     /// viewport this will move the point to (0, 0) and if it is below
     /// the viewport it'll move it to (cols - 1, rows - 1).
