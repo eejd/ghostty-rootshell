@@ -112,13 +112,7 @@ pub fn indexForCodepoint(
 
 fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) ?FontIndex {
     for (self.faces.get(style).items) |deferred, i| {
-        const face = deferred.face.?;
-
-        // If the presentation is null, we allow the first presentation we
-        // can find. Otherwise, we check for the specific one requested.
-        if (p != null and face.presentation != p.?) continue;
-
-        if (face.glyphIndex(cp) != null) {
+        if (deferred.hasCodepoint(cp, p)) {
             return FontIndex{
                 .style = style,
                 .idx = @intCast(FontIndex.IndexInt, i),
