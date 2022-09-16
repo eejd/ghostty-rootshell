@@ -11,6 +11,10 @@ pub const CharSet = opaque {
         c.FcCharSetDestroy(self.cval());
     }
 
+    pub fn hasChar(self: *CharSet, cp: u32) bool {
+        return c.FcCharSetHasChar(self.cval(), cp) == c.FcTrue;
+    }
+
     pub inline fn cval(self: *CharSet) *c.struct__FcCharSet {
         return @ptrCast(
             *c.struct__FcCharSet,
@@ -20,6 +24,10 @@ pub const CharSet = opaque {
 };
 
 test "create" {
+    const testing = std.testing;
+
     var fs = CharSet.create();
     defer fs.destroy();
+
+    try testing.expect(!fs.hasChar(0x20));
 }

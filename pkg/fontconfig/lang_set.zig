@@ -11,6 +11,10 @@ pub const LangSet = opaque {
         c.FcLangSetDestroy(self.cval());
     }
 
+    pub fn hasLang(self: *LangSet, lang: [:0]const u8) bool {
+        return c.FcLangSetHasLang(self.cval(), lang.ptr) == c.FcTrue;
+    }
+
     pub inline fn cval(self: *LangSet) *c.struct__FcLangSet {
         return @ptrCast(
             *c.struct__FcLangSet,
@@ -20,6 +24,10 @@ pub const LangSet = opaque {
 };
 
 test "create" {
+    const testing = std.testing;
+
     var fs = LangSet.create();
     defer fs.destroy();
+
+    try testing.expect(!fs.hasLang("und-zsye"));
 }
