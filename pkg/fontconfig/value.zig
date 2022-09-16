@@ -25,7 +25,7 @@ pub const Value = union(Type) {
     @"void": void,
     integer: u32,
     double: f64,
-    string: []const u8,
+    string: [:0]const u8,
     @"bool": bool,
     matrix: *const Matrix,
     char_set: *const CharSet,
@@ -46,6 +46,25 @@ pub const Value = union(Type) {
             .ft_face => .{ .ft_face = @ptrCast(*anyopaque, cvalue.u.f) },
             .lang_set => .{ .lang_set = @ptrCast(*const LangSet, cvalue.u.l) },
             .range => .{ .range = @ptrCast(*const Range, cvalue.u.r) },
+        };
+    }
+
+    pub fn cval(self: Value) c.struct__FcValue {
+        return .{
+            .@"type" = @enumToInt(std.meta.activeTag(self)),
+            .u = switch (self) {
+                .unknown => undefined,
+                .@"void" => undefined,
+                .integer => |v| .{ .i = @intCast(c_int, v) },
+                .double => |v| .{ .d = v },
+                .string => |v| .{ .s = v },
+                .@"bool" => |v| .{ .b = if (v) c.FcTrue else c.FcFalse },
+                .matrix => |v| .{ .m = @ptrCast(*const c.struct__FcMatrix, v) },
+                .char_set => |v| .{ .c = @ptrCast(*const c.struct__FcCharSet, v) },
+                .ft_face => |v| .{ .f = v },
+                .lang_set => |v| .{ .l = @ptrCast(*const c.struct__FcLangSet, v) },
+                .range => |v| .{ .r = @ptrCast(*const c.struct__FcRange, v) },
+            },
         };
     }
 };

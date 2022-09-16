@@ -74,7 +74,7 @@ pub const Property = enum {
     font_has_hint,
     order,
 
-    fn cval(self: Property) [:0]const u8 {
+    pub fn cval(self: Property) [:0]const u8 {
         @setEvalBranchQuota(10_000);
         inline for (@typeInfo(Property).Enum.fields) |field| {
             if (self == @field(Property, field.name)) {

@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c.zig");
 const ObjectSet = @import("main.zig").ObjectSet;
+const Property = @import("main.zig").Property;
 const Result = @import("main.zig").Result;
 const Value = @import("main.zig").Value;
 const ValueBinding = @import("main.zig").ValueBinding;
@@ -23,8 +24,17 @@ pub const Pattern = opaque {
         c.FcDefaultSubstitute(self.cval());
     }
 
-    pub fn delete(self: *Pattern, obj: [:0]const u8) bool {
-        return c.FcPatternDel(self.cval(), obj.ptr) == c.FcTrue;
+    pub fn add(self: *Pattern, prop: Property, value: Value, append: bool) bool {
+        return c.FcPatternAdd(
+            self.cval(),
+            prop.cval(),
+            value.cval(),
+            if (append) c.FcTrue else c.FcFalse,
+        ) == c.FcTrue;
+    }
+
+    pub fn delete(self: *Pattern, prop: Property) bool {
+        return c.FcPatternDel(self.cval(), prop.cval()) == c.FcTrue;
     }
 
     pub fn filter(self: *Pattern, os: *const ObjectSet) *Pattern {
@@ -124,8 +134,12 @@ pub const Pattern = opaque {
 };
 
 test "create" {
+    const testing = std.testing;
+
     var pat = Pattern.create();
     defer pat.destroy();
+
+    try testing.expect(pat.add(.family, .{ .string = "monospace" }, false));
 }
 
 test "name parse" {
