@@ -6,6 +6,7 @@ const Property = @import("main.zig").Property;
 const Result = @import("main.zig").Result;
 const Value = @import("main.zig").Value;
 const ValueBinding = @import("main.zig").ValueBinding;
+const Weight = @import("main.zig").Weight;
 
 pub const Pattern = opaque {
     pub fn create() *Pattern {
@@ -140,6 +141,7 @@ test "create" {
     defer pat.destroy();
 
     try testing.expect(pat.add(.family, .{ .string = "monospace" }, false));
+    try testing.expect(pat.add(.weight, .{ .integer = @enumToInt(Weight.bold) }, false));
 }
 
 test "name parse" {

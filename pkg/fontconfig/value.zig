@@ -23,7 +23,7 @@ pub const Type = enum(c_int) {
 pub const Value = union(Type) {
     unknown: void,
     @"void": void,
-    integer: u32,
+    integer: i32,
     double: f64,
     string: [:0]const u8,
     @"bool": bool,
@@ -38,7 +38,7 @@ pub const Value = union(Type) {
             .unknown => .{ .unknown = {} },
             .@"void" => .{ .@"void" = {} },
             .string => .{ .string = std.mem.sliceTo(cvalue.u.s, 0) },
-            .integer => .{ .integer = @intCast(u32, cvalue.u.i) },
+            .integer => .{ .integer = @intCast(i32, cvalue.u.i) },
             .double => .{ .double = cvalue.u.d },
             .@"bool" => .{ .@"bool" = cvalue.u.b == c.FcTrue },
             .matrix => .{ .matrix = @ptrCast(*const Matrix, cvalue.u.m) },
