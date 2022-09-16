@@ -11,6 +11,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const Atlas = @import("../Atlas.zig");
+const DeferredFace = @import("main.zig").DeferredFace;
 const Face = @import("main.zig").Face;
 const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
@@ -24,7 +25,7 @@ const log = std.log.scoped(.font_group);
 // usually only one font group for the entire process so this isn't the
 // most important memory efficiency we can look for. This is totally opaque
 // to the user so we can change this later.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(Face));
+const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
 
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
@@ -58,7 +59,7 @@ pub fn deinit(self: *Group, alloc: Allocator) void {
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
 pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: Face) !void {
-    try self.faces.getPtr(style).append(alloc, face);
+    try self.faces.getPtr(style).append(alloc, .{ .face = face });
 }
 
 /// This represents a specific font in the group.
@@ -110,7 +111,9 @@ pub fn indexForCodepoint(
 }
 
 fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) ?FontIndex {
-    for (self.faces.get(style).items) |face, i| {
+    for (self.faces.get(style).items) |deferred, i| {
+        const face = deferred.face.?;
+
         // If the presentation is null, we allow the first presentation we
         // can find. Otherwise, we check for the specific one requested.
         if (p != null and face.presentation != p.?) continue;
@@ -129,7 +132,8 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 
 /// Return the Face represented by a given FontIndex.
 pub fn faceFromIndex(self: Group, index: FontIndex) Face {
-    return self.faces.get(index.style).items[@intCast(usize, index.idx)];
+    const deferred = self.faces.get(index.style).items[@intCast(usize, index.idx)];
+    return deferred.face.?;
 }
 
 /// Render a glyph by glyph index into the given font atlas and return
@@ -151,7 +155,8 @@ pub fn renderGlyph(
     glyph_index: u32,
 ) !Glyph {
     const face = self.faces.get(index.style).items[@intCast(usize, index.idx)];
-    return try face.renderGlyph(alloc, atlas, glyph_index);
+    assert(face.loaded());
+    return try face.face.?.renderGlyph(alloc, atlas, glyph_index);
 }
 
 test {

@@ -16,7 +16,7 @@ const log = std.log.scoped(.main);
 pub fn main() !void {
     // Output some debug information right away
     log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
-    if (builtin.os.tag == .linux) {
+    if (options.fontconfig) {
         log.info("dependency fontconfig={d}", .{fontconfig.version()});
     }
 

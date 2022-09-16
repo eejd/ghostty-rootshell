@@ -16,6 +16,7 @@ const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 
 // Build options, see the build options help for more info.
 var tracy: bool = false;
+var enable_fontconfig: bool = false;
 
 pub fn build(b: *std.build.Builder) !void {
     const mode = b.standardReleaseOptions();
@@ -36,6 +37,12 @@ pub fn build(b: *std.build.Builder) !void {
         "Enable Tracy integration (default true in Debug on Linux)",
     ) orelse (mode == .Debug and target.isLinux());
 
+    enable_fontconfig = b.option(
+        bool,
+        "fontconfig",
+        "Enable fontconfig for font discovery (default true on Linux)",
+    ) orelse target.isLinux();
+
     const static = b.option(
         bool,
         "static",
@@ -49,12 +56,12 @@ pub fn build(b: *std.build.Builder) !void {
     );
 
     const exe = b.addExecutable("ghostty", "src/main.zig");
+    const exe_options = b.addOptions();
+    exe_options.addOption(bool, "tracy_enabled", tracy);
+    exe_options.addOption(bool, "fontconfig", enable_fontconfig);
 
     // Exe
     {
-        const exe_options = b.addOptions();
-        exe_options.addOption(bool, "tracy_enabled", tracy);
-
         exe.setTarget(target);
         exe.setBuildMode(mode);
         exe.addOptions("build_options", exe_options);
@@ -119,6 +126,7 @@ pub fn build(b: *std.build.Builder) !void {
 
             main_test.setTarget(target);
             try addDeps(b, main_test, true);
+            main_test.addOptions("build_options", exe_options);
 
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
             var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
@@ -132,6 +140,7 @@ pub fn build(b: *std.build.Builder) !void {
         // we wrote (are in the "pkg/" directory).
         for (main_test.packages.items) |pkg_| {
             const pkg: std.build.Pkg = pkg_;
+            if (std.mem.eql(u8, pkg.name, "build_options")) continue;
             if (std.mem.eql(u8, pkg.name, "glfw")) continue;
             var test_ = b.addTestSource(pkg.source);
 
@@ -158,7 +167,7 @@ fn addDeps(
     static: bool,
 ) !void {
     // We always need the Zig packages
-    step.addPackage(fontconfig.pkg);
+    if (enable_fontconfig) step.addPackage(fontconfig.pkg);
     step.addPackage(freetype.pkg);
     step.addPackage(harfbuzz.pkg);
     step.addPackage(glfw.pkg);
@@ -195,7 +204,7 @@ fn addDeps(
         step.linkSystemLibrary("libuv");
         step.linkSystemLibrary("zlib");
 
-        if (step.target.isLinux()) step.linkSystemLibrary("fontconfig");
+        if (enable_fontconfig) step.linkSystemLibrary("fontconfig");
     }
 
     // Other dependencies, we may dynamically link
@@ -237,7 +246,7 @@ fn addDeps(
         system_sdk.include(b, libuv_step, .{});
 
         // Only Linux gets fontconfig
-        if (step.target.isLinux()) {
+        if (enable_fontconfig) {
             // Libxml2
             const libxml2_lib = try libxml2.create(
                 b,

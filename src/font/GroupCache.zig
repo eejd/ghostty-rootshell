@@ -129,7 +129,7 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
     };
 
     const cell_baseline = cell_baseline: {
-        const face = self.group.faces.get(.regular).items[0];
+        const face = self.group.faces.get(.regular).items[0].face.?;
         break :cell_baseline cell_height - @intToFloat(
             f32,
             face.unitsToPxY(face.face.handle.*.ascender),
