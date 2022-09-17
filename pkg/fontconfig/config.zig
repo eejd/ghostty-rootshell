@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig");
+const Error = @import("main.zig").Error;
 const CharSet = @import("char_set.zig").CharSet;
 const FontSet = @import("font_set.zig").FontSet;
 const ObjectSet = @import("object_set.zig").ObjectSet;
@@ -34,8 +35,11 @@ pub const Config = opaque {
         return result;
     }
 
-    pub fn fontRenderPrepare(self: *Config, pat: *Pattern, font: *Pattern) *Pattern {
-        return @ptrCast(*Pattern, c.FcFontRenderPrepare(self.cval(), pat.cval(), font.cval()));
+    pub fn fontRenderPrepare(self: *Config, pat: *Pattern, font: *Pattern) Error!*Pattern {
+        return @ptrCast(
+            ?*Pattern,
+            c.FcFontRenderPrepare(self.cval(), pat.cval(), font.cval()),
+        ) orelse Error.FontconfigFailed;
     }
 
     pub fn substituteWithPat(self: *Config, pat: *Pattern, kind: MatchKind) bool {
