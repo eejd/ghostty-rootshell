@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig");
+const Error = @import("main.zig").Error;
 
 pub const Weight = enum(c_uint) {
     thin = c.FC_WEIGHT_THIN,
@@ -111,6 +112,16 @@ pub const Result = enum(c_uint) {
     type_mismatch = c.FcResultTypeMismatch,
     no_id = c.FcResultNoId,
     out_of_memory = c.FcResultOutOfMemory,
+
+    pub fn toError(self: Result) Error!void {
+        return switch (self) {
+            .match => {},
+            .no_match => Error.FontconfigNoMatch,
+            .type_mismatch => Error.FontconfigTypeMismatch,
+            .no_id => Error.FontconfigNoId,
+            .out_of_memory => Error.OutOfMemory,
+        };
+    }
 };
 
 pub const MatchKind = enum(c_uint) {

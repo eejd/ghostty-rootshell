@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c.zig");
+const Error = @import("main.zig").Error;
 const ObjectSet = @import("main.zig").ObjectSet;
 const Property = @import("main.zig").Property;
 const Result = @import("main.zig").Result;
@@ -32,6 +33,18 @@ pub const Pattern = opaque {
             value.cval(),
             if (append) c.FcTrue else c.FcFalse,
         ) == c.FcTrue;
+    }
+
+    pub fn get(self: *Pattern, prop: Property, id: u32) Error!Value {
+        var val: c.struct__FcValue = undefined;
+        try @intToEnum(Result, c.FcPatternGet(
+            self.cval(),
+            prop.cval(),
+            @intCast(c_int, id),
+            &val,
+        )).toError();
+
+        return Value.init(&val);
     }
 
     pub fn delete(self: *Pattern, prop: Property) bool {
@@ -142,6 +155,12 @@ test "create" {
 
     try testing.expect(pat.add(.family, .{ .string = "monospace" }, false));
     try testing.expect(pat.add(.weight, .{ .integer = @enumToInt(Weight.bold) }, false));
+
+    {
+        const val = try pat.get(.family, 0);
+        try testing.expect(val == .string);
+        try testing.expectEqualStrings("monospace", val.string);
+    }
 }
 
 test "name parse" {
