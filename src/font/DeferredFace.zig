@@ -23,9 +23,20 @@ fc: if (options.fontconfig) ?Fontconfig else void = if (options.fontconfig) null
 
 /// Fontconfig specific data. This is only present if building with fontconfig.
 pub const Fontconfig = struct {
+    /// The pattern for this font. This must be the "render prepared" pattern.
+    /// (i.e. call FcFontRenderPrepare).
     pattern: *fontconfig.Pattern,
+
+    /// Charset and Langset are used for quick lookup if a codepoint and
+    /// presentation style are supported. They can be derived from pattern
+    /// but are cached since they're frequently used.
     charset: *const fontconfig.CharSet,
     langset: *const fontconfig.LangSet,
+
+    /// The requested size in points for this font. This is used for loading.
+    /// This can't be derived from pattern because the requested size may
+    /// differ from the size the font advertises supported.
+    req_size: u16,
 
     pub fn deinit(self: *Fontconfig) void {
         self.pattern.destroy();

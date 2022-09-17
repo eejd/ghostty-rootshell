@@ -22,8 +22,10 @@ pub const Descriptor = struct {
     /// fontconfig pattern, such as "Fira Code-14:bold".
     family: [:0]const u8,
 
-    /// Font size in points that the font should support.
-    size: u16 = 0,
+    /// Font size in points that the font should support. For conversion
+    /// to pixels, we will use 72 DPI for Mac and 96 DPI for everything else.
+    /// (If pixel conversion is necessary, i.e. emoji fonts)
+    size: u16,
 
     /// True if we want to search specifically for a font that supports
     /// bold, italic, or both.
@@ -81,6 +83,7 @@ pub const Fontconfig = struct {
             .set = res.fs,
             .fonts = res.fs.fonts(),
             .i = 0,
+            .req_size = @floatToInt(u16, (try pat.get(.size, 0)).double),
         };
     }
 
@@ -90,6 +93,7 @@ pub const Fontconfig = struct {
         set: *fontconfig.FontSet,
         fonts: []*fontconfig.Pattern,
         i: usize,
+        req_size: u16,
 
         pub fn deinit(self: *DiscoverIterator) void {
             self.set.destroy();
@@ -117,6 +121,7 @@ pub const Fontconfig = struct {
                     .pattern = font_pattern,
                     .charset = (try font_pattern.get(.charset, 0)).char_set,
                     .langset = (try font_pattern.get(.lang, 0)).lang_set,
+                    .req_size = self.req_size,
                 },
             };
         }
@@ -127,7 +132,7 @@ test {
     const testing = std.testing;
 
     var fc = Fontconfig.init();
-    var it = try fc.discover(.{ .family = "monospace" });
+    var it = try fc.discover(.{ .family = "monospace", .size = 12 });
     defer it.deinit();
     while (try it.next()) |face| {
         try testing.expect(!face.loaded());
