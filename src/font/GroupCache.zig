@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 
 const Atlas = @import("../Atlas.zig");
 const Face = @import("main.zig").Face;
+const DeferredFace = @import("main.zig").DeferredFace;
 const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
@@ -221,7 +222,11 @@ test {
     defer cache.deinit(alloc);
 
     // Setup group
-    try cache.group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
+    try cache.group.addFace(
+        alloc,
+        .regular,
+        DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })),
+    );
     const group = cache.group;
 
     // Visible ASCII. Do it twice to verify cache.

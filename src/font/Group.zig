@@ -58,8 +58,8 @@ pub fn deinit(self: *Group, alloc: Allocator) void {
 ///
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
-pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: Face) !void {
-    try self.faces.getPtr(style).append(alloc, .{ .face = face });
+pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace) !void {
+    try self.faces.getPtr(style).append(alloc, face);
 }
 
 /// This represents a specific font in the group.
@@ -169,9 +169,9 @@ test {
     var group = try init(alloc);
     defer group.deinit(alloc);
 
-    try group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
-    try group.addFace(alloc, .regular, try Face.init(lib, testEmoji, .{ .points = 12 }));
-    try group.addFace(alloc, .regular, try Face.init(lib, testEmojiText, .{ .points = 12 }));
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     // Should find all visible ASCII
     var i: u32 = 32;

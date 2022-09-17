@@ -8,6 +8,7 @@ const harfbuzz = @import("harfbuzz");
 const trace = @import("tracy").trace;
 const Atlas = @import("../Atlas.zig");
 const Face = @import("main.zig").Face;
+const DeferredFace = @import("main.zig").DeferredFace;
 const Group = @import("main.zig").Group;
 const GroupCache = @import("main.zig").GroupCache;
 const Library = @import("main.zig").Library;
@@ -599,9 +600,9 @@ fn testShaper(alloc: Allocator) !TestShaper {
     errdefer cache_ptr.*.deinit(alloc);
 
     // Setup group
-    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
-    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testEmoji, .{ .points = 12 }));
-    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testEmojiText, .{ .points = 12 }));
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     var cell_buf = try alloc.alloc(Cell, 80);
     errdefer alloc.free(cell_buf);

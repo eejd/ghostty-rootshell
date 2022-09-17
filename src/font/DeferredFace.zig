@@ -13,6 +13,8 @@ const options = @import("main.zig").options;
 const Face = @import("main.zig").Face;
 const Presentation = @import("main.zig").Presentation;
 
+const Library = @import("main.zig").Library;
+
 /// The loaded face (once loaded).
 face: ?Face = null,
 
@@ -30,6 +32,12 @@ pub const Fontconfig = struct {
         self.* = undefined;
     }
 };
+
+/// Initialize a deferred face that is already pre-loaded. The deferred face
+/// takes ownership over the loaded face, deinit will deinit the loaded face.
+pub fn initLoaded(face: Face) DeferredFace {
+    return .{ .face = face };
+}
 
 pub fn deinit(self: *DeferredFace) void {
     if (self.face) |*face| face.deinit();
@@ -81,4 +89,20 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     // This is unreachable because discovery mechanisms terminate, and
     // if we're not using a discovery mechanism, the face MUST be loaded.
     unreachable;
+}
+
+test {
+    const testing = std.testing;
+    const testFont = @import("test.zig").fontRegular;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    errdefer face.deinit();
+
+    var def = initLoaded(face);
+    defer def.deinit();
+
+    try testing.expect(def.hasCodepoint(' ', null));
 }

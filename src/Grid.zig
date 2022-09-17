@@ -167,24 +167,24 @@ pub fn init(
         try group.addFace(
             alloc,
             .regular,
-            try font.Face.init(font_lib, face_ttf, font_size),
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_ttf, font_size)),
         );
         try group.addFace(
             alloc,
             .bold,
-            try font.Face.init(font_lib, face_bold_ttf, font_size),
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_bold_ttf, font_size)),
         );
 
         // Emoji
         try group.addFace(
             alloc,
             .regular,
-            try font.Face.init(font_lib, face_emoji_ttf, font_size),
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_ttf, font_size)),
         );
         try group.addFace(
             alloc,
             .regular,
-            try font.Face.init(font_lib, face_emoji_text_ttf, font_size),
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_text_ttf, font_size)),
         );
 
         break :group group;
