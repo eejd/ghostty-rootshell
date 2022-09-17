@@ -11,13 +11,20 @@ pub const CharSet = opaque {
         c.FcCharSetDestroy(self.cval());
     }
 
-    pub fn hasChar(self: *CharSet, cp: u32) bool {
-        return c.FcCharSetHasChar(self.cval(), cp) == c.FcTrue;
+    pub fn hasChar(self: *const CharSet, cp: u32) bool {
+        return c.FcCharSetHasChar(self.cvalConst(), cp) == c.FcTrue;
     }
 
     pub inline fn cval(self: *CharSet) *c.struct__FcCharSet {
         return @ptrCast(
             *c.struct__FcCharSet,
+            self,
+        );
+    }
+
+    pub inline fn cvalConst(self: *const CharSet) *const c.struct__FcCharSet {
+        return @ptrCast(
+            *const c.struct__FcCharSet,
             self,
         );
     }

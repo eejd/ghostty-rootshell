@@ -11,13 +11,20 @@ pub const LangSet = opaque {
         c.FcLangSetDestroy(self.cval());
     }
 
-    pub fn hasLang(self: *LangSet, lang: [:0]const u8) bool {
-        return c.FcLangSetHasLang(self.cval(), lang.ptr) == c.FcTrue;
+    pub fn hasLang(self: *const LangSet, lang: [:0]const u8) bool {
+        return c.FcLangSetHasLang(self.cvalConst(), lang.ptr) == c.FcTrue;
     }
 
     pub inline fn cval(self: *LangSet) *c.struct__FcLangSet {
         return @ptrCast(
             *c.struct__FcLangSet,
+            self,
+        );
+    }
+
+    pub inline fn cvalConst(self: *const LangSet) *const c.struct__FcLangSet {
+        return @ptrCast(
+            *const c.struct__FcLangSet,
             self,
         );
     }
