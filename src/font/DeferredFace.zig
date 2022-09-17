@@ -17,18 +17,23 @@ const Presentation = @import("main.zig").Presentation;
 face: ?Face = null,
 
 /// Fontconfig
-fc: if (options.fontconfig) Fontconfig else void = undefined,
+fc: if (options.fontconfig) ?Fontconfig else void = if (options.fontconfig) null else {},
 
 /// Fontconfig specific data. This is only present if building with fontconfig.
 pub const Fontconfig = struct {
     pattern: *fontconfig.Pattern,
-    charset: *fontconfig.CharSet,
-    langset: *fontconfig.LangSet,
+    charset: *const fontconfig.CharSet,
+    langset: *const fontconfig.LangSet,
+
+    pub fn deinit(self: *Fontconfig) void {
+        self.pattern.destroy();
+        self.* = undefined;
+    }
 };
 
 pub fn deinit(self: *DeferredFace) void {
     if (self.face) |*face| face.deinit();
-
+    if (options.fontconfig) if (self.fc) |*fc| fc.deinit();
     self.* = undefined;
 }
 
@@ -54,21 +59,23 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     // If we are using fontconfig, use the fontconfig metadata to
     // avoid loading the face.
     if (options.fontconfig) {
-        // Check if char exists
-        if (!self.fc.charset.hasChar(cp)) return false;
+        if (self.fc) |fc| {
+            // Check if char exists
+            if (!fc.charset.hasChar(cp)) return false;
 
-        // If we have a presentation, check it matches
-        if (p) |desired| {
-            const emoji_lang = "und-zsye";
-            const actual: Presentation = if (self.fc.langset.hasLang(emoji_lang))
-                .emoji
-            else
-                .text;
+            // If we have a presentation, check it matches
+            if (p) |desired| {
+                const emoji_lang = "und-zsye";
+                const actual: Presentation = if (fc.langset.hasLang(emoji_lang))
+                    .emoji
+                else
+                    .text;
 
-            return desired == actual;
+                return desired == actual;
+            }
+
+            return true;
         }
-
-        return true;
     }
 
     // This is unreachable because discovery mechanisms terminate, and

@@ -1,8 +1,13 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const fontconfig = @import("fontconfig");
+const DeferredFace = @import("main.zig").DeferredFace;
 
 const log = std.log.named(.discovery);
+
+pub const Error = error{
+    FontConfigFailed,
+};
 
 /// Descriptor is used to search for fonts. The only required field
 /// is "family". The rest are ignored unless they're set to a non-zero value.
@@ -53,25 +58,78 @@ pub const Fontconfig = struct {
     pub fn init() Fontconfig {
         // safe to call multiple times and concurrently
         _ = fontconfig.init();
-        return .{ .fc_config = fontconfig.initLoadConfig() };
+        return .{ .fc_config = fontconfig.initLoadConfigAndFonts() };
     }
 
-    pub fn discover(self: *Fontconfig, desc: Descriptor) void {
+    /// Discover fonts from a descriptor. This returns an iterator that can
+    /// be used to build up the deferred fonts.
+    pub fn discover(self: *Fontconfig, desc: Descriptor) !DiscoverIterator {
         // Build our pattern that we'll search for
         const pat = desc.toFcPattern();
-        defer pat.destroy();
+        errdefer pat.destroy();
         assert(self.fc_config.substituteWithPat(pat, .pattern));
         pat.defaultSubstitute();
 
         // Search
         const res = self.fc_config.fontSort(pat, true, null);
-        defer res.fs.destroy();
+        if (res.result != .match) return Error.FontConfigFailed;
+        errdefer res.fs.destroy();
+
+        return DiscoverIterator{
+            .config = self.fc_config,
+            .pattern = pat,
+            .set = res.fs,
+            .fonts = res.fs.fonts(),
+            .i = 0,
+        };
     }
+
+    pub const DiscoverIterator = struct {
+        config: *fontconfig.Config,
+        pattern: *fontconfig.Pattern,
+        set: *fontconfig.FontSet,
+        fonts: []*fontconfig.Pattern,
+        i: usize,
+
+        pub fn deinit(self: *DiscoverIterator) void {
+            self.set.destroy();
+            self.pattern.destroy();
+            self.* = undefined;
+        }
+
+        pub fn next(self: *DiscoverIterator) fontconfig.Error!?DeferredFace {
+            if (self.i >= self.fonts.len) return null;
+
+            // Get the copied pattern from our fontset that has the
+            // attributes configured for rendering.
+            const font_pattern = try self.config.fontRenderPrepare(
+                self.pattern,
+                self.fonts[self.i],
+            );
+            errdefer font_pattern.destroy();
+
+            // Increment after we return
+            defer self.i += 1;
+
+            return DeferredFace{
+                .face = null,
+                .fc = .{
+                    .pattern = font_pattern,
+                    .charset = (try font_pattern.get(.charset, 0)).char_set,
+                    .langset = (try font_pattern.get(.lang, 0)).lang_set,
+                },
+            };
+        }
+    };
 };
 
 test {
-    defer fontconfig.fini();
-    var fc = Fontconfig.init();
+    const testing = std.testing;
 
-    fc.discover(.{ .family = "monospace" });
+    var fc = Fontconfig.init();
+    var it = try fc.discover(.{ .family = "monospace" });
+    defer it.deinit();
+    while (try it.next()) |face| {
+        try testing.expect(!face.loaded());
+    }
 }
