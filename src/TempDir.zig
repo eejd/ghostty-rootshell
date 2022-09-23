@@ -52,13 +52,13 @@ pub fn init() !TempDir {
 
 /// Name returns the name of the directory. This is just the basename
 /// and is not the full absolute path.
-pub fn name(self: TempDir) []const u8 {
+pub fn name(self: *TempDir) []const u8 {
     return std.mem.sliceTo(&self.name_buf, 0);
 }
 
 /// Finish with the temporary directory. This deletes all contents in the
 /// directory. This is safe to call multiple times.
-pub fn deinit(self: TempDir) void {
+pub fn deinit(self: *TempDir) void {
     self.parent.deleteTree(self.name()) catch |err|
         log.err("error deleting temp dir err={}", .{err});
 }

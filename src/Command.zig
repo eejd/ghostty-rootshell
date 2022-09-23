@@ -353,7 +353,7 @@ test "Command: pre exec" {
 }
 
 test "Command: redirect stdout to file" {
-    const td = try TempDir.init();
+    var td = try TempDir.init();
     defer td.deinit();
     var stdout = try td.dir.createFile("stdout.txt", .{ .read = true });
     defer stdout.close();
@@ -378,7 +378,7 @@ test "Command: redirect stdout to file" {
 }
 
 test "Command: custom env vars" {
-    const td = try TempDir.init();
+    var td = try TempDir.init();
     defer td.deinit();
     var stdout = try td.dir.createFile("stdout.txt", .{ .read = true });
     defer stdout.close();
