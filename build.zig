@@ -2,7 +2,7 @@ const std = @import("std");
 const fs = std.fs;
 const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
-const glfw = @import("vendor/mach/glfw/build.zig");
+const glfw = @import("vendor/mach/libs/glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.zig");
@@ -12,7 +12,7 @@ const libpng = @import("pkg/libpng/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
-const system_sdk = @import("vendor/mach/glfw/system_sdk.zig");
+const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 
 // Build options, see the build options help for more info.
 var tracy: bool = false;
@@ -166,7 +166,7 @@ fn addDeps(
     step.addPackage(utf8proc.pkg);
 
     // We always statically compile glad
-    step.addIncludeDir("vendor/glad/include/");
+    step.addIncludePath("vendor/glad/include/");
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
     // Tracy

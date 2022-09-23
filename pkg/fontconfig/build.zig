@@ -142,6 +142,10 @@ pub fn buildFontconfig(
 
         "-DFC_GPERF_SIZE_T=size_t",
 
+        // Default errors that fontconfig can't handle
+        "-Wno-implicit-function-declaration",
+        "-Wno-int-conversion",
+
         // https://gitlab.freedesktop.org/fontconfig/fontconfig/-/merge_requests/231
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",

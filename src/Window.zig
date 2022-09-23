@@ -979,8 +979,6 @@ fn mouseButtonCallback(
     glfw_action: glfw.Action,
     mods: glfw.Mods,
 ) void {
-    _ = mods;
-
     const tracy = trace(@src());
     defer tracy.end();
 
