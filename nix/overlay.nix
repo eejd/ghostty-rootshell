@@ -12,7 +12,8 @@ final: prev: rec {
 
   wraptest = prev.callPackage ./wraptest.nix { };
 
-  # Last known working self-hosted with -fstage1
+  # Last known working self-hosted with -fstage1, due to
+  # https://github.com/ziglang/zig/issues/12944
   zig = final.zigpkgs.master-2022-09-13;
 
   # zig we want to be the latest nightly since 0.9.0 is not released yet.
