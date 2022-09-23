@@ -77,7 +77,7 @@ pub const Blob = struct {
         comptime T: type,
         key: ?*anyopaque,
         ptr: ?*T,
-        comptime destroycb: ?fn (?*T) callconv(.C) void,
+        comptime destroycb: ?std.meta.FnPtr(fn (?*T) callconv(.C) void),
         replace: bool,
     ) bool {
         const Callback = struct {
