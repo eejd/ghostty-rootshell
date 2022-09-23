@@ -57,7 +57,7 @@ pub const Value = union(Type) {
                 .@"void" => undefined,
                 .integer => |v| .{ .i = @intCast(c_int, v) },
                 .double => |v| .{ .d = v },
-                .string => |v| .{ .s = v },
+                .string => |v| .{ .s = v.ptr },
                 .@"bool" => |v| .{ .b = if (v) c.FcTrue else c.FcFalse },
                 .matrix => |v| .{ .m = @ptrCast(*const c.struct__FcMatrix, v) },
                 .char_set => |v| .{ .c = @ptrCast(*const c.struct__FcCharSet, v) },

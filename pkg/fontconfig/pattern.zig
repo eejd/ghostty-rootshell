@@ -29,7 +29,7 @@ pub const Pattern = opaque {
     pub fn add(self: *Pattern, prop: Property, value: Value, append: bool) bool {
         return c.FcPatternAdd(
             self.cval(),
-            prop.cval(),
+            prop.cval().ptr,
             value.cval(),
             if (append) c.FcTrue else c.FcFalse,
         ) == c.FcTrue;
@@ -39,7 +39,7 @@ pub const Pattern = opaque {
         var val: c.struct__FcValue = undefined;
         try @intToEnum(Result, c.FcPatternGet(
             self.cval(),
-            prop.cval(),
+            prop.cval().ptr,
             @intCast(c_int, id),
             &val,
         )).toError();
