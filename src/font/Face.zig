@@ -51,6 +51,23 @@ pub const DesiredSize = struct {
 };
 
 /// Initialize a new font face with the given source in-memory.
+pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: DesiredSize) !Face {
+    const face = try lib.lib.initFace(path, index);
+    errdefer face.deinit();
+    try face.selectCharmap(.unicode);
+    try setSize_(face, size);
+
+    const hb_font = try harfbuzz.freetype.createFont(face.handle);
+    errdefer hb_font.destroy();
+
+    return Face{
+        .face = face,
+        .hb_font = hb_font,
+        .presentation = if (face.hasColor()) .emoji else .text,
+    };
+}
+
+/// Initialize a new font face with the given source in-memory.
 pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
     const face = try lib.lib.initMemoryFace(source, 0);
     errdefer face.deinit();

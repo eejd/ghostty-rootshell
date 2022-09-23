@@ -61,6 +61,31 @@ pub inline fn loaded(self: DeferredFace) bool {
     return self.face != null;
 }
 
+pub fn load(self: *DeferredFace) !void {
+    // No-op if we already loaded
+    if (self.face != null) return;
+
+    if (options.fontconfig) {
+        try self.loadFontconfig();
+        return;
+    }
+
+    unreachable;
+}
+
+fn loadFontconfig(self: *DeferredFace) !void {
+    assert(self.face == null);
+    const fc = self.fc.?;
+
+    // Filename and index for our face so we can load it
+    const filename = (try fc.pattern.get(.file, 0)).string;
+    const face_index = (try fc.pattern.get(.index, 0)).integer;
+
+    self.face = try Face.initFile(filename, face_index, .{
+        .points = fc.req_size,
+    });
+}
+
 /// Returns true if this face can satisfy the given codepoint and
 /// presentation. If presentation is null, then it just checks if the
 /// codepoint is present at all.

@@ -32,6 +32,18 @@ pub fn version(self: Library) Version {
     return v;
 }
 
+/// Call FT_New_Face to open a font from a file.
+pub fn initFace(self: Library, path: [:0]const u8, index: i32) Error!Face {
+    var face: Face = undefined;
+    try intToError(c.FT_New_Face(
+        self.handle,
+        path.ptr,
+        index,
+        &face.handle,
+    ));
+    return face;
+}
+
 /// Call FT_Open_Face to open a font that has been loaded into memory.
 pub fn initMemoryFace(self: Library, data: []const u8, index: i32) Error!Face {
     var face: Face = undefined;
