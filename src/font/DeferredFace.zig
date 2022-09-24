@@ -10,10 +10,9 @@ const std = @import("std");
 const assert = std.debug.assert;
 const fontconfig = @import("fontconfig");
 const options = @import("main.zig").options;
+const Library = @import("main.zig").Library;
 const Face = @import("main.zig").Face;
 const Presentation = @import("main.zig").Presentation;
-
-const Library = @import("main.zig").Library;
 
 /// The loaded face (once loaded).
 face: ?Face = null,
@@ -61,19 +60,22 @@ pub inline fn loaded(self: DeferredFace) bool {
     return self.face != null;
 }
 
-pub fn load(self: *DeferredFace) !void {
+/// Load the deferred font face. This does nothing if the face is loaded.
+pub fn load(self: *DeferredFace, lib: Library) !void {
     // No-op if we already loaded
     if (self.face != null) return;
 
     if (options.fontconfig) {
-        try self.loadFontconfig();
+        try self.loadFontconfig(lib);
         return;
     }
 
+    // Unreachable because we must be already loaded or have the
+    // proper configuration for one of the other deferred mechanisms.
     unreachable;
 }
 
-fn loadFontconfig(self: *DeferredFace) !void {
+fn loadFontconfig(self: *DeferredFace, lib: Library) !void {
     assert(self.face == null);
     const fc = self.fc.?;
 
@@ -81,7 +83,7 @@ fn loadFontconfig(self: *DeferredFace) !void {
     const filename = (try fc.pattern.get(.file, 0)).string;
     const face_index = (try fc.pattern.get(.index, 0)).integer;
 
-    self.face = try Face.initFile(filename, face_index, .{
+    self.face = try Face.initFile(lib, filename, face_index, .{
         .points = fc.req_size,
     });
 }
@@ -127,7 +129,7 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     unreachable;
 }
 
-test {
+test "preloaded" {
     const testing = std.testing;
     const testFont = @import("test.zig").fontRegular;
 
@@ -141,4 +143,30 @@ test {
     defer def.deinit();
 
     try testing.expect(def.hasCodepoint(' ', null));
+}
+
+test "fontconfig" {
+    if (!options.fontconfig) return error.SkipZigTest;
+
+    const discovery = @import("main.zig").discovery;
+    const testing = std.testing;
+
+    // Load freetype
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    // Get a deferred face from fontconfig
+    var def = def: {
+        var fc = discovery.Fontconfig.init();
+        var it = try fc.discover(.{ .family = "monospace", .size = 12 });
+        defer it.deinit();
+        break :def (try it.next()).?;
+    };
+    defer def.deinit();
+    try testing.expect(!def.loaded());
+
+    // Load it and verify it works
+    try def.load(lib);
+    try testing.expect(def.hasCodepoint(' ', null));
+    try testing.expect(def.face.?.glyphIndex(' ') != null);
 }

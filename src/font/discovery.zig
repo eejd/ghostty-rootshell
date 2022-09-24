@@ -1,16 +1,17 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const fontconfig = @import("fontconfig");
+const options = @import("main.zig").options;
 const DeferredFace = @import("main.zig").DeferredFace;
 
 const log = std.log.named(.discovery);
 
-pub const Error = error{
-    FontConfigFailed,
-};
+/// Discover implementation for the compile options.
+pub const Discover = if (options.fontconfig) Fontconfig else void;
 
 /// Descriptor is used to search for fonts. The only required field
-/// is "family". The rest are ignored unless they're set to a non-zero value.
+/// is "family". The rest are ignored unless they're set to a non-zero
+/// value.
 pub const Descriptor = struct {
     /// Font family to search for. This can be a fully qualified font
     /// name such as "Fira Code", "monospace", "serif", etc. Memory is
@@ -74,7 +75,7 @@ pub const Fontconfig = struct {
 
         // Search
         const res = self.fc_config.fontSort(pat, true, null);
-        if (res.result != .match) return Error.FontConfigFailed;
+        if (res.result != .match) return error.FontConfigFailed;
         errdefer res.fs.destroy();
 
         return DiscoverIterator{
@@ -129,6 +130,8 @@ pub const Fontconfig = struct {
 };
 
 test {
+    if (!options.fontconfig) return error.SkipZigTest;
+
     const testing = std.testing;
 
     var fc = Fontconfig.init();
