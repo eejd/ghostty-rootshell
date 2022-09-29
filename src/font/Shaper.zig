@@ -8,6 +8,7 @@ const harfbuzz = @import("harfbuzz");
 const trace = @import("tracy").trace;
 const Atlas = @import("../Atlas.zig");
 const Face = @import("main.zig").Face;
+const DeferredFace = @import("main.zig").DeferredFace;
 const Group = @import("main.zig").Group;
 const GroupCache = @import("main.zig").GroupCache;
 const Library = @import("main.zig").Library;
@@ -61,7 +62,7 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
         harfbuzz.Feature.fromString("liga").?,
     };
 
-    const face = run.group.group.faceFromIndex(run.font_index);
+    const face = try run.group.group.faceFromIndex(run.font_index);
     harfbuzz.shape(face.hb_font, self.hb_buf, hb_feats);
 
     // If our buffer is empty, we short-circuit the rest of the work
@@ -595,13 +596,17 @@ fn testShaper(alloc: Allocator) !TestShaper {
 
     var cache_ptr = try alloc.create(GroupCache);
     errdefer alloc.destroy(cache_ptr);
-    cache_ptr.* = try GroupCache.init(alloc, try Group.init(alloc));
+    cache_ptr.* = try GroupCache.init(alloc, try Group.init(
+        alloc,
+        lib,
+        .{ .points = 12 },
+    ));
     errdefer cache_ptr.*.deinit(alloc);
 
     // Setup group
-    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
-    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testEmoji, .{ .points = 12 }));
-    try cache_ptr.group.addFace(alloc, .regular, try Face.init(lib, testEmojiText, .{ .points = 12 }));
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     var cell_buf = try alloc.alloc(Cell, 80);
     errdefer alloc.free(cell_buf);

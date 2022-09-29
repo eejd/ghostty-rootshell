@@ -60,6 +60,8 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
             try parseIntoField(T, arena_alloc, dst, key, value);
         }
     }
+
+    if (@hasDecl(T, "finalize")) try dst.finalize();
 }
 
 /// Parse a single key/value pair into the destination type T.
@@ -110,15 +112,28 @@ fn parseIntoField(
 
             // No parseCLI, magic the value based on the type
             @field(dst, field.name) = switch (Field) {
-                []const u8 => if (value) |slice| value: {
+                []const u8 => value: {
+                    const slice = value orelse return error.ValueRequired;
                     const buf = try alloc.alloc(u8, slice.len);
                     mem.copy(u8, buf, slice);
                     break :value buf;
-                } else return error.ValueRequired,
+                },
+
+                [:0]const u8 => value: {
+                    const slice = value orelse return error.ValueRequired;
+                    const buf = try alloc.allocSentinel(u8, slice.len, 0);
+                    mem.copy(u8, buf, slice);
+                    buf[slice.len] = 0;
+                    break :value buf;
+                },
 
                 bool => try parseBool(value orelse "t"),
 
-                u8 => try std.fmt.parseInt(u8, value orelse return error.ValueRequired, 0),
+                u8 => try std.fmt.parseInt(
+                    u8,
+                    value orelse return error.ValueRequired,
+                    0,
+                ),
 
                 else => unreachable,
             };
@@ -180,6 +195,28 @@ test "parse: simple" {
     try testing.expect(!data.@"b-f");
 }
 
+test "parse: finalize" {
+    const testing = std.testing;
+
+    var data: struct {
+        a: []const u8 = "",
+        _arena: ?ArenaAllocator = null,
+
+        pub fn finalize(self: *@This()) !void {
+            self.a = "YO";
+        }
+    } = .{};
+    defer if (data._arena) |arena| arena.deinit();
+
+    var iter = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--a=42",
+    );
+    defer iter.deinit();
+    try parse(@TypeOf(data), testing.allocator, &data, &iter);
+    try testing.expectEqualStrings("YO", data.a);
+}
+
 test "parseIntoField: string" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);
@@ -192,6 +229,21 @@ test "parseIntoField: string" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
     try testing.expectEqualStrings("42", data.a);
+}
+
+test "parseIntoField: sentinel string" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: [:0]const u8,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
+    try testing.expectEqualStrings("42", data.a);
+    try testing.expectEqual(@as(u8, 0), data.a[data.a.len]);
 }
 
 test "parseIntoField: bool" {

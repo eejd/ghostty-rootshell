@@ -58,8 +58,7 @@ texture: gl.Texture,
 texture_color: gl.Texture,
 
 /// The font structures.
-font_lib: font.Library,
-font_group: font.GroupCache,
+font_group: *font.GroupCache,
 font_shaper: font.Shaper,
 
 /// Whether the cursor is visible or not. This is used to control cursor
@@ -152,45 +151,7 @@ const GPUCellMode = enum(u8) {
     }
 };
 
-pub fn init(
-    alloc: Allocator,
-    font_size: font.Face.DesiredSize,
-) !Grid {
-    // Build our font group
-    var font_lib = try font.Library.init();
-    errdefer font_lib.deinit();
-    var font_group = try font.GroupCache.init(alloc, group: {
-        var group = try font.Group.init(alloc);
-        errdefer group.deinit(alloc);
-
-        // Our regular font
-        try group.addFace(
-            alloc,
-            .regular,
-            try font.Face.init(font_lib, face_ttf, font_size),
-        );
-        try group.addFace(
-            alloc,
-            .bold,
-            try font.Face.init(font_lib, face_bold_ttf, font_size),
-        );
-
-        // Emoji
-        try group.addFace(
-            alloc,
-            .regular,
-            try font.Face.init(font_lib, face_emoji_ttf, font_size),
-        );
-        try group.addFace(
-            alloc,
-            .regular,
-            try font.Face.init(font_lib, face_emoji_text_ttf, font_size),
-        );
-
-        break :group group;
-    });
-    errdefer font_group.deinit(alloc);
-
+pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
     // Create the initial font shaper
     var shape_buf = try alloc.alloc(font.Shaper.Cell, 1);
     errdefer alloc.free(shape_buf);
@@ -326,7 +287,6 @@ pub fn init(
         .vbo = vbo,
         .texture = tex,
         .texture_color = tex_color,
-        .font_lib = font_lib,
         .font_group = font_group,
         .font_shaper = shaper,
         .cursor_visible = true,
@@ -339,8 +299,6 @@ pub fn init(
 pub fn deinit(self: *Grid) void {
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
-    self.font_group.deinit(self.alloc);
-    self.font_lib.deinit();
 
     self.texture.destroy();
     self.texture_color.destroy();
@@ -423,7 +381,7 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
         const start = self.cells.items.len;
 
         // Split our row into runs and shape each one.
-        var iter = self.font_shaper.runIterator(&self.font_group, row);
+        var iter = self.font_shaper.runIterator(self.font_group, row);
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
                 assert(try self.updateCell(
@@ -610,7 +568,7 @@ pub fn updateCell(
     // If the cell has a character, draw it
     if (cell.char > 0) {
         // Render
-        const face = self.font_group.group.faceFromIndex(shaper_run.font_index);
+        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             shaper_run.font_index,
@@ -912,8 +870,3 @@ test "GridSize update rounding" {
     try testing.expectEqual(@as(GridSize.Unit, 3), grid.columns);
     try testing.expectEqual(@as(GridSize.Unit, 2), grid.rows);
 }
-
-const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
-const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
-const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
-const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");

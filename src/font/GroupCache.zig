@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 
 const Atlas = @import("../Atlas.zig");
 const Face = @import("main.zig").Face;
+const DeferredFace = @import("main.zig").DeferredFace;
 const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
@@ -93,7 +94,7 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
         var i: u32 = 32;
         while (i <= 126) : (i += 1) {
             const index = (try self.indexForCodepoint(alloc, i, .regular, .text)).?;
-            const face = self.group.faceFromIndex(index);
+            const face = try self.group.faceFromIndex(index);
             const glyph_index = face.glyphIndex(i).?;
             const glyph = try self.renderGlyph(alloc, index, glyph_index);
             if (glyph.advance_x > cell_width) {
@@ -109,7 +110,7 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
     const cell_height: f32 = cell_height: {
         // Get the '_' char for height
         const index = (try self.indexForCodepoint(alloc, '_', .regular, .text)).?;
-        const face = self.group.faceFromIndex(index);
+        const face = try self.group.faceFromIndex(index);
         const glyph_index = face.glyphIndex('_').?;
         const glyph = try self.renderGlyph(alloc, index, glyph_index);
 
@@ -129,7 +130,7 @@ pub fn metrics(self: *GroupCache, alloc: Allocator) !Metrics {
     };
 
     const cell_baseline = cell_baseline: {
-        const face = self.group.faces.get(.regular).items[0];
+        const face = self.group.faces.get(.regular).items[0].face.?;
         break :cell_baseline cell_height - @intToFloat(
             f32,
             face.unitsToPxY(face.face.handle.*.ascender),
@@ -178,7 +179,7 @@ pub fn renderGlyph(
     if (gop.found_existing) return gop.value_ptr.*;
 
     // Uncached, render it
-    const face = self.group.faceFromIndex(index);
+    const face = try self.group.faceFromIndex(index);
     const atlas: *Atlas = if (face.hasColor()) &self.atlas_color else &self.atlas_greyscale;
     const glyph = self.group.renderGlyph(
         alloc,
@@ -217,11 +218,19 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var cache = try init(alloc, try Group.init(alloc));
+    var cache = try init(alloc, try Group.init(
+        alloc,
+        lib,
+        .{ .points = 12 },
+    ));
     defer cache.deinit(alloc);
 
     // Setup group
-    try cache.group.addFace(alloc, .regular, try Face.init(lib, testFont, .{ .points = 12 }));
+    try cache.group.addFace(
+        alloc,
+        .regular,
+        DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })),
+    );
     const group = cache.group;
 
     // Visible ASCII. Do it twice to verify cache.
@@ -232,7 +241,7 @@ test {
         try testing.expectEqual(@as(Group.FontIndex.IndexInt, 0), idx.idx);
 
         // Render
-        const face = cache.group.faceFromIndex(idx);
+        const face = try cache.group.faceFromIndex(idx);
         const glyph_index = face.glyphIndex(i).?;
         _ = try cache.renderGlyph(
             alloc,
@@ -253,7 +262,7 @@ test {
             try testing.expectEqual(@as(Group.FontIndex.IndexInt, 0), idx.idx);
 
             // Render
-            const face = group.faceFromIndex(idx);
+            const face = try group.faceFromIndex(idx);
             const glyph_index = face.glyphIndex(i).?;
             _ = try cache.renderGlyph(
                 alloc,
