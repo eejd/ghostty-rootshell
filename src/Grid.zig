@@ -164,7 +164,7 @@ pub fn init(
         errdefer group.deinit(alloc);
 
         // Search for fonts
-        {
+        if (font.Discover != void) {
             var disco = font.Discover.init();
             defer disco.deinit();
 
