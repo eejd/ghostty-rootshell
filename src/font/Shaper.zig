@@ -62,7 +62,7 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
         harfbuzz.Feature.fromString("liga").?,
     };
 
-    const face = run.group.group.faceFromIndex(run.font_index);
+    const face = try run.group.group.faceFromIndex(run.font_index);
     harfbuzz.shape(face.hb_font, self.hb_buf, hb_feats);
 
     // If our buffer is empty, we short-circuit the rest of the work
@@ -596,7 +596,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
 
     var cache_ptr = try alloc.create(GroupCache);
     errdefer alloc.destroy(cache_ptr);
-    cache_ptr.* = try GroupCache.init(alloc, try Group.init(alloc));
+    cache_ptr.* = try GroupCache.init(alloc, try Group.init(alloc, lib));
     errdefer cache_ptr.*.deinit(alloc);
 
     // Setup group

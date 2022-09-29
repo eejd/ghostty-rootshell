@@ -17,6 +17,7 @@ const Library = @import("main.zig").Library;
 const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const Presentation = @import("main.zig").Presentation;
+const options = @import("main.zig").options;
 
 const log = std.log.scoped(.font_group);
 
@@ -27,12 +28,15 @@ const log = std.log.scoped(.font_group);
 // to the user so we can change this later.
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
 
+/// The library being used for all the faces.
+lib: Library,
+
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
 faces: StyleArray,
 
-pub fn init(alloc: Allocator) !Group {
-    var result = Group{ .faces = undefined };
+pub fn init(alloc: Allocator, lib: Library) !Group {
+    var result = Group{ .lib = lib, .faces = undefined };
 
     // Initialize all our styles to initially sized lists.
     var i: usize = 0;
@@ -125,8 +129,9 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 }
 
 /// Return the Face represented by a given FontIndex.
-pub fn faceFromIndex(self: Group, index: FontIndex) Face {
-    const deferred = self.faces.get(index.style).items[@intCast(usize, index.idx)];
+pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
+    const deferred = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
+    try deferred.load(self.lib);
     return deferred.face.?;
 }
 
@@ -148,8 +153,8 @@ pub fn renderGlyph(
     index: FontIndex,
     glyph_index: u32,
 ) !Glyph {
-    const face = self.faces.get(index.style).items[@intCast(usize, index.idx)];
-    assert(face.loaded());
+    const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
+    try face.load(self.lib);
     return try face.face.?.renderGlyph(alloc, atlas, glyph_index);
 }
 
@@ -166,7 +171,7 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var group = try init(alloc);
+    var group = try init(alloc, lib);
     defer group.deinit(alloc);
 
     try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
@@ -181,7 +186,7 @@ test {
         try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
 
         // Render it
-        const face = group.faceFromIndex(idx);
+        const face = try group.faceFromIndex(idx);
         const glyph_index = face.glyphIndex(i).?;
         _ = try group.renderGlyph(
             alloc,
@@ -208,5 +213,45 @@ test {
         const idx = group.indexForCodepoint(0x270C, .regular, .emoji).?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
+    }
+}
+
+test {
+    if (!options.fontconfig) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const Discover = @import("main.zig").Discover;
+
+    // Search for fonts
+    var fc = Discover.init();
+    var it = try fc.discover(.{ .family = "monospace", .size = 12 });
+    defer it.deinit();
+
+    // Initialize the group with the deferred face
+    var lib = try Library.init();
+    defer lib.deinit();
+    var group = try init(alloc, lib);
+    defer group.deinit(alloc);
+    try group.addFace(alloc, .regular, (try it.next()).?);
+
+    // Should find all visible ASCII
+    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+    var i: u32 = 32;
+    while (i < 127) : (i += 1) {
+        const idx = group.indexForCodepoint(i, .regular, null).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
+
+        // Render it
+        const face = try group.faceFromIndex(idx);
+        const glyph_index = face.glyphIndex(i).?;
+        _ = try group.renderGlyph(
+            alloc,
+            &atlas_greyscale,
+            idx,
+            glyph_index,
+        );
     }
 }

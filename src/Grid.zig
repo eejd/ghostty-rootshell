@@ -160,7 +160,7 @@ pub fn init(
     var font_lib = try font.Library.init();
     errdefer font_lib.deinit();
     var font_group = try font.GroupCache.init(alloc, group: {
-        var group = try font.Group.init(alloc);
+        var group = try font.Group.init(alloc, font_lib);
         errdefer group.deinit(alloc);
 
         // Our regular font
@@ -610,7 +610,7 @@ pub fn updateCell(
     // If the cell has a character, draw it
     if (cell.char > 0) {
         // Render
-        const face = self.font_group.group.faceFromIndex(shaper_run.font_index);
+        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             shaper_run.font_index,
