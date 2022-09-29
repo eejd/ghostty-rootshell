@@ -39,7 +39,11 @@ pub const Descriptor = struct {
     pub fn toFcPattern(self: Descriptor) *fontconfig.Pattern {
         const pat = fontconfig.Pattern.create();
         assert(pat.add(.family, .{ .string = self.family }, false));
-        if (self.size > 0) assert(pat.add(.size, .{ .integer = self.size }, false));
+        if (self.size > 0) assert(pat.add(
+            .size,
+            .{ .integer = self.size },
+            false,
+        ));
         if (self.bold) assert(pat.add(
             .weight,
             .{ .integer = @enumToInt(fontconfig.Weight.bold) },
@@ -64,6 +68,10 @@ pub const Fontconfig = struct {
         return .{ .fc_config = fontconfig.initLoadConfigAndFonts() };
     }
 
+    pub fn deinit(self: *Fontconfig) void {
+        _ = self;
+    }
+
     /// Discover fonts from a descriptor. This returns an iterator that can
     /// be used to build up the deferred fonts.
     pub fn discover(self: *Fontconfig, desc: Descriptor) !DiscoverIterator {
@@ -84,7 +92,6 @@ pub const Fontconfig = struct {
             .set = res.fs,
             .fonts = res.fs.fonts(),
             .i = 0,
-            .req_size = @floatToInt(u16, (try pat.get(.size, 0)).double),
         };
     }
 
@@ -94,7 +101,6 @@ pub const Fontconfig = struct {
         set: *fontconfig.FontSet,
         fonts: []*fontconfig.Pattern,
         i: usize,
-        req_size: u16,
 
         pub fn deinit(self: *DiscoverIterator) void {
             self.set.destroy();
@@ -122,7 +128,6 @@ pub const Fontconfig = struct {
                     .pattern = font_pattern,
                     .charset = (try font_pattern.get(.charset, 0)).char_set,
                     .langset = (try font_pattern.get(.lang, 0)).lang_set,
-                    .req_size = self.req_size,
                 },
             };
         }

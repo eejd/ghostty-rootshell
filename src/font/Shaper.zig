@@ -596,7 +596,11 @@ fn testShaper(alloc: Allocator) !TestShaper {
 
     var cache_ptr = try alloc.create(GroupCache);
     errdefer alloc.destroy(cache_ptr);
-    cache_ptr.* = try GroupCache.init(alloc, try Group.init(alloc, lib));
+    cache_ptr.* = try GroupCache.init(alloc, try Group.init(
+        alloc,
+        lib,
+        .{ .points = 12 },
+    ));
     errdefer cache_ptr.*.deinit(alloc);
 
     // Setup group

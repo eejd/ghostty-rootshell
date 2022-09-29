@@ -218,7 +218,11 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var cache = try init(alloc, try Group.init(alloc, lib));
+    var cache = try init(alloc, try Group.init(
+        alloc,
+        lib,
+        .{ .points = 12 },
+    ));
     defer cache.deinit(alloc);
 
     // Setup group

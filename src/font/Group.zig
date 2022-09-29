@@ -31,12 +31,19 @@ const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
 /// The library being used for all the faces.
 lib: Library,
 
+/// The desired font size. All fonts in a group must share the same size.
+size: Face.DesiredSize,
+
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
 faces: StyleArray,
 
-pub fn init(alloc: Allocator, lib: Library) !Group {
-    var result = Group{ .lib = lib, .faces = undefined };
+pub fn init(
+    alloc: Allocator,
+    lib: Library,
+    size: Face.DesiredSize,
+) !Group {
+    var result = Group{ .lib = lib, .size = size, .faces = undefined };
 
     // Initialize all our styles to initially sized lists.
     var i: usize = 0;
@@ -131,7 +138,7 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 /// Return the Face represented by a given FontIndex.
 pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
     const deferred = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
-    try deferred.load(self.lib);
+    try deferred.load(self.lib, self.size);
     return deferred.face.?;
 }
 
@@ -154,7 +161,7 @@ pub fn renderGlyph(
     glyph_index: u32,
 ) !Glyph {
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
-    try face.load(self.lib);
+    try face.load(self.lib, self.size);
     return try face.face.?.renderGlyph(alloc, atlas, glyph_index);
 }
 
@@ -171,7 +178,7 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var group = try init(alloc, lib);
+    var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit(alloc);
 
     try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
@@ -231,7 +238,7 @@ test {
     // Initialize the group with the deferred face
     var lib = try Library.init();
     defer lib.deinit();
-    var group = try init(alloc, lib);
+    var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit(alloc);
     try group.addFace(alloc, .regular, (try it.next()).?);
 

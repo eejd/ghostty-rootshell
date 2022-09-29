@@ -160,10 +160,36 @@ pub fn init(
     var font_lib = try font.Library.init();
     errdefer font_lib.deinit();
     var font_group = try font.GroupCache.init(alloc, group: {
-        var group = try font.Group.init(alloc, font_lib);
+        var group = try font.Group.init(alloc, font_lib, font_size);
         errdefer group.deinit(alloc);
 
-        // Our regular font
+        // Search for fonts
+        {
+            var disco = font.Discover.init();
+            defer disco.deinit();
+
+            {
+                var disco_it = try disco.discover(.{
+                    .family = "Fira Code",
+                    .size = font_size.points,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face|
+                    try group.addFace(alloc, .regular, face);
+            }
+            {
+                var disco_it = try disco.discover(.{
+                    .family = "Fira Code",
+                    .size = font_size.points,
+                    .bold = true,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face|
+                    try group.addFace(alloc, .bold, face);
+            }
+        }
+
+        // Our built-in font will be used as a backup
         try group.addFace(
             alloc,
             .regular,

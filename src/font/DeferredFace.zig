@@ -32,11 +32,6 @@ pub const Fontconfig = struct {
     charset: *const fontconfig.CharSet,
     langset: *const fontconfig.LangSet,
 
-    /// The requested size in points for this font. This is used for loading.
-    /// This can't be derived from pattern because the requested size may
-    /// differ from the size the font advertises supported.
-    req_size: u16,
-
     pub fn deinit(self: *Fontconfig) void {
         self.pattern.destroy();
         self.* = undefined;
@@ -60,13 +55,28 @@ pub inline fn loaded(self: DeferredFace) bool {
     return self.face != null;
 }
 
+/// Returns the name of this face. The memory is always owned by the
+/// face so it doesn't have to be freed.
+pub fn name(self: DeferredFace) ![:0]const u8 {
+    if (options.fontconfig) {
+        if (self.fc) |fc|
+            return (try fc.pattern.get(.fullname, 0)).string;
+    }
+
+    return "TODO: built-in font names";
+}
+
 /// Load the deferred font face. This does nothing if the face is loaded.
-pub fn load(self: *DeferredFace, lib: Library) !void {
+pub fn load(
+    self: *DeferredFace,
+    lib: Library,
+    size: Face.DesiredSize,
+) !void {
     // No-op if we already loaded
     if (self.face != null) return;
 
     if (options.fontconfig) {
-        try self.loadFontconfig(lib);
+        try self.loadFontconfig(lib, size);
         return;
     }
 
@@ -75,7 +85,11 @@ pub fn load(self: *DeferredFace, lib: Library) !void {
     unreachable;
 }
 
-fn loadFontconfig(self: *DeferredFace, lib: Library) !void {
+fn loadFontconfig(
+    self: *DeferredFace,
+    lib: Library,
+    size: Face.DesiredSize,
+) !void {
     assert(self.face == null);
     const fc = self.fc.?;
 
@@ -83,9 +97,7 @@ fn loadFontconfig(self: *DeferredFace, lib: Library) !void {
     const filename = (try fc.pattern.get(.file, 0)).string;
     const face_index = (try fc.pattern.get(.index, 0)).integer;
 
-    self.face = try Face.initFile(lib, filename, face_index, .{
-        .points = fc.req_size,
-    });
+    self.face = try Face.initFile(lib, filename, face_index, size);
 }
 
 /// Returns true if this face can satisfy the given codepoint and
@@ -165,8 +177,12 @@ test "fontconfig" {
     defer def.deinit();
     try testing.expect(!def.loaded());
 
+    // Verify we can get the name
+    const n = try def.name();
+    try testing.expect(n.len > 0);
+
     // Load it and verify it works
-    try def.load(lib);
+    try def.load(lib, .{ .points = 12 });
     try testing.expect(def.hasCodepoint(' ', null));
     try testing.expect(def.face.?.glyphIndex(' ') != null);
 }
