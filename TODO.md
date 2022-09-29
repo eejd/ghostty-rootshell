@@ -12,6 +12,7 @@ Performance:
   screen data structure.
 * Screen cell structure should be rethought to use some data oriented design,
   also bring it closer to GPU cells, perhaps.
+* Loading fonts on startups should probably happen in multiple threads
 
 Correctness:
 
