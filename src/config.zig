@@ -7,10 +7,10 @@ const inputpkg = @import("input.zig");
 /// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
 pub const Config = struct {
     /// The font families to use.
-    @"font-family": ?[]const u8 = null,
-    @"font-family-bold": ?[]const u8 = null,
-    @"font-family-italic": ?[]const u8 = null,
-    @"font-family-bold-italic": ?[]const u8 = null,
+    @"font-family": ?[:0]const u8 = null,
+    @"font-family-bold": ?[:0]const u8 = null,
+    @"font-family-italic": ?[:0]const u8 = null,
+    @"font-family-bold-italic": ?[:0]const u8 = null,
 
     /// Font size in points
     @"font-size": u8 = 12,
@@ -121,6 +121,25 @@ pub const Config = struct {
         try result.keybind.set.put(alloc, .{ .key = .f12 }, .{ .csi = "24~" });
 
         return result;
+    }
+
+    pub fn finalize(self: *Config) !void {
+        // If we have a font-family set and don't set the others, default
+        // the others to the font family. This way, if someone does
+        // --font-family=foo, then we try to get the stylized versions of
+        // "foo" as well.
+        if (self.@"font-family") |family| {
+            const fields = &[_][]const u8{
+                "font-family-bold",
+                "font-family-italic",
+                "font-family-bold-italic",
+            };
+            inline for (fields) |field| {
+                if (@field(self, field) == null) {
+                    @field(self, field) = family;
+                }
+            }
+        }
     }
 };
 

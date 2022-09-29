@@ -35,6 +35,10 @@ const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 alloc: Allocator,
 alloc_io_arena: std.heap.ArenaAllocator,
 
+/// The font structures
+font_lib: font.Library,
+font_group: *font.GroupCache,
+
 /// The glfw window handle.
 window: glfw.Window,
 
@@ -237,13 +241,108 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     gl.c.glEnable(gl.c.GL_BLEND);
     gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
 
-    // Create our terminal grid with the initial window size
-    const window_size = try window.getSize();
-    var grid = try Grid.init(alloc, .{
+    // The font size we desire along with the DPI determiend for the window
+    const font_size: font.Face.DesiredSize = .{
         .points = config.@"font-size",
         .xdpi = @floatToInt(u16, x_dpi),
         .ydpi = @floatToInt(u16, y_dpi),
+    };
+
+    // Find all the fonts for this window
+    var font_lib = try font.Library.init();
+    errdefer font_lib.deinit();
+    var font_group = try alloc.create(font.GroupCache);
+    errdefer alloc.destroy(font_group);
+    font_group.* = try font.GroupCache.init(alloc, group: {
+        var group = try font.Group.init(alloc, font_lib, font_size);
+        errdefer group.deinit(alloc);
+
+        // Search for fonts
+        if (font.Discover != void) {
+            var disco = font.Discover.init();
+            defer disco.deinit();
+
+            if (config.@"font-family") |family| {
+                var disco_it = try disco.discover(.{
+                    .family = family,
+                    .size = font_size.points,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.debug("font regular: {s}", .{try face.name()});
+                    try group.addFace(alloc, .regular, face);
+                }
+            }
+            if (config.@"font-family-bold") |family| {
+                var disco_it = try disco.discover(.{
+                    .family = family,
+                    .size = font_size.points,
+                    .bold = true,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.debug("font bold: {s}", .{try face.name()});
+                    try group.addFace(alloc, .bold, face);
+                }
+            }
+            if (config.@"font-family-italic") |family| {
+                var disco_it = try disco.discover(.{
+                    .family = family,
+                    .size = font_size.points,
+                    .italic = true,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.debug("font italic: {s}", .{try face.name()});
+                    try group.addFace(alloc, .italic, face);
+                }
+            }
+            if (config.@"font-family-bold-italic") |family| {
+                var disco_it = try disco.discover(.{
+                    .family = family,
+                    .size = font_size.points,
+                    .bold = true,
+                    .italic = true,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.debug("font bold+italic: {s}", .{try face.name()});
+                    try group.addFace(alloc, .bold_italic, face);
+                }
+            }
+        }
+
+        // Our built-in font will be used as a backup
+        try group.addFace(
+            alloc,
+            .regular,
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_ttf, font_size)),
+        );
+        try group.addFace(
+            alloc,
+            .bold,
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_bold_ttf, font_size)),
+        );
+
+        // Emoji
+        try group.addFace(
+            alloc,
+            .regular,
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_ttf, font_size)),
+        );
+        try group.addFace(
+            alloc,
+            .regular,
+            font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_text_ttf, font_size)),
+        );
+
+        break :group group;
     });
+    errdefer font_group.deinit(alloc);
+
+    // Create our terminal grid with the initial window size
+    const window_size = try window.getSize();
+    var grid = try Grid.init(alloc, font_group);
     try grid.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
     grid.background = .{
         .r = config.background.r,
@@ -333,6 +432,8 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     self.* = .{
         .alloc = alloc,
         .alloc_io_arena = io_arena,
+        .font_lib = font_lib,
+        .font_group = font_group,
         .window = window,
         .cursor = cursor,
         .focused = false,
@@ -418,6 +519,9 @@ pub fn destroy(self: *Window) void {
     // We can destroy the cursor right away. glfw will just revert any
     // windows using it to the default.
     self.cursor.destroy();
+
+    self.font_group.deinit(self.alloc);
+    self.font_lib.deinit();
 
     self.alloc_io_arena.deinit();
 }
@@ -1715,3 +1819,8 @@ pub fn invokeCharset(
 ) !void {
     self.terminal.invokeCharset(active, slot, single);
 }
+
+const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
+const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
+const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
+const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");
