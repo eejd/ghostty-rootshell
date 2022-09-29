@@ -117,6 +117,14 @@ fn parseIntoField(
                     break :value buf;
                 },
 
+                [:0]const u8 => value: {
+                    const slice = value orelse return error.ValueRequired;
+                    const buf = try alloc.allocSentinel(u8, slice.len, 0);
+                    mem.copy(u8, buf, slice);
+                    buf[slice.len] = 0;
+                    break :value buf;
+                },
+
                 bool => try parseBool(value orelse "t"),
 
                 u8 => try std.fmt.parseInt(
@@ -197,6 +205,21 @@ test "parseIntoField: string" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
     try testing.expectEqualStrings("42", data.a);
+}
+
+test "parseIntoField: sentinel string" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: [:0]const u8,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
+    try testing.expectEqualStrings("42", data.a);
+    try testing.expectEqual(@as(u8, 0), data.a[data.a.len]);
 }
 
 test "parseIntoField: bool" {
