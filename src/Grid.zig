@@ -174,8 +174,10 @@ pub fn init(
                     .size = font_size.points,
                 });
                 defer disco_it.deinit();
-                if (try disco_it.next()) |face|
+                if (try disco_it.next()) |face| {
+                    log.debug("font regular: {s}", .{try face.name()});
                     try group.addFace(alloc, .regular, face);
+                }
             }
             {
                 var disco_it = try disco.discover(.{
@@ -184,8 +186,35 @@ pub fn init(
                     .bold = true,
                 });
                 defer disco_it.deinit();
-                if (try disco_it.next()) |face|
+                if (try disco_it.next()) |face| {
+                    log.debug("font bold: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold, face);
+                }
+            }
+            {
+                var disco_it = try disco.discover(.{
+                    .family = "Fira Code",
+                    .size = font_size.points,
+                    .italic = true,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.debug("font italic: {s}", .{try face.name()});
+                    try group.addFace(alloc, .italic, face);
+                }
+            }
+            {
+                var disco_it = try disco.discover(.{
+                    .family = "Fira Code",
+                    .size = font_size.points,
+                    .bold = true,
+                    .italic = true,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.debug("font bold+italic: {s}", .{try face.name()});
+                    try group.addFace(alloc, .bold_italic, face);
+                }
             }
         }
 

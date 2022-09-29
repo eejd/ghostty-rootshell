@@ -110,15 +110,20 @@ fn parseIntoField(
 
             // No parseCLI, magic the value based on the type
             @field(dst, field.name) = switch (Field) {
-                []const u8 => if (value) |slice| value: {
+                []const u8 => value: {
+                    const slice = value orelse return error.ValueRequired;
                     const buf = try alloc.alloc(u8, slice.len);
                     mem.copy(u8, buf, slice);
                     break :value buf;
-                } else return error.ValueRequired,
+                },
 
                 bool => try parseBool(value orelse "t"),
 
-                u8 => try std.fmt.parseInt(u8, value orelse return error.ValueRequired, 0),
+                u8 => try std.fmt.parseInt(
+                    u8,
+                    value orelse return error.ValueRequired,
+                    0,
+                ),
 
                 else => unreachable,
             };

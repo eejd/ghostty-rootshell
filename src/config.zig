@@ -6,6 +6,12 @@ const inputpkg = @import("input.zig");
 /// Config is the main config struct. These fields map directly to the
 /// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
 pub const Config = struct {
+    /// The font families to use.
+    @"font-family": ?[]const u8 = null,
+    @"font-family-bold": ?[]const u8 = null,
+    @"font-family-italic": ?[]const u8 = null,
+    @"font-family-bold-italic": ?[]const u8 = null,
+
     /// Font size in points
     @"font-size": u8 = 12,
 
