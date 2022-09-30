@@ -319,23 +319,10 @@ test "createNullDelimitedEnvMap" {
     }
 }
 
-test "Command: basic exec" {
-    var cmd: Command = .{
-        .path = "/usr/bin/env",
-        .args = &.{ "/usr/bin/env", "--version" },
-    };
-
-    try cmd.start(testing.allocator);
-    try testing.expect(cmd.pid != null);
-    const exit = try cmd.wait();
-    try testing.expect(exit == .Exited);
-    try testing.expect(exit.Exited == 0);
-}
-
 test "Command: pre exec" {
     var cmd: Command = .{
         .path = "/usr/bin/env",
-        .args = &.{ "/usr/bin/env", "--version" },
+        .args = &.{ "/usr/bin/env", "-v" },
         .pre_exec = (struct {
             fn do(_: *Command) void {
                 // This runs in the child, so we can exit and it won't
@@ -360,7 +347,7 @@ test "Command: redirect stdout to file" {
 
     var cmd: Command = .{
         .path = "/usr/bin/env",
-        .args = &.{ "/usr/bin/env", "--version" },
+        .args = &.{ "/usr/bin/env", "-v" },
         .stdout = stdout,
     };
 
@@ -372,7 +359,7 @@ test "Command: redirect stdout to file" {
 
     // Read our stdout
     try stdout.seekTo(0);
-    const contents = try stdout.readToEndAlloc(testing.allocator, 4096);
+    const contents = try stdout.readToEndAlloc(testing.allocator, 1024 * 128);
     defer testing.allocator.free(contents);
     try testing.expect(contents.len > 0);
 }
