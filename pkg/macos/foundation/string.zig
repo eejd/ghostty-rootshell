@@ -21,6 +21,10 @@ pub const String = opaque {
         cftype.CFRelease(self);
     }
 
+    pub fn hasPrefix(self: *String, prefix: *String) bool {
+        return CFStringHasPrefix(self, prefix) == 1;
+    }
+
     pub extern "c" fn CFStringCreateWithBytes(
         allocator: ?*anyopaque,
         bytes: [*]const u8,
@@ -28,6 +32,7 @@ pub const String = opaque {
         encooding: u32,
         is_external: bool,
     ) ?*String;
+    pub extern "c" fn CFStringHasPrefix(*String, *String) u8;
 };
 
 /// https://developer.apple.com/documentation/corefoundation/cfstringencoding?language=objc
@@ -49,6 +54,13 @@ pub const StringEncoding = enum(u32) {
 };
 
 test "string" {
+    const testing = std.testing;
+
     const str = try String.createWithBytes("hello world", .ascii, false);
     defer str.release();
+
+    const prefix = try String.createWithBytes("hello", .ascii, false);
+    defer prefix.release();
+
+    try testing.expect(str.hasPrefix(prefix));
 }
