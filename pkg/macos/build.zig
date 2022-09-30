@@ -20,5 +20,6 @@ pub fn link(
     _ = opt;
     const lib = b.addStaticLibrary("macos", null);
     step.linkFramework("CoreFoundation");
+    step.linkFramework("CoreText");
     return lib;
 }

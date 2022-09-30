@@ -184,7 +184,12 @@ fn addDeps(
     step.addPackage(glfw.pkg);
     step.addPackage(libuv.pkg);
     step.addPackage(utf8proc.pkg);
-    if (step.target.isDarwin()) step.addPackage(macos.pkg);
+
+    // Mac Stuff
+    if (step.target.isDarwin()) {
+        step.addPackage(macos.pkg);
+        _ = try macos.link(b, step, .{});
+    }
 
     // We always statically compile glad
     step.addIncludePath("vendor/glad/include/");
