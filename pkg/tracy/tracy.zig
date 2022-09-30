@@ -246,3 +246,5 @@ const Noop = struct {
         return .{};
     }
 };
+
+test {}

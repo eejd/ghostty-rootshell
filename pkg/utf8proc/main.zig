@@ -16,3 +16,5 @@ pub fn graphemeBreakStateful(cp1: u21, cp2: u21, state: *i32) bool {
         state,
     );
 }
+
+test {}

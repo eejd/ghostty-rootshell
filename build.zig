@@ -55,6 +55,12 @@ pub fn build(b: *std.build.Builder) !void {
         "Name of the conformance app to run with 'run' option.",
     );
 
+    const emit_test_exe = b.option(
+        bool,
+        "test-exe",
+        "Build and install test executables with 'build'",
+    ) orelse false;
+
     const exe = b.addExecutable("ghostty", "src/main.zig");
     const exe_options = b.addOptions();
     exe_options.addOption(bool, "tracy_enabled", tracy);
@@ -113,17 +119,13 @@ pub fn build(b: *std.build.Builder) !void {
     // Tests
     {
         const test_step = b.step("test", "Run all tests");
-        var test_bin_ = b.option([]const u8, "test-bin", "Emit bin to");
         var test_filter = b.option([]const u8, "test-filter", "Filter for test");
 
-        const main_test = b.addTest("src/main.zig");
+        const main_test = b.addTestExe("ghostty-test", "src/main.zig");
         {
+            if (emit_test_exe) main_test.install();
+            const main_test_run = main_test.run();
             main_test.setFilter(test_filter);
-            if (test_bin_) |test_bin| {
-                main_test.name = std.fs.path.basename(test_bin);
-                if (std.fs.path.dirname(test_bin)) |dir| main_test.setOutputDir(dir);
-            }
-
             main_test.setTarget(target);
             try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
@@ -131,7 +133,7 @@ pub fn build(b: *std.build.Builder) !void {
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
             var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
             test_step.dependOn(&before.step);
-            test_step.dependOn(&main_test.step);
+            test_step.dependOn(&main_test_run.step);
             test_step.dependOn(&after.step);
         }
 
@@ -142,7 +144,13 @@ pub fn build(b: *std.build.Builder) !void {
             const pkg: std.build.Pkg = pkg_;
             if (std.mem.eql(u8, pkg.name, "build_options")) continue;
             if (std.mem.eql(u8, pkg.name, "glfw")) continue;
-            var test_ = b.addTestSource(pkg.source);
+
+            var buf: [256]u8 = undefined;
+            var test_ = b.addTestExeSource(
+                try std.fmt.bufPrint(&buf, "{s}-test", .{pkg.name}),
+                pkg.source,
+            );
+            const test_run = test_.run();
 
             test_.setTarget(target);
             try addDeps(b, test_, true);
@@ -154,8 +162,10 @@ pub fn build(b: *std.build.Builder) !void {
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{pkg.name});
             var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
             test_step.dependOn(&before.step);
-            test_step.dependOn(&test_.step);
+            test_step.dependOn(&test_run.step);
             test_step.dependOn(&after.step);
+
+            if (emit_test_exe) test_.install();
         }
     }
 }
