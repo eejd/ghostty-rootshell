@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
+const text = @import("../text.zig");
 
 pub const FontCollection = opaque {
     pub fn createFromAvailableFonts() Allocator.Error!*FontCollection {
@@ -33,4 +34,16 @@ test "collection" {
     defer list.release();
 
     try testing.expect(list.getCount() > 0);
+
+    // var i: usize = 0;
+    // while (i < list.getCount()) : (i += 1) {
+    //     const desc = list.getValueAtIndex(text.FontDescriptor, i);
+    //     {
+    //         var buf: [128]u8 = undefined;
+    //         const name = desc.copyAttribute(.name);
+    //         defer name.release();
+    //         const cstr = name.cstring(&buf, .utf8).?;
+    //         std.log.warn("i={d} v={s}", .{ i, cstr });
+    //     }
+    // }
 }

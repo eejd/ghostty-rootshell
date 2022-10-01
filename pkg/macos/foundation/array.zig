@@ -20,8 +20,11 @@ pub const Array = opaque {
         return CFArrayGetCount(self);
     }
 
-    pub fn getValueAtIndex(self: *Array, comptime T: type, idx: usize) *const T {
-        return @ptrCast(*const T, CFArrayGetValueAtIndex(self, idx));
+    /// Note the return type is actually a `*const T` but we strip the
+    /// constness so that further API calls work correctly. The Foundation
+    /// API doesn't properly mark things const/non-const.
+    pub fn getValueAtIndex(self: *Array, comptime T: type, idx: usize) *T {
+        return @ptrCast(*T, CFArrayGetValueAtIndex(self, idx));
     }
 
     pub extern "c" fn CFArrayCreate(
@@ -31,7 +34,7 @@ pub const Array = opaque {
         callbacks: ?*const anyopaque,
     ) ?*Array;
     pub extern "c" fn CFArrayGetCount(*Array) usize;
-    pub extern "c" fn CFArrayGetValueAtIndex(*Array, usize) *const anyopaque;
+    pub extern "c" fn CFArrayGetValueAtIndex(*Array, usize) *anyopaque;
     extern "c" var kCFTypeArrayCallBacks: anyopaque;
 };
 
