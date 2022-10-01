@@ -9,6 +9,7 @@ const harfbuzz = @import("pkg/harfbuzz/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
+const macos = @import("pkg/macos/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
@@ -183,6 +184,12 @@ fn addDeps(
     step.addPackage(glfw.pkg);
     step.addPackage(libuv.pkg);
     step.addPackage(utf8proc.pkg);
+
+    // Mac Stuff
+    if (step.target.isDarwin()) {
+        step.addPackage(macos.pkg);
+        _ = try macos.link(b, step, .{});
+    }
 
     // We always statically compile glad
     step.addIncludePath("vendor/glad/include/");
