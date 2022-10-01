@@ -87,26 +87,103 @@ pub const FontAttribute = enum {
             .style_name => *foundation.String,
             .traits => *foundation.Dictionary,
             .variation => *foundation.Dictionary,
-            .size => *anyopaque, // CFNumber
+            .size => *foundation.Number,
             .matrix => *anyopaque, // CFDataRef
             .cascade_list => *foundation.Array,
             .character_set => *anyopaque, // CFCharacterSetRef
             .languages => *foundation.Array,
-            .baseline_adjust => *anyopaque, // CFNumber
-            .macintosh_encodings => *anyopaque, // CFNumber
+            .baseline_adjust => *foundation.Number,
+            .macintosh_encodings => *foundation.Number,
             .features => *foundation.Array,
             .feature_settings => *foundation.Array,
-            .fixed_advance => *anyopaque, // CFNumber
-            .orientation => *anyopaque, // CFNumber
-            .format => *anyopaque, // CFNumber
-            .registration_scope => *anyopaque, // CFNumber
-            .priority => *anyopaque, // CFNumber
-            .enabled => *anyopaque, // CFNumber
+            .fixed_advance => *foundation.Number,
+            .orientation => *foundation.Number,
+            .format => *foundation.Number,
+            .registration_scope => *foundation.Number,
+            .priority => *foundation.Number,
+            .enabled => *foundation.Number,
             .downloadable => *anyopaque, // CFBoolean
             .downloaded => *anyopaque, // CFBoolean
         };
     }
 };
+
+pub const FontTraitKey = enum {
+    symbolic,
+    weight,
+    width,
+    slant,
+
+    pub fn key(self: FontTraitKey) *foundation.String {
+        return @intToPtr(*foundation.String, @ptrToInt(switch (self) {
+            .symbolic => c.kCTFontSymbolicTrait,
+            .weight => c.kCTFontWeightTrait,
+            .width => c.kCTFontWidthTrait,
+            .slant => c.kCTFontFontSlantTrait,
+        }));
+    }
+
+    pub fn Value(self: FontTraitKey) type {
+        return switch (self) {
+            .symbolic => *foundation.Number,
+            .weight => *foundation.Number,
+            .width => *foundation.Number,
+            .slant => *foundation.Number,
+        };
+    }
+};
+
+pub const FontSymbolicTraits = packed struct {
+    italic: bool = false,
+    bold: bool = false,
+    _unused1: u3 = 0,
+    expanded: bool = false,
+    condensed: bool = false,
+    _unused2: u3 = 0,
+    monospace: bool = false,
+    vertical: bool = false,
+    ui_optimized: bool = false,
+    color_glyphs: bool = false,
+    composite: bool = false,
+    _padding: u17 = 0,
+
+    pub fn init(num: *foundation.Number) FontSymbolicTraits {
+        var raw: i32 = undefined;
+        _ = num.getValue(.sint32, &raw);
+        return @bitCast(FontSymbolicTraits, raw);
+    }
+
+    test {
+        try std.testing.expectEqual(
+            @bitSizeOf(c.CTFontSymbolicTraits),
+            @bitSizeOf(FontSymbolicTraits),
+        );
+    }
+
+    test "bitcast" {
+        const actual: c.CTFontSymbolicTraits = c.kCTFontTraitMonoSpace | c.kCTFontTraitExpanded;
+        const expected: FontSymbolicTraits = .{
+            .monospace = true,
+            .expanded = true,
+        };
+
+        try std.testing.expectEqual(actual, @bitCast(c.CTFontSymbolicTraits, expected));
+    }
+
+    test "number" {
+        const raw: i32 = c.kCTFontTraitMonoSpace | c.kCTFontTraitExpanded;
+        const num = try foundation.Number.create(.sint32, &raw);
+        defer num.release();
+
+        const expected: FontSymbolicTraits = .{ .monospace = true, .expanded = true };
+        const actual = FontSymbolicTraits.init(num);
+        try std.testing.expect(std.meta.eql(expected, actual));
+    }
+};
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
 
 test "descriptor" {
     const testing = std.testing;
