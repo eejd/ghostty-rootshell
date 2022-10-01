@@ -43,7 +43,28 @@ test "collection" {
     //         const name = desc.copyAttribute(.name);
     //         defer name.release();
     //         const cstr = name.cstring(&buf, .utf8).?;
-    //         std.log.warn("i={d} v={s}", .{ i, cstr });
+    //
+    //         var buf2: [128]u8 = undefined;
+    //         const url = desc.copyAttribute(.url);
+    //         defer url.release();
+    //         const path = path: {
+    //             const blank = try foundation.String.createWithBytes("", .utf8, false);
+    //             defer blank.release();
+    //
+    //             const path = url.copyPath() orelse break :path "<no path>";
+    //             defer path.release();
+    //
+    //             const decoded = try foundation.URL.createStringByReplacingPercentEscapes(
+    //                 path,
+    //                 blank,
+    //             );
+    //             defer decoded.release();
+    //
+    //             break :path decoded.cstring(&buf2, .utf8) orelse
+    //                 "<path cannot be converted to string>";
+    //         };
+    //
+    //         std.log.warn("i={d} name={s} path={s}", .{ i, cstr, path });
     //     }
     // }
 }

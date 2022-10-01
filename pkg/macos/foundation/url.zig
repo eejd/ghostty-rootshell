@@ -11,6 +11,17 @@ pub const URL = opaque {
         ) orelse error.OutOfMemory;
     }
 
+    pub fn createStringByReplacingPercentEscapes(
+        str: *foundation.String,
+        escape: *foundation.String,
+    ) Allocator.Error!*foundation.String {
+        return CFURLCreateStringByReplacingPercentEscapes(
+            null,
+            str,
+            escape,
+        ) orelse return error.OutOfMemory;
+    }
+
     pub fn release(self: *URL) void {
         foundation.CFRelease(self);
     }
@@ -25,6 +36,11 @@ pub const URL = opaque {
         base_url: ?*const anyopaque,
     ) ?*URL;
     pub extern "c" fn CFURLCopyPath(*URL) ?*foundation.String;
+    pub extern "c" fn CFURLCreateStringByReplacingPercentEscapes(
+        allocator: ?*anyopaque,
+        original: *const anyopaque,
+        escape: *const anyopaque,
+    ) ?*foundation.String;
 };
 
 test {
