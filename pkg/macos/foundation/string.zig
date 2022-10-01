@@ -36,6 +36,22 @@ pub const String = opaque {
         );
     }
 
+    pub fn cstring(self: *String, buf: []u8, encoding: StringEncoding) ?[]const u8 {
+        if (CFStringGetCString(
+            self,
+            buf.ptr,
+            buf.len,
+            @enumToInt(encoding),
+        ) == 0) return null;
+        return std.mem.sliceTo(buf, 0);
+    }
+
+    pub fn cstringPtr(self: *String, encoding: StringEncoding) ?[:0]const u8 {
+        const ptr = CFStringGetCStringPtr(self, @enumToInt(encoding));
+        if (ptr == null) return null;
+        return std.mem.sliceTo(ptr, 0);
+    }
+
     pub extern "c" fn CFStringCreateWithBytes(
         allocator: ?*anyopaque,
         bytes: [*]const u8,
@@ -45,6 +61,8 @@ pub const String = opaque {
     ) ?*String;
     pub extern "c" fn CFStringHasPrefix(*String, *String) u8;
     pub extern "c" fn CFStringCompare(*String, *String, c_int) c_int;
+    pub extern "c" fn CFStringGetCString(*String, [*]u8, usize, u32) u8;
+    pub extern "c" fn CFStringGetCStringPtr(*String, u32) [*c]const u8;
 };
 
 pub const StringComparison = packed struct {
@@ -94,4 +112,11 @@ test "string" {
 
     try testing.expect(str.hasPrefix(prefix));
     try testing.expectEqual(foundation.ComparisonResult.equal, str.compare(str, .{}));
+    try testing.expectEqualStrings("hello world", str.cstringPtr(.ascii).?);
+
+    {
+        var buf: [128]u8 = undefined;
+        const cstr = str.cstring(&buf, .ascii).?;
+        try testing.expectEqualStrings("hello world", cstr);
+    }
 }
