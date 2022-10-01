@@ -83,7 +83,7 @@ pub const FontAttribute = enum {
 
     pub fn Value(self: FontAttribute) type {
         return switch (self) {
-            .url => *anyopaque, // CFUrl
+            .url => *foundation.URL,
             .name => *foundation.String,
             .display_name => *foundation.String,
             .family_name => *foundation.String,
