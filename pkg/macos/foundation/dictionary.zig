@@ -2,11 +2,12 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
+const c = @import("c.zig");
 
 pub const Dictionary = opaque {
     pub fn create(
-        keys: ?[]*const anyopaque,
-        values: ?[]*const anyopaque,
+        keys: ?[]?*const anyopaque,
+        values: ?[]?*const anyopaque,
     ) Allocator.Error!*Dictionary {
         if (keys != null or values != null) {
             assert(keys != null);
@@ -14,14 +15,14 @@ pub const Dictionary = opaque {
             assert(keys.?.len == values.?.len);
         }
 
-        return CFDictionaryCreate(
+        return @intToPtr(?*Dictionary, @ptrToInt(c.CFDictionaryCreate(
             null,
-            if (keys) |slice| slice.ptr else null,
-            if (values) |slice| slice.ptr else null,
-            if (keys) |slice| slice.len else 0,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks,
-        ) orelse Allocator.Error.OutOfMemory;
+            @ptrCast([*c]?*const anyopaque, if (keys) |slice| slice.ptr else null),
+            @ptrCast([*c]?*const anyopaque, if (values) |slice| slice.ptr else null),
+            @intCast(c.CFIndex, if (keys) |slice| slice.len else 0),
+            &c.kCFTypeDictionaryKeyCallBacks,
+            &c.kCFTypeDictionaryValueCallBacks,
+        ))) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn release(self: *Dictionary) void {
@@ -29,25 +30,16 @@ pub const Dictionary = opaque {
     }
 
     pub fn getCount(self: *Dictionary) usize {
-        return CFDictionaryGetCount(self);
+        return @intCast(usize, c.CFDictionaryGetCount(@ptrCast(c.CFDictionaryRef, self)));
     }
 
-    pub extern "c" fn CFDictionaryCreate(
-        allocator: ?*anyopaque,
-        keys: ?[*]*const anyopaque,
-        values: ?[*]*const anyopaque,
-        num_values: usize,
-        key_callbacks: *const anyopaque,
-        value_callbacks: *const anyopaque,
-    ) ?*Dictionary;
-    pub extern "c" fn CFDictionaryGetCount(*Dictionary) usize;
-
-    extern "c" var kCFTypeDictionaryKeyCallBacks: anyopaque;
-    extern "c" var kCFTypeDictionaryValueCallBacks: anyopaque;
+    pub fn getValue(self: *Dictionary, comptime V: type, key: ?*const anyopaque) ?*V {
+        return @intToPtr(?*V, @ptrToInt(c.CFDictionaryGetValue(
+            @ptrCast(c.CFDictionaryRef, self),
+            key,
+        )));
+    }
 };
-
-// Just used for a test
-extern "c" var kCFURLIsPurgeableKey: *const anyopaque;
 
 test "dictionary" {
     const testing = std.testing;
@@ -55,10 +47,12 @@ test "dictionary" {
     const str = try foundation.String.createWithBytes("hello", .unicode, false);
     defer str.release();
 
-    var keys = [_]*const anyopaque{kCFURLIsPurgeableKey};
-    var values = [_]*const anyopaque{str};
+    var keys = [_]?*const anyopaque{c.kCFURLIsPurgeableKey};
+    var values = [_]?*const anyopaque{str};
     const dict = try Dictionary.create(&keys, &values);
     defer dict.release();
 
     try testing.expectEqual(@as(usize, 1), dict.getCount());
+    try testing.expect(dict.getValue(foundation.String, c.kCFURLIsPurgeableKey) != null);
+    try testing.expect(dict.getValue(foundation.String, c.kCFURLIsVolumeKey) == null);
 }
