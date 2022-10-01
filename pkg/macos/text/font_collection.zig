@@ -2,26 +2,28 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
 const text = @import("../text.zig");
+const c = @import("c.zig");
 
 pub const FontCollection = opaque {
     pub fn createFromAvailableFonts() Allocator.Error!*FontCollection {
-        return CTFontCollectionCreateFromAvailableFonts(null) orelse Allocator.Error.OutOfMemory;
+        return @intToPtr(
+            ?*FontCollection,
+            @ptrToInt(c.CTFontCollectionCreateFromAvailableFonts(null)),
+        ) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn release(self: *FontCollection) void {
-        foundation.CFRelease(self);
+        c.CFRelease(self);
     }
 
     pub fn createMatchingFontDescriptors(self: *FontCollection) *foundation.Array {
-        return CTFontCollectionCreateMatchingFontDescriptors(self);
+        return @intToPtr(
+            *foundation.Array,
+            @ptrToInt(c.CTFontCollectionCreateMatchingFontDescriptors(
+                @ptrCast(c.CTFontCollectionRef, self),
+            )),
+        );
     }
-
-    pub extern "c" fn CTFontCollectionCreateFromAvailableFonts(
-        options: ?*foundation.Dictionary,
-    ) ?*FontCollection;
-    pub extern "c" fn CTFontCollectionCreateMatchingFontDescriptors(
-        collection: *FontCollection,
-    ) *foundation.Array;
 };
 
 test "collection" {

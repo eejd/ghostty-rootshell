@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
+const c = @import("c.zig");
 
 pub const String = opaque {
     pub fn createWithBytes(
@@ -8,21 +9,24 @@ pub const String = opaque {
         encoding: StringEncoding,
         external: bool,
     ) Allocator.Error!*String {
-        return CFStringCreateWithBytes(
+        return @intToPtr(?*String, @ptrToInt(c.CFStringCreateWithBytes(
             null,
             bs.ptr,
-            bs.len,
+            @intCast(c_long, bs.len),
             @enumToInt(encoding),
-            external,
-        ) orelse Allocator.Error.OutOfMemory;
+            @boolToInt(external),
+        ))) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn release(self: *String) void {
-        foundation.CFRelease(self);
+        c.CFRelease(self);
     }
 
     pub fn hasPrefix(self: *String, prefix: *String) bool {
-        return CFStringHasPrefix(self, prefix) == 1;
+        return c.CFStringHasPrefix(
+            @ptrCast(c.CFStringRef, self),
+            @ptrCast(c.CFStringRef, prefix),
+        ) == 1;
     }
 
     pub fn compare(
@@ -32,37 +36,32 @@ pub const String = opaque {
     ) foundation.ComparisonResult {
         return @intToEnum(
             foundation.ComparisonResult,
-            CFStringCompare(self, other, @bitCast(c_int, options)),
+            c.CFStringCompare(
+                @ptrCast(c.CFStringRef, self),
+                @ptrCast(c.CFStringRef, other),
+                @intCast(c_ulong, @bitCast(c_int, options)),
+            ),
         );
     }
 
     pub fn cstring(self: *String, buf: []u8, encoding: StringEncoding) ?[]const u8 {
-        if (CFStringGetCString(
-            self,
+        if (c.CFStringGetCString(
+            @ptrCast(c.CFStringRef, self),
             buf.ptr,
-            buf.len,
+            @intCast(c_long, buf.len),
             @enumToInt(encoding),
         ) == 0) return null;
         return std.mem.sliceTo(buf, 0);
     }
 
     pub fn cstringPtr(self: *String, encoding: StringEncoding) ?[:0]const u8 {
-        const ptr = CFStringGetCStringPtr(self, @enumToInt(encoding));
+        const ptr = c.CFStringGetCStringPtr(
+            @ptrCast(c.CFStringRef, self),
+            @enumToInt(encoding),
+        );
         if (ptr == null) return null;
         return std.mem.sliceTo(ptr, 0);
     }
-
-    pub extern "c" fn CFStringCreateWithBytes(
-        allocator: ?*anyopaque,
-        bytes: [*]const u8,
-        numBytes: usize,
-        encooding: u32,
-        is_external: bool,
-    ) ?*String;
-    pub extern "c" fn CFStringHasPrefix(*String, *String) u8;
-    pub extern "c" fn CFStringCompare(*String, *String, c_int) c_int;
-    pub extern "c" fn CFStringGetCString(*String, [*]u8, usize, u32) u8;
-    pub extern "c" fn CFStringGetCStringPtr(*String, u32) [*c]const u8;
 };
 
 pub const StringComparison = packed struct {

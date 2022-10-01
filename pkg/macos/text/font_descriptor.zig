@@ -1,29 +1,26 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
+const c = @import("c.zig");
 
 pub const FontDescriptor = opaque {
     pub fn createWithNameAndSize(name: *foundation.String, size: f64) Allocator.Error!*FontDescriptor {
-        return CTFontDescriptorCreateWithNameAndSize(name, size) orelse Allocator.Error.OutOfMemory;
+        return @intToPtr(
+            ?*FontDescriptor,
+            @ptrToInt(c.CTFontDescriptorCreateWithNameAndSize(@ptrCast(c.CFStringRef, name), size)),
+        ) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn release(self: *FontDescriptor) void {
-        foundation.CFRelease(self);
+        c.CFRelease(self);
     }
 
     pub fn copyAttribute(self: *FontDescriptor, comptime attr: FontAttribute) attr.Value() {
-        const T = attr.Value();
-        return @ptrCast(T, CTFontDescriptorCopyAttribute(self, attr.key()));
+        return @intToPtr(attr.Value(), @ptrToInt(c.CTFontDescriptorCopyAttribute(
+            @ptrCast(c.CTFontDescriptorRef, self),
+            @ptrCast(c.CFStringRef, attr.key()),
+        )));
     }
-
-    pub extern "c" fn CTFontDescriptorCreateWithNameAndSize(
-        name: *foundation.String,
-        size: f64,
-    ) ?*FontDescriptor;
-    pub extern "c" fn CTFontDescriptorCopyAttribute(
-        *FontDescriptor,
-        *foundation.String,
-    ) ?*anyopaque;
 };
 
 pub const FontAttribute = enum {
@@ -53,32 +50,32 @@ pub const FontAttribute = enum {
     downloaded,
 
     pub fn key(self: FontAttribute) *foundation.String {
-        return switch (self) {
-            .url => kCTFontURLAttribute,
-            .name => kCTFontNameAttribute,
-            .display_name => kCTFontDisplayNameAttribute,
-            .family_name => kCTFontFamilyNameAttribute,
-            .style_name => kCTFontStyleNameAttribute,
-            .traits => kCTFontTraitsAttribute,
-            .variation => kCTFontVariationAttribute,
-            .size => kCTFontSizeAttribute,
-            .matrix => kCTFontMatrixAttribute,
-            .cascade_list => kCTFontCascadeListAttribute,
-            .character_set => kCTFontCharacterSetAttribute,
-            .languages => kCTFontLanguagesAttribute,
-            .baseline_adjust => kCTFontBaselineAdjustAttribute,
-            .macintosh_encodings => kCTFontMacintoshEncodingsAttribute,
-            .features => kCTFontFeaturesAttribute,
-            .feature_settings => kCTFontFeatureSettingsAttribute,
-            .fixed_advance => kCTFontFixedAdvanceAttribute,
-            .orientation => kCTFontOrientationAttribute,
-            .format => kCTFontFormatAttribute,
-            .registration_scope => kCTFontRegistrationScopeAttribute,
-            .priority => kCTFontPriorityAttribute,
-            .enabled => kCTFontEnabledAttribute,
-            .downloadable => kCTFontDownloadableAttribute,
-            .downloaded => kCTFontDownloadedAttribute,
-        };
+        return @intToPtr(*foundation.String, @ptrToInt(switch (self) {
+            .url => c.kCTFontURLAttribute,
+            .name => c.kCTFontNameAttribute,
+            .display_name => c.kCTFontDisplayNameAttribute,
+            .family_name => c.kCTFontFamilyNameAttribute,
+            .style_name => c.kCTFontStyleNameAttribute,
+            .traits => c.kCTFontTraitsAttribute,
+            .variation => c.kCTFontVariationAttribute,
+            .size => c.kCTFontSizeAttribute,
+            .matrix => c.kCTFontMatrixAttribute,
+            .cascade_list => c.kCTFontCascadeListAttribute,
+            .character_set => c.kCTFontCharacterSetAttribute,
+            .languages => c.kCTFontLanguagesAttribute,
+            .baseline_adjust => c.kCTFontBaselineAdjustAttribute,
+            .macintosh_encodings => c.kCTFontMacintoshEncodingsAttribute,
+            .features => c.kCTFontFeaturesAttribute,
+            .feature_settings => c.kCTFontFeatureSettingsAttribute,
+            .fixed_advance => c.kCTFontFixedAdvanceAttribute,
+            .orientation => c.kCTFontOrientationAttribute,
+            .format => c.kCTFontFormatAttribute,
+            .registration_scope => c.kCTFontRegistrationScopeAttribute,
+            .priority => c.kCTFontPriorityAttribute,
+            .enabled => c.kCTFontEnabledAttribute,
+            .downloadable => c.kCTFontDownloadableAttribute,
+            .downloaded => c.kCTFontDownloadedAttribute,
+        }));
     }
 
     pub fn Value(self: FontAttribute) type {
@@ -109,32 +106,6 @@ pub const FontAttribute = enum {
             .downloaded => *anyopaque, // CFBoolean
         };
     }
-
-    extern "c" const kCTFontURLAttribute: *foundation.String;
-    extern "c" const kCTFontNameAttribute: *foundation.String;
-    extern "c" const kCTFontDisplayNameAttribute: *foundation.String;
-    extern "c" const kCTFontFamilyNameAttribute: *foundation.String;
-    extern "c" const kCTFontStyleNameAttribute: *foundation.String;
-    extern "c" const kCTFontTraitsAttribute: *foundation.String;
-    extern "c" const kCTFontVariationAttribute: *foundation.String;
-    extern "c" const kCTFontVariationAxesAttribute: *foundation.String;
-    extern "c" const kCTFontSizeAttribute: *foundation.String;
-    extern "c" const kCTFontMatrixAttribute: *foundation.String;
-    extern "c" const kCTFontCascadeListAttribute: *foundation.String;
-    extern "c" const kCTFontCharacterSetAttribute: *foundation.String;
-    extern "c" const kCTFontLanguagesAttribute: *foundation.String;
-    extern "c" const kCTFontBaselineAdjustAttribute: *foundation.String;
-    extern "c" const kCTFontMacintoshEncodingsAttribute: *foundation.String;
-    extern "c" const kCTFontFeaturesAttribute: *foundation.String;
-    extern "c" const kCTFontFeatureSettingsAttribute: *foundation.String;
-    extern "c" const kCTFontFixedAdvanceAttribute: *foundation.String;
-    extern "c" const kCTFontOrientationAttribute: *foundation.String;
-    extern "c" const kCTFontFormatAttribute: *foundation.String;
-    extern "c" const kCTFontRegistrationScopeAttribute: *foundation.String;
-    extern "c" const kCTFontPriorityAttribute: *foundation.String;
-    extern "c" const kCTFontEnabledAttribute: *foundation.String;
-    extern "c" const kCTFontDownloadableAttribute: *foundation.String;
-    extern "c" const kCTFontDownloadedAttribute: *foundation.String;
 };
 
 test "descriptor" {
