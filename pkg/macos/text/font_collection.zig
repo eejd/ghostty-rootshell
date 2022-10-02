@@ -27,12 +27,18 @@ pub const FontCollection = opaque {
     }
 
     pub fn createMatchingFontDescriptors(self: *FontCollection) *foundation.Array {
-        return @intToPtr(
-            *foundation.Array,
-            @ptrToInt(c.CTFontCollectionCreateMatchingFontDescriptors(
-                @ptrCast(c.CTFontCollectionRef, self),
-            )),
+        const result = c.CTFontCollectionCreateMatchingFontDescriptors(
+            @ptrCast(c.CTFontCollectionRef, self),
         );
+        if (result) |ptr| {
+            return @intToPtr(*foundation.Array, @ptrToInt(ptr));
+        }
+
+        // If we have no results, we create an empty array. This is not
+        // exactly matching the Mac API. We can fix this later if we want
+        // but I chose this to make it slightly more Zig-like at the cost
+        // of some memory in the rare case.
+        return foundation.Array.create(anyopaque, &[_]*const anyopaque{}) catch unreachable;
     }
 };
 
@@ -105,6 +111,32 @@ test "from descriptors" {
     defer list.release();
 
     try testing.expect(list.getCount() > 0);
+
+    //try debugDumpList(list);
+}
+
+test "from descriptors no match" {
+    const testing = std.testing;
+
+    const name = try foundation.String.createWithBytes("ThisShouldNeverExist", .utf8, false);
+    defer name.release();
+
+    const desc = try text.FontDescriptor.createWithNameAndSize(name, 12);
+    defer desc.release();
+
+    const arr = try foundation.Array.create(
+        text.FontDescriptor,
+        &[_]*const text.FontDescriptor{desc},
+    );
+    defer arr.release();
+
+    const v = try FontCollection.createWithFontDescriptors(arr);
+    defer v.release();
+
+    const list = v.createMatchingFontDescriptors();
+    defer list.release();
+
+    try testing.expect(list.getCount() == 0);
 
     //try debugDumpList(list);
 }
