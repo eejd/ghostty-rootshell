@@ -41,6 +41,29 @@ pub const Dictionary = opaque {
     }
 };
 
+pub const MutableDictionary = opaque {
+    pub fn create(cap: usize) Allocator.Error!*MutableDictionary {
+        return @intToPtr(?*MutableDictionary, @ptrToInt(c.CFDictionaryCreateMutable(
+            null,
+            @intCast(c.CFIndex, cap),
+            &c.kCFTypeDictionaryKeyCallBacks,
+            &c.kCFTypeDictionaryValueCallBacks,
+        ))) orelse Allocator.Error.OutOfMemory;
+    }
+
+    pub fn release(self: *MutableDictionary) void {
+        foundation.CFRelease(self);
+    }
+
+    pub fn setValue(self: *MutableDictionary, key: ?*const anyopaque, value: ?*const anyopaque) void {
+        c.CFDictionarySetValue(
+            @ptrCast(c.CFMutableDictionaryRef, self),
+            key,
+            value,
+        );
+    }
+};
+
 test "dictionary" {
     const testing = std.testing;
 
@@ -55,4 +78,23 @@ test "dictionary" {
     try testing.expectEqual(@as(usize, 1), dict.getCount());
     try testing.expect(dict.getValue(foundation.String, c.kCFURLIsPurgeableKey) != null);
     try testing.expect(dict.getValue(foundation.String, c.kCFURLIsVolumeKey) == null);
+}
+
+test "mutable dictionary" {
+    const testing = std.testing;
+
+    const dict = try MutableDictionary.create(0);
+    defer dict.release();
+
+    const str = try foundation.String.createWithBytes("hello", .unicode, false);
+    defer str.release();
+
+    dict.setValue(c.kCFURLIsPurgeableKey, str);
+
+    {
+        const imm = @ptrCast(*Dictionary, dict);
+        try testing.expectEqual(@as(usize, 1), imm.getCount());
+        try testing.expect(imm.getValue(foundation.String, c.kCFURLIsPurgeableKey) != null);
+        try testing.expect(imm.getValue(foundation.String, c.kCFURLIsVolumeKey) == null);
+    }
 }

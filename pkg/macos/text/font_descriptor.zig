@@ -11,6 +11,13 @@ pub const FontDescriptor = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createWithAttributes(dict: *foundation.Dictionary) Allocator.Error!*FontDescriptor {
+        return @intToPtr(
+            ?*FontDescriptor,
+            @ptrToInt(c.CTFontDescriptorCreateWithAttributes(@ptrCast(c.CFDictionaryRef, dict))),
+        ) orelse Allocator.Error.OutOfMemory;
+    }
+
     pub fn release(self: *FontDescriptor) void {
         c.CFRelease(self);
     }
