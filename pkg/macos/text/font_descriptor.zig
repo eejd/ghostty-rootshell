@@ -126,7 +126,7 @@ pub const FontTraitKey = enum {
             .symbolic => c.kCTFontSymbolicTrait,
             .weight => c.kCTFontWeightTrait,
             .width => c.kCTFontWidthTrait,
-            .slant => c.kCTFontFontSlantTrait,
+            .slant => c.kCTFontSlantTrait,
         }));
     }
 
@@ -158,6 +158,10 @@ pub const FontSymbolicTraits = packed struct {
         var raw: i32 = undefined;
         _ = num.getValue(.sint32, &raw);
         return @bitCast(FontSymbolicTraits, raw);
+    }
+
+    pub fn cval(self: FontSymbolicTraits) c.CTFontSymbolicTraits {
+        return @bitCast(c.CTFontSymbolicTraits, self);
     }
 
     test {
