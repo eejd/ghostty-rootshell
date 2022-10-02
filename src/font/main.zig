@@ -14,11 +14,25 @@ pub const Discover = discovery.Discover;
 
 /// Build options
 pub const options: struct {
-    coretext: bool = false,
-    fontconfig: bool = false,
+    backend: Backend,
 } = .{
-    .coretext = build_options.coretext,
-    .fontconfig = build_options.fontconfig,
+    .backend = if (build_options.coretext)
+        .coretext
+    else if (build_options.fontconfig)
+        .fontconfig_freetype
+    else
+        .freetype,
+};
+
+pub const Backend = enum {
+    /// FreeType for font rendering with no font discovery enabled.
+    freetype,
+
+    /// Fontconfig for font discovery and FreeType for font rendering.
+    fontconfig_freetype,
+
+    /// CoreText for both font discovery and rendering (macOS).
+    coretext,
 };
 
 /// The styles that a family can take.

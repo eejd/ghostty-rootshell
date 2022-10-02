@@ -224,7 +224,7 @@ test {
 }
 
 test {
-    if (!options.fontconfig) return error.SkipZigTest;
+    if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
 
     const testing = std.testing;
     const alloc = testing.allocator;

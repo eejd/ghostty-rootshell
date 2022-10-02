@@ -19,10 +19,12 @@ const Presentation = @import("main.zig").Presentation;
 face: ?Face = null,
 
 /// Fontconfig
-fc: if (options.fontconfig) ?Fontconfig else void = if (options.fontconfig) null else {},
+fc: if (options.backend == .fontconfig_freetype) ?Fontconfig else void =
+    if (options.backend == .fontconfig_freetype) null else {},
 
 /// CoreText
-ct: if (options.coretext) ?CoreText else void = if (options.coretext) null else {},
+ct: if (options.backend == .coretext) ?CoreText else void =
+    if (options.backend == .coretext) null else {},
 
 /// Fontconfig specific data. This is only present if building with fontconfig.
 pub const Fontconfig = struct {
@@ -61,8 +63,11 @@ pub fn initLoaded(face: Face) DeferredFace {
 
 pub fn deinit(self: *DeferredFace) void {
     if (self.face) |*face| face.deinit();
-    if (options.fontconfig) if (self.fc) |*fc| fc.deinit();
-    if (options.coretext) if (self.ct) |*ct| ct.deinit();
+    switch (options.backend) {
+        .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
+        .coretext => if (self.ct) |*ct| ct.deinit(),
+        .freetype => {},
+    }
     self.* = undefined;
 }
 
@@ -74,16 +79,16 @@ pub inline fn loaded(self: DeferredFace) bool {
 /// Returns the name of this face. The memory is always owned by the
 /// face so it doesn't have to be freed.
 pub fn name(self: DeferredFace) ![:0]const u8 {
-    if (options.fontconfig) {
-        if (self.fc) |fc|
-            return (try fc.pattern.get(.fullname, 0)).string;
-    }
+    switch (options.backend) {
+        .fontconfig_freetype => if (self.fc) |fc|
+            return (try fc.pattern.get(.fullname, 0)).string,
 
-    if (options.coretext) {
-        if (self.ct) |ct| {
+        .coretext => if (self.ct) |ct| {
             const display_name = ct.font.copyDisplayName();
             return display_name.cstringPtr(.utf8) orelse "<unsupported internal encoding>";
-        }
+        },
+
+        .freetype => {},
     }
 
     return "TODO: built-in font names";
@@ -98,19 +103,21 @@ pub fn load(
     // No-op if we already loaded
     if (self.face != null) return;
 
-    if (options.fontconfig) {
-        try self.loadFontconfig(lib, size);
-        return;
-    }
+    switch (options.backend) {
+        .fontconfig_freetype => {
+            try self.loadFontconfig(lib, size);
+            return;
+        },
 
-    if (options.coretext) {
-        try self.loadCoreText(lib, size);
-        return;
-    }
+        .coretext => {
+            try self.loadCoreText(lib, size);
+            return;
+        },
 
-    // Unreachable because we must be already loaded or have the
-    // proper configuration for one of the other deferred mechanisms.
-    unreachable;
+        // Unreachable because we must be already loaded or have the
+        // proper configuration for one of the other deferred mechanisms.
+        .freetype => unreachable,
+    }
 }
 
 fn loadFontconfig(
@@ -181,40 +188,44 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
         return face.glyphIndex(cp) != null;
     }
 
-    // If we are using fontconfig, use the fontconfig metadata to
-    // avoid loading the face.
-    if (options.fontconfig) {
-        if (self.fc) |fc| {
-            // Check if char exists
-            if (!fc.charset.hasChar(cp)) return false;
+    switch (options.backend) {
+        .fontconfig_freetype => {
+            // If we are using fontconfig, use the fontconfig metadata to
+            // avoid loading the face.
+            if (self.fc) |fc| {
+                // Check if char exists
+                if (!fc.charset.hasChar(cp)) return false;
 
-            // If we have a presentation, check it matches
-            if (p) |desired| {
-                const emoji_lang = "und-zsye";
-                const actual: Presentation = if (fc.langset.hasLang(emoji_lang))
-                    .emoji
-                else
-                    .text;
+                // If we have a presentation, check it matches
+                if (p) |desired| {
+                    const emoji_lang = "und-zsye";
+                    const actual: Presentation = if (fc.langset.hasLang(emoji_lang))
+                        .emoji
+                    else
+                        .text;
 
-                return desired == actual;
+                    return desired == actual;
+                }
+
+                return true;
             }
+        },
 
-            return true;
-        }
-    }
+        .coretext => {
+            // If we are using coretext, we check the loaded CT font.
+            if (self.ct) |ct| {
+                // Turn UTF-32 into UTF-16 for CT API
+                var unichars: [2]u16 = undefined;
+                const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
+                const len: usize = if (pair) 2 else 1;
 
-    // If we are using coretext, we check the loaded CT font.
-    if (options.coretext) {
-        if (self.ct) |ct| {
-            // Turn UTF-32 into UTF-16 for CT API
-            var unichars: [2]u16 = undefined;
-            const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
-            const len: usize = if (pair) 2 else 1;
+                // Get our glyphs
+                var glyphs = [2]macos.graphics.Glyph{ 0, 0 };
+                return ct.font.getGlyphsForCharacters(unichars[0..len], glyphs[0..len]);
+            }
+        },
 
-            // Get our glyphs
-            var glyphs = [2]macos.graphics.Glyph{ 0, 0 };
-            return ct.font.getGlyphsForCharacters(unichars[0..len], glyphs[0..len]);
-        }
+        .freetype => {},
     }
 
     // This is unreachable because discovery mechanisms terminate, and
@@ -239,7 +250,7 @@ test "preloaded" {
 }
 
 test "fontconfig" {
-    if (!options.fontconfig) return error.SkipZigTest;
+    if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
 
     const discovery = @import("main.zig").discovery;
     const testing = std.testing;
@@ -269,7 +280,7 @@ test "fontconfig" {
 }
 
 test "coretext" {
-    if (!options.coretext) return error.SkipZigTest;
+    if (options.backend != .coretext) return error.SkipZigTest;
 
     const discovery = @import("main.zig").discovery;
     const testing = std.testing;
