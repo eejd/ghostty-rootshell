@@ -52,6 +52,11 @@ fn debugDumpList(list: *foundation.Array) !void {
             defer name.release();
             const cstr = name.cstring(&buf, .utf8).?;
 
+            var family_buf: [128]u8 = undefined;
+            const family = desc.copyAttribute(.family_name);
+            defer family.release();
+            const family_cstr = family.cstring(&family_buf, .utf8).?;
+
             var buf2: [128]u8 = undefined;
             const url = desc.copyAttribute(.url);
             defer url.release();
@@ -72,7 +77,7 @@ fn debugDumpList(list: *foundation.Array) !void {
                     "<path cannot be converted to string>";
             };
 
-            std.log.warn("i={d} name={s} path={s}", .{ i, cstr, path });
+            std.log.warn("i={d} name={s} family={s} path={s}", .{ i, cstr, family_cstr, path });
         }
     }
 }
@@ -112,7 +117,7 @@ test "from descriptors" {
 
     try testing.expect(list.getCount() > 0);
 
-    //try debugDumpList(list);
+    // try debugDumpList(list);
 }
 
 test "from descriptors no match" {
