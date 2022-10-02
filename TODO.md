@@ -1,6 +1,7 @@
 Bugs:
 
 * Underline should use freetype underline thickness hint
+* Glyph baseline is using the main font, but it can vary font to font
 
 Performance:
 
