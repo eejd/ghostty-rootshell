@@ -1,5 +1,6 @@
 const std = @import("std");
 const freetypepkg = @import("../freetype/build.zig");
+const macospkg = @import("../macos/build.zig");
 
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/harfbuzz/";
@@ -10,7 +11,7 @@ pub const include_paths = .{include_path};
 pub const pkg = std.build.Pkg{
     .name = "harfbuzz",
     .source = .{ .path = thisDir() ++ "/main.zig" },
-    .dependencies = &.{freetypepkg.pkg},
+    .dependencies = &.{ freetypepkg.pkg, macospkg.pkg },
 };
 
 fn thisDir() []const u8 {
@@ -19,11 +20,16 @@ fn thisDir() []const u8 {
 
 pub const Options = struct {
     freetype: Freetype = .{},
+    coretext: CoreText = .{},
 
     pub const Freetype = struct {
         enabled: bool = false,
         step: ?*std.build.LibExeObjStep = null,
         include: ?[]const []const u8 = null,
+    };
+
+    pub const CoreText = struct {
+        enabled: bool = false,
     };
 };
 
@@ -84,6 +90,14 @@ pub fn buildHarfbuzz(
         "-DHAVE_FT_DONE_MM_VAR=1",
         "-DHAVE_FT_GET_TRANSFORM=1",
     });
+
+    if (opt.coretext.enabled) {
+        try flags.appendSlice(&.{
+            "-DHAVE_CORETEXT=1",
+        });
+
+        lib.linkFramework("ApplicationServices");
+    }
 
     // C files
     lib.addCSourceFiles(srcs, flags.items);

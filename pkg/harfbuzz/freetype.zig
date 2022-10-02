@@ -47,6 +47,8 @@ pub fn setFontFuncs(font: Font) void {
 }
 
 test {
+    if (!@hasDecl(c, "hb_ft_font_create_referenced")) return error.SkipZigTest;
+
     const testing = std.testing;
     const testFont = freetype.testing.font_regular;
     const ftc = freetype.c;

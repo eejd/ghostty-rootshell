@@ -258,13 +258,18 @@ fn addDeps(
         });
 
         // Harfbuzz
-        _ = try harfbuzz.link(b, step, .{
+        const harfbuzz_step = try harfbuzz.link(b, step, .{
             .freetype = .{
                 .enabled = true,
                 .step = freetype_step,
                 .include = &freetype.include_paths,
             },
+
+            .coretext = .{
+                .enabled = enable_coretext,
+            },
         });
+        system_sdk.include(b, harfbuzz_step, .{});
 
         // Libuv
         const libuv_step = try libuv.link(b, step);
