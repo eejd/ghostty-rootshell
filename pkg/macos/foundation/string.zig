@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
 const c = @import("c.zig");
@@ -100,6 +101,14 @@ pub const StringEncoding = enum(u32) {
     utf32_le = 0x1c000100,
 };
 
+pub fn stringGetSurrogatePairForLongCharacter(
+    ch: u32,
+    surrogates: []u16,
+) bool {
+    assert(surrogates.len >= 2);
+    return c.CFStringGetSurrogatePairForLongCharacter(ch, surrogates.ptr) == 1;
+}
+
 test "string" {
     const testing = std.testing;
 
@@ -118,4 +127,11 @@ test "string" {
         const cstr = str.cstring(&buf, .ascii).?;
         try testing.expectEqualStrings("hello world", cstr);
     }
+}
+
+test "unichar" {
+    const testing = std.testing;
+
+    var unichars: [2]u16 = undefined;
+    try testing.expect(!stringGetSurrogatePairForLongCharacter('A', &unichars));
 }
