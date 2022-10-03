@@ -49,16 +49,6 @@ pub const Presentation = enum(u1) {
     emoji = 1, // U+FEOF
 };
 
-/// Font metrics useful for things such as grid calculation.
-pub const Metrics = struct {
-    /// The width and height of a monospace cell.
-    cell_width: f32,
-    cell_height: f32,
-
-    /// The baseline offset that can be used to place underlines.
-    cell_baseline: f32,
-};
-
 test {
     @import("std").testing.refAllDecls(@This());
 }

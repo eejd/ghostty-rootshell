@@ -29,6 +29,9 @@ hb_font: harfbuzz.Font,
 /// a way to declare this. We just assume a font with color is an emoji font.
 presentation: Presentation,
 
+/// Metrics for this font face. These are useful for renderers.
+metrics: Metrics,
+
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
 /// using whatever platform method you can.
@@ -64,6 +67,7 @@ pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: DesiredSize)
         .face = face,
         .hb_font = hb_font,
         .presentation = if (face.hasColor()) .emoji else .text,
+        .metrics = calcMetrics(face),
     };
 }
 
@@ -81,6 +85,7 @@ pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
         .face = face,
         .hb_font = hb_font,
         .presentation = if (face.hasColor()) .emoji else .text,
+        .metrics = calcMetrics(face),
     };
 }
 
@@ -234,6 +239,86 @@ pub fn unitsToPxY(self: Face, units: i32) i32 {
 /// Convert 26.6 pixel format to f32
 fn f26dot6ToFloat(v: freetype.c.FT_F26Dot6) f32 {
     return @intToFloat(f32, v >> 6);
+}
+
+/// Metrics associated with the font that are useful for renderers to know.
+pub const Metrics = struct {
+    /// Recommended cell width and height for a monospace grid using this font.
+    cell_width: f32,
+    cell_height: f32,
+
+    /// For monospace grids, the recommended y-value from the top to set
+    /// the baseline for font rendering. This is chosen so that things such
+    /// as the bottom of a "g" or "y" do not drop below the cell.
+    cell_baseline: f32,
+};
+
+/// Calculate the metrics associated with a face. This is not public because
+/// the metrics are calculated for every face and cached since they're
+/// frequently required for renderers and take up next to little memory space
+/// in the grand scheme of things.
+///
+/// An aside: the proper way to limit memory usage due to faces is to limit
+/// the faces with DeferredFaces and reload on demand. A Face can't be converted
+/// into a DeferredFace but a Face that comes from a DeferredFace can be
+/// deinitialized anytime and reloaded with the deferred face.
+fn calcMetrics(face: freetype.Face) Metrics {
+    const size_metrics = face.handle.*.size.*.metrics;
+
+    // Cell width is calculated by preferring to use 'M' as the width of a
+    // cell since 'M' is generally the widest ASCII character. If loading 'M'
+    // fails then we use the max advance of the font face size metrics.
+    const cell_width: f32 = cell_width: {
+        if (face.getCharIndex('M')) |glyph_index| {
+            if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                break :cell_width f26dot6ToFloat(face.handle.*.glyph.*.advance.x);
+            } else |_| {
+                // Ignore the error since we just fall back to max_advance below
+            }
+        }
+
+        break :cell_width f26dot6ToFloat(size_metrics.max_advance);
+    };
+
+    // Cell height is calculated as the maximum of multiple things in order
+    // to handle edge cases in fonts: (1) the height as reported in metadata
+    // by the font designer (2) the maximum glyph height as measured in the
+    // font and (3) the height from the ascender to an underscore.
+    const cell_height: f32 = cell_height: {
+        // The height as reported by the font designer.
+        const face_height = f26dot6ToFloat(size_metrics.height);
+
+        // The maximum height a glyph can take in the font
+        const max_glyph_height = f26dot6ToFloat(size_metrics.ascender) -
+            f26dot6ToFloat(size_metrics.descender);
+
+        // The height of the underscore character
+        const underscore_height = underscore: {
+            if (face.getCharIndex('_')) |glyph_index| {
+                if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    var res: f32 = f26dot6ToFloat(size_metrics.ascender);
+                    res -= @intToFloat(f32, face.handle.*.glyph.*.bitmap_top);
+                    res += @intToFloat(f32, face.handle.*.glyph.*.bitmap.rows);
+                    break :underscore res;
+                } else |_| {
+                    // Ignore the error since we just fall back below
+                }
+            }
+
+            break :underscore 0;
+        };
+
+        break :cell_height @maximum(
+            face_height,
+            @maximum(max_glyph_height, underscore_height),
+        );
+    };
+
+    return .{
+        .cell_width = cell_width,
+        .cell_height = cell_height,
+        .cell_baseline = cell_height - f26dot6ToFloat(size_metrics.ascender),
+    };
 }
 
 test {
