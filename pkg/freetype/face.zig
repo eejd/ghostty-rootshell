@@ -24,6 +24,13 @@ pub const Face = struct {
         return c.FT_HAS_COLOR(self.handle);
     }
 
+    /// A macro that returns true whenever a face object contains a scalable
+    /// font face (true for TrueType, Type 1, Type 42, CID, OpenType/CFF,
+    /// and PFR font formats).
+    pub fn isScalable(self: Face) bool {
+        return c.FT_IS_SCALABLE(self.handle);
+    }
+
     /// Select a given charmap by its encoding tag (as listed in freetype.h).
     pub fn selectCharmap(self: Face, encoding: Encoding) Error!void {
         return intToError(c.FT_Select_Charmap(self.handle, @enumToInt(encoding)));

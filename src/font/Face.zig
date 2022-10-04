@@ -95,12 +95,6 @@ pub fn deinit(self: *Face) void {
     self.* = undefined;
 }
 
-/// Change the size of the loaded font face. If you're using a texture
-/// atlas, you should invalidate all the previous values if cached.
-pub fn setSize(self: Face, size: DesiredSize) !void {
-    return try setSize_(self.face, size);
-}
-
 fn setSize_(face: freetype.Face, size: DesiredSize) !void {
     // If we have fixed sizes, we just have to try to pick the one closest
     // to what the user requested. Otherwise, we can choose an arbitrary
@@ -215,12 +209,18 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
         atlas.set(region, buffer);
     }
 
+    // The Y offset is the offset of the top of our bitmap PLUS our
+    // baseline calculation. The baseline calculation is so that everything
+    // is properly centered when we render it out into a monospace grid.
+    // Note: we add here because our X/Y is actually reversed, adding goes UP.
+    const offset_y = glyph.*.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
+
     // Store glyph metadata
     return Glyph{
         .width = tgt_w,
         .height = tgt_h,
         .offset_x = glyph.*.bitmap_left,
-        .offset_y = glyph.*.bitmap_top,
+        .offset_y = offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = f26dot6ToFloat(glyph.*.advance.x),
@@ -247,7 +247,7 @@ pub const Metrics = struct {
     cell_width: f32,
     cell_height: f32,
 
-    /// For monospace grids, the recommended y-value from the top to set
+    /// For monospace grids, the recommended y-value from the bottom to set
     /// the baseline for font rendering. This is chosen so that things such
     /// as the bottom of a "g" or "y" do not drop below the cell.
     cell_baseline: f32,
@@ -314,10 +314,23 @@ fn calcMetrics(face: freetype.Face) Metrics {
         );
     };
 
+    // The baseline is the descender amount for the font. This is the maximum
+    // that a font may go down. We switch signs because our coordinate system
+    // is reversed.
+    const cell_baseline = -1 * f26dot6ToFloat(size_metrics.descender);
+
+    // log.warn("METRICS={} width={} height={} baseline={} baseline_desc={}", .{
+    //     size_metrics,
+    //     cell_width,
+    //     cell_height,
+    //     f26dot6ToFloat(size_metrics.ascender),
+    //     -1 * f26dot6ToFloat(size_metrics.descender),
+    // });
+
     return .{
         .cell_width = cell_width,
         .cell_height = cell_height,
-        .cell_baseline = cell_height - f26dot6ToFloat(size_metrics.ascender),
+        .cell_baseline = cell_baseline,
     };
 }
 

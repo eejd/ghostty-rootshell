@@ -138,9 +138,8 @@ void main() {
 
         // The glyph_offset.y is the y bearing, a y value that when added
         // to the baseline is the offset (+y is up). Our grid goes down.
-        // So we flip it with `cell_size.y - glyph_offset.y`. The glyph_baseline
-        // uniform sets our line baseline where characters "sit".
-        glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y - glyph_baseline;
+        // So we flip it with `cell_size.y - glyph_offset.y`.
+        glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y;
 
         // Calculate the final position of the cell.
         cell_pos = cell_pos + glyph_size_downsampled * position + glyph_offset_calc;
