@@ -229,7 +229,7 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
 
 /// Convert 16.6 pixel format to pixels based on the scale factor of the
 /// current font size.
-pub fn unitsToPxY(self: Face, units: i32) i32 {
+fn unitsToPxY(self: Face, units: i32) i32 {
     return @intCast(i32, freetype.mulFix(
         units,
         @intCast(i32, self.face.handle.*.size.*.metrics.y_scale),
@@ -251,6 +251,11 @@ pub const Metrics = struct {
     /// the baseline for font rendering. This is chosen so that things such
     /// as the bottom of a "g" or "y" do not drop below the cell.
     cell_baseline: f32,
+
+    /// The position of the underline from the top of the cell and the
+    /// thickness in pixels.
+    underline_position: f32,
+    underline_thickness: f32,
 };
 
 /// Calculate the metrics associated with a face. This is not public because
@@ -319,18 +324,41 @@ fn calcMetrics(face: freetype.Face) Metrics {
     // is reversed.
     const cell_baseline = -1 * f26dot6ToFloat(size_metrics.descender);
 
-    // log.warn("METRICS={} width={} height={} baseline={} baseline_desc={}", .{
+    // The underline position. This is a value from the top where the
+    // underline should go.
+    const underline_position = underline_pos: {
+        // We use the declared underline position if its available
+        const declared = freetype.mulFix(
+            @intCast(i32, size_metrics.descender) + face.handle.*.underline_position,
+            @intCast(i32, size_metrics.x_scale),
+        ) >> 6;
+        if (declared > 0)
+            break :underline_pos @intToFloat(f32, declared);
+
+        // If we have no declared underline position, we go slightly under the
+        // cell height (mainly: non-scalable fonts, i.e. emoji)
+        break :underline_pos cell_height - 1;
+    };
+    const underline_thickness = @intToFloat(f32, @maximum(1, freetype.mulFix(
+        face.handle.*.underline_thickness,
+        @intCast(i32, size_metrics.x_scale),
+    ) >> 6));
+
+    // log.warn("METRICS={} width={} height={} baseline={} underline_pos={} underline_thickness={}", .{
     //     size_metrics,
     //     cell_width,
     //     cell_height,
-    //     f26dot6ToFloat(size_metrics.ascender),
-    //     -1 * f26dot6ToFloat(size_metrics.descender),
+    //     cell_baseline,
+    //     cell_height - underline_position,
+    //     underline_thickness,
     // });
 
     return .{
         .cell_width = cell_width,
         .cell_height = cell_height,
         .cell_baseline = cell_baseline,
+        .underline_position = underline_position,
+        .underline_thickness = underline_thickness,
     };
 }
 

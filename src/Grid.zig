@@ -178,7 +178,8 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
     const pbind = try program.use();
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("glyph_baseline", metrics.cell_baseline);
+    try program.setUniform("underline_position", metrics.underline_position);
+    try program.setUniform("underline_thickness", metrics.underline_thickness);
 
     // Set all of our texture indexes
     try program.setUniform("text", 0);
