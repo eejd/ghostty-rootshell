@@ -135,9 +135,10 @@ void main() {
         // BARELY over it.
         vec2 glyph_size_downsampled = glyph_size;
         if (glyph_size_downsampled.y > cell_size_scaled.y + 2) {
-            glyph_size_downsampled.y = cell_size_scaled.y;
+            // Magic 0.9 and 1.1 are padding to make emoji look better
+            glyph_size_downsampled.y = cell_size_scaled.y * 0.9;
             glyph_size_downsampled.x = glyph_size.x * (glyph_size_downsampled.y / glyph_size.y);
-            glyph_offset_calc.y = glyph_offset.y * (glyph_size_downsampled.y / glyph_size.y);
+            glyph_offset_calc.y = glyph_offset.y * 1.1 * (glyph_size_downsampled.y / glyph_size.y);
         }
 
         // The glyph_offset.y is the y bearing, a y value that when added
