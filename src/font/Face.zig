@@ -328,28 +328,28 @@ fn calcMetrics(face: freetype.Face) Metrics {
     // underline should go.
     const underline_position = underline_pos: {
         // We use the declared underline position if its available
-        const declared = freetype.mulFix(
-            @intCast(i32, size_metrics.descender) + face.handle.*.underline_position,
-            @intCast(i32, size_metrics.x_scale),
-        ) >> 6;
+        const declared = fontUnitsToPxY(
+            face,
+            @intCast(i32, size_metrics.ascender) - face.handle.*.underline_position,
+        );
         if (declared > 0)
-            break :underline_pos @intToFloat(f32, declared);
+            break :underline_pos declared;
 
         // If we have no declared underline position, we go slightly under the
         // cell height (mainly: non-scalable fonts, i.e. emoji)
         break :underline_pos cell_height - 1;
     };
-    const underline_thickness = @intToFloat(f32, @maximum(1, freetype.mulFix(
+    const underline_thickness = @maximum(1, fontUnitsToPxY(
+        face,
         face.handle.*.underline_thickness,
-        @intCast(i32, size_metrics.x_scale),
-    ) >> 6));
+    ));
 
-    // log.warn("METRICS={} width={} height={} baseline={} underline_pos={} underline_thickness={}", .{
+    // log.warn("METRICS={} width={d} height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
     //     size_metrics,
     //     cell_width,
     //     cell_height,
-    //     cell_baseline,
-    //     cell_height - underline_position,
+    //     cell_height - cell_baseline,
+    //     underline_position,
     //     underline_thickness,
     // });
 
@@ -360,6 +360,13 @@ fn calcMetrics(face: freetype.Face) Metrics {
         .underline_position = underline_position,
         .underline_thickness = underline_thickness,
     };
+}
+
+/// Convert freetype "font units" to pixels using the Y scale.
+fn fontUnitsToPxY(face: freetype.Face, x: i32) f32 {
+    const mul = freetype.mulFix(x, @intCast(i32, face.handle.*.size.*.metrics.y_scale));
+    const div = @intToFloat(f32, mul) / 64;
+    return @ceil(div);
 }
 
 test {
