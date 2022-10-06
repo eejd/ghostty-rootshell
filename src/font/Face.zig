@@ -346,13 +346,18 @@ fn calcMetrics(face: freetype.Face) Metrics {
     // The underline position. This is a value from the top where the
     // underline should go.
     const underline_position = underline_pos: {
+        // The ascender is already scaled for scalable fonts, but the
+        // underline position is not.
+        const ascender_px = @intCast(i32, size_metrics.ascender) >> 6;
+        const declared_px = freetype.mulFix(
+            face.handle.*.underline_position,
+            @intCast(i32, face.handle.*.size.*.metrics.y_scale),
+        ) >> 6;
+
         // We use the declared underline position if its available
-        const declared = fontUnitsToPxY(
-            face,
-            @intCast(i32, size_metrics.ascender) - face.handle.*.underline_position,
-        );
+        const declared = ascender_px - declared_px;
         if (declared > 0)
-            break :underline_pos declared;
+            break :underline_pos @intToFloat(f32, declared);
 
         // If we have no declared underline position, we go slightly under the
         // cell height (mainly: non-scalable fonts, i.e. emoji)
@@ -369,10 +374,16 @@ fn calcMetrics(face: freetype.Face) Metrics {
         pos: f32,
         thickness: f32,
     } = if (face.getSfntTable(.os2)) |os2| .{
-        .pos = fontUnitsToPxY(face, @maximum(
-            0,
-            @intCast(i32, size_metrics.ascender) - os2.yStrikeoutPosition,
-        )),
+        .pos = pos: {
+            // Ascender is scaled, strikeout pos is not
+            const ascender_px = @intCast(i32, size_metrics.ascender) >> 6;
+            const declared_px = freetype.mulFix(
+                os2.yStrikeoutPosition,
+                @intCast(i32, face.handle.*.size.*.metrics.y_scale),
+            ) >> 6;
+
+            break :pos @intToFloat(f32, ascender_px - declared_px);
+        },
         .thickness = @maximum(1, fontUnitsToPxY(face, os2.yStrikeoutSize)),
     } else .{
         .pos = cell_baseline * 0.6,
