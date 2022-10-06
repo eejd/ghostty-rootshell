@@ -209,11 +209,25 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
         atlas.set(region, buffer);
     }
 
-    // The Y offset is the offset of the top of our bitmap PLUS our
-    // baseline calculation. The baseline calculation is so that everything
-    // is properly centered when we render it out into a monospace grid.
-    // Note: we add here because our X/Y is actually reversed, adding goes UP.
-    const offset_y = glyph.*.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
+    const offset_y = offset_y: {
+        // For non-scalable colorized fonts, we assume they are pictographic
+        // and just center the glyph. So far this has only applied to emoji
+        // fonts. Emoji fonts don't always report a correct ascender/descender
+        // (mainly Apple Emoji) so we just center them. Also, since emoji font
+        // aren't scalable, cell_baseline is incorrect anyways.
+        //
+        // NOTE(mitchellh): I don't know if this is right, this doesn't
+        // _feel_ right, but it makes all my limited test cases work.
+        if (self.face.hasColor() and !self.face.isScalable()) {
+            break :offset_y @intCast(c_int, tgt_h);
+        }
+
+        // The Y offset is the offset of the top of our bitmap PLUS our
+        // baseline calculation. The baseline calculation is so that everything
+        // is properly centered when we render it out into a monospace grid.
+        // Note: we add here because our X/Y is actually reversed, adding goes UP.
+        break :offset_y glyph.*.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
+    };
 
     // Store glyph metadata
     return Glyph{
