@@ -29,6 +29,9 @@ hb_font: harfbuzz.Font,
 /// a way to declare this. We just assume a font with color is an emoji font.
 presentation: Presentation,
 
+/// Metrics for this font face. These are useful for renderers.
+metrics: Metrics,
+
 /// If a DPI can't be calculated, this DPI is used. This is probably
 /// wrong on modern devices so it is highly recommended you get the DPI
 /// using whatever platform method you can.
@@ -64,6 +67,7 @@ pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: DesiredSize)
         .face = face,
         .hb_font = hb_font,
         .presentation = if (face.hasColor()) .emoji else .text,
+        .metrics = calcMetrics(face),
     };
 }
 
@@ -81,6 +85,7 @@ pub fn init(lib: Library, source: [:0]const u8, size: DesiredSize) !Face {
         .face = face,
         .hb_font = hb_font,
         .presentation = if (face.hasColor()) .emoji else .text,
+        .metrics = calcMetrics(face),
     };
 }
 
@@ -88,12 +93,6 @@ pub fn deinit(self: *Face) void {
     self.face.deinit();
     self.hb_font.destroy();
     self.* = undefined;
-}
-
-/// Change the size of the loaded font face. If you're using a texture
-/// atlas, you should invalidate all the previous values if cached.
-pub fn setSize(self: Face, size: DesiredSize) !void {
-    return try setSize_(self.face, size);
 }
 
 fn setSize_(face: freetype.Face, size: DesiredSize) !void {
@@ -210,12 +209,32 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
         atlas.set(region, buffer);
     }
 
+    const offset_y = offset_y: {
+        // For non-scalable colorized fonts, we assume they are pictographic
+        // and just center the glyph. So far this has only applied to emoji
+        // fonts. Emoji fonts don't always report a correct ascender/descender
+        // (mainly Apple Emoji) so we just center them. Also, since emoji font
+        // aren't scalable, cell_baseline is incorrect anyways.
+        //
+        // NOTE(mitchellh): I don't know if this is right, this doesn't
+        // _feel_ right, but it makes all my limited test cases work.
+        if (self.face.hasColor() and !self.face.isScalable()) {
+            break :offset_y @intCast(c_int, tgt_h);
+        }
+
+        // The Y offset is the offset of the top of our bitmap PLUS our
+        // baseline calculation. The baseline calculation is so that everything
+        // is properly centered when we render it out into a monospace grid.
+        // Note: we add here because our X/Y is actually reversed, adding goes UP.
+        break :offset_y glyph.*.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
+    };
+
     // Store glyph metadata
     return Glyph{
         .width = tgt_w,
         .height = tgt_h,
         .offset_x = glyph.*.bitmap_left,
-        .offset_y = glyph.*.bitmap_top,
+        .offset_y = offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = f26dot6ToFloat(glyph.*.advance.x),
@@ -224,7 +243,7 @@ pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32
 
 /// Convert 16.6 pixel format to pixels based on the scale factor of the
 /// current font size.
-pub fn unitsToPxY(self: Face, units: i32) i32 {
+fn unitsToPxY(self: Face, units: i32) i32 {
     return @intCast(i32, freetype.mulFix(
         units,
         @intCast(i32, self.face.handle.*.size.*.metrics.y_scale),
@@ -234,6 +253,134 @@ pub fn unitsToPxY(self: Face, units: i32) i32 {
 /// Convert 26.6 pixel format to f32
 fn f26dot6ToFloat(v: freetype.c.FT_F26Dot6) f32 {
     return @intToFloat(f32, v >> 6);
+}
+
+/// Metrics associated with the font that are useful for renderers to know.
+pub const Metrics = struct {
+    /// Recommended cell width and height for a monospace grid using this font.
+    cell_width: f32,
+    cell_height: f32,
+
+    /// For monospace grids, the recommended y-value from the bottom to set
+    /// the baseline for font rendering. This is chosen so that things such
+    /// as the bottom of a "g" or "y" do not drop below the cell.
+    cell_baseline: f32,
+
+    /// The position of the underline from the top of the cell and the
+    /// thickness in pixels.
+    underline_position: f32,
+    underline_thickness: f32,
+};
+
+/// Calculate the metrics associated with a face. This is not public because
+/// the metrics are calculated for every face and cached since they're
+/// frequently required for renderers and take up next to little memory space
+/// in the grand scheme of things.
+///
+/// An aside: the proper way to limit memory usage due to faces is to limit
+/// the faces with DeferredFaces and reload on demand. A Face can't be converted
+/// into a DeferredFace but a Face that comes from a DeferredFace can be
+/// deinitialized anytime and reloaded with the deferred face.
+fn calcMetrics(face: freetype.Face) Metrics {
+    const size_metrics = face.handle.*.size.*.metrics;
+
+    // Cell width is calculated by preferring to use 'M' as the width of a
+    // cell since 'M' is generally the widest ASCII character. If loading 'M'
+    // fails then we use the max advance of the font face size metrics.
+    const cell_width: f32 = cell_width: {
+        if (face.getCharIndex('M')) |glyph_index| {
+            if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                break :cell_width f26dot6ToFloat(face.handle.*.glyph.*.advance.x);
+            } else |_| {
+                // Ignore the error since we just fall back to max_advance below
+            }
+        }
+
+        break :cell_width f26dot6ToFloat(size_metrics.max_advance);
+    };
+
+    // Cell height is calculated as the maximum of multiple things in order
+    // to handle edge cases in fonts: (1) the height as reported in metadata
+    // by the font designer (2) the maximum glyph height as measured in the
+    // font and (3) the height from the ascender to an underscore.
+    const cell_height: f32 = cell_height: {
+        // The height as reported by the font designer.
+        const face_height = f26dot6ToFloat(size_metrics.height);
+
+        // The maximum height a glyph can take in the font
+        const max_glyph_height = f26dot6ToFloat(size_metrics.ascender) -
+            f26dot6ToFloat(size_metrics.descender);
+
+        // The height of the underscore character
+        const underscore_height = underscore: {
+            if (face.getCharIndex('_')) |glyph_index| {
+                if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    var res: f32 = f26dot6ToFloat(size_metrics.ascender);
+                    res -= @intToFloat(f32, face.handle.*.glyph.*.bitmap_top);
+                    res += @intToFloat(f32, face.handle.*.glyph.*.bitmap.rows);
+                    break :underscore res;
+                } else |_| {
+                    // Ignore the error since we just fall back below
+                }
+            }
+
+            break :underscore 0;
+        };
+
+        break :cell_height @maximum(
+            face_height,
+            @maximum(max_glyph_height, underscore_height),
+        );
+    };
+
+    // The baseline is the descender amount for the font. This is the maximum
+    // that a font may go down. We switch signs because our coordinate system
+    // is reversed.
+    const cell_baseline = -1 * f26dot6ToFloat(size_metrics.descender);
+
+    // The underline position. This is a value from the top where the
+    // underline should go.
+    const underline_position = underline_pos: {
+        // We use the declared underline position if its available
+        const declared = fontUnitsToPxY(
+            face,
+            @intCast(i32, size_metrics.ascender) - face.handle.*.underline_position,
+        );
+        if (declared > 0)
+            break :underline_pos declared;
+
+        // If we have no declared underline position, we go slightly under the
+        // cell height (mainly: non-scalable fonts, i.e. emoji)
+        break :underline_pos cell_height - 1;
+    };
+    const underline_thickness = @maximum(1, fontUnitsToPxY(
+        face,
+        face.handle.*.underline_thickness,
+    ));
+
+    // log.warn("METRICS={} width={d} height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
+    //     size_metrics,
+    //     cell_width,
+    //     cell_height,
+    //     cell_height - cell_baseline,
+    //     underline_position,
+    //     underline_thickness,
+    // });
+
+    return .{
+        .cell_width = cell_width,
+        .cell_height = cell_height,
+        .cell_baseline = cell_baseline,
+        .underline_position = underline_position,
+        .underline_thickness = underline_thickness,
+    };
+}
+
+/// Convert freetype "font units" to pixels using the Y scale.
+fn fontUnitsToPxY(face: freetype.Face, x: i32) f32 {
+    const mul = freetype.mulFix(x, @intCast(i32, face.handle.*.size.*.metrics.y_scale));
+    const div = @intToFloat(f32, mul) / 64;
+    return @ceil(div);
 }
 
 test {

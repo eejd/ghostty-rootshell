@@ -57,7 +57,8 @@ uniform sampler2D text;
 uniform sampler2D text_color;
 uniform vec2 cell_size;
 uniform mat4 projection;
-uniform float glyph_baseline;
+uniform float underline_position;
+uniform float underline_thickness;
 
 /********************************************************************
  * Modes
@@ -138,9 +139,8 @@ void main() {
 
         // The glyph_offset.y is the y bearing, a y value that when added
         // to the baseline is the offset (+y is up). Our grid goes down.
-        // So we flip it with `cell_size.y - glyph_offset.y`. The glyph_baseline
-        // uniform sets our line baseline where characters "sit".
-        glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y - glyph_baseline;
+        // So we flip it with `cell_size.y - glyph_offset.y`.
+        glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y;
 
         // Calculate the final position of the cell.
         cell_pos = cell_pos + glyph_size_downsampled * position + glyph_offset_calc;
@@ -197,18 +197,16 @@ void main() {
         break;
 
     case MODE_UNDERLINE:
-        // Make the underline a smaller version of our cell
-        // TODO: use real font underline thickness
-        vec2 underline_size = vec2(cell_size_scaled.x, cell_size_scaled.y*0.05);
+        // Underline Y value is just our thickness
+        vec2 underline_size = vec2(cell_size_scaled.x, underline_thickness);
 
-        // Position our underline so that it is midway between the glyph
-        // baseline and the bottom of the cell.
-        vec2 underline_offset = vec2(cell_size_scaled.x, cell_size_scaled.y - (glyph_baseline / 2));
+        // Position the underline where we are told to
+        vec2 underline_offset = vec2(cell_size_scaled.x, underline_position) ;
 
         // Go to the bottom of the cell, take away the size of the
         // underline, and that is our position. We also float it slightly
         // above the bottom.
-        cell_pos = cell_pos + underline_offset - underline_size * position;
+        cell_pos = cell_pos + underline_offset - (underline_size * position);
 
         gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
         color = fg_color_in / 255.0;

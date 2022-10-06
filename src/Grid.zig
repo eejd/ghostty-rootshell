@@ -158,9 +158,14 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
     var shaper = try font.Shaper.init(shape_buf);
     errdefer shaper.deinit();
 
-    // Load all visible ASCII characters and build our cell width based on
-    // the widest character that we see.
-    const metrics = try font_group.metrics(alloc);
+    // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
+    // Doesn't matter, any normal ASCII will do we're just trying to make
+    // sure we use the regular font.
+    const metrics = metrics: {
+        const index = (try font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
+        const face = try font_group.group.faceFromIndex(index);
+        break :metrics face.metrics;
+    };
     log.debug("cell dimensions={}", .{metrics});
 
     // Create our shader
@@ -173,7 +178,8 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
     const pbind = try program.use();
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("glyph_baseline", metrics.cell_baseline);
+    try program.setUniform("underline_position", metrics.underline_position);
+    try program.setUniform("underline_thickness", metrics.underline_thickness);
 
     // Set all of our texture indexes
     try program.setUniform("text", 0);
