@@ -49,6 +49,16 @@ pub fn Context(comptime T: type) type {
             );
         }
 
+        pub fn setRGBFillColor(self: *T, r: f64, g: f64, b: 64, alpha: f64) void {
+            c.CGContextSetRGBFillColor(
+                @ptrCast(c.CGContextRef, self),
+                r,
+                g,
+                b,
+                alpha,
+            );
+        }
+
         pub fn setTextDrawingMode(self: *T, mode: TextDrawingMode) void {
             c.CGContextSetTextDrawingMode(
                 @ptrCast(c.CGContextRef, self),
