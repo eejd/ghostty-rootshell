@@ -48,6 +48,22 @@ pub const Font = opaque {
         );
     }
 
+    pub fn getBoundingRectForGlyphs(
+        self: *Font,
+        orientation: FontOrientation,
+        glyphs: []const graphics.Glyph,
+        rects: ?[]graphics.Rect,
+    ) graphics.Rect {
+        if (rects) |s| assert(glyphs.len == s.len);
+        return @bitCast(graphics.Rect, c.CTFontGetBoundingRectsForGlyphs(
+            @ptrCast(c.CTFontRef, self),
+            @enumToInt(orientation),
+            glyphs.ptr,
+            @ptrCast(?[*]c.struct_CGRect, if (rects) |s| s.ptr else null),
+            @intCast(c_long, glyphs.len),
+        ));
+    }
+
     pub fn copyAttribute(self: *Font, comptime attr: text.FontAttribute) attr.Value() {
         return @intToPtr(attr.Value(), @ptrToInt(c.CTFontCopyAttribute(
             @ptrCast(c.CTFontRef, self),
@@ -61,6 +77,12 @@ pub const Font = opaque {
             @ptrToInt(c.CTFontCopyDisplayName(@ptrCast(c.CTFontRef, self))),
         );
     }
+};
+
+pub const FontOrientation = enum(c_uint) {
+    default = c.kCTFontOrientationDefault,
+    horizontal = c.kCTFontOrientationHorizontal,
+    vertical = c.kCTFontOrientationVertical,
 };
 
 test {
@@ -80,6 +102,17 @@ test {
         &glyphs,
     ));
     try testing.expect(glyphs[0] > 0);
+
+    // Bounding rect
+    {
+        var rect = font.getBoundingRectForGlyphs(.horizontal, &glyphs, null);
+        try testing.expect(rect.size.width > 0);
+
+        var singles: [1]graphics.Rect = undefined;
+        rect = font.getBoundingRectForGlyphs(.horizontal, &glyphs, &singles);
+        try testing.expect(rect.size.width > 0);
+        try testing.expect(singles[0].size.width > 0);
+    }
 
     // Draw
     {
