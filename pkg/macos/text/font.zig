@@ -32,6 +32,22 @@ pub const Font = opaque {
         );
     }
 
+    pub fn drawGlyphs(
+        self: *Font,
+        glyphs: []const graphics.Glyph,
+        positions: []const graphics.Point,
+        context: anytype, // Must be some context type from graphics
+    ) void {
+        assert(positions.len == glyphs.len);
+        c.CTFontDrawGlyphs(
+            @ptrCast(c.CTFontRef, self),
+            glyphs.ptr,
+            @ptrCast([*]const c.struct_CGPoint, positions.ptr),
+            glyphs.len,
+            @ptrCast(c.CGContextRef, context),
+        );
+    }
+
     pub fn copyAttribute(self: *Font, comptime attr: text.FontAttribute) attr.Value() {
         return @intToPtr(attr.Value(), @ptrToInt(c.CTFontCopyAttribute(
             @ptrCast(c.CTFontRef, self),
@@ -64,4 +80,19 @@ test {
         &glyphs,
     ));
     try testing.expect(glyphs[0] > 0);
+
+    // Draw
+    {
+        const cs = try graphics.ColorSpace.createDeviceGray();
+        defer cs.release();
+        const ctx = try graphics.BitmapContext.create(null, 80, 80, 8, 80, cs);
+        defer ctx.release();
+
+        var pos = [_]graphics.Point{.{ .x = 0, .y = 0 }};
+        font.drawGlyphs(
+            &glyphs,
+            &pos,
+            ctx,
+        );
+    }
 }
