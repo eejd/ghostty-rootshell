@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
-const freetype = @import("face/freetype.zig");
-const coretext = @import("face/coretext.zig");
+pub const freetype = @import("face/freetype.zig");
+pub const coretext = @import("face/coretext.zig");
 
 /// Face implementation for the compile options.
 pub const Face = switch (options.backend) {

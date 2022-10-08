@@ -89,6 +89,12 @@ pub const Font = opaque {
             @ptrToInt(c.CTFontCopyDisplayName(@ptrCast(c.CTFontRef, self))),
         );
     }
+
+    pub fn getSymbolicTraits(self: *Font) text.FontSymbolicTraits {
+        return @bitCast(text.FontSymbolicTraits, c.CTFontGetSymbolicTraits(
+            @ptrCast(c.CTFontRef, self),
+        ));
+    }
 };
 
 pub const FontOrientation = enum(c_uint) {
@@ -107,6 +113,12 @@ test {
 
     const font = try Font.createWithFontDescriptor(desc, 12);
     defer font.release();
+
+    // Traits
+    {
+        const traits = font.getSymbolicTraits();
+        try testing.expect(!traits.color_glyphs);
+    }
 
     var glyphs = [1]graphics.Glyph{0};
     try testing.expect(font.getGlyphsForCharacters(

@@ -111,7 +111,13 @@ pub fn load(
         },
 
         .coretext => {
-            try self.loadCoreText(lib, size);
+            // It is possible to use CoreText with Freetype so we support
+            // both here.
+            switch (font.Face) {
+                font.face.freetype.Face => try self.loadCoreTextFreetype(lib, size),
+                else => unreachable,
+            }
+
             return;
         },
 
@@ -136,7 +142,7 @@ fn loadFontconfig(
     self.face = try Face.initFile(lib, filename, face_index, size);
 }
 
-fn loadCoreText(
+fn loadCoreTextFreetype(
     self: *DeferredFace,
     lib: Library,
     size: font.face.DesiredSize,
