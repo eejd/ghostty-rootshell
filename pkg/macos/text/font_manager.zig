@@ -11,3 +11,12 @@ pub fn createFontDescriptorsFromURL(url: *foundation.URL) ?*foundation.Array {
         )),
     );
 }
+
+pub fn createFontDescriptorsFromData(data: *foundation.Data) ?*foundation.Array {
+    return @intToPtr(
+        ?*foundation.Array,
+        @ptrToInt(c.CTFontManagerCreateFontDescriptorsFromData(
+            @ptrCast(c.CFDataRef, data),
+        )),
+    );
+}
