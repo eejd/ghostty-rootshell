@@ -76,6 +76,22 @@ pub const Font = opaque {
         ));
     }
 
+    pub fn getAdvancesForGlyphs(
+        self: *Font,
+        orientation: FontOrientation,
+        glyphs: []const graphics.Glyph,
+        advances: ?[]graphics.Size,
+    ) f64 {
+        if (advances) |s| assert(glyphs.len == s.len);
+        return c.CTFontGetAdvancesForGlyphs(
+            @ptrCast(c.CTFontRef, self),
+            @enumToInt(orientation),
+            glyphs.ptr,
+            @ptrCast(?[*]c.struct_CGSize, if (advances) |s| s.ptr else null),
+            @intCast(c_long, glyphs.len),
+        );
+    }
+
     pub fn copyAttribute(self: *Font, comptime attr: text.FontAttribute) attr.Value() {
         return @intToPtr(attr.Value(), @ptrToInt(c.CTFontCopyAttribute(
             @ptrCast(c.CTFontRef, self),
@@ -94,6 +110,14 @@ pub const Font = opaque {
         return @bitCast(text.FontSymbolicTraits, c.CTFontGetSymbolicTraits(
             @ptrCast(c.CTFontRef, self),
         ));
+    }
+
+    pub fn getUnderlinePosition(self: *Font) f64 {
+        return c.CTFontGetUnderlinePosition(@ptrCast(c.CTFontRef, self));
+    }
+
+    pub fn getUnderlineThickness(self: *Font) f64 {
+        return c.CTFontGetUnderlineThickness(@ptrCast(c.CTFontRef, self));
     }
 };
 
@@ -136,6 +160,17 @@ test {
         rect = font.getBoundingRectForGlyphs(.horizontal, &glyphs, &singles);
         try testing.expect(rect.size.width > 0);
         try testing.expect(singles[0].size.width > 0);
+    }
+
+    // Advances
+    {
+        var advance = font.getAdvancesForGlyphs(.horizontal, &glyphs, null);
+        try testing.expect(advance > 0);
+
+        var singles: [1]graphics.Size = undefined;
+        advance = font.getAdvancesForGlyphs(.horizontal, &glyphs, &singles);
+        try testing.expect(advance > 0);
+        try testing.expect(singles[0].width > 0);
     }
 
     // Draw
