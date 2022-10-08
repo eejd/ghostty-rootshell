@@ -10,6 +10,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const font = @import("main.zig");
 const Atlas = @import("../Atlas.zig");
 const DeferredFace = @import("main.zig").DeferredFace;
 const Face = @import("main.zig").Face;
@@ -32,7 +33,7 @@ const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
 lib: Library,
 
 /// The desired font size. All fonts in a group must share the same size.
-size: Face.DesiredSize,
+size: font.face.DesiredSize,
 
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
@@ -41,7 +42,7 @@ faces: StyleArray,
 pub fn init(
     alloc: Allocator,
     lib: Library,
-    size: Face.DesiredSize,
+    size: font.face.DesiredSize,
 ) !Group {
     var result = Group{ .lib = lib, .size = size, .faces = undefined };
 

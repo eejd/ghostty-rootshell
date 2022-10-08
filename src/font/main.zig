@@ -2,8 +2,9 @@ const std = @import("std");
 const build_options = @import("build_options");
 
 pub const discovery = @import("discovery.zig");
+pub const face = @import("face.zig");
 pub const DeferredFace = @import("DeferredFace.zig");
-pub const Face = @import("Face.zig");
+pub const Face = face.Face;
 pub const Group = @import("Group.zig");
 pub const GroupCache = @import("GroupCache.zig");
 pub const Glyph = @import("Glyph.zig");

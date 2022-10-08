@@ -223,8 +223,8 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
     const content_scale = try window.getContentScale();
-    const x_dpi = content_scale.x_scale * font.Face.default_dpi;
-    const y_dpi = content_scale.y_scale * font.Face.default_dpi;
+    const x_dpi = content_scale.x_scale * font.face.default_dpi;
+    const y_dpi = content_scale.y_scale * font.face.default_dpi;
     log.debug("xscale={} yscale={} xdpi={} ydpi={}", .{
         content_scale.x_scale,
         content_scale.y_scale,
@@ -242,7 +242,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
 
     // The font size we desire along with the DPI determiend for the window
-    const font_size: font.Face.DesiredSize = .{
+    const font_size: font.face.DesiredSize = .{
         .points = config.@"font-size",
         .xdpi = @floatToInt(u16, x_dpi),
         .ydpi = @floatToInt(u16, y_dpi),

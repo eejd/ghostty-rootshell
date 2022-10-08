@@ -10,6 +10,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const fontconfig = @import("fontconfig");
 const macos = @import("macos");
+const font = @import("main.zig");
 const options = @import("main.zig").options;
 const Library = @import("main.zig").Library;
 const Face = @import("main.zig").Face;
@@ -98,7 +99,7 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
 pub fn load(
     self: *DeferredFace,
     lib: Library,
-    size: Face.DesiredSize,
+    size: font.face.DesiredSize,
 ) !void {
     // No-op if we already loaded
     if (self.face != null) return;
@@ -123,7 +124,7 @@ pub fn load(
 fn loadFontconfig(
     self: *DeferredFace,
     lib: Library,
-    size: Face.DesiredSize,
+    size: font.face.DesiredSize,
 ) !void {
     assert(self.face == null);
     const fc = self.fc.?;
@@ -138,7 +139,7 @@ fn loadFontconfig(
 fn loadCoreText(
     self: *DeferredFace,
     lib: Library,
-    size: Face.DesiredSize,
+    size: font.face.DesiredSize,
 ) !void {
     assert(self.face == null);
     const ct = self.ct.?;
