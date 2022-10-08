@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
@@ -39,6 +40,26 @@ pub const Face = struct {
         self.hb_font.destroy();
         self.* = undefined;
     }
+
+    /// Returns the glyph index for the given Unicode code point. If this
+    /// face doesn't support this glyph, null is returned.
+    pub fn glyphIndex(self: Face, cp: u32) ?u32 {
+        // Turn UTF-32 into UTF-16 for CT API
+        var unichars: [2]u16 = undefined;
+        const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
+        const len: usize = if (pair) 2 else 1;
+
+        // Get our glyphs
+        var glyphs = [2]macos.graphics.Glyph{ 0, 0 };
+        if (!self.font.getGlyphsForCharacters(unichars[0..len], glyphs[0..len]))
+            return null;
+
+        // We can have pairs due to chars like emoji but we expect all of them
+        // to decode down into exactly one glyph ID.
+        if (pair) assert(glyphs[1] == 0);
+
+        return @intCast(u32, glyphs[0]);
+    }
 };
 
 test {
@@ -55,6 +76,13 @@ test {
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
+
+    // Generate all visible ASCII
+    var i: u8 = 32;
+    while (i < 127) : (i += 1) {
+        try testing.expect(face.glyphIndex(i) != null);
+        //_ = try face.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?);
+    }
 }
 
 test "emoji" {
@@ -70,5 +98,9 @@ test "emoji" {
     var face = try Face.initFontCopy(ct_font, .{ .points = 18 });
     defer face.deinit();
 
+    // Presentation
     try testing.expectEqual(font.Presentation.emoji, face.presentation);
+
+    // Glyph index check
+    try testing.expect(face.glyphIndex('🥸') != null);
 }
