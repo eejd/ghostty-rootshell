@@ -31,7 +31,7 @@ pub const Face = struct {
     presentation: Presentation,
 
     /// Metrics for this font face. These are useful for renderers.
-    metrics: Metrics,
+    metrics: font.face.Metrics,
 
     /// Initialize a new font face with the given source in-memory.
     pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: font.face.DesiredSize) !Face {
@@ -235,28 +235,6 @@ pub const Face = struct {
         return @intToFloat(f32, v >> 6);
     }
 
-    /// Metrics associated with the font that are useful for renderers to know.
-    pub const Metrics = struct {
-        /// Recommended cell width and height for a monospace grid using this font.
-        cell_width: f32,
-        cell_height: f32,
-
-        /// For monospace grids, the recommended y-value from the bottom to set
-        /// the baseline for font rendering. This is chosen so that things such
-        /// as the bottom of a "g" or "y" do not drop below the cell.
-        cell_baseline: f32,
-
-        /// The position of the underline from the top of the cell and the
-        /// thickness in pixels.
-        underline_position: f32,
-        underline_thickness: f32,
-
-        /// The position and thickness of a strikethrough. Same units/style
-        /// as the underline fields.
-        strikethrough_position: f32,
-        strikethrough_thickness: f32,
-    };
-
     /// Calculate the metrics associated with a face. This is not public because
     /// the metrics are calculated for every face and cached since they're
     /// frequently required for renderers and take up next to little memory space
@@ -266,7 +244,7 @@ pub const Face = struct {
     /// the faces with DeferredFaces and reload on demand. A Face can't be converted
     /// into a DeferredFace but a Face that comes from a DeferredFace can be
     /// deinitialized anytime and reloaded with the deferred face.
-    fn calcMetrics(face: freetype.Face) Metrics {
+    fn calcMetrics(face: freetype.Face) font.face.Metrics {
         const size_metrics = face.handle.*.size.*.metrics;
 
         // Cell width is calculated by preferring to use 'M' as the width of a

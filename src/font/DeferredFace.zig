@@ -114,7 +114,7 @@ pub fn load(
             // It is possible to use CoreText with Freetype so we support
             // both here.
             switch (font.Face) {
-                font.face.freetype.Face => try self.loadCoreTextFreetype(lib, size),
+                @import("face/freetype.zig").Face => try self.loadCoreTextFreetype(lib, size),
                 else => unreachable,
             }
 
