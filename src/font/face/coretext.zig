@@ -14,6 +14,9 @@ pub const Face = struct {
     /// The presentation for this font.
     presentation: font.Presentation,
 
+    /// Metrics for this font face. These are useful for renderers.
+    metrics: font.face.Metrics,
+
     /// Initialize a CoreText-based font from a TTF/TTC in memory.
     pub fn init(lib: font.Library, source: [:0]const u8, size: font.face.DesiredSize) !Face {
         _ = lib;
@@ -50,6 +53,7 @@ pub const Face = struct {
             .font = ct_font,
             .hb_font = hb_font,
             .presentation = if (traits.color_glyphs) .emoji else .text,
+            .metrics = calcMetrics(ct_font),
         };
     }
 
@@ -77,6 +81,45 @@ pub const Face = struct {
         if (pair) assert(glyphs[1] == 0);
 
         return @intCast(u32, glyphs[0]);
+    }
+
+    fn calcMetrics(ct_font: *macos.text.Font) font.face.Metrics {
+        // Cell width is calculated by calculating the widest width of the
+        // visible ASCII characters. Usually 'M' is widest but we just take
+        // whatever is widest.
+        const cell_width: f32 = cell_width: {
+            // Build a comptime array of all the ASCII chars
+            const unichars = comptime unichars: {
+                const len = 127 - 32;
+                var result: [len]u16 = undefined;
+                var i: u16 = 32;
+                while (i < 127) : (i += 1) {
+                    result[i - 32] = i;
+                }
+
+                break :unichars result;
+            };
+
+            // Get our glyph IDs for the ASCII chars
+            var glyphs: [unichars.len]macos.graphics.Glyph = undefined;
+            _ = ct_font.getGlyphsForCharacters(&unichars, &glyphs);
+
+            // Get all our advances
+            var advances: [unichars.len]macos.graphics.Size = undefined;
+            _ = ct_font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
+
+            // Find the maximum advance
+            var max: f64 = 0;
+            var i: usize = 0;
+            while (i < advances.len) : (i += 1) {
+                max = @maximum(advances[i].width, max);
+            }
+
+            break :cell_width @floatCast(f32, max);
+        };
+
+        std.log.warn("width={}", .{cell_width});
+        return undefined;
     }
 };
 

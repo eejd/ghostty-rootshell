@@ -389,6 +389,7 @@ test {
 
     var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
     defer ft_font.deinit();
+    //log.warn("FT WIDTH={}", .{ft_font.metrics.cell_width});
 
     try testing.expectEqual(Presentation.text, ft_font.presentation);
 
