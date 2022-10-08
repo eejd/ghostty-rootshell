@@ -119,7 +119,7 @@ pub fn renderGlyph(
 
     // Uncached, render it
     const face = try self.group.faceFromIndex(index);
-    const atlas: *Atlas = if (face.hasColor()) &self.atlas_color else &self.atlas_greyscale;
+    const atlas: *Atlas = if (face.presentation == .emoji) &self.atlas_color else &self.atlas_greyscale;
     const glyph = self.group.renderGlyph(
         alloc,
         atlas,
