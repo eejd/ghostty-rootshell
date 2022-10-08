@@ -14,6 +14,24 @@ pub const Face = struct {
     /// The presentation for this font.
     presentation: font.Presentation,
 
+    /// Initialize a CoreText-based font from a TTF/TTC in memory.
+    pub fn init(lib: font.Library, source: [:0]const u8, size: font.face.DesiredSize) !Face {
+        _ = lib;
+
+        const data = try macos.foundation.Data.createWithBytesNoCopy(source);
+        defer data.release();
+
+        const arr = macos.text.createFontDescriptorsFromData(data) orelse
+            return error.FontInitFailure;
+        defer arr.release();
+
+        const desc = arr.getValueAtIndex(macos.text.FontDescriptor, 0);
+        const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
+        defer ct_font.release();
+
+        return try initFontCopy(ct_font, size);
+    }
+
     /// Initialize a CoreText-based face from another initialized font face
     /// but with a new size. This is often how CoreText fonts are initialized
     /// because the font is loaded at a default size during discovery, and then
@@ -103,4 +121,24 @@ test "emoji" {
 
     // Glyph index check
     try testing.expect(face.glyphIndex('🥸') != null);
+}
+
+test "in-memory" {
+    const testing = std.testing;
+    const testFont = @import("../test.zig").fontRegular;
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    defer face.deinit();
+
+    try testing.expectEqual(font.Presentation.text, face.presentation);
+
+    // Generate all visible ASCII
+    var i: u8 = 32;
+    while (i < 127) : (i += 1) {
+        try testing.expect(face.glyphIndex(i) != null);
+        //_ = try face.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?);
+    }
 }
