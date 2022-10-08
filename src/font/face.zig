@@ -31,3 +31,9 @@ pub const DesiredSize = struct {
         return (self.points * self.ydpi) / 72;
     }
 };
+
+pub const Foo = if (options.backend == .coretext) coretext.Face else void;
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

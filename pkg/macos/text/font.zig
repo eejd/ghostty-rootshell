@@ -18,6 +18,18 @@ pub const Font = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn copyWithAttributes(self: *Font, size: f32, attrs: ?*text.FontDescriptor) Allocator.Error!*Font {
+        return @intToPtr(
+            ?*Font,
+            @ptrToInt(c.CTFontCreateCopyWithAttributes(
+                @ptrCast(c.CTFontRef, self),
+                size,
+                null,
+                @ptrCast(c.CTFontDescriptorRef, attrs),
+            )),
+        ) orelse Allocator.Error.OutOfMemory;
+    }
+
     pub fn release(self: *Font) void {
         c.CFRelease(self);
     }
@@ -128,4 +140,17 @@ test {
             ctx,
         );
     }
+}
+
+test "copy" {
+    const name = try foundation.String.createWithBytes("Monaco", .utf8, false);
+    defer name.release();
+    const desc = try text.FontDescriptor.createWithNameAndSize(name, 12);
+    defer desc.release();
+
+    const font = try Font.createWithFontDescriptor(desc, 12);
+    defer font.release();
+
+    const f2 = try font.copyWithAttributes(14, null);
+    defer f2.release();
 }

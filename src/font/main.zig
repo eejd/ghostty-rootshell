@@ -34,6 +34,15 @@ pub const Backend = enum {
 
     /// CoreText for both font discovery and rendering (macOS).
     coretext,
+
+    /// Helper that just returns true if we should be using freetype. This
+    /// is used for tests.
+    pub fn freetype(self: Backend) bool {
+        return switch (self) {
+            .freetype, .fontconfig_freetype => true,
+            .coretext => false,
+        };
+    }
 };
 
 /// The styles that a family can take.
