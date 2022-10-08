@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
+const c = @import("c.zig");
 
 pub const URL = opaque {
     pub fn createWithString(str: *foundation.String, base: ?*URL) Allocator.Error!*URL {
@@ -8,6 +9,22 @@ pub const URL = opaque {
             null,
             str,
             base,
+        ) orelse error.OutOfMemory;
+    }
+
+    pub fn createWithFileSystemPath(
+        path: *foundation.String,
+        style: URLPathStyle,
+        dir: bool,
+    ) Allocator.Error!*URL {
+        return @intToPtr(
+            ?*URL,
+            @ptrToInt(c.CFURLCreateWithFileSystemPath(
+                null,
+                @ptrCast(c.CFStringRef, path),
+                @enumToInt(style),
+                if (dir) 1 else 0,
+            )),
         ) orelse error.OutOfMemory;
     }
 
@@ -43,6 +60,11 @@ pub const URL = opaque {
     ) ?*foundation.String;
 };
 
+pub const URLPathStyle = enum(c_int) {
+    posix = c.kCFURLPOSIXPathStyle,
+    windows = c.kCFURLWindowsPathStyle,
+};
+
 test {
     const testing = std.testing;
 
@@ -59,5 +81,24 @@ test {
         var buf: [128]u8 = undefined;
         const cstr = path.cstring(&buf, .utf8).?;
         try testing.expectEqualStrings("/foo", cstr);
+    }
+}
+
+test "path" {
+    const testing = std.testing;
+
+    const str = try foundation.String.createWithBytes("foo/bar.ttf", .utf8, false);
+    defer str.release();
+
+    const url = try URL.createWithFileSystemPath(str, .posix, false);
+    defer url.release();
+
+    {
+        const path = url.copyPath().?;
+        defer path.release();
+
+        var buf: [128]u8 = undefined;
+        const cstr = path.cstring(&buf, .utf8).?;
+        try testing.expectEqualStrings("foo/bar.ttf", cstr);
     }
 }
