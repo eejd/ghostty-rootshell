@@ -44,7 +44,7 @@ pub const Face = struct {
         const ct_font = try base.copyWithAttributes(@intToFloat(f32, size.points), null);
         errdefer ct_font.release();
 
-        const hb_font = try harfbuzz.coretext.createFont(ct_font);
+        var hb_font = try harfbuzz.coretext.createFont(ct_font);
         errdefer hb_font.destroy();
 
         const traits = ct_font.getSymbolicTraits();
@@ -53,7 +53,7 @@ pub const Face = struct {
             .font = ct_font,
             .hb_font = hb_font,
             .presentation = if (traits.color_glyphs) .emoji else .text,
-            .metrics = calcMetrics(ct_font),
+            .metrics = try calcMetrics(ct_font),
         };
     }
 
@@ -83,7 +83,7 @@ pub const Face = struct {
         return @intCast(u32, glyphs[0]);
     }
 
-    fn calcMetrics(ct_font: *macos.text.Font) font.face.Metrics {
+    fn calcMetrics(ct_font: *macos.text.Font) !font.face.Metrics {
         // Cell width is calculated by calculating the widest width of the
         // visible ASCII characters. Usually 'M' is widest but we just take
         // whatever is widest.
@@ -118,13 +118,63 @@ pub const Face = struct {
             break :cell_width @floatCast(f32, max);
         };
 
+        // Calculate the cell height by using CoreText's layout engine
+        // to tell us after laying out some text. This is inspired by Kitty's
+        // approach. Previously we were using descent/ascent math and it wasn't
+        // quite the same with CoreText and I never figured out why.
         const cell_height: f32 = cell_height: {
-            const diff = ct_font.getAscent() + ct_font.getDescent() + ct_font.getLeading();
-            break :cell_height @floatCast(f32, diff);
+            const unit = "AQWMH_gyl " ** 100;
+
+            // Setup our string we'll layout. We just stylize a string of
+            // ASCII characters to setup the letters.
+            const string = try macos.foundation.MutableAttributedString.create(unit.len);
+            defer string.release();
+            const rep = try macos.foundation.String.createWithBytes(unit, .utf8, false);
+            defer rep.release();
+            string.replaceString(macos.foundation.Range.init(0, 0), rep);
+            string.setAttribute(
+                macos.foundation.Range.init(0, unit.len),
+                macos.text.StringAttribute.font,
+                ct_font,
+            );
+
+            // Create our framesetter with our string. This is used to
+            // emit "frames" for the layout.
+            const fs = try macos.text.Framesetter.createWithAttributedString(
+                @ptrCast(*macos.foundation.AttributedString, string),
+            );
+            defer fs.release();
+
+            // Create a rectangle to fit all of this and create a frame of it.
+            const path = try macos.graphics.MutablePath.create();
+            path.addRect(null, macos.graphics.Rect.init(10, 10, 200, 200));
+            defer path.release();
+            const frame = try fs.createFrame(
+                macos.foundation.Range.init(0, 0),
+                @ptrCast(*macos.graphics.Path, path),
+                null,
+            );
+            defer frame.release();
+
+            // Get the two points where the lines start in order to determine
+            // the line height.
+            var points: [2]macos.graphics.Point = undefined;
+            frame.getLineOrigins(macos.foundation.Range.init(0, 1), points[0..]);
+            frame.getLineOrigins(macos.foundation.Range.init(1, 1), points[1..]);
+
+            break :cell_height @floatCast(f32, points[0].y - points[1].y);
         };
 
         std.log.warn("width={}, height={}", .{ cell_width, cell_height });
-        return undefined;
+        return font.face.Metrics{
+            .cell_width = cell_width,
+            .cell_height = cell_height,
+            .cell_baseline = 0,
+            .underline_position = 0,
+            .underline_thickness = 0,
+            .strikethrough_position = 0,
+            .strikethrough_thickness = 0,
+        };
     }
 };
 
@@ -176,10 +226,10 @@ test "in-memory" {
     const testFont = @import("../test.zig").fontRegular;
 
     var lib = try font.Library.init();
-    defer lib.deinit();
+    //defer lib.deinit();
 
     var face = try Face.init(lib, testFont, .{ .points = 12 });
-    defer face.deinit();
+    //defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
 
