@@ -95,6 +95,8 @@ pub const Face = struct {
         var bounding: [1]macos.graphics.Rect = undefined;
         _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
         const glyph_width = @floatToInt(u32, @ceil(bounding[0].size.width));
+        const glyph_height = @floatToInt(u32, @ceil(bounding[0].size.height));
+        _ = glyph_height;
         const width = @floatToInt(u32, self.metrics.cell_width);
         const height = @floatToInt(u32, self.metrics.cell_height);
 
@@ -109,6 +111,8 @@ pub const Face = struct {
             .atlas_y = 0,
             .advance_x = 0,
         };
+
+        //std.log.warn("bound={}", .{bounding[0]});
 
         // Get the advance that we need for the glyph
         var advances: [1]macos.graphics.Size = undefined;
@@ -130,10 +134,12 @@ pub const Face = struct {
             8,
             width,
             space,
+            @enumToInt(macos.graphics.BitmapInfo.alpha_mask) &
+                @enumToInt(macos.graphics.ImageAlphaInfo.none),
         );
         defer ctx.release();
 
-        ctx.setShouldAntialias(true);
+        ctx.setShouldAntialias(false);
         ctx.setShouldSmoothFonts(false);
         ctx.setGrayFillColor(1, 1);
         ctx.setGrayStrokeColor(1, 1);
