@@ -5,7 +5,27 @@ const foundation = @import("../foundation.zig");
 const text = @import("../text.zig");
 const c = @import("c.zig");
 
-pub const AttributedString = opaque {};
+pub const AttributedString = opaque {
+    pub fn release(self: *AttributedString) void {
+        foundation.CFRelease(self);
+    }
+
+    pub fn getLength(self: *AttributedString) usize {
+        return @intCast(
+            usize,
+            c.CFAttributedStringGetLength(@ptrCast(c.CFAttributedStringRef, self)),
+        );
+    }
+
+    pub fn getString(self: *AttributedString) *foundation.String {
+        return @intToPtr(
+            *foundation.String,
+            @ptrToInt(
+                c.CFAttributedStringGetString(@ptrCast(c.CFAttributedStringRef, self)),
+            ),
+        );
+    }
+};
 
 pub const MutableAttributedString = opaque {
     pub fn create(cap: usize) Allocator.Error!*MutableAttributedString {
