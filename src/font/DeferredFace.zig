@@ -115,6 +115,7 @@ pub fn load(
             // both here.
             switch (font.Face) {
                 @import("face/freetype.zig").Face => try self.loadCoreTextFreetype(lib, size),
+                @import("face/coretext.zig").Face => try self.loadCoreText(lib, size),
                 else => unreachable,
             }
 
@@ -140,6 +141,17 @@ fn loadFontconfig(
     const face_index = (try fc.pattern.get(.index, 0)).integer;
 
     self.face = try Face.initFile(lib, filename, face_index, size);
+}
+
+fn loadCoreText(
+    self: *DeferredFace,
+    lib: Library,
+    size: font.face.DesiredSize,
+) !void {
+    _ = lib;
+    assert(self.face == null);
+    const ct = self.ct.?;
+    self.face = try Face.initFontCopy(ct.font, size);
 }
 
 fn loadCoreTextFreetype(
