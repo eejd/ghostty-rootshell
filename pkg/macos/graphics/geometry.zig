@@ -20,6 +20,10 @@ pub const Rect = extern struct {
     pub fn cval(self: Rect) c.struct_CGRect {
         return @bitCast(c.struct_CGRect, self);
     }
+
+    pub fn isNull(self: Rect) bool {
+        return c.CGRectIsNull(self.cval());
+    }
 };
 
 pub const Size = extern struct {

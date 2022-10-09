@@ -23,6 +23,10 @@ pub const String = opaque {
         c.CFRelease(self);
     }
 
+    pub fn getLength(self: *String) usize {
+        return @intCast(usize, c.CFStringGetLength(@ptrCast(c.CFStringRef, self)));
+    }
+
     pub fn hasPrefix(self: *String, prefix: *String) bool {
         return c.CFStringHasPrefix(
             @ptrCast(c.CFStringRef, self),

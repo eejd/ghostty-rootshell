@@ -122,7 +122,10 @@ pub const Face = struct {
         // to tell us after laying out some text. This is inspired by Kitty's
         // approach. Previously we were using descent/ascent math and it wasn't
         // quite the same with CoreText and I never figured out why.
-        const cell_height: f32 = cell_height: {
+        const layout_metrics: struct {
+            height: f32,
+            ascent: f32,
+        } = metrics: {
             const unit = "AQWMH_gyl " ** 100;
 
             // Setup our string we'll layout. We just stylize a string of
@@ -156,24 +159,55 @@ pub const Face = struct {
             );
             defer frame.release();
 
-            // Get the two points where the lines start in order to determine
-            // the line height.
+            // Use our text layout from earlier to measure the difference
+            // between the lines.
             var points: [2]macos.graphics.Point = undefined;
             frame.getLineOrigins(macos.foundation.Range.init(0, 1), points[0..]);
             frame.getLineOrigins(macos.foundation.Range.init(1, 1), points[1..]);
 
-            break :cell_height @floatCast(f32, points[0].y - points[1].y);
+            const lines = frame.getLines();
+            const line = lines.getValueAtIndex(macos.text.Line, 0);
+
+            // NOTE(mitchellh): For some reason, CTLineGetBoundsWithOptions
+            // returns garbage and I can't figure out why... so we use the
+            // raw ascender.
+
+            var ascent: f64 = 0;
+            var descent: f64 = 0;
+            var leading: f64 = 0;
+            _ = line.getTypographicBounds(&ascent, &descent, &leading);
+            //std.log.warn("ascent={} descent={} leading={}", .{ ascent, descent, leading });
+
+            break :metrics .{
+                .height = @floatCast(f32, points[0].y - points[1].y),
+                .ascent = @floatCast(f32, ascent),
+            };
         };
 
-        std.log.warn("width={}, height={}", .{ cell_width, cell_height });
+        // All of these metrics are based on our layout above.
+        const cell_height = layout_metrics.height;
+        const cell_baseline = layout_metrics.ascent;
+        const underline_position = @ceil(layout_metrics.ascent -
+            @floatCast(f32, ct_font.getUnderlinePosition()));
+        const underline_thickness = @ceil(@floatCast(f32, ct_font.getUnderlineThickness()));
+        const strikethrough_position = cell_baseline * 0.6;
+        const strikethrough_thickness = underline_thickness;
+
+        // std.log.warn("width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
+        //     cell_width,
+        //     cell_height,
+        //     cell_baseline,
+        //     underline_position,
+        //     underline_thickness,
+        // });
         return font.face.Metrics{
             .cell_width = cell_width,
             .cell_height = cell_height,
-            .cell_baseline = 0,
-            .underline_position = 0,
-            .underline_thickness = 0,
-            .strikethrough_position = 0,
-            .strikethrough_thickness = 0,
+            .cell_baseline = cell_baseline,
+            .underline_position = underline_position,
+            .underline_thickness = underline_thickness,
+            .strikethrough_position = strikethrough_position,
+            .strikethrough_thickness = strikethrough_thickness,
         };
     }
 };
@@ -188,7 +222,7 @@ test {
     const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
     defer ct_font.release();
 
-    var face = try Face.initFontCopy(ct_font, .{ .points = 18 });
+    var face = try Face.initFontCopy(ct_font, .{ .points = 12 });
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
