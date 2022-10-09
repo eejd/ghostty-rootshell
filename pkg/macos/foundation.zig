@@ -1,5 +1,6 @@
 pub const c = @import("foundation/c.zig");
 pub usingnamespace @import("foundation/array.zig");
+pub usingnamespace @import("foundation/attributed_string.zig");
 pub usingnamespace @import("foundation/base.zig");
 pub usingnamespace @import("foundation/data.zig");
 pub usingnamespace @import("foundation/dictionary.zig");
