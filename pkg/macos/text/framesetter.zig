@@ -19,6 +19,23 @@ pub const Framesetter = opaque {
     pub fn release(self: *Framesetter) void {
         foundation.CFRelease(self);
     }
+
+    pub fn createFrame(
+        self: *Framesetter,
+        range: foundation.Range,
+        path: *graphics.Path,
+        attrs: ?*foundation.Dictionary,
+    ) !*text.Frame {
+        return @intToPtr(
+            ?*text.Frame,
+            @ptrToInt(c.CTFramesetterCreateFrame(
+                @ptrCast(c.CTFramesetterRef, self),
+                @bitCast(c.CFRange, range),
+                @ptrCast(c.CGPathRef, path),
+                @ptrCast(c.CFDictionaryRef, attrs),
+            )),
+        ) orelse error.FrameCreateFailed;
+    }
 };
 
 test {
@@ -32,4 +49,18 @@ test {
 
     const fs = try Framesetter.createWithAttributedString(@ptrCast(*foundation.AttributedString, str));
     defer fs.release();
+
+    const path = try graphics.Path.createWithRect(graphics.Rect.init(0, 0, 100, 200), null);
+    defer path.release();
+    const frame = try fs.createFrame(
+        foundation.Range.init(0, 0),
+        path,
+        null,
+    );
+    defer frame.release();
+
+    {
+        var points: [1]graphics.Point = undefined;
+        frame.getLineOrigins(foundation.Range.init(0, 1), &points);
+    }
 }
