@@ -118,7 +118,12 @@ pub const Face = struct {
             break :cell_width @floatCast(f32, max);
         };
 
-        std.log.warn("width={}", .{cell_width});
+        const cell_height: f32 = cell_height: {
+            const diff = ct_font.getAscent() + ct_font.getDescent() + ct_font.getLeading();
+            break :cell_height @floatCast(f32, diff);
+        };
+
+        std.log.warn("width={}, height={}", .{ cell_width, cell_height });
         return undefined;
     }
 };

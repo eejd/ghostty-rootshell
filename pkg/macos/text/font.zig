@@ -112,6 +112,22 @@ pub const Font = opaque {
         ));
     }
 
+    pub fn getAscent(self: *Font) f64 {
+        return c.CTFontGetAscent(@ptrCast(c.CTFontRef, self));
+    }
+
+    pub fn getDescent(self: *Font) f64 {
+        return c.CTFontGetDescent(@ptrCast(c.CTFontRef, self));
+    }
+
+    pub fn getLeading(self: *Font) f64 {
+        return c.CTFontGetLeading(@ptrCast(c.CTFontRef, self));
+    }
+
+    pub fn getBoundingBox(self: *Font) graphics.Rect {
+        return @bitCast(graphics.Rect, c.CTFontGetBoundingBox(@ptrCast(c.CTFontRef, self)));
+    }
+
     pub fn getUnderlinePosition(self: *Font) f64 {
         return c.CTFontGetUnderlinePosition(@ptrCast(c.CTFontRef, self));
     }
