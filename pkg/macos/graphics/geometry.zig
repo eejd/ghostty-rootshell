@@ -13,6 +13,10 @@ pub const Rect = extern struct {
     origin: Point,
     size: Size,
 
+    pub fn init(x: f64, y: f64, width: f64, height: f64) Rect {
+        return @bitCast(Rect, c.CGRectMake(x, y, width, height));
+    }
+
     pub fn cval(self: Rect) c.struct_CGRect {
         return @bitCast(c.struct_CGRect, self);
     }
