@@ -587,7 +587,7 @@ pub fn updateCell(
 
         // If we're rendering a color font, we use the color atlas
         var mode: GPUCellMode = .fg;
-        if (face.hasColor()) mode = .fg_color;
+        if (face.presentation == .emoji) mode = .fg_color;
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,

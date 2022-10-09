@@ -1,8 +1,10 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
+const Atlas = @import("../../Atlas.zig");
 
 pub const Face = struct {
     /// Our font face
@@ -81,6 +83,78 @@ pub const Face = struct {
         if (pair) assert(glyphs[1] == 0);
 
         return @intCast(u32, glyphs[0]);
+    }
+
+    /// Render a glyph using the glyph index. The rendered glyph is stored in the
+    /// given texture atlas.
+    pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32) !font.Glyph {
+        var glyphs = [_]macos.graphics.Glyph{@intCast(macos.graphics.Glyph, glyph_index)};
+
+        // Get the bounding rect for this glyph to determine the width/height
+        // of the bitmap. We use the rounded up width/height of the bounding rect.
+        var bounding: [1]macos.graphics.Rect = undefined;
+        _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
+        const width = @floatToInt(u32, @ceil(bounding[0].size.width));
+        const height = @floatToInt(u32, @ceil(bounding[0].size.height));
+
+        // This bitmap is blank. I've seen it happen in a font, I don't know why.
+        // If it is empty, we just return a valid glyph struct that does nothing.
+        if (width == 0 or height == 0) return font.Glyph{
+            .width = 0,
+            .height = 0,
+            .offset_x = 0,
+            .offset_y = 0,
+            .atlas_x = 0,
+            .atlas_y = 0,
+            .advance_x = 0,
+        };
+
+        // Get the advance that we need for the glyph
+        var advances: [1]macos.graphics.Size = undefined;
+        _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
+
+        // Our buffer for rendering
+        // TODO(perf): cache this buffer
+        // TODO(mitchellh): color is going to require a depth here
+        var buf = try alloc.alloc(u8, width * height);
+        defer alloc.free(buf);
+
+        const space = try macos.graphics.ColorSpace.createDeviceGray();
+        defer space.release();
+
+        const ctx = try macos.graphics.BitmapContext.create(
+            buf,
+            width,
+            height,
+            8,
+            width,
+            space,
+        );
+        defer ctx.release();
+
+        ctx.setShouldAntialias(true);
+        ctx.setShouldSmoothFonts(false);
+        ctx.setGrayFillColor(1, 1);
+        ctx.setGrayStrokeColor(1, 1);
+        ctx.setTextDrawingMode(.fill_stroke);
+        ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
+        ctx.setTextPosition(0, self.metrics.cell_height - self.metrics.cell_baseline);
+
+        var pos = [_]macos.graphics.Point{.{ .x = 0, .y = 0 }};
+        self.font.drawGlyphs(&glyphs, &pos, ctx);
+
+        const region = try atlas.reserve(alloc, width, height);
+        atlas.set(region, buf);
+
+        return font.Glyph{
+            .width = width,
+            .height = height,
+            .offset_x = 0,
+            .offset_y = 0,
+            .atlas_x = region.x,
+            .atlas_y = region.y,
+            .advance_x = @floatCast(f32, advances[0].width),
+        };
     }
 
     fn calcMetrics(ct_font: *macos.text.Font) !font.face.Metrics {
@@ -214,6 +288,10 @@ pub const Face = struct {
 
 test {
     const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas.deinit(alloc);
 
     const name = try macos.foundation.String.createWithBytes("Monaco", .utf8, false);
     defer name.release();
@@ -231,7 +309,7 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        //_ = try face.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?);
     }
 }
 
@@ -257,13 +335,17 @@ test "emoji" {
 
 test "in-memory" {
     const testing = std.testing;
+    const alloc = testing.allocator;
     const testFont = @import("../test.zig").fontRegular;
 
+    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas.deinit(alloc);
+
     var lib = try font.Library.init();
-    //defer lib.deinit();
+    defer lib.deinit();
 
     var face = try Face.init(lib, testFont, .{ .points = 12 });
-    //defer face.deinit();
+    defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
 
@@ -271,6 +353,6 @@ test "in-memory" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        //_ = try face.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?);
     }
 }
