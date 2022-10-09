@@ -15,6 +15,7 @@ pub const BitmapContext = opaque {
         bits_per_component: usize,
         bytes_per_row: usize,
         space: *graphics.ColorSpace,
+        opts: c_uint,
     ) Allocator.Error!*BitmapContext {
         return @intToPtr(
             ?*BitmapContext,
@@ -25,7 +26,7 @@ pub const BitmapContext = opaque {
                 bits_per_component,
                 bytes_per_row,
                 @ptrCast(c.CGColorSpaceRef, space),
-                0,
+                opts,
             )),
         ) orelse Allocator.Error.OutOfMemory;
     }
@@ -36,7 +37,7 @@ test {
 
     const cs = try graphics.ColorSpace.createDeviceGray();
     defer cs.release();
-    const ctx = try BitmapContext.create(null, 80, 80, 8, 80, cs);
+    const ctx = try BitmapContext.create(null, 80, 80, 8, 80, cs, 0);
     defer ctx.release();
 
     ctx.setShouldAntialias(true);

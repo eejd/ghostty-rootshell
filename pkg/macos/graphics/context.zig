@@ -49,7 +49,7 @@ pub fn Context(comptime T: type) type {
             );
         }
 
-        pub fn setRGBFillColor(self: *T, r: f64, g: f64, b: 64, alpha: f64) void {
+        pub fn setRGBFillColor(self: *T, r: f64, g: f64, b: f64, alpha: f64) void {
             c.CGContextSetRGBFillColor(
                 @ptrCast(c.CGContextRef, self),
                 r,
@@ -78,6 +78,13 @@ pub fn Context(comptime T: type) type {
                 @ptrCast(c.CGContextRef, self),
                 x,
                 y,
+            );
+        }
+
+        pub fn fillRect(self: *T, rect: graphics.Rect) void {
+            c.CGContextFillRect(
+                @ptrCast(c.CGContextRef, self),
+                @bitCast(c.CGRect, rect),
             );
         }
     };
