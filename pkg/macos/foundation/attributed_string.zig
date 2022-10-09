@@ -5,6 +5,8 @@ const foundation = @import("../foundation.zig");
 const text = @import("../text.zig");
 const c = @import("c.zig");
 
+pub const AttributedString = opaque {};
+
 pub const MutableAttributedString = opaque {
     pub fn create(cap: usize) Allocator.Error!*MutableAttributedString {
         return @intToPtr(
