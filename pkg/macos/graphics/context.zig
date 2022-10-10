@@ -19,6 +19,13 @@ pub fn Context(comptime T: type) type {
             );
         }
 
+        pub fn setAllowsAntialiasing(self: *T, v: bool) void {
+            c.CGContextSetAllowsAntialiasing(
+                @ptrCast(c.CGContextRef, self),
+                v,
+            );
+        }
+
         pub fn setShouldAntialias(self: *T, v: bool) void {
             c.CGContextSetShouldAntialias(
                 @ptrCast(c.CGContextRef, self),

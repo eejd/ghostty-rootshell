@@ -139,6 +139,7 @@ pub const Face = struct {
         );
         defer ctx.release();
 
+        ctx.setAllowsAntialiasing(false);
         ctx.setShouldAntialias(false);
         ctx.setShouldSmoothFonts(false);
         ctx.setGrayFillColor(1, 1);
