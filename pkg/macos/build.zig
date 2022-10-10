@@ -18,7 +18,11 @@ pub fn link(
     opt: Options,
 ) !*std.build.LibExeObjStep {
     _ = opt;
+    var flags = std.ArrayList([]const u8).init(b.allocator);
+    defer flags.deinit();
+
     const lib = b.addStaticLibrary("macos", null);
+    step.addCSourceFile(thisDir() ++ "/text/ext.c", flags.items);
     step.linkFramework("CoreFoundation");
     step.linkFramework("CoreText");
     return lib;
