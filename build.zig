@@ -214,7 +214,7 @@ fn addDeps(
     _ = try utf8proc.link(b, step);
 
     // Glfw
-    glfw.link(b, step, .{
+    try glfw.link(b, step, .{
         .metal = false,
         .opengl = false, // Found at runtime
     });

@@ -58,7 +58,7 @@ stdenv.mkDerivation rec {
   installPhase = ''
     runHook preInstall
 
-    export SDK_PATH=${src}/vendor/mach-sdk
+    export MACH_SDK_PATH=${src}/vendor/mach-sdk
     zig build \
       -Dcpu=baseline \
       --prefix $out \
