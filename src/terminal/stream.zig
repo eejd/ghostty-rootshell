@@ -57,7 +57,7 @@ pub fn Stream(comptime Handler: type) type {
                 switch (action_opt orelse continue) {
                     .print => |p| if (@hasDecl(T, "print")) try self.handler.print(p),
                     .execute => |code| try self.execute(code),
-                    .csi_dispatch => |csi| try self.csiDispatch(csi),
+                    .csi_dispatch => |csi_action| try self.csiDispatch(csi_action),
                     .esc_dispatch => |esc| try self.escDispatch(esc),
                     .osc_dispatch => |cmd| log.warn("unhandled OSC: {}", .{cmd}),
                     .dcs_hook => |dcs| log.warn("unhandled DCS hook: {}", .{dcs}),

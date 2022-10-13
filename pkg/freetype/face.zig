@@ -99,7 +99,7 @@ pub const SfntTag = enum(c_int) {
     pclt = c.FT_SFNT_PCLT,
 
     /// The data type for a given sfnt tag.
-    pub fn DataType(self: SfntTag) type {
+    pub fn DataType(comptime self: SfntTag) type {
         return switch (self) {
             .os2 => c.TT_OS2,
             else => unreachable, // As-needed...
