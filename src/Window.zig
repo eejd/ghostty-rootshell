@@ -381,7 +381,15 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     try window.setSizeLimits(.{
         .width = @floatToInt(u32, grid.cell_size.width * 10),
         .height = @floatToInt(u32, grid.cell_size.height * 4),
-    }, .{ .width = null, .height = null });
+    }, switch (builtin.zig_backend) {
+        .stage1 => .{ .width = null, .height = null },
+
+        // https://github.com/hexops/mach/issues/581
+        else => .{
+            .width = 100000,
+            .height = 100000,
+        },
+    });
 
     // Create our pty
     var pty = try Pty.open(.{
