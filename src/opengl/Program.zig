@@ -72,8 +72,15 @@ pub inline fn use(p: Program) !Binding {
 }
 
 /// Requires the program is currently in use.
-pub inline fn setUniform(p: Program, n: [:0]const u8, value: anytype) !void {
-    const loc = c.glGetUniformLocation(p.id, n);
+pub inline fn setUniform(
+    p: Program,
+    n: [:0]const u8,
+    value: anytype,
+) !void {
+    const loc = c.glGetUniformLocation(
+        p.id,
+        @ptrCast([*c]const u8, n.ptr),
+    );
     if (loc < 0) {
         return error.UniformNameInvalid;
     }
