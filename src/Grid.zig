@@ -171,8 +171,8 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
 
     // Create our shader
     const program = try gl.Program.createVF(
-        @embedFile("../shaders/cell.v.glsl"),
-        @embedFile("../shaders/cell.f.glsl"),
+        @embedFile("./shaders/cell.v.glsl"),
+        @embedFile("./shaders/cell.f.glsl"),
     );
 
     // Set our cell dimensions
