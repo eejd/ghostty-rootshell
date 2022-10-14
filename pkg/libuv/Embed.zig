@@ -24,12 +24,16 @@ cond: Cond,
 ready: bool = false,
 terminate: BoolAtomic,
 sleeping: BoolAtomic,
-callback: fn () void,
+callback: std.meta.FnPtr(fn () void),
 thread: ?Thread,
 
 /// Initialize a new embedder. The callback is called when libuv should
 /// tick. The callback should be as fast as possible.
-pub fn init(alloc: Allocator, loop: Loop, callback: fn () void) !Embed {
+pub fn init(
+    alloc: Allocator,
+    loop: Loop,
+    callback: std.meta.FnPtr(fn () void),
+) !Embed {
     return Embed{
         .loop = loop,
         .mutex = try Mutex.init(alloc),

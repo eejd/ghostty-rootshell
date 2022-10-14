@@ -96,10 +96,12 @@ pub fn Stream(comptime T: type) type {
                     });
 
                     if (result) |slice| {
-                        buf.* = @bitCast(c.uv_buf_t, slice);
+                        buf.* = .{
+                            .base = slice.ptr,
+                            .len = slice.len,
+                        };
                     } else {
-                        buf.*.base = null;
-                        buf.*.len = 0;
+                        buf.* = .{ .base = null, .len = 0 };
                     }
                 }
 
@@ -112,7 +114,7 @@ pub fn Stream(comptime T: type) type {
                     @call(.{ .modifier = .always_inline }, read_cb, .{
                         &param,
                         cbnread,
-                        @bitCast([]const u8, cbbuf.*),
+                        cbbuf.*.base[0..cbbuf.*.len],
                     });
                 }
             };
