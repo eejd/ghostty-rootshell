@@ -23,11 +23,13 @@ pub fn load(getProcAddress: anytype) !c_int {
 }
 
 pub fn versionMajor(res: c_int) c_uint {
-    // The intcast here is due to translate-c weirdness
-    return c.GLAD_VERSION_MAJOR(@intCast(c_uint, res));
+    // https://github.com/ziglang/zig/issues/13162
+    // return c.GLAD_VERSION_MAJOR(res);
+    return @intCast(c_uint, @divTrunc(res, 10000));
 }
 
 pub fn versionMinor(res: c_int) c_uint {
-    // The intcast here is due to translate-c weirdness
-    return c.GLAD_VERSION_MINOR(@intCast(c_uint, res));
+    // https://github.com/ziglang/zig/issues/13162
+    // return c.GLAD_VERSION_MINOR(res);
+    return @intCast(c_uint, @mod(res, 10000));
 }
