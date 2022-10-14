@@ -85,7 +85,7 @@ pub const FontAttribute = enum {
         }));
     }
 
-    pub fn Value(self: FontAttribute) type {
+    pub fn Value(comptime self: FontAttribute) type {
         return switch (self) {
             .url => *foundation.URL,
             .name => *foundation.String,

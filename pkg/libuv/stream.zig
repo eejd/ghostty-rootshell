@@ -182,11 +182,3 @@ pub const WriteReq = struct {
 test {
     _ = WriteReq;
 }
-
-test "uv_buf_t and slices are the same" {
-    // Verify that the fields are also the same
-    var slice: []const u8 = &[_]u8{ 1, 2, 3 };
-    var buf = @bitCast(c.uv_buf_t, slice);
-    try testing.expectEqual(slice.ptr, buf.base);
-    try testing.expectEqual(slice.len, buf.len);
-}

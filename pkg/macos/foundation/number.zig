@@ -46,7 +46,7 @@ pub const NumberType = enum(c.CFNumberType) {
     ns_integer = c.kCFNumberNSIntegerType,
     cg_float = c.kCFNumberCGFloatType,
 
-    pub fn ValueType(self: NumberType) type {
+    pub fn ValueType(comptime self: NumberType) type {
         return switch (self) {
             .sint8 => i8,
             .sint16 => i16,
