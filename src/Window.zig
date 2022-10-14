@@ -191,7 +191,10 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     try glfw.swapInterval(1);
 
     // Load OpenGL bindings
-    const version = try gl.glad.load(glfw.getProcAddress);
+    const version = try gl.glad.load(switch (builtin.zig_backend) {
+        .stage1 => glfw.getProcAddress,
+        else => &glfw.getProcAddress,
+    });
     log.info("loaded OpenGL {}.{}", .{
         gl.glad.versionMajor(version),
         gl.glad.versionMinor(version),
