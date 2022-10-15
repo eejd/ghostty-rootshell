@@ -42,7 +42,7 @@ pub fn buildLib(
     opt: Options,
 ) !*std.build.LibExeObjStep {
     const target = step.target;
-    const lib = b.addStaticLibrary("libpng", null);
+    const lib = b.addStaticLibrary("png", null);
     lib.setTarget(step.target);
     lib.setBuildMode(step.build_mode);
 
