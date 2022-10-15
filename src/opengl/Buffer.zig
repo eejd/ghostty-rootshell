@@ -40,7 +40,7 @@ pub const Binding = struct {
         data: anytype,
         usage: Usage,
     ) !void {
-        const info = dataInfo(data);
+        const info = dataInfo(&data);
         c.glBufferData(@enumToInt(b.target), info.size, info.ptr, @enumToInt(usage));
         try errors.getError();
     }
@@ -84,10 +84,6 @@ pub const Binding = struct {
         ptr: *const anyopaque,
     } {
         return switch (@typeInfo(@TypeOf(data))) {
-            .Array => .{
-                .size = @sizeOf(@TypeOf(data)),
-                .ptr = &data,
-            },
             .Pointer => |ptr| switch (ptr.size) {
                 .One => .{
                     .size = @sizeOf(ptr.child) * data.len,
