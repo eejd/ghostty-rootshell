@@ -80,7 +80,7 @@ pub const Face = struct {
         // If we have fixed sizes, we just have to try to pick the one closest
         // to what the user requested. Otherwise, we can choose an arbitrary
         // pixel size.
-        if (!face.hasFixedSizes()) {
+        if (face.isScalable()) {
             const size_26dot6 = @intCast(i32, size.points << 6); // mult by 64
             try face.setCharSize(0, size_26dot6, size.xdpi, size.ydpi);
         } else try selectSizeNearest(face, size.pixels());
