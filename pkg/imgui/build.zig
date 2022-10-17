@@ -19,6 +19,14 @@ fn thisDir() []const u8 {
 
 pub const Options = struct {
     backends: ?[]const []const u8 = null,
+
+    freetype: Freetype = .{},
+
+    pub const Freetype = struct {
+        enabled: bool = false,
+        step: ?*std.build.LibExeObjStep = null,
+        include: ?[]const []const u8 = null,
+    };
 };
 
 pub fn link(
@@ -54,6 +62,10 @@ pub fn buildImgui(
     try flags.appendSlice(&.{
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
 
+        // We want to always have STB in addition to Freetype to
+        // fix compilation issues with cimgui.
+        "-DIMGUI_ENABLE_STB_TRUETYPE=1",
+
         //"-fno-sanitize=undefined",
     });
     switch (target.getOsTag()) {
@@ -63,6 +75,26 @@ pub fn buildImgui(
         else => try flags.appendSlice(&.{
             "-DIMGUI_IMPL_API=extern\t\"C\"\t",
         }),
+    }
+
+    // Freetype
+    if (opt.freetype.enabled) {
+        if (opt.freetype.step) |freetype|
+            lib.linkLibrary(freetype)
+        else
+            lib.linkSystemLibrary("freetype2");
+
+        if (opt.freetype.include) |dirs|
+            for (dirs) |dir| lib.addIncludePath(dir);
+
+        // Enable in defines
+        try flags.appendSlice(&.{
+            "-DIMGUI_ENABLE_FREETYPE=1",
+            "-DCIMGUI_FREETYPE=1",
+        });
+
+        // Add necessary C file
+        lib.addCSourceFile(root ++ "imgui/misc/freetype/imgui_freetype.cpp", flags.items);
     }
 
     // C files

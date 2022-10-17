@@ -219,12 +219,12 @@ fn addDeps(
     const glfw_opts: glfw.Options = .{ .metal = false, .opengl = false };
     try glfw.link(b, step, glfw_opts);
 
-    // Imgui
+    // Imgui, we have to do this later since we need some information
     const imgui_backends = [_][]const u8{ "glfw", "opengl3" };
-    const imgui_step = try imgui.link(b, step, .{
+    var imgui_opts: imgui.Options = .{
         .backends = &imgui_backends,
-    });
-    try glfw.link(b, imgui_step, glfw_opts);
+        .freetype = .{ .enabled = true },
+    };
 
     // Dynamic link
     if (!static) {
@@ -305,7 +305,15 @@ fn addDeps(
             });
             libxml2_lib.link(fontconfig_step);
         }
+
+        // Imgui
+        imgui_opts.freetype.step = freetype_step;
+        imgui_opts.freetype.include = &freetype.include_paths;
     }
+
+    // Imgui
+    const imgui_step = try imgui.link(b, step, imgui_opts);
+    try glfw.link(b, imgui_step, glfw_opts);
 }
 
 fn conformanceSteps(
