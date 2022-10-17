@@ -684,6 +684,17 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // Dev Mode
+    if (DevMode.enabled and DevMode.instance.visible) {
+        // If the event was handled by imgui, ignore it.
+        if (imgui.IO.get()) |io| {
+            if (io.cval().WantCaptureKeyboard) {
+                win.render_timer.schedule() catch |err|
+                    log.err("error scheduling render timer err={}", .{err});
+            }
+        } else |_| {}
+    }
+
     // Ignore if requested. See field docs for more information.
     if (win.ignore_char) {
         win.ignore_char = false;
@@ -720,6 +731,17 @@ fn keyCallback(
     defer tracy.end();
 
     const win = window.getUserPointer(Window) orelse return;
+
+    // Dev Mode
+    if (DevMode.enabled and DevMode.instance.visible) {
+        // If the event was handled by imgui, ignore it.
+        if (imgui.IO.get()) |io| {
+            if (io.cval().WantCaptureKeyboard) {
+                win.render_timer.schedule() catch |err|
+                    log.err("error scheduling render timer err={}", .{err});
+            }
+        } else |_| {}
+    }
 
     // Reset the ignore char setting. If we didn't handle the char
     // by here, we aren't going to get it so we just reset this.
@@ -1155,6 +1177,11 @@ fn mouseButtonCallback(
     if (DevMode.enabled and DevMode.instance.visible) {
         win.render_timer.schedule() catch |err|
             log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+
+        // If the mouse event was handled by imgui, ignore it.
+        if (imgui.IO.get()) |io| {
+            if (io.cval().WantCaptureMouse) return;
+        } else |_| {}
     }
 
     // Convert glfw button to input button
@@ -1239,6 +1266,11 @@ fn cursorPosCallback(
     if (DevMode.enabled and DevMode.instance.visible) {
         win.render_timer.schedule() catch |err|
             log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+
+        // If the mouse event was handled by imgui, ignore it.
+        if (imgui.IO.get()) |io| {
+            if (io.cval().WantCaptureMouse) return;
+        } else |_| {}
     }
 
     // Do a mouse report
