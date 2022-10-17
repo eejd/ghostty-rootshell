@@ -1902,7 +1902,7 @@ pub fn invokeCharset(
     self.terminal.invokeCharset(active, slot, single);
 }
 
-const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
+const face_ttf = @embedFile("font/res/Monaco-Regular.ttf");
 const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
 const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
 const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");

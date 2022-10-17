@@ -190,6 +190,7 @@ fn loadCoreTextFreetype(
 
     // TODO: face index 0 is not correct long term and we should switch
     // to using CoreText for rendering, too.
+    //std.log.warn("path={s}", .{path_slice});
     self.face = try Face.initFile(lib, buf[0..path_slice.len :0], 0, size);
 }
 
