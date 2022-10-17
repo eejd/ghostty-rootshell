@@ -515,16 +515,24 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
         // Add our built-in fonts so it looks slightly better
         const dev_atlas = @ptrCast(*imgui.FontAtlas, io.cval().Fonts);
-        dev_atlas.addFontFromMemoryTTF(face_ttf, @intToFloat(f32, font_size.pixels()));
+        dev_atlas.addFontFromMemoryTTF(
+            face_ttf,
+            @intToFloat(f32, font_size.pixels()),
+        );
 
+        // Default dark style
         const style = try imgui.Style.get();
         style.colorsDark();
 
+        // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
             @ptrCast(*imgui.ImplGlfw.GLFWWindow, window.handle),
             true,
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
+
+        // Add our window to the instance
+        DevMode.instance.window = self;
     }
 
     return self;
@@ -532,6 +540,9 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
 pub fn destroy(self: *Window) void {
     if (DevMode.enabled) {
+        // Clear the window
+        DevMode.instance.window = null;
+
         // Uninitialize imgui
         imgui.ImplOpenGL3.shutdown();
         imgui.ImplGlfw.shutdown();
@@ -792,6 +803,7 @@ fn keyCallback(
                 .end => .end,
                 .page_up => .page_up,
                 .page_down => .page_down,
+                .escape => .escape,
                 .F1 => .f1,
                 .F2 => .f2,
                 .F3 => .f3,
@@ -809,6 +821,7 @@ fn keyCallback(
             },
         };
 
+        //log.warn("BINDING TRIGGER={}", .{trigger});
         if (win.config.keybind.set.get(trigger)) |binding_action| {
             //log.warn("BINDING ACTION={}", .{binding_action});
 
@@ -963,6 +976,18 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     defer tracy.end();
 
     const win = window.getUserPointer(Window) orelse return;
+
+    // If our dev mode window is visible then we always schedule a render on
+    // cursor move because the cursor might touch our windows.
+    if (DevMode.enabled and DevMode.instance.visible) {
+        win.render_timer.schedule() catch |err|
+            log.err("error scheduling render timer err={}", .{err});
+
+        // If the mouse event was handled by imgui, ignore it.
+        if (imgui.IO.get()) |io| {
+            if (io.cval().WantCaptureMouse) return;
+        } else |_| {}
+    }
 
     // If we're scrolling up or down, then send a mouse event
     if (yoff != 0) {
@@ -1613,7 +1638,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     };
 
     if (DevMode.enabled and DevMode.instance.visible) {
-        DevMode.instance.update();
+        DevMode.instance.update() catch unreachable;
         const data = DevMode.instance.render() catch unreachable;
         imgui.ImplOpenGL3.renderDrawData(data);
     }

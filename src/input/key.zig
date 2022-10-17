@@ -61,6 +61,7 @@ pub const Key = enum {
     end,
     page_up,
     page_down,
+    escape,
 
     f1,
     f2,

@@ -123,7 +123,7 @@ pub const Config = struct {
         // Dev Mode
         try result.keybind.set.put(
             alloc,
-            .{ .key = .grave_accent, .mods = .{ .shift = true, .super = true } },
+            .{ .key = .down, .mods = .{ .shift = true, .super = true } },
             .{ .toggle_dev_mode = 0 },
         );
 
