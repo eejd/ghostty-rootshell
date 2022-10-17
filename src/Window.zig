@@ -513,9 +513,9 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         const io = try imgui.IO.get();
         io.cval().IniFilename = "ghostty_dev_mode.ini";
 
-        // On Mac imgui handles scaling automatically just fine. On Linux
-        // and other platforms we need to apply a scaling factor.
-        if (builtin.os.tag != .macos) io.cval().FontGlobalScale = content_scale.x_scale;
+        // Add our built-in fonts so it looks slightly better
+        const dev_atlas = @ptrCast(*imgui.FontAtlas, io.cval().Fonts);
+        dev_atlas.addFontFromMemoryTTF(face_ttf, @intToFloat(f32, font_size.pixels()));
 
         const style = try imgui.Style.get();
         style.colorsDark();

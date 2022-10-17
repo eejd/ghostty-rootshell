@@ -2,6 +2,7 @@ pub const c = @import("c.zig");
 pub usingnamespace @import("context.zig");
 pub usingnamespace @import("core.zig");
 pub usingnamespace @import("draw_data.zig");
+pub usingnamespace @import("font_atlas.zig");
 pub usingnamespace @import("io.zig");
 pub usingnamespace @import("style.zig");
 
