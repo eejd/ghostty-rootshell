@@ -94,6 +94,11 @@ pub const Face = struct {
         glyph_index: u32,
         max_height: ?u16,
     ) !font.Glyph {
+        // We add a small pixel padding around the edge of our glyph so that
+        // anti-aliasing and smoothing doesn't cause us to pick up the pixels
+        // of another glyph when packed into the atlas.
+        const padding = 1;
+
         _ = max_height;
 
         var glyphs = [_]macos.graphics.Glyph{@intCast(macos.graphics.Glyph, glyph_index)};
@@ -104,8 +109,11 @@ pub const Face = struct {
         _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
         const glyph_width = @floatToInt(u32, @ceil(bounding[0].size.width));
         const glyph_height = @floatToInt(u32, @ceil(bounding[0].size.height));
-        const width = glyph_width;
-        const height = glyph_height;
+
+        // Width and height. Note the padding doubling is because we want
+        // the padding on both sides (top/bottom, left/right).
+        const width = glyph_width + (padding * 2);
+        const height = glyph_height + (padding * 2);
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
@@ -158,8 +166,8 @@ pub const Face = struct {
         // are offset by bearings, so we have to undo those bearings in order
         // to get them to 0,0.
         var pos = [_]macos.graphics.Point{.{
-            .x = -1 * bounding[0].origin.x,
-            .y = -1 * bounding[0].origin.y,
+            .x = padding + (-1 * bounding[0].origin.x),
+            .y = padding + (-1 * bounding[0].origin.y),
         }};
         self.font.drawGlyphs(&glyphs, &pos, ctx);
 
@@ -183,12 +191,12 @@ pub const Face = struct {
         };
 
         return font.Glyph{
-            .width = width,
-            .height = height,
+            .width = glyph_width,
+            .height = glyph_height,
             .offset_x = @floatToInt(i32, @ceil(bounding[0].origin.x)),
             .offset_y = offset_y,
-            .atlas_x = region.x,
-            .atlas_y = region.y,
+            .atlas_x = region.x + padding,
+            .atlas_y = region.y + padding,
             .advance_x = @floatCast(f32, advances[0].width),
         };
     }
