@@ -8,6 +8,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
+const resize = @import("stb_image_resize");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
@@ -118,7 +119,13 @@ pub const Face = struct {
 
     /// Render a glyph using the glyph index. The rendered glyph is stored in the
     /// given texture atlas.
-    pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32) !Glyph {
+    pub fn renderGlyph(
+        self: Face,
+        alloc: Allocator,
+        atlas: *Atlas,
+        glyph_index: u32,
+        max_height: ?u16,
+    ) !Glyph {
         // If our glyph has color, we want to render the color
         try self.face.loadGlyph(glyph_index, .{
             .render = true,
@@ -168,11 +175,58 @@ pub const Face = struct {
             break :blk try func(alloc, bitmap_ft);
         } else null;
         defer if (bitmap_converted) |bm| {
-            const len = bm.width * bm.rows * atlas.format.depth();
+            const len = @intCast(usize, bm.pitch) * @intCast(usize, bm.rows);
             alloc.free(bm.buffer[0..len]);
         };
 
-        const bitmap = bitmap_converted orelse bitmap_ft;
+        // Now we need to see if we need to resize this bitmap. This can happen
+        // in scenarios where we have fixed size glyphs. For example, emoji
+        // can be quite large (i.e. 128x128) when we have a cell width of 24!
+        // The issue with large bitmaps is they take a huge amount of space in
+        // the atlas and force resizes quite frequently. We pay some CPU cost
+        // up front to resize the glyph to avoid significant CPU cost to resize
+        // and copy the atlas.
+        const bitmap_resized: ?freetype.c.struct_FT_Bitmap_ = resized: {
+            const max = max_height orelse break :resized null;
+            const bm = bitmap_converted orelse bitmap_ft;
+            if (bm.rows <= max) break :resized null;
+
+            var result = bm;
+            result.rows = max;
+            result.width = (result.rows * bm.width) / bm.rows;
+            result.pitch = @intCast(c_int, result.width) * atlas.format.depth();
+
+            const buf = try alloc.alloc(
+                u8,
+                @intCast(usize, result.pitch) * @intCast(usize, result.rows),
+            );
+            result.buffer = buf.ptr;
+            errdefer alloc.free(buf);
+
+            if (resize.stbir_resize_uint8(
+                bm.buffer,
+                @intCast(c_int, bm.width),
+                @intCast(c_int, bm.rows),
+                bm.pitch,
+                result.buffer,
+                @intCast(c_int, result.width),
+                @intCast(c_int, result.rows),
+                result.pitch,
+                atlas.format.depth(),
+            ) == 0) {
+                // This should never fail because this is a fairly straightforward
+                // in-memory operation...
+                return error.GlyphResizeFailed;
+            }
+
+            break :resized result;
+        };
+        defer if (bitmap_resized) |bm| {
+            const len = @intCast(usize, bm.pitch) * @intCast(usize, bm.rows);
+            alloc.free(bm.buffer[0..len]);
+        };
+
+        const bitmap = bitmap_resized orelse (bitmap_converted orelse bitmap_ft);
         const tgt_w = bitmap.width;
         const tgt_h = bitmap.rows;
 
@@ -415,7 +469,7 @@ test {
     // Generate all visible ASCII
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
-        _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?);
+        _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?, null);
     }
 }
 
@@ -434,7 +488,13 @@ test "color emoji" {
 
     try testing.expectEqual(Presentation.emoji, ft_font.presentation);
 
-    _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?);
+    _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, null);
+
+    // resize
+    {
+        const glyph = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, 24);
+        try testing.expectEqual(@as(u32, 24), glyph.height);
+    }
 }
 
 test "mono to rgba" {
@@ -451,5 +511,5 @@ test "mono to rgba" {
     defer ft_font.deinit();
 
     // glyph 3 is mono in Noto
-    _ = try ft_font.renderGlyph(alloc, &atlas, 3);
+    _ = try ft_font.renderGlyph(alloc, &atlas, 3, null);
 }

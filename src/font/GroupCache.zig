@@ -110,6 +110,7 @@ pub fn renderGlyph(
     alloc: Allocator,
     index: Group.FontIndex,
     glyph_index: u32,
+    max_height: ?u16,
 ) !Glyph {
     const key: GlyphKey = .{ .index = index, .glyph = glyph_index };
     const gop = try self.glyphs.getOrPut(alloc, key);
@@ -125,6 +126,7 @@ pub fn renderGlyph(
         atlas,
         index,
         glyph_index,
+        max_height,
     ) catch |err| switch (err) {
         // If the atlas is full, we resize it
         error.AtlasFull => blk: {
@@ -134,6 +136,7 @@ pub fn renderGlyph(
                 atlas,
                 index,
                 glyph_index,
+                max_height,
             );
         },
 
@@ -186,6 +189,7 @@ test {
             alloc,
             idx,
             glyph_index,
+            null,
         );
     }
 
@@ -207,6 +211,7 @@ test {
                 alloc,
                 idx,
                 glyph_index,
+                null,
             );
         }
     }

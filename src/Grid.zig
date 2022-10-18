@@ -583,6 +583,7 @@ pub fn updateCell(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index,
+            @floatToInt(u16, @ceil(self.cell_size.height)),
         );
 
         // If we're rendering a color font, we use the color atlas

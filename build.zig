@@ -11,6 +11,7 @@ const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
 const macos = @import("pkg/macos/build.zig");
+const stb_image_resize = @import("pkg/stb_image_resize/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
@@ -193,6 +194,7 @@ fn addDeps(
     step.addPackage(imgui.pkg);
     step.addPackage(glfw.pkg);
     step.addPackage(libuv.pkg);
+    step.addPackage(stb_image_resize.pkg);
     step.addPackage(utf8proc.pkg);
 
     // Mac Stuff
@@ -211,6 +213,9 @@ fn addDeps(
         var tracy_step = try tracylib.link(b, step);
         system_sdk.include(b, tracy_step, .{});
     }
+
+    // stb_image_resize
+    _ = try stb_image_resize.link(b, step, .{});
 
     // utf8proc
     _ = try utf8proc.link(b, step);

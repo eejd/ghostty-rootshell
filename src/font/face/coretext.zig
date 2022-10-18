@@ -87,7 +87,15 @@ pub const Face = struct {
 
     /// Render a glyph using the glyph index. The rendered glyph is stored in the
     /// given texture atlas.
-    pub fn renderGlyph(self: Face, alloc: Allocator, atlas: *Atlas, glyph_index: u32) !font.Glyph {
+    pub fn renderGlyph(
+        self: Face,
+        alloc: Allocator,
+        atlas: *Atlas,
+        glyph_index: u32,
+        max_height: ?u16,
+    ) !font.Glyph {
+        _ = max_height;
+
         var glyphs = [_]macos.graphics.Glyph{@intCast(macos.graphics.Glyph, glyph_index)};
 
         // Get the bounding rect for this glyph to determine the width/height
@@ -321,7 +329,7 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, null);
     }
 }
 
@@ -365,6 +373,6 @@ test "in-memory" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, null);
     }
 }

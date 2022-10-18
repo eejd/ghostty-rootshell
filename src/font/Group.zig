@@ -160,10 +160,11 @@ pub fn renderGlyph(
     atlas: *Atlas,
     index: FontIndex,
     glyph_index: u32,
+    max_height: ?u16,
 ) !Glyph {
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try face.load(self.lib, self.size);
-    return try face.face.?.renderGlyph(alloc, atlas, glyph_index);
+    return try face.face.?.renderGlyph(alloc, atlas, glyph_index, max_height);
 }
 
 test {
@@ -201,6 +202,7 @@ test {
             &atlas_greyscale,
             idx,
             glyph_index,
+            null,
         );
     }
 
@@ -260,6 +262,7 @@ test {
             &atlas_greyscale,
             idx,
             glyph_index,
+            null,
         );
     }
 }
