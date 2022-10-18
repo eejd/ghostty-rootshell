@@ -346,6 +346,11 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
     // We've written no data to the GPU, refresh it all
     self.gl_cells_written = 0;
 
+    // This is the cell that has [mode == .fg] and is underneath our cursor.
+    // We keep track of it so that we can invert the colors so the character
+    // remains visible.
+    var cursor_cell: ?GPUCell = null;
+
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
@@ -367,6 +372,24 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
             }
 
             break :sel null;
+        };
+
+        // If this is the row with our cursor, then we may have to modify
+        // the cell with the cursor.
+        const start_i: usize = self.cells.items.len;
+        defer if (self.cursor_visible and
+            self.cursor_style == .box and
+            term.screen.viewportIsBottom() and
+            y == term.screen.cursor.y)
+        {
+            for (self.cells.items[start_i..]) |cell| {
+                if (cell.grid_col == term.screen.cursor.x and
+                    cell.mode == .fg)
+                {
+                    cursor_cell = cell;
+                    break;
+                }
+            }
         };
 
         // Get our value from the cache.
@@ -417,19 +440,23 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
         row.setDirty(false);
     }
 
-    // Add the cursor
+    // Add the cursor at the end so that it overlays everything. If we have
+    // a cursor cell then we invert the colors on that and add it in so
+    // that we can always see it.
     self.addCursor(term);
+    if (cursor_cell) |*cell| {
+        cell.fg_r = 0;
+        cell.fg_g = 0;
+        cell.fg_b = 0;
+        cell.fg_a = 255;
+        self.cells.appendAssumeCapacity(cell.*);
+    }
 }
 
 /// This should be called prior to render to finalize the cells and prepare
 /// for render. This performs tasks such as preparing the cursor, refreshing
 /// the cells if necessary, etc.
 pub fn finalizeCells(self: *Grid, term: *Terminal) !void {
-    // Add the cursor
-    // TODO: only add cursor if it changed
-    if (self.cells.items.len < self.cells.capacity)
-        self.addCursor(term);
-
     // If we're out of space or we have no more Z-space, rebuild.
     if (self.cells.items.len == self.cells.capacity) {
         log.info("cell cache full, rebuilding from scratch", .{});
