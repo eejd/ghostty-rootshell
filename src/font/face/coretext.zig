@@ -104,11 +104,8 @@ pub const Face = struct {
         _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
         const glyph_width = @floatToInt(u32, @ceil(bounding[0].size.width));
         const glyph_height = @floatToInt(u32, @ceil(bounding[0].size.height));
-        _ = glyph_height;
-        const width = @floatToInt(u32, self.metrics.cell_width);
-        const height = @floatToInt(u32, self.metrics.cell_height);
-        // const width = glyph_width;
-        // const height = glyph_height;
+        const width = glyph_width;
+        const height = glyph_height;
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
@@ -121,8 +118,6 @@ pub const Face = struct {
             .atlas_y = 0,
             .advance_x = 0,
         };
-
-        //std.log.warn("bound={}", .{bounding[0]});
 
         // Get the advance that we need for the glyph
         var advances: [1]macos.graphics.Size = undefined;
@@ -157,24 +152,41 @@ pub const Face = struct {
         ctx.setGrayStrokeColor(1, 1);
         ctx.setTextDrawingMode(.fill_stroke);
         ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
-        ctx.setTextPosition(0, @intToFloat(f32, height) - self.metrics.cell_baseline);
-        //ctx.setTextPosition(0, 0);
+        ctx.setTextPosition(0, 0);
 
-        var pos = [_]macos.graphics.Point{.{ .x = 0, .y = 0 }};
+        // We want to render the glyphs at (0,0), but the glyphs themselves
+        // are offset by bearings, so we have to undo those bearings in order
+        // to get them to 0,0.
+        var pos = [_]macos.graphics.Point{.{
+            .x = -1 * bounding[0].origin.x,
+            .y = -1 * bounding[0].origin.y,
+        }};
         self.font.drawGlyphs(&glyphs, &pos, ctx);
 
         const region = try atlas.reserve(alloc, width, height);
         atlas.set(region, buf);
 
+        const offset_y = offset_y: {
+            // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
+            // We need to calculate our baseline from the bottom of a cell.
+            const baseline_from_bottom = self.metrics.cell_height - self.metrics.cell_baseline;
+
+            // Next we offset our baseline by the bearing in the font. We
+            // ADD here because CoreText y is UP.
+            const baseline_with_offset = baseline_from_bottom + bounding[0].origin.y;
+
+            // Finally, since we're rendering at (0, 0), the glyph will render
+            // by default below the line. We have to add height (glyph height)
+            // so that we shift the glyph UP to be on the line, then we add our
+            // baseline offset to move the glyph further UP to match the baseline.
+            break :offset_y @intCast(i32, height) + @floatToInt(i32, @ceil(baseline_with_offset));
+        };
+
         return font.Glyph{
             .width = width,
             .height = height,
-            .offset_x = 0,
-
-            // Offset is full cell height because for CoreText we render
-            // an entire cell.
-            .offset_y = @floatToInt(i32, self.metrics.cell_height),
-
+            .offset_x = @floatToInt(i32, @ceil(bounding[0].origin.x)),
+            .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
             .advance_x = @floatCast(f32, advances[0].width),
