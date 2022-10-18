@@ -150,9 +150,9 @@ pub const Face = struct {
         );
         defer ctx.release();
 
-        ctx.setAllowsAntialiasing(false);
-        ctx.setShouldAntialias(false);
-        ctx.setShouldSmoothFonts(false);
+        ctx.setAllowsAntialiasing(true);
+        ctx.setShouldAntialias(true);
+        ctx.setShouldSmoothFonts(true);
         ctx.setGrayFillColor(1, 1);
         ctx.setGrayStrokeColor(1, 1);
         ctx.setTextDrawingMode(.fill_stroke);
