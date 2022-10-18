@@ -107,6 +107,8 @@ pub const Face = struct {
         _ = glyph_height;
         const width = @floatToInt(u32, self.metrics.cell_width);
         const height = @floatToInt(u32, self.metrics.cell_height);
+        // const width = glyph_width;
+        // const height = glyph_height;
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
@@ -131,6 +133,7 @@ pub const Face = struct {
         // TODO(mitchellh): color is going to require a depth here
         var buf = try alloc.alloc(u8, width * height);
         defer alloc.free(buf);
+        std.mem.set(u8, buf, 0);
 
         const space = try macos.graphics.ColorSpace.createDeviceGray();
         defer space.release();
@@ -155,6 +158,7 @@ pub const Face = struct {
         ctx.setTextDrawingMode(.fill_stroke);
         ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
         ctx.setTextPosition(0, @intToFloat(f32, height) - self.metrics.cell_baseline);
+        //ctx.setTextPosition(0, 0);
 
         var pos = [_]macos.graphics.Point{.{ .x = 0, .y = 0 }};
         self.font.drawGlyphs(&glyphs, &pos, ctx);
