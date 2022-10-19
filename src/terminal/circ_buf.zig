@@ -120,7 +120,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
             // If we're not full, we can just advance the tail. We know
             // it'll be less than the length because otherwise we'd be full.
-            self.tail += @minimum(self.len(), n);
+            self.tail += @min(self.len(), n);
             if (self.tail >= self.storage.len) self.tail -= self.storage.len;
             self.full = false;
         }

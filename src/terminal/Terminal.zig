@@ -711,7 +711,7 @@ pub fn index(self: *Terminal) !void {
     if (self.screen.cursor.y < self.scrolling_region.top or
         self.screen.cursor.y > self.scrolling_region.bottom)
     {
-        self.screen.cursor.y = @minimum(self.screen.cursor.y + 1, self.rows - 1);
+        self.screen.cursor.y = @min(self.screen.cursor.y + 1, self.rows - 1);
         return;
     }
 
@@ -734,7 +734,7 @@ pub fn index(self: *Terminal) !void {
     }
 
     // Increase cursor by 1, maximum to bottom of scroll region
-    self.screen.cursor.y = @minimum(self.screen.cursor.y + 1, self.scrolling_region.bottom);
+    self.screen.cursor.y = @min(self.screen.cursor.y + 1, self.scrolling_region.bottom);
 }
 
 /// Move the cursor to the previous line in the scrolling region, possibly
@@ -796,8 +796,8 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
 
     const row = if (row_req == 0) 1 else row_req;
     const col = if (col_req == 0) 1 else col_req;
-    self.screen.cursor.x = @minimum(params.x_max, col) -| 1;
-    self.screen.cursor.y = @minimum(params.y_max, row + params.y_offset) -| 1;
+    self.screen.cursor.x = @min(params.x_max, col) -| 1;
+    self.screen.cursor.y = @min(params.y_max, row + params.y_offset) -| 1;
     // log.info("set cursor position: col={} row={}", .{ self.screen.cursor.x, self.screen.cursor.y });
 
     // Unset pending wrap state
@@ -821,7 +821,7 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
     if (self.status_display != .main) return; // TODO
 
     const col = if (col_req == 0) 1 else col_req;
-    self.screen.cursor.x = @minimum(self.cols, col) - 1;
+    self.screen.cursor.x = @min(self.cols, col) - 1;
 }
 
 /// Erase the display.
@@ -966,7 +966,7 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
 
     // Our last index is at most the end of the number of chars we have
     // in the current line.
-    const end = @minimum(self.cols, self.screen.cursor.x + count);
+    const end = @min(self.cols, self.screen.cursor.x + count);
 
     // Shift
     var pen = self.screen.cursor.pen;
@@ -1169,7 +1169,7 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
     // If count is greater than the amount of rows, adjust down.
-    const adjusted_count = @minimum(count, rem);
+    const adjusted_count = @min(count, rem);
 
     // The the top `scroll_amount` lines need to move to the bottom
     // scroll area. We may have nothing to scroll if we're clearing.
@@ -1219,7 +1219,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
     // If the count is more than our remaining lines, we adjust down.
-    const adjusted_count = @minimum(count, rem);
+    const adjusted_count = @min(count, rem);
 
     // Scroll up the count amount.
     var y: usize = self.screen.cursor.y;
@@ -1306,7 +1306,7 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
     defer tracy.end();
 
     var t = if (top == 0) 1 else top;
-    var b = @minimum(bottom, self.rows);
+    var b = @min(bottom, self.rows);
     if (t >= b) {
         t = 1;
         b = self.rows;

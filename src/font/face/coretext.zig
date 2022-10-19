@@ -230,7 +230,7 @@ pub const Face = struct {
             var max: f64 = 0;
             var i: usize = 0;
             while (i < advances.len) : (i += 1) {
-                max = @maximum(advances[i].width, max);
+                max = @max(advances[i].width, max);
             }
 
             break :cell_width @floatCast(f32, max);

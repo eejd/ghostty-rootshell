@@ -712,7 +712,7 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
     // Update our LRU. We arbitrarily support a certain number of pages here.
     // We also always support a minimum number of caching in case a user
     // is resizing tiny then growing again we can save some of the renders.
-    const evicted = try self.cells_lru.resize(self.alloc, @maximum(80, self.size.rows * 10));
+    const evicted = try self.cells_lru.resize(self.alloc, @max(80, self.size.rows * 10));
     if (evicted) |list| for (list) |*value| value.deinit(self.alloc);
 
     // Update our shaper

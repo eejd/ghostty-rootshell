@@ -605,7 +605,7 @@ fn queueWrite(self: *Window, data: []const u8) !void {
     while (i < data.len) {
         const req = try self.write_req_pool.get();
         const buf = try self.write_buf_pool.get();
-        const end = @minimum(data.len, i + buf.len);
+        const end = @min(data.len, i + buf.len);
         std.mem.copy(u8, buf, data[i..end]);
         try self.pty_stream.write(
             .{ .req = req },
@@ -1007,7 +1007,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     // Positive is up
     const sign: isize = if (yoff > 0) -1 else 1;
-    const delta: isize = sign * @maximum(@divFloor(win.grid.size.rows, 15), 1);
+    const delta: isize = sign * @max(@divFloor(win.grid.size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
     win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
         log.err("error scrolling viewport err={}", .{err});
@@ -1450,13 +1450,13 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
 
             // Can be off the screen if the user drags it out, so max
             // it out on our available columns
-            break :x @minimum(x, self.terminal.cols - 1);
+            break :x @min(x, self.terminal.cols - 1);
         },
 
         .y = if (ypos < 0) 0 else y: {
             const cell_height = @floatCast(f64, self.grid.cell_size.height);
             const y = @floatToInt(usize, ypos / cell_height);
-            break :y @minimum(y, self.terminal.rows - 1);
+            break :y @min(y, self.terminal.rows - 1);
         },
     };
 }

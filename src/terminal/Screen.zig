@@ -397,7 +397,7 @@ pub const Row = struct {
         self.storage[0].header.flags.dirty = true;
 
         // If the source has no graphemes (likely) then this is fast.
-        const end = @minimum(src.storage.len, self.storage.len);
+        const end = @min(src.storage.len, self.storage.len);
         if (!src.storage[0].header.flags.grapheme) {
             std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
             return;
@@ -586,7 +586,7 @@ pub const RowIndexTag = enum {
 
             // Viewport can be any of the written rows or the max size
             // of a viewport.
-            .viewport => @minimum(screen.rows, screen.rowsWritten()),
+            .viewport => @min(screen.rows, screen.rowsWritten()),
 
             // History is all the way up to the top of our active area. If
             // we haven't filled our active area, there is no history.
@@ -596,7 +596,7 @@ pub const RowIndexTag = enum {
             // written here because this is the only row index that can
             // actively grow our rows.
             .active => screen.rows,
-            //TODO .active => @minimum(rows_written, screen.rows),
+            //TODO .active => @min(rows_written, screen.rows),
         };
     }
 
@@ -751,7 +751,7 @@ pub fn init(
     // * Our buffer size is preallocated to fit double our visible space
     //   or the maximum scrollback whichever is smaller.
     // * We add +1 to cols to fit the row header
-    const buf_size = (rows + @minimum(max_scrollback, rows)) * (cols + 1);
+    const buf_size = (rows + @min(max_scrollback, rows)) * (cols + 1);
 
     return Screen{
         .alloc = alloc,
@@ -943,7 +943,7 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // If we're scrolling down and not growing, then we just
     // add to the viewport and clamp at the bottom.
     if (!grow) {
-        self.viewport = @minimum(
+        self.viewport = @min(
             self.history,
             self.viewport + @intCast(usize, delta),
         );
@@ -976,15 +976,15 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
                 // of what we actually need and two pages. We don't want to
                 // allocate one row at a time (common for scrolling) so we do this
                 // to chunk it.
-                const needed_capacity = @maximum(
+                const needed_capacity = @max(
                     rows_final * (self.cols + 1),
-                    @minimum(self.storage.capacity() * 2, max_capacity),
+                    @min(self.storage.capacity() * 2, max_capacity),
                 );
 
                 // Allocate what we can.
                 try self.storage.resize(
                     self.alloc,
-                    @minimum(max_capacity, needed_capacity),
+                    @min(max_capacity, needed_capacity),
                 );
             }
         }
@@ -1076,7 +1076,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
 
             // Our end index is usually a full row, but if we're the final
             // row then we just use the length.
-            const end_idx = @minimum(slice.len, start_idx + self.cols + 1);
+            const end_idx = @min(slice.len, start_idx + self.cols + 1);
 
             // We may have to skip some cells from the beginning if we're
             // the first row.
@@ -1206,9 +1206,9 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // Calculate our buffer size. This is going to be either the old data
     // with scrollback or the max capacity of our new size. We prefer the old
     // length so we can save all the data (ignoring col truncation).
-    const old_len = @maximum(old.rowsWritten(), rows) * (cols + 1);
+    const old_len = @max(old.rowsWritten(), rows) * (cols + 1);
     const new_max_capacity = self.maxCapacity();
-    const buf_size = @minimum(old_len, new_max_capacity);
+    const buf_size = @min(old_len, new_max_capacity);
 
     // Reallocate the storage
     self.storage = try StorageBuf.init(self.alloc, buf_size);
@@ -1243,7 +1243,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // screen we can accomodate keeping it on the same place if we retain
     // the same scrollback.
     const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
-    self.cursor.x = @minimum(old.cursor.x, self.cols - 1);
+    self.cursor.x = @min(old.cursor.x, self.cols - 1);
     self.cursor.y = if (old_cursor_y_screen <= RowIndexTag.screen.maxLen(self))
         old_cursor_y_screen -| self.history
     else
@@ -1282,7 +1282,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         errdefer self.* = old;
 
         // Allocate enough to store our screen plus history.
-        const buf_size = (self.rows + @maximum(self.history, self.max_scrollback)) * (cols + 1);
+        const buf_size = (self.rows + @max(self.history, self.max_scrollback)) * (cols + 1);
         self.storage = try StorageBuf.init(self.alloc, buf_size);
         errdefer self.storage.deinit(self.alloc);
         defer old.storage.deinit(self.alloc);
@@ -1356,7 +1356,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     const wrapped_cells_rem = wrapped_cells.len - wrapped_i;
 
                     // We copy as much as we can into our new row
-                    const copy_len = @minimum(new_row_rem, wrapped_cells_rem);
+                    const copy_len = @min(new_row_rem, wrapped_cells_rem);
 
                     // The row doesn't fit, meaning we have to soft-wrap the
                     // new row but probably at a diff boundary.
@@ -1436,7 +1436,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         errdefer self.* = old;
 
         // Allocate enough to store our screen plus history.
-        const buf_size = (self.rows + @maximum(self.history, self.max_scrollback)) * (cols + 1);
+        const buf_size = (self.rows + @max(self.history, self.max_scrollback)) * (cols + 1);
         self.storage = try StorageBuf.init(self.alloc, buf_size);
         errdefer self.storage.deinit(self.alloc);
         defer old.storage.deinit(self.alloc);
@@ -1510,7 +1510,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             {
                 assert(new_cursor == null);
                 new_cursor = .{
-                    .x = @minimum(cursor_pos.x, self.cols - 1),
+                    .x = @min(cursor_pos.x, self.cols - 1),
                     .y = self.viewport + y,
                 };
             }
@@ -1528,14 +1528,14 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         // point and set it up.
         if (new_cursor) |pos| {
             const viewport_pos = pos.toViewport(self);
-            self.cursor.x = @minimum(viewport_pos.x, self.cols - 1);
-            self.cursor.y = @minimum(viewport_pos.y, self.rows - 1);
+            self.cursor.x = @min(viewport_pos.x, self.cols - 1);
+            self.cursor.y = @min(viewport_pos.y, self.rows - 1);
         } else {
             // TODO: why is this necessary? Without this, neovim will
             // crash when we shrink the window to the smallest size. We
             // never got a test case to cover this.
-            self.cursor.x = @minimum(self.cursor.x, self.cols - 1);
-            self.cursor.y = @minimum(self.cursor.y, self.rows - 1);
+            self.cursor.x = @min(self.cursor.x, self.cols - 1);
+            self.cursor.y = @min(self.cursor.y, self.rows - 1);
         }
     }
 }
@@ -1680,7 +1680,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
     }
 
     // So the cursor doesn't go off screen
-    self.cursor.x = @minimum(x, self.cols - 1);
+    self.cursor.x = @min(x, self.cols - 1);
     self.cursor.y = y;
 }
 
