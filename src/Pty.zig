@@ -19,9 +19,6 @@ const c = switch (builtin.os.tag) {
     }),
 };
 
-// https://github.com/ziglang/zig/issues/12944
-const ioctl = if (builtin.os.tag == .macos) c.ioctl else std.c.ioctl;
-
 /// Redeclare this winsize struct so we can just use a Zig struct. This
 /// layout should be correct on all tested platforms.
 const winsize = extern struct {
@@ -67,7 +64,7 @@ pub fn deinit(self: *Pty) void {
 /// Return the size of the pty.
 pub fn getSize(self: Pty) !winsize {
     var ws: winsize = undefined;
-    if (ioctl(self.master, c.TIOCGWINSZ, @ptrToInt(&ws)) < 0)
+    if (c.ioctl(self.master, c.TIOCGWINSZ, @ptrToInt(&ws)) < 0)
         return error.IoctlFailed;
 
     return ws;
@@ -75,7 +72,7 @@ pub fn getSize(self: Pty) !winsize {
 
 /// Set the size of the pty.
 pub fn setSize(self: Pty, size: winsize) !void {
-    if (ioctl(self.master, c.TIOCSWINSZ, @ptrToInt(&size)) < 0)
+    if (c.ioctl(self.master, c.TIOCSWINSZ, @ptrToInt(&size)) < 0)
         return error.IoctlFailed;
 }
 
@@ -86,7 +83,7 @@ pub fn childPreExec(self: Pty) !void {
     if (setsid() < 0) return error.ProcessGroupFailed;
 
     // Set controlling terminal
-    if (ioctl(self.slave, c.TIOCSCTTY, @as(c_ulong, 0)) < 0)
+    if (c.ioctl(self.slave, c.TIOCSCTTY, @as(c_ulong, 0)) < 0)
         return error.SetControllingTerminalFailed;
 
     // Can close master/slave pair now
