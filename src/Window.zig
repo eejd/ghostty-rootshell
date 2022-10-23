@@ -9,7 +9,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const Grid = @import("Grid.zig");
+const renderer = @import("renderer.zig");
 const glfw = @import("glfw");
 const gl = @import("opengl.zig");
 const imgui = @import("imgui");
@@ -53,8 +53,8 @@ imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 /// Whether the window is currently focused
 focused: bool,
 
-/// The terminal grid attached to this window.
-grid: Grid,
+/// The renderer for this window.
+renderer: renderer.OpenGL,
 
 /// The underlying pty for this window.
 pty: Pty,
@@ -368,14 +368,14 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Create our terminal grid with the initial window size
     const window_size = try window.getSize();
-    var grid = try Grid.init(alloc, font_group);
-    try grid.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
-    grid.background = .{
+    var renderer_impl = try renderer.OpenGL.init(alloc, font_group);
+    try renderer_impl.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
+    renderer_impl.background = .{
         .r = config.background.r,
         .g = config.background.g,
         .b = config.background.b,
     };
-    grid.foreground = .{
+    renderer_impl.foreground = .{
         .r = config.foreground.r,
         .g = config.foreground.g,
         .b = config.foreground.b,
@@ -384,14 +384,14 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
     try window.setSizeLimits(.{
-        .width = @floatToInt(u32, grid.cell_size.width * 10),
-        .height = @floatToInt(u32, grid.cell_size.height * 4),
+        .width = @floatToInt(u32, renderer_impl.cell_size.width * 10),
+        .height = @floatToInt(u32, renderer_impl.cell_size.height * 4),
     }, .{ .width = null, .height = null });
 
     // Create our pty
     var pty = try Pty.open(.{
-        .ws_row = @intCast(u16, grid.size.rows),
-        .ws_col = @intCast(u16, grid.size.columns),
+        .ws_row = @intCast(u16, renderer_impl.size.rows),
+        .ws_col = @intCast(u16, renderer_impl.size.columns),
         .ws_xpixel = @intCast(u16, window_size.width),
         .ws_ypixel = @intCast(u16, window_size.height),
     });
@@ -434,7 +434,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     try stream.readStart(ttyReadAlloc, ttyRead);
 
     // Create our terminal
-    var term = try terminal.Terminal.init(alloc, grid.size.columns, grid.size.rows);
+    var term = try terminal.Terminal.init(alloc, renderer_impl.size.columns, renderer_impl.size.rows);
     errdefer term.deinit(alloc);
 
     // Setup a timer for blinking the cursor
@@ -463,7 +463,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .window = window,
         .cursor = cursor,
         .focused = false,
-        .grid = grid,
+        .renderer = renderer_impl,
         .pty = pty,
         .command = cmd,
         .mouse = .{},
@@ -556,7 +556,7 @@ pub fn destroy(self: *Window) void {
         log.err("error waiting for command to exit: {}", .{err});
 
     self.terminal.deinit(self.alloc);
-    self.grid.deinit();
+    self.renderer.deinit();
     self.window.destroy();
 
     self.terminal_cursor.timer.close((struct {
@@ -662,19 +662,19 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
 
     // Update our grid so that the projections on render are correct.
     const win = window.getUserPointer(Window) orelse return;
-    win.grid.setScreenSize(.{
+    win.renderer.setScreenSize(.{
         .width = px_size.width,
         .height = px_size.height,
     }) catch |err| log.err("error updating grid screen size err={}", .{err});
 
     // Update the size of our terminal state
-    win.terminal.resize(win.alloc, win.grid.size.columns, win.grid.size.rows) catch |err|
+    win.terminal.resize(win.alloc, win.renderer.size.columns, win.renderer.size.rows) catch |err|
         log.err("error updating terminal size: {}", .{err});
 
     // Update the size of our pty
     win.pty.setSize(.{
-        .ws_row = @intCast(u16, win.grid.size.rows),
-        .ws_col = @intCast(u16, win.grid.size.columns),
+        .ws_row = @intCast(u16, win.renderer.size.rows),
+        .ws_col = @intCast(u16, win.renderer.size.columns),
         .ws_xpixel = @intCast(u16, width),
         .ws_ypixel = @intCast(u16, height),
     }) catch |err| log.err("error updating pty screen size err={}", .{err});
@@ -1007,7 +1007,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     // Positive is up
     const sign: isize = if (yoff > 0) -1 else 1;
-    const delta: isize = sign * @max(@divFloor(win.grid.size.rows, 15), 1);
+    const delta: isize = sign * @max(@divFloor(win.renderer.size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
     win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
         log.err("error scrolling viewport err={}", .{err});
@@ -1367,10 +1367,10 @@ fn cursorPosCallback(
     //
 
     // the boundary point at which we consider selection or non-selection
-    const cell_xboundary = win.grid.cell_size.width * 0.6;
+    const cell_xboundary = win.renderer.cell_size.width * 0.6;
 
     // first xpos of the clicked cell
-    const cell_xstart = @intToFloat(f32, win.mouse.left_click_point.x) * win.grid.cell_size.width;
+    const cell_xstart = @intToFloat(f32, win.mouse.left_click_point.x) * win.renderer.cell_size.width;
     const cell_start_xpos = win.mouse.left_click_xpos - cell_xstart;
 
     // If this is the same cell, then we only start the selection if weve
@@ -1445,7 +1445,7 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
     return .{
         .x = if (xpos < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
-            const cell_width = @floatCast(f64, self.grid.cell_size.width);
+            const cell_width = @floatCast(f64, self.renderer.cell_size.width);
             const x = @floatToInt(usize, xpos / cell_width);
 
             // Can be off the screen if the user drags it out, so max
@@ -1454,7 +1454,7 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
         },
 
         .y = if (ypos < 0) 0 else y: {
-            const cell_height = @floatCast(f64, self.grid.cell_size.height);
+            const cell_height = @floatCast(f64, self.renderer.cell_size.height);
             const y = @floatToInt(usize, ypos / cell_height);
             break :y @min(y, self.terminal.rows - 1);
         },
@@ -1584,23 +1584,23 @@ fn renderTimerCallback(t: *libuv.Timer) void {
 
     // Setup our cursor settings
     if (win.focused) {
-        win.grid.cursor_visible = win.terminal_cursor.visible and !win.terminal_cursor.blink;
-        win.grid.cursor_style = Grid.CursorStyle.fromTerminal(win.terminal_cursor.style) orelse .box;
+        win.renderer.cursor_visible = win.terminal_cursor.visible and !win.terminal_cursor.blink;
+        win.renderer.cursor_style = renderer.OpenGL.CursorStyle.fromTerminal(win.terminal_cursor.style) orelse .box;
     } else {
-        win.grid.cursor_visible = true;
-        win.grid.cursor_style = .box_hollow;
+        win.renderer.cursor_visible = true;
+        win.renderer.cursor_style = .box_hollow;
     }
 
     // Calculate foreground and background colors
-    const bg = win.grid.background;
-    const fg = win.grid.foreground;
+    const bg = win.renderer.background;
+    const fg = win.renderer.foreground;
     defer {
-        win.grid.background = bg;
-        win.grid.foreground = fg;
+        win.renderer.background = bg;
+        win.renderer.foreground = fg;
     }
     if (win.terminal.modes.reverse_colors) {
-        win.grid.background = fg;
-        win.grid.foreground = bg;
+        win.renderer.background = fg;
+        win.renderer.foreground = bg;
     }
 
     // Set our background
@@ -1624,15 +1624,15 @@ fn renderTimerCallback(t: *libuv.Timer) void {
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // For now, rebuild all cells
-    win.grid.rebuildCells(&win.terminal) catch |err|
+    win.renderer.rebuildCells(&win.terminal) catch |err|
         log.err("error calling rebuildCells in render timer err={}", .{err});
 
     // Finalize the cells prior to render
-    win.grid.finalizeCells(&win.terminal) catch |err|
+    win.renderer.finalizeCells(&win.terminal) catch |err|
         log.err("error calling updateCells in render timer err={}", .{err});
 
     // Render the grid
-    win.grid.render() catch |err| {
+    win.renderer.render() catch |err| {
         log.err("error rendering grid: {}", .{err});
         return;
     };
@@ -1812,7 +1812,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.terminal.setDeccolmSupported(enabled);
 
             // Force resize back to the window size
-            self.terminal.resize(self.alloc, self.grid.size.columns, self.grid.size.rows) catch |err|
+            self.terminal.resize(self.alloc, self.renderer.size.columns, self.renderer.size.rows) catch |err|
                 log.err("error updating terminal size: {}", .{err});
         },
 

@@ -1,18 +1,18 @@
-//! Represents a single terminal grid.
-const Grid = @This();
+//! Rendering implementation for OpenGL.
+pub const OpenGL = @This();
 
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const Atlas = @import("Atlas.zig");
-const font = @import("font/main.zig");
-const terminal = @import("terminal/main.zig");
+const Atlas = @import("../Atlas.zig");
+const font = @import("../font/main.zig");
+const terminal = @import("../terminal/main.zig");
 const Terminal = terminal.Terminal;
-const gl = @import("opengl.zig");
+const gl = @import("../opengl.zig");
 const trace = @import("tracy").trace;
-const math = @import("math.zig");
-const lru = @import("lru.zig");
+const math = @import("../math.zig");
+const lru = @import("../lru.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -152,7 +152,7 @@ const GPUCellMode = enum(u8) {
     }
 };
 
-pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
+pub fn init(alloc: Allocator, font_group: *font.GroupCache) !OpenGL {
     // Create the initial font shaper
     var shape_buf = try alloc.alloc(font.Shaper.Cell, 1);
     errdefer alloc.free(shape_buf);
@@ -171,8 +171,8 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
 
     // Create our shader
     const program = try gl.Program.createVF(
-        @embedFile("./shaders/cell.v.glsl"),
-        @embedFile("./shaders/cell.f.glsl"),
+        @embedFile("../shaders/cell.v.glsl"),
+        @embedFile("../shaders/cell.f.glsl"),
     );
 
     // Set our cell dimensions
@@ -284,7 +284,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
         );
     }
 
-    return Grid{
+    return OpenGL{
         .alloc = alloc,
         .cells = .{},
         .cells_lru = CellsLRU.init(0),
@@ -305,7 +305,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Grid {
     };
 }
 
-pub fn deinit(self: *Grid) void {
+pub fn deinit(self: *OpenGL) void {
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
 
@@ -327,7 +327,7 @@ pub fn deinit(self: *Grid) void {
 ///
 /// Note this doesn't have to typically be manually called. Internally,
 /// the renderer will do this when it needs more memory space.
-pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
+pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -456,7 +456,7 @@ pub fn rebuildCells(self: *Grid, term: *Terminal) !void {
 /// This should be called prior to render to finalize the cells and prepare
 /// for render. This performs tasks such as preparing the cursor, refreshing
 /// the cells if necessary, etc.
-pub fn finalizeCells(self: *Grid, term: *Terminal) !void {
+pub fn finalizeCells(self: *OpenGL, term: *Terminal) !void {
     // If we're out of space or we have no more Z-space, rebuild.
     if (self.cells.items.len == self.cells.capacity) {
         log.info("cell cache full, rebuilding from scratch", .{});
@@ -468,7 +468,7 @@ pub fn finalizeCells(self: *Grid, term: *Terminal) !void {
     try self.flushAtlas();
 }
 
-fn addCursor(self: *Grid, term: *Terminal) void {
+fn addCursor(self: *OpenGL, term: *Terminal) void {
     // Add the cursor
     if (self.cursor_visible and term.screen.viewportIsBottom()) {
         const cell = term.screen.getCell(
@@ -503,7 +503,7 @@ fn addCursor(self: *Grid, term: *Terminal) void {
 /// or not. If the cell wasn't updated, a full refreshCells call is
 /// needed.
 pub fn updateCell(
-    self: *Grid,
+    self: *OpenGL,
     term: *Terminal,
     cell: terminal.Screen.Cell,
     shaper_cell: font.Shaper.Cell,
@@ -690,7 +690,7 @@ pub fn updateCell(
 
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
-pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
+pub fn setScreenSize(self: *OpenGL, dim: ScreenSize) !void {
     // Update the projection uniform within our shader
     const bind = try self.program.use();
     defer bind.unbind();
@@ -725,7 +725,7 @@ pub fn setScreenSize(self: *Grid, dim: ScreenSize) !void {
 }
 
 /// Updates the font texture atlas if it is dirty.
-fn flushAtlas(self: *Grid) !void {
+fn flushAtlas(self: *OpenGL) !void {
     {
         const atlas = &self.font_group.atlas_greyscale;
         if (atlas.modified) {
@@ -797,7 +797,7 @@ fn flushAtlas(self: *Grid) !void {
 
 /// Render renders the current cell state. This will not modify any of
 /// the cells.
-pub fn render(self: *Grid) !void {
+pub fn render(self: *OpenGL) !void {
     const t = trace(@src());
     defer t.end();
 

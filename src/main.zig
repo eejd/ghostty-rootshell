@@ -105,16 +105,15 @@ fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
 
 test {
     _ = @import("Atlas.zig");
-    _ = @import("Grid.zig");
     _ = @import("Pty.zig");
     _ = @import("Command.zig");
     _ = @import("TempDir.zig");
     _ = @import("font/main.zig");
+    _ = @import("renderer.zig");
     _ = @import("terminal/Terminal.zig");
     _ = @import("input.zig");
 
     // Libraries
-    _ = @import("libuv");
     _ = @import("segmented_pool.zig");
     _ = @import("terminal/main.zig");
 

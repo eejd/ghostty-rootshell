@@ -45,13 +45,13 @@ pub fn update(self: *DevMode) !void {
                 if (imgui.treeNode("Atlas: Greyscale", .{ .default_open = true })) {
                     defer imgui.treePop();
                     const atlas = &window.font_group.atlas_greyscale;
-                    try self.atlasInfo(atlas, @intCast(usize, window.grid.texture.id));
+                    try self.atlasInfo(atlas, @intCast(usize, window.renderer.texture.id));
                 }
 
                 if (imgui.treeNode("Atlas: Color (Emoji)", .{ .default_open = true })) {
                     defer imgui.treePop();
                     const atlas = &window.font_group.atlas_color;
-                    try self.atlasInfo(atlas, @intCast(usize, window.grid.texture_color.id));
+                    try self.atlasInfo(atlas, @intCast(usize, window.renderer.texture_color.id));
                 }
             }
         }
