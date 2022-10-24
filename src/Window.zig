@@ -194,12 +194,14 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         gl.glad.versionMajor(version),
         gl.glad.versionMinor(version),
     });
-    if (builtin.mode == .Debug) {
-        var ext_iter = try gl.ext.iterator();
-        while (try ext_iter.next()) |ext| {
-            log.debug("OpenGL extension available name={s}", .{ext});
-        }
-    }
+    // These are very noisy so this is commented, but easy to uncomment
+    // whenever we need to check the OpenGL extension list
+    // if (builtin.mode == .Debug) {
+    //     var ext_iter = try gl.ext.iterator();
+    //     while (try ext_iter.next()) |ext| {
+    //         log.debug("OpenGL extension available name={s}", .{ext});
+    //     }
+    // }
 
     if (builtin.mode == .Debug) {
         // Get our physical DPI - debug only because we don't have a use for

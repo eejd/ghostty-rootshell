@@ -25,10 +25,13 @@ pub fn main() !void {
         // faster than GPA. We only do this in release modes so that we
         // can get easy memory leak detection in debug modes.
         if (builtin.link_libc) {
-            switch (builtin.mode) {
-                .ReleaseSafe, .ReleaseFast => break :gpa std.heap.c_allocator,
-                else => {},
-            }
+            if (switch (builtin.mode) {
+                .ReleaseSafe, .ReleaseFast => true,
+
+                // We also use it if we can detect we're running under
+                // Valgrind since Valgrind only instruments the C allocator
+                else => std.valgrind.runningOnValgrind() > 0,
+            }) break :gpa std.heap.c_allocator;
         }
 
         // We don't ever deinit our GPA because the process cleanup will
