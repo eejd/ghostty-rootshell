@@ -171,6 +171,11 @@ pub const Set = struct {
     /// The set of bindings.
     bindings: HashMap = .{},
 
+    pub fn deinit(self: *Set, alloc: Allocator) void {
+        self.bindings.deinit(alloc);
+        self.* = undefined;
+    }
+
     /// Add a binding to the set. If the binding already exists then
     /// this will overwrite it.
     pub fn put(self: *Set, alloc: Allocator, t: Trigger, action: Action) !void {

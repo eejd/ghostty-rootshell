@@ -632,6 +632,7 @@ pub fn destroy(self: *Window) void {
 
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
+    self.alloc.destroy(self.font_group);
 
     self.alloc_io_arena.deinit();
     self.alloc.destroy(self.renderer_state.mutex);
