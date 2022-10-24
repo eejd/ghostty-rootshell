@@ -59,6 +59,12 @@ renderer: renderer.OpenGL,
 /// The render state
 renderer_state: renderer.State,
 
+/// The renderer thread manager
+renderer_thread: renderer.Thread,
+
+/// The actual thread
+renderer_thr: std.Thread,
+
 /// The underlying pty for this window.
 pty: Pty,
 
@@ -450,6 +456,15 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     mutex.* = .{};
     errdefer alloc.destroy(mutex);
 
+    // Create the renderer thread
+    var render_thread = try renderer.Thread.init(
+        alloc,
+        window,
+        &self.renderer,
+        &self.renderer_state,
+    );
+    errdefer render_thread.deinit();
+
     self.* = .{
         .alloc = alloc,
         .alloc_io_arena = io_arena,
@@ -459,6 +474,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .cursor = cursor,
         .focused = false,
         .renderer = renderer_impl,
+        .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
             .cursor = .{
@@ -469,6 +485,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
             .terminal = &self.terminal,
             .devmode = if (!DevMode.enabled) null else &DevMode.instance,
         },
+        .renderer_thr = undefined,
         .pty = pty,
         .command = cmd,
         .mouse = .{},
@@ -489,7 +506,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Setup our callbacks and user data
     window.setUserPointer(self);
-    window.setSizeCallback(sizeCallback);
+    //window.setSizeCallback(sizeCallback);
     window.setCharCallback(charCallback);
     window.setKeyCallback(keyCallback);
     window.setFocusCallback(focusCallback);
@@ -537,10 +554,33 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         DevMode.instance.window = self;
     }
 
+    // Unload our context prior to switching over to the renderer thread
+    // because OpenGL requires it to be unloaded.
+    gl.glad.unload();
+    try glfw.makeContextCurrent(null);
+
+    // Start our renderer thread
+    self.renderer_thr = try std.Thread.spawn(
+        .{},
+        renderer.Thread.threadMain,
+        .{&self.renderer_thread},
+    );
+
     return self;
 }
 
 pub fn destroy(self: *Window) void {
+    {
+        // Stop rendering thread
+        self.renderer_thread.stop.send() catch |err|
+            log.err("error notifying renderer thread to stop, may stall err={}", .{err});
+        self.renderer_thr.join();
+
+        // We need to become the active rendering thread again
+        self.renderer.threadEnter(self.window) catch unreachable;
+        self.renderer_thread.deinit();
+    }
+
     if (DevMode.enabled) {
         // Clear the window
         DevMode.instance.window = null;
@@ -1470,6 +1510,10 @@ fn cursorTimerCallback(t: *libuv.Timer) void {
 
     const win = t.getData(Window) orelse return;
 
+    // We are modifying renderer state from here on out
+    win.renderer_state.mutex.lock();
+    defer win.renderer_state.mutex.unlock();
+
     // If the cursor is currently invisible, then we do nothing. Ideally
     // in this state the timer would be cancelled but no big deal.
     if (!win.renderer_state.cursor.visible) return;
@@ -1589,9 +1633,9 @@ fn renderTimerCallback(t: *libuv.Timer) void {
 
     const win = t.getData(Window).?;
 
-    // Render
-    win.renderer.render(win.window, win.renderer_state) catch |err|
-        log.warn("error rendering err={}", .{err});
+    // Trigger a render
+    win.renderer_thread.wakeup.send() catch |err|
+        log.err("error sending render notification err={}", .{err});
 
     // Record our run
     win.render_timer.tick();

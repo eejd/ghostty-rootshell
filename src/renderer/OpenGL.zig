@@ -325,7 +325,9 @@ pub fn deinit(self: *OpenGL) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(window: glfw.Window) !void {
+pub fn threadEnter(self: *const OpenGL, window: glfw.Window) !void {
+    _ = self;
+
     // We need to make the OpenGL context current. OpenGL requires
     // that a single thread own the a single OpenGL context (if any). This
     // ensures that the context switches over to our thread. Important:
@@ -350,7 +352,9 @@ pub fn threadEnter(window: glfw.Window) !void {
 }
 
 /// Callback called by renderer.Thread when it exits.
-pub fn threadExit() void {
+pub fn threadExit(self: *const OpenGL) void {
+    _ = self;
+
     gl.glad.unload();
     glfw.makeContextCurrent(null) catch {};
 }

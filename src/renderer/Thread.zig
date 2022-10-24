@@ -10,7 +10,7 @@ const renderer = @import("../renderer.zig");
 const gl = @import("../opengl.zig");
 
 const Allocator = std.mem.Allocator;
-const log = std.log.named(.renderer_thread);
+const log = std.log.scoped(.renderer_thread);
 
 /// The main event loop for the application. The user data of this loop
 /// is always the allocator used to create the loop. This is a convenience
@@ -21,10 +21,27 @@ loop: libuv.Loop,
 /// any thread.
 wakeup: libuv.Async,
 
+/// This can be used to stop the renderer on the next loop iteration.
+stop: libuv.Async,
+
+/// The windo we're rendering to.
+window: glfw.Window,
+
+/// The underlying renderer implementation.
+renderer: *renderer.OpenGL,
+
+/// Pointer to the shared state that is used to generate the final render.
+state: *const renderer.State,
+
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
 /// is up to the caller to start the thread with the threadMain entrypoint.
-pub fn init(alloc: Allocator) !Thread {
+pub fn init(
+    alloc: Allocator,
+    window: glfw.Window,
+    renderer_impl: *renderer.OpenGL,
+    state: *const renderer.State,
+) !Thread {
     // We always store allocator pointer on the loop data so that
     // handles can use our global allocator.
     const allocPtr = try alloc.create(Allocator);
@@ -37,10 +54,17 @@ pub fn init(alloc: Allocator) !Thread {
     loop.setData(allocPtr);
 
     // This async handle is used to "wake up" the renderer and force a render.
-    var async_h = try libuv.Async.init(alloc, loop, (struct {
-        fn callback(_: *libuv.Async) void {}
+    var wakeup_h = try libuv.Async.init(alloc, loop, renderCallback);
+    errdefer wakeup_h.close((struct {
+        fn callback(h: *libuv.Async) void {
+            const loop_alloc = h.loop().getData(Allocator).?.*;
+            h.deinit(loop_alloc);
+        }
     }).callback);
-    errdefer async_h.close((struct {
+
+    // This async handle is used to stop the loop and force the thread to end.
+    var stop_h = try libuv.Async.init(alloc, loop, stopCallback);
+    errdefer stop_h.close((struct {
         fn callback(h: *libuv.Async) void {
             const loop_alloc = h.loop().getData(Allocator).?.*;
             h.deinit(loop_alloc);
@@ -48,9 +72,12 @@ pub fn init(alloc: Allocator) !Thread {
     }).callback);
 
     return Thread{
-        .alloc = alloc,
         .loop = loop,
-        .notifier = async_h,
+        .wakeup = wakeup_h,
+        .stop = stop_h,
+        .window = window,
+        .renderer = renderer_impl,
+        .state = state,
     };
 }
 
@@ -60,6 +87,20 @@ pub fn deinit(self: *Thread) void {
     // Get a copy to our allocator
     const alloc_ptr = self.loop.getData(Allocator).?;
     const alloc = alloc_ptr.*;
+
+    // Schedule our handles to close
+    self.stop.close((struct {
+        fn callback(h: *libuv.Async) void {
+            const handle_alloc = h.loop().getData(Allocator).?.*;
+            h.deinit(handle_alloc);
+        }
+    }).callback);
+    self.wakeup.close((struct {
+        fn callback(h: *libuv.Async) void {
+            const handle_alloc = h.loop().getData(Allocator).?.*;
+            h.deinit(handle_alloc);
+        }
+    }).callback);
 
     // Run the loop one more time, because destroying our other things
     // like windows usually cancel all our event loop stuff and we need
@@ -74,40 +115,54 @@ pub fn deinit(self: *Thread) void {
 }
 
 /// The main entrypoint for the thread.
-pub fn threadMain(
-    window: glfw.Window,
-    renderer_impl: *const renderer.OpenGL,
-) void {
+pub fn threadMain(self: *Thread) void {
     // Call child function so we can use errors...
-    threadMain_(
-        window,
-        renderer_impl,
-    ) catch |err| {
+    self.threadMain_() catch |err| {
         // In the future, we should expose this on the thread struct.
         log.warn("error in renderer err={}", .{err});
     };
 }
 
-fn threadMain_(
-    self: *const Thread,
-    window: glfw.Window,
-    renderer_impl: *const renderer.OpenGL,
-) !void {
-    const Renderer = switch (@TypeOf(renderer_impl)) {
-        .Pointer => |p| p.child,
-        .Struct => |s| s,
-    };
-
+fn threadMain_(self: *Thread) !void {
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
     // some thread-local state since that is how it works.
-    if (@hasDecl(Renderer, "threadEnter")) try renderer_impl.threadEnter(window);
-    defer if (@hasDecl(Renderer, "threadExit")) renderer_impl.threadExit();
+    const Renderer = RendererType();
+    if (@hasDecl(Renderer, "threadEnter")) try self.renderer.threadEnter(self.window);
+    defer if (@hasDecl(Renderer, "threadExit")) self.renderer.threadExit();
 
-    // Setup our timer handle which is used to perform the actual render.
-    // TODO
+    // Set up our async handler to support rendering
+    self.wakeup.setData(self);
+    defer self.wakeup.setData(null);
 
     // Run
     log.debug("starting renderer thread", .{});
-    try self.loop.run(.default);
+    defer log.debug("exiting renderer thread", .{});
+    _ = try self.loop.run(.default);
+}
+
+fn renderCallback(h: *libuv.Async) void {
+    const t = h.getData(Thread) orelse {
+        // This shouldn't happen so we log it.
+        log.warn("render callback fired without data set", .{});
+        return;
+    };
+
+    t.renderer.render(t.window, t.state.*) catch |err|
+        log.warn("error rendering err={}", .{err});
+}
+
+fn stopCallback(h: *libuv.Async) void {
+    h.loop().stop();
+}
+
+// This is unnecessary right now but is logic we'll need for when we
+// abstract renderers out.
+fn RendererType() type {
+    const self: Thread = undefined;
+    return switch (@typeInfo(@TypeOf(self.renderer))) {
+        .Pointer => |p| p.child,
+        .Struct => |s| s,
+        else => unreachable,
+    };
 }

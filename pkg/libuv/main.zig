@@ -1,6 +1,7 @@
 const std = @import("std");
 const stream = @import("stream.zig");
 
+pub const c = @import("c.zig");
 pub const Loop = @import("Loop.zig");
 pub const Async = @import("Async.zig");
 pub const Idle = @import("Idle.zig");
