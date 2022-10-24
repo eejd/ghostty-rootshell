@@ -19,7 +19,6 @@ const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const SegmentedPool = @import("segmented_pool.zig").SegmentedPool;
 const trace = @import("tracy").trace;
-const max_timer = @import("max_timer.zig");
 const terminal = @import("terminal/main.zig");
 const Config = @import("config.zig").Config;
 const input = @import("input.zig");
