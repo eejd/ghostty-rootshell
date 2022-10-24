@@ -139,7 +139,7 @@ pub const Fontconfig = struct {
     }
 
     pub fn deinit(self: *Fontconfig) void {
-        _ = self;
+        self.fc_config.destroy();
     }
 
     /// Discover fonts from a descriptor. This returns an iterator that can
