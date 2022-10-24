@@ -3,11 +3,12 @@ const Texture = @This();
 const std = @import("std");
 const c = @import("c.zig");
 const errors = @import("errors.zig");
+const glad = @import("glad.zig");
 
 id: c.GLuint,
 
 pub inline fn active(target: c.GLenum) !void {
-    c.glActiveTexture(target);
+    glad.context.ActiveTexture.?(target);
 }
 
 /// Enun for possible texture binding targets.
@@ -74,17 +75,17 @@ pub const Binding = struct {
     target: Target,
 
     pub inline fn unbind(b: *Binding) void {
-        c.glBindTexture(@enumToInt(b.target), 0);
+        glad.context.BindTexture.?(@enumToInt(b.target), 0);
         b.* = undefined;
     }
 
     pub fn generateMipmap(b: Binding) void {
-        c.glGenerateMipmap(@enumToInt(b.target));
+        glad.context.GenerateMipmap.?(@enumToInt(b.target));
     }
 
     pub fn parameter(b: Binding, name: Parameter, value: anytype) !void {
         switch (@TypeOf(value)) {
-            c.GLint => c.glTexParameteri(
+            c.GLint => glad.context.TexParameteri.?(
                 @enumToInt(b.target),
                 @enumToInt(name),
                 value,
@@ -104,7 +105,7 @@ pub const Binding = struct {
         typ: DataType,
         data: ?*const anyopaque,
     ) !void {
-        c.glTexImage2D(
+        glad.context.TexImage2D.?(
             @enumToInt(b.target),
             level,
             @enumToInt(internal_format),
@@ -128,7 +129,7 @@ pub const Binding = struct {
         typ: DataType,
         data: ?*const anyopaque,
     ) !void {
-        c.glTexSubImage2D(
+        glad.context.TexSubImage2D.?(
             @enumToInt(b.target),
             level,
             xoffset,
@@ -145,16 +146,16 @@ pub const Binding = struct {
 /// Create a single texture.
 pub inline fn create() !Texture {
     var id: c.GLuint = undefined;
-    c.glGenTextures(1, &id);
+    glad.context.GenTextures.?(1, &id);
     return Texture{ .id = id };
 }
 
 /// glBindTexture
 pub inline fn bind(v: Texture, target: Target) !Binding {
-    c.glBindTexture(@enumToInt(target), v.id);
+    glad.context.BindTexture.?(@enumToInt(target), v.id);
     return Binding{ .target = target };
 }
 
 pub inline fn destroy(v: Texture) void {
-    c.glDeleteTextures(1, &v.id);
+    glad.context.DeleteTextures.?(1, &v.id);
 }

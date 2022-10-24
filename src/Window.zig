@@ -242,12 +242,12 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Culling, probably not necessary. We have to change the winding
     // order since our 0,0 is top-left.
-    gl.c.glEnable(gl.c.GL_CULL_FACE);
-    gl.c.glFrontFace(gl.c.GL_CW);
+    try gl.enable(gl.c.GL_CULL_FACE);
+    try gl.frontFace(gl.c.GL_CW);
 
     // Blending for text
-    gl.c.glEnable(gl.c.GL_BLEND);
-    gl.c.glBlendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
+    try gl.enable(gl.c.GL_BLEND);
+    try gl.blendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
 
     // The font size we desire along with the DPI determiend for the window
     const font_size: font.face.DesiredSize = .{

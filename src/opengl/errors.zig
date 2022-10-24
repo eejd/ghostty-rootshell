@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig");
+const glad = @import("glad.zig");
 
 pub const Error = error{
     InvalidEnum,
@@ -13,7 +14,7 @@ pub const Error = error{
 
 /// getError returns the error (if any) from the last OpenGL operation.
 pub fn getError() Error!void {
-    return switch (c.glGetError()) {
+    return switch (glad.context.GetError.?()) {
         c.GL_NO_ERROR => {},
         c.GL_INVALID_ENUM => Error.InvalidEnum,
         c.GL_INVALID_VALUE => Error.InvalidValue,

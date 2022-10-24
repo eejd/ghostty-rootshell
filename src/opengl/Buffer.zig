@@ -3,6 +3,7 @@ const Buffer = @This();
 const std = @import("std");
 const c = @import("c.zig");
 const errors = @import("errors.zig");
+const glad = @import("glad.zig");
 
 id: c.GLuint,
 
@@ -41,7 +42,7 @@ pub const Binding = struct {
         usage: Usage,
     ) !void {
         const info = dataInfo(&data);
-        c.glBufferData(@enumToInt(b.target), info.size, info.ptr, @enumToInt(usage));
+        glad.context.BufferData.?(@enumToInt(b.target), info.size, info.ptr, @enumToInt(usage));
         try errors.getError();
     }
 
@@ -53,7 +54,7 @@ pub const Binding = struct {
         data: anytype,
     ) !void {
         const info = dataInfo(data);
-        c.glBufferSubData(@enumToInt(b.target), @intCast(c_long, offset), info.size, info.ptr);
+        glad.context.BufferSubData.?(@enumToInt(b.target), @intCast(c_long, offset), info.size, info.ptr);
         try errors.getError();
     }
 
@@ -65,7 +66,7 @@ pub const Binding = struct {
         comptime T: type,
         usage: Usage,
     ) !void {
-        c.glBufferData(@enumToInt(b.target), @sizeOf(T), null, @enumToInt(usage));
+        glad.context.BufferData.?(@enumToInt(b.target), @sizeOf(T), null, @enumToInt(usage));
         try errors.getError();
     }
 
@@ -75,7 +76,7 @@ pub const Binding = struct {
         size: usize,
         usage: Usage,
     ) !void {
-        c.glBufferData(@enumToInt(b.target), @intCast(c_long, size), null, @enumToInt(usage));
+        glad.context.BufferData.?(@enumToInt(b.target), @intCast(c_long, size), null, @enumToInt(usage));
         try errors.getError();
     }
 
@@ -106,7 +107,7 @@ pub const Binding = struct {
     }
 
     pub inline fn enableAttribArray(_: Binding, idx: c.GLuint) !void {
-        c.glEnableVertexAttribArray(idx);
+        glad.context.EnableVertexAttribArray.?(idx);
     }
 
     /// Shorthand for vertexAttribPointer that is specialized towards the
@@ -153,7 +154,7 @@ pub const Binding = struct {
 
     /// VertexAttribDivisor
     pub fn attributeDivisor(_: Binding, idx: c.GLuint, divisor: c.GLuint) !void {
-        c.glVertexAttribDivisor(idx, divisor);
+        glad.context.VertexAttribDivisor.?(idx, divisor);
         try errors.getError();
     }
 
@@ -172,7 +173,7 @@ pub const Binding = struct {
         else
             null;
 
-        c.glVertexAttribPointer(idx, size, typ, normalized_c, stride, offsetPtr);
+        glad.context.VertexAttribPointer.?(idx, size, typ, normalized_c, stride, offsetPtr);
         try errors.getError();
     }
 
@@ -189,12 +190,12 @@ pub const Binding = struct {
         else
             null;
 
-        c.glVertexAttribIPointer(idx, size, typ, stride, offsetPtr);
+        glad.context.VertexAttribIPointer.?(idx, size, typ, stride, offsetPtr);
         try errors.getError();
     }
 
     pub inline fn unbind(b: *Binding) void {
-        c.glBindBuffer(@enumToInt(b.target), 0);
+        glad.context.BindBuffer.?(@enumToInt(b.target), 0);
         b.* = undefined;
     }
 };
@@ -202,16 +203,16 @@ pub const Binding = struct {
 /// Create a single buffer.
 pub inline fn create() !Buffer {
     var vbo: c.GLuint = undefined;
-    c.glGenBuffers(1, &vbo);
+    glad.context.GenBuffers.?(1, &vbo);
     return Buffer{ .id = vbo };
 }
 
 /// glBindBuffer
 pub inline fn bind(v: Buffer, target: Target) !Binding {
-    c.glBindBuffer(@enumToInt(target), v.id);
+    glad.context.BindBuffer.?(@enumToInt(target), v.id);
     return Binding{ .target = target };
 }
 
 pub inline fn destroy(v: Buffer) void {
-    c.glDeleteBuffers(1, &v.id);
+    glad.context.DeleteBuffers.?(1, &v.id);
 }
