@@ -2,11 +2,15 @@
 pub const OpenGL = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
+const glfw = @import("glfw");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Atlas = @import("../Atlas.zig");
 const font = @import("../font/main.zig");
+const imgui = @import("imgui");
+const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("../opengl.zig");
@@ -27,11 +31,8 @@ const CellsLRU = lru.AutoHashMap(struct {
 
 alloc: std.mem.Allocator,
 
-/// Current dimensions for this grid.
-size: GridSize,
-
 /// Current cell dimensions for this grid.
-cell_size: CellSize,
+cell_size: renderer.CellSize,
 
 /// The current set of cells to render.
 cells: std.ArrayListUnmanaged(GPUCell),
@@ -289,7 +290,6 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !OpenGL {
         .cells = .{},
         .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
-        .size = .{ .rows = 0, .columns = 0 },
         .program = program,
         .vao = vao,
         .ebo = ebo,
@@ -318,6 +318,135 @@ pub fn deinit(self: *OpenGL) void {
     self.cells_lru.deinit(self.alloc);
     self.cells.deinit(self.alloc);
     self.* = undefined;
+}
+
+/// Callback called by renderer.Thread when it begins.
+pub fn threadEnter(self: *const OpenGL, window: glfw.Window) !void {
+    _ = self;
+
+    // We need to make the OpenGL context current. OpenGL requires
+    // that a single thread own the a single OpenGL context (if any). This
+    // ensures that the context switches over to our thread. Important:
+    // the prior thread MUST have detached the context prior to calling
+    // this entrypoint.
+    try glfw.makeContextCurrent(window);
+    errdefer glfw.makeContextCurrent(null) catch |err|
+        log.warn("failed to cleanup OpenGL context err={}", .{err});
+    try glfw.swapInterval(1);
+
+    // Load OpenGL bindings. This API is context-aware so this sets
+    // a threadlocal context for these pointers.
+    const version = try gl.glad.load(switch (builtin.zig_backend) {
+        .stage1 => glfw.getProcAddress,
+        else => &glfw.getProcAddress,
+    });
+    errdefer gl.glad.unload();
+    log.info("loaded OpenGL {}.{}", .{
+        gl.glad.versionMajor(version),
+        gl.glad.versionMinor(version),
+    });
+}
+
+/// Callback called by renderer.Thread when it exits.
+pub fn threadExit(self: *const OpenGL) void {
+    _ = self;
+
+    gl.glad.unload();
+    glfw.makeContextCurrent(null) catch {};
+}
+
+/// The primary render callback that is completely thread-safe.
+pub fn render(
+    self: *OpenGL,
+    window: glfw.Window,
+    state: *renderer.State,
+) !void {
+    // Data we extract out of the critical area.
+    const Critical = struct {
+        gl_bg: terminal.color.RGB,
+        devmode_data: ?*imgui.DrawData,
+        screen_size: ?renderer.ScreenSize,
+    };
+
+    // Update all our data as tightly as possible within the mutex.
+    const critical: Critical = critical: {
+        state.mutex.lock();
+        defer state.mutex.unlock();
+
+        // If we're resizing, then handle that now.
+        if (state.resize_screen) |size| try self.setScreenSize(size);
+        defer state.resize_screen = null;
+
+        // Setup our cursor state
+        if (state.focused) {
+            self.cursor_visible = state.cursor.visible and !state.cursor.blink;
+            self.cursor_style = CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+        } else {
+            self.cursor_visible = true;
+            self.cursor_style = .box_hollow;
+        }
+
+        // Swap bg/fg if the terminal is reversed
+        const bg = self.background;
+        const fg = self.foreground;
+        defer {
+            self.background = bg;
+            self.foreground = fg;
+        }
+        if (state.terminal.modes.reverse_colors) {
+            self.background = fg;
+            self.foreground = bg;
+        }
+
+        // Build our GPU cells
+        try self.rebuildCells(state.terminal);
+        try self.finalizeCells(state.terminal);
+
+        // Build our devmode draw data
+        const devmode_data = devmode_data: {
+            if (state.devmode) |dm| {
+                if (dm.visible) {
+                    try dm.update();
+                    break :devmode_data try dm.render();
+                }
+            }
+
+            break :devmode_data null;
+        };
+
+        break :critical .{
+            .gl_bg = self.background,
+            .devmode_data = devmode_data,
+            .screen_size = state.resize_screen,
+        };
+    };
+
+    // If we are resizing we need to update the viewport
+    if (critical.screen_size) |size| {
+        // Update our viewport for this context to be the entire window.
+        // OpenGL works in pixels, so we have to use the pixel size.
+        try gl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
+    }
+
+    // Clear the surface
+    gl.clearColor(
+        @intToFloat(f32, critical.gl_bg.r) / 255,
+        @intToFloat(f32, critical.gl_bg.g) / 255,
+        @intToFloat(f32, critical.gl_bg.b) / 255,
+        1.0,
+    );
+    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
+
+    // We're out of the critical path now. Let's first render our terminal.
+    try self.draw();
+
+    // If we have devmode, then render that
+    if (critical.devmode_data) |data| {
+        imgui.ImplOpenGL3.renderDrawData(data);
+    }
+
+    // Swap our window buffers
+    try window.swapBuffers();
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a
@@ -690,7 +819,7 @@ pub fn updateCell(
 
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
-pub fn setScreenSize(self: *OpenGL, dim: ScreenSize) !void {
+fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Update the projection uniform within our shader
     const bind = try self.program.use();
     defer bind.unbind();
@@ -707,21 +836,21 @@ pub fn setScreenSize(self: *OpenGL, dim: ScreenSize) !void {
     );
 
     // Recalculate the rows/columns.
-    self.size.update(dim, self.cell_size);
+    const grid_size = renderer.GridSize.init(dim, self.cell_size);
 
     // Update our LRU. We arbitrarily support a certain number of pages here.
     // We also always support a minimum number of caching in case a user
     // is resizing tiny then growing again we can save some of the renders.
-    const evicted = try self.cells_lru.resize(self.alloc, @max(80, self.size.rows * 10));
+    const evicted = try self.cells_lru.resize(self.alloc, @max(80, grid_size.rows * 10));
     if (evicted) |list| for (list) |*value| value.deinit(self.alloc);
 
     // Update our shaper
-    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, self.size.columns * 2);
+    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, grid_size.columns * 2);
     errdefer self.alloc.free(shape_buf);
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
 
-    log.debug("screen size screen={} grid={}, cell={}", .{ dim, self.size, self.cell_size });
+    log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
 
 /// Updates the font texture atlas if it is dirty.
@@ -797,7 +926,7 @@ fn flushAtlas(self: *OpenGL) !void {
 
 /// Render renders the current cell state. This will not modify any of
 /// the cells.
-pub fn render(self: *OpenGL) !void {
+pub fn draw(self: *OpenGL) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -862,72 +991,4 @@ pub fn render(self: *OpenGL) !void {
         gl.c.GL_UNSIGNED_BYTE,
         self.cells.items.len,
     );
-}
-
-/// The dimensions of a single "cell" in the terminal grid.
-///
-/// The dimensions are dependent on the current loaded set of font glyphs.
-/// We calculate the width based on the widest character and the height based
-/// on the height requirement for an underscore (the "lowest" -- visually --
-/// character).
-///
-/// The units for the width and height are in world space. They have to
-/// be normalized using the screen projection.
-///
-/// TODO(mitchellh): we should recalculate cell dimensions when new glyphs
-/// are loaded.
-const CellSize = struct {
-    width: f32,
-    height: f32,
-};
-
-/// The dimensions of the screen that the grid is rendered to. This is the
-/// terminal screen, so it is likely a subset of the window size. The dimensions
-/// should be in pixels.
-const ScreenSize = struct {
-    width: u32,
-    height: u32,
-};
-
-/// The dimensions of the grid itself, in rows/columns units.
-const GridSize = struct {
-    const Unit = u32;
-
-    columns: Unit = 0,
-    rows: Unit = 0,
-
-    /// Update the columns/rows for the grid based on the given screen and
-    /// cell size.
-    fn update(self: *GridSize, screen: ScreenSize, cell: CellSize) void {
-        self.columns = @floatToInt(Unit, @intToFloat(f32, screen.width) / cell.width);
-        self.rows = @floatToInt(Unit, @intToFloat(f32, screen.height) / cell.height);
-    }
-};
-
-test "GridSize update exact" {
-    var grid: GridSize = .{};
-    grid.update(.{
-        .width = 100,
-        .height = 40,
-    }, .{
-        .width = 5,
-        .height = 10,
-    });
-
-    try testing.expectEqual(@as(GridSize.Unit, 20), grid.columns);
-    try testing.expectEqual(@as(GridSize.Unit, 4), grid.rows);
-}
-
-test "GridSize update rounding" {
-    var grid: GridSize = .{};
-    grid.update(.{
-        .width = 20,
-        .height = 40,
-    }, .{
-        .width = 6,
-        .height = 15,
-    });
-
-    try testing.expectEqual(@as(GridSize.Unit, 3), grid.columns);
-    try testing.expectEqual(@as(GridSize.Unit, 2), grid.rows);
 }

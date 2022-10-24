@@ -1,8 +1,10 @@
 const std = @import("std");
 const stream = @import("stream.zig");
 
+pub const c = @import("c.zig");
 pub const Loop = @import("Loop.zig");
 pub const Async = @import("Async.zig");
+pub const Idle = @import("Idle.zig");
 pub const Pipe = @import("Pipe.zig");
 pub const Timer = @import("Timer.zig");
 pub const Tty = @import("Tty.zig");
@@ -27,6 +29,7 @@ test {
 
     _ = Loop;
     _ = Async;
+    _ = Idle;
     _ = Pipe;
     _ = Timer;
     _ = Tty;

@@ -6,11 +6,12 @@ const log = std.log.scoped(.opengl);
 
 const c = @import("c.zig");
 const errors = @import("errors.zig");
+const glad = @import("glad.zig");
 
 id: c.GLuint,
 
 pub inline fn create(typ: c.GLenum) errors.Error!Shader {
-    const id = c.glCreateShader(typ);
+    const id = glad.context.CreateShader.?(typ);
     if (id == 0) {
         try errors.mustError();
         unreachable;
@@ -22,12 +23,12 @@ pub inline fn create(typ: c.GLenum) errors.Error!Shader {
 
 /// Set the source and compile a shader.
 pub inline fn setSourceAndCompile(s: Shader, source: [:0]const u8) !void {
-    c.glShaderSource(s.id, 1, &@ptrCast([*c]const u8, source), null);
-    c.glCompileShader(s.id);
+    glad.context.ShaderSource.?(s.id, 1, &@ptrCast([*c]const u8, source), null);
+    glad.context.CompileShader.?(s.id);
 
     // Check if compilation succeeded
     var success: c_int = undefined;
-    c.glGetShaderiv(s.id, c.GL_COMPILE_STATUS, &success);
+    glad.context.GetShaderiv.?(s.id, c.GL_COMPILE_STATUS, &success);
     if (success == c.GL_TRUE) return;
     log.err("shader compilation failure id={} message={s}", .{
         s.id,
@@ -44,12 +45,12 @@ pub inline fn setSourceAndCompile(s: Shader, source: [:0]const u8) !void {
 // if we ever need it.
 pub inline fn getInfoLog(s: Shader) [512]u8 {
     var msg: [512]u8 = undefined;
-    c.glGetShaderInfoLog(s.id, msg.len, null, &msg);
+    glad.context.GetShaderInfoLog.?(s.id, msg.len, null, &msg);
     return msg;
 }
 
 pub inline fn destroy(s: Shader) void {
     assert(s.id != 0);
-    c.glDeleteShader(s.id);
+    glad.context.DeleteShader.?(s.id);
     log.debug("shader destroyed id={}", .{s.id});
 }
