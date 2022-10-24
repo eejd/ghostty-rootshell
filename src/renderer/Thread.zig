@@ -24,6 +24,9 @@ wakeup: libuv.Async,
 /// This can be used to stop the renderer on the next loop iteration.
 stop: libuv.Async,
 
+/// The timer used for rendering
+render_h: libuv.Timer,
+
 /// The windo we're rendering to.
 window: glfw.Window,
 
@@ -54,7 +57,7 @@ pub fn init(
     loop.setData(allocPtr);
 
     // This async handle is used to "wake up" the renderer and force a render.
-    var wakeup_h = try libuv.Async.init(alloc, loop, renderCallback);
+    var wakeup_h = try libuv.Async.init(alloc, loop, wakeupCallback);
     errdefer wakeup_h.close((struct {
         fn callback(h: *libuv.Async) void {
             const loop_alloc = h.loop().getData(Allocator).?.*;
@@ -71,10 +74,20 @@ pub fn init(
         }
     }).callback);
 
+    // The primary timer for rendering.
+    var render_h = try libuv.Timer.init(alloc, loop);
+    errdefer render_h.close((struct {
+        fn callback(h: *libuv.Timer) void {
+            const loop_alloc = h.loop().getData(Allocator).?.*;
+            h.deinit(loop_alloc);
+        }
+    }).callback);
+
     return Thread{
         .loop = loop,
         .wakeup = wakeup_h,
         .stop = stop_h,
+        .render_h = render_h,
         .window = window,
         .renderer = renderer_impl,
         .state = state,
@@ -97,6 +110,12 @@ pub fn deinit(self: *Thread) void {
     }).callback);
     self.wakeup.close((struct {
         fn callback(h: *libuv.Async) void {
+            const handle_alloc = h.loop().getData(Allocator).?.*;
+            h.deinit(handle_alloc);
+        }
+    }).callback);
+    self.render_h.close((struct {
+        fn callback(h: *libuv.Timer) void {
             const handle_alloc = h.loop().getData(Allocator).?.*;
             h.deinit(handle_alloc);
         }
@@ -124,6 +143,10 @@ pub fn threadMain(self: *Thread) void {
 }
 
 fn threadMain_(self: *Thread) !void {
+    // Get a copy to our allocator
+    // const alloc_ptr = self.loop.getData(Allocator).?;
+    // const alloc = alloc_ptr.*;
+
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
     // some thread-local state since that is how it works.
@@ -135,13 +158,34 @@ fn threadMain_(self: *Thread) !void {
     self.wakeup.setData(self);
     defer self.wakeup.setData(null);
 
+    // Set up our timer and start it for rendering
+    self.render_h.setData(self);
+    defer self.render_h.setData(null);
+    try self.wakeup.send();
+
     // Run
     log.debug("starting renderer thread", .{});
     defer log.debug("exiting renderer thread", .{});
     _ = try self.loop.run(.default);
 }
 
-fn renderCallback(h: *libuv.Async) void {
+fn wakeupCallback(h: *libuv.Async) void {
+    const t = h.getData(Thread) orelse {
+        // This shouldn't happen so we log it.
+        log.warn("render callback fired without data set", .{});
+        return;
+    };
+
+    // If the timer is already active then we don't have to do anything.
+    const active = t.render_h.isActive() catch true;
+    if (active) return;
+
+    // Timer is not active, let's start it
+    t.render_h.start(renderCallback, 10, 0) catch |err|
+        log.warn("render timer failed to start err={}", .{err});
+}
+
+fn renderCallback(h: *libuv.Timer) void {
     const t = h.getData(Thread) orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});

@@ -25,8 +25,6 @@ const Config = @import("config.zig").Config;
 const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
 
-const RenderTimer = max_timer.MaxTimer(renderTimerCallback);
-
 const log = std.log.scoped(.window);
 
 // The preallocation size for the write request pool. This should be big
@@ -82,9 +80,6 @@ terminal_stream: terminal.Stream(*Window),
 
 /// Cursor state.
 terminal_cursor: Cursor,
-
-/// Render at least 60fps.
-render_timer: RenderTimer,
 
 /// The dimensions of the grid in rows and columns.
 grid_size: renderer.GridSize,
@@ -500,7 +495,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .terminal_stream = .{ .handler = self },
         .terminal_cursor = .{ .timer = timer },
         .grid_size = grid_size,
-        .render_timer = try RenderTimer.init(loop, self, 6, 12),
         .pty_stream = stream,
         .config = config,
         .bg_r = @intToFloat(f32, config.background.r) / 255.0,
@@ -616,8 +610,6 @@ pub fn destroy(self: *Window) void {
         }
     }).callback);
 
-    self.render_timer.deinit();
-
     // We have to dealloc our window in the close callback because
     // we can't free some of the memory associated with the window
     // until the stream is closed.
@@ -666,6 +658,13 @@ fn queueWrite(self: *Window, data: []const u8) !void {
 
         i = end;
     }
+}
+
+/// This queues a render operation with the renderer thread. The render
+/// isn't guaranteed to happen immediately but it will happen as soon as
+/// practical.
+fn queueRender(self: *const Window) !void {
+    try self.renderer_thread.wakeup.send();
 }
 
 /// The cursor position from glfw directly is in screen coordinates but
@@ -719,7 +718,7 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
     const win = window.getUserPointer(Window) orelse return;
 
     // Resize usually forces a redraw
-    win.render_timer.schedule() catch |err|
+    win.queueRender() catch |err|
         log.err("error scheduling render timer in sizeCallback err={}", .{err});
 
     // Recalculate our grid size
@@ -758,7 +757,7 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
         // If the event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
             if (io.cval().WantCaptureKeyboard) {
-                win.render_timer.schedule() catch |err|
+                win.queueRender() catch |err|
                     log.err("error scheduling render timer err={}", .{err});
             }
         } else |_| {}
@@ -773,7 +772,7 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
     // Anytime is character is created, we have to clear the selection
     if (win.terminal.selection != null) {
         win.terminal.selection = null;
-        win.render_timer.schedule() catch |err|
+        win.queueRender() catch |err|
             log.err("error scheduling render in charCallback err={}", .{err});
     }
 
@@ -781,7 +780,7 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
     // TODO: detect if we're at the bottom to avoid the render call here.
     win.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
         log.err("error scrolling viewport err={}", .{err});
-    win.render_timer.schedule() catch |err|
+    win.queueRender() catch |err|
         log.err("error scheduling render in charCallback err={}", .{err});
 
     // Write the character to the pty
@@ -806,7 +805,7 @@ fn keyCallback(
         // If the event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
             if (io.cval().WantCaptureKeyboard) {
-                win.render_timer.schedule() catch |err|
+                win.queueRender() catch |err|
                     log.err("error scheduling render timer err={}", .{err});
             }
         } else |_| {}
@@ -927,7 +926,7 @@ fn keyCallback(
 
                 .toggle_dev_mode => if (DevMode.enabled) {
                     DevMode.instance.visible = !DevMode.instance.visible;
-                    win.render_timer.schedule() catch unreachable;
+                    win.queueRender() catch unreachable;
                 } else log.warn("dev mode was not compiled into this binary", .{}),
             }
 
@@ -1004,7 +1003,7 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
     // We have to schedule a render because no matter what we're changing
     // the cursor. If we're focused its reappearing, if we're not then
     // its changing to hollow and not blinking.
-    win.render_timer.schedule() catch unreachable;
+    win.queueRender() catch unreachable;
 
     if (focused)
         win.terminal_cursor.startTimer() catch unreachable
@@ -1024,7 +1023,7 @@ fn refreshCallback(window: glfw.Window) void {
     const win = window.getUserPointer(Window) orelse return;
 
     // The point of this callback is to schedule a render, so do that.
-    win.render_timer.schedule() catch unreachable;
+    win.queueRender() catch unreachable;
 }
 
 fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
@@ -1036,7 +1035,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.render_timer.schedule() catch |err|
+        win.queueRender() catch |err|
             log.err("error scheduling render timer err={}", .{err});
 
         // If the mouse event was handled by imgui, ignore it.
@@ -1071,7 +1070,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     // Schedule render since scrolling usually does something.
     // TODO(perf): we can only schedule render if we know scrolling
     // did something
-    win.render_timer.schedule() catch unreachable;
+    win.queueRender() catch unreachable;
 }
 
 /// The type of action to report for a mouse event.
@@ -1256,7 +1255,7 @@ fn mouseButtonCallback(
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.render_timer.schedule() catch |err|
+        win.queueRender() catch |err|
             log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
 
         // If the mouse event was handled by imgui, ignore it.
@@ -1326,7 +1325,7 @@ fn mouseButtonCallback(
         // Selection is always cleared
         if (win.terminal.selection != null) {
             win.terminal.selection = null;
-            win.render_timer.schedule() catch |err|
+            win.queueRender() catch |err|
                 log.err("error scheduling render in mouseButtinCallback err={}", .{err});
         }
     }
@@ -1345,7 +1344,7 @@ fn cursorPosCallback(
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.render_timer.schedule() catch |err|
+        win.queueRender() catch |err|
             log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
 
         // If the mouse event was handled by imgui, ignore it.
@@ -1380,7 +1379,7 @@ fn cursorPosCallback(
     if (win.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
 
     // All roads lead to requiring a re-render at this pont.
-    win.render_timer.schedule() catch |err|
+    win.queueRender() catch |err|
         log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
 
     // Convert to pixels from screen coords
@@ -1533,7 +1532,7 @@ fn cursorTimerCallback(t: *libuv.Timer) void {
 
     // Swap blink state and schedule a render
     win.renderer_state.cursor.blink = !win.renderer_state.cursor.blink;
-    win.render_timer.schedule() catch unreachable;
+    win.queueRender() catch unreachable;
 }
 
 fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
@@ -1582,7 +1581,7 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     }
 
     // Schedule a render
-    win.render_timer.schedule() catch unreachable;
+    win.queueRender() catch unreachable;
 
     // Process the terminal data. This is an extremely hot part of the
     // terminal emulator, so we do some abstraction leakage to avoid
@@ -1637,21 +1636,6 @@ fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
         log.err("write error: {}", .{err});
 
     //log.info("WROTE: {d}", .{status});
-}
-
-fn renderTimerCallback(t: *libuv.Timer) void {
-    const tracy = trace(@src());
-    tracy.color(0x006E7F); // blue-ish
-    defer tracy.end();
-
-    const win = t.getData(Window).?;
-
-    // Trigger a render
-    win.renderer_thread.wakeup.send() catch |err|
-        log.err("error sending render notification err={}", .{err});
-
-    // Record our run
-    win.render_timer.tick();
 }
 
 //-------------------------------------------------------------------
@@ -1722,7 +1706,7 @@ pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
     if (mode == .complete) {
         // Whenever we erase the full display, scroll to bottom.
         try self.terminal.scrollViewport(.{ .bottom = {} });
-        try self.render_timer.schedule();
+        try self.queueRender();
     }
 
     self.terminal.eraseDisplay(mode);
@@ -1775,7 +1759,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.terminal.modes.reverse_colors = enabled;
 
             // Schedule a render since we changed colors
-            try self.render_timer.schedule();
+            try self.queueRender();
         },
 
         .origin => {
@@ -1803,7 +1787,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
                 self.terminal.primaryScreen(opts);
 
             // Schedule a render since we changed screens
-            try self.render_timer.schedule();
+            try self.queueRender();
         },
 
         .bracketed_paste => self.bracketed_paste = true,
