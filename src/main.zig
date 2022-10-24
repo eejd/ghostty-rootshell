@@ -99,6 +99,8 @@ pub fn tracy_enabled() bool {
     return options.tracy_enabled;
 }
 
+//pub const log_level: std.log.Level = .debug;
+
 fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
     log.warn("glfw error={} message={s}", .{ code, desc });
 }

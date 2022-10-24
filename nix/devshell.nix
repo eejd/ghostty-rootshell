@@ -7,6 +7,7 @@
 , python
 , scdoc
 , tracy
+, valgrind
 , vulkan-loader
 , vttest
 , wabt
@@ -63,6 +64,7 @@ in mkShell rec {
     parallel
     python
     tracy
+    valgrind
     vttest
     wraptest
 
