@@ -9,6 +9,8 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Atlas = @import("../Atlas.zig");
 const font = @import("../font/main.zig");
+const imgui = @import("imgui");
+const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("../opengl.zig");
@@ -351,6 +353,62 @@ pub fn threadEnter(window: glfw.Window) !void {
 pub fn threadExit() void {
     gl.glad.unload();
     glfw.makeContextCurrent(null) catch {};
+}
+
+/// The primary render callback that is completely thread-safe.
+pub fn render(
+    self: *OpenGL,
+    window: glfw.Window,
+    state: renderer.State,
+) !void {
+    // Update all our data as tightly as possible within the mutex.
+    var gl_bg = self.background;
+    {
+        state.mutex.lock();
+        defer state.mutex.unlock();
+
+        // Setup our cursor state
+        self.cursor_visible = state.cursor.visible and !state.cursor.blink;
+        self.cursor_style = CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+
+        // Swap bg/fg if the terminal is reversed
+        const bg = self.background;
+        const fg = self.foreground;
+        defer {
+            self.background = bg;
+            self.foreground = fg;
+        }
+        if (state.terminal.modes.reverse_colors) {
+            gl_bg = fg;
+            self.background = fg;
+            self.foreground = bg;
+        }
+
+        try self.rebuildCells(state.terminal);
+        try self.finalizeCells(state.terminal);
+        if (state.devmode) |dm| try dm.update();
+    }
+
+    // Clear the surface
+    gl.clearColor(
+        @intToFloat(f32, self.background.r) / 255,
+        @intToFloat(f32, self.background.g) / 255,
+        @intToFloat(f32, self.background.b) / 255,
+        1.0,
+    );
+    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
+
+    // We're out of the critical path now. Let's first render our terminal.
+    try self.draw();
+
+    // If we have devmode, then render that
+    if (state.devmode) |dm| {
+        const data = try dm.render();
+        imgui.ImplOpenGL3.renderDrawData(data);
+    }
+
+    // Swap our window buffers
+    try window.swapBuffers();
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a
@@ -830,7 +888,7 @@ fn flushAtlas(self: *OpenGL) !void {
 
 /// Render renders the current cell state. This will not modify any of
 /// the cells.
-pub fn render(self: *OpenGL) !void {
+pub fn draw(self: *OpenGL) !void {
     const t = trace(@src());
     defer t.end();
 

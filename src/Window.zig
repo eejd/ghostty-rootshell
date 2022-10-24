@@ -56,6 +56,9 @@ focused: bool,
 /// The renderer for this window.
 renderer: renderer.OpenGL,
 
+/// The render state
+renderer_state: renderer.State,
+
 /// The underlying pty for this window.
 pty: Pty,
 
@@ -455,6 +458,10 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     var io_arena = std.heap.ArenaAllocator.init(alloc);
     errdefer io_arena.deinit();
 
+    // The mutex used to protect our renderer state.
+    var mutex = try alloc.create(std.Thread.Mutex);
+    errdefer alloc.destroy(mutex);
+
     self.* = .{
         .alloc = alloc,
         .alloc_io_arena = io_arena,
@@ -464,6 +471,16 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .cursor = cursor,
         .focused = false,
         .renderer = renderer_impl,
+        .renderer_state = .{
+            .mutex = mutex,
+            .cursor = .{
+                .style = .blinking_block,
+                .visible = true,
+                .blink = false,
+            },
+            .terminal = &self.terminal,
+            .devmode = if (!DevMode.enabled) null else &DevMode.instance,
+        },
         .pty = pty,
         .command = cmd,
         .mouse = .{},
@@ -591,6 +608,7 @@ pub fn destroy(self: *Window) void {
     self.font_lib.deinit();
 
     self.alloc_io_arena.deinit();
+    self.alloc.destroy(self.renderer_state.mutex);
 }
 
 pub fn shouldClose(self: Window) bool {
@@ -1632,7 +1650,7 @@ fn renderTimerCallback(t: *libuv.Timer) void {
         log.err("error calling updateCells in render timer err={}", .{err});
 
     // Render the grid
-    win.renderer.render() catch |err| {
+    win.renderer.draw() catch |err| {
         log.err("error rendering grid: {}", .{err});
         return;
     };

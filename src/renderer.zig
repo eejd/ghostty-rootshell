@@ -9,6 +9,7 @@
 
 pub const OpenGL = @import("renderer/OpenGL.zig");
 pub const Thread = @import("renderer/Thread.zig");
+pub const State = @import("renderer/State.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
