@@ -363,12 +363,12 @@ pub fn render(
 ) !void {
     // Data we extract out of the critical area.
     const Critical = struct {
+        gl_bg: terminal.color.RGB,
         devmode_data: ?*imgui.DrawData,
         screen_size: ?renderer.ScreenSize,
     };
 
     // Update all our data as tightly as possible within the mutex.
-    var gl_bg = self.background;
     const critical: Critical = critical: {
         state.mutex.lock();
         defer state.mutex.unlock();
@@ -394,7 +394,6 @@ pub fn render(
             self.foreground = fg;
         }
         if (state.terminal.modes.reverse_colors) {
-            gl_bg = fg;
             self.background = fg;
             self.foreground = bg;
         }
@@ -416,6 +415,7 @@ pub fn render(
         };
 
         break :critical .{
+            .gl_bg = self.background,
             .devmode_data = devmode_data,
             .screen_size = state.resize_screen,
         };
@@ -430,9 +430,9 @@ pub fn render(
 
     // Clear the surface
     gl.clearColor(
-        @intToFloat(f32, self.background.r) / 255,
-        @intToFloat(f32, self.background.g) / 255,
-        @intToFloat(f32, self.background.b) / 255,
+        @intToFloat(f32, critical.gl_bg.r) / 255,
+        @intToFloat(f32, critical.gl_bg.g) / 255,
+        @intToFloat(f32, critical.gl_bg.b) / 255,
         1.0,
     );
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
