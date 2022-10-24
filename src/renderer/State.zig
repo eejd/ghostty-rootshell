@@ -3,6 +3,7 @@
 const std = @import("std");
 const DevMode = @import("../DevMode.zig");
 const terminal = @import("../terminal/main.zig");
+const renderer = @import("../renderer.zig");
 
 /// The mutex that must be held while reading any of the data in the
 /// members of this state. Note that the state itself is NOT protected
@@ -11,7 +12,7 @@ const terminal = @import("../terminal/main.zig");
 mutex: *std.Thread.Mutex,
 
 /// A new screen size if the screen was resized.
-resize: ?Resize = null,
+resize_screen: ?renderer.ScreenSize,
 
 /// Cursor configuration for rendering
 cursor: Cursor,
@@ -36,5 +37,3 @@ pub const Cursor = struct {
     /// the cursor will not be rendered.
     blink: bool = false,
 };
-
-pub const Resize = struct {};

@@ -359,13 +359,23 @@ pub fn threadExit(self: *const OpenGL) void {
 pub fn render(
     self: *OpenGL,
     window: glfw.Window,
-    state: renderer.State,
+    state: *renderer.State,
 ) !void {
+    // Data we extract out of the critical area.
+    const Critical = struct {
+        devmode_data: ?*imgui.DrawData,
+        screen_size: ?renderer.ScreenSize,
+    };
+
     // Update all our data as tightly as possible within the mutex.
     var gl_bg = self.background;
-    {
+    const critical: Critical = critical: {
         state.mutex.lock();
         defer state.mutex.unlock();
+
+        // If we're resizing, then handle that now.
+        if (state.resize_screen) |size| try self.setScreenSize(size);
+        defer state.resize_screen = null;
 
         // Setup our cursor state
         self.cursor_visible = state.cursor.visible and !state.cursor.blink;
@@ -384,9 +394,33 @@ pub fn render(
             self.foreground = bg;
         }
 
+        // Build our GPU cells
         try self.rebuildCells(state.terminal);
         try self.finalizeCells(state.terminal);
-        if (state.devmode) |dm| if (dm.visible) try dm.update();
+
+        // Build our devmode draw data
+        const devmode_data = devmode_data: {
+            if (state.devmode) |dm| {
+                if (dm.visible) {
+                    try dm.update();
+                    break :devmode_data try dm.render();
+                }
+            }
+
+            break :devmode_data null;
+        };
+
+        break :critical .{
+            .devmode_data = devmode_data,
+            .screen_size = state.resize_screen,
+        };
+    };
+
+    // If we are resizing we need to update the viewport
+    if (critical.screen_size) |size| {
+        // Update our viewport for this context to be the entire window.
+        // OpenGL works in pixels, so we have to use the pixel size.
+        try gl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
     }
 
     // Clear the surface
@@ -402,11 +436,8 @@ pub fn render(
     try self.draw();
 
     // If we have devmode, then render that
-    if (state.devmode) |dm| {
-        if (dm.visible) {
-            const data = try dm.render();
-            imgui.ImplOpenGL3.renderDrawData(data);
-        }
+    if (critical.devmode_data) |data| {
+        imgui.ImplOpenGL3.renderDrawData(data);
     }
 
     // Swap our window buffers
@@ -783,7 +814,7 @@ pub fn updateCell(
 
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
-pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
+fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Update the projection uniform within our shader
     const bind = try self.program.use();
     defer bind.unbind();

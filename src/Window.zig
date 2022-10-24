@@ -367,8 +367,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Create our terminal grid with the initial window size
     const window_size = try window.getSize();
+    const screen_size: renderer.ScreenSize = .{
+        .width = window_size.width,
+        .height = window_size.height,
+    };
     var renderer_impl = try renderer.OpenGL.init(alloc, font_group);
-    try renderer_impl.setScreenSize(.{ .width = window_size.width, .height = window_size.height });
     renderer_impl.background = .{
         .r = config.background.r,
         .g = config.background.g,
@@ -381,10 +384,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     };
 
     // Calculate our grid size based on known dimensions.
-    const grid_size = renderer.GridSize.init(
-        .{ .width = window_size.width, .height = window_size.height },
-        renderer_impl.cell_size,
-    );
+    const grid_size = renderer.GridSize.init(screen_size, renderer_impl.cell_size);
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
@@ -486,6 +486,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
+            .resize_screen = screen_size,
             .cursor = .{
                 .style = .blinking_block,
                 .visible = true,
@@ -516,7 +517,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Setup our callbacks and user data
     window.setUserPointer(self);
-    //window.setSizeCallback(sizeCallback);
+    window.setSizeCallback(sizeCallback);
     window.setCharCallback(charCallback);
     window.setKeyCallback(keyCallback);
     window.setFocusCallback(focusCallback);
@@ -718,17 +719,14 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         .height = px_size.height,
     };
 
-    // Update our grid so that the projections on render are correct.
     const win = window.getUserPointer(Window) orelse return;
-    win.renderer.setScreenSize(screen_size) catch |err|
-        log.err("error updating grid screen size err={}", .{err});
+
+    // Resize usually forces a redraw
+    win.render_timer.schedule() catch |err|
+        log.err("error scheduling render timer in sizeCallback err={}", .{err});
 
     // Recalculate our grid size
     win.grid_size.update(screen_size, win.renderer.cell_size);
-
-    // Update the size of our terminal state
-    win.terminal.resize(win.alloc, win.grid_size.columns, win.grid_size.rows) catch |err|
-        log.err("error updating terminal size: {}", .{err});
 
     // Update the size of our pty
     win.pty.setSize(.{
@@ -738,14 +736,18 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         .ws_ypixel = @intCast(u16, height),
     }) catch |err| log.err("error updating pty screen size err={}", .{err});
 
-    // Update our viewport for this context to be the entire window.
-    // OpenGL works in pixels, so we have to use the pixel size.
-    gl.viewport(0, 0, @intCast(i32, px_size.width), @intCast(i32, px_size.height)) catch |err|
-        log.err("error updating OpenGL viewport err={}", .{err});
+    // Enter the critical area that we want to keep small
+    {
+        win.renderer_state.mutex.lock();
+        defer win.renderer_state.mutex.unlock();
 
-    // Draw
-    win.render_timer.schedule() catch |err|
-        log.err("error scheduling render timer in sizeCallback err={}", .{err});
+        // We need to setup our render state to store our new pending size
+        win.renderer_state.resize_screen = screen_size;
+
+        // Update the size of our terminal state
+        win.terminal.resize(win.alloc, win.grid_size.columns, win.grid_size.rows) catch |err|
+            log.err("error updating terminal size: {}", .{err});
+    }
 }
 
 fn charCallback(window: glfw.Window, codepoint: u21) void {

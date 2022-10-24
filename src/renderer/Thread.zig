@@ -31,7 +31,7 @@ window: glfw.Window,
 renderer: *renderer.OpenGL,
 
 /// Pointer to the shared state that is used to generate the final render.
-state: *const renderer.State,
+state: *renderer.State,
 
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
@@ -40,7 +40,7 @@ pub fn init(
     alloc: Allocator,
     window: glfw.Window,
     renderer_impl: *renderer.OpenGL,
-    state: *const renderer.State,
+    state: *renderer.State,
 ) !Thread {
     // We always store allocator pointer on the loop data so that
     // handles can use our global allocator.
@@ -148,7 +148,7 @@ fn renderCallback(h: *libuv.Async) void {
         return;
     };
 
-    t.renderer.render(t.window, t.state.*) catch |err|
+    t.renderer.render(t.window, t.state) catch |err|
         log.warn("error rendering err={}", .{err});
 }
 
