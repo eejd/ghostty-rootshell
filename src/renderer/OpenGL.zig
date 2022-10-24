@@ -378,8 +378,13 @@ pub fn render(
         defer state.resize_screen = null;
 
         // Setup our cursor state
-        self.cursor_visible = state.cursor.visible and !state.cursor.blink;
-        self.cursor_style = CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+        if (state.focused) {
+            self.cursor_visible = state.cursor.visible and !state.cursor.blink;
+            self.cursor_style = CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+        } else {
+            self.cursor_visible = true;
+            self.cursor_style = .box_hollow;
+        }
 
         // Swap bg/fg if the terminal is reversed
         const bg = self.background;

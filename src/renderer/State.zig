@@ -11,6 +11,9 @@ const renderer = @import("../renderer.zig");
 /// state (i.e. the terminal, devmode, etc. values).
 mutex: *std.Thread.Mutex,
 
+/// True if the window is focused
+focused: bool,
+
 /// A new screen size if the screen was resized.
 resize_screen: ?renderer.ScreenSize,
 

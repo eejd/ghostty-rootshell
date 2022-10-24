@@ -50,9 +50,6 @@ cursor: glfw.Cursor,
 /// Imgui context
 imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 
-/// Whether the window is currently focused
-focused: bool,
-
 /// The renderer for this window.
 renderer: renderer.OpenGL,
 
@@ -481,11 +478,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .font_group = font_group,
         .window = window,
         .cursor = cursor,
-        .focused = false,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
+            .focused = false,
             .resize_screen = screen_size,
             .cursor = .{
                 .style = .blinking_block,
@@ -1004,22 +1001,20 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
-    // If we aren't changing focus state, do nothing. I don't think this
-    // can happen but it costs very little to check.
-    if (win.focused == focused) return;
-
     // We have to schedule a render because no matter what we're changing
     // the cursor. If we're focused its reappearing, if we're not then
     // its changing to hollow and not blinking.
     win.render_timer.schedule() catch unreachable;
 
-    // Set our focused state on the window.
-    win.focused = focused;
-
     if (focused)
         win.terminal_cursor.startTimer() catch unreachable
     else
         win.terminal_cursor.stopTimer() catch unreachable;
+
+    // We are modifying renderer state from here on out
+    win.renderer_state.mutex.lock();
+    defer win.renderer_state.mutex.unlock();
+    win.renderer_state.focused = focused;
 }
 
 fn refreshCallback(window: glfw.Window) void {
