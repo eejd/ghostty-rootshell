@@ -315,7 +315,13 @@ pub fn deinit(self: *OpenGL) void {
     self.ebo.destroy();
     self.vao.destroy();
     self.program.destroy();
-    self.cells_lru.deinit(self.alloc);
+
+    {
+        // Our LRU values are array lists so we need to deallocate those first
+        while (self.cells_lru.queue.pop()) |node| node.data.value.deinit(self.alloc);
+        self.cells_lru.deinit(self.alloc);
+    }
+
     self.cells.deinit(self.alloc);
     self.* = undefined;
 }
@@ -537,7 +543,6 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
 
             continue;
         }
-
         // Get the starting index for our row so we can cache any new GPU cells.
         const start = self.cells.items.len;
 
@@ -557,7 +562,15 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
         }
 
         // Initialize our list
-        if (!gop.found_existing) gop.value_ptr.* = .{};
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .{};
+
+            // If we evicted another value in our LRU for this one, free it
+            if (gop.evicted) |kv| {
+                var list = kv.value;
+                list.deinit(self.alloc);
+            }
+        }
         var row_cells = gop.value_ptr;
 
         // Get our new length and cache the cells.
