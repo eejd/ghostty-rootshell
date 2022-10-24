@@ -31,9 +31,6 @@ const CellsLRU = lru.AutoHashMap(struct {
 
 alloc: std.mem.Allocator,
 
-/// Current dimensions for this grid.
-size: renderer.GridSize,
-
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
@@ -293,7 +290,6 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !OpenGL {
         .cells = .{},
         .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
-        .size = .{ .rows = 0, .columns = 0 },
         .program = program,
         .vao = vao,
         .ebo = ebo,
@@ -804,21 +800,21 @@ pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     );
 
     // Recalculate the rows/columns.
-    self.size.update(dim, self.cell_size);
+    const grid_size = renderer.GridSize.init(dim, self.cell_size);
 
     // Update our LRU. We arbitrarily support a certain number of pages here.
     // We also always support a minimum number of caching in case a user
     // is resizing tiny then growing again we can save some of the renders.
-    const evicted = try self.cells_lru.resize(self.alloc, @max(80, self.size.rows * 10));
+    const evicted = try self.cells_lru.resize(self.alloc, @max(80, grid_size.rows * 10));
     if (evicted) |list| for (list) |*value| value.deinit(self.alloc);
 
     // Update our shaper
-    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, self.size.columns * 2);
+    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, grid_size.columns * 2);
     errdefer self.alloc.free(shape_buf);
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
 
-    log.debug("screen size screen={} grid={}, cell={}", .{ dim, self.size, self.cell_size });
+    log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
 
 /// Updates the font texture atlas if it is dirty.

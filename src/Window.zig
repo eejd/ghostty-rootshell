@@ -89,6 +89,9 @@ terminal_cursor: Cursor,
 /// Render at least 60fps.
 render_timer: RenderTimer,
 
+/// The dimensions of the grid in rows and columns.
+grid_size: renderer.GridSize,
+
 /// The reader/writer stream for the pty.
 pty_stream: libuv.Tty,
 
@@ -377,6 +380,12 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .b = config.foreground.b,
     };
 
+    // Calculate our grid size based on known dimensions.
+    const grid_size = renderer.GridSize.init(
+        .{ .width = window_size.width, .height = window_size.height },
+        renderer_impl.cell_size,
+    );
+
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
     try window.setSizeLimits(.{
@@ -386,8 +395,8 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // Create our pty
     var pty = try Pty.open(.{
-        .ws_row = @intCast(u16, renderer_impl.size.rows),
-        .ws_col = @intCast(u16, renderer_impl.size.columns),
+        .ws_row = @intCast(u16, grid_size.rows),
+        .ws_col = @intCast(u16, grid_size.columns),
         .ws_xpixel = @intCast(u16, window_size.width),
         .ws_ypixel = @intCast(u16, window_size.height),
     });
@@ -430,7 +439,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     try stream.readStart(ttyReadAlloc, ttyRead);
 
     // Create our terminal
-    var term = try terminal.Terminal.init(alloc, renderer_impl.size.columns, renderer_impl.size.rows);
+    var term = try terminal.Terminal.init(alloc, grid_size.columns, grid_size.rows);
     errdefer term.deinit(alloc);
 
     // Setup a timer for blinking the cursor
@@ -492,6 +501,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .terminal = term,
         .terminal_stream = .{ .handler = self },
         .terminal_cursor = .{ .timer = timer },
+        .grid_size = grid_size,
         .render_timer = try RenderTimer.init(loop, self, 6, 12),
         .pty_stream = stream,
         .config = config,
@@ -703,21 +713,27 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         };
     };
 
-    // Update our grid so that the projections on render are correct.
-    const win = window.getUserPointer(Window) orelse return;
-    win.renderer.setScreenSize(.{
+    const screen_size: renderer.ScreenSize = .{
         .width = px_size.width,
         .height = px_size.height,
-    }) catch |err| log.err("error updating grid screen size err={}", .{err});
+    };
+
+    // Update our grid so that the projections on render are correct.
+    const win = window.getUserPointer(Window) orelse return;
+    win.renderer.setScreenSize(screen_size) catch |err|
+        log.err("error updating grid screen size err={}", .{err});
+
+    // Recalculate our grid size
+    win.grid_size.update(screen_size, win.renderer.cell_size);
 
     // Update the size of our terminal state
-    win.terminal.resize(win.alloc, win.renderer.size.columns, win.renderer.size.rows) catch |err|
+    win.terminal.resize(win.alloc, win.grid_size.columns, win.grid_size.rows) catch |err|
         log.err("error updating terminal size: {}", .{err});
 
     // Update the size of our pty
     win.pty.setSize(.{
-        .ws_row = @intCast(u16, win.renderer.size.rows),
-        .ws_col = @intCast(u16, win.renderer.size.columns),
+        .ws_row = @intCast(u16, win.grid_size.rows),
+        .ws_col = @intCast(u16, win.grid_size.columns),
         .ws_xpixel = @intCast(u16, width),
         .ws_ypixel = @intCast(u16, height),
     }) catch |err| log.err("error updating pty screen size err={}", .{err});
@@ -1050,7 +1066,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     // Positive is up
     const sign: isize = if (yoff > 0) -1 else 1;
-    const delta: isize = sign * @max(@divFloor(win.renderer.size.rows, 15), 1);
+    const delta: isize = sign * @max(@divFloor(win.grid_size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
     win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
         log.err("error scrolling viewport err={}", .{err});
@@ -1800,7 +1816,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
             self.terminal.setDeccolmSupported(enabled);
 
             // Force resize back to the window size
-            self.terminal.resize(self.alloc, self.renderer.size.columns, self.renderer.size.rows) catch |err|
+            self.terminal.resize(self.alloc, self.grid_size.columns, self.grid_size.rows) catch |err|
                 log.err("error updating terminal size: {}", .{err});
         },
 
