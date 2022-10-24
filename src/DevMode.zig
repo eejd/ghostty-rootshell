@@ -27,7 +27,7 @@ window: ?*Window = null,
 /// Update the state associated with the dev mode. This should generally
 /// only be called paired with a render since it otherwise wastes CPU
 /// cycles.
-pub fn update(self: *DevMode) !void {
+pub fn update(self: *const DevMode) !void {
     imgui.ImplOpenGL3.newFrame();
     imgui.ImplGlfw.newFrame();
     imgui.newFrame();
@@ -82,7 +82,7 @@ fn helpMarker(desc: [:0]const u8) void {
     }
 }
 
-fn atlasInfo(self: *DevMode, atlas: *Atlas, tex: ?usize) !void {
+fn atlasInfo(self: *const DevMode, atlas: *Atlas, tex: ?usize) !void {
     _ = self;
 
     imgui.text("Dimensions: %d x %d", atlas.size, atlas.size);

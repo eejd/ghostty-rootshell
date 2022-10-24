@@ -120,19 +120,6 @@ const Cursor = struct {
     /// Timer for cursor blinking.
     timer: libuv.Timer,
 
-    /// Current cursor style. This can be set by escape sequences. To get
-    /// the default style, the config has to be referenced.
-    style: terminal.CursorStyle = .default,
-
-    /// Whether the cursor is visible at all. This should not be used for
-    /// "blink" settings, see "blink" for that. This is used to turn the
-    /// cursor ON or OFF.
-    visible: bool = true,
-
-    /// Whether the cursor is currently blinking. If it is blinking, then
-    /// the cursor will not be rendered.
-    blink: bool = false,
-
     /// Start (or restart) the timer. This is idempotent.
     pub fn startTimer(self: Cursor) !void {
         try self.timer.start(
@@ -460,6 +447,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
+    mutex.* = .{};
     errdefer alloc.destroy(mutex);
 
     self.* = .{
@@ -486,10 +474,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .mouse = .{},
         .terminal = term,
         .terminal_stream = .{ .handler = self },
-        .terminal_cursor = .{
-            .timer = timer,
-            .style = .blinking_block,
-        },
+        .terminal_cursor = .{ .timer = timer },
         .render_timer = try RenderTimer.init(loop, self, 6, 12),
         .pty_stream = stream,
         .config = config,
@@ -1487,10 +1472,10 @@ fn cursorTimerCallback(t: *libuv.Timer) void {
 
     // If the cursor is currently invisible, then we do nothing. Ideally
     // in this state the timer would be cancelled but no big deal.
-    if (!win.terminal_cursor.visible) return;
+    if (!win.renderer_state.cursor.visible) return;
 
     // Swap blink state and schedule a render
-    win.terminal_cursor.blink = !win.terminal_cursor.blink;
+    win.renderer_state.cursor.blink = !win.renderer_state.cursor.blink;
     win.render_timer.schedule() catch unreachable;
 }
 
@@ -1528,9 +1513,13 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
         return;
     };
 
+    // We are modifying terminal state from here on out
+    win.renderer_state.mutex.lock();
+    defer win.renderer_state.mutex.unlock();
+
     // Whenever a character is typed, we ensure the cursor is in the
     // non-blink state so it is rendered if visible.
-    win.terminal_cursor.blink = false;
+    win.renderer_state.cursor.blink = false;
     if (win.terminal_cursor.timer.isActive() catch false) {
         _ = win.terminal_cursor.timer.again() catch null;
     }
@@ -1600,72 +1589,9 @@ fn renderTimerCallback(t: *libuv.Timer) void {
 
     const win = t.getData(Window).?;
 
-    // Setup our cursor settings
-    if (win.focused) {
-        win.renderer.cursor_visible = win.terminal_cursor.visible and !win.terminal_cursor.blink;
-        win.renderer.cursor_style = renderer.OpenGL.CursorStyle.fromTerminal(win.terminal_cursor.style) orelse .box;
-    } else {
-        win.renderer.cursor_visible = true;
-        win.renderer.cursor_style = .box_hollow;
-    }
-
-    // Calculate foreground and background colors
-    const bg = win.renderer.background;
-    const fg = win.renderer.foreground;
-    defer {
-        win.renderer.background = bg;
-        win.renderer.foreground = fg;
-    }
-    if (win.terminal.modes.reverse_colors) {
-        win.renderer.background = fg;
-        win.renderer.foreground = bg;
-    }
-
-    // Set our background
-    const gl_bg: struct {
-        r: f32,
-        g: f32,
-        b: f32,
-        a: f32,
-    } = if (win.terminal.modes.reverse_colors) .{
-        .r = @intToFloat(f32, fg.r) / 255,
-        .g = @intToFloat(f32, fg.g) / 255,
-        .b = @intToFloat(f32, fg.b) / 255,
-        .a = 1.0,
-    } else .{
-        .r = win.bg_r,
-        .g = win.bg_g,
-        .b = win.bg_b,
-        .a = win.bg_a,
-    };
-    gl.clearColor(gl_bg.r, gl_bg.g, gl_bg.b, gl_bg.a);
-    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
-
-    // For now, rebuild all cells
-    win.renderer.rebuildCells(&win.terminal) catch |err|
-        log.err("error calling rebuildCells in render timer err={}", .{err});
-
-    // Finalize the cells prior to render
-    win.renderer.finalizeCells(&win.terminal) catch |err|
-        log.err("error calling updateCells in render timer err={}", .{err});
-
-    // Render the grid
-    win.renderer.draw() catch |err| {
-        log.err("error rendering grid: {}", .{err});
-        return;
-    };
-
-    if (DevMode.enabled and DevMode.instance.visible) {
-        DevMode.instance.update() catch unreachable;
-        const data = DevMode.instance.render() catch unreachable;
-        imgui.ImplOpenGL3.renderDrawData(data);
-    }
-
-    // Swap
-    win.window.swapBuffers() catch |err| {
-        log.err("error swapping buffers: {}", .{err});
-        return;
-    };
+    // Render
+    win.renderer.render(win.window, win.renderer_state) catch |err|
+        log.warn("error rendering err={}", .{err});
 
     // Record our run
     win.render_timer.tick();
@@ -1805,7 +1731,7 @@ pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
         },
 
         .cursor_visible => {
-            self.terminal_cursor.visible = enabled;
+            self.renderer_state.cursor.visible = enabled;
         },
 
         .alt_screen_save_cursor_clear_enter => {
@@ -1918,7 +1844,7 @@ pub fn setCursorStyle(
     self: *Window,
     style: terminal.CursorStyle,
 ) !void {
-    self.terminal_cursor.style = style;
+    self.renderer_state.cursor.style = style;
 }
 
 pub fn decaln(self: *Window) !void {

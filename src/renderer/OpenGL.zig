@@ -386,7 +386,7 @@ pub fn render(
 
         try self.rebuildCells(state.terminal);
         try self.finalizeCells(state.terminal);
-        if (state.devmode) |dm| try dm.update();
+        if (state.devmode) |dm| if (dm.visible) try dm.update();
     }
 
     // Clear the surface
@@ -403,8 +403,10 @@ pub fn render(
 
     // If we have devmode, then render that
     if (state.devmode) |dm| {
-        const data = try dm.render();
-        imgui.ImplOpenGL3.renderDrawData(data);
+        if (dm.visible) {
+            const data = try dm.render();
+            imgui.ImplOpenGL3.renderDrawData(data);
+        }
     }
 
     // Swap our window buffers
