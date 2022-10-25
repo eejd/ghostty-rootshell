@@ -195,12 +195,12 @@ fn addDeps(
     step.addPackage(imgui.pkg);
     step.addPackage(glfw.pkg);
     step.addPackage(libuv.pkg);
-    step.addPackage(objc.pkg);
     step.addPackage(stb_image_resize.pkg);
     step.addPackage(utf8proc.pkg);
 
     // Mac Stuff
     if (step.target.isDarwin()) {
+        step.addPackage(objc.pkg);
         step.addPackage(macos.pkg);
         _ = try macos.link(b, step, .{});
     }
