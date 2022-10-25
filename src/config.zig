@@ -68,15 +68,13 @@ pub const Config = struct {
     }
 
     pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
-        var arena = ArenaAllocator.init(alloc_gpa);
-        errdefer arena.deinit();
-        const alloc = arena.allocator();
-
         // Build up our basic config
         var result: Config = .{
-            ._arena = arena,
+            ._arena = ArenaAllocator.init(alloc_gpa),
             .command = "sh",
         };
+        errdefer result.deinit();
+        const alloc = result._arena.?.allocator();
 
         // Add our default keybindings
         try result.keybind.set.put(
