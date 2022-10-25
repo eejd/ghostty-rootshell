@@ -318,7 +318,12 @@ pub fn deinit(self: *OpenGL) void {
 
     {
         // Our LRU values are array lists so we need to deallocate those first
-        while (self.cells_lru.queue.pop()) |node| node.data.value.deinit(self.alloc);
+        var it = self.cells_lru.queue.first;
+        while (it) |node| {
+            it = node.next;
+            node.data.value.deinit(self.alloc);
+        }
+
         self.cells_lru.deinit(self.alloc);
     }
 
@@ -855,7 +860,10 @@ fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // We also always support a minimum number of caching in case a user
     // is resizing tiny then growing again we can save some of the renders.
     const evicted = try self.cells_lru.resize(self.alloc, @max(80, grid_size.rows * 10));
-    if (evicted) |list| for (list) |*value| value.deinit(self.alloc);
+    if (evicted) |list| {
+        for (list) |*value| value.deinit(self.alloc);
+        self.alloc.free(list);
+    }
 
     // Update our shaper
     var shape_buf = try self.alloc.alloc(font.Shaper.Cell, grid_size.columns * 2);
