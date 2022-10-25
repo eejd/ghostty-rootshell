@@ -20,7 +20,8 @@ pub fn main() !void {
         log.info("dependency fontconfig={d}", .{fontconfig.version()});
     }
 
-    const gpa = gpa: {
+    const GPA = std.heap.GeneralPurposeAllocator(.{});
+    var gpa: ?GPA = gpa: {
         // Use the libc allocator if it is available beacuse it is WAY
         // faster than GPA. We only do this in release modes so that we
         // can get easy memory leak detection in debug modes.
@@ -31,21 +32,28 @@ pub fn main() !void {
                 // We also use it if we can detect we're running under
                 // Valgrind since Valgrind only instruments the C allocator
                 else => std.valgrind.runningOnValgrind() > 0,
-            }) break :gpa std.heap.c_allocator;
+            }) break :gpa null;
         }
 
-        // We don't ever deinit our GPA because the process cleanup will
-        // clean it up. This defer isn't in the right location anyways because
-        // it'll deinit on return from blk.
-        // defer _ = general_purpose_allocator.deinit();
-
-        var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-        break :gpa general_purpose_allocator.allocator();
+        break :gpa GPA{};
+    };
+    defer if (gpa) |*value| {
+        // We want to ensure that we deinit the GPA because this is
+        // the point at which it will output if there were safety violations.
+        _ = value.deinit();
     };
 
-    // If we're tracing, then wrap memory so we can trace allocations
-    const alloc = if (!tracy.enabled) gpa else alloc: {
-        var tracy_alloc = tracy.allocator(gpa, null);
+    const alloc = alloc: {
+        const base = if (gpa) |*value|
+            value.allocator()
+        else if (builtin.link_libc)
+            std.heap.c_allocator
+        else
+            unreachable;
+
+        // If we're tracing, wrap the allocator
+        if (!tracy.enabled) break :alloc base;
+        var tracy_alloc = tracy.allocator(base, null);
         break :alloc tracy_alloc.allocator();
     };
 
