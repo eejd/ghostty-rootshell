@@ -4,4 +4,7 @@ pub usingnamespace @import("sel.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
+
+    // TODO: remove once we integrate this
+    _ = @import("msg_send.zig");
 }

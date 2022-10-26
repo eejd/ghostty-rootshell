@@ -1,8 +1,12 @@
 const std = @import("std");
 const c = @import("c.zig");
+const objc = @import("main.zig");
+const MsgSend = @import("msg_send.zig").MsgSend;
 
 pub const Class = struct {
     value: c.Class,
+
+    pub usingnamespace MsgSend(Class);
 
     /// Returns the class definition of a specified class.
     pub fn getClass(name: [:0]const u8) ?Class {
@@ -12,9 +16,16 @@ pub const Class = struct {
     }
 };
 
-test {
+test "getClass" {
     const testing = std.testing;
     const NSObject = Class.getClass("NSObject");
     try testing.expect(NSObject != null);
     try testing.expect(Class.getClass("NoWay") == null);
+}
+
+test "msgSend" {
+    const testing = std.testing;
+    const NSObject = Class.getClass("NSObject").?;
+    const id = NSObject.msgSend(c.id, objc.Sel.registerName("alloc"), .{});
+    try testing.expect(id != null);
 }
