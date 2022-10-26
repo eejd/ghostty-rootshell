@@ -26,6 +26,17 @@ test "getClass" {
 test "msgSend" {
     const testing = std.testing;
     const NSObject = Class.getClass("NSObject").?;
+
+    // Should work with primitives
     const id = NSObject.msgSend(c.id, objc.Sel.registerName("alloc"), .{});
     try testing.expect(id != null);
+    {
+        const obj: objc.Object = .{ .value = id };
+        obj.msgSend(void, objc.sel("dealloc"), .{});
+    }
+
+    // Should work with our wrappers
+    const obj = NSObject.msgSend(objc.Object, objc.Sel.registerName("alloc"), .{});
+    try testing.expect(obj.value != null);
+    obj.msgSend(void, objc.sel("dealloc"), .{});
 }

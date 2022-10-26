@@ -1,6 +1,11 @@
 const std = @import("std");
 const c = @import("c.zig");
 
+// Shorthand, equivalent to Sel.registerName
+pub inline fn sel(name: [:0]const u8) Sel {
+    return Sel.registerName(name);
+}
+
 pub const Sel = struct {
     value: c.SEL,
 
@@ -20,6 +25,6 @@ pub const Sel = struct {
 
 test {
     const testing = std.testing;
-    const sel = Sel.registerName("yo");
-    try testing.expectEqualStrings("yo", sel.getName());
+    const s = Sel.registerName("yo");
+    try testing.expectEqualStrings("yo", s.getName());
 }

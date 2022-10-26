@@ -19,9 +19,26 @@ pub fn MsgSend(comptime T: type) type {
             sel: objc.Sel,
             args: anytype,
         ) Return {
+            // Build our function type and call it
             const Fn = MsgSendFn(Return, @TypeOf(target.value), @TypeOf(args));
             const msg_send_ptr = @ptrCast(std.meta.FnPtr(Fn), &c.objc_msgSend);
-            return @call(.{}, msg_send_ptr, .{ target.value, sel } ++ args);
+            const result = @call(.{}, msg_send_ptr, .{ target.value, sel } ++ args);
+
+            // This is a special nicety: if the return type is one of our
+            // public structs then we wrap the msgSend id result with it.
+            // This lets msgSend magically work with Object and so on.
+            const is_pkg_struct = comptime is_pkg_struct: {
+                for (@typeInfo(objc).Struct.decls) |decl| {
+                    if (decl.is_pub and Return == @field(objc, decl.name)) {
+                        break :is_pkg_struct true;
+                    }
+                }
+
+                break :is_pkg_struct false;
+            };
+
+            if (!is_pkg_struct) return result;
+            return .{ .value = result };
         }
     };
 }
