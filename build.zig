@@ -11,6 +11,7 @@ const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
 const macos = @import("pkg/macos/build.zig");
+const objc = @import("pkg/objc/build.zig");
 const stb_image_resize = @import("pkg/stb_image_resize/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
@@ -199,6 +200,7 @@ fn addDeps(
 
     // Mac Stuff
     if (step.target.isDarwin()) {
+        step.addPackage(objc.pkg);
         step.addPackage(macos.pkg);
         _ = try macos.link(b, step, .{});
     }

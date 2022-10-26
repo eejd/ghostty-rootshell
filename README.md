@@ -75,15 +75,11 @@ on the [Zig downloads page](https://ziglang.org/download/).
 With Zig installed, a binary can be built using `zig build`:
 
 ```shell-session
-$ zig build -fstage1
+$ zig build
 ...
 
 $ zig-out/bin/ghostty
 ```
-
-**Important: you must specify the `-fstage1` flag.** Ghostty can't yet be
-built with the self-hosted Zig backend, so we have to use "stage1" (the
-C++ LLVM backend).
 
 This will build a binary for the currently running system (if supported).
 You can cross compile by setting `-Dtarget=<target-triple>`. For example,
