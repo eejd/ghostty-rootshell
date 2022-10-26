@@ -29,7 +29,10 @@ pub fn MsgSend(comptime T: type) type {
             // This lets msgSend magically work with Object and so on.
             const is_pkg_struct = comptime is_pkg_struct: {
                 for (@typeInfo(objc).Struct.decls) |decl| {
-                    if (decl.is_pub and Return == @field(objc, decl.name)) {
+                    if (decl.is_pub and
+                        @TypeOf(@field(objc, decl.name)) == type and
+                        Return == @field(objc, decl.name))
+                    {
                         break :is_pkg_struct true;
                     }
                 }
