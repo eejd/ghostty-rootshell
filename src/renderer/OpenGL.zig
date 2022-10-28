@@ -17,6 +17,7 @@ const gl = @import("../opengl.zig");
 const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const lru = @import("../lru.zig");
+const DevMode = @import("../DevMode.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -306,6 +307,11 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !OpenGL {
 }
 
 pub fn deinit(self: *OpenGL) void {
+    if (DevMode.enabled) {
+        imgui.ImplOpenGL3.shutdown();
+        imgui.ImplGlfw.shutdown();
+    }
+
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
 
@@ -329,6 +335,77 @@ pub fn deinit(self: *OpenGL) void {
 
     self.cells.deinit(self.alloc);
     self.* = undefined;
+}
+
+/// Returns the hints that we want for this
+pub fn windowHints() glfw.Window.Hints {
+    return .{
+        .context_version_major = 3,
+        .context_version_minor = 3,
+        .opengl_profile = .opengl_core_profile,
+        .opengl_forward_compat = true,
+        .cocoa_graphics_switching = builtin.os.tag == .macos,
+        .cocoa_retina_framebuffer = true,
+    };
+}
+
+/// This is called early right after window creation to setup our
+/// window surface as necessary.
+pub fn windowInit(window: glfw.Window) !void {
+    // Treat this like a thread entry
+    const self: OpenGL = undefined;
+    try self.threadEnter(window);
+
+    // Culling, probably not necessary. We have to change the winding
+    // order since our 0,0 is top-left.
+    try gl.enable(gl.c.GL_CULL_FACE);
+    try gl.frontFace(gl.c.GL_CW);
+
+    // Blending for text
+    try gl.enable(gl.c.GL_BLEND);
+    try gl.blendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
+
+    // These are very noisy so this is commented, but easy to uncomment
+    // whenever we need to check the OpenGL extension list
+    // if (builtin.mode == .Debug) {
+    //     var ext_iter = try gl.ext.iterator();
+    //     while (try ext_iter.next()) |ext| {
+    //         log.debug("OpenGL extension available name={s}", .{ext});
+    //     }
+    // }
+
+    if (builtin.mode == .Debug) {
+        // Get our physical DPI - debug only because we don't have a use for
+        // this but the logging of it may be useful
+        const monitor = window.getMonitor() orelse monitor: {
+            log.warn("window had null monitor, getting primary monitor", .{});
+            break :monitor glfw.Monitor.getPrimary().?;
+        };
+        const physical_size = monitor.getPhysicalSize();
+        const video_mode = try monitor.getVideoMode();
+        const physical_x_dpi = @intToFloat(f32, video_mode.getWidth()) / (@intToFloat(f32, physical_size.width_mm) / 25.4);
+        const physical_y_dpi = @intToFloat(f32, video_mode.getHeight()) / (@intToFloat(f32, physical_size.height_mm) / 25.4);
+        log.debug("physical dpi x={} y={}", .{
+            physical_x_dpi,
+            physical_y_dpi,
+        });
+    }
+}
+
+/// This is called just prior to spinning up the renderer thread for
+/// final main thread setup requirements.
+pub fn finalizeInit(self: *const OpenGL, window: glfw.Window) !void {
+    if (DevMode.enabled) {
+        // Initialize for our window
+        assert(imgui.ImplGlfw.initForOpenGL(
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, window.handle),
+            true,
+        ));
+        assert(imgui.ImplOpenGL3.init("#version 330 core"));
+    }
+
+    // Call thread exit to clean up our context
+    self.threadExit();
 }
 
 /// Callback called by renderer.Thread when it begins.

@@ -10,8 +10,8 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const renderer = @import("renderer.zig");
+const objc = @import("objc");
 const glfw = @import("glfw");
-const gl = @import("opengl.zig");
 const imgui = @import("imgui");
 const libuv = @import("libuv");
 const Pty = @import("Pty.zig");
@@ -29,6 +29,9 @@ const log = std.log.scoped(.window);
 // The preallocation size for the write request pool. This should be big
 // enough to satisfy most write requests. It must be a power of 2.
 const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
+
+// The renderer implementation to use.
+const Renderer = renderer.OpenGL;
 
 /// Allocator
 alloc: Allocator,
@@ -48,7 +51,7 @@ cursor: glfw.Cursor,
 imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 
 /// The renderer for this window.
-renderer: renderer.OpenGL,
+renderer: Renderer,
 
 /// The render state
 renderer_state: renderer.State,
@@ -166,59 +169,9 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     errdefer alloc.destroy(self);
 
     // Create our window
-    const window = try glfw.Window.create(640, 480, "ghostty", null, null, .{
-        .context_version_major = 3,
-        .context_version_minor = 3,
-        .opengl_profile = .opengl_core_profile,
-        .opengl_forward_compat = true,
-        .cocoa_graphics_switching = builtin.os.tag == .macos,
-        .cocoa_retina_framebuffer = true,
-    });
+    const window = try glfw.Window.create(640, 480, "ghostty", null, null, Renderer.windowHints());
     errdefer window.destroy();
-
-    // NOTE(multi-window): We'll need to extract all the below into a
-    // dedicated renderer and consider the multi-threading (or at the very
-    // least: multi-OpenGL-context) implications. Since we don't support
-    // multiple windows right now, we just do it all here.
-
-    // Setup OpenGL
-    try glfw.makeContextCurrent(window);
-    try glfw.swapInterval(1);
-
-    // Load OpenGL bindings
-    const version = try gl.glad.load(switch (builtin.zig_backend) {
-        .stage1 => glfw.getProcAddress,
-        else => &glfw.getProcAddress,
-    });
-    log.info("loaded OpenGL {}.{}", .{
-        gl.glad.versionMajor(version),
-        gl.glad.versionMinor(version),
-    });
-    // These are very noisy so this is commented, but easy to uncomment
-    // whenever we need to check the OpenGL extension list
-    // if (builtin.mode == .Debug) {
-    //     var ext_iter = try gl.ext.iterator();
-    //     while (try ext_iter.next()) |ext| {
-    //         log.debug("OpenGL extension available name={s}", .{ext});
-    //     }
-    // }
-
-    if (builtin.mode == .Debug) {
-        // Get our physical DPI - debug only because we don't have a use for
-        // this but the logging of it may be useful
-        const monitor = window.getMonitor() orelse monitor: {
-            log.warn("window had null monitor, getting primary monitor", .{});
-            break :monitor glfw.Monitor.getPrimary().?;
-        };
-        const physical_size = monitor.getPhysicalSize();
-        const video_mode = try monitor.getVideoMode();
-        const physical_x_dpi = @intToFloat(f32, video_mode.getWidth()) / (@intToFloat(f32, physical_size.width_mm) / 25.4);
-        const physical_y_dpi = @intToFloat(f32, video_mode.getHeight()) / (@intToFloat(f32, physical_size.height_mm) / 25.4);
-        log.debug("physical dpi x={} y={}", .{
-            physical_x_dpi,
-            physical_y_dpi,
-        });
-    }
+    try Renderer.windowInit(window);
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
@@ -231,15 +184,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         x_dpi,
         y_dpi,
     });
-
-    // Culling, probably not necessary. We have to change the winding
-    // order since our 0,0 is top-left.
-    try gl.enable(gl.c.GL_CULL_FACE);
-    try gl.frontFace(gl.c.GL_CW);
-
-    // Blending for text
-    try gl.enable(gl.c.GL_BLEND);
-    try gl.blendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
 
     // The font size we desire along with the DPI determiend for the window
     const font_size: font.face.DesiredSize = .{
@@ -359,12 +303,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     errdefer font_group.deinit(alloc);
 
     // Create our terminal grid with the initial window size
-    const window_size = try window.getSize();
-    const screen_size: renderer.ScreenSize = .{
-        .width = window_size.width,
-        .height = window_size.height,
-    };
-    var renderer_impl = try renderer.OpenGL.init(alloc, font_group);
+    var renderer_impl = try Renderer.init(alloc, font_group);
     renderer_impl.background = .{
         .r = config.background.r,
         .g = config.background.g,
@@ -377,6 +316,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     };
 
     // Calculate our grid size based on known dimensions.
+    const window_size = try window.getSize();
+    const screen_size: renderer.ScreenSize = .{
+        .width = window_size.width,
+        .height = window_size.height,
+    };
     const grid_size = renderer.GridSize.init(screen_size, renderer_impl.cell_size);
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
@@ -546,21 +490,13 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         const style = try imgui.Style.get();
         style.colorsDark();
 
-        // Initialize for our window
-        assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, window.handle),
-            true,
-        ));
-        assert(imgui.ImplOpenGL3.init("#version 330 core"));
-
         // Add our window to the instance
         DevMode.instance.window = self;
     }
 
-    // Unload our context prior to switching over to the renderer thread
-    // because OpenGL requires it to be unloaded.
-    gl.glad.unload();
-    try glfw.makeContextCurrent(null);
+    // Give the renderer one more opportunity to finalize any window
+    // setup on the main thread prior to spinning up the rendering thread.
+    try renderer_impl.finalizeInit(window);
 
     // Start our renderer thread
     self.renderer_thr = try std.Thread.spawn(
@@ -582,6 +518,9 @@ pub fn destroy(self: *Window) void {
         // We need to become the active rendering thread again
         self.renderer.threadEnter(self.window) catch unreachable;
         self.renderer_thread.deinit();
+
+        // Deinit our renderer
+        self.renderer.deinit();
     }
 
     if (DevMode.enabled) {
@@ -589,8 +528,6 @@ pub fn destroy(self: *Window) void {
         DevMode.instance.window = null;
 
         // Uninitialize imgui
-        imgui.ImplOpenGL3.shutdown();
-        imgui.ImplGlfw.shutdown();
         self.imgui_ctx.destroy();
     }
 
@@ -601,7 +538,6 @@ pub fn destroy(self: *Window) void {
         log.err("error waiting for command to exit: {}", .{err});
 
     self.terminal.deinit(self.alloc);
-    self.renderer.deinit();
     self.window.destroy();
 
     self.terminal_cursor.timer.close((struct {
