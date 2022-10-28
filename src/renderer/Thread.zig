@@ -31,7 +31,7 @@ render_h: libuv.Timer,
 window: glfw.Window,
 
 /// The underlying renderer implementation.
-renderer: *renderer.OpenGL,
+renderer: *renderer.Renderer,
 
 /// Pointer to the shared state that is used to generate the final render.
 state: *renderer.State,
@@ -42,7 +42,7 @@ state: *renderer.State,
 pub fn init(
     alloc: Allocator,
     window: glfw.Window,
-    renderer_impl: *renderer.OpenGL,
+    renderer_impl: *renderer.Renderer,
     state: *renderer.State,
 ) !Thread {
     // We always store allocator pointer on the loop data so that
@@ -143,16 +143,11 @@ pub fn threadMain(self: *Thread) void {
 }
 
 fn threadMain_(self: *Thread) !void {
-    // Get a copy to our allocator
-    // const alloc_ptr = self.loop.getData(Allocator).?;
-    // const alloc = alloc_ptr.*;
-
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
     // some thread-local state since that is how it works.
-    const Renderer = RendererType();
-    if (@hasDecl(Renderer, "threadEnter")) try self.renderer.threadEnter(self.window);
-    defer if (@hasDecl(Renderer, "threadExit")) self.renderer.threadExit();
+    try self.renderer.threadEnter(self.window);
+    defer self.renderer.threadExit();
 
     // Set up our async handler to support rendering
     self.wakeup.setData(self);
@@ -198,15 +193,4 @@ fn renderCallback(h: *libuv.Timer) void {
 
 fn stopCallback(h: *libuv.Async) void {
     h.loop().stop();
-}
-
-// This is unnecessary right now but is logic we'll need for when we
-// abstract renderers out.
-fn RendererType() type {
-    const self: Thread = undefined;
-    return switch (@typeInfo(@TypeOf(self.renderer))) {
-        .Pointer => |p| p.child,
-        .Struct => |s| s,
-        else => unreachable,
-    };
 }
