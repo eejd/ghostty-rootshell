@@ -23,6 +23,39 @@ pub const Object = struct {
     pub fn getClassName(self: Object) [:0]const u8 {
         return std.mem.sliceTo(c.object_getClassName(self.value), 0);
     }
+
+    /// Set a property. This is a helper around getProperty and is
+    /// strictly less performant than doing it manually. Consider doing
+    /// this manually if performance is critical.
+    pub fn setProperty(self: Object, comptime n: [:0]const u8, v: anytype) void {
+        const Class = self.getClass().?;
+        const prop = Class.getProperty(n).?;
+        const setter = if (prop.copyAttributeValue("S")) |val| setter: {
+            defer objc.free(val);
+            break :setter objc.sel(val);
+        } else objc.sel(
+            "set" ++
+                [1]u8{std.ascii.toUpper(n[0])} ++
+                n[1..n.len] ++
+                ":",
+        );
+
+        self.msgSend(void, setter, .{v});
+    }
+
+    /// Get a property. This is a helper around Class.getProperty and is
+    /// strictly less performant than doing it manually. Consider doing
+    /// this manually if performance is critical.
+    pub fn getProperty(self: Object, comptime T: type, comptime n: [:0]const u8) T {
+        const Class = self.getClass().?;
+        const prop = Class.getProperty(n).?;
+        const getter = if (prop.copyAttributeValue("G")) |val| getter: {
+            defer objc.free(val);
+            break :getter objc.sel(val);
+        } else objc.sel(n);
+
+        self.msgSend(T, getter, .{});
+    }
 };
 
 test {
