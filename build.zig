@@ -223,7 +223,10 @@ fn addDeps(
     _ = try utf8proc.link(b, step);
 
     // Glfw
-    const glfw_opts: glfw.Options = .{ .metal = false, .opengl = false };
+    const glfw_opts: glfw.Options = .{
+        .metal = step.target.isDarwin(),
+        .opengl = false,
+    };
     try glfw.link(b, step, glfw_opts);
 
     // Imgui, we have to do this later since we need some information
