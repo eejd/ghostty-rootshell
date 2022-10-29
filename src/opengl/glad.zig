@@ -35,14 +35,10 @@ pub fn unload() void {
     context = undefined;
 }
 
-pub fn versionMajor(res: c_int) c_uint {
-    // https://github.com/ziglang/zig/issues/13162
-    // return c.GLAD_VERSION_MAJOR(res);
-    return @intCast(c_uint, @divTrunc(res, 10000));
+pub fn versionMajor(res: c_uint) c_uint {
+    return c.GLAD_VERSION_MAJOR(res);
 }
 
-pub fn versionMinor(res: c_int) c_uint {
-    // https://github.com/ziglang/zig/issues/13162
-    // return c.GLAD_VERSION_MINOR(res);
-    return @intCast(c_uint, @mod(res, 10000));
+pub fn versionMinor(res: c_uint) c_uint {
+    return c.GLAD_VERSION_MINOR(res);
 }

@@ -430,8 +430,8 @@ pub fn threadEnter(self: *const OpenGL, window: glfw.Window) !void {
     });
     errdefer gl.glad.unload();
     log.info("loaded OpenGL {}.{}", .{
-        gl.glad.versionMajor(version),
-        gl.glad.versionMinor(version),
+        gl.glad.versionMajor(@intCast(c_uint, version)),
+        gl.glad.versionMinor(@intCast(c_uint, version)),
     });
 }
 
