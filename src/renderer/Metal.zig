@@ -8,7 +8,9 @@ const objc = @import("objc");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const Terminal = terminal.Terminal;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -17,8 +19,14 @@ const glfwNative = glfw.Native(.{
 
 const log = std.log.scoped(.metal);
 
+/// Allocator that can be used
+alloc: std.mem.Allocator,
+
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
+
+/// The last screen size set.
+screen_size: renderer.ScreenSize,
 
 /// Default foreground color
 foreground: terminal.color.RGB,
@@ -26,10 +34,22 @@ foreground: terminal.color.RGB,
 /// Default background color
 background: terminal.color.RGB,
 
+/// The current set of cells to render. This is rebuilt on every frame
+/// but we keep this around so that we don't reallocate.
+cells: std.ArrayListUnmanaged(GPUCell),
+
+/// The font structures.
+font_group: *font.GroupCache,
+font_shaper: font.Shaper,
+
 /// Metal objects
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
 swapchain: objc.Object, // CAMetalLayer
+
+const GPUCell = extern struct {
+    foo: f64,
+};
 
 /// Returns the hints that we want for this
 pub fn windowHints() glfw.Window.Hints {
@@ -71,10 +91,29 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     };
     log.debug("cell dimensions={}", .{metrics});
 
+    // Create the font shaper. We initially create a shaper that can support
+    // a width of 160 which is a common width for modern screens to help
+    // avoid allocations later.
+    var shape_buf = try alloc.alloc(font.Shaper.Cell, 160);
+    errdefer alloc.free(shape_buf);
+    var font_shaper = try font.Shaper.init(shape_buf);
+    errdefer font_shaper.deinit();
+
     return Metal{
+        .alloc = alloc,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
+        .screen_size = .{ .width = 0, .height = 0 },
         .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
+
+        // Render state
+        .cells = .{},
+
+        // Fonts
+        .font_group = font_group,
+        .font_shaper = font_shaper,
+
+        // Metal stuff
         .device = device,
         .queue = queue,
         .swapchain = swapchain,
@@ -82,6 +121,11 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
 }
 
 pub fn deinit(self: *Metal) void {
+    self.cells.deinit(self.alloc);
+
+    self.font_shaper.deinit();
+    self.alloc.free(self.font_shaper.cell_buf);
+
     self.* = undefined;
 }
 
@@ -128,6 +172,10 @@ pub fn render(
         state.mutex.lock();
         defer state.mutex.unlock();
 
+        // If we're resizing, then handle that now.
+        if (state.resize_screen) |size| try self.setScreenSize(size);
+        defer state.resize_screen = null;
+
         // Swap bg/fg if the terminal is reversed
         const bg = self.background;
         const fg = self.foreground;
@@ -139,6 +187,9 @@ pub fn render(
             self.background = fg;
             self.foreground = bg;
         }
+
+        // Build our GPU cells
+        try self.rebuildCells(state.terminal);
 
         break :critical .{
             .bg = self.background,
@@ -193,10 +244,162 @@ pub fn render(
         objc.sel("renderCommandEncoderWithDescriptor:"),
         .{desc.value},
     );
-    encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
+    // If we are resizing we need to update the viewport
+    encoder.msgSend(void, objc.sel("setViewport:"), .{MTLViewport{
+        .x = 0,
+        .y = 0,
+        .width = @intToFloat(f64, self.screen_size.width),
+        .height = @intToFloat(f64, self.screen_size.height),
+        .znear = 0,
+        .zfar = 1,
+    }});
+
+    // End our rendering and draw
+    encoder.msgSend(void, objc.sel("endEncoding"), .{});
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{surface.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+/// Resize the screen.
+fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
+    // Update our screen size
+    self.screen_size = dim;
+
+    // Recalculate the rows/columns.
+    const grid_size = renderer.GridSize.init(self.screen_size, self.cell_size);
+
+    // Update our shaper
+    // TODO: don't reallocate if it is close enough (but bigger)
+    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, grid_size.columns * 2);
+    errdefer self.alloc.free(shape_buf);
+    self.alloc.free(self.font_shaper.cell_buf);
+    self.font_shaper.cell_buf = shape_buf;
+}
+
+/// Sync all the CPU cells with the GPU state (but still on the CPU here).
+/// This builds all our "GPUCells" on this struct, but doesn't send them
+/// down to the GPU yet.
+fn rebuildCells(self: *Metal, term: *Terminal) !void {
+    // Over-allocate just to ensure we don't allocate again during loops.
+    self.cells.clearRetainingCapacity();
+    try self.cells.ensureTotalCapacity(
+        self.alloc,
+
+        // * 3 for background modes and cursor and underlines
+        // + 1 for cursor
+        (term.screen.rows * term.screen.cols * 3) + 1,
+    );
+
+    // // Build each cell
+    // var rowIter = term.screen.rowIterator(.viewport);
+    // var y: usize = 0;
+    // while (rowIter.next()) |row| {
+    //     defer y += 1;
+    //
+    //     // Split our row into runs and shape each one.
+    //     var iter = self.font_shaper.runIterator(self.font_group, row);
+    //     while (try iter.next(self.alloc)) |run| {
+    //         for (try self.font_shaper.shape(run)) |shaper_cell| {
+    //             assert(try self.updateCell(
+    //                 term,
+    //                 row.getCell(shaper_cell.x),
+    //                 shaper_cell,
+    //                 run,
+    //                 shaper_cell.x,
+    //                 y,
+    //             ));
+    //         }
+    //     }
+    //
+    //     // Set row is not dirty anymore
+    //     row.setDirty(false);
+    // }
+}
+
+pub fn updateCell(
+    self: *Metal,
+    term: *Terminal,
+    cell: terminal.Screen.Cell,
+    shaper_cell: font.Shaper.Cell,
+    shaper_run: font.Shaper.TextRun,
+    x: usize,
+    y: usize,
+) !bool {
+    _ = shaper_cell;
+    _ = shaper_run;
+
+    const BgFg = struct {
+        /// Background is optional because in un-inverted mode
+        /// it may just be equivalent to the default background in
+        /// which case we do nothing to save on GPU render time.
+        bg: ?terminal.color.RGB,
+
+        /// Fg is always set to some color, though we may not render
+        /// any fg if the cell is empty or has no attributes like
+        /// underline.
+        fg: terminal.color.RGB,
+    };
+
+    // The colors for the cell.
+    const colors: BgFg = colors: {
+        // If we have a selection, then we need to check if this
+        // cell is selected.
+        // TODO(perf): we can check in advance if selection is in
+        // our viewport at all and not run this on every point.
+        if (term.selection) |sel| {
+            const screen_point = (terminal.point.Viewport{
+                .x = x,
+                .y = y,
+            }).toScreen(&term.screen);
+
+            // If we are selected, we our colors are just inverted fg/bg
+            if (sel.contains(screen_point)) {
+                break :colors BgFg{
+                    .bg = self.foreground,
+                    .fg = self.background,
+                };
+            }
+        }
+
+        const res: BgFg = if (!cell.attrs.inverse) .{
+            // In normal mode, background and fg match the cell. We
+            // un-optionalize the fg by defaulting to our fg color.
+            .bg = if (cell.attrs.has_bg) cell.bg else null,
+            .fg = if (cell.attrs.has_fg) cell.fg else self.foreground,
+        } else .{
+            // In inverted mode, the background MUST be set to something
+            // (is never null) so it is either the fg or default fg. The
+            // fg is either the bg or default background.
+            .bg = if (cell.attrs.has_fg) cell.fg else self.foreground,
+            .fg = if (cell.attrs.has_bg) cell.bg else self.background,
+        };
+        break :colors res;
+    };
+
+    // Alpha multiplier
+    const alpha: u8 = if (cell.attrs.faint) 175 else 255;
+
+    // If the cell has a background, we always draw it.
+    // if (colors.bg) |rgb| {
+    //     self.cells.appendAssumeCapacity(.{
+    //         .grid_col = @intCast(u16, x),
+    //         .grid_row = @intCast(u16, y),
+    //         .grid_width = cell.widthLegacy(),
+    //         .fg_r = 0,
+    //         .fg_g = 0,
+    //         .fg_b = 0,
+    //         .fg_a = 0,
+    //         .bg_r = rgb.r,
+    //         .bg_g = rgb.g,
+    //         .bg_b = rgb.b,
+    //         .bg_a = alpha,
+    //     });
+    // }
+    _ = alpha;
+    _ = colors;
+
+    return true;
 }
 
 /// https://developer.apple.com/documentation/metal/mtlloadaction?language=objc
@@ -217,6 +420,15 @@ const MTLClearColor = extern struct {
     green: f64,
     blue: f64,
     alpha: f64,
+};
+
+const MTLViewport = extern struct {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    znear: f64,
+    zfar: f64,
 };
 
 extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;
