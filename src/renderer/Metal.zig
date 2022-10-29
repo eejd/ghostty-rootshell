@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const glfw = @import("glfw");
 const objc = @import("objc");
+const macos = @import("macos");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -46,6 +47,8 @@ font_shaper: font.Shaper,
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
 swapchain: objc.Object, // CAMetalLayer
+library: objc.Object, // MTLLibrary
+buf_instance: objc.Object, // MTLBuffer
 
 const GPUCell = extern struct {
     foo: f64,
@@ -99,6 +102,61 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     var font_shaper = try font.Shaper.init(shape_buf);
     errdefer font_shaper.deinit();
 
+    // Initialize our Metal buffers
+    const buf_instance = buffer: {
+        const data = [6]u8{
+            0, 1, 3, // Top-left triangle
+            1, 2, 3, // Bottom-right triangle
+        };
+
+        break :buffer device.msgSend(
+            objc.Object,
+            objc.sel("newBufferWithBytes:length:options:"),
+            .{
+                @ptrCast(*const anyopaque, &data),
+                @intCast(c_ulong, data.len * @sizeOf(u8)),
+                MTLResourceStorageModeShared,
+            },
+        );
+    };
+
+    // Initialize our shader (MTLLibrary)
+    const library = library: {
+        // Load our source into a CFString
+        const source = try macos.foundation.String.createWithBytes(
+            @embedFile("../shaders/cell.metal"),
+            .utf8,
+            false,
+        );
+        defer source.release();
+
+        // Compile
+        var err: ?*anyopaque = null;
+        const library = device.msgSend(
+            objc.Object,
+            objc.sel("newLibraryWithSource:options:error:"),
+            .{
+                source,
+                @as(?*anyopaque, null),
+                &err,
+            },
+        );
+
+        // If there is an error (shouldn't since we test), report it and exit.
+        if (err != null) {
+            const nserr = objc.Object.fromId(err);
+            const str = @ptrCast(
+                *macos.foundation.String,
+                nserr.getProperty(?*anyopaque, "localizedDescription").?,
+            );
+
+            log.err("shader error={s}", .{str.cstringPtr(.ascii).?});
+            return error.MetalFailed;
+        }
+
+        break :library library;
+    };
+
     return Metal{
         .alloc = alloc,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
@@ -117,6 +175,8 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .device = device,
         .queue = queue,
         .swapchain = swapchain,
+        .library = library,
+        .buf_instance = buf_instance,
     };
 }
 
@@ -414,6 +474,18 @@ const MTLStoreAction = enum(c_ulong) {
     dont_care = 0,
     store = 1,
 };
+
+/// https://developer.apple.com/documentation/metal/mtlstoragemode?language=objc
+const MTLStorageMode = enum(c_ulong) {
+    shared = 0,
+    managed = 1,
+    private = 2,
+    memoryless = 3,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc
+/// (incomplete, we only use this mode so we just hardcode it)
+const MTLResourceStorageModeShared: c_ulong = @enumToInt(MTLStorageMode.shared) << 4;
 
 const MTLClearColor = extern struct {
     red: f64,
