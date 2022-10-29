@@ -9,6 +9,7 @@ const macos = @import("macos");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
+const math = @import("../math.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Terminal = terminal.Terminal;
@@ -50,6 +51,11 @@ pipeline: objc.Object, // MTLRenderPipelineState
 
 const GPUCell = extern struct {
     foo: f64,
+};
+
+const GPUUniforms = extern struct {
+    projection_matrix: math.Mat,
+    cell_size: [2]f32,
 };
 
 /// Returns the hints that we want for this
@@ -340,6 +346,19 @@ pub fn render(
     const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
     self.swapchain.setProperty("drawableSize", bounds.size);
 
+    // Setup our uniforms
+    const uniforms: GPUUniforms = .{
+        .projection_matrix = math.ortho2d(
+            0,
+            @floatCast(f32, bounds.size.width),
+            @floatCast(f32, bounds.size.height),
+            0,
+        ),
+
+        // TODO: get content scale to scale these
+        .cell_size = .{ self.cell_size.width / 2, self.cell_size.height / 2 },
+    };
+
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
@@ -398,6 +417,15 @@ pub fn render(
             void,
             objc.sel("setVertexBuffer:offset:atIndex:"),
             .{ self.buf_cells.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+        );
+        encoder.msgSend(
+            void,
+            objc.sel("setVertexBytes:length:atIndex:"),
+            .{
+                @ptrCast(*const anyopaque, &uniforms),
+                @as(c_ulong, @sizeOf(@TypeOf(uniforms))),
+                @as(c_ulong, 1),
+            },
         );
 
         // Draw

@@ -1,13 +1,19 @@
-vertex float4 basic_vertex(unsigned int vid [[ vertex_id ]]) {
+using namespace metal;
+
+struct Uniforms {
+    float4x4 projection_matrix;
+    float2 cell_size;
+};
+
+vertex float4 basic_vertex(
+  unsigned int vid [[ vertex_id ]],
+  constant Uniforms &uniforms [[ buffer(1) ]]
+) {
   // Where we are in the grid (x, y) where top-left is origin
   float2 grid_coord = float2(0.0f, 0.0f);
 
-  // The size of a single cell in pixels
-  //float2 cell_size = float2(75.0f, 100.0f);
-  float2 cell_size = float2(1.0f, 1.0f);
-
   // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = cell_size * grid_coord;
+  float2 cell_pos = uniforms.cell_size * grid_coord;
 
   // Turn the cell position into a vertex point depending on the
   // vertex ID. Since we use instanced drawing, we have 4 vertices
@@ -26,9 +32,9 @@ vertex float4 basic_vertex(unsigned int vid [[ vertex_id ]]) {
   // Calculate the final position of our cell in world space.
   // We have to add our cell size since our vertices are offset
   // one cell up and to the left. (Do the math to verify yourself)
-  cell_pos = cell_pos + cell_size * position;
+  cell_pos = cell_pos + uniforms.cell_size * position;
 
-  return float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
+  return uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
 }
 
 fragment half4 basic_fragment() {
