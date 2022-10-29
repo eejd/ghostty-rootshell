@@ -26,15 +26,9 @@ vertex float4 basic_vertex(unsigned int vid [[ vertex_id ]]) {
   // Calculate the final position of our cell in world space.
   // We have to add our cell size since our vertices are offset
   // one cell up and to the left. (Do the math to verify yourself)
-  cell_pos = cell_size * position;
+  cell_pos = cell_pos + cell_size * position;
 
   return float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
-}
-
-vertex float4 demo_vertex(
-  const device packed_float3* vertex_array [[ buffer(0) ]],
-  unsigned int vid [[ vertex_id ]]) {
-  return float4(vertex_array[vid], 1.0);
 }
 
 fragment half4 basic_fragment() {

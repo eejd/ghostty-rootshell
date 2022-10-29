@@ -174,7 +174,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     };
     const func_vert = func_vert: {
         const str = try macos.foundation.String.createWithBytes(
-            "demo_vertex",
+            "basic_vertex",
             .utf8,
             false,
         );
@@ -336,6 +336,10 @@ pub fn render(
     const pool = objc_autoreleasePoolPush();
     defer objc_autoreleasePoolPop(pool);
 
+    // Ensure our layer size is always updated
+    const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
+    self.swapchain.setProperty("drawableSize", bounds.size);
+
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
@@ -383,6 +387,9 @@ pub fn render(
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
+        //do we need to do this?
+        //encoder.msgSend(void, objc.sel("setViewport:"), .{viewport});
+
         // Use our shader pipeline
         encoder.msgSend(void, objc.sel("setRenderPipelineState:"), .{self.pipeline.value});
 
@@ -394,29 +401,29 @@ pub fn render(
         );
 
         // Draw
-        encoder.msgSend(
-            void,
-            objc.sel("drawPrimitives:vertexStart:vertexCount:instanceCount:"),
-            .{
-                @enumToInt(MTLPrimitiveType.triangle),
-                @as(c_ulong, 0),
-                @as(c_ulong, 3),
-                @as(c_ulong, 1),
-            },
-        );
-
         // encoder.msgSend(
         //     void,
-        //     objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        //     objc.sel("drawPrimitives:vertexStart:vertexCount:instanceCount:"),
         //     .{
         //         @enumToInt(MTLPrimitiveType.triangle),
-        //         @as(c_ulong, 6),
-        //         @enumToInt(MTLIndexType.uint16),
-        //         self.buf_instance.value,
         //         @as(c_ulong, 0),
+        //         @as(c_ulong, 3),
         //         @as(c_ulong, 1),
         //     },
         // );
+
+        encoder.msgSend(
+            void,
+            objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+            .{
+                @enumToInt(MTLPrimitiveType.triangle),
+                @as(c_ulong, 6),
+                @enumToInt(MTLIndexType.uint16),
+                self.buf_instance.value,
+                @as(c_ulong, 0),
+                @as(c_ulong, 1),
+            },
+        );
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{surface.value});
