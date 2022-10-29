@@ -3,7 +3,8 @@ vertex float4 basic_vertex(unsigned int vid [[ vertex_id ]]) {
   float2 grid_coord = float2(0.0f, 0.0f);
 
   // The size of a single cell in pixels
-  float2 cell_size = float2(75.0f, 100.0f);
+  //float2 cell_size = float2(75.0f, 100.0f);
+  float2 cell_size = float2(1.0f, 1.0f);
 
   // Convert the grid x,y into world space x, y by accounting for cell size
   float2 cell_pos = cell_size * grid_coord;
@@ -25,11 +26,17 @@ vertex float4 basic_vertex(unsigned int vid [[ vertex_id ]]) {
   // Calculate the final position of our cell in world space.
   // We have to add our cell size since our vertices are offset
   // one cell up and to the left. (Do the math to verify yourself)
-  cell_pos = cell_pos + cell_size * position;
+  cell_pos = cell_size * position;
 
-  return float4(cell_pos.x, cell_pos.y, 0.5f, 1.0f);
+  return float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
+}
+
+vertex float4 demo_vertex(
+  const device packed_float3* vertex_array [[ buffer(0) ]],
+  unsigned int vid [[ vertex_id ]]) {
+  return float4(vertex_array[vid], 1.0);
 }
 
 fragment half4 basic_fragment() {
-  return half4(1.0);
+  return half4(1.0, 0.0, 0.0, 1.0);
 }

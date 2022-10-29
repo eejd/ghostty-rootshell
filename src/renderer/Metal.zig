@@ -26,9 +26,6 @@ alloc: std.mem.Allocator,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
-/// The last screen size set.
-screen_size: renderer.ScreenSize,
-
 /// Default foreground color
 foreground: terminal.color.RGB,
 
@@ -47,8 +44,9 @@ font_shaper: font.Shaper,
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
 swapchain: objc.Object, // CAMetalLayer
-library: objc.Object, // MTLLibrary
+buf_cells: objc.Object, // MTLBuffer
 buf_instance: objc.Object, // MTLBuffer
+pipeline: objc.Object, // MTLRenderPipelineState
 
 const GPUCell = extern struct {
     foo: f64,
@@ -104,7 +102,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
 
     // Initialize our Metal buffers
     const buf_instance = buffer: {
-        const data = [6]u8{
+        const data = [6]u16{
             0, 1, 3, // Top-left triangle
             1, 2, 3, // Bottom-right triangle
         };
@@ -114,7 +112,25 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
             objc.sel("newBufferWithBytes:length:options:"),
             .{
                 @ptrCast(*const anyopaque, &data),
-                @intCast(c_ulong, data.len * @sizeOf(u8)),
+                @intCast(c_ulong, data.len * @sizeOf(u16)),
+                MTLResourceStorageModeShared,
+            },
+        );
+    };
+
+    const buf_cells = buffer: {
+        const data = [9]f32{
+            0,  1,  0,
+            -1, -1, 0,
+            1,  -1, 0,
+        };
+
+        break :buffer device.msgSend(
+            objc.Object,
+            objc.sel("newBufferWithBytes:length:options:"),
+            .{
+                @ptrCast(*const anyopaque, &data),
+                @intCast(c_ulong, data.len * @sizeOf(f32)),
                 MTLResourceStorageModeShared,
             },
         );
@@ -156,11 +172,70 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
 
         break :library library;
     };
+    const func_vert = func_vert: {
+        const str = try macos.foundation.String.createWithBytes(
+            "demo_vertex",
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+        break :func_vert objc.Object.fromId(ptr.?);
+    };
+    const func_frag = func_frag: {
+        const str = try macos.foundation.String.createWithBytes(
+            "basic_fragment",
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+        break :func_frag objc.Object.fromId(ptr.?);
+    };
+
+    const pipeline_state = pipeline_state: {
+        // Create our descriptor
+        const desc = init: {
+            const Class = objc.Class.getClass("MTLRenderPipelineDescriptor").?;
+            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+            break :init id_init;
+        };
+
+        // Set our properties
+        desc.setProperty("vertexFunction", func_vert);
+        desc.setProperty("fragmentFunction", func_frag);
+
+        // Set our color attachment
+        const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+        {
+            const attachment = attachments.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 0)},
+            );
+
+            // Value is MTLPixelFormatBGRA8Unorm
+            attachment.setProperty("pixelFormat", @as(c_ulong, 80));
+        }
+
+        // Make our state
+        var err: ?*anyopaque = null;
+        const pipeline_state = device.msgSend(
+            objc.Object,
+            objc.sel("newRenderPipelineStateWithDescriptor:error:"),
+            .{ desc, &err },
+        );
+        try checkError(err);
+
+        break :pipeline_state pipeline_state;
+    };
 
     return Metal{
         .alloc = alloc,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
-        .screen_size = .{ .width = 0, .height = 0 },
         .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
 
@@ -175,8 +250,9 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .device = device,
         .queue = queue,
         .swapchain = swapchain,
-        .library = library,
+        .buf_cells = buf_cells,
         .buf_instance = buf_instance,
+        .pipeline = pipeline_state,
     };
 }
 
@@ -264,8 +340,8 @@ pub fn render(
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
     // MTLRenderPassDescriptor
-    const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
     const desc = desc: {
+        const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
         const desc = MTLRenderPassDescriptor.msgSend(
             objc.Object,
             objc.sel("renderPassDescriptor"),
@@ -298,36 +374,59 @@ pub fn render(
     // Command buffer (MTLCommandBuffer)
     const buffer = self.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
 
-    // MTLRenderCommandEncoder
-    const encoder = buffer.msgSend(
-        objc.Object,
-        objc.sel("renderCommandEncoderWithDescriptor:"),
-        .{desc.value},
-    );
+    {
+        // MTLRenderCommandEncoder
+        const encoder = buffer.msgSend(
+            objc.Object,
+            objc.sel("renderCommandEncoderWithDescriptor:"),
+            .{desc.value},
+        );
+        defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
-    // If we are resizing we need to update the viewport
-    encoder.msgSend(void, objc.sel("setViewport:"), .{MTLViewport{
-        .x = 0,
-        .y = 0,
-        .width = @intToFloat(f64, self.screen_size.width),
-        .height = @intToFloat(f64, self.screen_size.height),
-        .znear = 0,
-        .zfar = 1,
-    }});
+        // Use our shader pipeline
+        encoder.msgSend(void, objc.sel("setRenderPipelineState:"), .{self.pipeline.value});
 
-    // End our rendering and draw
-    encoder.msgSend(void, objc.sel("endEncoding"), .{});
+        // Set our buffers
+        encoder.msgSend(
+            void,
+            objc.sel("setVertexBuffer:offset:atIndex:"),
+            .{ self.buf_cells.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+        );
+
+        // Draw
+        encoder.msgSend(
+            void,
+            objc.sel("drawPrimitives:vertexStart:vertexCount:instanceCount:"),
+            .{
+                @enumToInt(MTLPrimitiveType.triangle),
+                @as(c_ulong, 0),
+                @as(c_ulong, 3),
+                @as(c_ulong, 1),
+            },
+        );
+
+        // encoder.msgSend(
+        //     void,
+        //     objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        //     .{
+        //         @enumToInt(MTLPrimitiveType.triangle),
+        //         @as(c_ulong, 6),
+        //         @enumToInt(MTLIndexType.uint16),
+        //         self.buf_instance.value,
+        //         @as(c_ulong, 0),
+        //         @as(c_ulong, 1),
+        //     },
+        // );
+    }
+
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{surface.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
 }
 
 /// Resize the screen.
 fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
-    // Update our screen size
-    self.screen_size = dim;
-
     // Recalculate the rows/columns.
-    const grid_size = renderer.GridSize.init(self.screen_size, self.cell_size);
+    const grid_size = renderer.GridSize.init(dim, self.cell_size);
 
     // Update our shaper
     // TODO: don't reallocate if it is close enough (but bigger)
@@ -335,6 +434,8 @@ fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
     errdefer self.alloc.free(shape_buf);
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
+
+    log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
 
 /// Sync all the CPU cells with the GPU state (but still on the CPU here).
@@ -462,6 +563,19 @@ pub fn updateCell(
     return true;
 }
 
+fn checkError(err_: ?*anyopaque) !void {
+    if (err_) |err| {
+        const nserr = objc.Object.fromId(err);
+        const str = @ptrCast(
+            *macos.foundation.String,
+            nserr.getProperty(?*anyopaque, "localizedDescription").?,
+        );
+
+        log.err("metal error={s}", .{str.cstringPtr(.ascii).?});
+        return error.MetalFailed;
+    }
+}
+
 /// https://developer.apple.com/documentation/metal/mtlloadaction?language=objc
 const MTLLoadAction = enum(c_ulong) {
     dont_care = 0,
@@ -481,6 +595,21 @@ const MTLStorageMode = enum(c_ulong) {
     managed = 1,
     private = 2,
     memoryless = 3,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlprimitivetype?language=objc
+const MTLPrimitiveType = enum(c_ulong) {
+    point = 0,
+    line = 1,
+    line_strip = 2,
+    triangle = 3,
+    triangle_strip = 4,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlindextype?language=objc
+const MTLIndexType = enum(c_ulong) {
+    uint16 = 0,
+    uint32 = 1,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc
