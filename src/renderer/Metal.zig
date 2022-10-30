@@ -37,6 +37,9 @@ background: terminal.color.RGB,
 /// but we keep this around so that we don't reallocate.
 cells: std.ArrayListUnmanaged(GPUCell),
 
+/// The current GPU uniform values.
+uniforms: GPUUniforms,
+
 /// The font structures.
 font_group: *font.GroupCache,
 font_shaper: font.Shaper,
@@ -247,6 +250,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
 
         // Render state
         .cells = .{},
+        .uniforms = undefined,
 
         // Fonts
         .font_group = font_group,
@@ -307,6 +311,7 @@ pub fn render(
     // Data we extract out of the critical area.
     const Critical = struct {
         bg: terminal.color.RGB,
+        screen_size: ?renderer.ScreenSize,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -335,6 +340,7 @@ pub fn render(
 
         break :critical .{
             .bg = self.background,
+            .screen_size = state.resize_screen,
         };
     };
 
@@ -342,22 +348,33 @@ pub fn render(
     const pool = objc_autoreleasePoolPush();
     defer objc_autoreleasePoolPop(pool);
 
-    // Ensure our layer size is always updated
-    const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
-    self.swapchain.setProperty("drawableSize", bounds.size);
+    // If we're resizing, then we have to update a bunch of things...
+    if (critical.screen_size) |screen_size| {
+        const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
 
-    // Setup our uniforms
-    const uniforms: GPUUniforms = .{
-        .projection_matrix = math.ortho2d(
-            0,
-            @floatCast(f32, bounds.size.width),
-            @floatCast(f32, bounds.size.height),
-            0,
-        ),
+        // Set the size of the drawable surface to the bounds of our surface.
+        self.swapchain.setProperty("drawableSize", bounds.size);
 
-        // TODO: get content scale to scale these
-        .cell_size = .{ self.cell_size.width / 2, self.cell_size.height / 2 },
-    };
+        // Our drawable surface is usually scaled so we need to figure
+        // out the scalem amount so our pixels are correct.
+        const scaleX = @floatCast(f32, bounds.size.width) / @intToFloat(f32, screen_size.width);
+        const scaleY = @floatCast(f32, bounds.size.height) / @intToFloat(f32, screen_size.height);
+
+        // Setup our uniforms
+        self.uniforms = .{
+            .projection_matrix = math.ortho2d(
+                0,
+                @floatCast(f32, bounds.size.width),
+                @floatCast(f32, bounds.size.height),
+                0,
+            ),
+
+            .cell_size = .{
+                self.cell_size.width * scaleX,
+                self.cell_size.height * scaleY,
+            },
+        };
+    }
 
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
@@ -422,8 +439,8 @@ pub fn render(
             void,
             objc.sel("setVertexBytes:length:atIndex:"),
             .{
-                @ptrCast(*const anyopaque, &uniforms),
-                @as(c_ulong, @sizeOf(@TypeOf(uniforms))),
+                @ptrCast(*const anyopaque, &self.uniforms),
+                @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
                 @as(c_ulong, 1),
             },
         );
