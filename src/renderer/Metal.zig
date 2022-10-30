@@ -53,7 +53,7 @@ buf_instance: objc.Object, // MTLBuffer
 pipeline: objc.Object, // MTLRenderPipelineState
 
 const GPUCell = extern struct {
-    foo: f64,
+    grid_pos: [2]f32,
 };
 
 const GPUUniforms = extern struct {
@@ -128,119 +128,23 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     };
 
     const buf_cells = buffer: {
-        const data = [9]f32{
-            0,  1,  0,
-            -1, -1, 0,
-            1,  -1, 0,
-        };
+        // Preallocate for 160x160 grid with 3 modes (bg, fg, text). This
+        // should handle most terminals well, and we can avoid a resize later.
+        const prealloc = 160 * 160 * 3;
 
         break :buffer device.msgSend(
             objc.Object,
-            objc.sel("newBufferWithBytes:length:options:"),
+            objc.sel("newBufferWithLength:options:"),
             .{
-                @ptrCast(*const anyopaque, &data),
-                @intCast(c_ulong, data.len * @sizeOf(f32)),
+                @intCast(c_ulong, prealloc * @sizeOf(GPUCell)),
                 MTLResourceStorageModeShared,
             },
         );
     };
 
     // Initialize our shader (MTLLibrary)
-    const library = library: {
-        // Load our source into a CFString
-        const source = try macos.foundation.String.createWithBytes(
-            @embedFile("../shaders/cell.metal"),
-            .utf8,
-            false,
-        );
-        defer source.release();
-
-        // Compile
-        var err: ?*anyopaque = null;
-        const library = device.msgSend(
-            objc.Object,
-            objc.sel("newLibraryWithSource:options:error:"),
-            .{
-                source,
-                @as(?*anyopaque, null),
-                &err,
-            },
-        );
-
-        // If there is an error (shouldn't since we test), report it and exit.
-        if (err != null) {
-            const nserr = objc.Object.fromId(err);
-            const str = @ptrCast(
-                *macos.foundation.String,
-                nserr.getProperty(?*anyopaque, "localizedDescription").?,
-            );
-
-            log.err("shader error={s}", .{str.cstringPtr(.ascii).?});
-            return error.MetalFailed;
-        }
-
-        break :library library;
-    };
-    const func_vert = func_vert: {
-        const str = try macos.foundation.String.createWithBytes(
-            "basic_vertex",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_vert objc.Object.fromId(ptr.?);
-    };
-    const func_frag = func_frag: {
-        const str = try macos.foundation.String.createWithBytes(
-            "basic_fragment",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_frag objc.Object.fromId(ptr.?);
-    };
-
-    const pipeline_state = pipeline_state: {
-        // Create our descriptor
-        const desc = init: {
-            const Class = objc.Class.getClass("MTLRenderPipelineDescriptor").?;
-            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-            break :init id_init;
-        };
-
-        // Set our properties
-        desc.setProperty("vertexFunction", func_vert);
-        desc.setProperty("fragmentFunction", func_frag);
-
-        // Set our color attachment
-        const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-        {
-            const attachment = attachments.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            // Value is MTLPixelFormatBGRA8Unorm
-            attachment.setProperty("pixelFormat", @as(c_ulong, 80));
-        }
-
-        // Make our state
-        var err: ?*anyopaque = null;
-        const pipeline_state = device.msgSend(
-            objc.Object,
-            objc.sel("newRenderPipelineStateWithDescriptor:error:"),
-            .{ desc, &err },
-        );
-        try checkError(err);
-
-        break :pipeline_state pipeline_state;
-    };
+    const library = try initLibrary(device, @embedFile("../shaders/cell.metal"));
+    const pipeline_state = try initPipelineState(device, library);
 
     return Metal{
         .alloc = alloc,
@@ -379,6 +283,9 @@ pub fn render(
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
+    // Setup our buffer
+    try self.syncCells();
+
     // MTLRenderPassDescriptor
     const desc = desc: {
         const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
@@ -445,18 +352,6 @@ pub fn render(
             },
         );
 
-        // Draw
-        // encoder.msgSend(
-        //     void,
-        //     objc.sel("drawPrimitives:vertexStart:vertexCount:instanceCount:"),
-        //     .{
-        //         @enumToInt(MTLPrimitiveType.triangle),
-        //         @as(c_ulong, 0),
-        //         @as(c_ulong, 3),
-        //         @as(c_ulong, 1),
-        //     },
-        // );
-
         encoder.msgSend(
             void,
             objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
@@ -466,7 +361,7 @@ pub fn render(
                 @enumToInt(MTLIndexType.uint16),
                 self.buf_instance.value,
                 @as(c_ulong, 0),
-                @as(c_ulong, 1),
+                @as(c_ulong, self.cells.items.len),
             },
         );
     }
@@ -504,30 +399,30 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
         (term.screen.rows * term.screen.cols * 3) + 1,
     );
 
-    // // Build each cell
-    // var rowIter = term.screen.rowIterator(.viewport);
-    // var y: usize = 0;
-    // while (rowIter.next()) |row| {
-    //     defer y += 1;
-    //
-    //     // Split our row into runs and shape each one.
-    //     var iter = self.font_shaper.runIterator(self.font_group, row);
-    //     while (try iter.next(self.alloc)) |run| {
-    //         for (try self.font_shaper.shape(run)) |shaper_cell| {
-    //             assert(try self.updateCell(
-    //                 term,
-    //                 row.getCell(shaper_cell.x),
-    //                 shaper_cell,
-    //                 run,
-    //                 shaper_cell.x,
-    //                 y,
-    //             ));
-    //         }
-    //     }
-    //
-    //     // Set row is not dirty anymore
-    //     row.setDirty(false);
-    // }
+    // Build each cell
+    var rowIter = term.screen.rowIterator(.viewport);
+    var y: usize = 0;
+    while (rowIter.next()) |row| {
+        defer y += 1;
+
+        // Split our row into runs and shape each one.
+        var iter = self.font_shaper.runIterator(self.font_group, row);
+        while (try iter.next(self.alloc)) |run| {
+            for (try self.font_shaper.shape(run)) |shaper_cell| {
+                assert(try self.updateCell(
+                    term,
+                    row.getCell(shaper_cell.x),
+                    shaper_cell,
+                    run,
+                    shaper_cell.x,
+                    y,
+                ));
+            }
+        }
+
+        // Set row is not dirty anymore
+        row.setDirty(false);
+    }
 }
 
 pub fn updateCell(
@@ -539,9 +434,6 @@ pub fn updateCell(
     x: usize,
     y: usize,
 ) !bool {
-    _ = shaper_cell;
-    _ = shaper_run;
-
     const BgFg = struct {
         /// Background is optional because in un-inverted mode
         /// it may just be equivalent to the default background in
@@ -594,25 +486,214 @@ pub fn updateCell(
     const alpha: u8 = if (cell.attrs.faint) 175 else 255;
 
     // If the cell has a background, we always draw it.
-    // if (colors.bg) |rgb| {
-    //     self.cells.appendAssumeCapacity(.{
-    //         .grid_col = @intCast(u16, x),
-    //         .grid_row = @intCast(u16, y),
-    //         .grid_width = cell.widthLegacy(),
-    //         .fg_r = 0,
-    //         .fg_g = 0,
-    //         .fg_b = 0,
-    //         .fg_a = 0,
-    //         .bg_r = rgb.r,
-    //         .bg_g = rgb.g,
-    //         .bg_b = rgb.b,
-    //         .bg_a = alpha,
-    //     });
-    // }
+    if (colors.bg) |rgb| {
+        _ = rgb;
+        self.cells.appendAssumeCapacity(.{
+            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            // .grid_col = @intCast(u16, x),
+            // .grid_row = @intCast(u16, y),
+            // .grid_width = cell.widthLegacy(),
+            // .fg_r = 0,
+            // .fg_g = 0,
+            // .fg_b = 0,
+            // .fg_a = 0,
+            // .bg_r = rgb.r,
+            // .bg_g = rgb.g,
+            // .bg_b = rgb.b,
+            // .bg_a = alpha,
+        });
+    }
     _ = alpha;
-    _ = colors;
+
+    // If the cell has a character, draw it
+    if (cell.char > 0) {
+        // Render
+        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
+        _ = face;
+        const glyph = try self.font_group.renderGlyph(
+            self.alloc,
+            shaper_run.font_index,
+            shaper_cell.glyph_index,
+            @floatToInt(u16, @ceil(self.cell_size.height)),
+        );
+        _ = glyph;
+
+        self.cells.appendAssumeCapacity(.{
+            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            // .mode = mode,
+            // .grid_col = @intCast(u16, x),
+            // .grid_row = @intCast(u16, y),
+            // .grid_width = cell.widthLegacy(),
+            // .glyph_x = glyph.atlas_x,
+            // .glyph_y = glyph.atlas_y,
+            // .glyph_width = glyph.width,
+            // .glyph_height = glyph.height,
+            // .glyph_offset_x = glyph.offset_x,
+            // .glyph_offset_y = glyph.offset_y,
+            // .fg_r = colors.fg.r,
+            // .fg_g = colors.fg.g,
+            // .fg_b = colors.fg.b,
+            // .fg_a = alpha,
+            // .bg_r = 0,
+            // .bg_g = 0,
+            // .bg_b = 0,
+            // .bg_a = 0,
+        });
+    }
 
     return true;
+}
+
+/// Sync the vertex buffer inputs to the GPU. This will attempt to reuse
+/// the existing buffer (of course!) but will allocate a new buffer if
+/// our cells don't fit in it.
+fn syncCells(self: *Metal) !void {
+    const req_bytes = self.cells.items.len * @sizeOf(GPUCell);
+    const avail_bytes = self.buf_cells.getProperty(c_ulong, "length");
+
+    // If we need more bytes than our buffer has, we need to reallocate.
+    if (req_bytes > avail_bytes) {
+        @panic("TODO: reallocate buffer");
+    }
+
+    // We can fit within the vertex buffer so we can just replace bytes.
+    const ptr = self.buf_cells.msgSend(?[*]u8, objc.sel("contents"), .{}) orelse {
+        log.warn("buf_cells contents ptr is null", .{});
+        return error.MetalFailed;
+    };
+
+    @memcpy(ptr, @ptrCast([*]const u8, self.cells.items.ptr), req_bytes);
+}
+
+/// Initialize the shader library.
+fn initLibrary(device: objc.Object, data: []const u8) !objc.Object {
+    const source = try macos.foundation.String.createWithBytes(
+        data,
+        .utf8,
+        false,
+    );
+    defer source.release();
+
+    var err: ?*anyopaque = null;
+    const library = device.msgSend(
+        objc.Object,
+        objc.sel("newLibraryWithSource:options:error:"),
+        .{
+            source,
+            @as(?*anyopaque, null),
+            &err,
+        },
+    );
+    try checkError(err);
+
+    return library;
+}
+
+/// Initialize the render pipeline for our shader library.
+fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
+    // Get our vertex and fragment functions
+    const func_vert = func_vert: {
+        const str = try macos.foundation.String.createWithBytes(
+            "basic_vertex",
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+        break :func_vert objc.Object.fromId(ptr.?);
+    };
+    const func_frag = func_frag: {
+        const str = try macos.foundation.String.createWithBytes(
+            "basic_fragment",
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+        break :func_frag objc.Object.fromId(ptr.?);
+    };
+
+    // Create the vertex descriptor. The vertex descriptor describves the
+    // data layout of the vertex inputs. We use indexed (or "instanced")
+    // rendering, so this makes it so that each instance gets a single
+    // GPUCell as input.
+    const vertex_desc = vertex_desc: {
+        const desc = init: {
+            const Class = objc.Class.getClass("MTLVertexDescriptor").?;
+            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+            break :init id_init;
+        };
+
+        // Our attributes are the fields of the input
+        const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 0)},
+            );
+
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.float2));
+            attr.setProperty("offset", @as(c_ulong, 0));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+
+        // The layout describes how and when we fetch the next vertex input.
+        const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
+        {
+            const layout = layouts.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 0)},
+            );
+
+            // Access each GPUCell per instance, not per vertex.
+            layout.setProperty("stepFunction", @enumToInt(MTLVertexStepFunction.per_instance));
+            layout.setProperty("stride", @as(c_ulong, @sizeOf(GPUCell)));
+        }
+
+        break :vertex_desc desc;
+    };
+
+    // Create our descriptor
+    const desc = init: {
+        const Class = objc.Class.getClass("MTLRenderPipelineDescriptor").?;
+        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+        break :init id_init;
+    };
+
+    // Set our properties
+    desc.setProperty("vertexFunction", func_vert);
+    desc.setProperty("fragmentFunction", func_frag);
+    desc.setProperty("vertexDescriptor", vertex_desc);
+
+    // Set our color attachment
+    const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+    {
+        const attachment = attachments.msgSend(
+            objc.Object,
+            objc.sel("objectAtIndexedSubscript:"),
+            .{@as(c_ulong, 0)},
+        );
+
+        // Value is MTLPixelFormatBGRA8Unorm
+        attachment.setProperty("pixelFormat", @as(c_ulong, 80));
+    }
+
+    // Make our state
+    var err: ?*anyopaque = null;
+    const pipeline_state = device.msgSend(
+        objc.Object,
+        objc.sel("newRenderPipelineStateWithDescriptor:error:"),
+        .{ desc, &err },
+    );
+    try checkError(err);
+
+    return pipeline_state;
 }
 
 fn checkError(err_: ?*anyopaque) !void {
@@ -662,6 +743,18 @@ const MTLPrimitiveType = enum(c_ulong) {
 const MTLIndexType = enum(c_ulong) {
     uint16 = 0,
     uint32 = 1,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlvertexformat?language=objc
+const MTLVertexFormat = enum(c_ulong) {
+    float2 = 29,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlvertexstepfunction?language=objc
+const MTLVertexStepFunction = enum(c_ulong) {
+    constant = 0,
+    per_vertex = 1,
+    per_instance = 2,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc

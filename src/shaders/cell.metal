@@ -1,16 +1,23 @@
 using namespace metal;
 
 struct Uniforms {
-    float4x4 projection_matrix;
-    float2 cell_size;
+  float4x4 projection_matrix;
+  float2 cell_size;
+};
+
+struct VertexIn {
+  // The grid coordinates (x, y) where x < columns and y < rows
+  float2 grid_pos [[ attribute(0) ]];
 };
 
 vertex float4 basic_vertex(
   unsigned int vid [[ vertex_id ]],
+  VertexIn input [[ stage_in ]],
   constant Uniforms &uniforms [[ buffer(1) ]]
 ) {
   // Where we are in the grid (x, y) where top-left is origin
-  float2 grid_coord = float2(0.0f, 0.0f);
+  // float2 grid_coord = float2(5.0f, 0.0f);
+  float2 grid_coord = input.grid_pos;
 
   // Convert the grid x,y into world space x, y by accounting for cell size
   float2 cell_pos = uniforms.cell_size * grid_coord;
