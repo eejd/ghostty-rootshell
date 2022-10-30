@@ -1,4 +1,11 @@
 //! Renderer implementation for Metal.
+//!
+//! Open questions:
+//!
+//!   - This requires a "px_scale" uniform to account for pixel scaling
+//!     issues with Retina. I'm not 100% sure why this is necessary and why
+//!     this doesn't happen with OpenGL.
+//!
 pub const Metal = @This();
 
 const std = @import("std");
@@ -64,7 +71,16 @@ const GPUCell = extern struct {
 };
 
 const GPUUniforms = extern struct {
+    /// The projection matrix for turning world coordinates to normalized.
+    /// This is calculated based on the size of the screen.
     projection_matrix: math.Mat,
+
+    /// A scale factor to apply to all pixels given as input (including
+    /// in this uniform i.e. cell_size). This is due to HiDPI screens (Retina)
+    /// mismatch with the window.
+    px_scale: [2]f32,
+
+    /// Size of a single cell in pixels, unscaled.
     cell_size: [2]f32,
 };
 
@@ -292,11 +308,8 @@ pub fn render(
                 @floatCast(f32, bounds.size.height),
                 0,
             ),
-
-            .cell_size = .{
-                self.cell_size.width * scaleX,
-                self.cell_size.height * scaleY,
-            },
+            .px_scale = .{ scaleX, scaleY },
+            .cell_size = .{ self.cell_size.width, self.cell_size.height },
         };
     }
 

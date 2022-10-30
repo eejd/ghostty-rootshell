@@ -147,7 +147,7 @@ void main() {
         glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y;
 
         // Calculate the final position of the cell.
-        cell_pos = cell_pos + glyph_size_downsampled * position + glyph_offset_calc;
+        cell_pos = cell_pos + (glyph_size_downsampled * position) + glyph_offset_calc;
         gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
 
         // We need to convert our texture position and size to normalized

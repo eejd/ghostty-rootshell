@@ -8,6 +8,7 @@ enum Mode : uint8_t {
 
 struct Uniforms {
   float4x4 projection_matrix;
+  float2 px_scale;
   float2 cell_size;
 };
 
@@ -45,8 +46,11 @@ vertex VertexOut uber_vertex(
   VertexIn input [[ stage_in ]],
   constant Uniforms &uniforms [[ buffer(1) ]]
 ) {
+  // TODO: scale with cell width
+  float2 cell_size = uniforms.cell_size * uniforms.px_scale;
+
   // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = uniforms.cell_size * input.grid_pos;
+  float2 cell_pos = cell_size * input.grid_pos;
 
   // Turn the cell position into a vertex point depending on the
   // vertex ID. Since we use instanced drawing, we have 4 vertices
@@ -62,9 +66,6 @@ vertex VertexOut uber_vertex(
   position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
   position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
 
-  // TODO: scale
-  float2 cell_size = uniforms.cell_size;
-
   VertexOut out;
   out.mode = input.mode;
   out.color = float4(input.color) / 255.0f;
@@ -73,14 +74,14 @@ vertex VertexOut uber_vertex(
     // Calculate the final position of our cell in world space.
     // We have to add our cell size since our vertices are offset
     // one cell up and to the left. (Do the math to verify yourself)
-    cell_pos = cell_pos + uniforms.cell_size * position;
+    cell_pos = cell_pos + cell_size * position;
 
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
     break;
 
   case MODE_FG:
-    float2 glyph_size = float2(input.glyph_size);
-    float2 glyph_offset = float2(input.glyph_offset);
+    float2 glyph_size = float2(input.glyph_size) * uniforms.px_scale;
+    float2 glyph_offset = float2(input.glyph_offset) * uniforms.px_scale;
 
     // TODO: downsampling
 
