@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
+const Atlas = @import("../Atlas.zig");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -51,14 +52,30 @@ swapchain: objc.Object, // CAMetalLayer
 buf_cells: objc.Object, // MTLBuffer
 buf_instance: objc.Object, // MTLBuffer
 pipeline: objc.Object, // MTLRenderPipelineState
+texture_greyscale: objc.Object, // MTLTexture
 
 const GPUCell = extern struct {
+    mode: GPUCellMode,
     grid_pos: [2]f32,
+    glyph_pos: [2]u32 = .{ 0, 0 },
+    glyph_size: [2]u32 = .{ 0, 0 },
+    glyph_offset: [2]i32 = .{ 0, 0 },
 };
 
 const GPUUniforms = extern struct {
     projection_matrix: math.Mat,
     cell_size: [2]f32,
+};
+
+const GPUCellMode = enum(u8) {
+    bg = 1,
+    fg = 2,
+    fg_color = 7,
+    cursor_rect = 3,
+    cursor_rect_hollow = 4,
+    cursor_bar = 5,
+    underline = 6,
+    strikethrough = 8,
 };
 
 /// Returns the hints that we want for this
@@ -145,6 +162,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     // Initialize our shader (MTLLibrary)
     const library = try initLibrary(device, @embedFile("../shaders/cell.metal"));
     const pipeline_state = try initPipelineState(device, library);
+    const texture_greyscale = try initAtlasTexture(device, &font_group.atlas_greyscale);
 
     return Metal{
         .alloc = alloc,
@@ -167,6 +185,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .buf_cells = buf_cells,
         .buf_instance = buf_instance,
         .pipeline = pipeline_state,
+        .texture_greyscale = texture_greyscale,
     };
 }
 
@@ -283,8 +302,14 @@ pub fn render(
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
-    // Setup our buffer
+    // Setup our buffers
     try self.syncCells();
+
+    // If our font atlas changed, sync the texture data
+    if (self.font_group.atlas_greyscale.modified) {
+        try syncAtlasTexture(&self.font_group.atlas_greyscale, &self.texture_greyscale);
+        self.font_group.atlas_greyscale.modified = false;
+    }
 
     // MTLRenderPassDescriptor
     const desc = desc: {
@@ -349,6 +374,14 @@ pub fn render(
                 @ptrCast(*const anyopaque, &self.uniforms),
                 @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
                 @as(c_ulong, 1),
+            },
+        );
+        encoder.msgSend(
+            void,
+            objc.sel("setFragmentTexture:atIndex:"),
+            .{
+                self.texture_greyscale.value,
+                @as(c_ulong, 0),
             },
         );
 
@@ -489,6 +522,7 @@ pub fn updateCell(
     if (colors.bg) |rgb| {
         _ = rgb;
         self.cells.appendAssumeCapacity(.{
+            .mode = .bg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
             // .grid_col = @intCast(u16, x),
             // .grid_row = @intCast(u16, y),
@@ -516,20 +550,16 @@ pub fn updateCell(
             shaper_cell.glyph_index,
             @floatToInt(u16, @ceil(self.cell_size.height)),
         );
-        _ = glyph;
 
         self.cells.appendAssumeCapacity(.{
+            .mode = .fg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
+            .glyph_size = .{ glyph.width, glyph.height },
+            .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+
             // .mode = mode,
-            // .grid_col = @intCast(u16, x),
-            // .grid_row = @intCast(u16, y),
             // .grid_width = cell.widthLegacy(),
-            // .glyph_x = glyph.atlas_x,
-            // .glyph_y = glyph.atlas_y,
-            // .glyph_width = glyph.width,
-            // .glyph_height = glyph.height,
-            // .glyph_offset_x = glyph.offset_x,
-            // .glyph_offset_y = glyph.offset_y,
             // .fg_r = colors.fg.r,
             // .fg_g = colors.fg.g,
             // .fg_b = colors.fg.b,
@@ -565,6 +595,34 @@ fn syncCells(self: *Metal) !void {
     @memcpy(ptr, @ptrCast([*]const u8, self.cells.items.ptr), req_bytes);
 }
 
+/// Sync the atlas data to the given texture. This copies the bytes
+/// associated with the atlas to the given texture. If the atlas no longer
+/// fits into the texture, the texture will be resized.
+fn syncAtlasTexture(atlas: *const Atlas, texture: *objc.Object) !void {
+    const width = texture.getProperty(c_ulong, "width");
+    if (atlas.size > width) {
+        @panic("TODO: reallocate texture");
+    }
+
+    texture.msgSend(
+        void,
+        objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
+        .{
+            MTLRegion{
+                .origin = .{ .x = 0, .y = 0, .z = 0 },
+                .size = .{
+                    .width = @intCast(c_ulong, atlas.size),
+                    .height = @intCast(c_ulong, atlas.size),
+                    .depth = 1,
+                },
+            },
+            @as(c_ulong, 0),
+            atlas.data.ptr,
+            @as(c_ulong, atlas.format.depth() * atlas.size),
+        },
+    );
+}
+
 /// Initialize the shader library.
 fn initLibrary(device: objc.Object, data: []const u8) !objc.Object {
     const source = try macos.foundation.String.createWithBytes(
@@ -594,7 +652,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
     // Get our vertex and fragment functions
     const func_vert = func_vert: {
         const str = try macos.foundation.String.createWithBytes(
-            "basic_vertex",
+            "uber_vertex",
             .utf8,
             false,
         );
@@ -605,7 +663,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
     };
     const func_frag = func_frag: {
         const str = try macos.foundation.String.createWithBytes(
-            "basic_fragment",
+            "uber_fragment",
             .utf8,
             false,
         );
@@ -636,8 +694,52 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 0)},
             );
 
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "mode")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 1)},
+            );
+
             attr.setProperty("format", @enumToInt(MTLVertexFormat.float2));
-            attr.setProperty("offset", @as(c_ulong, 0));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "grid_pos")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 2)},
+            );
+
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.uint2));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_pos")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 3)},
+            );
+
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.uint2));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_size")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 4)},
+            );
+
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.int2));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_offset")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 
@@ -696,6 +798,44 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
     return pipeline_state;
 }
 
+/// Initialize a MTLTexture object for the given atlas.
+fn initAtlasTexture(device: objc.Object, atlas: *const Atlas) !objc.Object {
+    // Determine our pixel format
+    const pixel_format: MTLPixelFormat = switch (atlas.format) {
+        .greyscale => .r8unorm,
+        else => @panic("unsupported atlas format for Metal texture"),
+    };
+
+    // Create our descriptor
+    const desc = init: {
+        const Class = objc.Class.getClass("MTLTextureDescriptor").?;
+        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+        break :init id_init;
+    };
+
+    // Set our properties
+    desc.setProperty("pixelFormat", @enumToInt(pixel_format));
+    desc.setProperty("width", @intCast(c_ulong, atlas.size));
+    desc.setProperty("height", @intCast(c_ulong, atlas.size));
+
+    // Initialize
+    const id = device.msgSend(
+        ?*anyopaque,
+        objc.sel("newTextureWithDescriptor:"),
+        .{desc},
+    ) orelse return error.MetalFailed;
+
+    return objc.Object.fromId(id);
+}
+
+/// Deinitialize a metal resource (buffer, texture, etc.) and free the
+/// memory associated with it.
+fn deinitMTLResource(obj: objc.Object) void {
+    obj.msgSend(void, objc.sel("setPurgeableState:"), .{@enumToInt(MTLPurgeableState.empty)});
+    obj.msgSend(void, objc.sel("release"), .{});
+}
+
 fn checkError(err_: ?*anyopaque) !void {
     if (err_) |err| {
         const nserr = objc.Object.fromId(err);
@@ -748,6 +888,9 @@ const MTLIndexType = enum(c_ulong) {
 /// https://developer.apple.com/documentation/metal/mtlvertexformat?language=objc
 const MTLVertexFormat = enum(c_ulong) {
     float2 = 29,
+    int2 = 33,
+    uint2 = 37,
+    uchar = 45,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlvertexstepfunction?language=objc
@@ -755,6 +898,16 @@ const MTLVertexStepFunction = enum(c_ulong) {
     constant = 0,
     per_vertex = 1,
     per_instance = 2,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlpixelformat?language=objc
+const MTLPixelFormat = enum(c_ulong) {
+    r8unorm = 10,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlpurgeablestate?language=objc
+const MTLPurgeableState = enum(c_ulong) {
+    empty = 4,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc
@@ -775,6 +928,23 @@ const MTLViewport = extern struct {
     height: f64,
     znear: f64,
     zfar: f64,
+};
+
+const MTLRegion = extern struct {
+    origin: MTLOrigin,
+    size: MTLSize,
+};
+
+const MTLOrigin = extern struct {
+    x: c_ulong,
+    y: c_ulong,
+    z: c_ulong,
+};
+
+const MTLSize = extern struct {
+    width: c_ulong,
+    height: c_ulong,
+    depth: c_ulong,
 };
 
 extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;
