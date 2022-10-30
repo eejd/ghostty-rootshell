@@ -57,6 +57,7 @@ texture_greyscale: objc.Object, // MTLTexture
 const GPUCell = extern struct {
     mode: GPUCellMode,
     grid_pos: [2]f32,
+    color: [4]u8,
     glyph_pos: [2]u32 = .{ 0, 0 },
     glyph_size: [2]u32 = .{ 0, 0 },
     glyph_offset: [2]i32 = .{ 0, 0 },
@@ -520,10 +521,11 @@ pub fn updateCell(
 
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
-        _ = rgb;
         self.cells.appendAssumeCapacity(.{
             .mode = .bg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .color = .{ rgb.r, rgb.g, rgb.b, alpha },
+
             // .grid_col = @intCast(u16, x),
             // .grid_row = @intCast(u16, y),
             // .grid_width = cell.widthLegacy(),
@@ -537,7 +539,6 @@ pub fn updateCell(
             // .bg_a = alpha,
         });
     }
-    _ = alpha;
 
     // If the cell has a character, draw it
     if (cell.char > 0) {
@@ -554,6 +555,7 @@ pub fn updateCell(
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -742,6 +744,17 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_offset")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 5)},
+            );
+
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar4));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "color")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
 
         // The layout describes how and when we fetch the next vertex input.
         const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
@@ -887,6 +900,7 @@ const MTLIndexType = enum(c_ulong) {
 
 /// https://developer.apple.com/documentation/metal/mtlvertexformat?language=objc
 const MTLVertexFormat = enum(c_ulong) {
+    uchar4 = 3,
     float2 = 29,
     int2 = 33,
     uint2 = 37,

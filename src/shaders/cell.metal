@@ -18,6 +18,10 @@ struct VertexIn {
   // The grid coordinates (x, y) where x < columns and y < rows
   float2 grid_pos [[ attribute(1) ]];
 
+  // The color. For BG modes, this is the bg color, for FG modes this is
+  // the text color. For styles, this is the color of the style.
+  uchar4 color [[ attribute(5) ]];
+
   // The fields below are present only when rendering text.
 
   // The position of the glyph in the texture (x,y)
@@ -32,6 +36,8 @@ struct VertexIn {
 
 struct VertexOut {
   float4 position [[ position ]];
+  uint8_t mode;
+  float4 color;
 };
 
 vertex VertexOut uber_vertex(
@@ -60,6 +66,8 @@ vertex VertexOut uber_vertex(
   float2 cell_size = uniforms.cell_size;
 
   VertexOut out;
+  out.mode = input.mode;
+  out.color = float4(input.color) / 255.0f;
   switch (input.mode) {
   case MODE_BG:
     // Calculate the final position of our cell in world space.
@@ -91,8 +99,17 @@ vertex VertexOut uber_vertex(
   return out;
 }
 
-fragment half4 uber_fragment(
-  VertexOut in [[ stage_in ]]
+fragment float4 uber_fragment(
+  VertexOut in [[ stage_in ]],
+  texture2d<float> textureGreyscale [[ texture(0) ]]
 ) {
-  return half4(1.0, 0.0, 0.0, 1.0);
+  constexpr sampler textureSampler;
+
+  switch (in.mode) {
+  case MODE_BG:
+    return in.color;
+
+  case MODE_FG:
+    return in.color;
+  }
 }
