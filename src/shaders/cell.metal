@@ -39,6 +39,7 @@ struct VertexOut {
   float4 position [[ position ]];
   uint8_t mode;
   float4 color;
+  float2 tex_coord;
 };
 
 vertex VertexOut uber_vertex(
@@ -90,10 +91,15 @@ vertex VertexOut uber_vertex(
     // So we flip it with `cell_size.y - glyph_offset.y`.
     glyph_offset.y = cell_size.y - glyph_offset.y;
 
-    // Calculate the final position of the cell.
+    // Calculate the final position of the cell which uses our glyph size
+    // and glyph offset to create the correct bounding box for the glyph.
     cell_pos = cell_pos + glyph_size * position + glyph_offset;
-
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
+
+    // Calculate the texture coordinate in pixels. This is NOT normalized
+    // (between 0.0 and 1.0) and must be done in the fragment shader.
+    // TODO: do I need to px_scale?
+    out.tex_coord = float2(input.glyph_pos) + float2(input.glyph_size) * position;
     break;
   }
 
@@ -104,13 +110,18 @@ fragment float4 uber_fragment(
   VertexOut in [[ stage_in ]],
   texture2d<float> textureGreyscale [[ texture(0) ]]
 ) {
-  constexpr sampler textureSampler;
+  constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
 
   switch (in.mode) {
   case MODE_BG:
     return in.color;
 
   case MODE_FG:
-    return in.color;
+    // Normalize the texture coordinates to [0,1]
+    float2 size = float2(textureGreyscale.get_width(), textureGreyscale.get_height());
+    float2 coord = in.tex_coord / size;
+
+    float a = textureGreyscale.sample(textureSampler, coord).r;
+    return float4(in.color.rgb, in.color.a * a);
   }
 }

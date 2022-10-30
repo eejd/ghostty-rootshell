@@ -810,6 +810,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
 
         // Value is MTLPixelFormatBGRA8Unorm
         attachment.setProperty("pixelFormat", @as(c_ulong, 80));
+        attachment.setProperty("blendingEnabled", true);
     }
 
     // Make our state
@@ -930,6 +931,7 @@ const MTLVertexStepFunction = enum(c_ulong) {
 /// https://developer.apple.com/documentation/metal/mtlpixelformat?language=objc
 const MTLPixelFormat = enum(c_ulong) {
     r8unorm = 10,
+    bgra8unorm = 80,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlpurgeablestate?language=objc
