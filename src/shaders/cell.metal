@@ -59,11 +59,12 @@ vertex VertexOut uber_vertex(
   VertexIn input [[ stage_in ]],
   constant Uniforms &uniforms [[ buffer(1) ]]
 ) {
-  float2 cell_size = uniforms.cell_size;
-  cell_size.x = cell_size.x * input.cell_width;
-
   // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = cell_size * input.grid_pos;
+  float2 cell_pos = uniforms.cell_size * input.grid_pos;
+
+  // Scaled cell size for the cell width
+  float2 cell_size_scaled = uniforms.cell_size;
+  cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
 
   // Turn the cell position into a vertex point depending on the
   // vertex ID. Since we use instanced drawing, we have 4 vertices
@@ -87,7 +88,7 @@ vertex VertexOut uber_vertex(
     // Calculate the final position of our cell in world space.
     // We have to add our cell size since our vertices are offset
     // one cell up and to the left. (Do the math to verify yourself)
-    cell_pos = cell_pos + cell_size * position;
+    cell_pos = cell_pos + cell_size_scaled * position;
 
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
     break;
@@ -101,9 +102,9 @@ vertex VertexOut uber_vertex(
     // The "+ 3" here is to give some wiggle room for fonts that are
     // BARELY over it.
     float2 glyph_size_downsampled = glyph_size;
-    if (glyph_size_downsampled.y > cell_size.y + 2) {
+    if (glyph_size_downsampled.y > cell_size_scaled.y + 2) {
       // Magic 0.9 and 1.1 are padding to make emoji look better
-      glyph_size_downsampled.y = cell_size.y * 0.9;
+      glyph_size_downsampled.y = cell_size_scaled.y * 0.9;
       glyph_size_downsampled.x = glyph_size.x * (glyph_size_downsampled.y / glyph_size.y);
       glyph_offset.y = glyph_offset.y * 1.1 * (glyph_size_downsampled.y / glyph_size.y);
     }
@@ -111,7 +112,7 @@ vertex VertexOut uber_vertex(
     // The glyph_offset.y is the y bearing, a y value that when added
     // to the baseline is the offset (+y is up). Our grid goes down.
     // So we flip it with `cell_size.y - glyph_offset.y`.
-    glyph_offset.y = cell_size.y - glyph_offset.y;
+    glyph_offset.y = cell_size_scaled.y - glyph_offset.y;
 
     // Calculate the final position of the cell which uses our glyph size
     // and glyph offset to create the correct bounding box for the glyph.
@@ -126,14 +127,14 @@ vertex VertexOut uber_vertex(
 
   case MODE_CURSOR_RECT:
     // Same as background since we're taking up the whole cell.
-    cell_pos = cell_pos + cell_size * position;
+    cell_pos = cell_pos + cell_size_scaled * position;
 
     out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
     break;
 
   case MODE_CURSOR_RECT_HOLLOW:
     // Same as background since we're taking up the whole cell.
-    cell_pos = cell_pos + cell_size * position;
+    cell_pos = cell_pos + cell_size_scaled * position;
     out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
 
     // Top-left position of this cell is needed for the hollow rect.
@@ -142,7 +143,7 @@ vertex VertexOut uber_vertex(
 
   case MODE_CURSOR_BAR: {
     // Make the bar a smaller version of our cell
-    float2 bar_size = float2(cell_size.x * 0.2, cell_size.y);
+    float2 bar_size = float2(uniforms.cell_size.x * 0.2, uniforms.cell_size.y);
 
     // Same as background since we're taking up the whole cell.
     cell_pos = cell_pos + bar_size * position;
@@ -153,10 +154,10 @@ vertex VertexOut uber_vertex(
 
   case MODE_UNDERLINE: {
     // Underline Y value is just our thickness
-    float2 underline_size = float2(cell_size.x, uniforms.underline_thickness);
+    float2 underline_size = float2(cell_size_scaled.x, uniforms.underline_thickness);
 
     // Position the underline where we are told to
-    float2 underline_offset = float2(cell_size.x, uniforms.underline_position);
+    float2 underline_offset = float2(cell_size_scaled.x, uniforms.underline_position);
 
     // Go to the bottom of the cell, take away the size of the
     // underline, and that is our position. We also float it slightly
@@ -169,10 +170,10 @@ vertex VertexOut uber_vertex(
 
   case MODE_STRIKETHROUGH: {
     // Strikethrough Y value is just our thickness
-    float2 strikethrough_size = float2(cell_size.x, uniforms.strikethrough_thickness);
+    float2 strikethrough_size = float2(cell_size_scaled.x, uniforms.strikethrough_thickness);
 
     // Position the strikethrough where we are told to
-    float2 strikethrough_offset = float2(cell_size.x, uniforms.strikethrough_position);
+    float2 strikethrough_offset = float2(cell_size_scaled.x, uniforms.strikethrough_position);
 
     // Go to the bottom of the cell, take away the size of the
     // strikethrough, and that is our position. We also float it slightly

@@ -361,7 +361,8 @@ pub fn render(
 
         // Set the size of the drawable surface to the scaled bounds
         self.swapchain.setProperty("drawableSize", scaled);
-        log.warn("bounds={} screen={} scaled={}", .{ bounds, screen_size, scaled });
+        _ = screen_size;
+        //log.warn("bounds={} screen={} scaled={}", .{ bounds, screen_size, scaled });
 
         // Setup our uniforms
         const old = self.uniforms;
