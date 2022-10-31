@@ -13,11 +13,13 @@ const builtin = @import("builtin");
 const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
+const imgui = @import("imgui");
 const Atlas = @import("../Atlas.zig");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
+const DevMode = @import("../DevMode.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Terminal = terminal.Terminal;
@@ -240,6 +242,11 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
 }
 
 pub fn deinit(self: *Metal) void {
+    if (DevMode.enabled) {
+        imgui.ImplMetal.shutdown();
+        imgui.ImplGlfw.shutdown();
+    }
+
     self.cells.deinit(self.alloc);
 
     self.font_shaper.deinit();
@@ -256,6 +263,15 @@ pub fn finalizeInit(self: *const Metal, window: glfw.Window) !void {
     const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
     contentView.setProperty("layer", self.swapchain.value);
     contentView.setProperty("wantsLayer", true);
+
+    if (DevMode.enabled) {
+        // Initialize for our window
+        assert(imgui.ImplGlfw.initForOther(
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, window.handle),
+            true,
+        ));
+        assert(imgui.ImplMetal.init(self.device.value));
+    }
 }
 
 /// Callback called by renderer.Thread when it begins.
@@ -285,6 +301,7 @@ pub fn render(
     const Critical = struct {
         bg: terminal.color.RGB,
         screen_size: ?renderer.ScreenSize,
+        devmode: bool,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -323,6 +340,7 @@ pub fn render(
         break :critical .{
             .bg = self.background,
             .screen_size = state.resize_screen,
+            .devmode = if (state.devmode) |dm| dm.visible else false,
         };
     };
 
@@ -470,6 +488,27 @@ pub fn render(
                 @as(c_ulong, self.cells.items.len),
             },
         );
+
+        // Build our devmode draw data. This sucks because it requires we
+        // lock our state mutex but the metal imgui implementation requires
+        // access to all this stuff.
+        if (critical.devmode) {
+            state.mutex.lock();
+            defer state.mutex.unlock();
+
+            if (state.devmode) |dm| {
+                if (dm.visible) {
+                    imgui.ImplMetal.newFrame(desc.value);
+                    imgui.ImplGlfw.newFrame();
+                    try dm.update();
+                    imgui.ImplMetal.renderDrawData(
+                        try dm.render(),
+                        buffer.value,
+                        encoder.value,
+                    );
+                }
+            }
+        }
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{surface.value});

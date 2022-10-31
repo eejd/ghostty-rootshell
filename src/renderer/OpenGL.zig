@@ -483,6 +483,8 @@ pub fn render(
         const devmode_data = devmode_data: {
             if (state.devmode) |dm| {
                 if (dm.visible) {
+                    imgui.ImplOpenGL3.newFrame();
+                    imgui.ImplGlfw.newFrame();
                     try dm.update();
                     break :devmode_data try dm.render();
                 }

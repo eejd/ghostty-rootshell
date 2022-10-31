@@ -101,11 +101,17 @@ pub fn buildImgui(
     lib.addCSourceFiles(srcs, flags.items);
     if (opt.backends) |backends| {
         for (backends) |backend| {
+            const ext = if (std.mem.eql(u8, "metal", backend)) ext: {
+                // Metal requires some extra frameworks
+                step.linkFramework("QuartzCore");
+                break :ext "mm";
+            } else "cpp";
+
             var buf: [4096]u8 = undefined;
             const path = try std.fmt.bufPrint(
                 &buf,
-                "{s}imgui/backends/imgui_impl_{s}.cpp",
-                .{ root, backend },
+                "{s}imgui/backends/imgui_impl_{s}.{s}",
+                .{ root, backend, ext },
             );
 
             lib.addCSourceFile(path, flags.items);

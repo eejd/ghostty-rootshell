@@ -7,6 +7,7 @@ pub usingnamespace @import("io.zig");
 pub usingnamespace @import("style.zig");
 
 pub usingnamespace @import("impl_glfw.zig");
+pub usingnamespace @import("impl_metal.zig");
 pub usingnamespace @import("impl_opengl3.zig");
 
 test {
