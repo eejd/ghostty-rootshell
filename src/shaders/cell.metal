@@ -49,6 +49,7 @@ struct VertexIn {
 
 struct VertexOut {
   float4 position [[ position ]];
+  float2 cell_size;
   uint8_t mode;
   float4 color;
   float2 tex_coord;
@@ -82,6 +83,7 @@ vertex VertexOut uber_vertex(
 
   VertexOut out;
   out.mode = input.mode;
+  out.cell_size = uniforms.cell_size;
   out.color = float4(input.color) / 255.0f;
   switch (input.mode) {
   case MODE_BG:
@@ -133,12 +135,12 @@ vertex VertexOut uber_vertex(
     break;
 
   case MODE_CURSOR_RECT_HOLLOW:
+    // Top-left position of this cell is needed for the hollow rect.
+    out.tex_coord = cell_pos;
+
     // Same as background since we're taking up the whole cell.
     cell_pos = cell_pos + cell_size_scaled * position;
     out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
-
-    // Top-left position of this cell is needed for the hollow rect.
-    out.tex_coord = cell_pos;
     break;
 
   case MODE_CURSOR_BAR: {
@@ -219,39 +221,40 @@ fragment float4 uber_fragment(
   case MODE_CURSOR_RECT:
     return in.color;
 
-  case MODE_CURSOR_RECT_HOLLOW:
+  case MODE_CURSOR_RECT_HOLLOW: {
     // Okay so yeah this is probably horrendously slow and a shader
     // should never do this, but we only ever render a cursor for ONE
     // rectangle so we take the slowdown for that one.
 
-    // // We subtracted one from cell size because our coordinates start at 0.
-    // // So a width of 50 means max pixel of 49.
-    // vec2 cell_size_coords = cell_size - 1;
-    //
-    // // Apply padding
-    // vec2 padding = vec2(1.,1.);
-    // cell_size_coords = cell_size_coords - (padding * 2);
-    // vec2 screen_cell_pos_padded = screen_cell_pos + padding;
-    //
-    // // Convert our frag coord to offset of this cell. We have to subtract
-    // // 0.5 because the frag coord is in center pixels.
-    // vec2 cell_frag_coord = gl_FragCoord.xy - screen_cell_pos_padded - 0.5;
-    //
-    // // If the frag coords are in the bounds, then we color it.
-    // const float eps = 0.1;
-    // if (cell_frag_coord.x >= 0 && cell_frag_coord.y >= 0 &&
-    //     cell_frag_coord.x <= cell_size_coords.x &&
-    //     cell_frag_coord.y <= cell_size_coords.y) {
-    //   if (abs(cell_frag_coord.x) < eps ||
-    //         abs(cell_frag_coord.x - cell_size_coords.x) < eps ||
-    //         abs(cell_frag_coord.y) < eps ||
-    //         abs(cell_frag_coord.y - cell_size_coords.y) < eps) {
-    //     out_FragColor = color;
-    //   }
-    // }
+    // We subtracted one from cell size because our coordinates start at 0.
+    // So a width of 50 means max pixel of 49.
+    float2 cell_size_coords = in.cell_size - 1;
+
+    // Apply padding
+    float2 padding = float2(1.0f, 1.0f);
+    cell_size_coords = cell_size_coords - (padding * 2);
+    float2 screen_cell_pos_padded = in.tex_coord + padding;
+
+    // Convert our frag coord to offset of this cell. We have to subtract
+    // 0.5 because the frag coord is in center pixels.
+    float2 cell_frag_coord = in.position.xy - screen_cell_pos_padded - 0.5;
+
+    // If the frag coords are in the bounds, then we color it.
+    const float eps = 0.1;
+    if (cell_frag_coord.x >= 0 && cell_frag_coord.y >= 0 &&
+        cell_frag_coord.x <= cell_size_coords.x &&
+        cell_frag_coord.y <= cell_size_coords.y) {
+      if (abs(cell_frag_coord.x) < eps ||
+            abs(cell_frag_coord.x - cell_size_coords.x) < eps ||
+            abs(cell_frag_coord.y) < eps ||
+            abs(cell_frag_coord.y - cell_size_coords.y) < eps) {
+        return in.color;
+      }
+    }
 
     // Default to no color.
     return float4(0.0f);
+  }
 
   case MODE_CURSOR_BAR:
     return in.color;
