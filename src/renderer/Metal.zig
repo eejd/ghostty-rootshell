@@ -810,7 +810,16 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
 
         // Value is MTLPixelFormatBGRA8Unorm
         attachment.setProperty("pixelFormat", @as(c_ulong, 80));
+
+        // Blending. This is required so that our text we render on top
+        // of our drawable properly blends into the bg.
         attachment.setProperty("blendingEnabled", true);
+        attachment.setProperty("rgbBlendOperation", @enumToInt(MTLBlendOperation.add));
+        attachment.setProperty("alphaBlendOperation", @enumToInt(MTLBlendOperation.add));
+        attachment.setProperty("sourceRGBBlendFactor", @enumToInt(MTLBlendFactor.source_alpha));
+        attachment.setProperty("sourceAlphaBlendFactor", @enumToInt(MTLBlendFactor.source_alpha));
+        attachment.setProperty("destinationRGBBlendFactor", @enumToInt(MTLBlendFactor.one_minus_source_alpha));
+        attachment.setProperty("destinationAlphaBlendFactor", @enumToInt(MTLBlendFactor.one_minus_source_alpha));
     }
 
     // Make our state
@@ -937,6 +946,38 @@ const MTLPixelFormat = enum(c_ulong) {
 /// https://developer.apple.com/documentation/metal/mtlpurgeablestate?language=objc
 const MTLPurgeableState = enum(c_ulong) {
     empty = 4,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlblendfactor?language=objc
+const MTLBlendFactor = enum(c_ulong) {
+    zero = 0,
+    one = 1,
+    source_color = 2,
+    one_minus_source_color = 3,
+    source_alpha = 4,
+    one_minus_source_alpha = 5,
+    dest_color = 6,
+    one_minus_dest_color = 7,
+    dest_alpha = 8,
+    one_minus_dest_alpha = 9,
+    source_alpha_saturated = 10,
+    blend_color = 11,
+    one_minus_blend_color = 12,
+    blend_alpha = 13,
+    one_minus_blend_alpha = 14,
+    source_1_color = 15,
+    one_minus_source_1_color = 16,
+    source_1_alpha = 17,
+    one_minus_source_1_alpha = 18,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlblendoperation?language=objc
+const MTLBlendOperation = enum(c_ulong) {
+    add = 0,
+    subtract = 1,
+    reverse_subtract = 2,
+    min = 3,
+    max = 4,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc
