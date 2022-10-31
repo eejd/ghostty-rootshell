@@ -1036,7 +1036,7 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
             return;
         };
 
-        win.mouseReport(if (yoff < 0) .four else .five, .press, win.mouse.mods, pos) catch |err| {
+        win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
             log.err("error reporting mouse event: {}", .{err});
             return;
         };
