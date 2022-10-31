@@ -6,6 +6,7 @@ const fontconfig = @import("fontconfig");
 const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
 const tracy = @import("tracy");
+const renderer = @import("renderer.zig");
 
 const App = @import("App.zig");
 const cli_args = @import("cli_args.zig");
@@ -19,6 +20,7 @@ pub fn main() !void {
     if (options.fontconfig) {
         log.info("dependency fontconfig={d}", .{fontconfig.version()});
     }
+    log.info("renderer={}", .{renderer.Renderer});
 
     const GPA = std.heap.GeneralPurposeAllocator(.{});
     var gpa: ?GPA = gpa: {
