@@ -22,6 +22,7 @@ pub fn link(
     defer flags.deinit();
 
     const lib = b.addStaticLibrary("macos", null);
+    step.addCSourceFile(comptime thisDir() ++ "/os/log.c", flags.items);
     step.addCSourceFile(comptime thisDir() ++ "/text/ext.c", flags.items);
     step.linkFramework("CoreFoundation");
     step.linkFramework("CoreText");
