@@ -36,7 +36,7 @@ const log = std.log.scoped(.window);
 const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
 // The renderer implementation to use.
-const Renderer = renderer.OpenGL;
+const Renderer = renderer.Renderer;
 
 /// Allocator
 alloc: Allocator,

@@ -13,6 +13,10 @@ pub const ImplGlfw = struct {
         return ImGui_ImplGlfw_InitForOpenGL(win, install_callbacks);
     }
 
+    pub fn initForOther(win: *GLFWWindow, install_callbacks: bool) bool {
+        return ImGui_ImplGlfw_InitForOther(win, install_callbacks);
+    }
+
     pub fn shutdown() void {
         return ImGui_ImplGlfw_Shutdown();
     }
@@ -23,6 +27,7 @@ pub const ImplGlfw = struct {
 
     extern "c" fn glfwGetError(?*const anyopaque) c_int;
     extern "c" fn ImGui_ImplGlfw_InitForOpenGL(*GLFWWindow, bool) bool;
+    extern "c" fn ImGui_ImplGlfw_InitForOther(*GLFWWindow, bool) bool;
     extern "c" fn ImGui_ImplGlfw_Shutdown() void;
     extern "c" fn ImGui_ImplGlfw_NewFrame() void;
 };

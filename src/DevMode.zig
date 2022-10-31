@@ -9,6 +9,7 @@ const assert = std.debug.assert;
 
 const Atlas = @import("Atlas.zig");
 const Window = @import("Window.zig");
+const renderer = @import("renderer.zig");
 
 /// If this is false, the rest of the terminal will be compiled without
 /// dev mode support at all.
@@ -27,9 +28,10 @@ window: ?*Window = null,
 /// Update the state associated with the dev mode. This should generally
 /// only be called paired with a render since it otherwise wastes CPU
 /// cycles.
+///
+/// Note: renderers should call their implementation "newFrame" functions
+/// prior to this.
 pub fn update(self: *const DevMode) !void {
-    imgui.ImplOpenGL3.newFrame();
-    imgui.ImplGlfw.newFrame();
     imgui.newFrame();
 
     if (imgui.begin("dev mode", null, .{})) {
@@ -42,16 +44,27 @@ pub fn update(self: *const DevMode) !void {
                 helpMarker("The number of glyphs loaded and rendered into a " ++
                     "font atlas currently.");
 
+                const Renderer = @TypeOf(window.renderer);
                 if (imgui.treeNode("Atlas: Greyscale", .{ .default_open = true })) {
                     defer imgui.treePop();
                     const atlas = &window.font_group.atlas_greyscale;
-                    try self.atlasInfo(atlas, @intCast(usize, window.renderer.texture.id));
+                    const tex = switch (Renderer) {
+                        renderer.OpenGL => @intCast(usize, window.renderer.texture.id),
+                        renderer.Metal => @ptrToInt(window.renderer.texture_greyscale.value),
+                        else => @compileError("renderer unsupported, add it!"),
+                    };
+                    try self.atlasInfo(atlas, tex);
                 }
 
                 if (imgui.treeNode("Atlas: Color (Emoji)", .{ .default_open = true })) {
                     defer imgui.treePop();
                     const atlas = &window.font_group.atlas_color;
-                    try self.atlasInfo(atlas, @intCast(usize, window.renderer.texture_color.id));
+                    const tex = switch (Renderer) {
+                        renderer.OpenGL => @intCast(usize, window.renderer.texture_color.id),
+                        renderer.Metal => @ptrToInt(window.renderer.texture_color.value),
+                        else => @compileError("renderer unsupported, add it!"),
+                    };
+                    try self.atlasInfo(atlas, tex);
                 }
             }
         }

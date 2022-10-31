@@ -54,7 +54,7 @@ pub const Object = struct {
             break :getter objc.sel(val);
         } else objc.sel(n);
 
-        self.msgSend(T, getter, .{});
+        return self.msgSend(T, getter, .{});
     }
 };
 

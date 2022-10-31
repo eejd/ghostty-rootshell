@@ -66,32 +66,13 @@ font_shaper: font.Shaper,
 /// Whether the cursor is visible or not. This is used to control cursor
 /// blinking.
 cursor_visible: bool,
-cursor_style: CursorStyle,
+cursor_style: renderer.CursorStyle,
 
 /// Default foreground color
 foreground: terminal.color.RGB,
 
 /// Default background color
 background: terminal.color.RGB,
-
-/// Available cursor styles for drawing. The values represents the mode value
-/// in the shader.
-pub const CursorStyle = enum(u8) {
-    box = 3,
-    box_hollow = 4,
-    bar = 5,
-
-    /// Create a cursor style from the terminal style request.
-    pub fn fromTerminal(style: terminal.CursorStyle) ?CursorStyle {
-        return switch (style) {
-            .blinking_block, .steady_block => .box,
-            .blinking_bar, .steady_bar => .bar,
-            .blinking_underline, .steady_underline => null, // TODO
-            .default => .box,
-            else => null,
-        };
-    }
-};
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
@@ -144,6 +125,14 @@ const GPUCellMode = enum(u8) {
 
     // Non-exhaustive because masks change it
     _,
+
+    pub fn fromCursor(cursor: renderer.CursorStyle) GPUCellMode {
+        return switch (cursor) {
+            .box => .cursor_rect,
+            .box_hollow => .cursor_rect_hollow,
+            .bar => .cursor_bar,
+        };
+    }
 
     /// Apply a mask to the mode.
     pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
@@ -468,7 +457,7 @@ pub fn render(
         // Setup our cursor state
         if (state.focused) {
             self.cursor_visible = state.cursor.visible and !state.cursor.blink;
-            self.cursor_style = CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+            self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
         } else {
             self.cursor_visible = true;
             self.cursor_style = .box_hollow;
@@ -494,6 +483,8 @@ pub fn render(
         const devmode_data = devmode_data: {
             if (state.devmode) |dm| {
                 if (dm.visible) {
+                    imgui.ImplOpenGL3.newFrame();
+                    imgui.ImplGlfw.newFrame();
                     try dm.update();
                     break :devmode_data try dm.render();
                 }
@@ -701,13 +692,8 @@ fn addCursor(self: *OpenGL, term: *Terminal) void {
             term.screen.cursor.x,
         );
 
-        var mode: GPUCellMode = @intToEnum(
-            GPUCellMode,
-            @enumToInt(self.cursor_style),
-        );
-
         self.cells.appendAssumeCapacity(.{
-            .mode = mode,
+            .mode = GPUCellMode.fromCursor(self.cursor_style),
             .grid_col = @intCast(u16, term.screen.cursor.x),
             .grid_row = @intCast(u16, term.screen.cursor.y),
             .grid_width = if (cell.attrs.wide) 2 else 1,
