@@ -4,6 +4,7 @@ using namespace metal;
 enum Mode : uint8_t {
     MODE_BG = 1u,
     MODE_FG = 2u,
+    MODE_FG_COLOR = 7u,
     MODE_CURSOR_RECT = 3u,
     MODE_CURSOR_RECT_HOLLOW = 4u,
     MODE_CURSOR_BAR = 5u,
@@ -92,11 +93,21 @@ vertex VertexOut uber_vertex(
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
     break;
 
-  case MODE_FG: {
+  case MODE_FG:
+  case MODE_FG_COLOR: {
     float2 glyph_size = float2(input.glyph_size) * uniforms.px_scale;
     float2 glyph_offset = float2(input.glyph_offset) * uniforms.px_scale;
 
-    // TODO: downsampling
+    // If the glyph is larger than our cell, we need to downsample it.
+    // The "+ 3" here is to give some wiggle room for fonts that are
+    // BARELY over it.
+    float2 glyph_size_downsampled = glyph_size;
+    if (glyph_size_downsampled.y > cell_size.y + 2) {
+      // Magic 0.9 and 1.1 are padding to make emoji look better
+      glyph_size_downsampled.y = cell_size.y * 0.9;
+      glyph_size_downsampled.x = glyph_size.x * (glyph_size_downsampled.y / glyph_size.y);
+      glyph_offset.y = glyph_offset.y * 1.1 * (glyph_size_downsampled.y / glyph_size.y);
+    }
 
     // The glyph_offset.y is the y bearing, a y value that when added
     // to the baseline is the offset (+y is up). Our grid goes down.
@@ -105,7 +116,7 @@ vertex VertexOut uber_vertex(
 
     // Calculate the final position of the cell which uses our glyph size
     // and glyph offset to create the correct bounding box for the glyph.
-    cell_pos = cell_pos + glyph_size * position + glyph_offset;
+    cell_pos = cell_pos + glyph_size_downsampled * position + glyph_offset;
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
 
     // Calculate the texture coordinate in pixels. This is NOT normalized
@@ -181,7 +192,8 @@ vertex VertexOut uber_vertex(
 
 fragment float4 uber_fragment(
   VertexOut in [[ stage_in ]],
-  texture2d<float> textureGreyscale [[ texture(0) ]]
+  texture2d<float> textureGreyscale [[ texture(0) ]],
+  texture2d<float> textureColor [[ texture(1) ]]
 ) {
   constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
 
@@ -196,6 +208,13 @@ fragment float4 uber_fragment(
 
     float a = textureGreyscale.sample(textureSampler, coord).r;
     return float4(in.color.rgb, in.color.a * a);
+  }
+
+  case MODE_FG_COLOR: {
+    // Normalize the texture coordinates to [0,1]
+    float2 size = float2(textureColor.get_width(), textureColor.get_height());
+    float2 coord = in.tex_coord / size;
+    return textureColor.sample(textureSampler, coord);
   }
 
   case MODE_CURSOR_RECT:

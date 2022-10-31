@@ -65,6 +65,7 @@ buf_cells: objc.Object, // MTLBuffer
 buf_instance: objc.Object, // MTLBuffer
 pipeline: objc.Object, // MTLRenderPipelineState
 texture_greyscale: objc.Object, // MTLTexture
+texture_color: objc.Object, // MTLTexture
 
 const GPUCell = extern struct {
     mode: GPUCellMode,
@@ -200,6 +201,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     const library = try initLibrary(device, @embedFile("../shaders/cell.metal"));
     const pipeline_state = try initPipelineState(device, library);
     const texture_greyscale = try initAtlasTexture(device, &font_group.atlas_greyscale);
+    const texture_color = try initAtlasTexture(device, &font_group.atlas_color);
 
     return Metal{
         .alloc = alloc,
@@ -233,6 +235,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .buf_instance = buf_instance,
         .pipeline = pipeline_state,
         .texture_greyscale = texture_greyscale,
+        .texture_color = texture_color,
     };
 }
 
@@ -368,6 +371,10 @@ pub fn render(
         try syncAtlasTexture(&self.font_group.atlas_greyscale, &self.texture_greyscale);
         self.font_group.atlas_greyscale.modified = false;
     }
+    if (self.font_group.atlas_color.modified) {
+        try syncAtlasTexture(&self.font_group.atlas_color, &self.texture_color);
+        self.font_group.atlas_color.modified = false;
+    }
 
     // MTLRenderPassDescriptor
     const desc = desc: {
@@ -440,6 +447,14 @@ pub fn render(
             .{
                 self.texture_greyscale.value,
                 @as(c_ulong, 0),
+            },
+        );
+        encoder.msgSend(
+            void,
+            objc.sel("setFragmentTexture:atIndex:"),
+            .{
+                self.texture_color.value,
+                @as(c_ulong, 1),
             },
         );
 
@@ -621,8 +636,6 @@ pub fn updateCell(
     // If the cell has a character, draw it
     if (cell.char > 0) {
         // Render
-        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
-        _ = face;
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             shaper_run.font_index,
@@ -630,16 +643,18 @@ pub fn updateCell(
             @floatToInt(u16, @ceil(self.cell_size.height)),
         );
 
+        // If we're rendering a color font, we use the color atlas
+        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
+        const mode: GPUCellMode = if (face.presentation == .emoji) .fg_color else .fg;
+
         self.cells.appendAssumeCapacity(.{
-            .mode = .fg,
+            .mode = mode,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
-
-            // .mode = mode,
         });
     }
 
@@ -946,6 +961,7 @@ fn initAtlasTexture(device: objc.Object, atlas: *const Atlas) !objc.Object {
     // Determine our pixel format
     const pixel_format: MTLPixelFormat = switch (atlas.format) {
         .greyscale => .r8unorm,
+        .rgba => .bgra8unorm,
         else => @panic("unsupported atlas format for Metal texture"),
     };
 
