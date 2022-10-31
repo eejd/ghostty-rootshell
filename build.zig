@@ -89,6 +89,14 @@ pub fn build(b: *std.build.Builder) !void {
         try addDeps(b, exe, static);
     }
 
+    // App (Mac)
+    if (target.isDarwin()) {
+        const bin_path = try std.fmt.allocPrint(b.allocator, "{s}/bin/ghostty", .{b.install_path});
+        b.installFile(bin_path, "Ghostty.app/Contents/MacOS/ghostty");
+        b.installFile("dist/macos/Info.plist", "Ghostty.app/Contents/Info.plist");
+        b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
+    }
+
     // term.wasm
     {
         const wasm = b.addSharedLibrary(
