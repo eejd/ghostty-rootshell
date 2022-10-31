@@ -1,7 +1,7 @@
 <!-- LOGO -->
 <h1>
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/1299/161641319-7778cc19-a69a-4041-8cdf-8aad9ce1ffe3.png" alt="Logo" width="70">
+  <img src="https://user-images.githubusercontent.com/1299/199110421-9ff5fc30-a244-441e-9882-26070662adf9.png" alt="Logo" width="100">
   <br>ghostty
 </h1>
   <p align="center">
