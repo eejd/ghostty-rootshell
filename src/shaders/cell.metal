@@ -4,12 +4,21 @@ using namespace metal;
 enum Mode : uint8_t {
     MODE_BG = 1u,
     MODE_FG = 2u,
+    MODE_CURSOR_RECT = 3u,
+    MODE_CURSOR_RECT_HOLLOW = 4u,
+    MODE_CURSOR_BAR = 5u,
+    MODE_UNDERLINE = 6u,
+    MODE_STRIKETHROUGH = 8u,
 };
 
 struct Uniforms {
   float4x4 projection_matrix;
   float2 px_scale;
   float2 cell_size;
+  float underline_position;
+  float underline_thickness;
+  float strikethrough_position;
+  float strikethrough_thickness;
 };
 
 struct VertexIn {
@@ -18,6 +27,9 @@ struct VertexIn {
 
   // The grid coordinates (x, y) where x < columns and y < rows
   float2 grid_pos [[ attribute(1) ]];
+
+  // The width of the cell in cells (i.e. 2 for double-wide).
+  uint8_t cell_width [[ attribute(6) ]];
 
   // The color. For BG modes, this is the bg color, for FG modes this is
   // the text color. For styles, this is the color of the style.
@@ -47,8 +59,8 @@ vertex VertexOut uber_vertex(
   VertexIn input [[ stage_in ]],
   constant Uniforms &uniforms [[ buffer(1) ]]
 ) {
-  // TODO: scale with cell width
   float2 cell_size = uniforms.cell_size * uniforms.px_scale;
+  cell_size.x = cell_size.x * input.cell_width;
 
   // Convert the grid x,y into world space x, y by accounting for cell size
   float2 cell_pos = cell_size * input.grid_pos;
@@ -80,7 +92,7 @@ vertex VertexOut uber_vertex(
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
     break;
 
-  case MODE_FG:
+  case MODE_FG: {
     float2 glyph_size = float2(input.glyph_size) * uniforms.px_scale;
     float2 glyph_offset = float2(input.glyph_offset) * uniforms.px_scale;
 
@@ -103,6 +115,67 @@ vertex VertexOut uber_vertex(
     break;
   }
 
+  case MODE_CURSOR_RECT:
+    // Same as background since we're taking up the whole cell.
+    cell_pos = cell_pos + cell_size * position;
+
+    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
+    break;
+
+  case MODE_CURSOR_RECT_HOLLOW:
+    // Same as background since we're taking up the whole cell.
+    cell_pos = cell_pos + cell_size * position;
+    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
+
+    // Top-left position of this cell is needed for the hollow rect.
+    out.tex_coord = cell_pos;
+    break;
+
+  case MODE_CURSOR_BAR: {
+    // Make the bar a smaller version of our cell
+    float2 bar_size = float2(cell_size.x * 0.2, cell_size.y);
+
+    // Same as background since we're taking up the whole cell.
+    cell_pos = cell_pos + bar_size * position;
+
+    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
+    break;
+  }
+
+  case MODE_UNDERLINE: {
+    // Underline Y value is just our thickness
+    float2 underline_size = float2(cell_size.x, uniforms.underline_thickness);
+
+    // Position the underline where we are told to
+    float2 underline_offset = float2(cell_size.x, uniforms.underline_position * uniforms.px_scale.y);
+
+    // Go to the bottom of the cell, take away the size of the
+    // underline, and that is our position. We also float it slightly
+    // above the bottom.
+    cell_pos = cell_pos + underline_offset - (underline_size * position);
+
+    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
+    break;
+  }
+
+  case MODE_STRIKETHROUGH: {
+    // Strikethrough Y value is just our thickness
+    float2 strikethrough_size = float2(cell_size.x, uniforms.strikethrough_thickness);
+
+    // Position the strikethrough where we are told to
+    float2 strikethrough_offset = float2(cell_size.x, uniforms.strikethrough_position * uniforms.px_scale.y);
+
+    // Go to the bottom of the cell, take away the size of the
+    // strikethrough, and that is our position. We also float it slightly
+    // above the bottom.
+    cell_pos = cell_pos + strikethrough_offset - (strikethrough_size * position);
+
+    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
+    break;
+  }
+
+  }
+
   return out;
 }
 
@@ -116,12 +189,59 @@ fragment float4 uber_fragment(
   case MODE_BG:
     return in.color;
 
-  case MODE_FG:
+  case MODE_FG: {
     // Normalize the texture coordinates to [0,1]
     float2 size = float2(textureGreyscale.get_width(), textureGreyscale.get_height());
     float2 coord = in.tex_coord / size;
 
     float a = textureGreyscale.sample(textureSampler, coord).r;
     return float4(in.color.rgb, in.color.a * a);
+  }
+
+  case MODE_CURSOR_RECT:
+    return in.color;
+
+  case MODE_CURSOR_RECT_HOLLOW:
+    // Okay so yeah this is probably horrendously slow and a shader
+    // should never do this, but we only ever render a cursor for ONE
+    // rectangle so we take the slowdown for that one.
+
+    // // We subtracted one from cell size because our coordinates start at 0.
+    // // So a width of 50 means max pixel of 49.
+    // vec2 cell_size_coords = cell_size - 1;
+    //
+    // // Apply padding
+    // vec2 padding = vec2(1.,1.);
+    // cell_size_coords = cell_size_coords - (padding * 2);
+    // vec2 screen_cell_pos_padded = screen_cell_pos + padding;
+    //
+    // // Convert our frag coord to offset of this cell. We have to subtract
+    // // 0.5 because the frag coord is in center pixels.
+    // vec2 cell_frag_coord = gl_FragCoord.xy - screen_cell_pos_padded - 0.5;
+    //
+    // // If the frag coords are in the bounds, then we color it.
+    // const float eps = 0.1;
+    // if (cell_frag_coord.x >= 0 && cell_frag_coord.y >= 0 &&
+    //     cell_frag_coord.x <= cell_size_coords.x &&
+    //     cell_frag_coord.y <= cell_size_coords.y) {
+    //   if (abs(cell_frag_coord.x) < eps ||
+    //         abs(cell_frag_coord.x - cell_size_coords.x) < eps ||
+    //         abs(cell_frag_coord.y) < eps ||
+    //         abs(cell_frag_coord.y - cell_size_coords.y) < eps) {
+    //     out_FragColor = color;
+    //   }
+    // }
+
+    // Default to no color.
+    return float4(0.0f);
+
+  case MODE_CURSOR_BAR:
+    return in.color;
+
+  case MODE_UNDERLINE:
+    return in.color;
+
+  case MODE_STRIKETHROUGH:
+    return in.color;
   }
 }

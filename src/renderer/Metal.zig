@@ -35,6 +35,11 @@ alloc: std.mem.Allocator,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
+/// Whether the cursor is visible or not. This is used to control cursor
+/// blinking.
+cursor_visible: bool,
+cursor_style: renderer.CursorStyle,
+
 /// Default foreground color
 foreground: terminal.color.RGB,
 
@@ -64,6 +69,7 @@ texture_greyscale: objc.Object, // MTLTexture
 const GPUCell = extern struct {
     mode: GPUCellMode,
     grid_pos: [2]f32,
+    cell_width: u8,
     color: [4]u8,
     glyph_pos: [2]u32 = .{ 0, 0 },
     glyph_size: [2]u32 = .{ 0, 0 },
@@ -82,6 +88,12 @@ const GPUUniforms = extern struct {
 
     /// Size of a single cell in pixels, unscaled.
     cell_size: [2]f32,
+
+    /// Metrics for underline/strikethrough
+    underline_position: f32,
+    underline_thickness: f32,
+    strikethrough_position: f32,
+    strikethrough_thickness: f32,
 };
 
 const GPUCellMode = enum(u8) {
@@ -93,6 +105,14 @@ const GPUCellMode = enum(u8) {
     cursor_bar = 5,
     underline = 6,
     strikethrough = 8,
+
+    pub fn fromCursor(cursor: renderer.CursorStyle) GPUCellMode {
+        return switch (cursor) {
+            .box => .cursor_rect,
+            .box_hollow => .cursor_rect_hollow,
+            .bar => .cursor_bar,
+        };
+    }
 };
 
 /// Returns the hints that we want for this
@@ -186,10 +206,20 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
+        .cursor_visible = true,
+        .cursor_style = .box,
 
         // Render state
         .cells = .{},
-        .uniforms = undefined,
+        .uniforms = .{
+            .projection_matrix = undefined,
+            .px_scale = undefined,
+            .cell_size = undefined,
+            .underline_position = metrics.underline_position,
+            .underline_thickness = metrics.underline_thickness,
+            .strikethrough_position = metrics.strikethrough_position,
+            .strikethrough_thickness = metrics.strikethrough_thickness,
+        },
 
         // Fonts
         .font_group = font_group,
@@ -263,6 +293,15 @@ pub fn render(
         if (state.resize_screen) |size| try self.setScreenSize(size);
         defer state.resize_screen = null;
 
+        // Setup our cursor state
+        if (state.focused) {
+            self.cursor_visible = state.cursor.visible and !state.cursor.blink;
+            self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+        } else {
+            self.cursor_visible = true;
+            self.cursor_style = .box_hollow;
+        }
+
         // Swap bg/fg if the terminal is reversed
         const bg = self.background;
         const fg = self.foreground;
@@ -301,6 +340,7 @@ pub fn render(
         const scaleY = @floatCast(f32, bounds.size.height) / @intToFloat(f32, screen_size.height);
 
         // Setup our uniforms
+        const old = self.uniforms;
         self.uniforms = .{
             .projection_matrix = math.ortho2d(
                 0,
@@ -310,6 +350,10 @@ pub fn render(
             ),
             .px_scale = .{ scaleX, scaleY },
             .cell_size = .{ self.cell_size.width, self.cell_size.height },
+            .underline_position = old.underline_position,
+            .underline_thickness = old.underline_thickness,
+            .strikethrough_position = old.strikethrough_position,
+            .strikethrough_thickness = old.strikethrough_thickness,
         };
     }
 
@@ -446,11 +490,34 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
         (term.screen.rows * term.screen.cols * 3) + 1,
     );
 
+    // This is the cell that has [mode == .fg] and is underneath our cursor.
+    // We keep track of it so that we can invert the colors so the character
+    // remains visible.
+    var cursor_cell: ?GPUCell = null;
+
     // Build each cell
     var rowIter = term.screen.rowIterator(.viewport);
     var y: usize = 0;
     while (rowIter.next()) |row| {
         defer y += 1;
+
+        // If this is the row with our cursor, then we may have to modify
+        // the cell with the cursor.
+        const start_i: usize = self.cells.items.len;
+        defer if (self.cursor_visible and
+            self.cursor_style == .box and
+            term.screen.viewportIsBottom() and
+            y == term.screen.cursor.y)
+        {
+            for (self.cells.items[start_i..]) |cell| {
+                if (cell.grid_pos[0] == @intToFloat(f32, term.screen.cursor.x) and
+                    cell.mode == .fg)
+                {
+                    cursor_cell = cell;
+                    break;
+                }
+            }
+        };
 
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(self.font_group, row);
@@ -469,6 +536,15 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
 
         // Set row is not dirty anymore
         row.setDirty(false);
+    }
+
+    // Add the cursor at the end so that it overlays everything. If we have
+    // a cursor cell then we invert the colors on that and add it in so
+    // that we can always see it.
+    self.addCursor(term);
+    if (cursor_cell) |*cell| {
+        cell.color = .{ 0, 0, 0, 255 };
+        self.cells.appendAssumeCapacity(cell.*);
     }
 }
 
@@ -537,19 +613,8 @@ pub fn updateCell(
         self.cells.appendAssumeCapacity(.{
             .mode = .bg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .cell_width = cell.widthLegacy(),
             .color = .{ rgb.r, rgb.g, rgb.b, alpha },
-
-            // .grid_col = @intCast(u16, x),
-            // .grid_row = @intCast(u16, y),
-            // .grid_width = cell.widthLegacy(),
-            // .fg_r = 0,
-            // .fg_g = 0,
-            // .fg_b = 0,
-            // .fg_a = 0,
-            // .bg_r = rgb.r,
-            // .bg_g = rgb.g,
-            // .bg_b = rgb.b,
-            // .bg_a = alpha,
         });
     }
 
@@ -568,25 +633,56 @@ pub fn updateCell(
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
 
             // .mode = mode,
-            // .grid_width = cell.widthLegacy(),
-            // .fg_r = colors.fg.r,
-            // .fg_g = colors.fg.g,
-            // .fg_b = colors.fg.b,
-            // .fg_a = alpha,
-            // .bg_r = 0,
-            // .bg_g = 0,
-            // .bg_b = 0,
-            // .bg_a = 0,
+        });
+    }
+
+    if (cell.attrs.underline) {
+        self.cells.appendAssumeCapacity(.{
+            .mode = .underline,
+            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .cell_width = cell.widthLegacy(),
+            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+        });
+    }
+
+    if (cell.attrs.strikethrough) {
+        self.cells.appendAssumeCapacity(.{
+            .mode = .strikethrough,
+            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .cell_width = cell.widthLegacy(),
+            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
         });
     }
 
     return true;
+}
+
+fn addCursor(self: *Metal, term: *Terminal) void {
+    // Add the cursor
+    if (self.cursor_visible and term.screen.viewportIsBottom()) {
+        const cell = term.screen.getCell(
+            .active,
+            term.screen.cursor.y,
+            term.screen.cursor.x,
+        );
+
+        self.cells.appendAssumeCapacity(.{
+            .mode = GPUCellMode.fromCursor(self.cursor_style),
+            .grid_pos = .{
+                @intToFloat(f32, term.screen.cursor.x),
+                @intToFloat(f32, term.screen.cursor.y),
+            },
+            .cell_width = if (cell.attrs.wide) 2 else 1,
+            .color = .{ 0xFF, 0xFF, 0xFF, 0xFF },
+        });
+    }
 }
 
 /// Sync the vertex buffer inputs to the GPU. This will attempt to reuse
@@ -766,6 +862,17 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
 
             attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar4));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "color")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 6)},
+            );
+
+            attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "cell_width")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 
