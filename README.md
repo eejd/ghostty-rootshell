@@ -115,3 +115,11 @@ than 5 MB on all platforms. The debug version is around 70MB.
 When targeting macOS, a macOS application bundle will be created at
 `zig-out/Ghostty.app`. This can be copied as-is and used like a normal app.
 This app will be not be signed or notarized.
+
+When running the app, logs are available via macOS unified logging such
+as `Console.app`. The easiest way I've found is to just use the CLI:
+
+```sh
+$ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
+...
+```

@@ -5,6 +5,7 @@ const glfw = @import("glfw");
 const fontconfig = @import("fontconfig");
 const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
+const macos = @import("macos");
 const tracy = @import("tracy");
 const renderer = @import("renderer.zig");
 
@@ -12,15 +13,13 @@ const App = @import("App.zig");
 const cli_args = @import("cli_args.zig");
 const Config = @import("config.zig").Config;
 
-const log = std.log.scoped(.main);
-
 pub fn main() !void {
     // Output some debug information right away
-    log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
+    std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
     if (options.fontconfig) {
-        log.info("dependency fontconfig={d}", .{fontconfig.version()});
+        std.log.info("dependency fontconfig={d}", .{fontconfig.version()});
     }
-    log.info("renderer={}", .{renderer.Renderer});
+    std.log.info("renderer={}", .{renderer.Renderer});
 
     const GPA = std.heap.GeneralPurposeAllocator(.{});
     var gpa: ?GPA = gpa: {
@@ -92,7 +91,7 @@ pub fn main() !void {
                 return error.ConfigFileInConfigFile;
         }
     }
-    log.info("config={}", .{config});
+    std.log.info("config={}", .{config});
 
     // We want to log all our errors
     glfw.setErrorCallback(glfwErrorCallback);
@@ -112,10 +111,54 @@ pub fn tracy_enabled() bool {
     return options.tracy_enabled;
 }
 
-//pub const log_level: std.log.Level = .debug;
+// Our log level is always at least info in every build mode.
+pub const log_level: std.log.Level = switch (builtin.mode) {
+    .Debug => .debug,
+    else => .info,
+};
+
+// The function std.log will call.
+pub fn log(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    // Stuff we can do before the lock
+    const level_txt = comptime level.asText();
+    const prefix = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+
+    // Lock so we are thread-safe
+    std.debug.getStderrMutex().lock();
+    defer std.debug.getStderrMutex().unlock();
+
+    // On Mac, we use unified logging. To view this:
+    //
+    //   sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
+    //
+    if (builtin.os.tag == .macos) {
+        // Convert our levels to Mac levels
+        const mac_level: macos.os.LogType = switch (level) {
+            .debug => .debug,
+            .info => .info,
+            .warn => .err,
+            .err => .fault,
+        };
+
+        // Initialize a logger. This is slow to do on every operation
+        // but we shouldn't be logging too much.
+        const logger = macos.os.Log.create("com.mitchellh.ghostty", @tagName(scope));
+        defer logger.release();
+        logger.log(std.heap.c_allocator, mac_level, format, args);
+    }
+
+    // Always try default to send to stderr
+    const stderr = std.io.getStdErr().writer();
+    nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
+}
 
 fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
-    log.warn("glfw error={} message={s}", .{ code, desc });
+    std.log.warn("glfw error={} message={s}", .{ code, desc });
 }
 
 test {

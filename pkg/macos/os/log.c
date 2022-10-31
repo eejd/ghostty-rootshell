@@ -6,5 +6,5 @@ void zig_os_log_with_type(
     os_log_type_t type,
     const char *message
 ) {
-    os_log_with_type(log, type, "%s", message);
+    os_log_with_type(log, type, "%{public}s", message);
 }
