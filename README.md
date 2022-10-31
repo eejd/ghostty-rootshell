@@ -93,3 +93,19 @@ Other useful commands:
     the `conformance` directory. The `name` is the name of the file. This runs
     in the current running terminal emulator so if you want to check the
     behavior of this project, you must run this command in ghostty.
+
+### Compiling a Release Build
+
+The normal build will be a _debug build_ which includes a number of
+safety features as well as debugging features that dramatically slow down
+normal operation of the terminal (by as much as 100x). If you are building
+a terminal for day to day usage, build a release version:
+
+```shell-session
+$ zig build -Drelease-fast
+...
+```
+
+You can verify you have a release version by checking the filesize of the
+built binary (`zig-out/bin/ghostty`). The release version should be less
+than 5 MB on all platforms. The debug version is around 70MB.
