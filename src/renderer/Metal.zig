@@ -393,11 +393,11 @@ pub fn render(
 
     // If our font atlas changed, sync the texture data
     if (self.font_group.atlas_greyscale.modified) {
-        try syncAtlasTexture(&self.font_group.atlas_greyscale, &self.texture_greyscale);
+        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
         self.font_group.atlas_greyscale.modified = false;
     }
     if (self.font_group.atlas_color.modified) {
-        try syncAtlasTexture(&self.font_group.atlas_color, &self.texture_color);
+        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
         self.font_group.atlas_color.modified = false;
     }
 
@@ -755,7 +755,19 @@ fn syncCells(self: *Metal) !void {
 
     // If we need more bytes than our buffer has, we need to reallocate.
     if (req_bytes > avail_bytes) {
-        @panic("TODO: reallocate buffer");
+        // Deallocate previous buffer
+        deinitMTLResource(self.buf_cells);
+
+        // Allocate a new buffer with enough to hold double what we require.
+        const size = req_bytes * 2;
+        self.buf_cells = self.device.msgSend(
+            objc.Object,
+            objc.sel("newBufferWithLength:options:"),
+            .{
+                @intCast(c_ulong, size * @sizeOf(GPUCell)),
+                MTLResourceStorageModeShared,
+            },
+        );
     }
 
     // We can fit within the vertex buffer so we can just replace bytes.
@@ -770,10 +782,14 @@ fn syncCells(self: *Metal) !void {
 /// Sync the atlas data to the given texture. This copies the bytes
 /// associated with the atlas to the given texture. If the atlas no longer
 /// fits into the texture, the texture will be resized.
-fn syncAtlasTexture(atlas: *const Atlas, texture: *objc.Object) !void {
+fn syncAtlasTexture(device: objc.Object, atlas: *const Atlas, texture: *objc.Object) !void {
     const width = texture.getProperty(c_ulong, "width");
     if (atlas.size > width) {
-        @panic("TODO: reallocate texture");
+        // Free our old texture
+        deinitMTLResource(texture.*);
+
+        // Reallocate
+        texture.* = try initAtlasTexture(device, atlas);
     }
 
     texture.msgSend(
