@@ -136,6 +136,10 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         const swapchain = CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
         swapchain.setProperty("device", device.value);
         swapchain.setProperty("opaque", true);
+
+        // disable v-sync
+        swapchain.setProperty("displaySyncEnabled", false);
+
         break :swapchain swapchain;
     };
 
