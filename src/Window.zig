@@ -303,21 +303,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
             }
         }
 
-        // If we're on Mac, then we try to use the Apple Emoji font for Emoji.
-        if (builtin.os.tag == .macos and font.Discover != void) {
-            var disco = font.Discover.init();
-            defer disco.deinit();
-            var disco_it = try disco.discover(.{
-                .family = "Apple Color Emoji",
-                .size = font_size.points,
-            });
-            defer disco_it.deinit();
-            if (try disco_it.next()) |face| {
-                log.debug("font emoji: {s}", .{try face.name()});
-                try group.addFace(alloc, .regular, face);
-            }
-        }
-
         // Our built-in font will be used as a backup
         try group.addFace(
             alloc,
@@ -343,6 +328,21 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
                 .regular,
                 font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_text_ttf, font_size)),
             );
+        }
+
+        // If we're on Mac, then we try to use the Apple Emoji font for Emoji.
+        if (builtin.os.tag == .macos and font.Discover != void) {
+            var disco = font.Discover.init();
+            defer disco.deinit();
+            var disco_it = try disco.discover(.{
+                .family = "Apple Color Emoji",
+                .size = font_size.points,
+            });
+            defer disco_it.deinit();
+            if (try disco_it.next()) |face| {
+                log.debug("font emoji: {s}", .{try face.name()});
+                try group.addFace(alloc, .regular, face);
+            }
         }
 
         break :group group;
