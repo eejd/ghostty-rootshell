@@ -14,7 +14,6 @@ enum Mode : uint8_t {
 
 struct Uniforms {
   float4x4 projection_matrix;
-  float2 px_scale;
   float2 cell_size;
   float underline_position;
   float underline_thickness;
@@ -60,7 +59,7 @@ vertex VertexOut uber_vertex(
   VertexIn input [[ stage_in ]],
   constant Uniforms &uniforms [[ buffer(1) ]]
 ) {
-  float2 cell_size = uniforms.cell_size * uniforms.px_scale;
+  float2 cell_size = uniforms.cell_size;
   cell_size.x = cell_size.x * input.cell_width;
 
   // Convert the grid x,y into world space x, y by accounting for cell size
@@ -95,8 +94,8 @@ vertex VertexOut uber_vertex(
 
   case MODE_FG:
   case MODE_FG_COLOR: {
-    float2 glyph_size = float2(input.glyph_size) * uniforms.px_scale;
-    float2 glyph_offset = float2(input.glyph_offset) * uniforms.px_scale;
+    float2 glyph_size = float2(input.glyph_size);
+    float2 glyph_offset = float2(input.glyph_offset);
 
     // If the glyph is larger than our cell, we need to downsample it.
     // The "+ 3" here is to give some wiggle room for fonts that are
@@ -121,7 +120,6 @@ vertex VertexOut uber_vertex(
 
     // Calculate the texture coordinate in pixels. This is NOT normalized
     // (between 0.0 and 1.0) and must be done in the fragment shader.
-    // TODO: do I need to px_scale?
     out.tex_coord = float2(input.glyph_pos) + float2(input.glyph_size) * position;
     break;
   }
@@ -158,7 +156,7 @@ vertex VertexOut uber_vertex(
     float2 underline_size = float2(cell_size.x, uniforms.underline_thickness);
 
     // Position the underline where we are told to
-    float2 underline_offset = float2(cell_size.x, uniforms.underline_position * uniforms.px_scale.y);
+    float2 underline_offset = float2(cell_size.x, uniforms.underline_position);
 
     // Go to the bottom of the cell, take away the size of the
     // underline, and that is our position. We also float it slightly
@@ -174,7 +172,7 @@ vertex VertexOut uber_vertex(
     float2 strikethrough_size = float2(cell_size.x, uniforms.strikethrough_thickness);
 
     // Position the strikethrough where we are told to
-    float2 strikethrough_offset = float2(cell_size.x, uniforms.strikethrough_position * uniforms.px_scale.y);
+    float2 strikethrough_offset = float2(cell_size.x, uniforms.strikethrough_position);
 
     // Go to the bottom of the cell, take away the size of the
     // strikethrough, and that is our position. We also float it slightly

@@ -2,10 +2,6 @@
 //!
 //! Open questions:
 //!
-//!   - This requires a "px_scale" uniform to account for pixel scaling
-//!     issues with Retina. I'm not 100% sure why this is necessary and why
-//!     this doesn't happen with OpenGL.
-//!
 pub const Metal = @This();
 
 const std = @import("std");
@@ -83,11 +79,6 @@ const GPUUniforms = extern struct {
     /// The projection matrix for turning world coordinates to normalized.
     /// This is calculated based on the size of the screen.
     projection_matrix: math.Mat,
-
-    /// A scale factor to apply to all pixels given as input (including
-    /// in this uniform i.e. cell_size). This is due to HiDPI screens (Retina)
-    /// mismatch with the window.
-    px_scale: [2]f32,
 
     /// Size of a single cell in pixels, unscaled.
     cell_size: [2]f32,
@@ -217,7 +208,6 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .cells = .{},
         .uniforms = .{
             .projection_matrix = undefined,
-            .px_scale = undefined,
             .cell_size = undefined,
             .underline_position = metrics.underline_position,
             .underline_thickness = metrics.underline_thickness,
@@ -263,6 +253,13 @@ pub fn finalizeInit(self: *const Metal, window: glfw.Window) !void {
     const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
     contentView.setProperty("layer", self.swapchain.value);
     contentView.setProperty("wantsLayer", true);
+
+    // Ensure that our metal layer has a content scale set to match the
+    // scale factor of the window. This avoids magnification issues leading
+    // to blurry rendering.
+    const layer = contentView.getProperty(objc.Object, "layer");
+    const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
+    layer.setProperty("contentsScale", scaleFactor);
 
     if (DevMode.enabled) {
         // Initialize for our window
@@ -352,24 +349,29 @@ pub fn render(
     if (critical.screen_size) |screen_size| {
         const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
 
-        // Set the size of the drawable surface to the bounds of our surface.
-        self.swapchain.setProperty("drawableSize", bounds.size);
+        // Scale the bounds based on the layer content scale so that we
+        // properly handle Retina.
+        const scaled: macos.graphics.Size = scaled: {
+            const scaleFactor = self.swapchain.getProperty(macos.graphics.c.CGFloat, "contentsScale");
+            break :scaled .{
+                .width = bounds.size.width * scaleFactor,
+                .height = bounds.size.height * scaleFactor,
+            };
+        };
 
-        // Our drawable surface is usually scaled so we need to figure
-        // out the scalem amount so our pixels are correct.
-        const scaleX = @floatCast(f32, bounds.size.width) / @intToFloat(f32, screen_size.width);
-        const scaleY = @floatCast(f32, bounds.size.height) / @intToFloat(f32, screen_size.height);
+        // Set the size of the drawable surface to the scaled bounds
+        self.swapchain.setProperty("drawableSize", scaled);
+        log.warn("bounds={} screen={} scaled={}", .{ bounds, screen_size, scaled });
 
         // Setup our uniforms
         const old = self.uniforms;
         self.uniforms = .{
             .projection_matrix = math.ortho2d(
                 0,
-                @floatCast(f32, bounds.size.width),
-                @floatCast(f32, bounds.size.height),
+                @floatCast(f32, scaled.width),
+                @floatCast(f32, scaled.height),
                 0,
             ),
-            .px_scale = .{ scaleX, scaleY },
             .cell_size = .{ self.cell_size.width, self.cell_size.height },
             .underline_position = old.underline_position,
             .underline_thickness = old.underline_thickness,
