@@ -57,10 +57,7 @@ stderr: ?File = null,
 /// If set, this will be executed /in the child process/ after fork but
 /// before exec. This is useful to setup some state in the child before the
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
-pre_exec: switch (builtin.zig_backend) {
-    .stage1 => ?PreExecFn,
-    else => ?*const PreExecFn,
-} = null,
+pre_exec: ?*const PreExecFn,
 
 /// User data that is sent to the callback. Set with setData and getData
 /// for a more user-friendly API.
