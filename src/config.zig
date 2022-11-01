@@ -32,7 +32,12 @@ pub const Config = struct {
     foreground: Color = .{ .r = 0xFF, .g = 0xA5, .b = 0 },
 
     /// The command to run, usually a shell. If this is not an absolute path,
-    /// it'll be looked up in the PATH.
+    /// it'll be looked up in the PATH. If this is not set, a default will
+    /// be looked up from your system. The rules for the default lookup are:
+    ///
+    ///   - SHELL environment variable
+    ///   - passwd entry (user information)
+    ///
     command: ?[]const u8 = null,
 
     /// Key bindings. The format is "trigger=action". Duplicate triggers
@@ -158,6 +163,15 @@ pub const Config = struct {
         // If we are missing either a command or home directory, we need
         // to look up defaults which is kind of expensive.
         if (self.command == null) command: {
+            const alloc = self._arena.?.allocator();
+
+            // First look up the command using the SHELL env var.
+            if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
+                log.debug("default shell source=env value={s}", .{value});
+                self.command = value;
+                break :command;
+            } else |_| {}
+
             var buf: [1024]u8 = undefined;
             var pw: c.struct_passwd = undefined;
             var pw_ptr: ?*c.struct_passwd = null;
@@ -176,11 +190,10 @@ pub const Config = struct {
 
             if (pw.pw_shell) |ptr| {
                 const source = std.mem.sliceTo(ptr, 0);
-                const alloc = self._arena.?.allocator();
                 const sh = try alloc.alloc(u8, source.len);
                 std.mem.copy(u8, sh, source);
 
-                log.debug("default shell={s}", .{sh});
+                log.debug("default shell src=passwd value={s}", .{sh});
                 self.command = sh;
             }
         }
