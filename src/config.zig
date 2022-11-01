@@ -1,7 +1,17 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const inputpkg = @import("input.zig");
+
+const log = std.log.scoped(.config);
+
+/// Used to determine the default shell and directory on Unixes.
+const c = @cImport({
+    @cInclude("sys/types.h");
+    @cInclude("unistd.h");
+    @cInclude("pwd.h");
+});
 
 /// Config is the main config struct. These fields map directly to the
 /// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
@@ -23,7 +33,7 @@ pub const Config = struct {
 
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH.
-    command: ?[]const u8,
+    command: ?[]const u8 = null,
 
     /// Key bindings. The format is "trigger=action". Duplicate triggers
     /// will overwrite previously set values.
@@ -71,7 +81,6 @@ pub const Config = struct {
         // Build up our basic config
         var result: Config = .{
             ._arena = ArenaAllocator.init(alloc_gpa),
-            .command = "sh",
         };
         errdefer result.deinit();
         const alloc = result._arena.?.allocator();
@@ -143,6 +152,36 @@ pub const Config = struct {
                 if (@field(self, field) == null) {
                     @field(self, field) = family;
                 }
+            }
+        }
+
+        // If we are missing either a command or home directory, we need
+        // to look up defaults which is kind of expensive.
+        if (self.command == null) command: {
+            var buf: [1024]u8 = undefined;
+            var pw: c.struct_passwd = undefined;
+            var pw_ptr: ?*c.struct_passwd = null;
+            const res = c.getpwuid_r(c.getuid(), &pw, &buf, buf.len, &pw_ptr);
+            if (res != 0) {
+                log.warn("error retrieving pw entry code={d}", .{res});
+                break :command;
+            }
+
+            if (pw_ptr == null) {
+                // Future: let's check if a better shell is available like zsh
+                log.warn("no pw entry to detect default shell, will default to 'sh'", .{});
+                self.command = "sh";
+                break :command;
+            }
+
+            if (pw.pw_shell) |ptr| {
+                const source = std.mem.sliceTo(ptr, 0);
+                const alloc = self._arena.?.allocator();
+                const sh = try alloc.alloc(u8, source.len);
+                std.mem.copy(u8, sh, source);
+
+                log.debug("default shell={s}", .{sh});
+                self.command = sh;
             }
         }
     }
