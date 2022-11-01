@@ -80,13 +80,13 @@ pub const Config = struct {
         try result.keybind.set.put(
             alloc,
             .{ .key = .c, .mods = .{ .super = true } },
-            .{ .copy_to_clipboard = 0 },
+            .{ .copy_to_clipboard = {} },
         );
 
         try result.keybind.set.put(
             alloc,
             .{ .key = .v, .mods = .{ .super = true } },
-            .{ .paste_from_clipboard = 0 },
+            .{ .paste_from_clipboard = {} },
         );
 
         try result.keybind.set.put(alloc, .{ .key = .up }, .{ .csi = "A" });
@@ -122,7 +122,7 @@ pub const Config = struct {
         try result.keybind.set.put(
             alloc,
             .{ .key = .down, .mods = .{ .shift = true, .super = true } },
-            .{ .toggle_dev_mode = 0 },
+            .{ .toggle_dev_mode = {} },
         );
 
         return result;

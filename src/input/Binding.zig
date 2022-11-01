@@ -95,12 +95,6 @@ pub fn parse(input: []const u8) !Binding {
                         break :action @unionInit(Action, field.name, {});
                     },
 
-                    // see note about what Void is
-                    Action.Void => {
-                        if (colonIdx != null) return Error.InvalidFormat;
-                        break :action @unionInit(Action, field.name, 0);
-                    },
-
                     []const u8 => {
                         const idx = colonIdx orelse return Error.InvalidFormat;
                         const param = actionRaw[idx + 1 ..];
@@ -120,10 +114,6 @@ pub fn parse(input: []const u8) !Binding {
 
 /// The set of actions that a keybinding can take.
 pub const Action = union(enum) {
-    // stage1 compiler bug where if this is "void" then it crashes the
-    // compiler. TODO: check this out when we upgrade to stage2.
-    const Void = u0;
-
     /// Ignore this key combination, don't send it to the child process,
     /// just black hole it.
     ignore: void,
@@ -131,18 +121,18 @@ pub const Action = union(enum) {
     /// This action is used to flag that the binding should be removed
     /// from the set. This should never exist in an active set and
     /// `set.put` has an assertion to verify this.
-    unbind: Void,
+    unbind: void,
 
     /// Send a CSI sequence. The value should be the CSI sequence
     /// without the CSI header ("ESC ]" or "\x1b]").
     csi: []const u8,
 
     /// Copy and paste.
-    copy_to_clipboard: Void,
-    paste_from_clipboard: Void,
+    copy_to_clipboard: void,
+    paste_from_clipboard: void,
 
     /// Dev mode
-    toggle_dev_mode: Void,
+    toggle_dev_mode: void,
 };
 
 /// Trigger is the associated key state that can trigger an action.
