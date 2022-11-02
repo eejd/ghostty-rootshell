@@ -174,14 +174,14 @@ pub const Config = struct {
         }
 
         // The default for the working directory depends on the system.
-        const wd_default = switch (builtin.os.tag) {
+        const wd = self.@"working-directory" orelse switch (builtin.os.tag) {
             .macos => if (c.getppid() == 1) "home" else "inherit",
             else => "inherit",
         };
 
         // If we are missing either a command or home directory, we need
         // to look up defaults which is kind of expensive.
-        const wd_home = std.mem.eql(u8, "home", self.@"working-directory" orelse wd_default);
+        const wd_home = std.mem.eql(u8, "home", wd);
         if (self.command == null or wd_home) command: {
             const alloc = self._arena.?.allocator();
 
@@ -210,6 +210,10 @@ pub const Config = struct {
                 }
             }
         }
+
+        // If we have the special value "inherit" then set it to null which
+        // does the same. In the future we should change to a tagged union.
+        if (std.mem.eql(u8, wd, "inherit")) self.@"working-directory" = null;
     }
 };
 
