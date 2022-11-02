@@ -48,6 +48,10 @@ args: []const []const u8,
 /// environment variables to set; these are /not/ merged.
 env: ?*const EnvMap = null,
 
+/// Working directory to change to in the child process. If not set, the
+/// working directory of the calling process is preserved.
+cwd: ?[]const u8 = null,
+
 /// The file handle to set for stdin/out/err. If this isn't set, we do
 /// nothing explicitly so it is up to the behavior of the operating system.
 stdin: ?File = null,
@@ -57,7 +61,7 @@ stderr: ?File = null,
 /// If set, this will be executed /in the child process/ after fork but
 /// before exec. This is useful to setup some state in the child before the
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
-pre_exec: ?*const PreExecFn,
+pre_exec: ?*const PreExecFn = null,
 
 /// User data that is sent to the callback. Set with setData and getData
 /// for a more user-friendly API.
@@ -131,6 +135,9 @@ pub fn start(self: *Command, alloc: Allocator) !void {
     if (self.stdin) |f| try setupFd(f.handle, os.STDIN_FILENO);
     if (self.stdout) |f| try setupFd(f.handle, os.STDOUT_FILENO);
     if (self.stderr) |f| try setupFd(f.handle, os.STDERR_FILENO);
+
+    // Setup our working directory
+    if (self.cwd) |cwd| try os.chdir(cwd);
 
     // If the user requested a pre exec callback, call it now.
     if (self.pre_exec) |f| f(self);
@@ -389,4 +396,30 @@ test "Command: custom env vars" {
     const contents = try stdout.readToEndAlloc(testing.allocator, 4096);
     defer testing.allocator.free(contents);
     try testing.expectEqualStrings("hello\n", contents);
+}
+
+test "Command: custom working directory" {
+    var td = try TempDir.init();
+    defer td.deinit();
+    var stdout = try td.dir.createFile("stdout.txt", .{ .read = true });
+    defer stdout.close();
+
+    var cmd: Command = .{
+        .path = "/usr/bin/env",
+        .args = &.{ "/usr/bin/env", "sh", "-c", "pwd" },
+        .stdout = stdout,
+        .cwd = "/usr/bin",
+    };
+
+    try cmd.start(testing.allocator);
+    try testing.expect(cmd.pid != null);
+    const exit = try cmd.wait();
+    try testing.expect(exit == .Exited);
+    try testing.expect(exit.Exited == 0);
+
+    // Read our stdout
+    try stdout.seekTo(0);
+    const contents = try stdout.readToEndAlloc(testing.allocator, 4096);
+    defer testing.allocator.free(contents);
+    try testing.expectEqualStrings("/usr/bin\n", contents);
 }
