@@ -399,6 +399,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .path = path,
         .args = &[_][]const u8{path},
         .env = &env,
+        .cwd = config.@"working-directory",
         .pre_exec = (struct {
             fn callback(c: *Command) void {
                 const p = c.getData(Pty) orelse unreachable;

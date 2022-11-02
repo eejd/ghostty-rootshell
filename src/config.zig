@@ -7,6 +7,11 @@ const passwd = @import("passwd.zig");
 
 const log = std.log.scoped(.config);
 
+/// Used on Unixes for some defaults.
+const c = @cImport({
+    @cInclude("unistd.h");
+});
+
 /// Config is the main config struct. These fields map directly to the
 /// CLI flag names hence we use a lot of `@""` syntax to support hyphens.
 pub const Config = struct {
@@ -33,6 +38,20 @@ pub const Config = struct {
     ///   - passwd entry (user information)
     ///
     command: ?[]const u8 = null,
+
+    /// The directory to change to after starting the command.
+    ///
+    /// The default is "inherit" except in special scenarios listed next.
+    /// If ghostty can detect it is launched on macOS from launchd
+    /// (double-clicked), then it defaults to "home".
+    ///
+    /// The value of this must be an absolute value or one of the special
+    /// values below:
+    ///
+    ///   - "home" - The home directory of the executing user.
+    ///   - "inherit" - The working directory of the launching process.
+    ///
+    @"working-directory": ?[]const u8 = null,
 
     /// Key bindings. The format is "trigger=action". Duplicate triggers
     /// will overwrite previously set values.
@@ -154,23 +173,41 @@ pub const Config = struct {
             }
         }
 
+        // The default for the working directory depends on the system.
+        const wd_default = switch (builtin.os.tag) {
+            .macos => if (c.getppid() == 1) "home" else "inherit",
+            else => "inherit",
+        };
+
         // If we are missing either a command or home directory, we need
         // to look up defaults which is kind of expensive.
-        if (self.command == null) command: {
+        const wd_home = std.mem.eql(u8, "home", self.@"working-directory" orelse wd_default);
+        if (self.command == null or wd_home) command: {
             const alloc = self._arena.?.allocator();
 
             // First look up the command using the SHELL env var.
             if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
                 log.debug("default shell source=env value={s}", .{value});
                 self.command = value;
-                break :command;
+
+                // If we don't need the working directory, then we can exit now.
+                if (!wd_home) break :command;
             } else |_| {}
 
-            // Get the shell from the passwd entry
+            // We need the passwd entry for the remainder
             const pw = try passwd.get(alloc);
-            if (pw.shell) |sh| {
-                log.debug("default shell src=passwd value={s}", .{sh});
-                self.command = sh;
+            if (self.command == null) {
+                if (pw.shell) |sh| {
+                    log.debug("default shell src=passwd value={s}", .{sh});
+                    self.command = sh;
+                }
+            }
+
+            if (wd_home) {
+                if (pw.home) |home| {
+                    log.debug("default working directory src=passwd value={s}", .{home});
+                    self.@"working-directory" = home;
+                }
             }
         }
     }
