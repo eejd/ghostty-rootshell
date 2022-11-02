@@ -22,13 +22,18 @@ pub const Config = struct {
     @"font-family-bold-italic": ?[:0]const u8 = null,
 
     /// Font size in points
-    @"font-size": u8 = 12,
+    @"font-size": u8 = switch (builtin.os.tag) {
+        // On Mac we default a little bigger since this tends to look better.
+        // This is purely subjective but this is easy to modify.
+        .macos => 13,
+        else => 12,
+    },
 
     /// Background color for the window.
-    background: Color = .{ .r = 0, .g = 0, .b = 0 },
+    background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 
     /// Foreground color for the window.
-    foreground: Color = .{ .r = 0xFF, .g = 0xA5, .b = 0 },
+    foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH. If this is not set, a default will
