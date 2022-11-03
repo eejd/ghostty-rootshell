@@ -1,6 +1,7 @@
 //! This is the render state that is given to a renderer.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const DevMode = @import("../DevMode.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");

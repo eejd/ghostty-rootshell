@@ -456,6 +456,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .grid_size = grid_size,
         .screen_size = screen_size,
         .config = config,
+        .renderer_state = &self.renderer_state,
     });
     errdefer io.deinit(alloc);
 

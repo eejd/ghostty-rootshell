@@ -113,8 +113,9 @@ pub fn threadMain(self: *Thread) void {
 fn threadMain_(self: *Thread) !void {
     // Run our thread start/end callbacks. This allows the implementation
     // to hook into the event loop as needed.
-    try self.impl.threadEnter(self.loop);
-    defer self.impl.threadExit();
+    var data = try self.impl.threadEnter(self.loop);
+    defer data.deinit();
+    defer self.impl.threadExit(data);
 
     // Set up our async handler to support rendering
     self.wakeup.setData(self);
