@@ -1,5 +1,6 @@
 //! The options that are used to configure a terminal IO implementation.
 
+const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
 
@@ -17,3 +18,7 @@ config: *const Config,
 /// is free to change that if that is useful (i.e. doing some sort of dual
 /// terminal implementation.)
 renderer_state: *renderer.State,
+
+/// A handle to wake up the renderer. This hints to the renderer that that
+/// a repaint should happen.
+renderer_wakeup: libuv.Async,

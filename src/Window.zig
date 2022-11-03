@@ -451,19 +451,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     var io_arena = std.heap.ArenaAllocator.init(alloc);
     errdefer io_arena.deinit();
 
-    // Start our IO implementation
-    var io = try termio.Impl.init(alloc, .{
-        .grid_size = grid_size,
-        .screen_size = screen_size,
-        .config = config,
-        .renderer_state = &self.renderer_state,
-    });
-    errdefer io.deinit(alloc);
-
-    // Create the IO thread
-    var io_thread = try termio.Thread.init(alloc, &self.io);
-    errdefer io_thread.deinit();
-
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
     mutex.* = .{};
@@ -477,6 +464,20 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         &self.renderer_state,
     );
     errdefer render_thread.deinit();
+
+    // Start our IO implementation
+    var io = try termio.Impl.init(alloc, .{
+        .grid_size = grid_size,
+        .screen_size = screen_size,
+        .config = config,
+        .renderer_state = &self.renderer_state,
+        .renderer_wakeup = render_thread.wakeup,
+    });
+    errdefer io.deinit(alloc);
+
+    // Create the IO thread
+    var io_thread = try termio.Thread.init(alloc, &self.io);
+    errdefer io_thread.deinit();
 
     self.* = .{
         .alloc = alloc,

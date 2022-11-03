@@ -32,6 +32,10 @@ terminal_stream: terminal.Stream(StreamHandler),
 /// The shared render state
 renderer_state: *renderer.State,
 
+/// A handle to wake up the renderer. This hints to the renderer that that
+/// a repaint should happen.
+renderer_wakeup: libuv.Async,
+
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
@@ -87,6 +91,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .terminal = term,
         .terminal_stream = undefined,
         .renderer_state = opts.renderer_state,
+        .renderer_wakeup = opts.renderer_wakeup,
     };
 }
 
@@ -120,11 +125,12 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
     ev_data_ptr.* = .{
         .read_arena = std.heap.ArenaAllocator.init(alloc),
         .renderer_state = self.renderer_state,
+        .renderer_wakeup = self.renderer_wakeup,
         .data_stream = stream,
         .terminal_stream = .{
             .handler = .{
+                .ev = ev_data_ptr,
                 .terminal = &self.terminal,
-                .renderer_state = self.renderer_state,
             },
         },
     };
@@ -173,6 +179,10 @@ const EventData = struct {
     /// The shared render state
     renderer_state: *renderer.State,
 
+    /// A handle to wake up the renderer. This hints to the renderer that that
+    /// a repaint should happen.
+    renderer_wakeup: libuv.Async,
+
     /// The data stream is the main IO for the pty.
     data_stream: libuv.Tty,
 
@@ -201,7 +211,46 @@ const EventData = struct {
             }
         }).callback);
     }
+
+    /// This queues a render operation with the renderer thread. The render
+    /// isn't guaranteed to happen immediately but it will happen as soon as
+    /// practical.
+    inline fn queueRender(self: *EventData) !void {
+        try self.renderer_wakeup.send();
+    }
+
+    /// Queue a write to the pty.
+    fn queueWrite(self: *EventData, data: []const u8) !void {
+        // We go through and chunk the data if necessary to fit into
+        // our cached buffers that we can queue to the stream.
+        var i: usize = 0;
+        while (i < data.len) {
+            const req = try self.write_req_pool.get();
+            const buf = try self.write_buf_pool.get();
+            const end = @min(data.len, i + buf.len);
+            std.mem.copy(u8, buf, data[i..end]);
+            try self.data_stream.write(
+                .{ .req = req },
+                &[1][]u8{buf[0..(end - i)]},
+                ttyWrite,
+            );
+
+            i = end;
+        }
+    }
 };
+
+fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
+    const tty = req.handle(libuv.Tty).?;
+    const ev = tty.getData(EventData).?;
+    ev.write_req_pool.put();
+    ev.write_buf_pool.put();
+
+    libuv.convertError(status) catch |err|
+        log.err("write error: {}", .{err});
+
+    //log.info("WROTE: {d}", .{status});
+}
 
 fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
     const ev = t.getData(EventData) orelse return null;
@@ -243,8 +292,7 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     // }
 
     // Schedule a render
-    // TODO
-    //win.queueRender() catch unreachable;
+    ev.queueRender() catch unreachable;
 
     // Process the terminal data. This is an extremely hot part of the
     // terminal emulator, so we do some abstraction leakage to avoid
@@ -257,12 +305,11 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     // Empirically, this alone improved throughput of large text output by ~20%.
     var i: usize = 0;
     const end = @intCast(usize, n);
-    // TODO: re-enable this
-    if (ev.terminal_stream.parser.state == .ground and false) {
+    if (ev.terminal_stream.parser.state == .ground) {
         for (buf[i..end]) |c| {
             switch (terminal.parse_table.table[c][@enumToInt(terminal.Parser.State.ground)].action) {
                 // Print, call directly.
-                .print => ev.print(@intCast(u21, c)) catch |err|
+                .print => ev.terminal_stream.handler.print(@intCast(u21, c)) catch |err|
                     log.err("error processing terminal data: {}", .{err}),
 
                 // C0 execute, let our stream handle this one but otherwise
@@ -292,21 +339,18 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
 /// It is NOT VALID to stop a stream handler, create a new one, and use that
 /// unless all of the member fields are copied.
 const StreamHandler = struct {
+    ev: *EventData,
     terminal: *terminal.Terminal,
-    renderer_state: *renderer.State,
 
     /// Bracketed paste mode
     bracketed_paste: bool = false,
 
-    // TODO
-    fn queueRender(self: *StreamHandler) !void {
-        _ = self;
+    inline fn queueRender(self: *StreamHandler) !void {
+        try self.ev.queueRender();
     }
 
-    // TODO
-    fn queueWrite(self: *StreamHandler, data: []const u8) !void {
-        _ = self;
-        _ = data;
+    inline fn queueWrite(self: *StreamHandler, data: []const u8) !void {
+        try self.ev.queueWrite(data);
     }
 
     pub fn print(self: *StreamHandler, c: u21) !void {
@@ -440,7 +484,7 @@ const StreamHandler = struct {
     //         },
     //
     //         .cursor_visible => {
-    //             self.renderer_state.cursor.visible = enabled;
+    //             self.ev.renderer_state.cursor.visible = enabled;
     //         },
     //
     //         .alt_screen_save_cursor_clear_enter => {
@@ -553,7 +597,7 @@ const StreamHandler = struct {
         self: *StreamHandler,
         style: terminal.CursorStyle,
     ) !void {
-        self.renderer_state.cursor.style = style;
+        self.ev.renderer_state.cursor.style = style;
     }
 
     pub fn decaln(self: *StreamHandler) !void {
