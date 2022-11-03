@@ -10,6 +10,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const renderer = @import("renderer.zig");
+const termio = @import("termio.zig");
 const objc = @import("objc");
 const glfw = @import("glfw");
 const imgui = @import("imgui");
@@ -75,6 +76,11 @@ command: Command,
 
 /// Mouse state.
 mouse: Mouse,
+
+/// The terminal IO handler.
+io: termio.Impl,
+io_thread: termio.Thread,
+io_thr: std.Thread,
 
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
@@ -445,6 +451,18 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     var io_arena = std.heap.ArenaAllocator.init(alloc);
     errdefer io_arena.deinit();
 
+    // Start our IO implementation
+    var io = try termio.Impl.init(alloc, .{
+        .grid_size = grid_size,
+        .screen_size = screen_size,
+        .config = config,
+    });
+    errdefer io.deinit(alloc);
+
+    // Create the IO thread
+    var io_thread = try termio.Thread.init(alloc, &self.io);
+    errdefer io_thread.deinit();
+
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
     mutex.* = .{};
@@ -484,6 +502,9 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .pty = pty,
         .command = cmd,
         .mouse = .{},
+        .io = io,
+        .io_thread = io_thread,
+        .io_thr = undefined,
         .terminal = term,
         .terminal_stream = .{ .handler = self },
         .terminal_cursor = .{ .timer = timer },
@@ -524,11 +545,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
     if (DevMode.enabled) {
-        const io = try imgui.IO.get();
-        io.cval().IniFilename = "ghostty_dev_mode.ini";
+        const dev_io = try imgui.IO.get();
+        dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
 
         // Add our built-in fonts so it looks slightly better
-        const dev_atlas = @ptrCast(*imgui.FontAtlas, io.cval().Fonts);
+        const dev_atlas = @ptrCast(*imgui.FontAtlas, dev_io.cval().Fonts);
         dev_atlas.addFontFromMemoryTTF(
             face_ttf,
             @intToFloat(f32, font_size.pixels()),
@@ -551,6 +572,13 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .{},
         renderer.Thread.threadMain,
         .{&self.renderer_thread},
+    );
+
+    // Start our IO thread
+    self.io_thr = try std.Thread.spawn(
+        .{},
+        termio.Thread.threadMain,
+        .{&self.io_thread},
     );
 
     return self;
@@ -577,6 +605,17 @@ pub fn destroy(self: *Window) void {
 
         // Uninitialize imgui
         self.imgui_ctx.destroy();
+    }
+
+    {
+        // Stop our IO thread
+        self.io_thread.stop.send() catch |err|
+            log.err("error notifying io thread to stop, may stall err={}", .{err});
+        self.io_thr.join();
+        self.io_thread.deinit();
+
+        // Deinitialize our terminal IO
+        self.io.deinit(self.alloc);
     }
 
     // Deinitialize the pty. This closes the pty handles. This should
