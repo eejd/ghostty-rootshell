@@ -203,6 +203,7 @@ test {
     _ = @import("terminal/main.zig");
 
     // TODO
+    _ = @import("blocking_queue.zig");
     _ = @import("config.zig");
     _ = @import("homedir.zig");
     _ = @import("passwd.zig");
