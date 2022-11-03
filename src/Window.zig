@@ -1580,7 +1580,7 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     // Empirically, this alone improved throughput of large text output by ~20%.
     var i: usize = 0;
     const end = @intCast(usize, n);
-    if (win.terminal_stream.parser.state == .ground and false) {
+    if (win.terminal_stream.parser.state == .ground) {
         for (buf[i..end]) |c| {
             switch (terminal.parse_table.table[c][@enumToInt(terminal.Parser.State.ground)].action) {
                 // Print, call directly.
