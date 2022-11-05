@@ -810,17 +810,25 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
         return;
     }
 
-    // Anytime a char is created, we have to clear the selection if there is one.
-    _ = win.io_thread.mailbox.push(.{
-        .clear_selection = {},
-    }, .{ .forever = {} });
+    // Critical area
+    {
+        win.renderer_state.mutex.lock();
+        defer win.renderer_state.mutex.unlock();
 
-    // Scroll to the bottom
-    _ = win.io_thread.mailbox.push(.{
-        .scroll_viewport = .{ .bottom = {} },
-    }, .{ .forever = {} });
+        // Clear the selction if we have one.
+        if (win.terminal.selection != null) {
+            win.terminal.selection = null;
+            win.queueRender() catch |err|
+                log.err("error scheduling render in charCallback err={}", .{err});
+        }
 
-    // Write the char to the pty
+        // We want to scroll to the bottom
+        // TODO: detect if we're at the bottom to avoid the render call here.
+        win.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
+            log.err("error scrolling viewport err={}", .{err});
+    }
+
+    // Ask our IO thread to write the data
     var data: termio.message.IO.SmallWriteArray = undefined;
     data[0] = @intCast(u8, codepoint);
     _ = win.io_thread.mailbox.push(.{
@@ -835,16 +843,8 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
 
     // TODO: the stuff below goes away with IO thread
 
-    if (win.terminal.selection != null) {
-        win.terminal.selection = null;
-        win.queueRender() catch |err|
-            log.err("error scheduling render in charCallback err={}", .{err});
-    }
-
     // We want to scroll to the bottom
     // TODO: detect if we're at the bottom to avoid the render call here.
-    win.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
-        log.err("error scrolling viewport err={}", .{err});
     win.queueRender() catch |err|
         log.err("error scheduling render in charCallback err={}", .{err});
 
@@ -959,8 +959,13 @@ fn keyCallback(
                 },
 
                 .copy_to_clipboard => {
-                    if (win.terminal.selection) |sel| {
-                        var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
+                    // We can read from the renderer state without holding
+                    // the lock because only we will write to this field.
+                    if (win.renderer_state.terminal.selection) |sel| {
+                        var buf = win.renderer_state.terminal.screen.selectionString(
+                            win.alloc,
+                            sel,
+                        ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;
                         };
@@ -1129,12 +1134,17 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     const sign: isize = if (yoff > 0) -1 else 1;
     const delta: isize = sign * @max(@divFloor(win.grid_size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
-    win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
-        log.err("error scrolling viewport err={}", .{err});
 
-    // Schedule render since scrolling usually does something.
-    // TODO(perf): we can only schedule render if we know scrolling
-    // did something
+    // Modify our viewport, this requires a lock since it affects rendering
+    {
+        win.renderer_state.mutex.lock();
+        defer win.renderer_state.mutex.unlock();
+
+        win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
+            log.err("error scrolling viewport err={}", .{err});
+    }
+
+    // TODO: drop after IO thread
     win.queueRender() catch unreachable;
 }
 
@@ -1389,6 +1399,9 @@ fn mouseButtonCallback(
 
         // Selection is always cleared
         if (win.terminal.selection != null) {
+            // We only need the lock to write since only we'll ever write.
+            win.renderer_state.mutex.lock();
+            defer win.renderer_state.mutex.unlock();
             win.terminal.selection = null;
             win.queueRender() catch |err|
                 log.err("error scheduling render in mouseButtinCallback err={}", .{err});
@@ -1461,6 +1474,12 @@ fn cursorPosCallback(
     // common so its not like this performance heavy code is running that
     // often.
     // TODO: unit test this, this logic sucks
+
+    // At some point below we likely write selection state so we just grab
+    // a lock. This is not optimal efficiency but its not a common operation
+    // so its okay.
+    win.renderer_state.mutex.lock();
+    defer win.renderer_state.mutex.unlock();
 
     // If we were selecting, and we switched directions, then we restart
     // calculations because it forces us to reconsider if the first cell is

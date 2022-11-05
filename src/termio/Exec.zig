@@ -199,24 +199,6 @@ pub fn resize(
     }
 }
 
-pub fn clearSelection(self: *Exec) !void {
-    // We don't need a lock to read because nothing else can possibly write
-    // as we're looking at this.
-    if (self.terminal.selection != null) {
-        // We need to lock so we can write because other things might be reading.
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        self.terminal.selection = null;
-    }
-}
-
-pub fn scrollViewport(self: *Exec, scroll: terminal.Terminal.ScrollViewport) !void {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-
-    try self.terminal.scrollViewport(scroll);
-}
-
 pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
     try self.data.?.queueWrite(data);
 }

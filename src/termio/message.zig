@@ -12,12 +12,6 @@ pub const IO = union(enum) {
         screen_size: renderer.ScreenSize,
     },
 
-    /// Clear the selection
-    clear_selection: void,
-
-    /// Scroll the viewport
-    scroll_viewport: terminal.Terminal.ScrollViewport,
-
     /// Write where the data fits in the union.
     small_write: struct {
         data: [22]u8,
