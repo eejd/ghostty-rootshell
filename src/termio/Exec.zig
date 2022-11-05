@@ -39,6 +39,9 @@ renderer_state: *renderer.State,
 /// a repaint should happen.
 renderer_wakeup: libuv.Async,
 
+/// The cached grid size whenever a resize is called.
+grid_size: renderer.GridSize,
+
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
@@ -96,6 +99,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .terminal_stream = undefined,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
+        .grid_size = opts.grid_size,
     };
 }
 
@@ -133,8 +137,10 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
         .data_stream = stream,
         .terminal_stream = .{
             .handler = .{
+                .alloc = self.alloc,
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
+                .grid_size = &self.grid_size,
             },
         },
     };
@@ -165,6 +171,9 @@ pub fn resize(
         .ws_xpixel = @intCast(u16, screen_size.width),
         .ws_ypixel = @intCast(u16, screen_size.height),
     });
+
+    // Update our cached grid size
+    self.grid_size = grid_size;
 
     // Enter the critical area that we want to keep small
     {
@@ -371,6 +380,8 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
 /// unless all of the member fields are copied.
 const StreamHandler = struct {
     ev: *EventData,
+    alloc: Allocator,
+    grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
 
     /// Bracketed paste mode
@@ -496,72 +507,72 @@ const StreamHandler = struct {
         self.terminal.setScrollingRegion(top, bot);
     }
 
-    // pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
-    //     switch (mode) {
-    //         .reverse_colors => {
-    //             self.terminal.modes.reverse_colors = enabled;
-    //
-    //             // Schedule a render since we changed colors
-    //             try self.queueRender();
-    //         },
-    //
-    //         .origin => {
-    //             self.terminal.modes.origin = enabled;
-    //             self.terminal.setCursorPos(1, 1);
-    //         },
-    //
-    //         .autowrap => {
-    //             self.terminal.modes.autowrap = enabled;
-    //         },
-    //
-    //         .cursor_visible => {
-    //             self.ev.renderer_state.cursor.visible = enabled;
-    //         },
-    //
-    //         .alt_screen_save_cursor_clear_enter => {
-    //             const opts: terminal.Terminal.AlternateScreenOptions = .{
-    //                 .cursor_save = true,
-    //                 .clear_on_enter = true,
-    //             };
-    //
-    //             if (enabled)
-    //                 self.terminal.alternateScreen(opts)
-    //             else
-    //                 self.terminal.primaryScreen(opts);
-    //
-    //             // Schedule a render since we changed screens
-    //             try self.queueRender();
-    //         },
-    //
-    //         .bracketed_paste => self.bracketed_paste = true,
-    //
-    //         .enable_mode_3 => {
-    //             // Disable deccolm
-    //             self.terminal.setDeccolmSupported(enabled);
-    //
-    //             // Force resize back to the window size
-    //             self.terminal.resize(self.alloc, self.grid_size.columns, self.grid_size.rows) catch |err|
-    //                 log.err("error updating terminal size: {}", .{err});
-    //         },
-    //
-    //         .@"132_column" => try self.terminal.deccolm(
-    //             self.alloc,
-    //             if (enabled) .@"132_cols" else .@"80_cols",
-    //         ),
-    //
-    //         .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
-    //         .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
-    //         .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
-    //         .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
-    //
-    //         .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
-    //         .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
-    //         .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
-    //         .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
-    //
-    //         else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
-    //     }
-    // }
+    pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
+        switch (mode) {
+            .reverse_colors => {
+                self.terminal.modes.reverse_colors = enabled;
+
+                // Schedule a render since we changed colors
+                try self.queueRender();
+            },
+
+            .origin => {
+                self.terminal.modes.origin = enabled;
+                self.terminal.setCursorPos(1, 1);
+            },
+
+            .autowrap => {
+                self.terminal.modes.autowrap = enabled;
+            },
+
+            .cursor_visible => {
+                self.ev.renderer_state.cursor.visible = enabled;
+            },
+
+            .alt_screen_save_cursor_clear_enter => {
+                const opts: terminal.Terminal.AlternateScreenOptions = .{
+                    .cursor_save = true,
+                    .clear_on_enter = true,
+                };
+
+                if (enabled)
+                    self.terminal.alternateScreen(opts)
+                else
+                    self.terminal.primaryScreen(opts);
+
+                // Schedule a render since we changed screens
+                try self.queueRender();
+            },
+
+            .bracketed_paste => self.bracketed_paste = true,
+
+            .enable_mode_3 => {
+                // Disable deccolm
+                self.terminal.setDeccolmSupported(enabled);
+
+                // Force resize back to the window size
+                self.terminal.resize(self.alloc, self.grid_size.columns, self.grid_size.rows) catch |err|
+                    log.err("error updating terminal size: {}", .{err});
+            },
+
+            .@"132_column" => try self.terminal.deccolm(
+                self.alloc,
+                if (enabled) .@"132_cols" else .@"80_cols",
+            ),
+
+            .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
+            .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
+            .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
+            .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
+
+            .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
+            .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
+            .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
+            .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
+
+            else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
+        }
+    }
 
     pub fn setAttribute(self: *StreamHandler, attr: terminal.Attribute) !void {
         switch (attr) {
