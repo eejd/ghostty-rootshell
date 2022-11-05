@@ -810,7 +810,13 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
         return;
     }
 
-    // Anytime is character is created, we have to clear the selection
+    // Anytime a char is created, we have to clear the selection if there is one.
+    _ = win.io_thread.mailbox.push(.{
+        .clear_selection = {},
+    }, .{ .forever = {} });
+
+    // TODO: the stuff below goes away with IO thread
+
     if (win.terminal.selection != null) {
         win.terminal.selection = null;
         win.queueRender() catch |err|
