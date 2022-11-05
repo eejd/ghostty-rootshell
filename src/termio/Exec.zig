@@ -3,6 +3,7 @@ pub const Exec = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
@@ -41,6 +42,9 @@ renderer_wakeup: libuv.Async,
 
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
+
+/// The data associated with the currently running thread.
+data: ?*EventData,
 
 /// Initialize the exec implementation. This will also start the child
 /// process.
@@ -100,6 +104,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .grid_size = opts.grid_size,
+        .data = null,
     };
 }
 
@@ -115,6 +120,8 @@ pub fn deinit(self: *Exec) void {
 }
 
 pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
+    assert(self.data == null);
+
     // Get a copy to our allocator
     const alloc_ptr = loop.getData(Allocator).?;
     const alloc = alloc_ptr.*;
@@ -146,7 +153,10 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
     };
     errdefer ev_data_ptr.deinit();
 
-    // Return our data
+    // Store our data so our callbacks can access it
+    self.data = ev_data_ptr;
+
+    // Return our thread data
     return ThreadData{
         .alloc = alloc,
         .ev = ev_data_ptr,
@@ -154,8 +164,9 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
 }
 
 pub fn threadExit(self: *Exec, data: ThreadData) void {
-    _ = self;
     _ = data;
+
+    self.data = null;
 }
 
 /// Resize the terminal.
@@ -197,6 +208,17 @@ pub fn clearSelection(self: *Exec) !void {
         defer self.renderer_state.mutex.unlock();
         self.terminal.selection = null;
     }
+}
+
+pub fn scrollViewport(self: *Exec, scroll: terminal.Terminal.ScrollViewport) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    try self.terminal.scrollViewport(scroll);
+}
+
+pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
+    try self.data.?.queueWrite(data);
 }
 
 const ThreadData = struct {

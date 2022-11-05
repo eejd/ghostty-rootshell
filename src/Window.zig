@@ -815,6 +815,24 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
         .clear_selection = {},
     }, .{ .forever = {} });
 
+    // Scroll to the bottom
+    _ = win.io_thread.mailbox.push(.{
+        .scroll_viewport = .{ .bottom = {} },
+    }, .{ .forever = {} });
+
+    // Write the char to the pty
+    var data: termio.message.IO.SmallWriteArray = undefined;
+    data[0] = @intCast(u8, codepoint);
+    _ = win.io_thread.mailbox.push(.{
+        .small_write = .{
+            .data = data,
+            .len = 1,
+        },
+    }, .{ .forever = {} });
+
+    // After sending all our messages we have to notify our IO thread
+    win.io_thread.wakeup.send() catch {};
+
     // TODO: the stuff below goes away with IO thread
 
     if (win.terminal.selection != null) {

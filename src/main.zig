@@ -196,6 +196,7 @@ test {
     _ = @import("font/main.zig");
     _ = @import("renderer.zig");
     _ = @import("terminal/Terminal.zig");
+    _ = @import("termio.zig");
     _ = @import("input.zig");
 
     // Libraries
