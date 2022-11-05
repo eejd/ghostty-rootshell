@@ -14,6 +14,9 @@ const renderer = @import("../renderer.zig");
 
 const log = std.log.scoped(.io_exec);
 
+/// Allocator
+alloc: Allocator,
+
 /// This is the pty fd created for the subcommand.
 pty: Pty,
 
@@ -86,6 +89,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     errdefer term.deinit(alloc);
 
     return Exec{
+        .alloc = alloc,
         .pty = pty,
         .command = cmd,
         .terminal = term,
@@ -95,7 +99,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     };
 }
 
-pub fn deinit(self: *Exec, alloc: Allocator) void {
+pub fn deinit(self: *Exec) void {
     // Deinitialize the pty. This closes the pty handles. This should
     // cause a close in the our subprocess so just wait for that.
     self.pty.deinit();
@@ -103,7 +107,7 @@ pub fn deinit(self: *Exec, alloc: Allocator) void {
         log.err("error waiting for command to exit: {}", .{err});
 
     // Clean up our other members
-    self.terminal.deinit(alloc);
+    self.terminal.deinit(self.alloc);
 }
 
 pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
@@ -146,6 +150,33 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
 pub fn threadExit(self: *Exec, data: ThreadData) void {
     _ = self;
     _ = data;
+}
+
+/// Resize the terminal.
+pub fn resize(
+    self: *Exec,
+    grid_size: renderer.GridSize,
+    screen_size: renderer.ScreenSize,
+) !void {
+    // Update the size of our pty
+    try self.pty.setSize(.{
+        .ws_row = @intCast(u16, grid_size.rows),
+        .ws_col = @intCast(u16, grid_size.columns),
+        .ws_xpixel = @intCast(u16, screen_size.width),
+        .ws_ypixel = @intCast(u16, screen_size.height),
+    });
+
+    // Enter the critical area that we want to keep small
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // We need to setup our render state to store our new pending size
+        self.renderer_state.resize_screen = screen_size;
+
+        // Update the size of our terminal state
+        try self.terminal.resize(self.alloc, grid_size.columns, grid_size.rows);
+    }
 }
 
 const ThreadData = struct {

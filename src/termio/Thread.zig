@@ -6,9 +6,15 @@ const std = @import("std");
 const builtin = @import("builtin");
 const libuv = @import("libuv");
 const termio = @import("../termio.zig");
+const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.io_thread);
+
+/// The type used for sending messages to the IO thread. For now this is
+/// hardcoded with a capacity. We can make this a comptime parameter in
+/// the future if we want it configurable.
+const Mailbox = BlockingQueue(termio.message.IO, 64);
 
 /// The main event loop for the thread. The user data of this loop
 /// is always the allocator used to create the loop. This is a convenience
@@ -23,6 +29,10 @@ stop: libuv.Async,
 
 /// The underlying IO implementation.
 impl: *termio.Impl,
+
+/// The mailbox that can be used to send this thread messages. Note
+/// this is a blocking queue so if it is full you will get errors (or block).
+mailbox: *Mailbox,
 
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
@@ -60,11 +70,16 @@ pub fn init(
         }
     }).callback);
 
+    // The mailbox for messaging this thread
+    var mailbox = try Mailbox.create(alloc);
+    errdefer mailbox.destroy(alloc);
+
     return Thread{
         .loop = loop,
         .wakeup = wakeup_h,
         .stop = stop_h,
         .impl = impl,
+        .mailbox = mailbox,
     };
 }
 
@@ -94,6 +109,9 @@ pub fn deinit(self: *Thread) void {
     // one more run through to finalize all the closes.
     _ = self.loop.run(.default) catch |err|
         log.err("error finalizing event loop: {}", .{err});
+
+    // Nothing can possibly access the mailbox anymore, destroy it.
+    self.mailbox.destroy(alloc);
 
     // Dealloc our allocator copy
     alloc.destroy(alloc_ptr);
@@ -127,13 +145,33 @@ fn threadMain_(self: *Thread) !void {
     _ = try self.loop.run(.default);
 }
 
+/// Drain the mailbox, handling all the messages in our terminal implementation.
+fn drainMailbox(self: *Thread) !void {
+    // This holds the mailbox lock for the duration of the drain. The
+    // expectation is that all our message handlers will be non-blocking
+    // ENOUGH to not mess up throughput on producers.
+    var drain = self.mailbox.drain();
+    defer drain.deinit();
+
+    while (drain.next()) |message| {
+        log.debug("mailbox message={}", .{message});
+        switch (message) {
+            .resize => |v| try self.impl.resize(v.grid_size, v.screen_size),
+        }
+    }
+}
+
 fn wakeupCallback(h: *libuv.Async) void {
-    _ = h;
-    // const t = h.getData(Thread) orelse {
-    //     // This shouldn't happen so we log it.
-    //     log.warn("render callback fired without data set", .{});
-    //     return;
-    // };
+    const t = h.getData(Thread) orelse {
+        // This shouldn't happen so we log it.
+        log.warn("wakeup callback fired without data set", .{});
+        return;
+    };
+
+    // When we wake up, we check the mailbox. Mailbox producers should
+    // wake up our thread after publishing.
+    t.drainMailbox() catch |err|
+        log.err("error draining mailbox err={}", .{err});
 }
 
 fn stopCallback(h: *libuv.Async) void {

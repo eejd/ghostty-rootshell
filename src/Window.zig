@@ -473,7 +473,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
     });
-    errdefer io.deinit(alloc);
+    errdefer io.deinit();
 
     // Create the IO thread
     var io_thread = try termio.Thread.init(alloc, &self.io);
@@ -617,7 +617,7 @@ pub fn destroy(self: *Window) void {
         self.io_thread.deinit();
 
         // Deinitialize our terminal IO
-        self.io.deinit(self.alloc);
+        self.io.deinit();
     }
 
     // Deinitialize the pty. This closes the pty handles. This should
@@ -744,12 +744,26 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
-    // Resize usually forces a redraw
-    win.queueRender() catch |err|
-        log.err("error scheduling render timer in sizeCallback err={}", .{err});
+    // TODO: if our screen size didn't change, then we should avoid the
+    // overhead of inter-thread communication
 
     // Recalculate our grid size
     win.grid_size.update(screen_size, win.renderer.cell_size);
+
+    // Mail the IO thread
+    _ = win.io_thread.mailbox.push(.{
+        .resize = .{
+            .grid_size = win.grid_size,
+            .screen_size = screen_size,
+        },
+    }, .{ .forever = {} });
+    win.io_thread.wakeup.send() catch {};
+
+    // TODO: everything below here goes away with the IO thread
+
+    // Resize usually forces a redraw
+    win.queueRender() catch |err|
+        log.err("error scheduling render timer in sizeCallback err={}", .{err});
 
     // Update the size of our pty
     win.pty.setSize(.{
