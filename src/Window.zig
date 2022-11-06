@@ -14,11 +14,9 @@ const termio = @import("termio.zig");
 const objc = @import("objc");
 const glfw = @import("glfw");
 const imgui = @import("imgui");
-const libuv = @import("libuv");
 const Pty = @import("Pty.zig");
 const font = @import("font/main.zig");
 const Command = @import("Command.zig");
-const SegmentedPool = @import("segmented_pool.zig").SegmentedPool;
 const trace = @import("tracy").trace;
 const terminal = @import("terminal/main.zig");
 const Config = @import("config.zig").Config;
@@ -70,6 +68,7 @@ mouse: Mouse,
 io: termio.Impl,
 io_thread: termio.Thread,
 io_thr: std.Thread,
+
 /// The dimensions of the grid in rows and columns.
 grid_size: renderer.GridSize,
 
@@ -81,30 +80,6 @@ config: *const Config,
 /// callbacks so we abuse that here. This is to solve an issue where commands
 /// like such as "control-v" will write a "v" even if they're intercepted.
 ignore_char: bool = false,
-
-/// Information related to the current cursor for the window.
-//
-// QUESTION(mitchellh): should this be attached to the Screen instead?
-// I'm not sure if the cursor settings stick to the screen, i.e. if you
-// change to an alternate screen if those are preserved. Need to check this.
-const Cursor = struct {
-    /// Timer for cursor blinking.
-    timer: libuv.Timer,
-
-    /// Start (or restart) the timer. This is idempotent.
-    pub fn startTimer(self: Cursor) !void {
-        try self.timer.start(
-            cursorTimerCallback,
-            0,
-            self.timer.getRepeat(),
-        );
-    }
-
-    /// Stop the timer. This is idempotent.
-    pub fn stopTimer(self: Cursor) !void {
-        try self.timer.stop();
-    }
-};
 
 /// Mouse state for the window.
 const Mouse = struct {
@@ -132,8 +107,7 @@ const Mouse = struct {
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
-pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Window {
-    _ = loop;
+pub fn create(alloc: Allocator, config: *const Config) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
@@ -1456,25 +1430,6 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
             break :y @min(y, self.io.terminal.rows - 1);
         },
     };
-}
-
-fn cursorTimerCallback(t: *libuv.Timer) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = t.getData(Window) orelse return;
-
-    // We are modifying renderer state from here on out
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
-
-    // If the cursor is currently invisible, then we do nothing. Ideally
-    // in this state the timer would be cancelled but no big deal.
-    if (!win.renderer_state.cursor.visible) return;
-
-    // Swap blink state and schedule a render
-    win.renderer_state.cursor.blink = !win.renderer_state.cursor.blink;
-    win.queueRender() catch unreachable;
 }
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
