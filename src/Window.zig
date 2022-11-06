@@ -116,48 +116,6 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
     errdefer window.destroy();
     try Renderer.windowInit(window);
 
-    // TEST
-    // if (builtin.os.tag == .macos) {
-    //     const id = glfwNative.getCocoaWindow(window) orelse unreachable;
-    //     const nswindow = objc.Object.fromId(id);
-    //     const NSWindow = nswindow.getClass().?;
-    //
-    //     {
-    //         const prop = NSWindow.getProperty("titlebarAppearsTransparent").?;
-    //         const setter = if (prop.copyAttributeValue("S")) |val| setter: {
-    //             defer objc.free(val);
-    //             break :setter objc.sel(val);
-    //         } else objc.sel("setTitlebarAppearsTransparent:");
-    //
-    //         nswindow.msgSend(void, setter, .{true});
-    //     }
-    //
-    //     {
-    //         const NSColor = objc.Class.getClass("NSColor").?;
-    //         const nscolor = NSColor.msgSend(
-    //             objc.Object,
-    //             objc.sel("colorWithSRGBRed:green:blue:alpha:"),
-    //             .{
-    //                 1.0,
-    //                 0.0,
-    //                 0.0,
-    //                 // @intToFloat(f32, config.background.r) / 255.0,
-    //                 // @intToFloat(f32, config.background.g) / 255.0,
-    //                 // @intToFloat(f32, config.background.b) / 255.0,
-    //                 1.0,
-    //             },
-    //         );
-    //
-    //         const prop = NSWindow.getProperty("backgroundColor").?;
-    //         const setter = if (prop.copyAttributeValue("S")) |val| setter: {
-    //             defer objc.free(val);
-    //             break :setter objc.sel(val);
-    //         } else objc.sel("setBackgroundColor:");
-    //
-    //         nswindow.msgSend(void, setter, .{nscolor});
-    //     }
-    // }
-
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
     const content_scale = try window.getContentScale();
