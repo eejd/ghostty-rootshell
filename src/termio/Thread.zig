@@ -14,7 +14,7 @@ const log = std.log.scoped(.io_thread);
 /// The type used for sending messages to the IO thread. For now this is
 /// hardcoded with a capacity. We can make this a comptime parameter in
 /// the future if we want it configurable.
-const Mailbox = BlockingQueue(termio.message.IO, 64);
+const Mailbox = BlockingQueue(termio.Message, 64);
 
 /// The main event loop for the thread. The user data of this loop
 /// is always the allocator used to create the loop. This is a convenience

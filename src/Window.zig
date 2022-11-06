@@ -611,7 +611,7 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
     }
 
     // Ask our IO thread to write the data
-    var data: termio.message.WriteReq.Small.Array = undefined;
+    var data: termio.Message.WriteReq.Small.Array = undefined;
     data[0] = @intCast(u8, codepoint);
     _ = win.io_thread.mailbox.push(.{
         .write_small = .{
@@ -771,7 +771,7 @@ fn keyCallback(
                             }, .{ .forever = {} });
                         }
 
-                        _ = win.io_thread.mailbox.push(termio.message.IO.writeReq(
+                        _ = win.io_thread.mailbox.push(termio.Message.writeReq(
                             win.alloc,
                             data,
                         ) catch unreachable, .{ .forever = {} });
@@ -851,7 +851,7 @@ fn keyCallback(
         };
         if (char > 0) {
             // Ask our IO thread to write the data
-            var data: termio.message.WriteReq.Small.Array = undefined;
+            var data: termio.Message.WriteReq.Small.Array = undefined;
             data[0] = @intCast(u8, char);
             _ = win.io_thread.mailbox.push(.{
                 .write_small = .{
@@ -1037,7 +1037,7 @@ fn mouseReport(
             }
 
             // + 1 below is because our x/y is 0-indexed and proto wants 1
-            var data: termio.message.WriteReq.Small.Array = undefined;
+            var data: termio.Message.WriteReq.Small.Array = undefined;
             assert(data.len >= 5);
             data[0] = '\x1b';
             data[1] = '[';
@@ -1057,7 +1057,7 @@ fn mouseReport(
 
         .utf8 => {
             // Maximum of 12 because at most we have 2 fully UTF-8 encoded chars
-            var data: termio.message.WriteReq.Small.Array = undefined;
+            var data: termio.Message.WriteReq.Small.Array = undefined;
             assert(data.len >= 12);
             data[0] = '\x1b';
             data[1] = '[';
@@ -1086,7 +1086,7 @@ fn mouseReport(
 
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
-            var data: termio.message.WriteReq.Small.Array = undefined;
+            var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
                 viewport_point.x + 1,
@@ -1106,7 +1106,7 @@ fn mouseReport(
         .urxvt => {
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
-            var data: termio.message.WriteReq.Small.Array = undefined;
+            var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[{d};{d};{d}M", .{
                 32 + button_code,
                 viewport_point.x + 1,
@@ -1128,7 +1128,7 @@ fn mouseReport(
 
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
-            var data: termio.message.WriteReq.Small.Array = undefined;
+            var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
                 pos.xpos,

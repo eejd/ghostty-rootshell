@@ -2,7 +2,7 @@
 //! for taking the config, spinning up a child process, and handling IO
 //! with the termianl.
 
-pub const message = @import("termio/message.zig");
+pub usingnamespace @import("termio/message.zig");
 pub const Exec = @import("termio/Exec.zig");
 pub const Options = @import("termio/Options.zig");
 pub const Thread = @import("termio/Thread.zig");

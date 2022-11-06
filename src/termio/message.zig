@@ -9,7 +9,7 @@ const terminal = @import("../terminal/main.zig");
 /// This is not a tiny structure (~40 bytes at the time of writing this comment),
 /// but the messages are IO thread sends are also very few. At the current size
 /// we can queue 26,000 messages before consuming a MB of RAM.
-pub const IO = union(enum) {
+pub const Message = union(enum) {
     /// Resize the window.
     resize: struct {
         grid_size: renderer.GridSize,
@@ -28,7 +28,7 @@ pub const IO = union(enum) {
     /// Return a write request for the given data. This will use
     /// write_small if it fits or write_alloc otherwise. This should NOT
     /// be used for stable pointers which can be manually set to write_stable.
-    pub fn writeReq(alloc: Allocator, data: anytype) !IO {
+    pub fn writeReq(alloc: Allocator, data: anytype) !Message {
         switch (@typeInfo(@TypeOf(data))) {
             .Pointer => |info| {
                 assert(info.size == .Slice);
@@ -38,7 +38,7 @@ pub const IO = union(enum) {
                 if (data.len <= WriteReq.Small.Max) {
                     var buf: WriteReq.Small.Array = undefined;
                     std.mem.copy(u8, &buf, data);
-                    return IO{
+                    return Message{
                         .write_small = .{
                             .data = buf,
                             .len = @intCast(u8, data.len),
@@ -49,7 +49,7 @@ pub const IO = union(enum) {
                 // Otherwise, allocate
                 var buf = try alloc.dupe(u8, data);
                 errdefer alloc.free(buf);
-                return IO{
+                return Message{
                     .write_alloc = .{
                         .alloc = alloc,
                         .data = buf,
@@ -60,32 +60,32 @@ pub const IO = union(enum) {
             else => unreachable,
         }
     }
-};
 
-/// Represents a write request.
-pub const WriteReq = union(enum) {
-    pub const Small = struct {
-        pub const Max = 38;
-        pub const Array = [Max]u8;
-        data: Array,
-        len: u8,
+    /// Represents a write request.
+    pub const WriteReq = union(enum) {
+        pub const Small = struct {
+            pub const Max = 38;
+            pub const Array = [Max]u8;
+            data: Array,
+            len: u8,
+        };
+
+        pub const Alloc = struct {
+            alloc: Allocator,
+            data: []u8,
+        };
+
+        /// A small write where the data fits into this union size.
+        small: Small,
+
+        /// A stable pointer so we can just pass the slice directly through.
+        /// This is useful i.e. for const data.
+        stable: []const u8,
+
+        /// Allocated and must be freed with the provided allocator. This
+        /// should be rarely used.
+        alloc: Alloc,
     };
-
-    pub const Alloc = struct {
-        alloc: Allocator,
-        data: []u8,
-    };
-
-    /// A small write where the data fits into this union size.
-    small: Small,
-
-    /// A stable pointer so we can just pass the slice directly through.
-    /// This is useful i.e. for const data.
-    stable: []const u8,
-
-    /// Allocated and must be freed with the provided allocator. This
-    /// should be rarely used.
-    alloc: Alloc,
 };
 
 test {
@@ -95,24 +95,24 @@ test {
 test {
     // Ensure we don't grow our IO message size without explicitly wanting to.
     const testing = std.testing;
-    try testing.expectEqual(@as(usize, 40), @sizeOf(IO));
+    try testing.expectEqual(@as(usize, 40), @sizeOf(Message));
 }
 
-test "IO.writeReq small" {
+test "Message.writeReq small" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     const input = "hello!";
-    const io = try IO.writeReq(alloc, @as([]const u8, input));
+    const io = try Message.writeReq(alloc, @as([]const u8, input));
     try testing.expect(io == .write_small);
 }
 
-test "IO.writeReq alloc" {
+test "Message.writeReq alloc" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     const input = "hello! " ** 100;
-    const io = try IO.writeReq(alloc, @as([]const u8, input));
+    const io = try Message.writeReq(alloc, @as([]const u8, input));
     try testing.expect(io == .write_alloc);
     io.write_alloc.alloc.free(io.write_alloc.data);
 }
