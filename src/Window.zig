@@ -394,7 +394,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
-            .focused = true,
             .resize_screen = screen_size,
             .cursor = .{
                 .style = .blinking_block,
@@ -917,6 +916,11 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
+    // Notify our render thread of the new state
+    _ = win.renderer_thread.mailbox.push(.{
+        .focus = focused,
+    }, .{ .forever = {} });
+
     // We have to schedule a render because no matter what we're changing
     // the cursor. If we're focused its reappearing, if we're not then
     // its changing to hollow and not blinking.
@@ -926,11 +930,6 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
         win.terminal_cursor.startTimer() catch unreachable
     else
         win.terminal_cursor.stopTimer() catch unreachable;
-
-    // We are modifying renderer state from here on out
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
-    win.renderer_state.focused = focused;
 }
 
 fn refreshCallback(window: glfw.Window) void {

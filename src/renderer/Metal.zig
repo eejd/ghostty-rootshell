@@ -33,6 +33,9 @@ alloc: std.mem.Allocator,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
+/// True if the window is focused
+focused: bool,
+
 /// Whether the cursor is visible or not. This is used to control cursor
 /// blinking.
 cursor_visible: bool,
@@ -205,6 +208,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
+        .focused = true,
         .cursor_visible = true,
         .cursor_style = .box,
 
@@ -290,6 +294,11 @@ pub fn threadExit(self: *const Metal) void {
     // Metal requires no per-thread state.
 }
 
+/// Callback when the focus changes for the terminal this is rendering.
+pub fn setFocus(self: *Metal, focus: bool) !void {
+    self.focused = focus;
+}
+
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *Metal,
@@ -315,7 +324,7 @@ pub fn render(
         defer state.resize_screen = null;
 
         // Setup our cursor state
-        if (state.focused) {
+        if (self.focused) {
             self.cursor_visible = state.cursor.visible and !state.cursor.blink;
             self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
         } else {

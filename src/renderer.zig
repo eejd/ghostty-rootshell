@@ -10,6 +10,7 @@
 const builtin = @import("builtin");
 
 pub usingnamespace @import("renderer/cursor.zig");
+pub usingnamespace @import("renderer/message.zig");
 pub usingnamespace @import("renderer/size.zig");
 pub const Metal = @import("renderer/Metal.zig");
 pub const OpenGL = @import("renderer/OpenGL.zig");
