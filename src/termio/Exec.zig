@@ -16,6 +16,7 @@ const renderer = @import("../renderer.zig");
 const log = std.log.scoped(.io_exec);
 
 const c = @cImport({
+    @cInclude("errno.h");
     @cInclude("signal.h");
     @cInclude("unistd.h");
 });
@@ -119,7 +120,8 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
 
 pub fn deinit(self: *Exec) void {
     // Kill our command
-    self.killCommand();
+    self.killCommand() catch |err|
+        log.err("error sending SIGHUP to command, may hang: {}", .{err});
     _ = self.command.wait() catch |err|
         log.err("error waiting for command to exit: {}", .{err});
 
@@ -130,15 +132,35 @@ pub fn deinit(self: *Exec) void {
 /// Kill the underlying subprocess. This closes the pty file handle and
 /// sends a SIGHUP to the child process. This doesn't wait for the child
 /// process to be exited.
-fn killCommand(self: *Exec) void {
+fn killCommand(self: *Exec) !void {
     // Close our PTY
     self.pty.deinit();
 
     // We need to get our process group ID and send a SIGHUP to it.
     if (self.command.pid) |pid| {
-        const pgid = c.getpgid(pid);
-        if (pgid > 0) {
-            _ = c.killpg(pgid, c.SIGHUP);
+        const pgid_: ?c.pid_t = pgid: {
+            const pgid = c.getpgid(pid);
+
+            // Don't know why it would be zero but its not a valid pid
+            if (pgid == 0) break :pgid null;
+
+            // If the pid doesn't exist then... okay.
+            if (pgid == c.ESRCH) break :pgid null;
+
+            // If we have an error...
+            if (pgid < 0) {
+                log.warn("error getting pgid for kill", .{});
+                break :pgid null;
+            }
+
+            break :pgid pgid;
+        };
+
+        if (pgid_) |pgid| {
+            if (c.killpg(pgid, c.SIGHUP) < 0) {
+                log.warn("error killing process group pgid={}", .{pgid});
+                return error.KillFailed;
+            }
         }
     }
 }
