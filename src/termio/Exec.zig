@@ -399,9 +399,6 @@ const StreamHandler = struct {
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
 
-    /// Bracketed paste mode
-    bracketed_paste: bool = false,
-
     inline fn queueRender(self: *StreamHandler) !void {
         try self.ev.queueRender();
     }
@@ -559,7 +556,7 @@ const StreamHandler = struct {
                 try self.queueRender();
             },
 
-            .bracketed_paste => self.bracketed_paste = true,
+            .bracketed_paste => self.terminal.modes.bracketed_paste = enabled,
 
             .enable_mode_3 => {
                 // Disable deccolm

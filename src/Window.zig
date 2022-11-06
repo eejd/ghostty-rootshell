@@ -80,9 +80,6 @@ grid_size: renderer.GridSize,
 /// The app configuration
 config: *const Config,
 
-/// Bracketed paste mode
-bracketed_paste: bool = false,
-
 /// Set to true for a single GLFW key/char callback cycle to cause the
 /// char callback to ignore. GLFW seems to always do key followed by char
 /// callbacks so we abuse that here. This is to solve an issue where commands
@@ -807,7 +804,13 @@ fn keyCallback(
                     };
 
                     if (data.len > 0) {
-                        if (win.bracketed_paste) {
+                        const bracketed = bracketed: {
+                            win.renderer_state.mutex.lock();
+                            defer win.renderer_state.mutex.unlock();
+                            break :bracketed win.renderer_state.terminal.modes.bracketed_paste;
+                        };
+
+                        if (bracketed) {
                             _ = win.io_thread.mailbox.push(.{
                                 .write_stable = "\x1B[200~",
                             }, .{ .forever = {} });
@@ -818,7 +821,7 @@ fn keyCallback(
                             .write_stable = data,
                         }, .{ .forever = {} });
 
-                        if (win.bracketed_paste) {
+                        if (bracketed) {
                             _ = win.io_thread.mailbox.push(.{
                                 .write_stable = "\x1B[201~",
                             }, .{ .forever = {} });
