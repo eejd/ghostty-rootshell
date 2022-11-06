@@ -22,3 +22,6 @@ renderer_state: *renderer.State,
 /// A handle to wake up the renderer. This hints to the renderer that that
 /// a repaint should happen.
 renderer_wakeup: libuv.Async,
+
+/// The mailbox for renderer messages.
+renderer_mailbox: *renderer.Thread.Mailbox,

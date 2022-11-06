@@ -15,7 +15,7 @@ const log = std.log.scoped(.renderer_thread);
 /// The type used for sending messages to the IO thread. For now this is
 /// hardcoded with a capacity. We can make this a comptime parameter in
 /// the future if we want it configurable.
-const Mailbox = BlockingQueue(renderer.Message, 64);
+pub const Mailbox = BlockingQueue(renderer.Message, 64);
 
 /// The main event loop for the application. The user data of this loop
 /// is always the allocator used to create the loop. This is a convenience
@@ -227,12 +227,20 @@ fn drainMailbox(self: *Thread) !void {
                     // If we're focused, we immediately show the cursor again
                     // and then restart the timer.
                     if (!try self.cursor_h.isActive()) {
+                        self.renderer.blinkCursor(true);
                         try self.cursor_h.start(
                             cursorTimerCallback,
-                            0,
+                            self.cursor_h.getRepeat(),
                             self.cursor_h.getRepeat(),
                         );
                     }
+                }
+            },
+
+            .reset_cursor_blink => {
+                self.renderer.blinkCursor(true);
+                if (try self.cursor_h.isActive()) {
+                    _ = try self.cursor_h.again();
                 }
             },
         }
@@ -278,7 +286,7 @@ fn cursorTimerCallback(h: *libuv.Timer) void {
         return;
     };
 
-    t.renderer.blinkCursor();
+    t.renderer.blinkCursor(false);
     t.wakeup.send() catch {};
 }
 

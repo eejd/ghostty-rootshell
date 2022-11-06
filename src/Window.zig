@@ -367,6 +367,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .config = config,
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
+        .renderer_mailbox = render_thread.mailbox,
     });
     errdefer io.deinit();
 

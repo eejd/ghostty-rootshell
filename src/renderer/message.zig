@@ -8,4 +8,8 @@ pub const Message = union(enum) {
     /// rendering within. This is only sent when a change is detected so
     /// the renderer is expected to handle all of these.
     focus: bool,
+
+    /// Reset the cursor blink by immediately showing the cursor then
+    /// restarting the timer.
+    reset_cursor_blink: void,
 };

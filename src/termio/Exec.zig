@@ -40,6 +40,9 @@ renderer_state: *renderer.State,
 /// a repaint should happen.
 renderer_wakeup: libuv.Async,
 
+/// The mailbox for notifying the renderer of things.
+renderer_mailbox: *renderer.Thread.Mailbox,
+
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
@@ -103,6 +106,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .terminal_stream = undefined,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
+        .renderer_mailbox = opts.renderer_mailbox,
         .grid_size = opts.grid_size,
         .data = null,
     };
@@ -141,6 +145,7 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
         .read_arena = std.heap.ArenaAllocator.init(alloc),
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
+        .renderer_mailbox = self.renderer_mailbox,
         .data_stream = stream,
         .terminal_stream = .{
             .handler = .{
@@ -238,6 +243,9 @@ const EventData = struct {
     /// a repaint should happen.
     renderer_wakeup: libuv.Async,
 
+    /// The mailbox for notifying the renderer of things.
+    renderer_mailbox: *renderer.Thread.Mailbox,
+
     /// The data stream is the main IO for the pty.
     data_stream: libuv.Tty,
 
@@ -334,17 +342,15 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
         return;
     };
 
+    // Whenever a character is typed, we ensure the cursor is in the
+    // non-blink state so it is rendered if visible.
+    _ = ev.renderer_mailbox.push(.{
+        .reset_cursor_blink = {},
+    }, .{ .forever = {} });
+
     // We are modifying terminal state from here on out
     ev.renderer_state.mutex.lock();
     defer ev.renderer_state.mutex.unlock();
-
-    // Whenever a character is typed, we ensure the cursor is in the
-    // non-blink state so it is rendered if visible.
-    //ev.renderer_state.cursor.blink = false;
-    // TODO
-    // if (win.terminal_cursor.timer.isActive() catch false) {
-    //     _ = win.terminal_cursor.timer.again() catch null;
-    // }
 
     // Schedule a render
     ev.queueRender() catch unreachable;

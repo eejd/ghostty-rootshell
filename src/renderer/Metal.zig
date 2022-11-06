@@ -300,8 +300,8 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 }
 
 /// Called to toggle the blink state of the cursor
-pub fn blinkCursor(self: *Metal) void {
-    self.cursor_visible = !self.cursor_visible;
+pub fn blinkCursor(self: *Metal, reset: bool) void {
+    self.cursor_visible = reset or !self.cursor_visible;
 }
 
 /// The primary render callback that is completely thread-safe.
