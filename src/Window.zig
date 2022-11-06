@@ -780,8 +780,8 @@ fn keyCallback(
                 .copy_to_clipboard => {
                     // We can read from the renderer state without holding
                     // the lock because only we will write to this field.
-                    if (win.renderer_state.terminal.selection) |sel| {
-                        var buf = win.renderer_state.terminal.screen.selectionString(
+                    if (win.io.terminal.selection) |sel| {
+                        var buf = win.io.terminal.screen.selectionString(
                             win.alloc,
                             sel,
                         ) catch |err| {
@@ -807,7 +807,7 @@ fn keyCallback(
                         const bracketed = bracketed: {
                             win.renderer_state.mutex.lock();
                             defer win.renderer_state.mutex.unlock();
-                            break :bracketed win.renderer_state.terminal.modes.bracketed_paste;
+                            break :bracketed win.io.terminal.modes.bracketed_paste;
                         };
 
                         if (bracketed) {
