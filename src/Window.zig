@@ -761,7 +761,7 @@ fn keyCallback(
                 .new_window => {
                     _ = win.app.mailbox.push(.{
                         .new_window = {},
-                    }, .{ .forever = {} });
+                    }, .{ .instant = {} });
                     win.app.wakeup();
                 },
             }
