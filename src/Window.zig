@@ -136,6 +136,10 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
     };
 
     // Find all the fonts for this window
+    //
+    // Future: we can share the font group amongst all windows to save
+    // some new window init time and some memory. This will require making
+    // thread-safe changes to font structs.
     var font_lib = try font.Library.init();
     errdefer font_lib.deinit();
     var font_group = try alloc.create(font.GroupCache);
