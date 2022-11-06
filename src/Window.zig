@@ -394,7 +394,7 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
-            .focused = false,
+            .focused = true,
             .resize_screen = screen_size,
             .cursor = .{
                 .style = .blinking_block,
