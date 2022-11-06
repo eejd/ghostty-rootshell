@@ -159,8 +159,13 @@ pub const Config = struct {
 
         try result.keybind.set.put(
             alloc,
-            .{ .key = .up, .mods = .{ .super = true } },
+            .{ .key = .n, .mods = .{ .super = true } },
             .{ .new_window = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .w, .mods = .{ .super = true } },
+            .{ .close_window = {} },
         );
 
         return result;

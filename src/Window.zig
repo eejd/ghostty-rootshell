@@ -764,6 +764,8 @@ fn keyCallback(
                     }, .{ .instant = {} });
                     win.app.wakeup();
                 },
+
+                .close_window => win.window.setShouldClose(true),
             }
 
             // Bindings always result in us ignoring the char if printable
