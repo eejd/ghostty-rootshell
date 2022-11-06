@@ -10,14 +10,13 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const renderer = @import("renderer.zig");
+const termio = @import("termio.zig");
 const objc = @import("objc");
 const glfw = @import("glfw");
 const imgui = @import("imgui");
-const libuv = @import("libuv");
 const Pty = @import("Pty.zig");
 const font = @import("font/main.zig");
 const Command = @import("Command.zig");
-const SegmentedPool = @import("segmented_pool.zig").SegmentedPool;
 const trace = @import("tracy").trace;
 const terminal = @import("terminal/main.zig");
 const Config = @import("config.zig").Config;
@@ -31,16 +30,11 @@ const glfwNative = glfw.Native(.{
 
 const log = std.log.scoped(.window);
 
-// The preallocation size for the write request pool. This should be big
-// enough to satisfy most write requests. It must be a power of 2.
-const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
-
 // The renderer implementation to use.
 const Renderer = renderer.Renderer;
 
 /// Allocator
 alloc: Allocator,
-alloc_io_arena: std.heap.ArenaAllocator,
 
 /// The font structures
 font_lib: font.Library,
@@ -67,81 +61,25 @@ renderer_thread: renderer.Thread,
 /// The actual thread
 renderer_thr: std.Thread,
 
-/// The underlying pty for this window.
-pty: Pty,
-
-/// The command we're running for our tty.
-command: Command,
-
 /// Mouse state.
 mouse: Mouse,
 
-/// The terminal emulator internal state. This is the abstract "terminal"
-/// that manages input, grid updating, etc. and is renderer-agnostic. It
-/// just stores internal state about a grid. This is connected back to
-/// a renderer.
-terminal: terminal.Terminal,
-
-/// The stream parser.
-terminal_stream: terminal.Stream(*Window),
-
-/// Cursor state.
-terminal_cursor: Cursor,
+/// The terminal IO handler.
+io: termio.Impl,
+io_thread: termio.Thread,
+io_thr: std.Thread,
 
 /// The dimensions of the grid in rows and columns.
 grid_size: renderer.GridSize,
 
-/// The reader/writer stream for the pty.
-pty_stream: libuv.Tty,
-
-/// This is the pool of available (unused) write requests. If you grab
-/// one from the pool, you must put it back when you're done!
-write_req_pool: SegmentedPool(libuv.WriteReq.T, WRITE_REQ_PREALLOC) = .{},
-
-/// The pool of available buffers for writing to the pty.
-write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
-
 /// The app configuration
 config: *const Config,
-
-/// Window background color
-bg_r: f32,
-bg_g: f32,
-bg_b: f32,
-bg_a: f32,
-
-/// Bracketed paste mode
-bracketed_paste: bool = false,
 
 /// Set to true for a single GLFW key/char callback cycle to cause the
 /// char callback to ignore. GLFW seems to always do key followed by char
 /// callbacks so we abuse that here. This is to solve an issue where commands
 /// like such as "control-v" will write a "v" even if they're intercepted.
 ignore_char: bool = false,
-
-/// Information related to the current cursor for the window.
-//
-// QUESTION(mitchellh): should this be attached to the Screen instead?
-// I'm not sure if the cursor settings stick to the screen, i.e. if you
-// change to an alternate screen if those are preserved. Need to check this.
-const Cursor = struct {
-    /// Timer for cursor blinking.
-    timer: libuv.Timer,
-
-    /// Start (or restart) the timer. This is idempotent.
-    pub fn startTimer(self: Cursor) !void {
-        try self.timer.start(
-            cursorTimerCallback,
-            0,
-            self.timer.getRepeat(),
-        );
-    }
-
-    /// Stop the timer. This is idempotent.
-    pub fn stopTimer(self: Cursor) !void {
-        try self.timer.stop();
-    }
-};
 
 /// Mouse state for the window.
 const Mouse = struct {
@@ -169,7 +107,7 @@ const Mouse = struct {
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
-pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Window {
+pub fn create(alloc: Allocator, config: *const Config) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
@@ -377,73 +315,10 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .height = @floatToInt(u32, renderer_impl.cell_size.height * 4),
     }, .{ .width = null, .height = null });
 
-    // Create our pty
-    var pty = try Pty.open(.{
-        .ws_row = @intCast(u16, grid_size.rows),
-        .ws_col = @intCast(u16, grid_size.columns),
-        .ws_xpixel = @intCast(u16, window_size.width),
-        .ws_ypixel = @intCast(u16, window_size.height),
-    });
-    errdefer pty.deinit();
-
-    // Create our child process
-    const path = (try Command.expandPath(alloc, config.command orelse "sh")) orelse
-        return error.CommandNotFound;
-    defer alloc.free(path);
-
-    var env = try std.process.getEnvMap(alloc);
-    defer env.deinit();
-    try env.put("TERM", "xterm-256color");
-
-    var cmd: Command = .{
-        .path = path,
-        .args = &[_][]const u8{path},
-        .env = &env,
-        .cwd = config.@"working-directory",
-        .pre_exec = (struct {
-            fn callback(c: *Command) void {
-                const p = c.getData(Pty) orelse unreachable;
-                p.childPreExec() catch |err|
-                    log.err("error initializing child: {}", .{err});
-            }
-        }).callback,
-        .data = &pty,
-    };
-    // note: can't set these in the struct initializer because it
-    // sets the handle to "0". Probably a stage1 zig bug.
-    cmd.stdin = std.fs.File{ .handle = pty.slave };
-    cmd.stdout = cmd.stdin;
-    cmd.stderr = cmd.stdin;
-    try cmd.start(alloc);
-    log.debug("started subcommand path={s} pid={?}", .{ path, cmd.pid });
-
-    // Read data
-    var stream = try libuv.Tty.init(alloc, loop, pty.master);
-    errdefer stream.deinit(alloc);
-    stream.setData(self);
-    try stream.readStart(ttyReadAlloc, ttyRead);
-
-    // Create our terminal
-    var term = try terminal.Terminal.init(alloc, grid_size.columns, grid_size.rows);
-    errdefer term.deinit(alloc);
-
-    // Setup a timer for blinking the cursor
-    var timer = try libuv.Timer.init(alloc, loop);
-    errdefer timer.deinit(alloc);
-    errdefer timer.close(null);
-    timer.setData(self);
-    try timer.start(cursorTimerCallback, 600, 600);
-
     // Create the cursor
     const cursor = try glfw.Cursor.createStandard(.ibeam);
     errdefer cursor.destroy();
     try window.setCursor(cursor);
-
-    // Create our IO allocator arena. Libuv appears to guarantee (in code,
-    // not in docs) that read_alloc is called directly before a read so
-    // we can use an arena to make allocation faster.
-    var io_arena = std.heap.ArenaAllocator.init(alloc);
-    errdefer io_arena.deinit();
 
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
@@ -459,9 +334,23 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     );
     errdefer render_thread.deinit();
 
+    // Start our IO implementation
+    var io = try termio.Impl.init(alloc, .{
+        .grid_size = grid_size,
+        .screen_size = screen_size,
+        .config = config,
+        .renderer_state = &self.renderer_state,
+        .renderer_wakeup = render_thread.wakeup,
+        .renderer_mailbox = render_thread.mailbox,
+    });
+    errdefer io.deinit();
+
+    // Create the IO thread
+    var io_thread = try termio.Thread.init(alloc, &self.io);
+    errdefer io_thread.deinit();
+
     self.* = .{
         .alloc = alloc,
-        .alloc_io_arena = io_arena,
         .font_lib = font_lib,
         .font_group = font_group,
         .window = window,
@@ -470,30 +359,21 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
-            .focused = false,
             .resize_screen = screen_size,
             .cursor = .{
                 .style = .blinking_block,
                 .visible = true,
-                .blink = false,
             },
-            .terminal = &self.terminal,
+            .terminal = &self.io.terminal,
             .devmode = if (!DevMode.enabled) null else &DevMode.instance,
         },
         .renderer_thr = undefined,
-        .pty = pty,
-        .command = cmd,
         .mouse = .{},
-        .terminal = term,
-        .terminal_stream = .{ .handler = self },
-        .terminal_cursor = .{ .timer = timer },
+        .io = io,
+        .io_thread = io_thread,
+        .io_thr = undefined,
         .grid_size = grid_size,
-        .pty_stream = stream,
         .config = config,
-        .bg_r = @intToFloat(f32, config.background.r) / 255.0,
-        .bg_g = @intToFloat(f32, config.background.g) / 255.0,
-        .bg_b = @intToFloat(f32, config.background.b) / 255.0,
-        .bg_a = 1.0,
 
         .imgui_ctx = if (!DevMode.enabled) void else try imgui.Context.create(),
     };
@@ -524,11 +404,11 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
     if (DevMode.enabled) {
-        const io = try imgui.IO.get();
-        io.cval().IniFilename = "ghostty_dev_mode.ini";
+        const dev_io = try imgui.IO.get();
+        dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
 
         // Add our built-in fonts so it looks slightly better
-        const dev_atlas = @ptrCast(*imgui.FontAtlas, io.cval().Fonts);
+        const dev_atlas = @ptrCast(*imgui.FontAtlas, dev_io.cval().Fonts);
         dev_atlas.addFontFromMemoryTTF(
             face_ttf,
             @intToFloat(f32, font_size.pixels()),
@@ -551,6 +431,13 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .{},
         renderer.Thread.threadMain,
         .{&self.renderer_thread},
+    );
+
+    // Start our IO thread
+    self.io_thr = try std.Thread.spawn(
+        .{},
+        termio.Thread.threadMain,
+        .{&self.io_thread},
     );
 
     return self;
@@ -579,36 +466,18 @@ pub fn destroy(self: *Window) void {
         self.imgui_ctx.destroy();
     }
 
-    // Deinitialize the pty. This closes the pty handles. This should
-    // cause a close in the our subprocess so just wait for that.
-    self.pty.deinit();
-    _ = self.command.wait() catch |err|
-        log.err("error waiting for command to exit: {}", .{err});
+    {
+        // Stop our IO thread
+        self.io_thread.stop.send() catch |err|
+            log.err("error notifying io thread to stop, may stall err={}", .{err});
+        self.io_thr.join();
+        self.io_thread.deinit();
 
-    self.terminal.deinit(self.alloc);
+        // Deinitialize our terminal IO
+        self.io.deinit();
+    }
+
     self.window.destroy();
-
-    self.terminal_cursor.timer.close((struct {
-        fn callback(t: *libuv.Timer) void {
-            const alloc = t.loop().getData(Allocator).?.*;
-            t.deinit(alloc);
-        }
-    }).callback);
-
-    // We have to dealloc our window in the close callback because
-    // we can't free some of the memory associated with the window
-    // until the stream is closed.
-    self.pty_stream.readStop();
-    self.pty_stream.close((struct {
-        fn callback(t: *libuv.Tty) void {
-            const win = t.getData(Window).?;
-            const alloc = win.alloc;
-            t.deinit(alloc);
-            win.write_req_pool.deinit(alloc);
-            win.write_buf_pool.deinit(alloc);
-            win.alloc.destroy(win);
-        }
-    }).callback);
 
     // We can destroy the cursor right away. glfw will just revert any
     // windows using it to the default.
@@ -618,32 +487,13 @@ pub fn destroy(self: *Window) void {
     self.font_lib.deinit();
     self.alloc.destroy(self.font_group);
 
-    self.alloc_io_arena.deinit();
     self.alloc.destroy(self.renderer_state.mutex);
+
+    self.alloc.destroy(self);
 }
 
 pub fn shouldClose(self: Window) bool {
     return self.window.shouldClose();
-}
-
-/// Queue a write to the pty.
-fn queueWrite(self: *Window, data: []const u8) !void {
-    // We go through and chunk the data if necessary to fit into
-    // our cached buffers that we can queue to the stream.
-    var i: usize = 0;
-    while (i < data.len) {
-        const req = try self.write_req_pool.get();
-        const buf = try self.write_buf_pool.get();
-        const end = @min(data.len, i + buf.len);
-        std.mem.copy(u8, buf, data[i..end]);
-        try self.pty_stream.write(
-            .{ .req = req },
-            &[1][]u8{buf[0..(end - i)]},
-            ttyWrite,
-        );
-
-        i = end;
-    }
 }
 
 /// This queues a render operation with the renderer thread. The render
@@ -703,33 +553,20 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
-    // Resize usually forces a redraw
-    win.queueRender() catch |err|
-        log.err("error scheduling render timer in sizeCallback err={}", .{err});
+    // TODO: if our screen size didn't change, then we should avoid the
+    // overhead of inter-thread communication
 
     // Recalculate our grid size
     win.grid_size.update(screen_size, win.renderer.cell_size);
 
-    // Update the size of our pty
-    win.pty.setSize(.{
-        .ws_row = @intCast(u16, win.grid_size.rows),
-        .ws_col = @intCast(u16, win.grid_size.columns),
-        .ws_xpixel = @intCast(u16, width),
-        .ws_ypixel = @intCast(u16, height),
-    }) catch |err| log.err("error updating pty screen size err={}", .{err});
-
-    // Enter the critical area that we want to keep small
-    {
-        win.renderer_state.mutex.lock();
-        defer win.renderer_state.mutex.unlock();
-
-        // We need to setup our render state to store our new pending size
-        win.renderer_state.resize_screen = screen_size;
-
-        // Update the size of our terminal state
-        win.terminal.resize(win.alloc, win.grid_size.columns, win.grid_size.rows) catch |err|
-            log.err("error updating terminal size: {}", .{err});
-    }
+    // Mail the IO thread
+    _ = win.io_thread.mailbox.push(.{
+        .resize = .{
+            .grid_size = win.grid_size,
+            .screen_size = screen_size,
+        },
+    }, .{ .forever = {} });
+    win.io_thread.wakeup.send() catch {};
 }
 
 fn charCallback(window: glfw.Window, codepoint: u21) void {
@@ -755,23 +592,36 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
         return;
     }
 
-    // Anytime is character is created, we have to clear the selection
-    if (win.terminal.selection != null) {
-        win.terminal.selection = null;
-        win.queueRender() catch |err|
-            log.err("error scheduling render in charCallback err={}", .{err});
+    // Critical area
+    {
+        win.renderer_state.mutex.lock();
+        defer win.renderer_state.mutex.unlock();
+
+        // Clear the selction if we have one.
+        if (win.io.terminal.selection != null) {
+            win.io.terminal.selection = null;
+            win.queueRender() catch |err|
+                log.err("error scheduling render in charCallback err={}", .{err});
+        }
+
+        // We want to scroll to the bottom
+        // TODO: detect if we're at the bottom to avoid the render call here.
+        win.io.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
+            log.err("error scrolling viewport err={}", .{err});
     }
 
-    // We want to scroll to the bottom
-    // TODO: detect if we're at the bottom to avoid the render call here.
-    win.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
-        log.err("error scrolling viewport err={}", .{err});
-    win.queueRender() catch |err|
-        log.err("error scheduling render in charCallback err={}", .{err});
+    // Ask our IO thread to write the data
+    var data: termio.Message.WriteReq.Small.Array = undefined;
+    data[0] = @intCast(u8, codepoint);
+    _ = win.io_thread.mailbox.push(.{
+        .write_small = .{
+            .data = data,
+            .len = 1,
+        },
+    }, .{ .forever = {} });
 
-    // Write the character to the pty
-    win.queueWrite(&[1]u8{@intCast(u8, codepoint)}) catch |err|
-        log.err("error queueing write in charCallback err={}", .{err});
+    // After sending all our messages we have to notify our IO thread
+    win.io_thread.wakeup.send() catch {};
 }
 
 fn keyCallback(
@@ -873,15 +723,23 @@ fn keyCallback(
                 .ignore => {},
 
                 .csi => |data| {
-                    win.queueWrite("\x1B[") catch |err|
-                        log.err("error queueing write in keyCallback err={}", .{err});
-                    win.queueWrite(data) catch |err|
-                        log.warn("error pasting clipboard: {}", .{err});
+                    _ = win.io_thread.mailbox.push(.{
+                        .write_stable = "\x1B[",
+                    }, .{ .forever = {} });
+                    _ = win.io_thread.mailbox.push(.{
+                        .write_stable = data,
+                    }, .{ .forever = {} });
+                    win.io_thread.wakeup.send() catch {};
                 },
 
                 .copy_to_clipboard => {
-                    if (win.terminal.selection) |sel| {
-                        var buf = win.terminal.screen.selectionString(win.alloc, sel) catch |err| {
+                    // We can read from the renderer state without holding
+                    // the lock because only we will write to this field.
+                    if (win.io.terminal.selection) |sel| {
+                        var buf = win.io.terminal.screen.selectionString(
+                            win.alloc,
+                            sel,
+                        ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;
                         };
@@ -901,12 +759,30 @@ fn keyCallback(
                     };
 
                     if (data.len > 0) {
-                        if (win.bracketed_paste) win.queueWrite("\x1B[200~") catch |err|
-                            log.err("error queueing write in keyCallback err={}", .{err});
-                        win.queueWrite(data) catch |err|
-                            log.warn("error pasting clipboard: {}", .{err});
-                        if (win.bracketed_paste) win.queueWrite("\x1B[201~") catch |err|
-                            log.err("error queueing write in keyCallback err={}", .{err});
+                        const bracketed = bracketed: {
+                            win.renderer_state.mutex.lock();
+                            defer win.renderer_state.mutex.unlock();
+                            break :bracketed win.io.terminal.modes.bracketed_paste;
+                        };
+
+                        if (bracketed) {
+                            _ = win.io_thread.mailbox.push(.{
+                                .write_stable = "\x1B[200~",
+                            }, .{ .forever = {} });
+                        }
+
+                        _ = win.io_thread.mailbox.push(termio.Message.writeReq(
+                            win.alloc,
+                            data,
+                        ) catch unreachable, .{ .forever = {} });
+
+                        if (bracketed) {
+                            _ = win.io_thread.mailbox.push(.{
+                                .write_stable = "\x1B[201~",
+                            }, .{ .forever = {} });
+                        }
+
+                        win.io_thread.wakeup.send() catch {};
                     }
                 },
 
@@ -974,8 +850,18 @@ fn keyCallback(
             });
         };
         if (char > 0) {
-            win.queueWrite(&[1]u8{char}) catch |err|
-                log.err("error queueing write in keyCallback err={}", .{err});
+            // Ask our IO thread to write the data
+            var data: termio.Message.WriteReq.Small.Array = undefined;
+            data[0] = @intCast(u8, char);
+            _ = win.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = 1,
+                },
+            }, .{ .forever = {} });
+
+            // After sending all our messages we have to notify our IO thread
+            win.io_thread.wakeup.send() catch {};
         }
     }
 }
@@ -986,20 +872,13 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
 
     const win = window.getUserPointer(Window) orelse return;
 
-    // We have to schedule a render because no matter what we're changing
-    // the cursor. If we're focused its reappearing, if we're not then
-    // its changing to hollow and not blinking.
+    // Notify our render thread of the new state
+    _ = win.renderer_thread.mailbox.push(.{
+        .focus = focused,
+    }, .{ .forever = {} });
+
+    // Schedule render which also drains our mailbox
     win.queueRender() catch unreachable;
-
-    if (focused)
-        win.terminal_cursor.startTimer() catch unreachable
-    else
-        win.terminal_cursor.stopTimer() catch unreachable;
-
-    // We are modifying renderer state from here on out
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
-    win.renderer_state.focused = focused;
 }
 
 fn refreshCallback(window: glfw.Window) void {
@@ -1030,19 +909,6 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
         } else |_| {}
     }
 
-    // If we're scrolling up or down, then send a mouse event
-    if (yoff != 0) {
-        const pos = window.getCursorPos() catch |err| {
-            log.err("error reading cursor position: {}", .{err});
-            return;
-        };
-
-        win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
-    }
-
     //log.info("SCROLL: {} {}", .{ xoff, yoff });
     _ = xoff;
 
@@ -1050,12 +916,30 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     const sign: isize = if (yoff > 0) -1 else 1;
     const delta: isize = sign * @max(@divFloor(win.grid_size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
-    win.terminal.scrollViewport(.{ .delta = delta }) catch |err|
-        log.err("error scrolling viewport err={}", .{err});
 
-    // Schedule render since scrolling usually does something.
-    // TODO(perf): we can only schedule render if we know scrolling
-    // did something
+    {
+        win.renderer_state.mutex.lock();
+        defer win.renderer_state.mutex.unlock();
+
+        // Modify our viewport, this requires a lock since it affects rendering
+        win.io.terminal.scrollViewport(.{ .delta = delta }) catch |err|
+            log.err("error scrolling viewport err={}", .{err});
+
+        // If we're scrolling up or down, then send a mouse event. This requires
+        // a lock since we read terminal state.
+        if (yoff != 0) {
+            const pos = window.getCursorPos() catch |err| {
+                log.err("error reading cursor position: {}", .{err});
+                return;
+            };
+
+            win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
+                log.err("error reporting mouse event: {}", .{err});
+                return;
+            };
+        }
+    }
+
     win.queueRender() catch unreachable;
 }
 
@@ -1073,7 +957,7 @@ fn mouseReport(
     // do we want to not report mouse events at all outside the window?
 
     // Depending on the event, we may do nothing at all.
-    switch (self.terminal.modes.mouse_event) {
+    switch (self.io.terminal.modes.mouse_event) {
         .none => return,
 
         // X10 only reports clicks with mouse button 1, 2, 3. We verify
@@ -1099,8 +983,8 @@ fn mouseReport(
     const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
 
     // For button events, we only report if we moved cells
-    if (self.terminal.modes.mouse_event == .button or
-        self.terminal.modes.mouse_event == .any)
+    if (self.io.terminal.modes.mouse_event == .button or
+        self.io.terminal.modes.mouse_event == .any)
     {
         if (self.mouse.event_point.x == viewport_point.x and
             self.mouse.event_point.y == viewport_point.y) return;
@@ -1117,7 +1001,7 @@ fn mouseReport(
         if (button == null) {
             // Null button means motion without a button pressed
             acc = 3;
-        } else if (action == .release and self.terminal.modes.mouse_format != .sgr) {
+        } else if (action == .release and self.io.terminal.modes.mouse_format != .sgr) {
             // Release is 3. It is NOT 3 in SGR mode because SGR can tell
             // the application what button was released.
             acc = 3;
@@ -1133,7 +1017,7 @@ fn mouseReport(
         }
 
         // X10 doesn't have modifiers
-        if (self.terminal.modes.mouse_event != .x10) {
+        if (self.io.terminal.modes.mouse_event != .x10) {
             if (mods.shift) acc += 4;
             if (mods.super) acc += 8;
             if (mods.ctrl) acc += 16;
@@ -1145,7 +1029,7 @@ fn mouseReport(
         break :code acc;
     };
 
-    switch (self.terminal.modes.mouse_format) {
+    switch (self.io.terminal.modes.mouse_format) {
         .x10 => {
             if (viewport_point.x > 222 or viewport_point.y > 222) {
                 log.info("X10 mouse format can only encode X/Y up to 223", .{});
@@ -1153,29 +1037,47 @@ fn mouseReport(
             }
 
             // + 1 below is because our x/y is 0-indexed and proto wants 1
-            var buf = [_]u8{ '\x1b', '[', 'M', 0, 0, 0 };
-            buf[3] = 32 + button_code;
-            buf[4] = 32 + @intCast(u8, viewport_point.x) + 1;
-            buf[5] = 32 + @intCast(u8, viewport_point.y) + 1;
-            try self.queueWrite(&buf);
+            var data: termio.Message.WriteReq.Small.Array = undefined;
+            assert(data.len >= 5);
+            data[0] = '\x1b';
+            data[1] = '[';
+            data[2] = 'M';
+            data[3] = 32 + button_code;
+            data[4] = 32 + @intCast(u8, viewport_point.x) + 1;
+            data[5] = 32 + @intCast(u8, viewport_point.y) + 1;
+
+            // Ask our IO thread to write the data
+            _ = self.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = 5,
+                },
+            }, .{ .forever = {} });
         },
 
         .utf8 => {
             // Maximum of 12 because at most we have 2 fully UTF-8 encoded chars
-            var buf: [12]u8 = undefined;
-            buf[0] = '\x1b';
-            buf[1] = '[';
-            buf[2] = 'M';
+            var data: termio.Message.WriteReq.Small.Array = undefined;
+            assert(data.len >= 12);
+            data[0] = '\x1b';
+            data[1] = '[';
+            data[2] = 'M';
 
             // The button code will always fit in a single u8
-            buf[3] = 32 + button_code;
+            data[3] = 32 + button_code;
 
             // UTF-8 encode the x/y
             var i: usize = 4;
-            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.x + 1), buf[i..]);
-            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.y + 1), buf[i..]);
+            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.x + 1), data[i..]);
+            i += try std.unicode.utf8Encode(@intCast(u21, 32 + viewport_point.y + 1), data[i..]);
 
-            try self.queueWrite(buf[0..i]);
+            // Ask our IO thread to write the data
+            _ = self.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = @intCast(u8, i),
+                },
+            }, .{ .forever = {} });
         },
 
         .sgr => {
@@ -1184,28 +1086,40 @@ fn mouseReport(
 
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
-            var buf: [32]u8 = undefined;
-            const resp = try std.fmt.bufPrint(&buf, "\x1B[<{d};{d};{d}{c}", .{
+            var data: termio.Message.WriteReq.Small.Array = undefined;
+            const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
                 viewport_point.x + 1,
                 viewport_point.y + 1,
                 final,
             });
 
-            try self.queueWrite(resp);
+            // Ask our IO thread to write the data
+            _ = self.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = @intCast(u8, resp.len),
+                },
+            }, .{ .forever = {} });
         },
 
         .urxvt => {
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
-            var buf: [32]u8 = undefined;
-            const resp = try std.fmt.bufPrint(&buf, "\x1B[{d};{d};{d}M", .{
+            var data: termio.Message.WriteReq.Small.Array = undefined;
+            const resp = try std.fmt.bufPrint(&data, "\x1B[{d};{d};{d}M", .{
                 32 + button_code,
                 viewport_point.x + 1,
                 viewport_point.y + 1,
             });
 
-            try self.queueWrite(resp);
+            // Ask our IO thread to write the data
+            _ = self.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = @intCast(u8, resp.len),
+                },
+            }, .{ .forever = {} });
         },
 
         .sgr_pixels => {
@@ -1214,17 +1128,26 @@ fn mouseReport(
 
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
-            var buf: [32]u8 = undefined;
-            const resp = try std.fmt.bufPrint(&buf, "\x1B[<{d};{d};{d}{c}", .{
+            var data: termio.Message.WriteReq.Small.Array = undefined;
+            const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
                 pos.xpos,
                 pos.ypos,
                 final,
             });
 
-            try self.queueWrite(resp);
+            // Ask our IO thread to write the data
+            _ = self.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = @intCast(u8, resp.len),
+                },
+            }, .{ .forever = {} });
         },
     }
+
+    // After sending all our messages we have to notify our IO thread
+    try self.io_thread.wakeup.send();
 }
 
 fn mouseButtonCallback(
@@ -1271,8 +1194,11 @@ fn mouseButtonCallback(
     win.mouse.click_state[@enumToInt(button)] = action;
     win.mouse.mods = @bitCast(input.Mods, mods);
 
+    win.renderer_state.mutex.lock();
+    defer win.renderer_state.mutex.unlock();
+
     // Report mouse events if enabled
-    if (win.terminal.modes.mouse_event != .none) {
+    if (win.io.terminal.modes.mouse_event != .none) {
         const pos = window.getCursorPos() catch |err| {
             log.err("error reading cursor position: {}", .{err});
             return;
@@ -1304,13 +1230,13 @@ fn mouseButtonCallback(
 
         // Store it
         const point = win.posToViewport(pos.xpos, pos.ypos);
-        win.mouse.left_click_point = point.toScreen(&win.terminal.screen);
+        win.mouse.left_click_point = point.toScreen(&win.io.terminal.screen);
         win.mouse.left_click_xpos = pos.xpos;
         win.mouse.left_click_ypos = pos.ypos;
 
         // Selection is always cleared
-        if (win.terminal.selection != null) {
-            win.terminal.selection = null;
+        if (win.io.terminal.selection != null) {
+            win.io.terminal.selection = null;
             win.queueRender() catch |err|
                 log.err("error scheduling render in mouseButtinCallback err={}", .{err});
         }
@@ -1339,8 +1265,12 @@ fn cursorPosCallback(
         } else |_| {}
     }
 
+    // We are reading/writing state for the remainder
+    win.renderer_state.mutex.lock();
+    defer win.renderer_state.mutex.unlock();
+
     // Do a mouse report
-    if (win.terminal.modes.mouse_event != .none) {
+    if (win.io.terminal.modes.mouse_event != .none) {
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
         const button: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
@@ -1375,7 +1305,7 @@ fn cursorPosCallback(
 
     // Convert to points
     const viewport_point = win.posToViewport(xpos, ypos);
-    const screen_point = viewport_point.toScreen(&win.terminal.screen);
+    const screen_point = viewport_point.toScreen(&win.io.terminal.screen);
 
     // NOTE(mitchellh): This logic super sucks. There has to be an easier way
     // to calculate this, but this is good for a v1. Selection isn't THAT
@@ -1386,13 +1316,13 @@ fn cursorPosCallback(
     // If we were selecting, and we switched directions, then we restart
     // calculations because it forces us to reconsider if the first cell is
     // selected.
-    if (win.terminal.selection) |sel| {
+    if (win.io.terminal.selection) |sel| {
         const reset: bool = if (sel.end.before(sel.start))
             sel.start.before(screen_point)
         else
             screen_point.before(sel.start);
 
-        if (reset) win.terminal.selection = null;
+        if (reset) win.io.terminal.selection = null;
     }
 
     // Our logic for determing if the starting cell is selected:
@@ -1424,7 +1354,7 @@ fn cursorPosCallback(
         else
             cell_xpos < cell_xboundary;
 
-        win.terminal.selection = if (selected) .{
+        win.io.terminal.selection = if (selected) .{
             .start = screen_point,
             .end = screen_point,
         } else null;
@@ -1434,7 +1364,7 @@ fn cursorPosCallback(
 
     // If this is a different cell and we haven't started selection,
     // we determine the starting cell first.
-    if (win.terminal.selection == null) {
+    if (win.io.terminal.selection == null) {
         //   - If we're moving to a point before the start, then we select
         //     the starting cell if we started after the boundary, else
         //     we start selection of the prior cell.
@@ -1448,7 +1378,7 @@ fn cursorPosCallback(
                     .y = click_point.y,
                     .x = click_point.x - 1,
                 } else terminal.point.ScreenPoint{
-                    .x = win.terminal.screen.cols - 1,
+                    .x = win.io.terminal.screen.cols - 1,
                     .y = click_point.y -| 1,
                 };
             }
@@ -1456,7 +1386,7 @@ fn cursorPosCallback(
             if (win.mouse.left_click_xpos < cell_xboundary) {
                 break :start click_point;
             } else {
-                break :start if (click_point.x < win.terminal.screen.cols - 1) terminal.point.ScreenPoint{
+                break :start if (click_point.x < win.io.terminal.screen.cols - 1) terminal.point.ScreenPoint{
                     .y = click_point.y,
                     .x = click_point.x + 1,
                 } else terminal.point.ScreenPoint{
@@ -1466,7 +1396,7 @@ fn cursorPosCallback(
             }
         };
 
-        win.terminal.selection = .{ .start = start, .end = screen_point };
+        win.io.terminal.selection = .{ .start = start, .end = screen_point };
         return;
     }
 
@@ -1475,8 +1405,8 @@ fn cursorPosCallback(
 
     // We moved! Set the selection end point. The start point should be
     // set earlier.
-    assert(win.terminal.selection != null);
-    win.terminal.selection.?.end = screen_point;
+    assert(win.io.terminal.selection != null);
+    win.io.terminal.selection.?.end = screen_point;
 }
 
 fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
@@ -1491,443 +1421,15 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
 
             // Can be off the screen if the user drags it out, so max
             // it out on our available columns
-            break :x @min(x, self.terminal.cols - 1);
+            break :x @min(x, self.io.terminal.cols - 1);
         },
 
         .y = if (ypos < 0) 0 else y: {
             const cell_height = @floatCast(f64, self.renderer.cell_size.height);
             const y = @floatToInt(usize, ypos / cell_height);
-            break :y @min(y, self.terminal.rows - 1);
+            break :y @min(y, self.io.terminal.rows - 1);
         },
     };
-}
-
-fn cursorTimerCallback(t: *libuv.Timer) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = t.getData(Window) orelse return;
-
-    // We are modifying renderer state from here on out
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
-
-    // If the cursor is currently invisible, then we do nothing. Ideally
-    // in this state the timer would be cancelled but no big deal.
-    if (!win.renderer_state.cursor.visible) return;
-
-    // Swap blink state and schedule a render
-    win.renderer_state.cursor.blink = !win.renderer_state.cursor.blink;
-    win.queueRender() catch unreachable;
-}
-
-fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = t.getData(Window) orelse return null;
-    const alloc = win.alloc_io_arena.allocator();
-    return alloc.alloc(u8, size) catch null;
-}
-
-fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
-    const tracy = trace(@src());
-    tracy.color(0xEAEA7F); // yellow-ish
-    defer tracy.end();
-
-    const win = t.getData(Window).?;
-    defer {
-        const alloc = win.alloc_io_arena.allocator();
-        alloc.free(buf);
-    }
-
-    // log.info("DATA: {d}", .{n});
-    // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
-
-    // First check for errors in the case n is less than 0.
-    libuv.convertError(@intCast(i32, n)) catch |err| {
-        switch (err) {
-            // ignore EOF because it should end the process.
-            libuv.Error.EOF => {},
-            else => log.err("read error: {}", .{err}),
-        }
-
-        return;
-    };
-
-    // We are modifying terminal state from here on out
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
-
-    // Whenever a character is typed, we ensure the cursor is in the
-    // non-blink state so it is rendered if visible.
-    win.renderer_state.cursor.blink = false;
-    if (win.terminal_cursor.timer.isActive() catch false) {
-        _ = win.terminal_cursor.timer.again() catch null;
-    }
-
-    // Schedule a render
-    win.queueRender() catch unreachable;
-
-    // Process the terminal data. This is an extremely hot part of the
-    // terminal emulator, so we do some abstraction leakage to avoid
-    // function calls and unnecessary logic.
-    //
-    // The ground state is the only state that we can see and print/execute
-    // ASCII, so we only execute this hot path if we're already in the ground
-    // state.
-    //
-    // Empirically, this alone improved throughput of large text output by ~20%.
-    var i: usize = 0;
-    const end = @intCast(usize, n);
-    if (win.terminal_stream.parser.state == .ground) {
-        for (buf[i..end]) |c| {
-            switch (terminal.parse_table.table[c][@enumToInt(terminal.Parser.State.ground)].action) {
-                // Print, call directly.
-                .print => win.print(@intCast(u21, c)) catch |err|
-                    log.err("error processing terminal data: {}", .{err}),
-
-                // C0 execute, let our stream handle this one but otherwise
-                // continue since we're guaranteed to be back in ground.
-                .execute => win.terminal_stream.execute(c) catch |err|
-                    log.err("error processing terminal data: {}", .{err}),
-
-                // Otherwise, break out and go the slow path until we're
-                // back in ground. There is a slight optimization here where
-                // could try to find the next transition to ground but when
-                // I implemented that it didn't materially change performance.
-                else => break,
-            }
-
-            i += 1;
-        }
-    }
-
-    if (i < end) {
-        win.terminal_stream.nextSlice(buf[i..end]) catch |err|
-            log.err("error processing terminal data: {}", .{err});
-    }
-}
-
-fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const tty = req.handle(libuv.Tty).?;
-    const win = tty.getData(Window).?;
-    win.write_req_pool.put();
-    win.write_buf_pool.put();
-
-    libuv.convertError(status) catch |err|
-        log.err("write error: {}", .{err});
-
-    //log.info("WROTE: {d}", .{status});
-}
-
-//-------------------------------------------------------------------
-// Stream Callbacks
-
-pub fn print(self: *Window, c: u21) !void {
-    try self.terminal.print(c);
-}
-
-pub fn bell(self: Window) !void {
-    _ = self;
-    log.info("BELL", .{});
-}
-
-pub fn backspace(self: *Window) !void {
-    self.terminal.backspace();
-}
-
-pub fn horizontalTab(self: *Window) !void {
-    try self.terminal.horizontalTab();
-}
-
-pub fn linefeed(self: *Window) !void {
-    // Small optimization: call index instead of linefeed because they're
-    // identical and this avoids one layer of function call overhead.
-    try self.terminal.index();
-}
-
-pub fn carriageReturn(self: *Window) !void {
-    self.terminal.carriageReturn();
-}
-
-pub fn setCursorLeft(self: *Window, amount: u16) !void {
-    self.terminal.cursorLeft(amount);
-}
-
-pub fn setCursorRight(self: *Window, amount: u16) !void {
-    self.terminal.cursorRight(amount);
-}
-
-pub fn setCursorDown(self: *Window, amount: u16) !void {
-    self.terminal.cursorDown(amount);
-}
-
-pub fn setCursorUp(self: *Window, amount: u16) !void {
-    self.terminal.cursorUp(amount);
-}
-
-pub fn setCursorCol(self: *Window, col: u16) !void {
-    self.terminal.setCursorColAbsolute(col);
-}
-
-pub fn setCursorRow(self: *Window, row: u16) !void {
-    if (self.terminal.modes.origin) {
-        // TODO
-        log.err("setCursorRow: implement origin mode", .{});
-        unreachable;
-    }
-
-    self.terminal.setCursorPos(row, self.terminal.screen.cursor.x + 1);
-}
-
-pub fn setCursorPos(self: *Window, row: u16, col: u16) !void {
-    self.terminal.setCursorPos(row, col);
-}
-
-pub fn eraseDisplay(self: *Window, mode: terminal.EraseDisplay) !void {
-    if (mode == .complete) {
-        // Whenever we erase the full display, scroll to bottom.
-        try self.terminal.scrollViewport(.{ .bottom = {} });
-        try self.queueRender();
-    }
-
-    self.terminal.eraseDisplay(mode);
-}
-
-pub fn eraseLine(self: *Window, mode: terminal.EraseLine) !void {
-    self.terminal.eraseLine(mode);
-}
-
-pub fn deleteChars(self: *Window, count: usize) !void {
-    try self.terminal.deleteChars(count);
-}
-
-pub fn eraseChars(self: *Window, count: usize) !void {
-    self.terminal.eraseChars(count);
-}
-
-pub fn insertLines(self: *Window, count: usize) !void {
-    try self.terminal.insertLines(count);
-}
-
-pub fn insertBlanks(self: *Window, count: usize) !void {
-    self.terminal.insertBlanks(count);
-}
-
-pub fn deleteLines(self: *Window, count: usize) !void {
-    try self.terminal.deleteLines(count);
-}
-
-pub fn reverseIndex(self: *Window) !void {
-    try self.terminal.reverseIndex();
-}
-
-pub fn index(self: *Window) !void {
-    try self.terminal.index();
-}
-
-pub fn nextLine(self: *Window) !void {
-    self.terminal.carriageReturn();
-    try self.terminal.index();
-}
-
-pub fn setTopAndBottomMargin(self: *Window, top: u16, bot: u16) !void {
-    self.terminal.setScrollingRegion(top, bot);
-}
-
-pub fn setMode(self: *Window, mode: terminal.Mode, enabled: bool) !void {
-    switch (mode) {
-        .reverse_colors => {
-            self.terminal.modes.reverse_colors = enabled;
-
-            // Schedule a render since we changed colors
-            try self.queueRender();
-        },
-
-        .origin => {
-            self.terminal.modes.origin = enabled;
-            self.terminal.setCursorPos(1, 1);
-        },
-
-        .autowrap => {
-            self.terminal.modes.autowrap = enabled;
-        },
-
-        .cursor_visible => {
-            self.renderer_state.cursor.visible = enabled;
-        },
-
-        .alt_screen_save_cursor_clear_enter => {
-            const opts: terminal.Terminal.AlternateScreenOptions = .{
-                .cursor_save = true,
-                .clear_on_enter = true,
-            };
-
-            if (enabled)
-                self.terminal.alternateScreen(opts)
-            else
-                self.terminal.primaryScreen(opts);
-
-            // Schedule a render since we changed screens
-            try self.queueRender();
-        },
-
-        .bracketed_paste => self.bracketed_paste = true,
-
-        .enable_mode_3 => {
-            // Disable deccolm
-            self.terminal.setDeccolmSupported(enabled);
-
-            // Force resize back to the window size
-            self.terminal.resize(self.alloc, self.grid_size.columns, self.grid_size.rows) catch |err|
-                log.err("error updating terminal size: {}", .{err});
-        },
-
-        .@"132_column" => try self.terminal.deccolm(
-            self.alloc,
-            if (enabled) .@"132_cols" else .@"80_cols",
-        ),
-
-        .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
-        .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
-        .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
-        .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
-
-        .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
-        .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
-        .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
-        .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
-
-        else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
-    }
-}
-
-pub fn setAttribute(self: *Window, attr: terminal.Attribute) !void {
-    switch (attr) {
-        .unknown => |unk| log.warn("unimplemented or unknown attribute: {any}", .{unk}),
-
-        else => self.terminal.setAttribute(attr) catch |err|
-            log.warn("error setting attribute {}: {}", .{ attr, err }),
-    }
-}
-
-pub fn deviceAttributes(
-    self: *Window,
-    req: terminal.DeviceAttributeReq,
-    params: []const u16,
-) !void {
-    _ = params;
-
-    switch (req) {
-        // VT220
-        .primary => self.queueWrite("\x1B[?62;c") catch |err|
-            log.warn("error queueing device attr response: {}", .{err}),
-        else => log.warn("unimplemented device attributes req: {}", .{req}),
-    }
-}
-
-pub fn deviceStatusReport(
-    self: *Window,
-    req: terminal.DeviceStatusReq,
-) !void {
-    switch (req) {
-        .operating_status => self.queueWrite("\x1B[0n") catch |err|
-            log.warn("error queueing device attr response: {}", .{err}),
-
-        .cursor_position => {
-            const pos: struct {
-                x: usize,
-                y: usize,
-            } = if (self.terminal.modes.origin) .{
-                // TODO: what do we do if cursor is outside scrolling region?
-                .x = self.terminal.screen.cursor.x,
-                .y = self.terminal.screen.cursor.y -| self.terminal.scrolling_region.top,
-            } else .{
-                .x = self.terminal.screen.cursor.x,
-                .y = self.terminal.screen.cursor.y,
-            };
-
-            // Response always is at least 4 chars, so this leaves the
-            // remainder for the row/column as base-10 numbers. This
-            // will support a very large terminal.
-            var buf: [32]u8 = undefined;
-            const resp = try std.fmt.bufPrint(&buf, "\x1B[{};{}R", .{
-                pos.y + 1,
-                pos.x + 1,
-            });
-
-            try self.queueWrite(resp);
-        },
-
-        else => log.warn("unimplemented device status req: {}", .{req}),
-    }
-}
-
-pub fn setCursorStyle(
-    self: *Window,
-    style: terminal.CursorStyle,
-) !void {
-    self.renderer_state.cursor.style = style;
-}
-
-pub fn decaln(self: *Window) !void {
-    try self.terminal.decaln();
-}
-
-pub fn tabClear(self: *Window, cmd: terminal.TabClear) !void {
-    self.terminal.tabClear(cmd);
-}
-
-pub fn tabSet(self: *Window) !void {
-    self.terminal.tabSet();
-}
-
-pub fn saveCursor(self: *Window) !void {
-    self.terminal.saveCursor();
-}
-
-pub fn restoreCursor(self: *Window) !void {
-    self.terminal.restoreCursor();
-}
-
-pub fn enquiry(self: *Window) !void {
-    try self.queueWrite("");
-}
-
-pub fn scrollDown(self: *Window, count: usize) !void {
-    try self.terminal.scrollDown(count);
-}
-
-pub fn scrollUp(self: *Window, count: usize) !void {
-    try self.terminal.scrollUp(count);
-}
-
-pub fn setActiveStatusDisplay(
-    self: *Window,
-    req: terminal.StatusDisplay,
-) !void {
-    self.terminal.status_display = req;
-}
-
-pub fn configureCharset(
-    self: *Window,
-    slot: terminal.CharsetSlot,
-    set: terminal.Charset,
-) !void {
-    self.terminal.configureCharset(slot, set);
-}
-
-pub fn invokeCharset(
-    self: *Window,
-    active: terminal.CharsetActiveSlot,
-    slot: terminal.CharsetSlot,
-    single: bool,
-) !void {
-    self.terminal.invokeCharset(active, slot, single);
 }
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");

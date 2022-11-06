@@ -440,7 +440,7 @@ pub fn Stream(comptime Handler: type) type {
         }
 
         fn configureCharset(
-            self: Self,
+            self: *Self,
             intermediates: []const u8,
             set: charsets.Charset,
         ) !void {

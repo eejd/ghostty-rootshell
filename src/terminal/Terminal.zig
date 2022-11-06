@@ -75,6 +75,8 @@ modes: packed struct {
     mouse_event: MouseEvents = .none,
     mouse_format: MouseFormat = .x10,
 
+    bracketed_paste: bool = false, // 2004
+
     test {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,

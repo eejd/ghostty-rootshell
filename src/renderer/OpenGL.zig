@@ -74,6 +74,9 @@ foreground: terminal.color.RGB,
 /// Default background color
 background: terminal.color.RGB,
 
+/// True if the window is focused
+focused: bool,
+
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
 /// Zig compiler.
@@ -292,6 +295,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !OpenGL {
         .cursor_style = .box,
         .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
+        .focused = true,
     };
 }
 
@@ -432,6 +436,16 @@ pub fn threadExit(self: *const OpenGL) void {
     glfw.makeContextCurrent(null) catch {};
 }
 
+/// Callback when the focus changes for the terminal this is rendering.
+pub fn setFocus(self: *OpenGL, focus: bool) !void {
+    self.focused = focus;
+}
+
+/// Called to toggle the blink state of the cursor
+pub fn blinkCursor(self: *OpenGL, reset: bool) void {
+    self.cursor_visible = reset or !self.cursor_visible;
+}
+
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *OpenGL,
@@ -455,8 +469,8 @@ pub fn render(
         defer state.resize_screen = null;
 
         // Setup our cursor state
-        if (state.focused) {
-            self.cursor_visible = state.cursor.visible and !state.cursor.blink;
+        if (self.focused) {
+            self.cursor_visible = self.cursor_visible and state.cursor.visible;
             self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
         } else {
             self.cursor_visible = true;

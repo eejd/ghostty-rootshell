@@ -1,6 +1,7 @@
 //! This is the render state that is given to a renderer.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const DevMode = @import("../DevMode.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -10,9 +11,6 @@ const renderer = @import("../renderer.zig");
 /// by the mutex and is NOT thread-safe, only the members values of the
 /// state (i.e. the terminal, devmode, etc. values).
 mutex: *std.Thread.Mutex,
-
-/// True if the window is focused
-focused: bool,
 
 /// A new screen size if the screen was resized.
 resize_screen: ?renderer.ScreenSize,
@@ -35,8 +33,4 @@ pub const Cursor = struct {
     /// "blink" settings, see "blink" for that. This is used to turn the
     /// cursor ON or OFF.
     visible: bool = true,
-
-    /// Whether the cursor is currently blinking. If it is blinking, then
-    /// the cursor will not be rendered.
-    blink: bool = false,
 };
