@@ -816,10 +816,10 @@ fn keyCallback(
                             }, .{ .forever = {} });
                         }
 
-                        // TODO: NO! ALLOCATE THIS
-                        _ = win.io_thread.mailbox.push(.{
-                            .write_stable = data,
-                        }, .{ .forever = {} });
+                        _ = win.io_thread.mailbox.push(termio.message.IO.writeReq(
+                            win.alloc,
+                            data,
+                        ) catch unreachable, .{ .forever = {} });
 
                         if (bracketed) {
                             _ = win.io_thread.mailbox.push(.{

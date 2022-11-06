@@ -164,6 +164,10 @@ fn drainMailbox(self: *Thread) !void {
                 .resize => |v| try self.impl.resize(v.grid_size, v.screen_size),
                 .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
                 .write_stable => |v| try self.impl.queueWrite(v),
+                .write_alloc => |v| {
+                    defer v.alloc.free(v.data);
+                    try self.impl.queueWrite(v.data);
+                },
             }
         }
     }
