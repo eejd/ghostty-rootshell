@@ -441,6 +441,11 @@ pub fn setFocus(self: *OpenGL, focus: bool) !void {
     self.focused = focus;
 }
 
+/// Called to toggle the blink state of the cursor
+pub fn blinkCursor(self: *OpenGL) void {
+    self.cursor_visible = !self.cursor_visible;
+}
+
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *OpenGL,
@@ -465,7 +470,7 @@ pub fn render(
 
         // Setup our cursor state
         if (self.focused) {
-            self.cursor_visible = state.cursor.visible and !state.cursor.blink;
+            self.cursor_visible = self.cursor_visible and state.cursor.visible;
             self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
         } else {
             self.cursor_visible = true;

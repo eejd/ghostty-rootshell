@@ -32,6 +32,9 @@ stop: libuv.Async,
 /// The timer used for rendering
 render_h: libuv.Timer,
 
+/// The timer used for cursor blinking
+cursor_h: libuv.Timer,
+
 /// The windo we're rendering to.
 window: glfw.Window,
 
@@ -92,6 +95,15 @@ pub fn init(
         }
     }).callback);
 
+    // Setup a timer for blinking the cursor
+    var cursor_timer = try libuv.Timer.init(alloc, loop);
+    errdefer cursor_timer.close((struct {
+        fn callback(t: *libuv.Timer) void {
+            const alloc_h = t.loop().getData(Allocator).?.*;
+            t.deinit(alloc_h);
+        }
+    }).callback);
+
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
@@ -101,6 +113,7 @@ pub fn init(
         .wakeup = wakeup_h,
         .stop = stop_h,
         .render_h = render_h,
+        .cursor_h = cursor_timer,
         .window = window,
         .renderer = renderer_impl,
         .state = state,
@@ -129,6 +142,12 @@ pub fn deinit(self: *Thread) void {
         }
     }).callback);
     self.render_h.close((struct {
+        fn callback(h: *libuv.Timer) void {
+            const handle_alloc = h.loop().getData(Allocator).?.*;
+            h.deinit(handle_alloc);
+        }
+    }).callback);
+    self.cursor_h.close((struct {
         fn callback(h: *libuv.Timer) void {
             const handle_alloc = h.loop().getData(Allocator).?.*;
             h.deinit(handle_alloc);
@@ -175,6 +194,10 @@ fn threadMain_(self: *Thread) !void {
     defer self.render_h.setData(null);
     try self.wakeup.send();
 
+    // Setup a timer for blinking the cursor
+    self.cursor_h.setData(self);
+    try self.cursor_h.start(cursorTimerCallback, 600, 600);
+
     // Run
     log.debug("starting renderer thread", .{});
     defer log.debug("exiting renderer thread", .{});
@@ -193,7 +216,25 @@ fn drainMailbox(self: *Thread) !void {
     while (drain.next()) |message| {
         log.debug("mailbox message={}", .{message});
         switch (message) {
-            .focus => |v| try self.renderer.setFocus(v),
+            .focus => |v| {
+                // Set it on the renderer
+                try self.renderer.setFocus(v);
+
+                if (!v) {
+                    // If we're not focused, then we stop the cursor blink
+                    try self.cursor_h.stop();
+                } else {
+                    // If we're focused, we immediately show the cursor again
+                    // and then restart the timer.
+                    if (!try self.cursor_h.isActive()) {
+                        try self.cursor_h.start(
+                            cursorTimerCallback,
+                            0,
+                            self.cursor_h.getRepeat(),
+                        );
+                    }
+                }
+            },
         }
     }
 }
@@ -228,6 +269,17 @@ fn renderCallback(h: *libuv.Timer) void {
 
     t.renderer.render(t.window, t.state) catch |err|
         log.warn("error rendering err={}", .{err});
+}
+
+fn cursorTimerCallback(h: *libuv.Timer) void {
+    const t = h.getData(Thread) orelse {
+        // This shouldn't happen so we log it.
+        log.warn("render callback fired without data set", .{});
+        return;
+    };
+
+    t.renderer.blinkCursor();
+    t.wakeup.send() catch {};
 }
 
 fn stopCallback(h: *libuv.Async) void {

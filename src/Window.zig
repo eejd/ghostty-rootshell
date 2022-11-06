@@ -70,10 +70,6 @@ mouse: Mouse,
 io: termio.Impl,
 io_thread: termio.Thread,
 io_thr: std.Thread,
-
-/// Cursor state.
-terminal_cursor: Cursor,
-
 /// The dimensions of the grid in rows and columns.
 grid_size: renderer.GridSize,
 
@@ -137,6 +133,7 @@ const Mouse = struct {
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
 pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Window {
+    _ = loop;
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
@@ -344,13 +341,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .height = @floatToInt(u32, renderer_impl.cell_size.height * 4),
     }, .{ .width = null, .height = null });
 
-    // Setup a timer for blinking the cursor
-    var timer = try libuv.Timer.init(alloc, loop);
-    errdefer timer.deinit(alloc);
-    errdefer timer.close(null);
-    timer.setData(self);
-    try timer.start(cursorTimerCallback, 600, 600);
-
     // Create the cursor
     const cursor = try glfw.Cursor.createStandard(.ibeam);
     errdefer cursor.destroy();
@@ -398,7 +388,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
             .cursor = .{
                 .style = .blinking_block,
                 .visible = true,
-                .blink = false,
             },
             .terminal = &self.io.terminal,
             .devmode = if (!DevMode.enabled) null else &DevMode.instance,
@@ -408,7 +397,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .io = io,
         .io_thread = io_thread,
         .io_thr = undefined,
-        .terminal_cursor = .{ .timer = timer },
         .grid_size = grid_size,
         .config = config,
 
@@ -515,13 +503,6 @@ pub fn destroy(self: *Window) void {
     }
 
     self.window.destroy();
-
-    self.terminal_cursor.timer.close((struct {
-        fn callback(t: *libuv.Timer) void {
-            const alloc = t.loop().getData(Allocator).?.*;
-            t.deinit(alloc);
-        }
-    }).callback);
 
     // We can destroy the cursor right away. glfw will just revert any
     // windows using it to the default.
@@ -921,15 +902,8 @@ fn focusCallback(window: glfw.Window, focused: bool) void {
         .focus = focused,
     }, .{ .forever = {} });
 
-    // We have to schedule a render because no matter what we're changing
-    // the cursor. If we're focused its reappearing, if we're not then
-    // its changing to hollow and not blinking.
+    // Schedule render which also drains our mailbox
     win.queueRender() catch unreachable;
-
-    if (focused)
-        win.terminal_cursor.startTimer() catch unreachable
-    else
-        win.terminal_cursor.stopTimer() catch unreachable;
 }
 
 fn refreshCallback(window: glfw.Window) void {

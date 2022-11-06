@@ -340,7 +340,7 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
 
     // Whenever a character is typed, we ensure the cursor is in the
     // non-blink state so it is rendered if visible.
-    ev.renderer_state.cursor.blink = false;
+    //ev.renderer_state.cursor.blink = false;
     // TODO
     // if (win.terminal_cursor.timer.isActive() catch false) {
     //     _ = win.terminal_cursor.timer.again() catch null;
