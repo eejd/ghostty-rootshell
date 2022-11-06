@@ -961,19 +961,6 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
         } else |_| {}
     }
 
-    // If we're scrolling up or down, then send a mouse event
-    if (yoff != 0) {
-        const pos = window.getCursorPos() catch |err| {
-            log.err("error reading cursor position: {}", .{err});
-            return;
-        };
-
-        win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
-    }
-
     //log.info("SCROLL: {} {}", .{ xoff, yoff });
     _ = xoff;
 
@@ -982,13 +969,27 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
     const delta: isize = sign * @max(@divFloor(win.grid_size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
 
-    // Modify our viewport, this requires a lock since it affects rendering
     {
         win.renderer_state.mutex.lock();
         defer win.renderer_state.mutex.unlock();
 
+        // Modify our viewport, this requires a lock since it affects rendering
         win.io.terminal.scrollViewport(.{ .delta = delta }) catch |err|
             log.err("error scrolling viewport err={}", .{err});
+
+        // If we're scrolling up or down, then send a mouse event. This requires
+        // a lock since we read terminal state.
+        if (yoff != 0) {
+            const pos = window.getCursorPos() catch |err| {
+                log.err("error reading cursor position: {}", .{err});
+                return;
+            };
+
+            win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
+                log.err("error reporting mouse event: {}", .{err});
+                return;
+            };
+        }
     }
 
     win.queueRender() catch unreachable;
@@ -1006,12 +1007,6 @@ fn mouseReport(
 ) !void {
     // TODO: posToViewport currently clamps to the window boundary,
     // do we want to not report mouse events at all outside the window?
-
-    // Everything in here requires reading/writing mouse state so we
-    // acquire a big lock. Mouse events are rare so this should be okay
-    // but we can make this more fine-grained later.
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
 
     // Depending on the event, we may do nothing at all.
     switch (self.io.terminal.modes.mouse_event) {
