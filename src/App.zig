@@ -74,7 +74,8 @@ pub fn wakeup(self: App) void {
 /// Run the main event loop for the application. This blocks until the
 /// application quits or every window is closed.
 pub fn run(self: *App) !void {
-    while (self.windows.items.len > 0) {
+    var quit: bool = false;
+    while (!quit and self.windows.items.len > 0) {
         // Block for any glfw events.
         try glfw.waitEvents();
 
@@ -100,12 +101,12 @@ pub fn run(self: *App) !void {
         }
 
         // Drain our mailbox
-        try self.drainMailbox();
+        try self.drainMailbox(&quit);
     }
 }
 
 /// Drain the mailbox.
-fn drainMailbox(self: *App) !void {
+fn drainMailbox(self: *App, quit: *bool) !void {
     var drain = self.mailbox.drain();
     defer drain.deinit();
 
@@ -113,6 +114,7 @@ fn drainMailbox(self: *App) !void {
         log.debug("mailbox message={}", .{message});
         switch (message) {
             .new_window => try self.newWindow(),
+            .quit => quit.* = true,
         }
     }
 }
@@ -134,4 +136,7 @@ fn newWindow(self: *App) !void {
 pub const Message = union(enum) {
     /// Create a new terminal window.
     new_window: void,
+
+    /// Quit
+    quit: void,
 };

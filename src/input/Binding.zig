@@ -139,6 +139,9 @@ pub const Action = union(enum) {
 
     /// Close the current window
     close_window: void,
+
+    /// Quit ghostty
+    quit: void,
 };
 
 /// Trigger is the associated key state that can trigger an action.

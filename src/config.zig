@@ -168,6 +168,14 @@ pub const Config = struct {
             .{ .close_window = {} },
         );
 
+        if (builtin.os.tag == .macos) {
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .q, .mods = .{ .super = true } },
+                .{ .close_window = {} },
+            );
+        }
+
         return result;
     }
 

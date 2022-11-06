@@ -342,7 +342,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .grid_size = grid_size,
         .config = config,
 
-        .imgui_ctx = if (!DevMode.enabled) void else try imgui.Context.create(),
+        .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
     };
     errdefer if (DevMode.enabled) self.imgui_ctx.destroy();
 
@@ -766,6 +766,13 @@ fn keyCallback(
                 },
 
                 .close_window => win.window.setShouldClose(true),
+
+                .quit => {
+                    _ = win.app.mailbox.push(.{
+                        .quit = {},
+                    }, .{ .instant = {} });
+                    win.app.wakeup();
+                },
             }
 
             // Bindings always result in us ignoring the char if printable
