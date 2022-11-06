@@ -32,16 +32,11 @@ const glfwNative = glfw.Native(.{
 
 const log = std.log.scoped(.window);
 
-// The preallocation size for the write request pool. This should be big
-// enough to satisfy most write requests. It must be a power of 2.
-const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
-
 // The renderer implementation to use.
 const Renderer = renderer.Renderer;
 
 /// Allocator
 alloc: Allocator,
-alloc_io_arena: std.heap.ArenaAllocator,
 
 /// The font structures
 font_lib: font.Library,
@@ -82,21 +77,8 @@ terminal_cursor: Cursor,
 /// The dimensions of the grid in rows and columns.
 grid_size: renderer.GridSize,
 
-/// This is the pool of available (unused) write requests. If you grab
-/// one from the pool, you must put it back when you're done!
-write_req_pool: SegmentedPool(libuv.WriteReq.T, WRITE_REQ_PREALLOC) = .{},
-
-/// The pool of available buffers for writing to the pty.
-write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
-
 /// The app configuration
 config: *const Config,
-
-/// Window background color
-bg_r: f32,
-bg_g: f32,
-bg_b: f32,
-bg_a: f32,
 
 /// Bracketed paste mode
 bracketed_paste: bool = false,
@@ -377,12 +359,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
     errdefer cursor.destroy();
     try window.setCursor(cursor);
 
-    // Create our IO allocator arena. Libuv appears to guarantee (in code,
-    // not in docs) that read_alloc is called directly before a read so
-    // we can use an arena to make allocation faster.
-    var io_arena = std.heap.ArenaAllocator.init(alloc);
-    errdefer io_arena.deinit();
-
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
     mutex.* = .{};
@@ -413,7 +389,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
 
     self.* = .{
         .alloc = alloc,
-        .alloc_io_arena = io_arena,
         .font_lib = font_lib,
         .font_group = font_group,
         .window = window,
@@ -440,10 +415,6 @@ pub fn create(alloc: Allocator, loop: libuv.Loop, config: *const Config) !*Windo
         .terminal_cursor = .{ .timer = timer },
         .grid_size = grid_size,
         .config = config,
-        .bg_r = @intToFloat(f32, config.background.r) / 255.0,
-        .bg_g = @intToFloat(f32, config.background.g) / 255.0,
-        .bg_b = @intToFloat(f32, config.background.b) / 255.0,
-        .bg_a = 1.0,
 
         .imgui_ctx = if (!DevMode.enabled) void else try imgui.Context.create(),
     };
@@ -564,11 +535,8 @@ pub fn destroy(self: *Window) void {
     self.font_lib.deinit();
     self.alloc.destroy(self.font_group);
 
-    self.alloc_io_arena.deinit();
     self.alloc.destroy(self.renderer_state.mutex);
 
-    self.write_req_pool.deinit(self.alloc);
-    self.write_buf_pool.deinit(self.alloc);
     self.alloc.destroy(self);
 }
 
