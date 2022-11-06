@@ -300,11 +300,6 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !OpenGL {
 }
 
 pub fn deinit(self: *OpenGL) void {
-    if (DevMode.enabled) {
-        imgui.ImplOpenGL3.shutdown();
-        imgui.ImplGlfw.shutdown();
-    }
-
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
 
@@ -387,7 +382,17 @@ pub fn windowInit(window: glfw.Window) !void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeInit(self: *const OpenGL, window: glfw.Window) !void {
+pub fn finalizeWindowInit(self: *const OpenGL, window: glfw.Window) !void {
+    _ = self;
+    _ = window;
+}
+
+/// This is called only after the first window is opened. This may be
+/// called multiple times if all windows are closed and a new one is
+/// reopened.
+pub fn firstWindowInit(self: *const OpenGL, window: glfw.Window) !void {
+    _ = self;
+
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
@@ -396,9 +401,14 @@ pub fn finalizeInit(self: *const OpenGL, window: glfw.Window) !void {
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
     }
+}
 
-    // Call thread exit to clean up our context
-    self.threadExit();
+/// This is called only when the last window is destroyed.
+pub fn lastWindowDeinit() void {
+    if (DevMode.enabled) {
+        imgui.ImplOpenGL3.shutdown();
+        imgui.ImplGlfw.shutdown();
+    }
 }
 
 /// Callback called by renderer.Thread when it begins.

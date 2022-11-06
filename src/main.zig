@@ -128,8 +128,8 @@ pub fn main() !void {
     defer glfw.terminate();
 
     // Run our app
-    var app = try App.init(alloc, &config);
-    defer app.deinit();
+    var app = try App.create(alloc, &config);
+    defer app.destroy();
     try app.run();
 }
 

@@ -157,6 +157,12 @@ pub const Config = struct {
             .{ .toggle_dev_mode = {} },
         );
 
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .up, .mods = .{ .super = true } },
+            .{ .new_window = {} },
+        );
+
         return result;
     }
 

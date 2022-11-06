@@ -22,6 +22,7 @@ const terminal = @import("terminal/main.zig");
 const Config = @import("config.zig").Config;
 const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
+const App = @import("App.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -35,6 +36,9 @@ const Renderer = renderer.Renderer;
 
 /// Allocator
 alloc: Allocator,
+
+/// The app that this window is a part of.
+app: *App,
 
 /// The font structures
 font_lib: font.Library,
@@ -107,7 +111,7 @@ const Mouse = struct {
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
-pub fn create(alloc: Allocator, config: *const Config) !*Window {
+pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
@@ -313,6 +317,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
 
     self.* = .{
         .alloc = alloc,
+        .app = app,
         .font_lib = font_lib,
         .font_group = font_group,
         .window = window,
@@ -386,7 +391,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
 
     // Give the renderer one more opportunity to finalize any window
     // setup on the main thread prior to spinning up the rendering thread.
-    try renderer_impl.finalizeInit(window);
+    try renderer_impl.finalizeWindowInit(window);
 
     // Start our renderer thread
     self.renderer_thr = try std.Thread.spawn(
@@ -752,6 +757,13 @@ fn keyCallback(
                     DevMode.instance.visible = !DevMode.instance.visible;
                     win.queueRender() catch unreachable;
                 } else log.warn("dev mode was not compiled into this binary", .{}),
+
+                .new_window => {
+                    _ = win.app.mailbox.push(.{
+                        .new_window = {},
+                    }, .{ .forever = {} });
+                    win.app.wakeup();
+                },
             }
 
             // Bindings always result in us ignoring the char if printable

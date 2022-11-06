@@ -133,6 +133,9 @@ pub const Action = union(enum) {
 
     /// Dev mode
     toggle_dev_mode: void,
+
+    /// Open a new terminal window.
+    new_window: void,
 };
 
 /// Trigger is the associated key state that can trigger an action.
