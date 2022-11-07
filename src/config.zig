@@ -157,6 +157,7 @@ pub const Config = struct {
             .{ .toggle_dev_mode = {} },
         );
 
+        // Windowing
         try result.keybind.set.put(
             alloc,
             .{ .key = .n, .mods = .{ .super = true } },
@@ -167,12 +168,11 @@ pub const Config = struct {
             .{ .key = .w, .mods = .{ .super = true } },
             .{ .close_window = {} },
         );
-
         if (builtin.os.tag == .macos) {
             try result.keybind.set.put(
                 alloc,
                 .{ .key = .q, .mods = .{ .super = true } },
-                .{ .close_window = {} },
+                .{ .quit = {} },
             );
         }
 
