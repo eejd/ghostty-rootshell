@@ -6,6 +6,7 @@ pub const Loop = @import("Loop.zig");
 pub const Async = @import("Async.zig");
 pub const Idle = @import("Idle.zig");
 pub const Pipe = @import("Pipe.zig");
+pub const Prepare = @import("Prepare.zig");
 pub const Timer = @import("Timer.zig");
 pub const Tty = @import("Tty.zig");
 pub const Cond = @import("Cond.zig");
@@ -30,6 +31,7 @@ test {
     _ = Loop;
     _ = Async;
     _ = Idle;
+    _ = Prepare;
     _ = Pipe;
     _ = Timer;
     _ = Tty;
