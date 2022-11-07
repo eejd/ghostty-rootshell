@@ -567,6 +567,15 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 } else log.warn("unimplemented invokeCharset: {}", .{action}),
 
+                // RIS - Full Reset
+                'c' => if (@hasDecl(T, "fullReset")) switch (action.intermediates.len) {
+                    0 => try self.handler.fullReset(),
+                    else => {
+                        log.warn("invalid full reset command: {}", .{action});
+                        return;
+                    },
+                } else log.warn("unimplemented ESC callback: {}", .{action}),
+
                 // LS2 - Locking Shift 2
                 'n' => if (@hasDecl(T, "invokeCharset")) switch (action.intermediates.len) {
                     0 => try self.handler.invokeCharset(.GL, .G2, false),

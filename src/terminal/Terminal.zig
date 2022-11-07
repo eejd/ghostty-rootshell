@@ -1322,6 +1322,20 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
     self.setCursorPos(1, 1);
 }
 
+/// Full reset
+pub fn fullReset(self: *Terminal) void {
+    self.primaryScreen(.{});
+    self.selection = null;
+    self.charset = .{};
+    self.eraseDisplay(.scrollback);
+    self.eraseDisplay(.complete);
+    self.modes = .{};
+    self.tabstops.reset(0);
+    self.screen.cursor = .{};
+    self.screen.saved_cursor = .{};
+    self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
+}
+
 test "Terminal: input with no control characters" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);

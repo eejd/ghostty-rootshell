@@ -767,4 +767,10 @@ const StreamHandler = struct {
     ) !void {
         self.terminal.invokeCharset(active, slot, single);
     }
+
+    pub fn fullReset(
+        self: *StreamHandler,
+    ) !void {
+        self.terminal.fullReset();
+    }
 };
