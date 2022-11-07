@@ -161,6 +161,7 @@ pub const Cell = struct {
         has_fg: bool = false,
 
         bold: bool = false,
+        italic: bool = false,
         faint: bool = false,
         underline: bool = false,
         inverse: bool = false,

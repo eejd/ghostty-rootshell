@@ -351,6 +351,10 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.bold = true;
         },
 
+        .italic => {
+            self.screen.cursor.pen.attrs.italic = true;
+        },
+
         .faint => {
             self.screen.cursor.pen.attrs.faint = true;
         },

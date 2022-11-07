@@ -21,6 +21,9 @@ pub const Attribute = union(enum) {
     /// Bold the text.
     bold: void,
 
+    /// Italic text.
+    italic: void,
+
     /// Faint/dim text.
     faint: void,
 
@@ -96,6 +99,8 @@ pub const Parser = struct {
             1 => return Attribute{ .bold = {} },
 
             2 => return Attribute{ .faint = {} },
+
+            3 => return Attribute{ .italic = {} },
 
             4 => return Attribute{ .underline = {} },
 
@@ -222,6 +227,11 @@ test "sgr: Parser multiple" {
 test "sgr: bold" {
     const v = testParse(&[_]u16{1});
     try testing.expect(v == .bold);
+}
+
+test "sgr: italic" {
+    const v = testParse(&[_]u16{3});
+    try testing.expect(v == .italic);
 }
 
 test "sgr: inverse" {
