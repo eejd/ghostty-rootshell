@@ -315,6 +315,11 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     var io_thread = try termio.Thread.init(alloc, &self.io);
     errdefer io_thread.deinit();
 
+    // True if this window is hosting devmode. We only host devmode on
+    // the first window since imgui is not threadsafe. We need to do some
+    // work to make DevMode work with multiple threads.
+    const host_devmode = DevMode.enabled and DevMode.instance.window == null;
+
     self.* = .{
         .alloc = alloc,
         .app = app,
@@ -332,7 +337,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
                 .visible = true,
             },
             .terminal = &self.io.terminal,
-            .devmode = if (!DevMode.enabled) null else &DevMode.instance,
+            .devmode = if (!host_devmode) null else &DevMode.instance,
         },
         .renderer_thr = undefined,
         .mouse = .{},
@@ -370,7 +375,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
-    if (DevMode.enabled) {
+    if (DevMode.enabled and DevMode.instance.window == null) {
         const dev_io = try imgui.IO.get();
         dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
 
@@ -385,7 +390,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         const style = try imgui.Style.get();
         style.colorsDark();
 
-        // Add our window to the instance
+        // Add our window to the instance if it isn't set.
         DevMode.instance.window = self;
     }
 
@@ -425,7 +430,7 @@ pub fn destroy(self: *Window) void {
         self.renderer.deinit();
     }
 
-    if (DevMode.enabled) {
+    if (DevMode.enabled and DevMode.instance.window == self) {
         // Clear the window
         DevMode.instance.window = null;
 
