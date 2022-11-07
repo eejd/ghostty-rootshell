@@ -15,6 +15,12 @@ const renderer = @import("../renderer.zig");
 
 const log = std.log.scoped(.io_exec);
 
+const c = @cImport({
+    @cInclude("errno.h");
+    @cInclude("signal.h");
+    @cInclude("unistd.h");
+});
+
 /// Allocator
 alloc: Allocator,
 
@@ -78,8 +84,8 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .env = &env,
         .cwd = opts.config.@"working-directory",
         .pre_exec = (struct {
-            fn callback(c: *Command) void {
-                const p = c.getData(Pty) orelse unreachable;
+            fn callback(cmd: *Command) void {
+                const p = cmd.getData(Pty) orelse unreachable;
                 p.childPreExec() catch |err|
                     log.err("error initializing child: {}", .{err});
             }
@@ -113,14 +119,50 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
 }
 
 pub fn deinit(self: *Exec) void {
-    // Deinitialize the pty. This closes the pty handles. This should
-    // cause a close in the our subprocess so just wait for that.
-    self.pty.deinit();
+    // Kill our command
+    self.killCommand() catch |err|
+        log.err("error sending SIGHUP to command, may hang: {}", .{err});
     _ = self.command.wait() catch |err|
         log.err("error waiting for command to exit: {}", .{err});
 
     // Clean up our other members
     self.terminal.deinit(self.alloc);
+}
+
+/// Kill the underlying subprocess. This closes the pty file handle and
+/// sends a SIGHUP to the child process. This doesn't wait for the child
+/// process to be exited.
+fn killCommand(self: *Exec) !void {
+    // Close our PTY
+    self.pty.deinit();
+
+    // We need to get our process group ID and send a SIGHUP to it.
+    if (self.command.pid) |pid| {
+        const pgid_: ?c.pid_t = pgid: {
+            const pgid = c.getpgid(pid);
+
+            // Don't know why it would be zero but its not a valid pid
+            if (pgid == 0) break :pgid null;
+
+            // If the pid doesn't exist then... okay.
+            if (pgid == c.ESRCH) break :pgid null;
+
+            // If we have an error...
+            if (pgid < 0) {
+                log.warn("error getting pgid for kill", .{});
+                break :pgid null;
+            }
+
+            break :pgid pgid;
+        };
+
+        if (pgid_) |pgid| {
+            if (c.killpg(pgid, c.SIGHUP) < 0) {
+                log.warn("error killing process group pgid={}", .{pgid});
+                return error.KillFailed;
+            }
+        }
+    }
 }
 
 pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
@@ -367,15 +409,15 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     var i: usize = 0;
     const end = @intCast(usize, n);
     if (ev.terminal_stream.parser.state == .ground) {
-        for (buf[i..end]) |c| {
-            switch (terminal.parse_table.table[c][@enumToInt(terminal.Parser.State.ground)].action) {
+        for (buf[i..end]) |ch| {
+            switch (terminal.parse_table.table[ch][@enumToInt(terminal.Parser.State.ground)].action) {
                 // Print, call directly.
-                .print => ev.terminal_stream.handler.print(@intCast(u21, c)) catch |err|
+                .print => ev.terminal_stream.handler.print(@intCast(u21, ch)) catch |err|
                     log.err("error processing terminal data: {}", .{err}),
 
                 // C0 execute, let our stream handle this one but otherwise
                 // continue since we're guaranteed to be back in ground.
-                .execute => ev.terminal_stream.execute(c) catch |err|
+                .execute => ev.terminal_stream.execute(ch) catch |err|
                     log.err("error processing terminal data: {}", .{err}),
 
                 // Otherwise, break out and go the slow path until we're
@@ -413,8 +455,8 @@ const StreamHandler = struct {
         try self.ev.queueWrite(data);
     }
 
-    pub fn print(self: *StreamHandler, c: u21) !void {
-        try self.terminal.print(c);
+    pub fn print(self: *StreamHandler, ch: u21) !void {
+        try self.terminal.print(ch);
     }
 
     pub fn bell(self: StreamHandler) !void {

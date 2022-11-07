@@ -22,6 +22,9 @@ pub fn main() !void {
     }
     std.log.info("renderer={}", .{renderer.Renderer});
 
+    // First things first, we fix our file descriptors
+    fixMaxFiles();
+
     const GPA = std.heap.GeneralPurposeAllocator(.{});
     var gpa: ?GPA = gpa: {
         // Use the libc allocator if it is available beacuse it is WAY
@@ -128,8 +131,8 @@ pub fn main() !void {
     defer glfw.terminate();
 
     // Run our app
-    var app = try App.init(alloc, &config);
-    defer app.deinit();
+    var app = try App.create(alloc, &config);
+    defer app.destroy();
     try app.run();
 }
 
@@ -186,6 +189,54 @@ pub fn log(
 
 fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
     std.log.warn("glfw error={} message={s}", .{ code, desc });
+}
+
+/// This maximizes the number of file descriptors we can have open. We
+/// need to do this because each window consumes at least a handful of fds.
+/// This is extracted from the Zig compiler source code.
+fn fixMaxFiles() void {
+    if (!@hasDecl(std.os.system, "rlimit")) return;
+    const posix = std.os;
+
+    var lim = posix.getrlimit(.NOFILE) catch {
+        std.log.warn("failed to query file handle limit, may limit max windows", .{});
+        return; // Oh well; we tried.
+    };
+    if (comptime builtin.target.isDarwin()) {
+        // On Darwin, `NOFILE` is bounded by a hardcoded value `OPEN_MAX`.
+        // According to the man pages for setrlimit():
+        //   setrlimit() now returns with errno set to EINVAL in places that historically succeeded.
+        //   It no longer accepts "rlim_cur = RLIM.INFINITY" for RLIM.NOFILE.
+        //   Use "rlim_cur = min(OPEN_MAX, rlim_max)".
+        lim.max = std.math.min(std.os.darwin.OPEN_MAX, lim.max);
+    }
+
+    // If we're already at the max, we're done.
+    if (lim.cur >= lim.max) {
+        std.log.debug("file handle limit already maximized value={}", .{lim.cur});
+        return;
+    }
+
+    // Do a binary search for the limit.
+    var min: posix.rlim_t = lim.cur;
+    var max: posix.rlim_t = 1 << 20;
+    // But if there's a defined upper bound, don't search, just set it.
+    if (lim.max != posix.RLIM.INFINITY) {
+        min = lim.max;
+        max = lim.max;
+    }
+
+    while (true) {
+        lim.cur = min + @divTrunc(max - min, 2); // on freebsd rlim_t is signed
+        if (posix.setrlimit(.NOFILE, lim)) |_| {
+            min = lim.cur;
+        } else |_| {
+            max = lim.cur;
+        }
+        if (min + 1 >= max) break;
+    }
+
+    std.log.debug("file handle limit raised value={}", .{lim.cur});
 }
 
 test {

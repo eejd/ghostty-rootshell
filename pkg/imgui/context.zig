@@ -14,6 +14,10 @@ pub const Context = opaque {
         c.igDestroyContext(self.cval());
     }
 
+    pub fn setCurrent(self: *Context) void {
+        c.igSetCurrentContext(self.cval());
+    }
+
     pub inline fn cval(self: *Context) *c.ImGuiContext {
         return @ptrCast(
             *c.ImGuiContext,
@@ -25,4 +29,6 @@ pub const Context = opaque {
 test {
     var ctx = try Context.create();
     defer ctx.destroy();
+
+    ctx.setCurrent();
 }

@@ -49,7 +49,11 @@ pub fn init(
 
     // Create our event loop.
     var loop = try libuv.Loop.init(alloc);
-    errdefer loop.deinit(alloc);
+    errdefer {
+        // Run the loop once to close any of our handles
+        _ = loop.run(.nowait) catch 0;
+        loop.deinit(alloc);
+    }
     loop.setData(allocPtr);
 
     // This async handle is used to "wake up" the renderer and force a render.

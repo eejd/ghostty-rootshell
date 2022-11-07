@@ -22,6 +22,7 @@ const terminal = @import("terminal/main.zig");
 const Config = @import("config.zig").Config;
 const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
+const App = @import("App.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -35,6 +36,9 @@ const Renderer = renderer.Renderer;
 
 /// Allocator
 alloc: Allocator,
+
+/// The app that this window is a part of.
+app: *App,
 
 /// The font structures
 font_lib: font.Library,
@@ -107,7 +111,7 @@ const Mouse = struct {
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
-pub fn create(alloc: Allocator, config: *const Config) !*Window {
+pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
@@ -136,6 +140,10 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
     };
 
     // Find all the fonts for this window
+    //
+    // Future: we can share the font group amongst all windows to save
+    // some new window init time and some memory. This will require making
+    // thread-safe changes to font structs.
     var font_lib = try font.Library.init();
     errdefer font_lib.deinit();
     var font_group = try alloc.create(font.GroupCache);
@@ -247,6 +255,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
 
     // Create our terminal grid with the initial window size
     var renderer_impl = try Renderer.init(alloc, font_group);
+    errdefer renderer_impl.deinit();
     renderer_impl.background = .{
         .r = config.background.r,
         .g = config.background.g,
@@ -307,8 +316,14 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
     var io_thread = try termio.Thread.init(alloc, &self.io);
     errdefer io_thread.deinit();
 
+    // True if this window is hosting devmode. We only host devmode on
+    // the first window since imgui is not threadsafe. We need to do some
+    // work to make DevMode work with multiple threads.
+    const host_devmode = DevMode.enabled and DevMode.instance.window == null;
+
     self.* = .{
         .alloc = alloc,
+        .app = app,
         .font_lib = font_lib,
         .font_group = font_group,
         .window = window,
@@ -323,7 +338,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
                 .visible = true,
             },
             .terminal = &self.io.terminal,
-            .devmode = if (!DevMode.enabled) null else &DevMode.instance,
+            .devmode = if (!host_devmode) null else &DevMode.instance,
         },
         .renderer_thr = undefined,
         .mouse = .{},
@@ -333,7 +348,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
         .grid_size = grid_size,
         .config = config,
 
-        .imgui_ctx = if (!DevMode.enabled) void else try imgui.Context.create(),
+        .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
     };
     errdefer if (DevMode.enabled) self.imgui_ctx.destroy();
 
@@ -361,7 +376,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
 
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
-    if (DevMode.enabled) {
+    if (DevMode.enabled and DevMode.instance.window == null) {
         const dev_io = try imgui.IO.get();
         dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
 
@@ -376,13 +391,16 @@ pub fn create(alloc: Allocator, config: *const Config) !*Window {
         const style = try imgui.Style.get();
         style.colorsDark();
 
-        // Add our window to the instance
+        // Add our window to the instance if it isn't set.
         DevMode.instance.window = self;
+
+        // Let our renderer setup
+        try renderer_impl.initDevMode(window);
     }
 
     // Give the renderer one more opportunity to finalize any window
     // setup on the main thread prior to spinning up the rendering thread.
-    try renderer_impl.finalizeInit(window);
+    try renderer_impl.finalizeWindowInit(window);
 
     // Start our renderer thread
     self.renderer_thr = try std.Thread.spawn(
@@ -412,16 +430,20 @@ pub fn destroy(self: *Window) void {
         self.renderer.threadEnter(self.window) catch unreachable;
         self.renderer_thread.deinit();
 
+        // If we are devmode-owning, clean that up.
+        if (DevMode.enabled and DevMode.instance.window == self) {
+            // Let our renderer clean up
+            self.renderer.deinitDevMode();
+
+            // Clear the window
+            DevMode.instance.window = null;
+
+            // Uninitialize imgui
+            self.imgui_ctx.destroy();
+        }
+
         // Deinit our renderer
         self.renderer.deinit();
-    }
-
-    if (DevMode.enabled) {
-        // Clear the window
-        DevMode.instance.window = null;
-
-        // Uninitialize imgui
-        self.imgui_ctx.destroy();
     }
 
     {
@@ -748,6 +770,22 @@ fn keyCallback(
                     DevMode.instance.visible = !DevMode.instance.visible;
                     win.queueRender() catch unreachable;
                 } else log.warn("dev mode was not compiled into this binary", .{}),
+
+                .new_window => {
+                    _ = win.app.mailbox.push(.{
+                        .new_window = {},
+                    }, .{ .instant = {} });
+                    win.app.wakeup();
+                },
+
+                .close_window => win.window.setShouldClose(true),
+
+                .quit => {
+                    _ = win.app.mailbox.push(.{
+                        .quit = {},
+                    }, .{ .instant = {} });
+                    win.app.wakeup();
+                },
             }
 
             // Bindings always result in us ignoring the char if printable
