@@ -187,6 +187,11 @@ const Impl = struct {
         return .{};
     }
 
+    /// Name the current thread.
+    pub inline fn setThreadName(comptime name: [:0]const u8) void {
+        c.___tracy_set_thread_name(name.ptr);
+    }
+
     inline fn alloc(ptr: [*]u8, len: usize) void {
         if (has_callstack_support) {
             c.___tracy_emit_memory_alloc_callstack(ptr, len, callstack_depth, 0);
@@ -244,6 +249,10 @@ const Noop = struct {
 
     pub inline fn frame(comptime name: [:0]const u8) Frame(name) {
         return .{};
+    }
+
+    pub inline fn setThreadName(comptime name: [:0]const u8) void {
+        _ = name;
     }
 };
 
