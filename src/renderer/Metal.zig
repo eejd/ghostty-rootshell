@@ -265,10 +265,8 @@ pub fn finalizeWindowInit(self: *const Metal, window: glfw.Window) !void {
     layer.setProperty("contentsScale", scaleFactor);
 }
 
-/// This is called only after the first window is opened. This may be
-/// called multiple times if all windows are closed and a new one is
-/// reopened.
-pub fn firstWindowInit(self: *const Metal, window: glfw.Window) !void {
+/// This is called if this renderer runs DevMode.
+pub fn initDevMode(self: *const Metal, window: glfw.Window) !void {
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOther(
@@ -279,8 +277,10 @@ pub fn firstWindowInit(self: *const Metal, window: glfw.Window) !void {
     }
 }
 
-/// This is called only when the last window is destroyed.
-pub fn lastWindowDeinit() void {
+/// This is called if this renderer runs DevMode.
+pub fn deinitDevMode(self: *const Metal) void {
+    _ = self;
+
     if (DevMode.enabled) {
         imgui.ImplMetal.shutdown();
         imgui.ImplGlfw.shutdown();

@@ -32,6 +32,9 @@ config: *const Config,
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: *Mailbox,
 
+/// Set to true once we're quitting. This never goes false again.
+quit: bool,
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -47,6 +50,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
         .windows = .{},
         .config = config,
         .mailbox = mailbox,
+        .quit = false,
     };
     errdefer app.windows.deinit(alloc);
 
@@ -74,8 +78,7 @@ pub fn wakeup(self: App) void {
 /// Run the main event loop for the application. This blocks until the
 /// application quits or every window is closed.
 pub fn run(self: *App) !void {
-    var quit: bool = false;
-    while (!quit and self.windows.items.len > 0) {
+    while (!self.quit and self.windows.items.len > 0) {
         // Block for any glfw events.
         try glfw.waitEvents();
 
@@ -87,11 +90,6 @@ pub fn run(self: *App) !void {
         while (i < self.windows.items.len) {
             const window = self.windows.items[i];
             if (window.shouldClose()) {
-                // If this was our final window, deinitialize the renderer
-                if (self.windows.items.len == 1) {
-                    renderer.Renderer.lastWindowDeinit();
-                }
-
                 window.destroy();
                 _ = self.windows.swapRemove(i);
                 continue;
@@ -100,13 +98,13 @@ pub fn run(self: *App) !void {
             i += 1;
         }
 
-        // Drain our mailbox
-        try self.drainMailbox(&quit);
+        // Drain our mailbox only if we're not quitting.
+        if (!self.quit) try self.drainMailbox();
     }
 }
 
 /// Drain the mailbox.
-fn drainMailbox(self: *App, quit: *bool) !void {
+fn drainMailbox(self: *App) !void {
     var drain = self.mailbox.drain();
     defer drain.deinit();
 
@@ -114,7 +112,7 @@ fn drainMailbox(self: *App, quit: *bool) !void {
         log.debug("mailbox message={}", .{message});
         switch (message) {
             .new_window => try self.newWindow(),
-            .quit => quit.* = true,
+            .quit => try self.setQuit(),
         }
     }
 }
@@ -125,10 +123,16 @@ fn newWindow(self: *App) !void {
     errdefer window.destroy();
     try self.windows.append(self.alloc, window);
     errdefer _ = self.windows.pop();
+}
 
-    // This was the first window, so we need to initialize our renderer.
-    if (self.windows.items.len == 1) {
-        try window.renderer.firstWindowInit(window.window);
+/// Start quitting
+fn setQuit(self: *App) !void {
+    if (self.quit) return;
+    self.quit = true;
+
+    // Mark that all our windows should close
+    for (self.windows.items) |window| {
+        window.window.setShouldClose(true);
     }
 }
 

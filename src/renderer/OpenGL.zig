@@ -387,10 +387,8 @@ pub fn finalizeWindowInit(self: *const OpenGL, window: glfw.Window) !void {
     _ = window;
 }
 
-/// This is called only after the first window is opened. This may be
-/// called multiple times if all windows are closed and a new one is
-/// reopened.
-pub fn firstWindowInit(self: *const OpenGL, window: glfw.Window) !void {
+/// This is called if this renderer runs DevMode.
+pub fn initDevMode(self: *const OpenGL, window: glfw.Window) !void {
     _ = self;
 
     if (DevMode.enabled) {
@@ -403,8 +401,10 @@ pub fn firstWindowInit(self: *const OpenGL, window: glfw.Window) !void {
     }
 }
 
-/// This is called only when the last window is destroyed.
-pub fn lastWindowDeinit() void {
+/// This is called if this renderer runs DevMode.
+pub fn deinitDevMode(self: *const OpenGL) void {
+    _ = self;
+
     if (DevMode.enabled) {
         imgui.ImplOpenGL3.shutdown();
         imgui.ImplGlfw.shutdown();

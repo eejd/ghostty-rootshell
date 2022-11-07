@@ -393,6 +393,9 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
         // Add our window to the instance if it isn't set.
         DevMode.instance.window = self;
+
+        // Let our renderer setup
+        try renderer_impl.initDevMode(window);
     }
 
     // Give the renderer one more opportunity to finalize any window
@@ -427,16 +430,20 @@ pub fn destroy(self: *Window) void {
         self.renderer.threadEnter(self.window) catch unreachable;
         self.renderer_thread.deinit();
 
+        // If we are devmode-owning, clean that up.
+        if (DevMode.enabled and DevMode.instance.window == self) {
+            // Let our renderer clean up
+            self.renderer.deinitDevMode();
+
+            // Clear the window
+            DevMode.instance.window = null;
+
+            // Uninitialize imgui
+            self.imgui_ctx.destroy();
+        }
+
         // Deinit our renderer
         self.renderer.deinit();
-    }
-
-    if (DevMode.enabled and DevMode.instance.window == self) {
-        // Clear the window
-        DevMode.instance.window = null;
-
-        // Uninitialize imgui
-        self.imgui_ctx.destroy();
     }
 
     {
