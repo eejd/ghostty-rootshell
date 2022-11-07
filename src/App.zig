@@ -82,9 +82,6 @@ pub fn run(self: *App) !void {
         // Block for any glfw events.
         try glfw.waitEvents();
 
-        // Mark this so we're in a totally different "frame"
-        tracy.frameMark();
-
         // If any windows are closing, destroy them
         var i: usize = 0;
         while (i < self.windows.items.len) {

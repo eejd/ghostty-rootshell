@@ -8,6 +8,8 @@ const glfw = @import("glfw");
 const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
+const tracy = @import("tracy");
+const trace = tracy.trace;
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
@@ -183,6 +185,8 @@ pub fn threadMain(self: *Thread) void {
 }
 
 fn threadMain_(self: *Thread) !void {
+    tracy.setThreadName("renderer");
+
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
     // some thread-local state since that is how it works.
@@ -202,6 +206,27 @@ fn threadMain_(self: *Thread) !void {
     self.cursor_h.setData(self);
     try self.cursor_h.start(cursorTimerCallback, 600, 600);
 
+    // If we are using tracy, then we setup a prepare handle so that
+    // we can mark the frame.
+    var frame_h: libuv.Prepare = if (!tracy.enabled) undefined else frame_h: {
+        const alloc_ptr = self.loop.getData(Allocator).?;
+        const alloc = alloc_ptr.*;
+        const h = try libuv.Prepare.init(alloc, self.loop);
+        h.setData(self);
+        try h.start(prepFrameCallback);
+
+        break :frame_h h;
+    };
+    defer if (tracy.enabled) {
+        frame_h.close((struct {
+            fn callback(h: *libuv.Prepare) void {
+                const alloc_h = h.loop().getData(Allocator).?.*;
+                h.deinit(alloc_h);
+            }
+        }).callback);
+        _ = self.loop.run(.nowait) catch {};
+    };
+
     // Run
     log.debug("starting renderer thread", .{});
     defer log.debug("exiting renderer thread", .{});
@@ -210,6 +235,9 @@ fn threadMain_(self: *Thread) !void {
 
 /// Drain the mailbox.
 fn drainMailbox(self: *Thread) !void {
+    const zone = trace(@src());
+    defer zone.end();
+
     // This holds the mailbox lock for the duration of the drain. The
     // expectation is that all our message handlers will be non-blocking
     // ENOUGH to not mess up throughput on producers.
@@ -252,6 +280,9 @@ fn drainMailbox(self: *Thread) !void {
 }
 
 fn wakeupCallback(h: *libuv.Async) void {
+    const zone = trace(@src());
+    defer zone.end();
+
     const t = h.getData(Thread) orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
@@ -273,6 +304,9 @@ fn wakeupCallback(h: *libuv.Async) void {
 }
 
 fn renderCallback(h: *libuv.Timer) void {
+    const zone = trace(@src());
+    defer zone.end();
+
     const t = h.getData(Thread) orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
@@ -284,6 +318,9 @@ fn renderCallback(h: *libuv.Timer) void {
 }
 
 fn cursorTimerCallback(h: *libuv.Timer) void {
+    const zone = trace(@src());
+    defer zone.end();
+
     const t = h.getData(Thread) orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
@@ -292,6 +329,12 @@ fn cursorTimerCallback(h: *libuv.Timer) void {
 
     t.renderer.blinkCursor(false);
     t.wakeup.send() catch {};
+}
+
+fn prepFrameCallback(h: *libuv.Prepare) void {
+    _ = h;
+
+    tracy.frameMark();
 }
 
 fn stopCallback(h: *libuv.Async) void {

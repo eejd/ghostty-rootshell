@@ -408,6 +408,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         renderer.Thread.threadMain,
         .{&self.renderer_thread},
     );
+    self.renderer_thr.setName("renderer") catch {};
 
     // Start our IO thread
     self.io_thr = try std.Thread.spawn(
@@ -415,6 +416,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         termio.Thread.threadMain,
         .{&self.io_thread},
     );
+    self.io_thr.setName("io") catch {};
 
     return self;
 }
