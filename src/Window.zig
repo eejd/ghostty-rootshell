@@ -255,6 +255,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
     // Create our terminal grid with the initial window size
     var renderer_impl = try Renderer.init(alloc, font_group);
+    errdefer renderer_impl.deinit();
     renderer_impl.background = .{
         .r = config.background.r,
         .g = config.background.g,
