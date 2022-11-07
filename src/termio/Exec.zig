@@ -298,6 +298,10 @@ const EventData = struct {
     /// The pool of available buffers for writing to the pty.
     write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
 
+    /// Last time the cursor was reset. This is used to prevent message
+    /// flooding with cursor resets.
+    last_cursor_reset: u64 = 0,
+
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         self.read_arena.deinit();
 
@@ -385,10 +389,16 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
     };
 
     // Whenever a character is typed, we ensure the cursor is in the
-    // non-blink state so it is rendered if visible.
-    _ = ev.renderer_mailbox.push(.{
-        .reset_cursor_blink = {},
-    }, .{ .forever = {} });
+    // non-blink state so it is rendered if visible. If we're under
+    // HEAVY read load, we don't want to send a ton of these so we
+    // use a timer under the covers
+    const now = t.loop().now();
+    if (now - ev.last_cursor_reset > 500) {
+        ev.last_cursor_reset = now;
+        _ = ev.renderer_mailbox.push(.{
+            .reset_cursor_blink = {},
+        }, .{ .forever = {} });
+    }
 
     // We are modifying terminal state from here on out
     ev.renderer_state.mutex.lock();
