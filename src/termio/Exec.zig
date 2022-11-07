@@ -12,6 +12,8 @@ const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
 const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
+const tracy = @import("tracy");
+const trace = tracy.trace;
 
 const log = std.log.scoped(.io_exec);
 
@@ -362,12 +364,18 @@ fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
 }
 
 fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
+    const zone = trace(@src());
+    defer zone.end();
+
     const ev = t.getData(EventData) orelse return null;
     const alloc = ev.read_arena.allocator();
     return alloc.alloc(u8, size) catch null;
 }
 
 fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
+    const zone = trace(@src());
+    defer zone.end();
+
     const ev = t.getData(EventData).?;
     defer {
         const alloc = ev.read_arena.allocator();
