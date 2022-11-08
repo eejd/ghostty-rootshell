@@ -1,5 +1,8 @@
 Bugs:
 
+* Asian characters (amongst others) turn into missing glyph symbol, should
+  be able to find them somewhere when other programs can render them fine.
+
 Performance:
 
 * for scrollback, investigate using segmented list for sufficiently large
@@ -12,6 +15,7 @@ Performance:
   and should use should close callbacks instead.
 * Window shutdown should be done in threads but GLFW window close cannot
   be done in multiple threads making this a bit tricky.
+* `deleteLines` is very, very slow which makes scroll region benchmarks terrible
 
 Correctness:
 
