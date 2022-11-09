@@ -861,6 +861,9 @@ pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) !void {
 ///
 /// This can be used to implement terminal scroll regions efficiently.
 pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usize) void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     // Avoid a lot of work if we're doing nothing.
     if (count == 0) return;
 

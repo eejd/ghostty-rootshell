@@ -732,8 +732,11 @@ pub fn index(self: *Terminal) !void {
         {
             try self.screen.scroll(.{ .delta = 1 });
         } else {
-            // TODO: test
-            try self.scrollUp(1);
+            self.screen.scrollRegionUp(
+                .{ .active = self.scrolling_region.top },
+                .{ .active = self.scrolling_region.bottom },
+                1,
+            );
         }
 
         return;
@@ -1251,13 +1254,11 @@ pub fn scrollDown(self: *Terminal, count: usize) !void {
 /// Does not change the (absolute) cursor position.
 // TODO: test
 pub fn scrollUp(self: *Terminal, count: usize) !void {
-    // Preserve the cursor
-    const cursor = self.screen.cursor;
-    defer self.screen.cursor = cursor;
-
-    // Move to the top of the scroll region
-    self.screen.cursor.y = self.scrolling_region.top;
-    try self.deleteLines(count);
+    self.screen.scrollRegionUp(
+        .{ .active = self.scrolling_region.top },
+        .{ .active = self.scrolling_region.bottom },
+        count,
+    );
 }
 
 /// Options for scrolling the viewport of the terminal grid.
