@@ -60,6 +60,7 @@ const color = @import("color.zig");
 const point = @import("point.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
+const fastmem = @import("../fastmem.zig");
 
 const log = std.log.scoped(.screen);
 
@@ -400,7 +401,7 @@ pub const Row = struct {
         // If the source has no graphemes (likely) then this is fast.
         const end = @min(src.storage.len, self.storage.len);
         if (!src.storage[0].header.flags.grapheme) {
-            std.mem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
+            fastmem.copy(StorageCell, self.storage[1..], src.storage[1..end]);
             return;
         }
 
@@ -642,7 +643,7 @@ pub const GraphemeData = union(enum) {
             .three => |v| self.* = .{ .four = .{ v[0], v[1], v[2], cp } },
             .four => |v| {
                 const many = try alloc.alloc(u21, 5);
-                std.mem.copy(u21, many, &v);
+                fastmem.copy(u21, many, &v);
                 many[4] = cp;
                 self.* = .{ .many = many };
             },
@@ -898,7 +899,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
             const src_offset = count * (self.cols + 1);
             const src = buf[src_offset..];
             assert(@ptrToInt(dst.ptr) < @ptrToInt(src.ptr));
-            std.mem.copy(StorageCell, dst, src);
+            fastmem.move(StorageCell, dst, src);
         }
 
         {
@@ -1449,7 +1450,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
                     // The row doesn't fit, meaning we have to soft-wrap the
                     // new row but probably at a diff boundary.
-                    std.mem.copy(
+                    fastmem.copy(
                         StorageCell,
                         new_row.storage[x + 1 ..],
                         wrapped_cells[wrapped_i .. wrapped_i + copy_len],

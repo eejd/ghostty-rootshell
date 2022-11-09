@@ -14,6 +14,7 @@ const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
 const trace = tracy.trace;
+const fastmem = @import("../fastmem.zig");
 
 const log = std.log.scoped(.io_exec);
 
@@ -339,7 +340,7 @@ const EventData = struct {
             const req = try self.write_req_pool.get();
             const buf = try self.write_buf_pool.get();
             const end = @min(data.len, i + buf.len);
-            std.mem.copy(u8, buf, data[i..end]);
+            fastmem.copy(u8, buf, data[i..end]);
             try self.data_stream.write(
                 .{ .req = req },
                 &[1][]u8{buf[0..(end - i)]},

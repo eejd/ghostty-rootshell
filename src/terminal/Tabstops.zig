@@ -13,6 +13,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const assert = std.debug.assert;
+const fastmem = @import("../fastmem.zig");
 
 /// Unit is the type we use per tabstop unit (see file docs).
 const Unit = u8;
@@ -129,7 +130,7 @@ pub fn resize(self: *Tabstops, alloc: Allocator, cols: usize) !void {
     // Note: we can probably try to realloc here but I'm not sure it matters.
     const new = try alloc.alloc(Unit, size);
     if (self.dynamic_stops.len > 0) {
-        std.mem.copy(Unit, new, self.dynamic_stops);
+        fastmem.copy(Unit, new, self.dynamic_stops);
         alloc.free(self.dynamic_stops);
     }
 

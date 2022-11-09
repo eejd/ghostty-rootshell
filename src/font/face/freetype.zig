@@ -18,6 +18,7 @@ const Glyph = font.Glyph;
 const Library = font.Library;
 const Presentation = font.Presentation;
 const convert = @import("freetype_convert.zig");
+const fastmem = @import("../../fastmem.zig");
 
 const log = std.log.scoped(.font_face);
 
@@ -248,7 +249,7 @@ pub const Face = struct {
                 var src_ptr = bitmap.buffer;
                 var i: usize = 0;
                 while (i < bitmap.rows) : (i += 1) {
-                    std.mem.copy(u8, dst_ptr, src_ptr[0 .. bitmap.width * depth]);
+                    fastmem.copy(u8, dst_ptr, src_ptr[0 .. bitmap.width * depth]);
                     dst_ptr = dst_ptr[tgt_w * depth ..];
                     src_ptr += @intCast(usize, bitmap.pitch);
                 }

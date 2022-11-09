@@ -1,6 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const trace = @import("tracy").trace;
+const fastmem = @import("../fastmem.zig");
 
 /// Returns a circular buffer containing type T.
 pub fn CircBuf(comptime T: type, comptime default: T) type {
@@ -82,13 +84,13 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             }
 
             if (!self.full and self.head >= self.tail) {
-                std.mem.copy(T, buf, self.storage[self.tail..self.head]);
+                fastmem.copy(T, buf, self.storage[self.tail..self.head]);
                 return;
             }
 
             const middle = self.storage.len - self.tail;
-            std.mem.copy(T, buf, self.storage[self.tail..]);
-            std.mem.copy(T, buf[middle..], self.storage[0..self.head]);
+            fastmem.copy(T, buf, self.storage[self.tail..]);
+            fastmem.copy(T, buf[middle..], self.storage[0..self.head]);
         }
 
         /// Returns if the buffer is currently empty. To check if its
@@ -130,6 +132,9 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// the end of our buffer. This never "rotates" the buffer because
         /// the offset can only be within the size of the buffer.
         pub fn getPtrSlice(self: *Self, offset: usize, slice_len: usize) [2][]T {
+            const tracy = trace(@src());
+            defer tracy.end();
+
             // Note: this assertion is very important, it hints the compiler
             // which generates ~10% faster code than without it.
             assert(offset + slice_len <= self.capacity());

@@ -19,6 +19,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
+const fastmem = @import("fastmem.zig");
 
 /// Data is the raw texture data.
 data: []u8,
@@ -233,7 +234,7 @@ pub fn set(self: *Atlas, reg: Region, data: []const u8) void {
     while (i < reg.height) : (i += 1) {
         const tex_offset = (((reg.y + i) * self.size) + reg.x) * depth;
         const data_offset = i * reg.width * depth;
-        std.mem.copy(
+        fastmem.copy(
             u8,
             self.data[tex_offset..],
             data[data_offset .. data_offset + (reg.width * depth)],
