@@ -1023,6 +1023,9 @@ pub fn scroll(self: *Screen, behavior: Scroll) !void {
 }
 
 fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
     // If we're scrolling up, then we just subtract and we're done.
     // We just clamp at 0 which blocks us from scrolling off the top.
     if (delta < 0) {

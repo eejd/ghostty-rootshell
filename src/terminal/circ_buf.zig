@@ -46,6 +46,9 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// Resize the buffer to the given size (larger or smaller).
         /// If larger, new values will be set to the default value.
         pub fn resize(self: *Self, alloc: Allocator, size: usize) !void {
+            const tracy = trace(@src());
+            defer tracy.end();
+
             // Rotate to zero so it is aligned.
             try self.rotateToZero(alloc);
 
@@ -69,6 +72,9 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
         /// Rotate the data so that it is zero-aligned.
         fn rotateToZero(self: *Self, alloc: Allocator) !void {
+            const tracy = trace(@src());
+            defer tracy.end();
+
             // TODO: this does this in the worst possible way by allocating.
             // rewrite to not allocate, its possible, I'm just lazy right now.
 
@@ -116,9 +122,12 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         pub fn deleteOldest(self: *Self, n: usize) void {
             assert(n <= self.storage.len);
 
+            const tracy = trace(@src());
+            defer tracy.end();
+
             // Clear the values back to default
             const slices = self.getPtrSlice(0, n);
-            for (slices) |slice| std.mem.set(T, slice, default);
+            inline for (slices) |slice| std.mem.set(T, slice, default);
 
             // If we're not full, we can just advance the tail. We know
             // it'll be less than the length because otherwise we'd be full.
