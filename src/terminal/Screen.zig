@@ -827,12 +827,17 @@ pub fn getRow(self: *Screen, index: RowIndex) Row {
         // Store the header
         row.storage[0].header.id = id;
 
-        // Mark that we're dirty since we're a new row
-        row.storage[0].header.flags.dirty = true;
+        // We only set dirty and fill if its not dirty. If its dirty
+        // we assume this row has been written but just hasn't had
+        // an ID assigned yet.
+        if (!row.storage[0].header.flags.dirty) {
+            // Mark that we're dirty since we're a new row
+            row.storage[0].header.flags.dirty = true;
 
-        // We only need to fill with runtime safety because unions are
-        // tag-checked. Otherwise, the default value of zero will be valid.
-        if (std.debug.runtime_safety) row.fill(.{});
+            // We only need to fill with runtime safety because unions are
+            // tag-checked. Otherwise, the default value of zero will be valid.
+            if (std.debug.runtime_safety) row.fill(.{});
+        }
     }
     return row;
 }
@@ -844,6 +849,86 @@ pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) !void {
     const dst_row = self.getRow(dst);
     const src_row = self.getRow(src);
     try dst_row.copyRow(src_row);
+}
+
+/// Scroll rows in a region up. Rows that go beyond the region
+/// top or bottom are deleted, and new rows inserted are blank according
+/// to the current pen.
+///
+/// This does NOT create any new scrollback. This modifies an existing
+/// region within the screen (including possibly the scrollback if
+/// the top/bottom are within it).
+///
+/// This can be used to implement terminal scroll regions efficiently.
+pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usize) void {
+    // Avoid a lot of work if we're doing nothing.
+    if (count == 0) return;
+
+    // Convert our top/bottom to screen y values. This is the y offset
+    // in the entire screen buffer.
+    const top_y = top.toScreen(self).screen;
+    const bot_y = bottom.toScreen(self).screen;
+    assert(bot_y > top_y);
+    assert(count <= (bot_y - top_y));
+
+    // Get the storage pointer for the full scroll region. We're going to
+    // be modifying the whole thing so we get it right away.
+    const height = bot_y - top_y;
+    const slices = self.storage.getPtrSlice(
+        top_y * (self.cols + 1),
+        (height * (self.cols + 1)) + self.cols + 1,
+    );
+
+    // Fast-path is that we have a contigous buffer in our circular buffer.
+    // In this case we can do some memmoves.
+    if (slices[1].len == 0) {
+        const buf = slices[0];
+
+        {
+            // Our copy starts "count" rows below and is the length of
+            // the remainder of the data. Our destination is the top since
+            // we're scrolling up.
+            //
+            // Note we do NOT need to set any row headers to dirty because
+            // the row contents are not changing for the row ID.
+            const dst = buf;
+            const src_offset = count * (self.cols + 1);
+            const src = buf[src_offset..];
+            assert(@ptrToInt(dst.ptr) < @ptrToInt(src.ptr));
+            std.mem.copy(StorageCell, dst, src);
+        }
+
+        {
+            // Copy in our empties. The destination is the bottom
+            // count rows. We first fill with the pen values since there
+            // is a lot more of that.
+            const dst_offset = (height - (count - 1)) * (self.cols + 1);
+            const dst = buf[dst_offset..];
+            std.mem.set(StorageCell, dst, .{ .cell = self.cursor.pen });
+
+            // Then we make sure our row headers are zeroed out. We set
+            // the value to a dirty row header so that the renderer re-draws.
+            //
+            // NOTE: we do NOT set a valid row ID here. The next time getRow
+            // is called it will be initialized. This should work fine as
+            // far as I can tell. It is important to set dirty so that the
+            // renderer knows to redraw this.
+            var i: usize = dst_offset;
+            while (i < buf.len) : (i += self.cols + 1) {
+                buf[i] = .{ .header = .{
+                    .flags = .{ .dirty = true },
+                } };
+            }
+        }
+
+        return;
+    }
+
+    // If we're split across two buffers this is a "slow" path.
+    // This isn't possible with the /active/ area of the screen so mark
+    // it as unreachable for now but this is something we need to fix.
+
+    unreachable;
 }
 
 /// Returns the offset into the storage buffer that the given row can
@@ -2161,6 +2246,93 @@ test "Screen: row copy" {
     var contents = try s.testString(alloc, .viewport);
     defer alloc.free(contents);
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
+}
+
+test "Screen: scrollRegionUp single" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    s.scrollRegionUp(.{ .active = 1 }, .{ .active = 2 }, 1);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n3IJKL\n\n4ABCD", contents);
+    }
+}
+
+test "Screen: scrollRegionUp single with pen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    s.cursor.pen = .{ .char = 'X' };
+    s.scrollRegionUp(.{ .active = 1 }, .{ .active = 2 }, 1);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n3IJKL\nXXXXX\n4ABCD", contents);
+    }
+}
+
+test "Screen: scrollRegionUp multiple" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    s.scrollRegionUp(.{ .active = 1 }, .{ .active = 3 }, 1);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n3IJKL\n4ABCD", contents);
+    }
+}
+
+test "Screen: scrollRegionUp multiple count" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    s.scrollRegionUp(.{ .active = 1 }, .{ .active = 3 }, 2);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n4ABCD", contents);
+    }
+}
+
+test "Screen: scrollRegionUp foo" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("A\nB\nC\nD");
+
+    s.cursor.pen = .{ .char = 'X' };
+    s.scrollRegionUp(.{ .active = 0 }, .{ .active = 2 }, 1);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("B\nC\nXXXXX\nD", contents);
+    }
 }
 
 test "Screen: clear history with no history" {

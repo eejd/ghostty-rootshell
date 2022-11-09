@@ -1216,27 +1216,15 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: scroll region bounds
-
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
 
-    // Remaining number of lines in the scrolling region
-    const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
-
-    // If the count is more than our remaining lines, we adjust down.
-    const adjusted_count = @min(count, rem);
-
-    // Scroll up the count amount.
-    var y: usize = self.screen.cursor.y;
-    while (y <= self.scrolling_region.bottom - adjusted_count) : (y += 1) {
-        try self.screen.copyRow(.{ .active = y }, .{ .active = y + adjusted_count });
-    }
-
-    while (y <= self.scrolling_region.bottom) : (y += 1) {
-        const row = self.screen.getRow(.{ .active = y });
-        row.fill(self.screen.cursor.pen);
-    }
+    // Perform the scroll
+    self.screen.scrollRegionUp(
+        .{ .active = self.screen.cursor.y },
+        .{ .active = self.scrolling_region.bottom },
+        count,
+    );
 }
 
 /// Scroll the text down by one row.
