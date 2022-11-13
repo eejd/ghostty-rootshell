@@ -72,6 +72,9 @@ pub fn build(b: *std.build.Builder) !void {
         "Build and install test executables with 'build'",
     ) orelse false;
 
+    // Add our benchmarks
+    try benchSteps(b, target, mode);
+
     const exe = b.addExecutable("ghostty", "src/main.zig");
     const exe_options = b.addOptions();
     exe_options.addOption(bool, "tracy_enabled", tracy);
@@ -335,6 +338,44 @@ fn addDeps(
     // Imgui
     const imgui_step = try imgui.link(b, step, imgui_opts);
     try glfw.link(b, imgui_step, glfw_opts);
+}
+
+fn benchSteps(
+    b: *std.build.Builder,
+    target: std.zig.CrossTarget,
+    mode: std.builtin.Mode,
+) !void {
+    // Open the directory ./src/bench
+    const c_dir_path = (comptime root()) ++ "/src/bench";
+    var c_dir = try fs.openIterableDirAbsolute(c_dir_path, .{});
+    defer c_dir.close();
+
+    // Go through and add each as a step
+    var c_dir_it = c_dir.iterate();
+    while (try c_dir_it.next()) |entry| {
+        // Get the index of the last '.' so we can strip the extension.
+        const index = std.mem.lastIndexOfScalar(u8, entry.name, '.') orelse continue;
+        if (index == 0) continue;
+
+        // If it doesn't end in 'zig' then ignore
+        if (!std.mem.eql(u8, entry.name[index + 1 ..], "zig")) continue;
+
+        // Name of the conformance app and full path to the entrypoint.
+        const name = entry.name[0..index];
+        const path = try fs.path.join(b.allocator, &[_][]const u8{
+            c_dir_path,
+            entry.name,
+        });
+
+        // Executable builder.
+        const bin_name = try std.fmt.allocPrint(b.allocator, "bench-{s}", .{name});
+        const c_exe = b.addExecutable(bin_name, path);
+        c_exe.setTarget(target);
+        c_exe.setBuildMode(mode);
+        c_exe.setMainPkgPath("./src");
+        c_exe.install();
+        try addDeps(b, c_exe, true);
+    }
 }
 
 fn conformanceSteps(
