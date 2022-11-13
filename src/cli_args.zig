@@ -28,8 +28,9 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
     // Make an arena for all our allocations if we support it. Otherwise,
     // use an allocator that always fails. If the arena is already set on
     // the config, then we reuse that. See memory note in parse docs.
+    const arena_available = @hasField(T, "_arena");
     var arena_owned: bool = false;
-    const arena_alloc = if (@hasField(T, "_arena")) arena: {
+    const arena_alloc = if (arena_available) arena: {
         // If the arena is unset, we create it. We mark that we own it
         // only so that we can clean it up on error.
         if (dst._arena == null) {
@@ -38,8 +39,12 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
         }
 
         break :arena dst._arena.?.allocator();
-    } else std.mem.fail_allocator;
-    errdefer if (arena_owned) {
+    } else fail: {
+        // Note: this is... not safe...
+        var fail = std.testing.FailingAllocator.init(alloc, 0);
+        break :fail fail.allocator();
+    };
+    errdefer if (arena_available and arena_owned) {
         dst._arena.?.deinit();
         dst._arena = null;
     };
