@@ -7,12 +7,13 @@ const log = std.log.scoped(.os);
 
 /// Ensure that the locale is set.
 pub fn ensureLocale() void {
+    assert(builtin.link_libc);
+
     // On macOS, pre-populate the LANG env var with system preferences.
     // When launching the .app, LANG is not set so we must query it from the
     // OS. When launching from the CLI, LANG is usually set by the parent
     // process.
     if (comptime builtin.target.isDarwin()) {
-        assert(builtin.link_libc);
         if (std.os.getenv("LANG") == null) {
             setLangFromCocoa();
         }
