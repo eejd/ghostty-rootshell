@@ -390,14 +390,13 @@ pub fn render(
     defer objc_autoreleasePoolPop(pool);
 
     // If we're resizing, then we have to update a bunch of things...
-    if (critical.screen_size) |screen_size| {
-        // Update our grid size
-        try self.setScreenSize(screen_size);
-
-        const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
+    if (critical.screen_size) |_| {
+        // Note: we ignore the screen size value because our view should be
+        // automatically updated by being in the window.
 
         // Scale the bounds based on the layer content scale so that we
         // properly handle Retina.
+        const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
         const scaled: macos.graphics.Size = scaled: {
             const scaleFactor = self.swapchain.getProperty(macos.graphics.c.CGFloat, "contentsScale");
             break :scaled .{
@@ -406,25 +405,8 @@ pub fn render(
             };
         };
 
-        // Set the size of the drawable surface to the scaled bounds
-        self.swapchain.setProperty("drawableSize", scaled);
-        //log.warn("bounds={} screen={} scaled={}", .{ bounds, screen_size, scaled });
-
-        // Setup our uniforms
-        const old = self.uniforms;
-        self.uniforms = .{
-            .projection_matrix = math.ortho2d(
-                0,
-                @floatCast(f32, scaled.width),
-                @floatCast(f32, scaled.height),
-                0,
-            ),
-            .cell_size = .{ self.cell_size.width, self.cell_size.height },
-            .underline_position = old.underline_position,
-            .underline_thickness = old.underline_thickness,
-            .strikethrough_position = old.strikethrough_position,
-            .strikethrough_thickness = old.strikethrough_thickness,
-        };
+        // Handle our new size
+        try self.setScreenSize(scaled);
     }
 
     // Build our GPU cells
@@ -572,9 +554,44 @@ pub fn render(
 }
 
 /// Resize the screen.
-fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
+fn setScreenSize(self: *Metal, bounds: macos.graphics.Size) !void {
+    // Easier to work with our own types
+    const dim: renderer.ScreenSize = .{
+        .width = @floatToInt(u32, bounds.width),
+        .height = @floatToInt(u32, bounds.height),
+    };
+
     // Recalculate the rows/columns.
     const grid_size = renderer.GridSize.init(dim, self.cell_size);
+
+    // Determine if we need to pad the window. For "auto" padding, we take
+    // the leftover amounts on the right/bottom that don't fit a full grid cell
+    // and we split them equal across all boundaries.
+
+    // The size of our full grid
+    const grid_width = @intToFloat(f32, grid_size.columns) * self.cell_size.width;
+    const grid_height = @intToFloat(f32, grid_size.rows) * self.cell_size.height;
+
+    // The empty space to the right of a line and bottom of the last row
+    const space_right = @intToFloat(f32, dim.width) - grid_width;
+    const space_bot = @intToFloat(f32, dim.height) - grid_height;
+
+    // The left/right padding is just an equal split.
+    const padding_right = @floatToInt(i32, @floor(space_right / 2));
+    const padding_left = padding_right;
+
+    // The top/bottom padding is interesting. Subjectively, lots of padding
+    // at the top looks bad. So instead of always being equal (like left/right),
+    // we force the top padding to be at most equal to the left, and the bottom
+    // padding is the difference thereafter.
+    const padding_top = @min(padding_left, @floatToInt(i32, @floor(space_bot / 2)));
+    const padding_bot = @floatToInt(i32, space_bot - @intToFloat(f32, padding_top));
+
+    // The full padded dimensions of the renderable area.
+    const padded_dim: renderer.ScreenSize = .{
+        .width = dim.width - @intCast(u32, padding_left + padding_right),
+        .height = dim.height - @intCast(u32, padding_bot + padding_top),
+    };
 
     // Update our shaper
     // TODO: don't reallocate if it is close enough (but bigger)
@@ -582,6 +599,25 @@ fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
     errdefer self.alloc.free(shape_buf);
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
+
+    // Set the size of the drawable surface to the bounds
+    self.swapchain.setProperty("drawableSize", bounds);
+
+    // Setup our uniforms
+    const old = self.uniforms;
+    self.uniforms = .{
+        .projection_matrix = math.ortho2d(
+            @intToFloat(f32, -1 * padding_left),
+            @intToFloat(f32, padded_dim.width),
+            @intToFloat(f32, padded_dim.height),
+            @intToFloat(f32, -1 * padding_top),
+        ),
+        .cell_size = .{ self.cell_size.width, self.cell_size.height },
+        .underline_position = old.underline_position,
+        .underline_thickness = old.underline_thickness,
+        .strikethrough_position = old.strikethrough_position,
+        .strikethrough_thickness = old.strikethrough_thickness,
+    };
 
     log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
