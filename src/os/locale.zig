@@ -25,6 +25,8 @@ pub fn ensureLocale() void {
     } else log.warn("setlocale failed, locale may be incorrect", .{});
 }
 
+/// This sets the LANG environment variable based on the macOS system
+/// preferences selected locale settings.
 fn setLangFromCocoa() void {
     const pool = objc.AutoreleasePool.init();
     defer pool.deinit();
