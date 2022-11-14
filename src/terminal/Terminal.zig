@@ -190,6 +190,9 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.secondary_screen = old;
     self.active_screen = .alternate;
 
+    // Clear our pen
+    self.screen.cursor = .{};
+
     // Clear our selection
     self.selection = null;
 
@@ -1317,7 +1320,7 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
 
 /// Full reset
 pub fn fullReset(self: *Terminal) void {
-    self.primaryScreen(.{});
+    self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
     self.selection = null;
     self.charset = .{};
     self.eraseDisplay(.scrollback);
