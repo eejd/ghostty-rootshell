@@ -354,8 +354,18 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.bold = true;
         },
 
+        .reset_bold => {
+            // Bold and faint share the same SGR code for this
+            self.screen.cursor.pen.attrs.bold = false;
+            self.screen.cursor.pen.attrs.faint = false;
+        },
+
         .italic => {
             self.screen.cursor.pen.attrs.italic = true;
+        },
+
+        .reset_italic => {
+            self.screen.cursor.pen.attrs.italic = false;
         },
 
         .faint => {
@@ -364,6 +374,19 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .underline => {
             self.screen.cursor.pen.attrs.underline = true;
+        },
+
+        .reset_underline => {
+            self.screen.cursor.pen.attrs.underline = false;
+        },
+
+        .blink => {
+            log.warn("blink requested, but not implemented", .{});
+            self.screen.cursor.pen.attrs.blink = true;
+        },
+
+        .reset_blink => {
+            self.screen.cursor.pen.attrs.blink = false;
         },
 
         .inverse => {
@@ -434,7 +457,7 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.bg = color.default[idx];
         },
 
-        else => return error.InvalidAttribute,
+        .unknown => return error.InvalidAttribute,
     }
 }
 

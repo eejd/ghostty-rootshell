@@ -20,18 +20,23 @@ pub const Attribute = union(enum) {
 
     /// Bold the text.
     bold: void,
+    reset_bold: void,
 
     /// Italic text.
     italic: void,
+    reset_italic: void,
 
     /// Faint/dim text.
+    /// Note: reset faint is the same SGR code as reset bold
     faint: void,
 
     /// Underline the text
     underline: void,
+    reset_underline: void,
 
     /// Blink the text
     blink: void,
+    reset_blink: void,
 
     /// Invert fg/bg colors.
     inverse: void,
@@ -106,9 +111,19 @@ pub const Parser = struct {
 
             5 => return Attribute{ .blink = {} },
 
+            6 => return Attribute{ .blink = {} },
+
             7 => return Attribute{ .inverse = {} },
 
             9 => return Attribute{ .strikethrough = {} },
+
+            22 => return Attribute{ .reset_bold = {} },
+
+            23 => return Attribute{ .reset_italic = {} },
+
+            24 => return Attribute{ .reset_underline = {} },
+
+            25 => return Attribute{ .reset_blink = {} },
 
             27 => return Attribute{ .reset_inverse = {} },
 
@@ -225,13 +240,56 @@ test "sgr: Parser multiple" {
 }
 
 test "sgr: bold" {
-    const v = testParse(&[_]u16{1});
-    try testing.expect(v == .bold);
+    {
+        const v = testParse(&[_]u16{1});
+        try testing.expect(v == .bold);
+    }
+
+    {
+        const v = testParse(&[_]u16{22});
+        try testing.expect(v == .reset_bold);
+    }
 }
 
 test "sgr: italic" {
-    const v = testParse(&[_]u16{3});
-    try testing.expect(v == .italic);
+    {
+        const v = testParse(&[_]u16{3});
+        try testing.expect(v == .italic);
+    }
+
+    {
+        const v = testParse(&[_]u16{23});
+        try testing.expect(v == .reset_italic);
+    }
+}
+
+test "sgr: underline" {
+    {
+        const v = testParse(&[_]u16{4});
+        try testing.expect(v == .underline);
+    }
+
+    {
+        const v = testParse(&[_]u16{24});
+        try testing.expect(v == .reset_underline);
+    }
+}
+
+test "sgr: blink" {
+    {
+        const v = testParse(&[_]u16{5});
+        try testing.expect(v == .blink);
+    }
+
+    {
+        const v = testParse(&[_]u16{6});
+        try testing.expect(v == .blink);
+    }
+
+    {
+        const v = testParse(&[_]u16{25});
+        try testing.expect(v == .reset_blink);
+    }
 }
 
 test "sgr: inverse" {

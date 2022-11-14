@@ -165,6 +165,7 @@ pub const Cell = struct {
         italic: bool = false,
         faint: bool = false,
         underline: bool = false,
+        blink: bool = false,
         inverse: bool = false,
         strikethrough: bool = false,
 
