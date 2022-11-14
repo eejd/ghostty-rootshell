@@ -79,6 +79,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     var env = try std.process.getEnvMap(alloc);
     defer env.deinit();
     try env.put("TERM", "xterm-256color");
+    try env.put("COLORTERM", "truecolor");
 
     // Build our subcommand
     var cmd: Command = .{
