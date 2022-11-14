@@ -2293,7 +2293,7 @@ test "Screen: row copy" {
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
 }
 
-test "Screen: copy" {
+test "Screen: clone" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -2303,7 +2303,7 @@ test "Screen: copy" {
     try testing.expect(s.viewportIsBottom());
 
     {
-        var s2 = try s.copy(alloc, .{ .active = 1 }, .{ .active = 1 });
+        var s2 = try s.clone(alloc, .{ .active = 1 }, .{ .active = 1 });
         defer s2.deinit();
 
         // Test our contents rotated
@@ -2313,7 +2313,7 @@ test "Screen: copy" {
     }
 
     {
-        var s2 = try s.copy(alloc, .{ .active = 1 }, .{ .active = 2 });
+        var s2 = try s.clone(alloc, .{ .active = 1 }, .{ .active = 2 });
         defer s2.deinit();
 
         // Test our contents rotated
