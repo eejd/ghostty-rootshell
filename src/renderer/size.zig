@@ -44,6 +44,14 @@ pub const CellSize = struct {
 pub const ScreenSize = struct {
     width: u32,
     height: u32,
+
+    /// Subtract padding from the screen size.
+    pub fn subPadding(self: ScreenSize, padding: Padding) ScreenSize {
+        return .{
+            .width = self.width - @floatToInt(u32, padding.left + padding.right),
+            .height = self.height - @floatToInt(u32, padding.top + padding.bottom),
+        };
+    }
 };
 
 /// The dimensions of the grid itself, in rows/columns units.
@@ -65,6 +73,44 @@ pub const GridSize = struct {
     pub fn update(self: *GridSize, screen: ScreenSize, cell: CellSize) void {
         self.columns = @floatToInt(Unit, @intToFloat(f32, screen.width) / cell.width);
         self.rows = @floatToInt(Unit, @intToFloat(f32, screen.height) / cell.height);
+    }
+};
+
+/// The padding to add to a screen.
+pub const Padding = struct {
+    top: f32,
+    bottom: f32,
+    right: f32,
+    left: f32,
+
+    /// Returns padding that balances the whitespace around the screen
+    /// for the given grid and cell sizes.
+    pub fn balanced(screen: ScreenSize, grid: GridSize, cell: CellSize) Padding {
+        // The size of our full grid
+        const grid_width = @intToFloat(f32, grid.columns) * cell.width;
+        const grid_height = @intToFloat(f32, grid.rows) * cell.height;
+
+        // The empty space to the right of a line and bottom of the last row
+        const space_right = @intToFloat(f32, screen.width) - grid_width;
+        const space_bot = @intToFloat(f32, screen.height) - grid_height;
+
+        // The left/right padding is just an equal split.
+        const padding_right = @floor(space_right / 2);
+        const padding_left = padding_right;
+
+        // The top/bottom padding is interesting. Subjectively, lots of padding
+        // at the top looks bad. So instead of always being equal (like left/right),
+        // we force the top padding to be at most equal to the left, and the bottom
+        // padding is the difference thereafter.
+        const padding_top = @min(padding_left, @floor(space_bot / 2));
+        const padding_bot = space_bot - padding_top;
+
+        return .{
+            .top = padding_top,
+            .bottom = padding_bot,
+            .right = padding_right,
+            .left = padding_left,
+        };
     }
 };
 
