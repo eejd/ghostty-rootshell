@@ -547,10 +547,6 @@ pub fn render(
     if (critical.screen_size) |size| {
         // Update our grid size
         try self.setScreenSize(size);
-
-        // Update our viewport for this context to be the entire window.
-        // OpenGL works in pixels, so we have to use the pixel size.
-        try gl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
     }
 
     // Build our GPU cells
@@ -950,23 +946,16 @@ pub fn updateCell(
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
 fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
-    // Update the projection uniform within our shader
-    const bind = try self.program.use();
-    defer bind.unbind();
-    try self.program.setUniform(
-        "projection",
-
-        // 2D orthographic projection with the full w/h
-        math.ortho2d(
-            0,
-            @intToFloat(f32, dim.width),
-            @intToFloat(f32, dim.height),
-            0,
-        ),
-    );
-
     // Recalculate the rows/columns.
     const grid_size = renderer.GridSize.init(dim, self.cell_size);
+
+    // Determine if we need to pad the window. For "auto" padding, we take
+    // the leftover amounts on the right/bottom that don't fit a full grid cell
+    // and we split them equal across all boundaries.
+    const padding = renderer.Padding.balanced(dim, grid_size, self.cell_size);
+    const padded_dim = dim.subPadding(padding);
+
+    log.debug("screen size padded={} screen={} grid={} cell={}", .{ padded_dim, dim, grid_size, self.cell_size });
 
     // Update our LRU. We arbitrarily support a certain number of pages here.
     // We also always support a minimum number of caching in case a user
@@ -983,7 +972,31 @@ fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
 
-    log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
+    // Update our viewport for this context to be the entire window.
+    // OpenGL works in pixels, so we have to use the pixel size.
+    try gl.viewport(
+        0,
+        0,
+        @intCast(i32, dim.width),
+        @intCast(i32, dim.height),
+    );
+
+    // Update the projection uniform within our shader
+    {
+        const bind = try self.program.use();
+        defer bind.unbind();
+        try self.program.setUniform(
+            "projection",
+
+            // 2D orthographic projection with the full w/h
+            math.ortho2d(
+                -1 * padding.left,
+                @intToFloat(f32, padded_dim.width),
+                @intToFloat(f32, padded_dim.height),
+                -1 * padding.top,
+            ),
+        );
+    }
 }
 
 /// Updates the font texture atlas if it is dirty.
