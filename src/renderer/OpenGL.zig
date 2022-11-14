@@ -478,10 +478,6 @@ pub fn render(
         state.mutex.lock();
         defer state.mutex.unlock();
 
-        // If we're resizing, then handle that now.
-        if (state.resize_screen) |size| try self.setScreenSize(size);
-        defer state.resize_screen = null;
-
         // Setup our cursor state
         if (self.focused) {
             self.cursor_visible = self.cursor_visible and state.cursor.visible;
@@ -527,6 +523,9 @@ pub fn render(
         );
         errdefer screen_copy.deinit();
 
+        // We set this in the state below
+        defer state.resize_screen = null;
+
         break :critical .{
             .gl_bg = self.background,
             .devmode_data = devmode_data,
@@ -539,6 +538,16 @@ pub fn render(
     };
     defer critical.screen.deinit();
 
+    // If we are resizing we need to update the viewport
+    if (critical.screen_size) |size| {
+        // Update our grid size
+        try self.setScreenSize(size);
+
+        // Update our viewport for this context to be the entire window.
+        // OpenGL works in pixels, so we have to use the pixel size.
+        try gl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
+    }
+
     // Build our GPU cells
     try self.rebuildCells(
         critical.active_screen,
@@ -550,13 +559,6 @@ pub fn render(
     // Try to flush our atlas, this will only do something if there
     // are changes to the atlas.
     try self.flushAtlas();
-
-    // If we are resizing we need to update the viewport
-    if (critical.screen_size) |size| {
-        // Update our viewport for this context to be the entire window.
-        // OpenGL works in pixels, so we have to use the pixel size.
-        try gl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
-    }
 
     // Clear the surface
     gl.clearColor(
