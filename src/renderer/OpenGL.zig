@@ -975,10 +975,10 @@ fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Update our viewport for this context to be the entire window.
     // OpenGL works in pixels, so we have to use the pixel size.
     try gl.viewport(
-        @floatToInt(i32, padding.left),
-        @floatToInt(i32, padding.bottom),
-        @intCast(i32, padded_dim.width),
-        @intCast(i32, padded_dim.height),
+        0,
+        0,
+        @intCast(i32, dim.width),
+        @intCast(i32, dim.height),
     );
 
     // Update the projection uniform within our shader
@@ -990,10 +990,10 @@ fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
 
             // 2D orthographic projection with the full w/h
             math.ortho2d(
-                0,
+                -1 * padding.left,
                 @intToFloat(f32, padded_dim.width),
                 @intToFloat(f32, padded_dim.height),
-                0,
+                -1 * padding.top,
             ),
         );
     }
