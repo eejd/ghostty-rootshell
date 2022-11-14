@@ -774,6 +774,44 @@ pub fn deinit(self: *Screen) void {
     self.graphemes.deinit(self.alloc);
 }
 
+/// Copy the screen portion given by top and bottom into a new screen instance.
+/// This clone is meant for read-only access and hasn't been tested for
+/// mutability.
+pub fn clone(self: *Screen, alloc: Allocator, top: RowIndex, bottom: RowIndex) !Screen {
+    // Convert our top/bottom to screen coordinates
+    const top_y = top.toScreen(self).screen;
+    const bot_y = bottom.toScreen(self).screen;
+    assert(bot_y >= top_y);
+    const height = (bot_y - top_y) + 1;
+
+    // Init a new screen that exactly fits the height
+    var result = try init(alloc, height, self.cols, 0);
+    errdefer result.deinit();
+
+    // Copy some data
+    result.cursor = self.cursor;
+
+    // Get the pointer to our source buffer
+    const len = height * (self.cols + 1);
+    const src = self.storage.getPtrSlice(top_y * (self.cols + 1), len);
+
+    // Get a direct pointer into our storage buffer. This should always be
+    // one slice because we created a perfectly fitting buffer.
+    const dst = result.storage.getPtrSlice(0, len);
+    assert(dst[1].len == 0);
+
+    // Perform the copy
+    fastmem.copy(StorageCell, dst[0], src[0]);
+    fastmem.copy(StorageCell, dst[0][src[0].len..], src[1]);
+
+    // If there are graphemes, we just copy them all
+    if (self.graphemes.count() > 0) {
+        result.graphemes = try self.graphemes.clone(alloc);
+    }
+
+    return result;
+}
+
 /// Returns true if the viewport is scrolled to the bottom of the screen.
 pub fn viewportIsBottom(self: Screen) bool {
     return self.viewport == self.history;
@@ -2253,6 +2291,36 @@ test "Screen: row copy" {
     var contents = try s.testString(alloc, .viewport);
     defer alloc.free(contents);
     try testing.expectEqualStrings("2EFGH\n3IJKL\n2EFGH", contents);
+}
+
+test "Screen: copy" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    {
+        var s2 = try s.copy(alloc, .{ .active = 1 }, .{ .active = 1 });
+        defer s2.deinit();
+
+        // Test our contents rotated
+        var contents = try s2.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH", contents);
+    }
+
+    {
+        var s2 = try s.copy(alloc, .{ .active = 1 }, .{ .active = 2 });
+        defer s2.deinit();
+
+        // Test our contents rotated
+        var contents = try s2.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
 }
 
 test "Screen: scrollRegionUp single" {

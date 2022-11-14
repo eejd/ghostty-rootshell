@@ -467,10 +467,14 @@ pub fn render(
         gl_bg: terminal.color.RGB,
         devmode_data: ?*imgui.DrawData,
         screen_size: ?renderer.ScreenSize,
+        active_screen: terminal.Terminal.ScreenType,
+        selection: ?terminal.Selection,
+        screen: terminal.Screen,
+        draw_cursor: bool,
     };
 
     // Update all our data as tightly as possible within the mutex.
-    const critical: Critical = critical: {
+    var critical: Critical = critical: {
         state.mutex.lock();
         defer state.mutex.unlock();
 
@@ -499,10 +503,6 @@ pub fn render(
             self.foreground = bg;
         }
 
-        // Build our GPU cells
-        try self.rebuildCells(state.terminal);
-        try self.finalizeCells(state.terminal);
-
         // Build our devmode draw data
         const devmode_data = devmode_data: {
             if (state.devmode) |dm| {
@@ -517,12 +517,39 @@ pub fn render(
             break :devmode_data null;
         };
 
+        // We used to share terminal state, but we've since learned through
+        // analysis that it is faster to copy the terminal state than to
+        // hold the lock wile rebuilding GPU cells.
+        var screen_copy = try state.terminal.screen.clone(
+            self.alloc,
+            .{ .active = 0 },
+            .{ .active = state.terminal.screen.rows - 1 },
+        );
+        errdefer screen_copy.deinit();
+
         break :critical .{
             .gl_bg = self.background,
             .devmode_data = devmode_data,
             .screen_size = state.resize_screen,
+            .active_screen = state.terminal.active_screen,
+            .selection = state.terminal.selection,
+            .screen = screen_copy,
+            .draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom(),
         };
     };
+    defer critical.screen.deinit();
+
+    // Build our GPU cells
+    try self.rebuildCells(
+        critical.active_screen,
+        critical.selection,
+        &critical.screen,
+        critical.draw_cursor,
+    );
+
+    // Try to flush our atlas, this will only do something if there
+    // are changes to the atlas.
+    try self.flushAtlas();
 
     // If we are resizing we need to update the viewport
     if (critical.screen_size) |size| {
@@ -559,7 +586,13 @@ pub fn render(
 ///
 /// Note this doesn't have to typically be manually called. Internally,
 /// the renderer will do this when it needs more memory space.
-pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
+pub fn rebuildCells(
+    self: *OpenGL,
+    active_screen: terminal.Terminal.ScreenType,
+    term_selection: ?terminal.Selection,
+    screen: *terminal.Screen,
+    draw_cursor: bool,
+) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -572,7 +605,7 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
 
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        (term.screen.rows * term.screen.cols * 3) + 1,
+        (screen.rows * screen.cols * 3) + 1,
     );
 
     // We've written no data to the GPU, refresh it all
@@ -584,7 +617,7 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
     var cursor_cell: ?GPUCell = null;
 
     // Build each cell
-    var rowIter = term.screen.rowIterator(.viewport);
+    var rowIter = screen.rowIterator(.viewport);
     var y: usize = 0;
     while (rowIter.next()) |row| {
         defer y += 1;
@@ -593,11 +626,11 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
         // to contain this row. If the selection changes for any reason,
         // then we invalidate the cache.
         const selection = sel: {
-            if (term.selection) |sel| {
+            if (term_selection) |sel| {
                 const screen_point = (terminal.point.Viewport{
                     .x = 0,
                     .y = y,
-                }).toScreen(&term.screen);
+                }).toScreen(screen);
 
                 // If we are selected, we our colors are just inverted fg/bg
                 if (sel.containsRow(screen_point)) break :sel sel;
@@ -611,11 +644,11 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
         const start_i: usize = self.cells.items.len;
         defer if (self.cursor_visible and
             self.cursor_style == .box and
-            term.screen.viewportIsBottom() and
-            y == term.screen.cursor.y)
+            screen.viewportIsBottom() and
+            y == screen.cursor.y)
         {
             for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_col == term.screen.cursor.x and
+                if (cell.grid_col == screen.cursor.x and
                     cell.mode == .fg)
                 {
                     cursor_cell = cell;
@@ -627,7 +660,7 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
         // Get our value from the cache.
         const gop = try self.cells_lru.getOrPut(self.alloc, .{
             .selection = selection,
-            .screen = term.active_screen,
+            .screen = active_screen,
             .row_id = row.getId(),
         });
         if (!row.isDirty() and gop.found_existing) {
@@ -648,7 +681,8 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
                 assert(try self.updateCell(
-                    term,
+                    term_selection,
+                    screen,
                     row.getCell(shaper_cell.x),
                     shaper_cell,
                     run,
@@ -671,7 +705,7 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
         var row_cells = gop.value_ptr;
 
         // Get our new length and cache the cells.
-        try row_cells.ensureTotalCapacity(self.alloc, term.screen.cols);
+        try row_cells.ensureTotalCapacity(self.alloc, screen.cols);
         row_cells.clearRetainingCapacity();
         try row_cells.appendSlice(self.alloc, self.cells.items[start..]);
 
@@ -682,7 +716,7 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    self.addCursor(term);
+    if (draw_cursor) self.addCursor(screen);
     if (cursor_cell) |*cell| {
         cell.fg_r = 0;
         cell.fg_g = 0;
@@ -692,45 +726,28 @@ pub fn rebuildCells(self: *OpenGL, term: *Terminal) !void {
     }
 }
 
-/// This should be called prior to render to finalize the cells and prepare
-/// for render. This performs tasks such as preparing the cursor, refreshing
-/// the cells if necessary, etc.
-pub fn finalizeCells(self: *OpenGL, term: *Terminal) !void {
-    // If we're out of space or we have no more Z-space, rebuild.
-    if (self.cells.items.len == self.cells.capacity) {
-        log.info("cell cache full, rebuilding from scratch", .{});
-        try self.rebuildCells(term);
-    }
-
-    // Try to flush our atlas, this will only do something if there
-    // are changes to the atlas.
-    try self.flushAtlas();
-}
-
-fn addCursor(self: *OpenGL, term: *Terminal) void {
+fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
     // Add the cursor
-    if (self.cursor_visible and term.screen.viewportIsBottom()) {
-        const cell = term.screen.getCell(
-            .active,
-            term.screen.cursor.y,
-            term.screen.cursor.x,
-        );
+    const cell = screen.getCell(
+        .active,
+        screen.cursor.y,
+        screen.cursor.x,
+    );
 
-        self.cells.appendAssumeCapacity(.{
-            .mode = GPUCellMode.fromCursor(self.cursor_style),
-            .grid_col = @intCast(u16, term.screen.cursor.x),
-            .grid_row = @intCast(u16, term.screen.cursor.y),
-            .grid_width = if (cell.attrs.wide) 2 else 1,
-            .fg_r = 0,
-            .fg_g = 0,
-            .fg_b = 0,
-            .fg_a = 0,
-            .bg_r = 0xFF,
-            .bg_g = 0xFF,
-            .bg_b = 0xFF,
-            .bg_a = 255,
-        });
-    }
+    self.cells.appendAssumeCapacity(.{
+        .mode = GPUCellMode.fromCursor(self.cursor_style),
+        .grid_col = @intCast(u16, screen.cursor.x),
+        .grid_row = @intCast(u16, screen.cursor.y),
+        .grid_width = if (cell.attrs.wide) 2 else 1,
+        .fg_r = 0,
+        .fg_g = 0,
+        .fg_b = 0,
+        .fg_a = 0,
+        .bg_r = 0xFF,
+        .bg_g = 0xFF,
+        .bg_b = 0xFF,
+        .bg_a = 255,
+    });
 }
 
 /// Update a single cell. The bool returns whether the cell was updated
@@ -738,7 +755,8 @@ fn addCursor(self: *OpenGL, term: *Terminal) void {
 /// needed.
 pub fn updateCell(
     self: *OpenGL,
-    term: *Terminal,
+    selection: ?terminal.Selection,
+    screen: *terminal.Screen,
     cell: terminal.Screen.Cell,
     shaper_cell: font.Shaper.Cell,
     shaper_run: font.Shaper.TextRun,
@@ -766,11 +784,11 @@ pub fn updateCell(
         // cell is selected.
         // TODO(perf): we can check in advance if selection is in
         // our viewport at all and not run this on every point.
-        if (term.selection) |sel| {
+        if (selection) |sel| {
             const screen_point = (terminal.point.Viewport{
                 .x = x,
                 .y = y,
-            }).toScreen(&term.screen);
+            }).toScreen(screen);
 
             // If we are selected, we our colors are just inverted fg/bg
             if (sel.contains(screen_point)) {
