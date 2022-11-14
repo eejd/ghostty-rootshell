@@ -325,16 +325,15 @@ pub fn render(
         bg: terminal.color.RGB,
         screen_size: ?renderer.ScreenSize,
         devmode: bool,
+        selection: ?terminal.Selection,
+        screen: terminal.Screen,
+        draw_cursor: bool,
     };
 
     // Update all our data as tightly as possible within the mutex.
-    const critical: Critical = critical: {
+    var critical: Critical = critical: {
         state.mutex.lock();
         defer state.mutex.unlock();
-
-        // If we're resizing, then handle that now.
-        if (state.resize_screen) |size| try self.setScreenSize(size);
-        defer state.resize_screen = null;
 
         // Setup our cursor state
         if (self.focused) {
@@ -357,15 +356,34 @@ pub fn render(
             self.foreground = bg;
         }
 
-        // Build our GPU cells
-        try self.rebuildCells(state.terminal);
+        // We used to share terminal state, but we've since learned through
+        // analysis that it is faster to copy the terminal state than to
+        // hold the lock wile rebuilding GPU cells.
+        const viewport_bottom = state.terminal.screen.viewportIsBottom();
+        var screen_copy = if (viewport_bottom) try state.terminal.screen.clone(
+            self.alloc,
+            .{ .active = 0 },
+            .{ .active = state.terminal.rows - 1 },
+        ) else try state.terminal.screen.clone(
+            self.alloc,
+            .{ .viewport = 0 },
+            .{ .viewport = state.terminal.rows - 1 },
+        );
+        errdefer screen_copy.deinit();
+
+        // We set this in the state below
+        defer state.resize_screen = null;
 
         break :critical .{
             .bg = self.background,
             .screen_size = state.resize_screen,
             .devmode = if (state.devmode) |dm| dm.visible else false,
+            .selection = state.terminal.selection,
+            .screen = screen_copy,
+            .draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom(),
         };
     };
+    defer critical.screen.deinit();
 
     // @autoreleasepool {}
     const pool = objc_autoreleasePoolPush();
@@ -373,6 +391,9 @@ pub fn render(
 
     // If we're resizing, then we have to update a bunch of things...
     if (critical.screen_size) |screen_size| {
+        // Update our grid size
+        try self.setScreenSize(screen_size);
+
         const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
 
         // Scale the bounds based on the layer content scale so that we
@@ -387,7 +408,6 @@ pub fn render(
 
         // Set the size of the drawable surface to the scaled bounds
         self.swapchain.setProperty("drawableSize", scaled);
-        _ = screen_size;
         //log.warn("bounds={} screen={} scaled={}", .{ bounds, screen_size, scaled });
 
         // Setup our uniforms
@@ -406,6 +426,13 @@ pub fn render(
             .strikethrough_thickness = old.strikethrough_thickness,
         };
     }
+
+    // Build our GPU cells
+    try self.rebuildCells(
+        critical.selection,
+        &critical.screen,
+        critical.draw_cursor,
+    );
 
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
@@ -562,7 +589,12 @@ fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
 /// Sync all the CPU cells with the GPU state (but still on the CPU here).
 /// This builds all our "GPUCells" on this struct, but doesn't send them
 /// down to the GPU yet.
-fn rebuildCells(self: *Metal, term: *Terminal) !void {
+fn rebuildCells(
+    self: *Metal,
+    term_selection: ?terminal.Selection,
+    screen: *terminal.Screen,
+    draw_cursor: bool,
+) !void {
     // Over-allocate just to ensure we don't allocate again during loops.
     self.cells.clearRetainingCapacity();
     try self.cells.ensureTotalCapacity(
@@ -570,7 +602,7 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
 
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        (term.screen.rows * term.screen.cols * 3) + 1,
+        (screen.rows * screen.cols * 3) + 1,
     );
 
     // This is the cell that has [mode == .fg] and is underneath our cursor.
@@ -579,7 +611,7 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
     var cursor_cell: ?GPUCell = null;
 
     // Build each cell
-    var rowIter = term.screen.rowIterator(.viewport);
+    var rowIter = screen.rowIterator(.viewport);
     var y: usize = 0;
     while (rowIter.next()) |row| {
         defer y += 1;
@@ -589,11 +621,11 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
         const start_i: usize = self.cells.items.len;
         defer if (self.cursor_visible and
             self.cursor_style == .box and
-            term.screen.viewportIsBottom() and
-            y == term.screen.cursor.y)
+            screen.viewportIsBottom() and
+            y == screen.cursor.y)
         {
             for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_pos[0] == @intToFloat(f32, term.screen.cursor.x) and
+                if (cell.grid_pos[0] == @intToFloat(f32, screen.cursor.x) and
                     cell.mode == .fg)
                 {
                     cursor_cell = cell;
@@ -607,7 +639,8 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
                 assert(try self.updateCell(
-                    term,
+                    term_selection,
+                    screen,
                     row.getCell(shaper_cell.x),
                     shaper_cell,
                     run,
@@ -624,7 +657,7 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    self.addCursor(term);
+    if (draw_cursor) self.addCursor(screen);
     if (cursor_cell) |*cell| {
         cell.color = .{ 0, 0, 0, 255 };
         self.cells.appendAssumeCapacity(cell.*);
@@ -633,7 +666,8 @@ fn rebuildCells(self: *Metal, term: *Terminal) !void {
 
 pub fn updateCell(
     self: *Metal,
-    term: *Terminal,
+    selection: ?terminal.Selection,
+    screen: *terminal.Screen,
     cell: terminal.Screen.Cell,
     shaper_cell: font.Shaper.Cell,
     shaper_run: font.Shaper.TextRun,
@@ -658,11 +692,11 @@ pub fn updateCell(
         // cell is selected.
         // TODO(perf): we can check in advance if selection is in
         // our viewport at all and not run this on every point.
-        if (term.selection) |sel| {
+        if (selection) |sel| {
             const screen_point = (terminal.point.Viewport{
                 .x = x,
                 .y = y,
-            }).toScreen(&term.screen);
+            }).toScreen(screen);
 
             // If we are selected, we our colors are just inverted fg/bg
             if (sel.contains(screen_point)) {
@@ -747,25 +781,23 @@ pub fn updateCell(
     return true;
 }
 
-fn addCursor(self: *Metal, term: *Terminal) void {
+fn addCursor(self: *Metal, screen: *terminal.Screen) void {
     // Add the cursor
-    if (self.cursor_visible and term.screen.viewportIsBottom()) {
-        const cell = term.screen.getCell(
-            .active,
-            term.screen.cursor.y,
-            term.screen.cursor.x,
-        );
+    const cell = screen.getCell(
+        .active,
+        screen.cursor.y,
+        screen.cursor.x,
+    );
 
-        self.cells.appendAssumeCapacity(.{
-            .mode = GPUCellMode.fromCursor(self.cursor_style),
-            .grid_pos = .{
-                @intToFloat(f32, term.screen.cursor.x),
-                @intToFloat(f32, term.screen.cursor.y),
-            },
-            .cell_width = if (cell.attrs.wide) 2 else 1,
-            .color = .{ 0xFF, 0xFF, 0xFF, 0xFF },
-        });
-    }
+    self.cells.appendAssumeCapacity(.{
+        .mode = GPUCellMode.fromCursor(self.cursor_style),
+        .grid_pos = .{
+            @intToFloat(f32, screen.cursor.x),
+            @intToFloat(f32, screen.cursor.y),
+        },
+        .cell_width = if (cell.attrs.wide) 2 else 1,
+        .color = .{ 0xFF, 0xFF, 0xFF, 0xFF },
+    });
 }
 
 /// Sync the vertex buffer inputs to the GPU. This will attempt to reuse

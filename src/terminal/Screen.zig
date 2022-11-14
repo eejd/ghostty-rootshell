@@ -588,7 +588,7 @@ pub const RowIndexTag = enum {
 
             // Viewport can be any of the written rows or the max size
             // of a viewport.
-            .viewport => @min(screen.rows, screen.rowsWritten()),
+            .viewport => @max(1, @min(screen.rows, screen.rowsWritten())),
 
             // History is all the way up to the top of our active area. If
             // we haven't filled our active area, there is no history.
@@ -2320,6 +2320,43 @@ test "Screen: clone" {
         var contents = try s2.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: clone empty viewport" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+
+    {
+        var s2 = try s.clone(alloc, .{ .viewport = 0 }, .{ .viewport = 0 });
+        defer s2.deinit();
+
+        // Test our contents rotated
+        var contents = try s2.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+}
+
+test "Screen: clone one line viewport" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABC");
+
+    {
+        var s2 = try s.clone(alloc, .{ .viewport = 0 }, .{ .viewport = 0 });
+        defer s2.deinit();
+
+        // Test our contents rotated
+        var contents = try s2.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABC", contents);
     }
 }
 

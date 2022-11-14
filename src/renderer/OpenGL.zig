@@ -516,10 +516,15 @@ pub fn render(
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
         // hold the lock wile rebuilding GPU cells.
-        var screen_copy = try state.terminal.screen.clone(
+        const viewport_bottom = state.terminal.screen.viewportIsBottom();
+        var screen_copy = if (viewport_bottom) try state.terminal.screen.clone(
             self.alloc,
             .{ .active = 0 },
-            .{ .active = state.terminal.screen.rows - 1 },
+            .{ .active = state.terminal.rows - 1 },
+        ) else try state.terminal.screen.clone(
+            self.alloc,
+            .{ .viewport = 0 },
+            .{ .viewport = state.terminal.rows - 1 },
         );
         errdefer screen_copy.deinit();
 
