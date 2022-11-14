@@ -37,7 +37,7 @@ pub fn BlockingQueue(
         // The type we use for queue size types. We can optimize this
         // in the future to be the correct bit-size for our preallocated
         // size for this queue.
-        const Size = u32;
+        pub const Size = u32;
 
         // The bounds of this queue. We recast this to Size so we can do math.
         const bounds = @intCast(Size, capacity);

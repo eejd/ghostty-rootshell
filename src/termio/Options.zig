@@ -3,6 +3,7 @@
 const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
+const Window = @import("../Window.zig");
 
 /// The size of the terminal grid.
 grid_size: renderer.GridSize,
@@ -25,3 +26,6 @@ renderer_wakeup: libuv.Async,
 
 /// The mailbox for renderer messages.
 renderer_mailbox: *renderer.Thread.Mailbox,
+
+/// The mailbox for sending the window messages.
+window_mailbox: Window.Mailbox,

@@ -41,7 +41,6 @@ Mac:
 
 * Set menubar
 * Preferences window
-* Need to load and proper locale env vars
 
 Major Features:
 

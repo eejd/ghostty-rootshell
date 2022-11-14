@@ -5,6 +5,12 @@
 //! writing, we support exactly one window.
 const Window = @This();
 
+// TODO: eventually, I want to extract Window.zig into the "window" package
+// so we can also have alternate implementations (i.e. not glfw).
+const message = @import("window/message.zig");
+pub const Mailbox = message.Mailbox;
+pub const Message = message.Message;
+
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
@@ -309,6 +315,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
+        .window_mailbox = .{ .window = self, .app = app.mailbox },
     });
     errdefer io.deinit();
 
@@ -476,6 +483,20 @@ pub fn destroy(self: *Window) void {
 
 pub fn shouldClose(self: Window) bool {
     return self.window.shouldClose();
+}
+
+/// Called from the app thread to handle mailbox messages to our specific
+/// window.
+pub fn handleMessage(self: *Window, msg: Message) !void {
+    switch (msg) {
+        .set_title => |*v| {
+            // The ptrCast just gets sliceTo to return the proper type.
+            // We know that our title should end in 0.
+            const slice = std.mem.sliceTo(@ptrCast([*:0]const u8, v), 0);
+            log.debug("changing title \"{s}\"", .{slice});
+            try self.window.setTitle(slice.ptr);
+        },
+    }
 }
 
 /// This queues a render operation with the renderer thread. The render

@@ -4,6 +4,7 @@ const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
 const trace = @import("tracy").trace;
 
@@ -59,7 +60,7 @@ pub fn Stream(comptime Handler: type) type {
                     .execute => |code| try self.execute(code),
                     .csi_dispatch => |csi_action| try self.csiDispatch(csi_action),
                     .esc_dispatch => |esc| try self.escDispatch(esc),
-                    .osc_dispatch => |cmd| log.warn("unhandled OSC: {}", .{cmd}),
+                    .osc_dispatch => |cmd| try self.oscDispatch(cmd),
                     .dcs_hook => |dcs| log.warn("unhandled DCS hook: {}", .{dcs}),
                     .dcs_put => |code| log.warn("unhandled DCS put: {}", .{code}),
                     .dcs_unhook => log.warn("unhandled DCS unhook", .{}),
@@ -452,6 +453,21 @@ pub fn Stream(comptime Handler: type) type {
                     try self.handler.csiUnimplemented(action)
                 else
                     log.warn("unimplemented CSI action: {}", .{action}),
+            }
+        }
+
+        fn oscDispatch(self: *Self, cmd: osc.Command) !void {
+            switch (cmd) {
+                .change_window_title => |title| {
+                    if (@hasDecl(T, "changeWindowTitle")) {
+                        try self.handler.changeWindowTitle(title);
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
+                else => if (@hasDecl(T, "oscUnimplemented"))
+                    try self.handler.oscUnimplemented(cmd)
+                else
+                    log.warn("unimplemented OSC command: {}", .{cmd}),
             }
         }
 

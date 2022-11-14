@@ -7,6 +7,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
+const Window = @import("../Window.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
@@ -51,6 +52,9 @@ renderer_wakeup: libuv.Async,
 
 /// The mailbox for notifying the renderer of things.
 renderer_mailbox: *renderer.Thread.Mailbox,
+
+/// The mailbox for communicating with the window.
+window_mailbox: Window.Mailbox,
 
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
@@ -117,6 +121,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
+        .window_mailbox = opts.window_mailbox,
         .grid_size = opts.grid_size,
         .data = null,
     };
@@ -199,6 +204,7 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
                 .grid_size = &self.grid_size,
+                .window_mailbox = self.window_mailbox,
             },
         },
     };
@@ -466,6 +472,7 @@ const StreamHandler = struct {
     alloc: Allocator,
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
+    window_mailbox: Window.Mailbox,
 
     inline fn queueRender(self: *StreamHandler) !void {
         try self.ev.queueRender();
@@ -786,5 +793,23 @@ const StreamHandler = struct {
         self: *StreamHandler,
     ) !void {
         self.terminal.fullReset();
+    }
+
+    //-------------------------------------------------------------------------
+    // OSC
+
+    pub fn changeWindowTitle(self: *StreamHandler, title: []const u8) !void {
+        var buf: [256]u8 = undefined;
+        if (title.len >= buf.len) {
+            log.warn("change title requested larger than our buffer size, ignoring", .{});
+            return;
+        }
+
+        std.mem.copy(u8, &buf, title);
+        buf[title.len] = 0;
+
+        _ = self.window_mailbox.push(.{
+            .set_title = buf,
+        }, .{ .forever = {} });
     }
 };

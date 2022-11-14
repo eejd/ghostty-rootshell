@@ -106,10 +106,11 @@ fn drainMailbox(self: *App) !void {
     defer drain.deinit();
 
     while (drain.next()) |message| {
-        log.debug("mailbox message={}", .{message});
+        log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .new_window => try self.newWindow(),
             .quit => try self.setQuit(),
+            .window_message => |msg| try self.windowMessage(msg.window, msg.message),
         }
     }
 }
@@ -133,6 +134,22 @@ fn setQuit(self: *App) !void {
     }
 }
 
+/// Handle a window message
+fn windowMessage(self: *App, win: *Window, msg: Window.Message) !void {
+    // We want to ensure our window is still active. Window messages
+    // are quite rare and we normally don't have many windows so we do
+    // a simple linear search here.
+    for (self.windows.items) |window| {
+        if (window == win) {
+            try win.handleMessage(msg);
+            return;
+        }
+    }
+
+    // Window was not found, it probably quit before we handled the message.
+    // Not a problem.
+}
+
 /// The message types that can be sent to the app thread.
 pub const Message = union(enum) {
     /// Create a new terminal window.
@@ -140,4 +157,10 @@ pub const Message = union(enum) {
 
     /// Quit
     quit: void,
+
+    /// A message for a specific window
+    window_message: struct {
+        window: *Window,
+        message: Window.Message,
+    },
 };
