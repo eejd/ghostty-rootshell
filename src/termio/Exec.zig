@@ -478,6 +478,10 @@ const StreamHandler = struct {
         try self.terminal.print(ch);
     }
 
+    pub fn printRepeat(self: *StreamHandler, count: usize) !void {
+        try self.terminal.printRepeat(count);
+    }
+
     pub fn bell(self: StreamHandler) !void {
         _ = self;
         log.info("BELL", .{});

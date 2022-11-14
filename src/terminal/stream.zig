@@ -314,6 +314,18 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
+                // Repeat Previous Char (REP)
+                'b' => if (@hasDecl(T, "printRepeat")) try self.handler.printRepeat(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid print repeat command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
                 // c - Device Attributes (DA1)
                 'c' => if (@hasDecl(T, "deviceAttributes")) {
                     const req: ansi.DeviceAttributeReq = switch (action.intermediates.len) {
@@ -408,11 +420,6 @@ pub fn Stream(comptime Handler: type) type {
                     else => log.warn("invalid DECSTBM command: {}", .{action}),
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
-                else => if (@hasDecl(T, "csiUnimplemented"))
-                    try self.handler.csiUnimplemented(action)
-                else
-                    log.warn("unimplemented CSI action: {}", .{action}),
-
                 // ICH - Insert Blanks
                 // TODO: test
                 '@' => if (@hasDecl(T, "insertBlanks")) switch (action.params.len) {
@@ -440,6 +447,11 @@ pub fn Stream(comptime Handler: type) type {
 
                     if (!success) log.warn("unimplemented CSI callback: {}", .{action});
                 },
+
+                else => if (@hasDecl(T, "csiUnimplemented"))
+                    try self.handler.csiUnimplemented(action)
+                else
+                    log.warn("unimplemented CSI action: {}", .{action}),
             }
         }
 

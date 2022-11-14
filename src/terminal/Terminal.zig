@@ -60,6 +60,10 @@ scrolling_region: ScrollingRegion,
 /// The charset state
 charset: CharsetState = .{},
 
+/// The previous printed character. This is used for the repeat previous
+/// char CSI (ESC [ <n> b).
+previous_char: ?u21 = null,
+
 /// Modes - This isn't exhaustive, since some modes (i.e. cursor origin)
 /// are applied to the cursor and others aren't boolean yes/no.
 modes: packed struct {
@@ -571,6 +575,9 @@ pub fn print(self: *Terminal, c: u21) !void {
         return;
     }
 
+    // We have a printable character, save it
+    self.previous_char = c;
+
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap)
         try self.printWrap();
@@ -697,6 +704,15 @@ fn clearWideSpacerHead(self: *Terminal) void {
         self.cols - 1,
     );
     cell.attrs.wide_spacer_head = false;
+}
+
+/// Print the previous printed character a repeated amount of times.
+pub fn printRepeat(self: *Terminal, count: usize) !void {
+    // TODO: test
+    if (self.previous_char) |c| {
+        var i: usize = 0;
+        while (i < count) : (i += 1) try self.print(c);
+    }
 }
 
 /// Resets all margins and fills the whole screen with the character 'E'
@@ -1353,6 +1369,7 @@ pub fn fullReset(self: *Terminal) void {
     self.screen.cursor = .{};
     self.screen.saved_cursor = .{};
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
+    self.previous_char = null;
 }
 
 test "Terminal: input with no control characters" {
