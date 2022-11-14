@@ -547,10 +547,6 @@ pub fn render(
     if (critical.screen_size) |size| {
         // Update our grid size
         try self.setScreenSize(size);
-
-        // Update our viewport for this context to be the entire window.
-        // OpenGL works in pixels, so we have to use the pixel size.
-        try gl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
     }
 
     // Build our GPU cells
@@ -950,23 +946,39 @@ pub fn updateCell(
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
 fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
-    // Update the projection uniform within our shader
-    const bind = try self.program.use();
-    defer bind.unbind();
-    try self.program.setUniform(
-        "projection",
-
-        // 2D orthographic projection with the full w/h
-        math.ortho2d(
-            0,
-            @intToFloat(f32, dim.width),
-            @intToFloat(f32, dim.height),
-            0,
-        ),
-    );
-
     // Recalculate the rows/columns.
     const grid_size = renderer.GridSize.init(dim, self.cell_size);
+
+    // Determine if we need to pad the window. For "auto" padding, we take
+    // the leftover amounts on the right/bottom that don't fit a full grid cell
+    // and we split them equal across all boundaries.
+
+    // The size of our full grid
+    const grid_width = @intToFloat(f32, grid_size.columns) * self.cell_size.width;
+    const grid_height = @intToFloat(f32, grid_size.rows) * self.cell_size.height;
+
+    // The empty space to the right of a line and bottom of the last row
+    const space_right = @intToFloat(f32, dim.width) - grid_width;
+    const space_bot = @intToFloat(f32, dim.height) - grid_height;
+
+    // The left/right padding is just an equal split.
+    const padding_right = @floatToInt(i32, @floor(space_right / 2));
+    const padding_left = padding_right;
+
+    // The top/bottom padding is interesting. Subjectively, lots of padding
+    // at the top looks bad. So instead of always being equal (like left/right),
+    // we force the top padding to be at most equal to the left, and the bottom
+    // padding is the difference thereafter.
+    const padding_top = @min(padding_left, @floatToInt(i32, @floor(space_bot / 2)));
+    const padding_bot = @floatToInt(i32, space_bot - @intToFloat(f32, padding_top));
+
+    // The full padded dimensions of the renderable area.
+    const padded_dim: renderer.ScreenSize = .{
+        .width = dim.width - @intCast(u32, padding_left + padding_right),
+        .height = dim.height - @intCast(u32, padding_bot + padding_top),
+    };
+
+    log.debug("screen size padded={} screen={} grid={} cell={}", .{ padded_dim, dim, grid_size, self.cell_size });
 
     // Update our LRU. We arbitrarily support a certain number of pages here.
     // We also always support a minimum number of caching in case a user
@@ -983,7 +995,31 @@ fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
 
-    log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
+    // Update our viewport for this context to be the entire window.
+    // OpenGL works in pixels, so we have to use the pixel size.
+    try gl.viewport(
+        padding_left,
+        padding_bot,
+        @intCast(i32, padded_dim.width),
+        @intCast(i32, padded_dim.height),
+    );
+
+    // Update the projection uniform within our shader
+    {
+        const bind = try self.program.use();
+        defer bind.unbind();
+        try self.program.setUniform(
+            "projection",
+
+            // 2D orthographic projection with the full w/h
+            math.ortho2d(
+                0,
+                @intToFloat(f32, padded_dim.width),
+                @intToFloat(f32, padded_dim.height),
+                0,
+            ),
+        );
+    }
 }
 
 /// Updates the font texture atlas if it is dirty.
