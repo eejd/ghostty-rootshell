@@ -1,6 +1,6 @@
 [submodule "vendor/mach"]
 	path = vendor/mach
-	url = https://github.com/mitchellh/mach.git
+	url = https://github.com/hexops/mach.git
 [submodule "vendor/freetype"]
 	path = vendor/freetype
 	url = https://github.com/freetype/freetype.git
