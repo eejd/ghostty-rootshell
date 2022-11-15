@@ -71,6 +71,13 @@ pub const Face = struct {
         self.* = undefined;
     }
 
+    /// Resize the font in-place. If this succeeds, the caller is responsible
+    /// for clearing any glyph caches, font atlas data, etc.
+    pub fn setSize(self: *Face, size: font.face.DesiredSize) !void {
+        try setSize_(self.face, size);
+        self.metrics = calcMetrics(self.face);
+    }
+
     fn setSize_(face: freetype.Face, size: font.face.DesiredSize) !void {
         // If we have fixed sizes, we just have to try to pick the one closest
         // to what the user requested. Otherwise, we can choose an arbitrary
@@ -456,7 +463,6 @@ test {
 
     var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
     defer ft_font.deinit();
-    log.warn("FT={}", .{ft_font.metrics});
 
     try testing.expectEqual(Presentation.text, ft_font.presentation);
 
@@ -464,6 +470,16 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?, null);
+    }
+
+    // Test resizing
+    {
+        const g1 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, null);
+        try testing.expectEqual(@as(u32, 11), g1.height);
+
+        try ft_font.setSize(.{ .points = 24 });
+        const g2 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, null);
+        try testing.expectEqual(@as(u32, 21), g2.height);
     }
 }
 
@@ -489,6 +505,42 @@ test "color emoji" {
         const glyph = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, 24);
         try testing.expectEqual(@as(u32, 24), glyph.height);
     }
+}
+
+test "metrics" {
+    const testFont = @import("../test.zig").fontRegular;
+    const alloc = testing.allocator;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas.deinit(alloc);
+
+    var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
+    defer ft_font.deinit();
+
+    try testing.expectEqual(font.face.Metrics{
+        .cell_width = 8,
+        .cell_height = 1.8e1,
+        .cell_baseline = 4,
+        .underline_position = 18,
+        .underline_thickness = 1,
+        .strikethrough_position = 10,
+        .strikethrough_thickness = 1,
+    }, ft_font.metrics);
+
+    // Resize should change metrics
+    try ft_font.setSize(.{ .points = 24 });
+    try testing.expectEqual(font.face.Metrics{
+        .cell_width = 16,
+        .cell_height = 35,
+        .cell_baseline = 7,
+        .underline_position = 36,
+        .underline_thickness = 2,
+        .strikethrough_position = 20,
+        .strikethrough_thickness = 2,
+    }, ft_font.metrics);
 }
 
 test "mono to rgba" {
