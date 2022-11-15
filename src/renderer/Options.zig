@@ -1,6 +1,7 @@
 //! The options that are used to configure a renderer.
 
 const font = @import("../font/main.zig");
+const renderer = @import("../renderer.zig");
 
 /// The font group that should be used.
 font_group: *font.GroupCache,
@@ -11,10 +12,7 @@ padding: Padding,
 pub const Padding = struct {
     // Explicit padding options, in pixels. The windowing thread is
     // expected to convert points to pixels for a given DPI.
-    top: u32 = 0,
-    bottom: u32 = 0,
-    right: u32 = 0,
-    left: u32 = 0,
+    explicit: renderer.Padding,
 
     // Balance options
     balance: bool = false,

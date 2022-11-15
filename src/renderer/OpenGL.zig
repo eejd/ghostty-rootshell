@@ -947,21 +947,34 @@ pub fn updateCell(
     return true;
 }
 
+/// Returns the grid size for a given screen size. This is safe to call
+/// on any thread.
+pub fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
+    return renderer.GridSize.init(
+        screen_size.subPadding(self.padding.explicit),
+        self.cell_size,
+    );
+}
+
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
 fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Recalculate the rows/columns.
-    const grid_size = renderer.GridSize.init(dim, self.cell_size);
+    const grid_size = self.gridSize(dim);
 
-    // Determine if we need to pad the window. For "auto" padding, we take
-    // the leftover amounts on the right/bottom that don't fit a full grid cell
-    // and we split them equal across all boundaries.
-    const padding: renderer.Padding = if (self.padding.balance)
+    // Apply our padding
+    const padding = self.padding.explicit.add(if (self.padding.balance)
         renderer.Padding.balanced(dim, grid_size, self.cell_size)
-    else .{};
+    else .{});
     const padded_dim = dim.subPadding(padding);
 
-    log.debug("screen size padded={} screen={} grid={} cell={}", .{ padded_dim, dim, grid_size, self.cell_size });
+    log.debug("screen size padded={} screen={} grid={} cell={} padding={}", .{
+        padded_dim,
+        dim,
+        grid_size,
+        self.cell_size,
+        self.padding.explicit,
+    });
 
     // Update our LRU. We arbitrarily support a certain number of pages here.
     // We also always support a minimum number of caching in case a user
@@ -997,8 +1010,8 @@ fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
             // 2D orthographic projection with the full w/h
             math.ortho2d(
                 -1 * padding.left,
-                @intToFloat(f32, padded_dim.width),
-                @intToFloat(f32, padded_dim.height),
+                @intToFloat(f32, padded_dim.width) + padding.right,
+                @intToFloat(f32, padded_dim.height) + padding.bottom,
                 -1 * padding.top,
             ),
         );

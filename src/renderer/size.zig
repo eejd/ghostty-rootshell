@@ -112,6 +112,16 @@ pub const Padding = struct {
             .left = padding_left,
         };
     }
+
+    /// Add another padding to ths one
+    pub fn add(self: Padding, other: Padding) Padding {
+        return .{
+            .top = self.top + other.top,
+            .bottom = self.bottom + other.bottom,
+            .right = self.right + other.right,
+            .left = self.left + other.left,
+        };
+    }
 };
 
 test "GridSize update exact" {

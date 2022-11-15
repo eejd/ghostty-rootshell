@@ -82,6 +82,9 @@ io_thr: std.Thread,
 /// The dimensions of the grid in rows and columns.
 grid_size: renderer.GridSize,
 
+/// Explicit padding due to configuration
+padding: renderer.Padding,
+
 /// The app configuration
 config: *const Config,
 
@@ -259,10 +262,21 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     });
     errdefer font_group.deinit(alloc);
 
+    // Convert our padding from points to pixels
+    const padding_x = (@intToFloat(f32, config.@"window-padding-x") * x_dpi) / 72;
+    const padding_y = (@intToFloat(f32, config.@"window-padding-y") * y_dpi) / 72;
+    const padding: renderer.Padding = .{
+        .top = padding_y,
+        .bottom = padding_y,
+        .right = padding_x,
+        .left = padding_x,
+    };
+
     // Create our terminal grid with the initial window size
     var renderer_impl = try Renderer.init(alloc, .{
         .font_group = font_group,
         .padding = .{
+            .explicit = padding,
             .balance = config.@"window-padding-balance",
         },
     });
@@ -284,7 +298,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .width = window_size.width,
         .height = window_size.height,
     };
-    const grid_size = renderer.GridSize.init(screen_size, renderer_impl.cell_size);
+    const grid_size = renderer_impl.gridSize(screen_size);
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
@@ -358,6 +372,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .io_thread = io_thread,
         .io_thr = undefined,
         .grid_size = grid_size,
+        .padding = padding,
         .config = config,
 
         .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
@@ -565,13 +580,13 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
     // overhead of inter-thread communication
 
     // Recalculate our grid size
-    win.grid_size.update(screen_size, win.renderer.cell_size);
+    win.grid_size = win.renderer.gridSize(screen_size);
 
     // Mail the IO thread
     _ = win.io_thread.mailbox.push(.{
         .resize = .{
             .grid_size = win.grid_size,
-            .screen_size = screen_size,
+            .screen_size = screen_size.subPadding(win.padding),
         },
     }, .{ .forever = {} });
     win.io_thread.wakeup.send() catch {};
