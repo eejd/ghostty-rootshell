@@ -74,6 +74,25 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace)
     try self.faces.getPtr(style).append(alloc, face);
 }
 
+/// Resize the fonts to the desired size.
+pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
+    // Note: there are some issues here with partial failure. We don't
+    // currently handle it in any meaningful way if one face can resize
+    // but another can't.
+
+    // Resize all our faces that are loaded
+    var it = self.faces.iterator();
+    while (it.next()) |entry| {
+        for (entry.value.items) |*deferred| {
+            if (!deferred.loaded()) continue;
+            try deferred.face.?.setSize(size);
+        }
+    }
+
+    // Set our size for future loads
+    self.size = size;
+}
+
 /// This represents a specific font in the group.
 pub const FontIndex = packed struct {
     /// The number of bits we use for the index.
@@ -226,7 +245,57 @@ test {
     }
 }
 
-test {
+test "resize" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var group = try init(alloc, lib, .{ .points = 12 });
+    defer group.deinit(alloc);
+
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+
+    // Load a letter
+    {
+        const idx = group.indexForCodepoint('A', .regular, null).?;
+        const face = try group.faceFromIndex(idx);
+        const glyph_index = face.glyphIndex('A').?;
+        const glyph = try group.renderGlyph(
+            alloc,
+            &atlas_greyscale,
+            idx,
+            glyph_index,
+            null,
+        );
+
+        try testing.expectEqual(@as(u32, 11), glyph.height);
+    }
+
+    // Resize
+    try group.setSize(.{ .points = 24 });
+    {
+        const idx = group.indexForCodepoint('A', .regular, null).?;
+        const face = try group.faceFromIndex(idx);
+        const glyph_index = face.glyphIndex('A').?;
+        const glyph = try group.renderGlyph(
+            alloc,
+            &atlas_greyscale,
+            idx,
+            glyph_index,
+            null,
+        );
+
+        try testing.expectEqual(@as(u32, 21), glyph.height);
+    }
+}
+
+test "discover monospace with fontconfig and freetype" {
     if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
 
     const testing = std.testing;
