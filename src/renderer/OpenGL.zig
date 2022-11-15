@@ -431,10 +431,7 @@ pub fn threadEnter(self: *const OpenGL, window: glfw.Window) !void {
 
     // Load OpenGL bindings. This API is context-aware so this sets
     // a threadlocal context for these pointers.
-    const version = try gl.glad.load(switch (builtin.zig_backend) {
-        .stage1 => glfw.getProcAddress,
-        else => &glfw.getProcAddress,
-    });
+    const version = try gl.glad.load(&glfw.getProcAddress);
     errdefer gl.glad.unload();
     log.info("loaded OpenGL {}.{}", .{
         gl.glad.versionMajor(@intCast(c_uint, version)),

@@ -91,6 +91,9 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .args = &[_][]const u8{path},
         .env = &env,
         .cwd = opts.config.@"working-directory",
+        .stdin = .{ .handle = pty.slave },
+        .stdout = .{ .handle = pty.slave },
+        .stderr = .{ .handle = pty.slave },
         .pre_exec = (struct {
             fn callback(cmd: *Command) void {
                 const p = cmd.getData(Pty) orelse unreachable;
@@ -100,11 +103,6 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         }).callback,
         .data = &pty,
     };
-    // note: can't set these in the struct initializer because it
-    // sets the handle to "0". Probably a stage1 zig bug.
-    cmd.stdin = std.fs.File{ .handle = pty.slave };
-    cmd.stdout = cmd.stdin;
-    cmd.stderr = cmd.stdin;
     try cmd.start(alloc);
     log.info("started subcommand path={s} pid={?}", .{ path, cmd.pid });
 
