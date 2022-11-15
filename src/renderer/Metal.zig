@@ -201,7 +201,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
 
     // Initialize our shader (MTLLibrary)
-    const library = try initLibrary(device, @embedFile("../shaders/cell.metal"));
+    const library = try initLibrary(device, @embedFile("shaders/cell.metal"));
     const pipeline_state = try initPipelineState(device, library);
     const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
     const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
@@ -399,8 +399,8 @@ pub fn render(
     defer critical.screen.deinit();
 
     // @autoreleasepool {}
-    const pool = objc_autoreleasePoolPush();
-    defer objc_autoreleasePoolPop(pool);
+    const pool = objc.AutoreleasePool.init();
+    defer pool.deinit();
 
     // If we're resizing, then we have to update a bunch of things...
     if (critical.screen_size) |_| {
@@ -1285,5 +1285,3 @@ const MTLSize = extern struct {
 };
 
 extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;
-extern "c" fn objc_autoreleasePoolPush() ?*anyopaque;
-extern "c" fn objc_autoreleasePoolPop(?*anyopaque) void;
