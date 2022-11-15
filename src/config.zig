@@ -89,6 +89,27 @@ pub const Config = struct {
     ///
     keybind: Keybinds = .{},
 
+    /// Window padding. This applies padding between the terminal cells and
+    /// the window border. The "x" option applies to the left and right
+    /// padding and the "y" option is top and bottom. The value is in points,
+    /// meaning that it will be scaled appropriately for screen DPI.
+    @"window-padding-x": u32 = 0,
+    @"window-padding-y": u32 = 0,
+
+    /// The viewport dimensions are usually not perfectly divisible by
+    /// the cell size. In this case, some extra padding on the end of a
+    /// column and the bottom of the final row may exist. If this is true,
+    /// then this extra padding is automatically balanced between all four
+    /// edges to minimize imbalance on one side. If this is false, the top
+    /// left grid cell will always hug the edge with zero padding other than
+    /// what may be specified with the other "window-padding" options.
+    ///
+    /// If other "window-padding" fields are set and this is true, this will
+    /// still apply. The other padding is applied first and may affect how
+    /// many grid cells actually exist, and this is applied last in order
+    /// to balance the padding given a certain viewport size and grid cell size.
+    @"window-padding-balance": bool = true,
+
     /// Additional configuration files to read.
     @"config-file": RepeatableString = .{},
 

@@ -78,10 +78,10 @@ pub const GridSize = struct {
 
 /// The padding to add to a screen.
 pub const Padding = struct {
-    top: f32,
-    bottom: f32,
-    right: f32,
-    left: f32,
+    top: f32 = 0,
+    bottom: f32 = 0,
+    right: f32 = 0,
+    left: f32 = 0,
 
     /// Returns padding that balances the whitespace around the screen
     /// for the given grid and cell sizes.

@@ -260,7 +260,12 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer font_group.deinit(alloc);
 
     // Create our terminal grid with the initial window size
-    var renderer_impl = try Renderer.init(alloc, font_group);
+    var renderer_impl = try Renderer.init(alloc, .{
+        .font_group = font_group,
+        .padding = .{
+            .balance = config.@"window-padding-balance",
+        },
+    });
     errdefer renderer_impl.deinit();
     renderer_impl.background = .{
         .r = config.background.r,
