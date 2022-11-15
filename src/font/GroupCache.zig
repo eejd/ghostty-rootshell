@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const Atlas = @import("../Atlas.zig");
+const font = @import("main.zig");
 const Face = @import("main.zig").Face;
 const DeferredFace = @import("main.zig").DeferredFace;
 const Library = @import("main.zig").Library;
@@ -81,6 +82,18 @@ pub fn deinit(self: *GroupCache, alloc: Allocator) void {
 pub fn reset(self: *GroupCache) void {
     self.codepoints.clearRetainingCapacity();
     self.glyphs.clearRetainingCapacity();
+}
+
+/// Resize the fonts in the group. This will clear the cache.
+pub fn setSize(self: *GroupCache, size: font.face.DesiredSize) !void {
+    try self.group.setSize(size);
+
+    // Reset our internal state
+    self.reset();
+
+    // Clear our atlases
+    self.atlas_greyscale.clear();
+    self.atlas_color.clear();
 }
 
 /// Get the font index for a given codepoint. This is cached.
@@ -214,5 +227,63 @@ test {
                 null,
             );
         }
+    }
+}
+
+test "resize" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+    // const testEmoji = @import("test.zig").fontEmoji;
+
+    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var cache = try init(alloc, try Group.init(
+        alloc,
+        lib,
+        .{ .points = 12 },
+    ));
+    defer cache.deinit(alloc);
+
+    // Setup group
+    try cache.group.addFace(
+        alloc,
+        .regular,
+        DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })),
+    );
+
+    // Load a letter
+    {
+        const idx = (try cache.indexForCodepoint(alloc, 'A', .regular, null)).?;
+        const face = try cache.group.faceFromIndex(idx);
+        const glyph_index = face.glyphIndex('A').?;
+        const glyph = try cache.renderGlyph(
+            alloc,
+            idx,
+            glyph_index,
+            null,
+        );
+
+        try testing.expectEqual(@as(u32, 11), glyph.height);
+    }
+
+    // Resize
+    try cache.setSize(.{ .points = 24 });
+    {
+        const idx = (try cache.indexForCodepoint(alloc, 'A', .regular, null)).?;
+        const face = try cache.group.faceFromIndex(idx);
+        const glyph_index = face.glyphIndex('A').?;
+        const glyph = try cache.renderGlyph(
+            alloc,
+            idx,
+            glyph_index,
+            null,
+        );
+
+        try testing.expectEqual(@as(u32, 21), glyph.height);
     }
 }
