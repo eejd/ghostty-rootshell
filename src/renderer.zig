@@ -14,6 +14,7 @@ pub usingnamespace @import("renderer/message.zig");
 pub usingnamespace @import("renderer/size.zig");
 pub const Metal = @import("renderer/Metal.zig");
 pub const OpenGL = @import("renderer/OpenGL.zig");
+pub const Options = @import("renderer/Options.zig");
 pub const Thread = @import("renderer/Thread.zig");
 pub const State = @import("renderer/State.zig");
 

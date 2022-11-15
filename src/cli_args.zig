@@ -138,6 +138,12 @@ fn parseIntoField(
                     0,
                 ),
 
+                u32 => try std.fmt.parseInt(
+                    u32,
+                    value orelse return error.ValueRequired,
+                    0,
+                ),
+
                 else => unreachable,
             };
 

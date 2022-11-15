@@ -33,6 +33,9 @@ alloc: std.mem.Allocator,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
+/// Explicit padding.
+padding: renderer.Options.Padding,
+
 /// True if the window is focused
 focused: bool,
 
@@ -130,7 +133,7 @@ pub fn windowInit(window: glfw.Window) !void {
     // else up during actual initialization.
 }
 
-pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
+pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // Initialize our metal stuff
     const device = objc.Object.fromId(MTLCreateSystemDefaultDevice());
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
@@ -150,8 +153,8 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     // Doesn't matter, any normal ASCII will do we're just trying to make
     // sure we use the regular font.
     const metrics = metrics: {
-        const index = (try font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
-        const face = try font_group.group.faceFromIndex(index);
+        const index = (try options.font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
+        const face = try options.font_group.group.faceFromIndex(index);
         break :metrics face.metrics;
     };
     log.debug("cell dimensions={}", .{metrics});
@@ -200,12 +203,13 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
     // Initialize our shader (MTLLibrary)
     const library = try initLibrary(device, @embedFile("../shaders/cell.metal"));
     const pipeline_state = try initPipelineState(device, library);
-    const texture_greyscale = try initAtlasTexture(device, &font_group.atlas_greyscale);
-    const texture_color = try initAtlasTexture(device, &font_group.atlas_color);
+    const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
+    const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
 
     return Metal{
         .alloc = alloc,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
+        .padding = options.padding,
         .background = .{ .r = 0, .g = 0, .b = 0 },
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
         .focused = true,
@@ -224,7 +228,7 @@ pub fn init(alloc: Allocator, font_group: *font.GroupCache) !Metal {
         },
 
         // Fonts
-        .font_group = font_group,
+        .font_group = options.font_group,
         .font_shaper = font_shaper,
 
         // Metal stuff
@@ -300,6 +304,15 @@ pub fn threadExit(self: *const Metal) void {
     _ = self;
 
     // Metal requires no per-thread state.
+}
+
+/// Returns the grid size for a given screen size. This is safe to call
+/// on any thread.
+pub fn gridSize(self: *Metal, screen_size: renderer.ScreenSize) renderer.GridSize {
+    return renderer.GridSize.init(
+        screen_size.subPadding(self.padding.explicit),
+        self.cell_size,
+    );
 }
 
 /// Callback when the focus changes for the terminal this is rendering.
@@ -562,12 +575,14 @@ fn setScreenSize(self: *Metal, bounds: macos.graphics.Size) !void {
     };
 
     // Recalculate the rows/columns.
-    const grid_size = renderer.GridSize.init(dim, self.cell_size);
+    const grid_size = self.gridSize(dim);
 
     // Determine if we need to pad the window. For "auto" padding, we take
     // the leftover amounts on the right/bottom that don't fit a full grid cell
     // and we split them equal across all boundaries.
-    const padding = renderer.Padding.balanced(dim, grid_size, self.cell_size);
+    const padding = self.padding.explicit.add(if (self.padding.balance)
+        renderer.Padding.balanced(dim, grid_size, self.cell_size)
+    else .{});
     const padded_dim = dim.subPadding(padding);
 
     // Update our shaper
@@ -585,8 +600,8 @@ fn setScreenSize(self: *Metal, bounds: macos.graphics.Size) !void {
     self.uniforms = .{
         .projection_matrix = math.ortho2d(
             -1 * padding.left,
-            @intToFloat(f32, padded_dim.width),
-            @intToFloat(f32, padded_dim.height),
+            @intToFloat(f32, padded_dim.width) + padding.right,
+            @intToFloat(f32, padded_dim.height) + padding.bottom,
             -1 * padding.top,
         ),
         .cell_size = .{ self.cell_size.width, self.cell_size.height },
