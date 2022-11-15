@@ -586,7 +586,8 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
     _ = win.io_thread.mailbox.push(.{
         .resize = .{
             .grid_size = win.grid_size,
-            .screen_size = screen_size.subPadding(win.padding),
+            .screen_size = screen_size,
+            .padding = win.padding,
         },
     }, .{ .forever = {} });
     win.io_thread.wakeup.send() catch {};

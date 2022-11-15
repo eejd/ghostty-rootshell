@@ -12,8 +12,16 @@ const terminal = @import("../terminal/main.zig");
 pub const Message = union(enum) {
     /// Resize the window.
     resize: struct {
+        /// The grid size for the given screen size with padding applied.
         grid_size: renderer.GridSize,
+
+        /// The full screen (drawable) size. This does NOT include padding.
+        /// This should be sent on to the renderer.
         screen_size: renderer.ScreenSize,
+
+        /// The padding, so that the terminal implementation can subtract
+        /// this to send to the pty.
+        padding: renderer.Padding,
     },
 
     /// Write where the data fits in the union.

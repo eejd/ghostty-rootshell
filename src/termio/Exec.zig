@@ -231,13 +231,16 @@ pub fn resize(
     self: *Exec,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
+    padding: renderer.Padding,
 ) !void {
+    const padded_size = screen_size.subPadding(padding);
+
     // Update the size of our pty
     try self.pty.setSize(.{
         .ws_row = @intCast(u16, grid_size.rows),
         .ws_col = @intCast(u16, grid_size.columns),
-        .ws_xpixel = @intCast(u16, screen_size.width),
-        .ws_ypixel = @intCast(u16, screen_size.height),
+        .ws_xpixel = @intCast(u16, padded_size.width),
+        .ws_ypixel = @intCast(u16, padded_size.height),
     });
 
     // Update our cached grid size
