@@ -581,6 +581,14 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
 
     // Recalculate our grid size
     win.grid_size = win.renderer.gridSize(screen_size);
+    if (win.grid_size.columns < 5 and (win.padding.left > 0 or win.padding.right > 0)) {
+        log.warn("WARNING: very small terminal grid detected with padding " ++
+            "set. Is your padding reasonable?", .{});
+    }
+    if (win.grid_size.rows < 2 and (win.padding.top > 0 or win.padding.bottom > 0)) {
+        log.warn("WARNING: very small terminal grid detected with padding " ++
+            "set. Is your padding reasonable?", .{});
+    }
 
     // Mail the IO thread
     _ = win.io_thread.mailbox.push(.{

@@ -48,8 +48,8 @@ pub const ScreenSize = struct {
     /// Subtract padding from the screen size.
     pub fn subPadding(self: ScreenSize, padding: Padding) ScreenSize {
         return .{
-            .width = self.width - @floatToInt(u32, padding.left + padding.right),
-            .height = self.height - @floatToInt(u32, padding.top + padding.bottom),
+            .width = self.width -| @floatToInt(u32, padding.left + padding.right),
+            .height = self.height -| @floatToInt(u32, padding.top + padding.bottom),
         };
     }
 };
@@ -71,8 +71,8 @@ pub const GridSize = struct {
     /// Update the columns/rows for the grid based on the given screen and
     /// cell size.
     pub fn update(self: *GridSize, screen: ScreenSize, cell: CellSize) void {
-        self.columns = @floatToInt(Unit, @intToFloat(f32, screen.width) / cell.width);
-        self.rows = @floatToInt(Unit, @intToFloat(f32, screen.height) / cell.height);
+        self.columns = @max(1, @floatToInt(Unit, @intToFloat(f32, screen.width) / cell.width));
+        self.rows = @max(1, @floatToInt(Unit, @intToFloat(f32, screen.height) / cell.height));
     }
 };
 

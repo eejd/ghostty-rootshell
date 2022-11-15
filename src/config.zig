@@ -93,6 +93,11 @@ pub const Config = struct {
     /// the window border. The "x" option applies to the left and right
     /// padding and the "y" option is top and bottom. The value is in points,
     /// meaning that it will be scaled appropriately for screen DPI.
+    ///
+    /// If this value is set too large, the screen will render nothing, because
+    /// the grid will be completely squished by the padding. It is up to you
+    /// as the user to pick a reasonable value. If you pick an unreasonable
+    /// value, a warning will appear in the logs.
     @"window-padding-x": u32 = 0,
     @"window-padding-y": u32 = 0,
 
