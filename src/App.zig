@@ -11,6 +11,7 @@ const tracy = @import("tracy");
 const Config = @import("config.zig").Config;
 const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
+const font = @import("font/main.zig");
 
 const log = std.log.scoped(.app);
 
@@ -55,7 +56,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     errdefer app.windows.deinit(alloc);
 
     // Create the first window
-    try app.newWindow();
+    try app.newWindow(.{});
 
     return app;
 }
@@ -108,7 +109,7 @@ fn drainMailbox(self: *App) !void {
     while (drain.next()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
-            .new_window => try self.newWindow(),
+            .new_window => |msg| try self.newWindow(msg),
             .quit => try self.setQuit(),
             .window_message => |msg| try self.windowMessage(msg.window, msg.message),
         }
@@ -116,11 +117,14 @@ fn drainMailbox(self: *App) !void {
 }
 
 /// Create a new window
-fn newWindow(self: *App) !void {
+fn newWindow(self: *App, msg: Message.NewWindow) !void {
     var window = try Window.create(self.alloc, self, self.config);
     errdefer window.destroy();
     try self.windows.append(self.alloc, window);
     errdefer _ = self.windows.pop();
+
+    // Set initial font size if given
+    if (msg.font_size) |size| window.setFontSize(size);
 }
 
 /// Start quitting
@@ -153,7 +157,7 @@ fn windowMessage(self: *App, win: *Window, msg: Window.Message) !void {
 /// The message types that can be sent to the app thread.
 pub const Message = union(enum) {
     /// Create a new terminal window.
-    new_window: void,
+    new_window: NewWindow,
 
     /// Quit
     quit: void,
@@ -163,4 +167,10 @@ pub const Message = union(enum) {
         window: *Window,
         message: Window.Message,
     },
+
+    const NewWindow = struct {
+        /// The font size to create the window with or null to default to
+        /// the configuration amount.
+        font_size: ?font.face.DesiredSize = null,
+    };
 };

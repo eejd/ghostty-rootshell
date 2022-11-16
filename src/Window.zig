@@ -558,7 +558,9 @@ fn setCellSize(self: *Window, size: renderer.CellSize) !void {
 }
 
 /// Change the font size.
-fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
+///
+/// This can only be called from the main thread.
+pub fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
     // Update our font size so future changes work
     self.font_size = size;
 
@@ -917,7 +919,12 @@ fn keyCallback(
 
                 .new_window => {
                     _ = win.app.mailbox.push(.{
-                        .new_window = {},
+                        .new_window = .{
+                            .font_size = if (win.config.@"window-inherit-font-size")
+                                win.font_size
+                            else
+                                null,
+                        },
                     }, .{ .instant = {} });
                     win.app.wakeup();
                 },
