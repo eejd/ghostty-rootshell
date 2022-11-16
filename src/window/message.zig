@@ -1,5 +1,6 @@
 const App = @import("../App.zig");
 const Window = @import("../Window.zig");
+const renderer = @import("../renderer.zig");
 
 /// The message types that can be sent to a single window.
 pub const Message = union(enum) {

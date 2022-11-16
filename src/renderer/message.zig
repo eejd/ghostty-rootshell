@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const font = @import("../font/main.zig");
 
 /// The messages that can be sent to a renderer thread.
 pub const Message = union(enum) {
@@ -12,4 +13,9 @@ pub const Message = union(enum) {
     /// Reset the cursor blink by immediately showing the cursor then
     /// restarting the timer.
     reset_cursor_blink: void,
+
+    /// Change the font size. This should recalculate the grid size and
+    /// send a grid size change message back to the window thread if
+    /// the size changes.
+    font_size: font.face.DesiredSize,
 };
