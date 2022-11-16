@@ -916,11 +916,12 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
 
     // Get the storage pointer for the full scroll region. We're going to
     // be modifying the whole thing so we get it right away.
-    const height = bot_y - top_y;
-    const slices = self.storage.getPtrSlice(
-        top_y * (self.cols + 1),
-        (height * (self.cols + 1)) + self.cols + 1,
-    );
+    const height = (bot_y - top_y) + 1;
+    const len = height * (self.cols + 1);
+    const slices = self.storage.getPtrSlice(top_y * (self.cols + 1), len);
+
+    // The total amount we're going to copy
+    const total_copy = (height - count) * (self.cols + 1);
 
     // Fast-path is that we have a contigous buffer in our circular buffer.
     // In this case we can do some memmoves.
@@ -945,7 +946,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
             // Copy in our empties. The destination is the bottom
             // count rows. We first fill with the pen values since there
             // is a lot more of that.
-            const dst_offset = (height - (count - 1)) * (self.cols + 1);
+            const dst_offset = total_copy;
             const dst = buf[dst_offset..];
             std.mem.set(StorageCell, dst, .{ .cell = self.cursor.pen });
 
@@ -967,11 +968,75 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
         return;
     }
 
-    // If we're split across two buffers this is a "slow" path.
-    // This isn't possible with the /active/ area of the screen so mark
-    // it as unreachable for now but this is something we need to fix.
+    // If we're split across two buffers this is a "slow" path. This shouldn't
+    // happen with the "active" area but it appears it does... in the future
+    // I plan on changing scroll region stuff to make it much faster so for
+    // now we just deal with this slow path.
 
-    unreachable;
+    // This is the offset where we have to start copying.
+    const src_offset = count * (self.cols + 1);
+
+    // Perform the copy and calculate where we need to start zero-ing.
+    const zero_offset: [2]usize = if (src_offset < slices[0].len) zero_offset: {
+        var remaining: usize = len;
+
+        // Source starts in the top... so we can copy some from there.
+        const dst = slices[0];
+        const src = slices[0][src_offset..];
+        assert(@ptrToInt(dst.ptr) < @ptrToInt(src.ptr));
+        fastmem.move(StorageCell, dst, src);
+        remaining = total_copy - src.len;
+        if (remaining == 0) break :zero_offset .{ src.len, 0 };
+
+        // We have data remaining, which means that we have to grab some
+        // from the bottom slice.
+        const dst2 = slices[0][src.len..];
+        const src2_len = @min(dst2.len, remaining);
+        const src2 = slices[1][0..src2_len];
+        fastmem.copy(StorageCell, dst2, src2);
+        remaining -= src2_len;
+        if (remaining == 0) break :zero_offset .{ src.len + src2.len, 0 };
+
+        // We still have data remaining, which means we copy into the bot.
+        const dst3 = slices[1];
+        const src3 = slices[1][src2_len .. src2_len + remaining];
+        fastmem.move(StorageCell, dst3, src3);
+
+        break :zero_offset .{ slices[0].len, src3.len };
+    } else zero_offset: {
+        var remaining: usize = len;
+
+        // Source is in the bottom, so we copy from there into top.
+        const bot_src_offset = src_offset - slices[0].len;
+        const dst = slices[0];
+        const src = slices[1][bot_src_offset..];
+        const src_len = @min(dst.len, src.len);
+        fastmem.copy(StorageCell, dst, src[0..src_len]);
+        remaining = total_copy - src_len;
+        if (remaining == 0) break :zero_offset .{ src_len, 0 };
+
+        // We have data remaining, this has to go into the bottom.
+        const dst2 = slices[1];
+        const src2_offset = bot_src_offset + src_len;
+        const src2 = slices[1][src2_offset..];
+        fastmem.move(StorageCell, dst2, src2);
+        break :zero_offset .{ slices[0].len, src2_offset };
+    };
+
+    // Zero
+    for (zero_offset) |offset, i| {
+        if (offset >= slices[i].len) continue;
+
+        const dst = slices[i][offset..];
+        std.mem.set(StorageCell, dst, .{ .cell = self.cursor.pen });
+
+        var j: usize = offset;
+        while (j < slices[i].len) : (j += self.cols + 1) {
+            slices[i][j] = .{ .header = .{
+                .flags = .{ .dirty = true },
+            } };
+        }
+    }
 }
 
 /// Returns the offset into the storage buffer that the given row can
@@ -2430,7 +2495,7 @@ test "Screen: scrollRegionUp multiple count" {
     }
 }
 
-test "Screen: scrollRegionUp foo" {
+test "Screen: scrollRegionUp fills with pen" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -2445,6 +2510,58 @@ test "Screen: scrollRegionUp foo" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings("B\nC\nXXXXX\nD", contents);
+    }
+}
+
+test "Screen: scrollRegionUp buffer wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    // Scroll down, should still be bottom, but should wrap because
+    // we're out of space.
+    try s.scroll(.{ .delta = 1 });
+    s.cursor.x = 0;
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    // Scroll
+    s.cursor.pen = .{ .char = 'X' };
+    s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 2 }, 1);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("3IJKL\n4ABCD\nXXXXX", contents);
+    }
+}
+
+test "Screen: scrollRegionUp buffer wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    // Scroll down, should still be bottom, but should wrap because
+    // we're out of space.
+    try s.scroll(.{ .delta = 1 });
+    s.cursor.x = 0;
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    // Scroll
+    s.cursor.pen = .{ .char = 'X' };
+    s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 2 }, 2);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("4ABCD\nXXXXX\nXXXXX", contents);
     }
 }
 
