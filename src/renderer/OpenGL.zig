@@ -18,6 +18,7 @@ const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const lru = @import("../lru.zig");
 const DevMode = @import("../DevMode.zig");
+const Window = @import("../Window.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -79,6 +80,9 @@ focused: bool,
 
 /// Padding options
 padding: renderer.Options.Padding,
+
+/// The mailbox for communicating with the window.
+window_mailbox: Window.Mailbox,
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
@@ -156,21 +160,14 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     var shaper = try font.Shaper.init(shape_buf);
     errdefer shaper.deinit();
 
-    // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
-    // Doesn't matter, any normal ASCII will do we're just trying to make
-    // sure we use the regular font.
-    const metrics = metrics: {
-        const index = (try options.font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
-        const face = try options.font_group.group.faceFromIndex(index);
-        break :metrics face.metrics;
-    };
-    log.debug("cell dimensions={}", .{metrics});
-
     // Create our shader
     const program = try gl.Program.createVF(
         @embedFile("shaders/cell.v.glsl"),
         @embedFile("shaders/cell.f.glsl"),
     );
+
+    // Setup our font metrics uniform
+    const metrics = try resetFontMetrics(alloc, program, options.font_group);
 
     // Set our cell dimensions
     const pbind = try program.use();
@@ -300,6 +297,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
         .focused = true,
         .padding = options.padding,
+        .window_mailbox = options.window_mailbox,
     };
 }
 
@@ -314,19 +312,27 @@ pub fn deinit(self: *OpenGL) void {
     self.vao.destroy();
     self.program.destroy();
 
-    {
-        // Our LRU values are array lists so we need to deallocate those first
-        var it = self.cells_lru.queue.first;
-        while (it) |node| {
-            it = node.next;
-            node.data.value.deinit(self.alloc);
-        }
-
-        self.cells_lru.deinit(self.alloc);
-    }
+    self.resetCellsLRU();
+    self.cells_lru.deinit(self.alloc);
 
     self.cells.deinit(self.alloc);
     self.* = undefined;
+}
+
+fn resetCellsLRU(self: *OpenGL) void {
+    // Preserve the old capacity so that we have space in our LRU
+    const cap = self.cells_lru.capacity;
+
+    // Our LRU values are array lists so we need to deallocate those first
+    var it = self.cells_lru.queue.first;
+    while (it) |node| {
+        it = node.next;
+        node.data.value.deinit(self.alloc);
+    }
+    self.cells_lru.deinit(self.alloc);
+
+    // Initialize our new LRU
+    self.cells_lru = CellsLRU.init(cap);
 }
 
 /// Returns the hints that we want for this
@@ -448,13 +454,73 @@ pub fn threadExit(self: *const OpenGL) void {
 }
 
 /// Callback when the focus changes for the terminal this is rendering.
+///
+/// Must be called on the render thread.
 pub fn setFocus(self: *OpenGL, focus: bool) !void {
     self.focused = focus;
 }
 
 /// Called to toggle the blink state of the cursor
+///
+/// Must be called on the render thread.
 pub fn blinkCursor(self: *OpenGL, reset: bool) void {
     self.cursor_visible = reset or !self.cursor_visible;
+}
+
+/// Set the new font size.
+///
+/// Must be called on the render thread.
+pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
+    log.info("set font size={}", .{size});
+
+    // Set our new size, this will also reset our font atlas.
+    try self.font_group.setSize(size);
+
+    // Invalidate our cell cache.
+    self.resetCellsLRU();
+
+    // Reset our GPU uniforms
+    const metrics = try resetFontMetrics(self.alloc, self.program, self.font_group);
+
+    // Recalculate our cell size. If it is the same as before, then we do
+    // nothing since the grid size couldn't have possibly changed.
+    const new_cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height };
+    if (std.meta.eql(self.cell_size, new_cell_size)) return;
+    self.cell_size = new_cell_size;
+
+    // Notify the window that the cell size changed.
+    _ = self.window_mailbox.push(.{
+        .cell_size = new_cell_size,
+    }, .{ .forever = {} });
+}
+
+/// Reload the font metrics, recalculate cell size, and send that all
+/// down to the GPU.
+fn resetFontMetrics(
+    alloc: Allocator,
+    program: gl.Program,
+    font_group: *font.GroupCache,
+) !font.face.Metrics {
+    // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
+    // Doesn't matter, any normal ASCII will do we're just trying to make
+    // sure we use the regular font.
+    const metrics = metrics: {
+        const index = (try font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
+        const face = try font_group.group.faceFromIndex(index);
+        break :metrics face.metrics;
+    };
+    log.debug("cell dimensions={}", .{metrics});
+
+    // Set our uniforms that rely on metrics
+    const pbind = try program.use();
+    defer pbind.unbind();
+    try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
+    try program.setUniform("underline_position", metrics.underline_position);
+    try program.setUniform("underline_thickness", metrics.underline_thickness);
+    try program.setUniform("strikethrough_position", metrics.strikethrough_position);
+    try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
+
+    return metrics;
 }
 
 /// The primary render callback that is completely thread-safe.
@@ -946,7 +1012,7 @@ pub fn updateCell(
 
 /// Returns the grid size for a given screen size. This is safe to call
 /// on any thread.
-pub fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
+fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
     return renderer.GridSize.init(
         screen_size.subPadding(self.padding.explicit),
         self.cell_size,

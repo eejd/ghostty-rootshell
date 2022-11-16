@@ -131,6 +131,13 @@ pub const Action = union(enum) {
     copy_to_clipboard: void,
     paste_from_clipboard: void,
 
+    /// Increase/decrease the font size by a certain amount
+    increase_font_size: u16,
+    decrease_font_size: u16,
+
+    /// Reset the font size to the original configured size
+    reset_font_size: void,
+
     /// Dev mode
     toggle_dev_mode: void,
 

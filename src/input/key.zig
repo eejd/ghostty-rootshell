@@ -49,8 +49,22 @@ pub const Key = enum {
     y,
     z,
 
+    // numbers
+    zero,
+    one,
+    two,
+    three,
+    four,
+    five,
+    six,
+    seven,
+    eight,
+    nine,
+
     // other
     grave_accent, // `
+    minus,
+    equal,
 
     // control
     up,

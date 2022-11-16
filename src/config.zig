@@ -176,6 +176,23 @@ pub const Config = struct {
         try result.keybind.set.put(alloc, .{ .key = .f11 }, .{ .csi = "23~" });
         try result.keybind.set.put(alloc, .{ .key = .f12 }, .{ .csi = "24~" });
 
+        // Fonts
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .equal, .mods = .{ .super = true } },
+            .{ .increase_font_size = 1 },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .minus, .mods = .{ .super = true } },
+            .{ .decrease_font_size = 1 },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .zero, .mods = .{ .super = true } },
+            .{ .reset_font_size = {} },
+        );
+
         // Dev Mode
         try result.keybind.set.put(
             alloc,

@@ -49,6 +49,7 @@ app: *App,
 /// The font structures
 font_lib: font.Library,
 font_group: *font.GroupCache,
+font_size: font.face.DesiredSize,
 
 /// The glfw window handle.
 window: glfw.Window,
@@ -79,8 +80,10 @@ io: termio.Impl,
 io_thread: termio.Thread,
 io_thr: std.Thread,
 
-/// The dimensions of the grid in rows and columns.
+/// All the cached sizes since we need them at various times.
+screen_size: renderer.ScreenSize,
 grid_size: renderer.GridSize,
+cell_size: renderer.CellSize,
 
 /// Explicit padding due to configuration
 padding: renderer.Padding,
@@ -262,6 +265,9 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     });
     errdefer font_group.deinit(alloc);
 
+    // Pre-calculate our initial cell size ourselves.
+    const cell_size = try renderer.CellSize.init(alloc, font_group);
+
     // Convert our padding from points to pixels
     const padding_x = (@intToFloat(f32, config.@"window-padding-x") * x_dpi) / 72;
     const padding_y = (@intToFloat(f32, config.@"window-padding-y") * y_dpi) / 72;
@@ -279,6 +285,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
             .explicit = padding,
             .balance = config.@"window-padding-balance",
         },
+        .window_mailbox = .{ .window = self, .app = app.mailbox },
     });
     errdefer renderer_impl.deinit();
     renderer_impl.background = .{
@@ -298,13 +305,16 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .width = window_size.width,
         .height = window_size.height,
     };
-    const grid_size = renderer_impl.gridSize(screen_size);
+    const grid_size = renderer.GridSize.init(
+        screen_size.subPadding(padding),
+        cell_size,
+    );
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
     try window.setSizeLimits(.{
-        .width = @floatToInt(u32, renderer_impl.cell_size.width * 10),
-        .height = @floatToInt(u32, renderer_impl.cell_size.height * 4),
+        .width = @floatToInt(u32, cell_size.width * 10),
+        .height = @floatToInt(u32, cell_size.height * 4),
     }, .{ .width = null, .height = null });
 
     // Create the cursor
@@ -352,6 +362,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .app = app,
         .font_lib = font_lib,
         .font_group = font_group,
+        .font_size = font_size,
         .window = window,
         .cursor = cursor,
         .renderer = renderer_impl,
@@ -371,7 +382,9 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .io = io,
         .io_thread = io_thread,
         .io_thr = undefined,
+        .screen_size = screen_size,
         .grid_size = grid_size,
+        .cell_size = cell_size,
         .padding = padding,
         .config = config,
 
@@ -516,7 +529,46 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
             log.debug("changing title \"{s}\"", .{slice});
             try self.window.setTitle(slice.ptr);
         },
+
+        .cell_size => |size| try self.setCellSize(size),
     }
+}
+
+/// Change the cell size for the terminal grid. This can happen as
+/// a result of changing the font size at runtime.
+fn setCellSize(self: *Window, size: renderer.CellSize) !void {
+    // Update our new cell size for future calcs
+    self.cell_size = size;
+
+    // Update our grid_size
+    self.grid_size = renderer.GridSize.init(
+        self.screen_size.subPadding(self.padding),
+        self.cell_size,
+    );
+
+    // Notify the terminal
+    _ = self.io_thread.mailbox.push(.{
+        .resize = .{
+            .grid_size = self.grid_size,
+            .screen_size = self.screen_size,
+            .padding = self.padding,
+        },
+    }, .{ .forever = {} });
+    self.io_thread.wakeup.send() catch {};
+}
+
+/// Change the font size.
+fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
+    // Update our font size so future changes work
+    self.font_size = size;
+
+    // Notify our render thread of the font size. This triggers everything else.
+    _ = self.renderer_thread.mailbox.push(.{
+        .font_size = size,
+    }, .{ .forever = {} });
+
+    // Schedule render which also drains our mailbox
+    self.queueRender() catch unreachable;
 }
 
 /// This queues a render operation with the renderer thread. The render
@@ -569,18 +621,22 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         };
     };
 
-    const screen_size: renderer.ScreenSize = .{
-        .width = px_size.width,
-        .height = px_size.height,
-    };
-
     const win = window.getUserPointer(Window) orelse return;
 
     // TODO: if our screen size didn't change, then we should avoid the
     // overhead of inter-thread communication
 
+    // Save our screen size
+    win.screen_size = .{
+        .width = px_size.width,
+        .height = px_size.height,
+    };
+
     // Recalculate our grid size
-    win.grid_size = win.renderer.gridSize(screen_size);
+    win.grid_size = renderer.GridSize.init(
+        win.screen_size.subPadding(win.padding),
+        win.cell_size,
+    );
     if (win.grid_size.columns < 5 and (win.padding.left > 0 or win.padding.right > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
@@ -594,7 +650,7 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
     _ = win.io_thread.mailbox.push(.{
         .resize = .{
             .grid_size = win.grid_size,
-            .screen_size = screen_size,
+            .screen_size = win.screen_size,
             .padding = win.padding,
         },
     }, .{ .forever = {} });
@@ -720,6 +776,16 @@ fn keyCallback(
                 .x => .x,
                 .y => .y,
                 .z => .z,
+                .zero => .zero,
+                .one => .one,
+                .two => .three,
+                .three => .four,
+                .four => .four,
+                .five => .five,
+                .six => .six,
+                .seven => .seven,
+                .eight => .eight,
+                .nine => .nine,
                 .up => .up,
                 .down => .down,
                 .right => .right,
@@ -742,6 +808,8 @@ fn keyCallback(
                 .F11 => .f11,
                 .F12 => .f12,
                 .grave_accent => .grave_accent,
+                .minus => .minus,
+                .equal => .equal,
                 else => .invalid,
             },
         };
@@ -816,6 +884,30 @@ fn keyCallback(
 
                         win.io_thread.wakeup.send() catch {};
                     }
+                },
+
+                .increase_font_size => |delta| {
+                    log.debug("increase font size={}", .{delta});
+
+                    var size = win.font_size;
+                    size.points +|= delta;
+                    win.setFontSize(size);
+                },
+
+                .decrease_font_size => |delta| {
+                    log.debug("decrease font size={}", .{delta});
+
+                    var size = win.font_size;
+                    size.points = @max(1, size.points -| delta);
+                    win.setFontSize(size);
+                },
+
+                .reset_font_size => {
+                    log.debug("reset font size", .{});
+
+                    var size = win.font_size;
+                    size.points = win.config.@"font-size";
+                    win.setFontSize(size);
                 },
 
                 .toggle_dev_mode => if (DevMode.enabled) {
@@ -1386,10 +1478,10 @@ fn cursorPosCallback(
     //
 
     // the boundary point at which we consider selection or non-selection
-    const cell_xboundary = win.renderer.cell_size.width * 0.6;
+    const cell_xboundary = win.cell_size.width * 0.6;
 
     // first xpos of the clicked cell
-    const cell_xstart = @intToFloat(f32, win.mouse.left_click_point.x) * win.renderer.cell_size.width;
+    const cell_xstart = @intToFloat(f32, win.mouse.left_click_point.x) * win.cell_size.width;
     const cell_start_xpos = win.mouse.left_click_xpos - cell_xstart;
 
     // If this is the same cell, then we only start the selection if weve
@@ -1464,7 +1556,7 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
     return .{
         .x = if (xpos < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
-            const cell_width = @floatCast(f64, self.renderer.cell_size.width);
+            const cell_width = @floatCast(f64, self.cell_size.width);
             const x = @floatToInt(usize, xpos / cell_width);
 
             // Can be off the screen if the user drags it out, so max
@@ -1473,7 +1565,7 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
         },
 
         .y = if (ypos < 0) 0 else y: {
-            const cell_height = @floatCast(f64, self.renderer.cell_size.height);
+            const cell_height = @floatCast(f64, self.cell_size.height);
             const y = @floatToInt(usize, ypos / cell_height);
             break :y @min(y, self.io.terminal.rows - 1);
         },

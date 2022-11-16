@@ -16,6 +16,7 @@ const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const DevMode = @import("../DevMode.zig");
+const Window = @import("../Window.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Terminal = terminal.Terminal;
@@ -29,6 +30,9 @@ const log = std.log.scoped(.metal);
 
 /// Allocator that can be used
 alloc: std.mem.Allocator,
+
+/// The mailbox for communicating with the window.
+window_mailbox: Window.Mailbox,
 
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
@@ -208,6 +212,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
     return Metal{
         .alloc = alloc,
+        .window_mailbox = options.window_mailbox,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .padding = options.padding,
         .background = .{ .r = 0, .g = 0, .b = 0 },
@@ -308,7 +313,7 @@ pub fn threadExit(self: *const Metal) void {
 
 /// Returns the grid size for a given screen size. This is safe to call
 /// on any thread.
-pub fn gridSize(self: *Metal, screen_size: renderer.ScreenSize) renderer.GridSize {
+fn gridSize(self: *Metal, screen_size: renderer.ScreenSize) renderer.GridSize {
     return renderer.GridSize.init(
         screen_size.subPadding(self.padding.explicit),
         self.cell_size,
@@ -316,13 +321,55 @@ pub fn gridSize(self: *Metal, screen_size: renderer.ScreenSize) renderer.GridSiz
 }
 
 /// Callback when the focus changes for the terminal this is rendering.
+///
+/// Must be called on the render thread.
 pub fn setFocus(self: *Metal, focus: bool) !void {
     self.focused = focus;
 }
 
 /// Called to toggle the blink state of the cursor
+///
+/// Must be called on the render thread.
 pub fn blinkCursor(self: *Metal, reset: bool) void {
     self.cursor_visible = reset or !self.cursor_visible;
+}
+
+/// Set the new font size.
+///
+/// Must be called on the render thread.
+pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
+    log.info("set font size={}", .{size});
+
+    // Set our new size, this will also reset our font atlas.
+    try self.font_group.setSize(size);
+
+    // Recalculate our metrics
+    const metrics = metrics: {
+        const index = (try self.font_group.indexForCodepoint(self.alloc, 'M', .regular, .text)).?;
+        const face = try self.font_group.group.faceFromIndex(index);
+        break :metrics face.metrics;
+    };
+    const new_cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height };
+
+    // Update our uniforms
+    self.uniforms = .{
+        .projection_matrix = self.uniforms.projection_matrix,
+        .cell_size = .{ new_cell_size.width, new_cell_size.height },
+        .underline_position = metrics.underline_position,
+        .underline_thickness = metrics.underline_thickness,
+        .strikethrough_position = metrics.strikethrough_position,
+        .strikethrough_thickness = metrics.strikethrough_thickness,
+    };
+
+    // Recalculate our cell size. If it is the same as before, then we do
+    // nothing since the grid size couldn't have possibly changed.
+    if (std.meta.eql(self.cell_size, new_cell_size)) return;
+    self.cell_size = new_cell_size;
+
+    // Notify the window that the cell size changed.
+    _ = self.window_mailbox.push(.{
+        .cell_size = new_cell_size,
+    }, .{ .forever = {} });
 }
 
 /// The primary render callback that is completely thread-safe.

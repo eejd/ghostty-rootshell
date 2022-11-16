@@ -275,6 +275,10 @@ fn drainMailbox(self: *Thread) !void {
                     _ = try self.cursor_h.again();
                 }
             },
+
+            .font_size => |size| {
+                try self.renderer.setFontSize(size);
+            },
         }
     }
 }
