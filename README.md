@@ -44,6 +44,7 @@ The high-level ambitious plan for the project, in order:
 | 3 | Basic customizability -- fonts, bg colors, etc. | ✅ |
 | 4 | Richer windowing features -- multi-window, tabbing, panes | ⚠️  |
 | 5 | Native Platform Experiences (i.e. Mac Preference Panel) | ❌ |
+| 6 | Windows Terminals (including PowerShell, Cmd, WSL) | ❌ |
 | N | Fancy features (to be expanded upon later) | ❌ |
 
 ### Standards-Compliant Terminal Emulation
