@@ -65,6 +65,15 @@ pub const Face = struct {
         self.* = undefined;
     }
 
+    /// Resize the font in-place. If this succeeds, the caller is responsible
+    /// for clearing any glyph caches, font atlas data, etc.
+    pub fn setSize(self: *Face, size: font.face.DesiredSize) !void {
+        // We just create a copy and replace ourself
+        const face = try initFontCopy(self.font, size);
+        self.deinit();
+        self.* = face;
+    }
+
     /// Returns the glyph index for the given Unicode code point. If this
     /// face doesn't support this glyph, null is returned.
     pub fn glyphIndex(self: Face, cp: u32) ?u32 {
