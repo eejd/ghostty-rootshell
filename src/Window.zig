@@ -49,6 +49,7 @@ app: *App,
 /// The font structures
 font_lib: font.Library,
 font_group: *font.GroupCache,
+font_size: font.face.DesiredSize,
 
 /// The glfw window handle.
 window: glfw.Window,
@@ -361,6 +362,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .app = app,
         .font_lib = font_lib,
         .font_group = font_group,
+        .font_size = font_size,
         .window = window,
         .cursor = cursor,
         .renderer = renderer_impl,
@@ -553,6 +555,20 @@ fn setCellSize(self: *Window, size: renderer.CellSize) !void {
         },
     }, .{ .forever = {} });
     self.io_thread.wakeup.send() catch {};
+}
+
+/// Change the font size.
+fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
+    // Update our font size so future changes work
+    self.font_size = size;
+
+    // Notify our render thread of the font size. This triggers everything else.
+    _ = self.renderer_thread.mailbox.push(.{
+        .font_size = size,
+    }, .{ .forever = {} });
+
+    // Schedule render which also drains our mailbox
+    self.queueRender() catch unreachable;
 }
 
 /// This queues a render operation with the renderer thread. The render
@@ -760,6 +776,16 @@ fn keyCallback(
                 .x => .x,
                 .y => .y,
                 .z => .z,
+                .zero => .zero,
+                .one => .one,
+                .two => .three,
+                .three => .four,
+                .four => .four,
+                .five => .five,
+                .six => .six,
+                .seven => .seven,
+                .eight => .eight,
+                .nine => .nine,
                 .up => .up,
                 .down => .down,
                 .right => .right,
@@ -782,6 +808,8 @@ fn keyCallback(
                 .F11 => .f11,
                 .F12 => .f12,
                 .grave_accent => .grave_accent,
+                .minus => .minus,
+                .equal => .equal,
                 else => .invalid,
             },
         };
@@ -856,6 +884,30 @@ fn keyCallback(
 
                         win.io_thread.wakeup.send() catch {};
                     }
+                },
+
+                .increase_font_size => |delta| {
+                    log.debug("increase font size={}", .{delta});
+
+                    var size = win.font_size;
+                    size.points +|= delta;
+                    win.setFontSize(size);
+                },
+
+                .decrease_font_size => |delta| {
+                    log.debug("decrease font size={}", .{delta});
+
+                    var size = win.font_size;
+                    size.points = @max(1, size.points -| delta);
+                    win.setFontSize(size);
+                },
+
+                .reset_font_size => {
+                    log.debug("reset font size", .{});
+
+                    var size = win.font_size;
+                    size.points = win.config.@"font-size";
+                    win.setFontSize(size);
                 },
 
                 .toggle_dev_mode => if (DevMode.enabled) {

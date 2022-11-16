@@ -320,6 +320,9 @@ pub fn deinit(self: *OpenGL) void {
 }
 
 fn resetCellsLRU(self: *OpenGL) void {
+    // Preserve the old capacity so that we have space in our LRU
+    const cap = self.cells_lru.capacity;
+
     // Our LRU values are array lists so we need to deallocate those first
     var it = self.cells_lru.queue.first;
     while (it) |node| {
@@ -329,7 +332,7 @@ fn resetCellsLRU(self: *OpenGL) void {
     self.cells_lru.deinit(self.alloc);
 
     // Initialize our new LRU
-    self.cells_lru = CellsLRU.init(0);
+    self.cells_lru = CellsLRU.init(cap);
 }
 
 /// Returns the hints that we want for this
@@ -468,6 +471,8 @@ pub fn blinkCursor(self: *OpenGL, reset: bool) void {
 ///
 /// Must be called on the render thread.
 pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
+    log.info("set font size={}", .{size});
+
     // Set our new size, this will also reset our font atlas.
     try self.font_group.setSize(size);
 
