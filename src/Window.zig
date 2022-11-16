@@ -527,7 +527,32 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
             log.debug("changing title \"{s}\"", .{slice});
             try self.window.setTitle(slice.ptr);
         },
+
+        .cell_size => |size| try self.setCellSize(size),
     }
+}
+
+/// Change the cell size for the terminal grid. This can happen as
+/// a result of changing the font size at runtime.
+fn setCellSize(self: *Window, size: renderer.CellSize) !void {
+    // Update our new cell size for future calcs
+    self.cell_size = size;
+
+    // Update our grid_size
+    self.grid_size = renderer.GridSize.init(
+        self.screen_size.subPadding(self.padding),
+        self.cell_size,
+    );
+
+    // Notify the terminal
+    _ = self.io_thread.mailbox.push(.{
+        .resize = .{
+            .grid_size = self.grid_size,
+            .screen_size = self.screen_size,
+            .padding = self.padding,
+        },
+    }, .{ .forever = {} });
+    self.io_thread.wakeup.send() catch {};
 }
 
 /// This queues a render operation with the renderer thread. The render

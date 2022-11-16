@@ -18,6 +18,7 @@ const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const lru = @import("../lru.zig");
 const DevMode = @import("../DevMode.zig");
+const Window = @import("../Window.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -79,6 +80,9 @@ focused: bool,
 
 /// Padding options
 padding: renderer.Options.Padding,
+
+/// The mailbox for communicating with the window.
+window_mailbox: Window.Mailbox,
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
@@ -293,6 +297,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .foreground = .{ .r = 255, .g = 255, .b = 255 },
         .focused = true,
         .padding = options.padding,
+        .window_mailbox = options.window_mailbox,
     };
 }
 
@@ -476,8 +481,12 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     // nothing since the grid size couldn't have possibly changed.
     const new_cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height };
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
+    self.cell_size = new_cell_size;
 
     // Notify the window that the cell size changed.
+    _ = self.window_mailbox.push(.{
+        .cell_size = new_cell_size,
+    }, .{ .forever = {} });
 }
 
 /// Reload the font metrics, recalculate cell size, and send that all

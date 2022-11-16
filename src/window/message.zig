@@ -9,6 +9,9 @@ pub const Message = union(enum) {
     /// the termio message so that we can more efficiently send strings
     /// of any length
     set_title: [256]u8,
+
+    /// Change the cell size.
+    cell_size: renderer.CellSize,
 };
 
 /// A window mailbox.
