@@ -28,8 +28,10 @@ terminal emulator that aims to remain compatible with all existing shells
 and software. You can use this as a drop-in replacement for your existing
 terminal emulator.
 
-**Project Status:** Pre-Alpha. It now supports enough to be used day to day
-for my use case, but is still missing a lot of functionality.
+**Project Status:** Alpha. It is a minimal terminal emulator that can be used
+for day-to-day work. It is missing many nice to have features but as a minimal
+terminal emulator it is ready to go. I've been using it full time since
+April 2022.
 
 ## Roadmap and Status
 
@@ -39,9 +41,9 @@ The high-level ambitious plan for the project, in order:
 |:---:|------|:------:|
 | 1 | [Standards-compliant terminal emulation](docs/sequences.md)     | ⚠️ |
 | 2 | Competitive rendering performance (not the fastest, but fast enough) | ✅ |
-| 3 | Basic customizability -- fonts, bg colors, etc. | ❌ |
-| 4 | Richer windowing features -- multi-window, tabbing, panes | ❌ |
-| 5 | Optimal rendering performance | ❌ |
+| 3 | Basic customizability -- fonts, bg colors, etc. | ✅ |
+| 4 | Richer windowing features -- multi-window, tabbing, panes | ⚠️  |
+| 5 | Native Platform Experiences (i.e. Mac Preference Panel) | ❌ |
 | N | Fancy features (to be expanded upon later) | ❌ |
 
 ### Standards-Compliant Terminal Emulation
@@ -52,24 +54,37 @@ compliance but the set that are regularly in use are working pretty well.
 
 ### Competitive Rendering Performance
 
-I want to automate the testing of this, but for now I've manually verified
-we can maintain 120fps `cat`-ing a 6MB file. In terms of raw draw speed,
-`cat`-ing a 6MB file is consistently faster on Linux using ghostty than
-any other terminal emulator currently.
+I want to benchmark this better, but we can maintain roughly 100fps under
+heavy load and 120fps generally. We have a multi-renderer architecture that
+uses OpenGL on Linux and Metal on macOS. As far as I'm aware, we're the only
+terminal emulator other than iTerm that uses Metal directly. And we're the
+only terminal emulator that has a Metal renderer that supports ligatures.
 
-On macOS, `cat`-ing the large file is acceptable performance but not optimal.
-I don't know why and need to look into it.
+### Richer Windowing Features
+
+We support multi-window, but do not yet support tabs or panes. This is
+a must-have feature so this will come in time.
+
+### Native Platform Experiences
+
+Ghostty is a cross-platform terminal emulator but is meant to feel native
+on each platform it runs on. On macOS, this means having a preferences window
+that is a native Mac window (versus only file-based configuratin). On
+Linux this means having a GTK option that has richer windowing features. Etc.
+
+Right now, we're focusing on the macOS experience first. We are using Cocoa
+with Metal and rendering text with CoreText. We will be working to improve
+the windowing experience here.
 
 ## Developing Ghostty
 
 Ghostty is built using both the [Zig](https://ziglang.org/) programming
-language as well as the Zig build system. At a minimum, Zig must be installed.
+language as well as the Zig build system. At a minimum, Zig and Git must be installed.
 For [Nix](https://nixos.org/) users, a `shell.nix` is available which includes
 all the necessary dependencies pinned to exact versions.
 
 **Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig. The latest released version (0.9.1 at the time of this
-edit) will NOT work. You can find binary releases of nightly builds
+releases of Zig. You can find binary releases of nightly builds
 on the [Zig downloads page](https://ziglang.org/download/).
 
 With Zig installed, a binary can be built using `zig build`:
