@@ -32,7 +32,7 @@ const App = @import("App.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
-    .cocoa = builtin.os.tag == .macos,
+    .cocoa = builtin.target.isDarwin(),
 });
 
 const log = std.log.scoped(.window);
@@ -131,6 +131,14 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     const window = try glfw.Window.create(640, 480, "ghostty", null, null, Renderer.windowHints());
     errdefer window.destroy();
     try Renderer.windowInit(window);
+
+    // On Mac, enable tabbing
+    if (comptime builtin.target.isDarwin()) {
+        const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
+        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(window).?);
+        nswindow.setProperty("tabbingMode", NSWindowTabbingMode.automatic);
+        nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
+    }
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.

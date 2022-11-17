@@ -4,6 +4,7 @@
 const App = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const glfw = @import("glfw");
 const Window = @import("Window.zig");
@@ -12,6 +13,8 @@ const Config = @import("config.zig").Config;
 const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
+const macos = @import("macos");
+const objc = @import("objc");
 
 const log = std.log.scoped(.app);
 
@@ -36,6 +39,21 @@ mailbox: *Mailbox,
 /// Set to true once we're quitting. This never goes false again.
 quit: bool,
 
+/// Mac settings
+darwin: if (Darwin.enabled) Darwin else void,
+
+/// Mac-specific settings
+pub const Darwin = struct {
+    pub const enabled = builtin.target.isDarwin();
+
+    tabbing_id: *macos.foundation.String,
+
+    pub fn deinit(self: *Darwin) void {
+        self.tabbing_id.release();
+        self.* = undefined;
+    }
+};
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -52,8 +70,29 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
         .config = config,
         .mailbox = mailbox,
         .quit = false,
+        .darwin = if (Darwin.enabled) undefined else {},
     };
     errdefer app.windows.deinit(alloc);
+
+    // On Mac, we enable window tabbing
+    if (comptime builtin.target.isDarwin()) {
+        const NSWindow = objc.Class.getClass("NSWindow").?;
+        NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
+
+        // Our tabbing ID allows all of our windows to group together
+        const tabbing_id = try macos.foundation.String.createWithBytes(
+            "dev.ghostty.window",
+            .utf8,
+            false,
+        );
+        errdefer tabbing_id.release();
+
+        // Setup our Mac settings
+        app.darwin = .{
+            .tabbing_id = tabbing_id,
+        };
+    }
+    errdefer if (comptime builtin.target.isDarwin()) app.darwin.deinit();
 
     // Create the first window
     try app.newWindow(.{});
