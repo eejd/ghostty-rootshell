@@ -63,8 +63,8 @@ only terminal emulator that has a Metal renderer that supports ligatures.
 
 ### Richer Windowing Features
 
-We support multi-window, but do not yet support tabs or panes. This is
-a must-have feature so this will come in time.
+We support multi-window and tabbing on Mac. We will support panes/splits
+in the future and we'll continue to improve multi-window features.
 
 ### Native Platform Experiences
 
