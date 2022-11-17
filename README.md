@@ -7,6 +7,13 @@
   <p align="center">
     GPU-accelerated terminal emulator pushing modern features.
     <br />
+    <a href="#about">About</a>
+    ·
+    <a href="#download">Download</a>
+    ·
+    <a href="#roadmap-and-status">Roadmap</a>
+    ·
+    <a href="#developing-ghostty">Developing</a>
     </p>
 </p>
 
@@ -32,6 +39,14 @@ terminal emulator.
 for day-to-day work. It is missing many nice to have features but as a minimal
 terminal emulator it is ready to go. I've been using it full time since
 April 2022.
+
+## Download
+
+| Platform / Package  | Links | Notes |
+| ----------| ----- | ----- |
+| macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | Not signed or notarized |
+| Linux | [Build from Source](#developing-ghostty)  | No binary packages today |
+| Windows | n/a | Not supported yet |
 
 ## Roadmap and Status
 
