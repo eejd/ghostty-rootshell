@@ -12,9 +12,6 @@ const renderer = @import("../renderer.zig");
 /// state (i.e. the terminal, devmode, etc. values).
 mutex: *std.Thread.Mutex,
 
-/// A new screen size if the screen was resized.
-resize_screen: ?renderer.ScreenSize,
-
 /// Cursor configuration for rendering
 cursor: Cursor,
 

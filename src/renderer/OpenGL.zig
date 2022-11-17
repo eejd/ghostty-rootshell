@@ -533,7 +533,6 @@ pub fn render(
     const Critical = struct {
         gl_bg: terminal.color.RGB,
         devmode_data: ?*imgui.DrawData,
-        screen_size: ?renderer.ScreenSize,
         active_screen: terminal.Terminal.ScreenType,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
@@ -595,13 +594,9 @@ pub fn render(
         );
         errdefer screen_copy.deinit();
 
-        // We set this in the state below
-        defer state.resize_screen = null;
-
         break :critical .{
             .gl_bg = self.background,
             .devmode_data = devmode_data,
-            .screen_size = state.resize_screen,
             .active_screen = state.terminal.active_screen,
             .selection = state.terminal.selection,
             .screen = screen_copy,
@@ -609,12 +604,6 @@ pub fn render(
         };
     };
     defer critical.screen.deinit();
-
-    // If we are resizing we need to update the viewport
-    if (critical.screen_size) |size| {
-        // Update our grid size
-        try self.setScreenSize(size);
-    }
 
     // Build our GPU cells
     try self.rebuildCells(
@@ -1021,7 +1010,7 @@ fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
 
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
-fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
+pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);
 

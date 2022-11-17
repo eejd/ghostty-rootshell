@@ -249,9 +249,6 @@ pub fn resize(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        // We need to setup our render state to store our new pending size
-        self.renderer_state.resize_screen = screen_size;
-
         // Update the size of our terminal state
         try self.terminal.resize(self.alloc, grid_size.columns, grid_size.rows);
     }

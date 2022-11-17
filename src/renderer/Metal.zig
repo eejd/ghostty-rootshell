@@ -383,7 +383,6 @@ pub fn render(
     // Data we extract out of the critical area.
     const Critical = struct {
         bg: terminal.color.RGB,
-        screen_size: ?renderer.ScreenSize,
         devmode: bool,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
@@ -431,12 +430,8 @@ pub fn render(
         );
         errdefer screen_copy.deinit();
 
-        // We set this in the state below
-        defer state.resize_screen = null;
-
         break :critical .{
             .bg = self.background,
-            .screen_size = state.resize_screen,
             .devmode = if (state.devmode) |dm| dm.visible else false,
             .selection = state.terminal.selection,
             .screen = screen_copy,
@@ -448,26 +443,6 @@ pub fn render(
     // @autoreleasepool {}
     const pool = objc.AutoreleasePool.init();
     defer pool.deinit();
-
-    // If we're resizing, then we have to update a bunch of things...
-    if (critical.screen_size) |_| {
-        // Note: we ignore the screen size value because our view should be
-        // automatically updated by being in the window.
-
-        // Scale the bounds based on the layer content scale so that we
-        // properly handle Retina.
-        const bounds = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
-        const scaled: macos.graphics.Size = scaled: {
-            const scaleFactor = self.swapchain.getProperty(macos.graphics.c.CGFloat, "contentsScale");
-            break :scaled .{
-                .width = bounds.size.width * scaleFactor,
-                .height = bounds.size.height * scaleFactor,
-            };
-        };
-
-        // Handle our new size
-        try self.setScreenSize(scaled);
-    }
 
     // Build our GPU cells
     try self.rebuildCells(
@@ -614,7 +589,17 @@ pub fn render(
 }
 
 /// Resize the screen.
-fn setScreenSize(self: *Metal, bounds: macos.graphics.Size) !void {
+pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
+    // We use the bounds of our view which should be updated by now.
+    const unscaled = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
+    const bounds: macos.graphics.Size = scaled: {
+        const scaleFactor = self.swapchain.getProperty(macos.graphics.c.CGFloat, "contentsScale");
+        break :scaled .{
+            .width = unscaled.size.width * scaleFactor,
+            .height = unscaled.size.height * scaleFactor,
+        };
+    };
+
     // Easier to work with our own types
     const dim: renderer.ScreenSize = .{
         .width = @floatToInt(u32, bounds.width),

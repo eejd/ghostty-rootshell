@@ -382,7 +382,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
-            .resize_screen = screen_size,
             .cursor = .{
                 .style = .blinking_block,
                 .visible = true,
@@ -688,6 +687,12 @@ fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
+
+    // Mail the renderer
+    _ = win.renderer_thread.mailbox.push(.{
+        .screen_size = win.screen_size,
+    }, .{ .forever = {} });
+    win.queueRender() catch unreachable;
 
     // Mail the IO thread
     _ = win.io_thread.mailbox.push(.{
