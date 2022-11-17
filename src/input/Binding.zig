@@ -144,7 +144,10 @@ pub const Action = union(enum) {
     /// Open a new window
     new_window: void,
 
-    /// Close the current window
+    /// Open a new tab
+    new_tab: void,
+
+    /// Close the current window or tab
     close_window: void,
 
     /// Quit ghostty

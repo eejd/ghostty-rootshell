@@ -217,7 +217,12 @@ pub const Config = struct {
             .{ .key = .w, .mods = .{ .super = true } },
             .{ .close_window = {} },
         );
-        if (builtin.os.tag == .macos) {
+        if (comptime builtin.target.isDarwin()) {
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .t, .mods = .{ .super = true } },
+                .{ .new_tab = {} },
+            );
             try result.keybind.set.put(
                 alloc,
                 .{ .key = .q, .mods = .{ .super = true } },

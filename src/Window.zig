@@ -542,6 +542,18 @@ pub fn shouldClose(self: Window) bool {
     return self.window.shouldClose();
 }
 
+/// Add a window to the tab group of this window.
+pub fn addWindow(self: Window, other: *Window) void {
+    assert(builtin.target.isDarwin());
+
+    const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
+    const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
+    nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
+        objc.Object.fromId(glfwNative.getCocoaWindow(other.window).?),
+        NSWindowOrderingMode.above,
+    });
+}
+
 /// Called from the app thread to handle mailbox messages to our specific
 /// window.
 pub fn handleMessage(self: *Window, msg: Message) !void {
@@ -944,6 +956,20 @@ fn keyCallback(
                 .new_window => {
                     _ = win.app.mailbox.push(.{
                         .new_window = .{
+                            .font_size = if (win.config.@"window-inherit-font-size")
+                                win.font_size
+                            else
+                                null,
+                        },
+                    }, .{ .instant = {} });
+                    win.app.wakeup();
+                },
+
+                .new_tab => {
+                    _ = win.app.mailbox.push(.{
+                        .new_tab = .{
+                            .parent = win,
+
                             .font_size = if (win.config.@"window-inherit-font-size")
                                 win.font_size
                             else
