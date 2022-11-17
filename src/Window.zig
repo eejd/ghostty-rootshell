@@ -507,6 +507,22 @@ pub fn destroy(self: *Window) void {
         self.io.deinit();
     }
 
+    if (comptime builtin.target.isDarwin()) {
+        // If our tab bar is visible and we are going down to 1 window,
+        // hide the tab bar.
+        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
+        const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
+        if (tabgroup.getProperty(bool, "tabBarVisible")) {
+            const windows = tabgroup.getProperty(objc.Object, "windows");
+
+            // count check is 2 because our window will still be present
+            // in the tab bar since we haven't destroyed yet
+            if (windows.getProperty(usize, "count") == 2) {
+                nswindow.msgSend(void, objc.sel("toggleTabBar:"), .{nswindow.value});
+            }
+        }
+    }
+
     self.window.destroy();
 
     // We can destroy the cursor right away. glfw will just revert any
