@@ -136,7 +136,12 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     if (comptime builtin.target.isDarwin()) {
         const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
         const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(window).?);
+
+        // Tabbing mode enables tabbing at all
         nswindow.setProperty("tabbingMode", NSWindowTabbingMode.automatic);
+
+        // All windows within a tab bar must have a matching tabbing ID.
+        // The app sets this up for us.
         nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
     }
 

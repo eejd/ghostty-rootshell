@@ -104,6 +104,7 @@ pub fn destroy(self: *App) void {
     // Clean up all our windows
     for (self.windows.items) |window| window.destroy();
     self.windows.deinit(self.alloc);
+    if (comptime builtin.target.isDarwin()) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
     self.alloc.destroy(self);
 }
