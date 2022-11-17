@@ -186,7 +186,10 @@ fn setupFd(src: File.Handle, target: i32) !void {
 
 /// Wait for the command to exit and return information about how it exited.
 pub fn wait(self: Command) !Exit {
-    const res = std.os.waitpid(self.pid.?, 0);
+    // We specify NOHANG because its not our fault if the process we launch
+    // for the tty doesn't properly waitpid its children. We don't want
+    // to hang the terminal over it.
+    const res = std.os.waitpid(self.pid.?, std.c.W.NOHANG);
     return Exit.init(res.status);
 }
 
