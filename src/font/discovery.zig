@@ -6,7 +6,7 @@ const macos = @import("macos");
 const options = @import("main.zig").options;
 const DeferredFace = @import("main.zig").DeferredFace;
 
-const log = std.log.named(.discovery);
+const log = std.log.scoped(.discovery);
 
 /// Discover implementation for the compile options.
 pub const Discover = switch (options.backend) {
@@ -27,12 +27,15 @@ pub const Descriptor = struct {
     ///
     /// On systems that use fontconfig (Linux), this can be a full
     /// fontconfig pattern, such as "Fira Code-14:bold".
-    family: [:0]const u8,
+    family: ?[:0]const u8 = null,
+
+    /// A codepoint that this font must be able to render.
+    codepoint: u32 = 0,
 
     /// Font size in points that the font should support. For conversion
     /// to pixels, we will use 72 DPI for Mac and 96 DPI for everything else.
     /// (If pixel conversion is necessary, i.e. emoji fonts)
-    size: u16,
+    size: u16 = 0,
 
     /// True if we want to search specifically for a font that supports
     /// bold, italic, or both.
@@ -44,7 +47,15 @@ pub const Descriptor = struct {
     /// must still do this.
     pub fn toFcPattern(self: Descriptor) *fontconfig.Pattern {
         const pat = fontconfig.Pattern.create();
-        assert(pat.add(.family, .{ .string = self.family }, false));
+        if (self.family) |family| {
+            assert(pat.add(.family, .{ .string = family }, false));
+        }
+        if (self.codepoint > 0) {
+            const cs = fontconfig.CharSet.create();
+            defer cs.destroy();
+            assert(cs.addChar(self.codepoint));
+            assert(pat.add(.charset, .{ .char_set = cs }, false));
+        }
         if (self.size > 0) assert(pat.add(
             .size,
             .{ .integer = self.size },
@@ -70,13 +81,28 @@ pub const Descriptor = struct {
         const attrs = try macos.foundation.MutableDictionary.create(0);
         defer attrs.release();
 
-        // Family is always set
-        const family = try macos.foundation.String.createWithBytes(self.family, .utf8, false);
-        defer family.release();
-        attrs.setValue(
-            macos.text.FontAttribute.family_name.key(),
-            family,
-        );
+        // Family
+        if (self.family) |family_bytes| {
+            const family = try macos.foundation.String.createWithBytes(family_bytes, .utf8, false);
+            defer family.release();
+            attrs.setValue(
+                macos.text.FontAttribute.family_name.key(),
+                family,
+            );
+        }
+
+        // Codepoint support
+        if (self.codepoint > 0) {
+            const cs = try macos.foundation.CharacterSet.createWithCharactersInRange(.{
+                .location = self.codepoint,
+                .length = 1,
+            });
+            defer cs.release();
+            attrs.setValue(
+                macos.text.FontAttribute.character_set.key(),
+                cs,
+            );
+        }
 
         // Set our size attribute if set
         if (self.size > 0) {
@@ -254,9 +280,26 @@ pub const CoreText = struct {
         pub fn next(self: *DiscoverIterator) !?DeferredFace {
             if (self.i >= self.list.getCount()) return null;
 
+            // Get our descriptor. We need to remove the character set
+            // limitation because we may have used that to filter but we
+            // don't want it anymore because it'll restrict the characters
+            // available.
+            //const desc = self.list.getValueAtIndex(macos.text.FontDescriptor, self.i);
+            const desc = desc: {
+                const original = self.list.getValueAtIndex(macos.text.FontDescriptor, self.i);
+
+                // For some reason simply copying the attributes and recreating
+                // the descriptor removes the charset restriction. This is tested.
+                const attrs = original.copyAttributes();
+                defer attrs.release();
+                break :desc try macos.text.FontDescriptor.createWithAttributes(
+                    @ptrCast(*macos.foundation.Dictionary, attrs),
+                );
+            };
+            defer desc.release();
+
             // Create our font. We need a size to initialize it so we use size
             // 12 but we will alter the size later.
-            const desc = self.list.getValueAtIndex(macos.text.FontDescriptor, self.i);
             const font = try macos.text.Font.createWithFontDescriptor(desc, 12);
             errdefer font.release();
 
@@ -284,7 +327,26 @@ test "fontconfig" {
     }
 }
 
-test "core text" {
+test "fontconfig codepoint" {
+    if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    var fc = Fontconfig.init();
+    var it = try fc.discover(.{ .codepoint = 'A', .size = 12 });
+    defer it.deinit();
+
+    // The first result should have the codepoint. Later ones may not
+    // because fontconfig returns all fonts sorted.
+    const face = (try it.next()).?;
+    try testing.expect(!face.loaded());
+    try testing.expect(face.hasCodepoint('A', null));
+
+    // Should have other codepoints too
+    try testing.expect(face.hasCodepoint('B', null));
+}
+
+test "coretext" {
     if (options.backend != .coretext) return error.SkipZigTest;
 
     const testing = std.testing;
@@ -299,4 +361,24 @@ test "core text" {
         try testing.expect(!face.loaded());
     }
     try testing.expect(count > 0);
+}
+
+test "coretext codepoint" {
+    if (options.backend != .coretext) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    var ct = CoreText.init();
+    defer ct.deinit();
+    var it = try ct.discover(.{ .codepoint = 'A', .size = 12 });
+    defer it.deinit();
+
+    // The first result should have the codepoint. Later ones may not
+    // because fontconfig returns all fonts sorted.
+    const face = (try it.next()).?;
+    try testing.expect(!face.loaded());
+    try testing.expect(face.hasCodepoint('A', null));
+
+    // Should have other codepoints too
+    try testing.expect(face.hasCodepoint('B', null));
 }

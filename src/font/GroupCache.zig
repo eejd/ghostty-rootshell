@@ -253,7 +253,7 @@ test "resize" {
     try cache.group.addFace(
         alloc,
         .regular,
-        DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })),
+        DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })),
     );
 
     // Load a letter
@@ -272,7 +272,7 @@ test "resize" {
     }
 
     // Resize
-    try cache.setSize(.{ .points = 24 });
+    try cache.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
     {
         const idx = (try cache.indexForCodepoint(alloc, 'A', .regular, null)).?;
         const face = try cache.group.faceFromIndex(idx);

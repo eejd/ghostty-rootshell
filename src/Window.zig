@@ -189,7 +189,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.debug("font regular: {s}", .{try face.name()});
+                    log.info("font regular: {s}", .{try face.name()});
                     try group.addFace(alloc, .regular, face);
                 }
             }
@@ -201,7 +201,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.debug("font bold: {s}", .{try face.name()});
+                    log.info("font bold: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold, face);
                 }
             }
@@ -213,7 +213,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.debug("font italic: {s}", .{try face.name()});
+                    log.info("font italic: {s}", .{try face.name()});
                     try group.addFace(alloc, .italic, face);
                 }
             }
@@ -226,7 +226,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.debug("font bold+italic: {s}", .{try face.name()});
+                    log.info("font bold+italic: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold_italic, face);
                 }
             }

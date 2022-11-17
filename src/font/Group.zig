@@ -256,10 +256,10 @@ test "resize" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var group = try init(alloc, lib, .{ .points = 12 });
+    var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit(alloc);
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
 
     // Load a letter
     {
@@ -278,7 +278,7 @@ test "resize" {
     }
 
     // Resize
-    try group.setSize(.{ .points = 24 });
+    try group.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
     {
         const idx = group.indexForCodepoint('A', .regular, null).?;
         const face = try group.faceFromIndex(idx);

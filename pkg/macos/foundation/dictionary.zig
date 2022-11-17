@@ -51,6 +51,14 @@ pub const MutableDictionary = opaque {
         ))) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createMutableCopy(cap: usize, src: *Dictionary) Allocator.Error!*MutableDictionary {
+        return @intToPtr(?*MutableDictionary, @ptrToInt(c.CFDictionaryCreateMutableCopy(
+            null,
+            @intCast(c.CFIndex, cap),
+            @ptrCast(c.CFDictionaryRef, src),
+        ))) orelse Allocator.Error.OutOfMemory;
+    }
+
     pub fn release(self: *MutableDictionary) void {
         foundation.CFRelease(self);
     }

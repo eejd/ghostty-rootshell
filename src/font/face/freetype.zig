@@ -461,7 +461,7 @@ test {
     var atlas = try Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
+    var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer ft_font.deinit();
 
     try testing.expectEqual(Presentation.text, ft_font.presentation);
@@ -477,7 +477,7 @@ test {
         const g1 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, null);
         try testing.expectEqual(@as(u32, 11), g1.height);
 
-        try ft_font.setSize(.{ .points = 24 });
+        try ft_font.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
         const g2 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, null);
         try testing.expectEqual(@as(u32, 21), g2.height);
     }
@@ -493,7 +493,7 @@ test "color emoji" {
     var atlas = try Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
+    var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer ft_font.deinit();
 
     try testing.expectEqual(Presentation.emoji, ft_font.presentation);
@@ -517,7 +517,7 @@ test "metrics" {
     var atlas = try Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
+    var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer ft_font.deinit();
 
     try testing.expectEqual(font.face.Metrics{
@@ -531,7 +531,7 @@ test "metrics" {
     }, ft_font.metrics);
 
     // Resize should change metrics
-    try ft_font.setSize(.{ .points = 24 });
+    try ft_font.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
     try testing.expectEqual(font.face.Metrics{
         .cell_width = 16,
         .cell_height = 35,
