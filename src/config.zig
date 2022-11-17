@@ -115,7 +115,7 @@ pub const Config = struct {
     /// to balance the padding given a certain viewport size and grid cell size.
     @"window-padding-balance": bool = true,
 
-    /// If true, new windows will inherit the font size of the previously
+    /// If true, new windows and tabs will inherit the font size of the previously
     /// focused window. If no window was previously focused, the default
     /// font size will be used. If this is false, the default font size
     /// specified in the configuration "font-size" will be used.
