@@ -115,7 +115,7 @@ pub const Config = struct {
     /// to balance the padding given a certain viewport size and grid cell size.
     @"window-padding-balance": bool = true,
 
-    /// If true, new windows will inherit the font size of the previously
+    /// If true, new windows and tabs will inherit the font size of the previously
     /// focused window. If no window was previously focused, the default
     /// font size will be used. If this is false, the default font size
     /// specified in the configuration "font-size" will be used.
@@ -217,7 +217,12 @@ pub const Config = struct {
             .{ .key = .w, .mods = .{ .super = true } },
             .{ .close_window = {} },
         );
-        if (builtin.os.tag == .macos) {
+        if (comptime builtin.target.isDarwin()) {
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .t, .mods = .{ .super = true } },
+                .{ .new_tab = {} },
+            );
             try result.keybind.set.put(
                 alloc,
                 .{ .key = .q, .mods = .{ .super = true } },

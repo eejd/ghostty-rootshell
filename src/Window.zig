@@ -32,7 +32,7 @@ const App = @import("App.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
-    .cocoa = builtin.os.tag == .macos,
+    .cocoa = builtin.target.isDarwin(),
 });
 
 const log = std.log.scoped(.window);
@@ -131,6 +131,19 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     const window = try glfw.Window.create(640, 480, "ghostty", null, null, Renderer.windowHints());
     errdefer window.destroy();
     try Renderer.windowInit(window);
+
+    // On Mac, enable tabbing
+    if (comptime builtin.target.isDarwin()) {
+        const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
+        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(window).?);
+
+        // Tabbing mode enables tabbing at all
+        nswindow.setProperty("tabbingMode", NSWindowTabbingMode.automatic);
+
+        // All windows within a tab bar must have a matching tabbing ID.
+        // The app sets this up for us.
+        nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
+    }
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
@@ -499,6 +512,22 @@ pub fn destroy(self: *Window) void {
         self.io.deinit();
     }
 
+    if (comptime builtin.target.isDarwin()) {
+        // If our tab bar is visible and we are going down to 1 window,
+        // hide the tab bar.
+        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
+        const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
+        if (tabgroup.getProperty(bool, "tabBarVisible")) {
+            const windows = tabgroup.getProperty(objc.Object, "windows");
+
+            // count check is 2 because our window will still be present
+            // in the tab bar since we haven't destroyed yet
+            if (windows.getProperty(usize, "count") == 2) {
+                nswindow.msgSend(void, objc.sel("toggleTabBar:"), .{nswindow.value});
+            }
+        }
+    }
+
     self.window.destroy();
 
     // We can destroy the cursor right away. glfw will just revert any
@@ -516,6 +545,18 @@ pub fn destroy(self: *Window) void {
 
 pub fn shouldClose(self: Window) bool {
     return self.window.shouldClose();
+}
+
+/// Add a window to the tab group of this window.
+pub fn addWindow(self: Window, other: *Window) void {
+    assert(builtin.target.isDarwin());
+
+    const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
+    const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
+    nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
+        objc.Object.fromId(glfwNative.getCocoaWindow(other.window).?),
+        NSWindowOrderingMode.above,
+    });
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
@@ -920,6 +961,20 @@ fn keyCallback(
                 .new_window => {
                     _ = win.app.mailbox.push(.{
                         .new_window = .{
+                            .font_size = if (win.config.@"window-inherit-font-size")
+                                win.font_size
+                            else
+                                null,
+                        },
+                    }, .{ .instant = {} });
+                    win.app.wakeup();
+                },
+
+                .new_tab => {
+                    _ = win.app.mailbox.push(.{
+                        .new_tab = .{
+                            .parent = win,
+
                             .font_size = if (win.config.@"window-inherit-font-size")
                                 win.font_size
                             else

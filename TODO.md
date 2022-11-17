@@ -45,7 +45,6 @@ Mac:
 Major Features:
 
 * Reloadable configuration
-* Tabs (macOS only for UI reasons)
 * Bell
 * Sixels: https://saitoha.github.io/libsixel/
 * Kitty keyboard protocol: https://sw.kovidgoyal.net/kitty/keyboard-protocol/

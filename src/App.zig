@@ -4,6 +4,7 @@
 const App = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const glfw = @import("glfw");
 const Window = @import("Window.zig");
@@ -12,6 +13,8 @@ const Config = @import("config.zig").Config;
 const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
+const macos = @import("macos");
+const objc = @import("objc");
 
 const log = std.log.scoped(.app);
 
@@ -36,6 +39,21 @@ mailbox: *Mailbox,
 /// Set to true once we're quitting. This never goes false again.
 quit: bool,
 
+/// Mac settings
+darwin: if (Darwin.enabled) Darwin else void,
+
+/// Mac-specific settings
+pub const Darwin = struct {
+    pub const enabled = builtin.target.isDarwin();
+
+    tabbing_id: *macos.foundation.String,
+
+    pub fn deinit(self: *Darwin) void {
+        self.tabbing_id.release();
+        self.* = undefined;
+    }
+};
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -52,11 +70,32 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
         .config = config,
         .mailbox = mailbox,
         .quit = false,
+        .darwin = if (Darwin.enabled) undefined else {},
     };
     errdefer app.windows.deinit(alloc);
 
+    // On Mac, we enable window tabbing
+    if (comptime builtin.target.isDarwin()) {
+        const NSWindow = objc.Class.getClass("NSWindow").?;
+        NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
+
+        // Our tabbing ID allows all of our windows to group together
+        const tabbing_id = try macos.foundation.String.createWithBytes(
+            "dev.ghostty.window",
+            .utf8,
+            false,
+        );
+        errdefer tabbing_id.release();
+
+        // Setup our Mac settings
+        app.darwin = .{
+            .tabbing_id = tabbing_id,
+        };
+    }
+    errdefer if (comptime builtin.target.isDarwin()) app.darwin.deinit();
+
     // Create the first window
-    try app.newWindow(.{});
+    _ = try app.newWindow(.{});
 
     return app;
 }
@@ -65,6 +104,7 @@ pub fn destroy(self: *App) void {
     // Clean up all our windows
     for (self.windows.items) |window| window.destroy();
     self.windows.deinit(self.alloc);
+    if (comptime builtin.target.isDarwin()) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
     self.alloc.destroy(self);
 }
@@ -109,7 +149,8 @@ fn drainMailbox(self: *App) !void {
     while (drain.next()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
-            .new_window => |msg| try self.newWindow(msg),
+            .new_window => |msg| _ = try self.newWindow(msg),
+            .new_tab => |msg| try self.newTab(msg),
             .quit => try self.setQuit(),
             .window_message => |msg| try self.windowMessage(msg.window, msg.message),
         }
@@ -117,7 +158,7 @@ fn drainMailbox(self: *App) !void {
 }
 
 /// Create a new window
-fn newWindow(self: *App, msg: Message.NewWindow) !void {
+fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
     var window = try Window.create(self.alloc, self, self.config);
     errdefer window.destroy();
     try self.windows.append(self.alloc, window);
@@ -125,6 +166,33 @@ fn newWindow(self: *App, msg: Message.NewWindow) !void {
 
     // Set initial font size if given
     if (msg.font_size) |size| window.setFontSize(size);
+
+    return window;
+}
+
+/// Create a new tab in the parent window
+fn newTab(self: *App, msg: Message.NewWindow) !void {
+    if (comptime !builtin.target.isDarwin()) {
+        log.warn("tabbing is not supported on this platform", .{});
+        return;
+    }
+
+    const parent = msg.parent orelse {
+        log.warn("parent must be set in new_tab message", .{});
+        return;
+    };
+
+    // If the parent was closed prior to us handling the message, we do nothing.
+    if (!self.hasWindow(parent)) {
+        log.warn("new_tab parent is gone, not launching a new tab", .{});
+        return;
+    }
+
+    // Create the new window
+    const window = try self.newWindow(msg);
+
+    // Add the window to our parent tab group
+    parent.addWindow(window);
 }
 
 /// Start quitting
@@ -143,21 +211,31 @@ fn windowMessage(self: *App, win: *Window, msg: Window.Message) !void {
     // We want to ensure our window is still active. Window messages
     // are quite rare and we normally don't have many windows so we do
     // a simple linear search here.
-    for (self.windows.items) |window| {
-        if (window == win) {
-            try win.handleMessage(msg);
-            return;
-        }
+    if (self.hasWindow(win)) {
+        try win.handleMessage(msg);
     }
 
     // Window was not found, it probably quit before we handled the message.
     // Not a problem.
 }
 
+fn hasWindow(self: *App, win: *Window) bool {
+    for (self.windows.items) |window| {
+        if (window == win) return true;
+    }
+
+    return false;
+}
+
 /// The message types that can be sent to the app thread.
 pub const Message = union(enum) {
     /// Create a new terminal window.
     new_window: NewWindow,
+
+    /// Create a new tab within the tab group of the focused window.
+    /// This does nothing if we're on a platform or using a window
+    /// environment that doesn't support tabs.
+    new_tab: NewWindow,
 
     /// Quit
     quit: void,
@@ -169,6 +247,9 @@ pub const Message = union(enum) {
     },
 
     const NewWindow = struct {
+        /// The parent window, only used for new tabs.
+        parent: ?*Window = null,
+
         /// The font size to create the window with or null to default to
         /// the configuration amount.
         font_size: ?font.face.DesiredSize = null,
