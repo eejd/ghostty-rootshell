@@ -11,6 +11,10 @@ pub const CharSet = opaque {
         c.FcCharSetDestroy(self.cval());
     }
 
+    pub fn addChar(self: *CharSet, cp: u32) bool {
+        return c.FcCharSetAddChar(self.cval(), cp) == c.FcTrue;
+    }
+
     pub fn hasChar(self: *const CharSet, cp: u32) bool {
         return c.FcCharSetHasChar(self.cvalConst(), cp) == c.FcTrue;
     }
@@ -37,4 +41,6 @@ test "create" {
     defer fs.destroy();
 
     try testing.expect(!fs.hasChar(0x20));
+    try testing.expect(fs.addChar(0x20));
+    try testing.expect(fs.hasChar(0x20));
 }
