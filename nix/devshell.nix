@@ -14,6 +14,8 @@
 , wasmtime
 , wraptest
 , zig
+, zip
+, llvmPackages_latest
 
 , bzip2
 , expat
@@ -55,9 +57,11 @@ in mkShell rec {
 
   nativeBuildInputs = [
     # For builds
+    llvmPackages_latest.llvm
     pkg-config
     scdoc
     zig
+    zip
 
     # Testing
     gdb
