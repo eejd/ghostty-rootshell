@@ -14,6 +14,15 @@ pub const CharacterSet = opaque {
         ))) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createWithCharactersInRange(
+        range: foundation.Range,
+    ) Allocator.Error!*CharacterSet {
+        return @intToPtr(?*CharacterSet, @ptrToInt(c.CFCharacterSetCreateWithCharactersInRange(
+            null,
+            range.cval(),
+        ))) orelse Allocator.Error.OutOfMemory;
+    }
+
     pub fn release(self: *CharacterSet) void {
         c.CFRelease(self);
     }
@@ -26,5 +35,15 @@ test "character set" {
     defer str.release();
 
     const cs = try CharacterSet.createWithCharactersInString(str);
+    defer cs.release();
+}
+
+test "character set range" {
+    //const testing = std.testing;
+
+    const cs = try CharacterSet.createWithCharactersInRange(.{
+        .location = 'A',
+        .length = 1,
+    });
     defer cs.release();
 }
