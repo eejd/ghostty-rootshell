@@ -185,11 +185,11 @@ fn setupFd(src: File.Handle, target: i32) !void {
 }
 
 /// Wait for the command to exit and return information about how it exited.
-pub fn wait(self: Command) !Exit {
+pub fn wait(self: Command, block: bool) !Exit {
     // We specify NOHANG because its not our fault if the process we launch
     // for the tty doesn't properly waitpid its children. We don't want
     // to hang the terminal over it.
-    const res = std.os.waitpid(self.pid.?, std.c.W.NOHANG);
+    const res = std.os.waitpid(self.pid.?, if (block) 0 else std.c.W.NOHANG);
     return Exit.init(res.status);
 }
 
@@ -341,7 +341,7 @@ test "Command: pre exec" {
 
     try cmd.start(testing.allocator);
     try testing.expect(cmd.pid != null);
-    const exit = try cmd.wait();
+    const exit = try cmd.wait(true);
     try testing.expect(exit == .Exited);
     try testing.expect(exit.Exited == 42);
 }
@@ -360,7 +360,7 @@ test "Command: redirect stdout to file" {
 
     try cmd.start(testing.allocator);
     try testing.expect(cmd.pid != null);
-    const exit = try cmd.wait();
+    const exit = try cmd.wait(true);
     try testing.expect(exit == .Exited);
     try testing.expect(exit.Exited == 0);
 
@@ -390,7 +390,7 @@ test "Command: custom env vars" {
 
     try cmd.start(testing.allocator);
     try testing.expect(cmd.pid != null);
-    const exit = try cmd.wait();
+    const exit = try cmd.wait(true);
     try testing.expect(exit == .Exited);
     try testing.expect(exit.Exited == 0);
 
@@ -416,7 +416,7 @@ test "Command: custom working directory" {
 
     try cmd.start(testing.allocator);
     try testing.expect(cmd.pid != null);
-    const exit = try cmd.wait();
+    const exit = try cmd.wait(true);
     try testing.expect(exit == .Exited);
     try testing.expect(exit.Exited == 0);
 

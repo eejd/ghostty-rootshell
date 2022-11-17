@@ -129,7 +129,7 @@ pub fn deinit(self: *Exec) void {
     // Kill our command
     self.killCommand() catch |err|
         log.err("error sending SIGHUP to command, may hang: {}", .{err});
-    _ = self.command.wait() catch |err|
+    _ = self.command.wait(false) catch |err|
         log.err("error waiting for command to exit: {}", .{err});
 
     // Clean up our other members
