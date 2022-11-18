@@ -1189,16 +1189,8 @@ fn mouseReport(
     const pos = self.cursorPosToPixels(unscaled_pos);
     const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
 
-    // For button events, we only report if we moved cells
-    if (self.io.terminal.modes.mouse_event == .button or
-        self.io.terminal.modes.mouse_event == .any)
-    {
-        if (self.mouse.event_point.x == viewport_point.x and
-            self.mouse.event_point.y == viewport_point.y) return;
-
-        // Record our new point
-        self.mouse.event_point = viewport_point;
-    }
+    // Record our new point
+    self.mouse.event_point = viewport_point;
 
     // Get the code we'll actually write
     const button_code: u8 = code: {
