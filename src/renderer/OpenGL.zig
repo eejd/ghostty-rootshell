@@ -354,11 +354,6 @@ pub fn windowInit(window: glfw.Window) !void {
     const self: OpenGL = undefined;
     try self.threadEnter(window);
 
-    // Culling, probably not necessary. We have to change the winding
-    // order since our 0,0 is top-left.
-    try gl.enable(gl.c.GL_CULL_FACE);
-    try gl.frontFace(gl.c.GL_CW);
-
     // Blending for text
     try gl.enable(gl.c.GL_BLEND);
     try gl.blendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
