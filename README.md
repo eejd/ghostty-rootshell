@@ -107,7 +107,7 @@ Install dependencies by running `make`:
 
 ```shell-session
 $ make
-``
+```
 
 With Zig installed, a binary can be built using `zig build`:
 
