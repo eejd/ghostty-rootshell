@@ -667,7 +667,7 @@ pub fn rebuildCells(
 
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        (screen.rows * screen.cols * 3) + 1,
+        (screen.rows * screen.cols * 2) + 1,
     );
 
     // We've written no data to the GPU, refresh it all
