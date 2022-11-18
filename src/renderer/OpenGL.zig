@@ -36,7 +36,9 @@ alloc: std.mem.Allocator,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
-/// The current set of cells to render.
+/// The current set of cells to render. Each set of cells goes into
+/// a separate shader call.
+cells_bg: std.ArrayListUnmanaged(GPUCell),
 cells: std.ArrayListUnmanaged(GPUCell),
 
 /// The LRU that stores our GPU cells cached by row IDs. This is used to
@@ -280,6 +282,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
 
     return OpenGL{
         .alloc = alloc,
+        .cells_bg = .{},
         .cells = .{},
         .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
@@ -316,6 +319,7 @@ pub fn deinit(self: *OpenGL) void {
     self.cells_lru.deinit(self.alloc);
 
     self.cells.deinit(self.alloc);
+    self.cells_bg.deinit(self.alloc);
     self.* = undefined;
 }
 
@@ -650,6 +654,10 @@ pub fn rebuildCells(
     const t = trace(@src());
     defer t.end();
 
+    // Bg cells at most will need space for the visible screen size
+    self.cells_bg.clearRetainingCapacity();
+    try self.cells_bg.ensureTotalCapacity(self.alloc, screen.rows * screen.cols);
+
     // For now, we just ensure that we have enough cells for all the lines
     // we have plus a full width. This is very likely too much but its
     // the probably close enough while guaranteeing no more allocations.
@@ -778,6 +786,12 @@ pub fn rebuildCells(
         cell.fg_a = 255;
         self.cells.appendAssumeCapacity(cell.*);
     }
+
+    // Some debug mode safety checks
+    if (std.debug.runtime_safety) {
+        for (self.cells_bg.items) |cell| assert(cell.mode == .bg);
+        for (self.cells.items) |cell| assert(cell.mode != .bg);
+    }
 }
 
 fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
@@ -886,7 +900,7 @@ pub fn updateCell(
     if (colors.bg) |rgb| {
         var mode: GPUCellMode = .bg;
 
-        self.cells.appendAssumeCapacity(.{
+        self.cells_bg.appendAssumeCapacity(.{
             .mode = mode,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
@@ -1145,9 +1159,6 @@ pub fn draw(self: *OpenGL) !void {
     // If we have no cells to render, then we render nothing.
     if (self.cells.items.len == 0) return;
 
-    const pbind = try self.program.use();
-    defer pbind.unbind();
-
     // Setup our VAO
     try self.vao.bind();
     defer gl.VertexArray.unbind() catch null;
@@ -1160,34 +1171,6 @@ pub fn draw(self: *OpenGL) !void {
     var binding = try self.vbo.bind(.ArrayBuffer);
     defer binding.unbind();
 
-    // Our allocated buffer on the GPU is smaller than our capacity.
-    // We reallocate a new buffer with the full new capacity.
-    if (self.gl_cells_size < self.cells.capacity) {
-        log.info("reallocating GPU buffer old={} new={}", .{
-            self.gl_cells_size,
-            self.cells.capacity,
-        });
-
-        try binding.setDataNullManual(
-            @sizeOf(GPUCell) * self.cells.capacity,
-            .StaticDraw,
-        );
-
-        self.gl_cells_size = self.cells.capacity;
-        self.gl_cells_written = 0;
-    }
-
-    // If we have data to write to the GPU, send it.
-    if (self.gl_cells_written < self.cells.items.len) {
-        const data = self.cells.items[self.gl_cells_written..];
-        //log.info("sending {} cells to GPU", .{data.len});
-        try binding.setSubData(self.gl_cells_written * @sizeOf(GPUCell), data);
-
-        self.gl_cells_written += data.len;
-        assert(data.len > 0);
-        assert(self.gl_cells_written <= self.cells.items.len);
-    }
-
     // Bind our textures
     try gl.Texture.active(gl.c.GL_TEXTURE0);
     var texbind = try self.texture.bind(.@"2D");
@@ -1197,10 +1180,59 @@ pub fn draw(self: *OpenGL) !void {
     var texbind1 = try self.texture_color.bind(.@"2D");
     defer texbind1.unbind();
 
+    // Pick our shader to use
+    const pbind = try self.program.use();
+    defer pbind.unbind();
+
+    try self.drawCells(binding, self.cells_bg);
+    try self.drawCells(binding, self.cells);
+}
+
+/// Loads some set of cell data into our buffer and issues a draw call.
+/// This expects all the OpenGL state to be setup.
+///
+/// Future: when we move to multiple shaders, this will go away and
+/// we'll have a draw call per-shader.
+fn drawCells(
+    self: *OpenGL,
+    binding: gl.Buffer.Binding,
+    cells: std.ArrayListUnmanaged(GPUCell),
+) !void {
+    // Todo: get rid of this completely
+    self.gl_cells_written = 0;
+
+    // Our allocated buffer on the GPU is smaller than our capacity.
+    // We reallocate a new buffer with the full new capacity.
+    if (self.gl_cells_size < cells.capacity) {
+        log.info("reallocating GPU buffer old={} new={}", .{
+            self.gl_cells_size,
+            cells.capacity,
+        });
+
+        try binding.setDataNullManual(
+            @sizeOf(GPUCell) * cells.capacity,
+            .StaticDraw,
+        );
+
+        self.gl_cells_size = cells.capacity;
+        self.gl_cells_written = 0;
+    }
+
+    // If we have data to write to the GPU, send it.
+    if (self.gl_cells_written < cells.items.len) {
+        const data = cells.items[self.gl_cells_written..];
+        //log.info("sending {} cells to GPU", .{data.len});
+        try binding.setSubData(self.gl_cells_written * @sizeOf(GPUCell), data);
+
+        self.gl_cells_written += data.len;
+        assert(data.len > 0);
+        assert(self.gl_cells_written <= cells.items.len);
+    }
+
     try gl.drawElementsInstanced(
         gl.c.GL_TRIANGLES,
         6,
         gl.c.GL_UNSIGNED_BYTE,
-        self.cells.items.len,
+        cells.items.len,
     );
 }
