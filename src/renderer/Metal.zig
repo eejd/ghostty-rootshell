@@ -275,6 +275,13 @@ pub fn deinit(self: *Metal) void {
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
 
+    deinitMTLResource(self.buf_cells_bg);
+    deinitMTLResource(self.buf_cells);
+    deinitMTLResource(self.buf_instance);
+    deinitMTLResource(self.texture_greyscale);
+    deinitMTLResource(self.texture_color);
+    self.queue.msgSend(void, objc.sel("release"), .{});
+
     self.* = undefined;
 }
 
