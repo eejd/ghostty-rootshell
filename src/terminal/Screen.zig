@@ -388,7 +388,9 @@ pub const Row = struct {
         const cell = &self.storage[x + 1].cell;
         const key = self.getId() + x + 1;
         cell.attrs.grapheme = false;
-        _ = self.screen.graphemes.remove(key);
+        if (self.screen.graphemes.fetchRemove(key)) |kv| {
+            kv.value.deinit(self.screen.alloc);
+        }
     }
 
     /// Copy the row src into this row. The row can be from another screen.
@@ -771,7 +773,7 @@ pub fn deinit(self: *Screen) void {
     self.storage.deinit(self.alloc);
 
     var grapheme_it = self.graphemes.valueIterator();
-    while (grapheme_it.next()) |data| if (data.* == .many) self.alloc.free(data.many);
+    while (grapheme_it.next()) |data| data.deinit(self.alloc);
     self.graphemes.deinit(self.alloc);
 }
 
@@ -807,7 +809,17 @@ pub fn clone(self: *Screen, alloc: Allocator, top: RowIndex, bottom: RowIndex) !
 
     // If there are graphemes, we just copy them all
     if (self.graphemes.count() > 0) {
-        result.graphemes = try self.graphemes.clone(alloc);
+        // Clone the map
+        const graphemes = try self.graphemes.clone(alloc);
+
+        // Go through all the values and clone the data because it MAY
+        // (rarely) be allocated.
+        var it = graphemes.iterator();
+        while (it.next()) |kv| {
+            kv.value_ptr.* = try kv.value_ptr.copy(alloc);
+        }
+
+        result.graphemes = graphemes;
     }
 
     return result;
