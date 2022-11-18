@@ -55,7 +55,9 @@ foreground: terminal.color.RGB,
 background: terminal.color.RGB,
 
 /// The current set of cells to render. This is rebuilt on every frame
-/// but we keep this around so that we don't reallocate.
+/// but we keep this around so that we don't reallocate. Each set of
+/// cells goes into a separate shader.
+cells_bg: std.ArrayListUnmanaged(GPUCell),
 cells: std.ArrayListUnmanaged(GPUCell),
 
 /// The current GPU uniform values.
@@ -69,6 +71,7 @@ font_shaper: font.Shaper,
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
 swapchain: objc.Object, // CAMetalLayer
+buf_cells_bg: objc.Object, // MTLBuffer
 buf_cells: objc.Object, // MTLBuffer
 buf_instance: objc.Object, // MTLBuffer
 pipeline: objc.Object, // MTLRenderPipelineState
@@ -204,6 +207,21 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         );
     };
 
+    const buf_cells_bg = buffer: {
+        // Preallocate for 160x160 grid with 3 modes (bg, fg, text). This
+        // should handle most terminals well, and we can avoid a resize later.
+        const prealloc = 160 * 160;
+
+        break :buffer device.msgSend(
+            objc.Object,
+            objc.sel("newBufferWithLength:options:"),
+            .{
+                @intCast(c_ulong, prealloc * @sizeOf(GPUCell)),
+                MTLResourceStorageModeShared,
+            },
+        );
+    };
+
     // Initialize our shader (MTLLibrary)
     const library = try initLibrary(device, @embedFile("shaders/cell.metal"));
     const pipeline_state = try initPipelineState(device, library);
@@ -222,6 +240,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .cursor_style = .box,
 
         // Render state
+        .cells_bg = .{},
         .cells = .{},
         .uniforms = .{
             .projection_matrix = undefined,
@@ -241,6 +260,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .queue = queue,
         .swapchain = swapchain,
         .buf_cells = buf_cells,
+        .buf_cells_bg = buf_cells_bg,
         .buf_instance = buf_instance,
         .pipeline = pipeline_state,
         .texture_greyscale = texture_greyscale,
@@ -250,6 +270,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
 pub fn deinit(self: *Metal) void {
     self.cells.deinit(self.alloc);
+    self.cells_bg.deinit(self.alloc);
 
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
@@ -454,9 +475,6 @@ pub fn render(
     // Get our surface (CAMetalDrawable)
     const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
-    // Setup our buffers
-    try self.syncCells();
-
     // If our font atlas changed, sync the texture data
     if (self.font_group.atlas_greyscale.modified) {
         try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
@@ -467,42 +485,42 @@ pub fn render(
         self.font_group.atlas_color.modified = false;
     }
 
-    // MTLRenderPassDescriptor
-    const desc = desc: {
-        const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
-        const desc = MTLRenderPassDescriptor.msgSend(
-            objc.Object,
-            objc.sel("renderPassDescriptor"),
-            .{},
-        );
-
-        // Set our color attachment to be our drawable surface.
-        const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-        {
-            const attachment = attachments.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            attachment.setProperty("loadAction", @enumToInt(MTLLoadAction.clear));
-            attachment.setProperty("storeAction", @enumToInt(MTLStoreAction.store));
-            attachment.setProperty("texture", surface.getProperty(objc.c.id, "texture").?);
-            attachment.setProperty("clearColor", MTLClearColor{
-                .red = @intToFloat(f32, critical.bg.r) / 255,
-                .green = @intToFloat(f32, critical.bg.g) / 255,
-                .blue = @intToFloat(f32, critical.bg.b) / 255,
-                .alpha = 1.0,
-            });
-        }
-
-        break :desc desc;
-    };
-
     // Command buffer (MTLCommandBuffer)
     const buffer = self.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
 
     {
+        // MTLRenderPassDescriptor
+        const desc = desc: {
+            const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
+            const desc = MTLRenderPassDescriptor.msgSend(
+                objc.Object,
+                objc.sel("renderPassDescriptor"),
+                .{},
+            );
+
+            // Set our color attachment to be our drawable surface.
+            const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+            {
+                const attachment = attachments.msgSend(
+                    objc.Object,
+                    objc.sel("objectAtIndexedSubscript:"),
+                    .{@as(c_ulong, 0)},
+                );
+
+                attachment.setProperty("loadAction", @enumToInt(MTLLoadAction.clear));
+                attachment.setProperty("storeAction", @enumToInt(MTLStoreAction.store));
+                attachment.setProperty("texture", surface.getProperty(objc.c.id, "texture").?);
+                attachment.setProperty("clearColor", MTLClearColor{
+                    .red = @intToFloat(f32, critical.bg.r) / 255,
+                    .green = @intToFloat(f32, critical.bg.g) / 255,
+                    .blue = @intToFloat(f32, critical.bg.b) / 255,
+                    .alpha = 1.0,
+                });
+            }
+
+            break :desc desc;
+        };
+
         // MTLRenderCommandEncoder
         const encoder = buffer.msgSend(
             objc.Object,
@@ -518,11 +536,6 @@ pub fn render(
         encoder.msgSend(void, objc.sel("setRenderPipelineState:"), .{self.pipeline.value});
 
         // Set our buffers
-        encoder.msgSend(
-            void,
-            objc.sel("setVertexBuffer:offset:atIndex:"),
-            .{ self.buf_cells.value, @as(c_ulong, 0), @as(c_ulong, 0) },
-        );
         encoder.msgSend(
             void,
             objc.sel("setVertexBytes:length:atIndex:"),
@@ -549,18 +562,9 @@ pub fn render(
             },
         );
 
-        encoder.msgSend(
-            void,
-            objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
-            .{
-                @enumToInt(MTLPrimitiveType.triangle),
-                @as(c_ulong, 6),
-                @enumToInt(MTLIndexType.uint16),
-                self.buf_instance.value,
-                @as(c_ulong, 0),
-                @as(c_ulong, self.cells.items.len),
-            },
-        );
+        // Issue the draw calls for this shader
+        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
+        try self.drawCells(encoder, &self.buf_cells, self.cells);
 
         // Build our devmode draw data. This sucks because it requires we
         // lock our state mutex but the metal imgui implementation requires
@@ -586,6 +590,38 @@ pub fn render(
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{surface.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+/// Loads some set of cell data into our buffer and issues a draw call.
+/// This expects all the Metal command encoder state to be setup.
+///
+/// Future: when we move to multiple shaders, this will go away and
+/// we'll have a draw call per-shader.
+fn drawCells(
+    self: *Metal,
+    encoder: objc.Object,
+    buf: *objc.Object,
+    cells: std.ArrayListUnmanaged(GPUCell),
+) !void {
+    try self.syncCells(buf, cells);
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ buf.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+    );
+
+    encoder.msgSend(
+        void,
+        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        .{
+            @enumToInt(MTLPrimitiveType.triangle),
+            @as(c_ulong, 6),
+            @enumToInt(MTLIndexType.uint16),
+            self.buf_instance.value,
+            @as(c_ulong, 0),
+            @as(c_ulong, cells.items.len),
+        },
+    );
 }
 
 /// Resize the screen.
@@ -655,6 +691,10 @@ fn rebuildCells(
     screen: *terminal.Screen,
     draw_cursor: bool,
 ) !void {
+    // Bg cells at most will need space for the visible screen size
+    self.cells_bg.clearRetainingCapacity();
+    try self.cells_bg.ensureTotalCapacity(self.alloc, screen.rows * screen.cols);
+
     // Over-allocate just to ensure we don't allocate again during loops.
     self.cells.clearRetainingCapacity();
     try self.cells.ensureTotalCapacity(
@@ -662,7 +702,7 @@ fn rebuildCells(
 
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
-        (screen.rows * screen.cols * 3) + 1,
+        (screen.rows * screen.cols * 2) + 1,
     );
 
     // This is the cell that has [mode == .fg] and is underneath our cursor.
@@ -721,6 +761,12 @@ fn rebuildCells(
     if (cursor_cell) |*cell| {
         cell.color = .{ 0, 0, 0, 255 };
         self.cells.appendAssumeCapacity(cell.*);
+    }
+
+    // Some debug mode safety checks
+    if (std.debug.runtime_safety) {
+        for (self.cells_bg.items) |cell| assert(cell.mode == .bg);
+        for (self.cells.items) |cell| assert(cell.mode != .bg);
     }
 }
 
@@ -787,7 +833,7 @@ pub fn updateCell(
 
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
-        self.cells.appendAssumeCapacity(.{
+        self.cells_bg.appendAssumeCapacity(.{
             .mode = .bg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
             .cell_width = cell.widthLegacy(),
@@ -863,18 +909,22 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
 /// Sync the vertex buffer inputs to the GPU. This will attempt to reuse
 /// the existing buffer (of course!) but will allocate a new buffer if
 /// our cells don't fit in it.
-fn syncCells(self: *Metal) !void {
-    const req_bytes = self.cells.items.len * @sizeOf(GPUCell);
-    const avail_bytes = self.buf_cells.getProperty(c_ulong, "length");
+fn syncCells(
+    self: *Metal,
+    target: *objc.Object,
+    cells: std.ArrayListUnmanaged(GPUCell),
+) !void {
+    const req_bytes = cells.items.len * @sizeOf(GPUCell);
+    const avail_bytes = target.getProperty(c_ulong, "length");
 
     // If we need more bytes than our buffer has, we need to reallocate.
     if (req_bytes > avail_bytes) {
         // Deallocate previous buffer
-        deinitMTLResource(self.buf_cells);
+        deinitMTLResource(target.*);
 
         // Allocate a new buffer with enough to hold double what we require.
         const size = req_bytes * 2;
-        self.buf_cells = self.device.msgSend(
+        target.* = self.device.msgSend(
             objc.Object,
             objc.sel("newBufferWithLength:options:"),
             .{
@@ -885,12 +935,12 @@ fn syncCells(self: *Metal) !void {
     }
 
     // We can fit within the vertex buffer so we can just replace bytes.
-    const ptr = self.buf_cells.msgSend(?[*]u8, objc.sel("contents"), .{}) orelse {
+    const ptr = target.msgSend(?[*]u8, objc.sel("contents"), .{}) orelse {
         log.warn("buf_cells contents ptr is null", .{});
         return error.MetalFailed;
     };
 
-    @memcpy(ptr, @ptrCast([*]const u8, self.cells.items.ptr), req_bytes);
+    @memcpy(ptr, @ptrCast([*]const u8, cells.items.ptr), req_bytes);
 }
 
 /// Sync the atlas data to the given texture. This copies the bytes
