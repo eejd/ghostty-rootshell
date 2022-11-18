@@ -175,12 +175,12 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer alloc.destroy(font_group);
     font_group.* = try font.GroupCache.init(alloc, group: {
         var group = try font.Group.init(alloc, font_lib, font_size);
-        errdefer group.deinit(alloc);
+        errdefer group.deinit();
 
         // Search for fonts
         if (font.Discover != void) {
             var disco = font.Discover.init();
-            defer disco.deinit();
+            group.discover = disco;
 
             if (config.@"font-family") |family| {
                 var disco_it = try disco.discover(.{

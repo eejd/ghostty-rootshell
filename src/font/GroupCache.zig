@@ -70,7 +70,7 @@ pub fn deinit(self: *GroupCache, alloc: Allocator) void {
     self.glyphs.deinit(alloc);
     self.atlas_greyscale.deinit(alloc);
     self.atlas_color.deinit(alloc);
-    self.group.deinit(alloc);
+    self.group.deinit();
 }
 
 /// Reset the cache. This should be called:

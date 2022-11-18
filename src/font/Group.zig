@@ -29,6 +29,9 @@ const log = std.log.scoped(.font_group);
 // to the user so we can change this later.
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
 
+/// The allocator for this group
+alloc: Allocator,
+
 /// The library being used for all the faces.
 lib: Library,
 
@@ -39,12 +42,16 @@ size: font.face.DesiredSize,
 /// Instead, use the functions available on Group.
 faces: StyleArray,
 
+/// If discovery is available, we'll look up fonts where we can't find
+/// the codepoint.
+discover: ?font.Discover = null,
+
 pub fn init(
     alloc: Allocator,
     lib: Library,
     size: font.face.DesiredSize,
 ) !Group {
-    var result = Group{ .lib = lib, .size = size, .faces = undefined };
+    var result = Group{ .alloc = alloc, .lib = lib, .size = size, .faces = undefined };
 
     // Initialize all our styles to initially sized lists.
     var i: usize = 0;
@@ -56,11 +63,15 @@ pub fn init(
     return result;
 }
 
-pub fn deinit(self: *Group, alloc: Allocator) void {
+pub fn deinit(self: *Group) void {
     var it = self.faces.iterator();
     while (it.next()) |entry| {
         for (entry.value.items) |*item| item.deinit();
-        entry.value.deinit(alloc);
+        entry.value.deinit(self.alloc);
+    }
+
+    if (font.Discover != void) {
+        if (self.discover) |*discover| discover.deinit();
     }
 }
 
@@ -126,13 +137,35 @@ pub const FontIndex = packed struct {
 /// is allowed. This func will NOT determine the default presentation for
 /// a code point.
 pub fn indexForCodepoint(
-    self: Group,
+    self: *Group,
     cp: u32,
     style: Style,
     p: ?Presentation,
 ) ?FontIndex {
     // If we can find the exact value, then return that.
     if (self.indexForCodepointExact(cp, style, p)) |value| return value;
+
+    // Try looking for another font that will satisfy this request.
+    if (font.Discover != void) {
+        if (self.discover) |*disco| discover: {
+            var disco_it = disco.discover(.{
+                .codepoint = cp,
+                .size = self.size.points,
+                .bold = style == .bold or style == .bold_italic,
+                .italic = style == .italic or style == .bold_italic,
+            }) catch break :discover;
+            defer disco_it.deinit();
+
+            if (disco_it.next() catch break :discover) |face| {
+                log.info("found codepoint 0x{x} in fallback face={s}", .{
+                    cp,
+                    face.name() catch "<error>",
+                });
+                self.addFace(self.alloc, style, face) catch break :discover;
+                if (self.indexForCodepointExact(cp, style, p)) |value| return value;
+            }
+        }
+    }
 
     // If this is already regular, we're done falling back.
     if (style == .regular and p == null) return null;
@@ -200,7 +233,7 @@ test {
     defer lib.deinit();
 
     var group = try init(alloc, lib, .{ .points = 12 });
-    defer group.deinit(alloc);
+    defer group.deinit();
 
     try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
     try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
@@ -257,7 +290,7 @@ test "resize" {
     defer lib.deinit();
 
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
-    defer group.deinit(alloc);
+    defer group.deinit();
 
     try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
 
@@ -311,7 +344,7 @@ test "discover monospace with fontconfig and freetype" {
     var lib = try Library.init();
     defer lib.deinit();
     var group = try init(alloc, lib, .{ .points = 12 });
-    defer group.deinit(alloc);
+    defer group.deinit();
     try group.addFace(alloc, .regular, (try it.next()).?);
 
     // Should find all visible ASCII
