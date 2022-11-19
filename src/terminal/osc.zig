@@ -63,6 +63,14 @@ pub const Command = union(enum) {
     /// Reset the color for the cursor. This reverts changes made with
     /// change/read cursor color.
     reset_cursor_color: void,
+
+    /// Set or get clipboard contents. If data is null, then the current
+    /// clipboard contents are sent to the pty. If data is set, this
+    /// contents is set on the clipboard.
+    clipboard_contents: struct {
+        kind: u8,
+        data: []const u8,
+    },
 };
 
 pub const Parser = struct {
@@ -110,6 +118,8 @@ pub const Parser = struct {
         @"13",
         @"133",
         @"2",
+        @"5",
+        @"52",
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -119,6 +129,10 @@ pub const Parser = struct {
         semantic_option_value,
         semantic_exit_code_start,
         semantic_exit_code,
+
+        // Get/set clipboard states
+        clipboard_kind,
+        clipboard_kind_end,
 
         // Expect a string parameter. param_str must be set as well as
         // buf_start.
@@ -151,6 +165,7 @@ pub const Parser = struct {
                 '0' => self.state = .@"0",
                 '1' => self.state = .@"1",
                 '2' => self.state = .@"2",
+                '5' => self.state = .@"5",
                 else => self.state = .invalid,
             },
 
@@ -196,6 +211,36 @@ pub const Parser = struct {
 
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.change_window_title };
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .@"5" => switch (c) {
+                '2' => self.state = .@"52",
+                else => self.state = .invalid,
+            },
+
+            .@"52" => switch (c) {
+                ';' => {
+                    self.command = .{ .clipboard_contents = undefined };
+                    self.state = .clipboard_kind;
+                },
+                else => self.state = .invalid,
+            },
+
+            .clipboard_kind => switch (c) {
+                ';' => self.state = .invalid,
+                else => {
+                    self.command.clipboard_contents.kind = c;
+                    self.state = .clipboard_kind_end;
+                },
+            },
+
+            .clipboard_kind_end => switch (c) {
+                ';' => {
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
                 },
                 else => self.state = .invalid,
@@ -438,4 +483,18 @@ test "OSC: reset_cursor_color" {
 
     const cmd = p.end().?;
     try testing.expect(cmd == .reset_cursor_color);
+}
+
+test "OSC: reset_cursor_color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "52;s;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .clipboard_contents);
+    try testing.expect(cmd.clipboard_contents.kind == 's');
+    try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
 }
