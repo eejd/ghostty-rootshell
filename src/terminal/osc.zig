@@ -485,7 +485,7 @@ test "OSC: reset_cursor_color" {
     try testing.expect(cmd == .reset_cursor_color);
 }
 
-test "OSC: reset_cursor_color" {
+test "OSC: get/set clipboard" {
     const testing = std.testing;
 
     var p: Parser = .{};
