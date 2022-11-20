@@ -517,23 +517,47 @@ pub fn destroy(self: *Window) void {
         self.io.deinit();
     }
 
+    var tabgroup_opt: if (builtin.target.isDarwin()) ?objc.Object else void = undefined;
     if (comptime builtin.target.isDarwin()) {
-        // If our tab bar is visible and we are going down to 1 window,
-        // hide the tab bar.
         const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
         const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
-        if (tabgroup.getProperty(bool, "tabBarVisible")) {
-            const windows = tabgroup.getProperty(objc.Object, "windows");
 
-            // count check is 2 because our window will still be present
-            // in the tab bar since we haven't destroyed yet
-            if (windows.getProperty(usize, "count") == 2) {
+        // On macOS versions prior to Ventura, we lose window focus on tab close
+        // for some reason. We manually fix this by keeping track of the tab
+        // group and just selecting the next window.
+        if (internal_os.macosVersionAtLeast(13, 0, 0))
+            tabgroup_opt = null
+        else
+            tabgroup_opt = tabgroup;
+
+        const windows = tabgroup.getProperty(objc.Object, "windows");
+        switch (windows.getProperty(usize, "count")) {
+            // If we're going down to one window our tab bar is going to be
+            // destroyed so unset it so that the later logic doesn't try to
+            // use it.
+            1 => tabgroup_opt = null,
+
+            // If our tab bar is visible and we are going down to 1 window,
+            // hide the tab bar. The check is "2" because our current window
+            // is still present.
+            2 => if (tabgroup.getProperty(bool, "tabBarVisible")) {
                 nswindow.msgSend(void, objc.sel("toggleTabBar:"), .{nswindow.value});
-            }
+            },
+
+            else => {},
         }
     }
 
     self.window.destroy();
+
+    // If we have a tabgroup set, we want to manually focus the next window.
+    // We should NOT have to do this usually, see the comments above.
+    if (comptime builtin.target.isDarwin()) {
+        if (tabgroup_opt) |tabgroup| {
+            const selected = tabgroup.getProperty(objc.Object, "selectedWindow");
+            selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
+        }
+    }
 
     // We can destroy the cursor right away. glfw will just revert any
     // windows using it to the default.
