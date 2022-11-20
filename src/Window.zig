@@ -29,6 +29,7 @@ const Config = @import("config.zig").Config;
 const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
+const internal_os = @import("os/main.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -333,7 +334,12 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // Create the cursor
     const cursor = try glfw.Cursor.createStandard(.ibeam);
     errdefer cursor.destroy();
-    try window.setCursor(cursor);
+    if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
+        // We only set our cursor if we're NOT on Mac, or if we are then the
+        // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
+        // since we use a tab group.
+        try window.setCursor(cursor);
+    }
 
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
