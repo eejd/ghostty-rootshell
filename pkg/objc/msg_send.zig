@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const c = @import("c.zig");
 const objc = @import("main.zig");
@@ -19,28 +20,67 @@ pub fn MsgSend(comptime T: type) type {
             sel: objc.Sel,
             args: anytype,
         ) Return {
-            // Build our function type and call it
-            const Fn = MsgSendFn(Return, @TypeOf(target.value), @TypeOf(args));
-            const msg_send_ptr = @ptrCast(std.meta.FnPtr(Fn), &c.objc_msgSend);
-            const result = @call(.{}, msg_send_ptr, .{ target.value, sel } ++ args);
+            // Our one special-case: If the return type is our own Object
+            // type then we wrap it.
+            const is_object = Return == objc.Object;
 
-            // This is a special nicety: if the return type is one of our
-            // public structs then we wrap the msgSend id result with it.
-            // This lets msgSend magically work with Object and so on.
-            const is_pkg_struct = comptime is_pkg_struct: {
-                for (@typeInfo(objc).Struct.decls) |decl| {
-                    if (decl.is_pub and
-                        @TypeOf(@field(objc, decl.name)) == type and
-                        Return == @field(objc, decl.name))
-                    {
-                        break :is_pkg_struct true;
-                    }
-                }
+            // Our actual return value is an "id" if we are using one of
+            // our built-in types (see above). Otherwise, we trust the caller.
+            const RealReturn = if (is_object) c.id else Return;
 
-                break :is_pkg_struct false;
+            // See objc/message.h. The high-level is that depending on the
+            // target architecture and return type, we must use a different
+            // objc_msgSend function.
+            const msg_send_fn = switch (builtin.target.cpu.arch) {
+                // Aarch64 uses objc_msgSend for everything. Hurray!
+                .aarch64 => &c.objc_msgSend,
+
+                // x86_64 depends on the return type...
+                .x86_64 => switch (@typeInfo(RealReturn)) {
+                    // Most types use objc_msgSend
+                    inline .Int, .Bool, .Pointer, .Void => &c.objc_msgSend,
+                    .Optional => |opt| opt: {
+                        assert(@typeInfo(opt.child) == .Pointer);
+                        break :opt &c.objc_msgSend;
+                    },
+
+                    // Structs must use objc_msgSend_stret.
+                    // NOTE: This is probably WAY more complicated... we only
+                    // call this if the struct is NOT returned as a register.
+                    // And that depends on the size of the struct. But I don't
+                    // know what the breakpoint actually is for that. This SO
+                    // answer says 16 bytes so I'm going to use that but I have
+                    // no idea...
+                    .Struct => if (@sizeOf(Return) > 16)
+                        &c.objc_msgSend_stret
+                    else
+                        &c.objc_msgSend,
+
+                    // Floats use objc_msgSend_fpret for f64 on x86_64,
+                    // but normal msgSend for other bit sizes. i386 has
+                    // more complex rules but we don't support i386 at the time
+                    // of this comment and probably never will since all i386
+                    // Apple models are discontinued at this point.
+                    .Float => |float| switch (float.bits) {
+                        64 => &c.objc_msgSend_fpret,
+                        else => &c.objc_msgSend,
+                    },
+
+                    // Otherwise we log in case we need to add a new case above
+                    else => {
+                        @compileLog(@typeInfo(RealReturn));
+                        @compileError("unsupported return type for objc runtime on x86_64");
+                    },
+                },
+                else => @compileError("unsupported objc architecture"),
             };
 
-            if (!is_pkg_struct) return result;
+            // Build our function type and call it
+            const Fn = MsgSendFn(RealReturn, @TypeOf(target.value), @TypeOf(args));
+            const msg_send_ptr = @ptrCast(std.meta.FnPtr(Fn), msg_send_fn);
+            const result = @call(.{}, msg_send_ptr, .{ target.value, sel.value } ++ args);
+
+            if (!is_object) return result;
             return .{ .value = result };
         }
     };
@@ -89,7 +129,7 @@ fn MsgSendFn(
 
         // First argument is always the target and selector.
         acc[0] = .{ .arg_type = Target, .is_generic = false, .is_noalias = false };
-        acc[1] = .{ .arg_type = objc.Sel, .is_generic = false, .is_noalias = false };
+        acc[1] = .{ .arg_type = c.SEL, .is_generic = false, .is_noalias = false };
 
         // Remaining arguments depend on the args given, in the order given
         for (argsInfo.fields) |field, i| {
