@@ -83,6 +83,11 @@ pub fn build(b: *std.build.Builder) !void {
 
     // Exe
     {
+        if (target.isDarwin()) {
+            // See the comment in this file
+            exe.addCSourceFile("src/renderer/metal_workaround.c", &.{});
+        }
+
         exe.setTarget(target);
         exe.setBuildMode(mode);
         exe.addOptions("build_options", exe_options);
