@@ -77,7 +77,9 @@ pub fn MsgSend(comptime T: type) type {
 
             // Build our function type and call it
             const Fn = MsgSendFn(RealReturn, @TypeOf(target.value), @TypeOf(args));
-            const msg_send_ptr = @ptrCast(std.meta.FnPtr(Fn), msg_send_fn);
+            // Due to this stage2 Zig issue[1], this must be var for now.
+            // [1]: https://github.com/ziglang/zig/issues/13598
+            var msg_send_ptr = @ptrCast(std.meta.FnPtr(Fn), msg_send_fn);
             const result = @call(.{}, msg_send_ptr, .{ target.value, sel.value } ++ args);
 
             if (!is_object) return result;
