@@ -593,11 +593,18 @@ pub fn render(
         );
         errdefer screen_copy.deinit();
 
+        // Convert our selection to viewport points because we copy only
+        // the viewport above.
+        const selection: ?terminal.Selection = if (state.terminal.selection) |sel|
+            sel.toViewport(&state.terminal.screen)
+        else
+            null;
+
         break :critical .{
             .gl_bg = self.background,
             .devmode_data = devmode_data,
             .active_screen = state.terminal.active_screen,
-            .selection = state.terminal.selection,
+            .selection = selection,
             .screen = screen_copy,
             .draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom(),
         };

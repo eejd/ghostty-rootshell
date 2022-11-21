@@ -4,6 +4,7 @@ const Selection = @This();
 
 const std = @import("std");
 const point = @import("point.zig");
+const Screen = @import("Screen.zig");
 const ScreenPoint = point.ScreenPoint;
 
 /// Start and end of the selection. There is no guarantee that
@@ -12,6 +13,25 @@ const ScreenPoint = point.ScreenPoint;
 /// to not have to worry about this.
 start: ScreenPoint,
 end: ScreenPoint,
+
+/// Converts a selection screen points to viewport points (still typed
+/// as ScreenPoints) if the selection is present within the viewport
+/// of the screen.
+pub fn toViewport(self: Selection, screen: *const Screen) ?Selection {
+    const top = (point.Viewport{ .x = 0, .y = 0 }).toScreen(screen);
+    const bot = (point.Viewport{ .x = 0, .y = screen.rows - 1 }).toScreen(screen);
+
+    // If our selection isn't within the viewport, do nothing.
+    if (!self.within(top, bot)) return null;
+
+    // Convert
+    const start = self.start.toViewport(screen);
+    const end = self.end.toViewport(screen);
+    return Selection{
+        .start = .{ .x = start.x, .y = start.y },
+        .end = .{ .x = end.x, .y = end.y },
+    };
+}
 
 /// Returns true if the selection contains the given point.
 ///
@@ -38,6 +58,15 @@ pub fn contains(self: Selection, p: ScreenPoint) bool {
 
     // If between the top/bottom, always good.
     return p.y > tl.y and p.y < br.y;
+}
+
+/// Returns true if the selection contains any of the points between
+/// (and including) the start and end. The x values are ignored this is
+/// just a section match
+pub fn within(self: Selection, start: ScreenPoint, end: ScreenPoint) bool {
+    const tl = self.topLeft();
+    const br = self.bottomRight();
+    return tl.y >= start.y and br.y <= end.y;
 }
 
 /// Returns true if the selection contains the row of the given point,
@@ -114,5 +143,19 @@ test "Selection: contains" {
         try testing.expect(sel.contains(.{ .x = 6, .y = 1 }));
         try testing.expect(!sel.contains(.{ .x = 2, .y = 1 }));
         try testing.expect(!sel.contains(.{ .x = 12, .y = 1 }));
+    }
+}
+
+test "Selection: within" {
+    const testing = std.testing;
+    {
+        const sel: Selection = .{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 2 },
+        };
+
+        try testing.expect(sel.within(.{ .x = 6, .y = 0 }, .{ .x = 6, .y = 3 }));
+        try testing.expect(sel.within(.{ .x = 3, .y = 1 }, .{ .x = 6, .y = 3 }));
+        try testing.expect(sel.within(.{ .x = 3, .y = 0 }, .{ .x = 6, .y = 2 }));
     }
 }

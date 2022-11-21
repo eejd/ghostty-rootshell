@@ -1650,13 +1650,13 @@ fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
 
             // Can be off the screen if the user drags it out, so max
             // it out on our available columns
-            break :x @min(x, self.io.terminal.cols - 1);
+            break :x @min(x, self.grid_size.columns - 1);
         },
 
         .y = if (ypos < 0) 0 else y: {
             const cell_height = @floatCast(f64, self.cell_size.height);
             const y = @floatToInt(usize, ypos / cell_height);
-            break :y @min(y, self.io.terminal.rows - 1);
+            break :y @min(y, self.grid_size.rows - 1);
         },
     };
 }
