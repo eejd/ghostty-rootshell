@@ -15,6 +15,7 @@ const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
 const macos = @import("macos");
 const objc = @import("objc");
+const DevMode = @import("DevMode.zig");
 
 const log = std.log.scoped(.app);
 
@@ -61,6 +62,9 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
+
+    // If we have DevMode on, store the config so we can show it
+    if (DevMode.enabled) DevMode.instance.config = config;
 
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
