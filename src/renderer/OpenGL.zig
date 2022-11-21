@@ -77,6 +77,10 @@ foreground: terminal.color.RGB,
 /// Default background color
 background: terminal.color.RGB,
 
+/// Default selection color
+selection_background: ?terminal.color.RGB,
+selection_foreground: ?terminal.color.RGB,
+
 /// True if the window is focused
 focused: bool,
 
@@ -296,8 +300,16 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .font_shaper = shaper,
         .cursor_visible = true,
         .cursor_style = .box,
-        .background = .{ .r = 0, .g = 0, .b = 0 },
-        .foreground = .{ .r = 255, .g = 255, .b = 255 },
+        .background = options.config.background.toTerminalRGB(),
+        .foreground = options.config.foreground.toTerminalRGB(),
+        .selection_background = if (options.config.@"selection-background") |bg|
+            bg.toTerminalRGB()
+        else
+            null,
+        .selection_foreground = if (options.config.@"selection-foreground") |bg|
+            bg.toTerminalRGB()
+        else
+            null,
         .focused = true,
         .padding = options.padding,
         .window_mailbox = options.window_mailbox,
@@ -865,11 +877,11 @@ pub fn updateCell(
                 .y = y,
             }).toScreen(screen);
 
-            // If we are selected, we our colors are just inverted fg/bg
+            // If we are selected, we use the selection colors
             if (sel.contains(screen_point)) {
                 break :colors BgFg{
-                    .bg = self.foreground,
-                    .fg = self.background,
+                    .bg = self.selection_background orelse self.foreground,
+                    .fg = self.selection_foreground orelse self.background,
                 };
             }
         }

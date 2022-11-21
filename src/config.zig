@@ -36,6 +36,12 @@ pub const Config = struct {
     /// Foreground color for the window.
     foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
+    /// The foreground and background color for selection. If this is not
+    /// set, then the selection color is just the inverted window background
+    /// and foreground (note: not to be confused with the cell bg/fg).
+    @"selection-foreground": ?Color = null,
+    @"selection-background": ?Color = null,
+
     /// Color palette for the 256 color form that many terminal applications
     /// use. The syntax of this configuration is "N=HEXCODE" where "n"
     /// is 0 to 255 (for the 256 colors) and HEXCODE is a typical RGB
@@ -315,6 +321,11 @@ pub const Color = struct {
     pub const Error = error{
         InvalidFormat,
     };
+
+    /// Convert this to the terminal RGB struct
+    pub fn toTerminalRGB(self: Color) terminal.color.RGB {
+        return .{ .r = self.r, .g = self.g, .b = self.b };
+    }
 
     pub fn parseCLI(input: ?[]const u8) !Color {
         return fromHex(input orelse return error.ValueRequired);

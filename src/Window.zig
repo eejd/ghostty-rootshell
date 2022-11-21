@@ -294,6 +294,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
     // Create our terminal grid with the initial window size
     var renderer_impl = try Renderer.init(alloc, .{
+        .config = config,
         .font_group = font_group,
         .padding = .{
             .explicit = padding,
@@ -302,16 +303,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .window_mailbox = .{ .window = self, .app = app.mailbox },
     });
     errdefer renderer_impl.deinit();
-    renderer_impl.background = .{
-        .r = config.background.r,
-        .g = config.background.g,
-        .b = config.background.b,
-    };
-    renderer_impl.foreground = .{
-        .r = config.foreground.r,
-        .g = config.foreground.g,
-        .b = config.foreground.b,
-    };
 
     // Calculate our grid size based on known dimensions.
     const window_size = try window.getSize();
