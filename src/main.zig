@@ -126,7 +126,7 @@ pub fn main() !void {
         }
     }
     try config.finalize();
-    std.log.info("config={}", .{config});
+    std.log.debug("config={}", .{config});
 
     // We want to log all our errors
     glfw.setErrorCallback(glfwErrorCallback);
