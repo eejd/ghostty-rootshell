@@ -143,10 +143,7 @@ pub fn run(self: *App) !void {
 
 /// Drain the mailbox.
 fn drainMailbox(self: *App) !void {
-    var drain = self.mailbox.drain();
-    defer drain.deinit();
-
-    while (drain.next()) |message| {
+    while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .new_window => |msg| _ = try self.newWindow(msg),

@@ -238,14 +238,7 @@ fn drainMailbox(self: *Thread) !void {
     const zone = trace(@src());
     defer zone.end();
 
-    // This holds the mailbox lock for the duration of the drain. The
-    // expectation is that all our message handlers will be non-blocking
-    // ENOUGH to not mess up throughput on producers.
-
-    var drain = self.mailbox.drain();
-    defer drain.deinit();
-
-    while (drain.next()) |message| {
+    while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={}", .{message});
         switch (message) {
             .focus => |v| {

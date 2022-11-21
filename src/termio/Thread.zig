@@ -162,24 +162,19 @@ fn drainMailbox(self: *Thread) !void {
     // expectation is that all our message handlers will be non-blocking
     // ENOUGH to not mess up throughput on producers.
     var redraw: bool = false;
-    {
-        var drain = self.mailbox.drain();
-        defer drain.deinit();
+    while (self.mailbox.pop()) |message| {
+        // If we have a message we always redraw
+        redraw = true;
 
-        while (drain.next()) |message| {
-            // If we have a message we always redraw
-            redraw = true;
-
-            log.debug("mailbox message={}", .{message});
-            switch (message) {
-                .resize => |v| try self.impl.resize(v.grid_size, v.screen_size, v.padding),
-                .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
-                .write_stable => |v| try self.impl.queueWrite(v),
-                .write_alloc => |v| {
-                    defer v.alloc.free(v.data);
-                    try self.impl.queueWrite(v.data);
-                },
-            }
+        log.debug("mailbox message={}", .{message});
+        switch (message) {
+            .resize => |v| try self.impl.resize(v.grid_size, v.screen_size, v.padding),
+            .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
+            .write_stable => |v| try self.impl.queueWrite(v),
+            .write_alloc => |v| {
+                defer v.alloc.free(v.data);
+                try self.impl.queueWrite(v.data);
+            },
         }
     }
 
