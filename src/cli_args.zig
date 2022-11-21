@@ -333,10 +333,22 @@ pub fn LineIterator(comptime ReaderType: type) type {
 
         pub fn next(self: *Self) ?[]const u8 {
             // TODO: detect "--" prefixed lines and give a friendlier error
-            const buf = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch {
-                // TODO: handle errors
-                unreachable;
-            } orelse return null;
+            const buf = buf: {
+                while (true) {
+                    // Read the full line
+                    const entry = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch {
+                        // TODO: handle errors
+                        unreachable;
+                    } orelse return null;
+
+                    // Trim any whitespace around it
+                    const trim = std.mem.trim(u8, entry, " \t");
+                    if (trim.len != entry.len) std.mem.copy(u8, entry, trim);
+
+                    // Ignore empty lines
+                    if (entry.len > 0 and entry[0] != '#') break :buf entry[0..trim.len];
+                }
+            };
 
             // We need to reslice so that we include our '--' at the beginning
             // of our buffer so that we can trick the CLI parser to treat it
@@ -357,12 +369,30 @@ test "LineIterator" {
         \\A
         \\B
         \\C
+        \\
+        \\# A comment
+        \\D
+        \\
+        \\  # An indented comment
+        \\  E
     );
 
     var iter = lineIterator(fbs.reader());
     try testing.expectEqualStrings("--A", iter.next().?);
     try testing.expectEqualStrings("--B", iter.next().?);
     try testing.expectEqualStrings("--C", iter.next().?);
+    try testing.expectEqualStrings("--D", iter.next().?);
+    try testing.expectEqualStrings("--E", iter.next().?);
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+}
+
+test "LineIterator end in newline" {
+    const testing = std.testing;
+    var fbs = std.io.fixedBufferStream("A\n\n");
+
+    var iter = lineIterator(fbs.reader());
+    try testing.expectEqualStrings("--A", iter.next().?);
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
 }
