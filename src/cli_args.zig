@@ -204,6 +204,26 @@ test "parse: simple" {
     try testing.expect(!data.@"b-f");
 }
 
+test "parse: quoted value" {
+    const testing = std.testing;
+
+    var data: struct {
+        a: u8 = 0,
+        b: []const u8 = "",
+        _arena: ?ArenaAllocator = null,
+    } = .{};
+    defer if (data._arena) |arena| arena.deinit();
+
+    var iter = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--a=\"42\" --b=\"hello!\"",
+    );
+    defer iter.deinit();
+    try parse(@TypeOf(data), testing.allocator, &data, &iter);
+    try testing.expectEqual(@as(u8, 42), data.a);
+    try testing.expectEqualStrings("hello!", data.b);
+}
+
 test "parseIntoField: string" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);
