@@ -85,10 +85,34 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     try env.put("TERM", "xterm-256color");
     try env.put("COLORTERM", "truecolor");
 
+    // On macOS, we launch the program as a login shell. This is a Mac-specific
+    // behavior (see other terminals). Terminals in general should NOT be
+    // spawning login shells because well... we're not "logging in." The solution
+    // is to put dotfiles in "rc" variants rather than "_login" variants. But,
+    // history!
+    var argv0_buf: []u8 = undefined;
+    const args: []const []const u8 = if (comptime builtin.target.isDarwin()) args: {
+        // Get rid of the path
+        const argv0 = if (std.mem.lastIndexOf(u8, path, "/")) |idx|
+            path[idx + 1 ..]
+        else
+            path;
+
+        // Copy it with a hyphen so its a login shell
+        argv0_buf = try alloc.alloc(u8, argv0.len + 1);
+        argv0_buf[0] = '-';
+        std.mem.copy(u8, argv0_buf[1..], argv0);
+        break :args &[_][]const u8{argv0_buf};
+    } else &[_][]const u8{path};
+
+    // We can free the args buffer since it is only used for start.
+    // cmd retains a dangling pointer but we're not supposed to access it.
+    defer if (comptime builtin.target.isDarwin()) alloc.free(argv0_buf);
+
     // Build our subcommand
     var cmd: Command = .{
         .path = path,
-        .args = &[_][]const u8{path},
+        .args = args,
         .env = &env,
         .cwd = opts.config.@"working-directory",
         .stdin = .{ .handle = pty.slave },
