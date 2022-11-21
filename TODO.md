@@ -1,8 +1,3 @@
-Bugs:
-
-* Asian characters (amongst others) turn into missing glyph symbol, should
-  be able to find them somewhere when other programs can render them fine.
-
 Performance:
 
 * for scrollback, investigate using segmented list for sufficiently large
@@ -35,7 +30,6 @@ Improvements:
 * double-click to select a word
 * triple-click to select a line
 * shift-click and drag to continue selection
-* keybind action: increase/decrease font size
 
 Mac:
 
