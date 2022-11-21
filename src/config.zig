@@ -52,6 +52,9 @@ pub const Config = struct {
     /// https://www.ditig.com/256-colors-cheat-sheet
     palette: Palette = .{},
 
+    /// The color of the cursor. If this is not set, a default will be chosen.
+    @"cursor-color": ?Color = null,
+
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH. If this is not set, a default will
     /// be looked up from your system. The rules for the default lookup are:

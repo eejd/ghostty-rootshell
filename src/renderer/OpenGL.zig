@@ -70,6 +70,7 @@ font_shaper: font.Shaper,
 /// blinking.
 cursor_visible: bool,
 cursor_style: renderer.CursorStyle,
+cursor_color: ?terminal.color.RGB,
 
 /// Default foreground color
 foreground: terminal.color.RGB,
@@ -300,6 +301,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .font_shaper = shaper,
         .cursor_visible = true,
         .cursor_style = .box,
+        .cursor_color = if (options.config.@"cursor-color") |col| col.toTerminalRGB() else null,
         .background = options.config.background.toTerminalRGB(),
         .foreground = options.config.foreground.toTerminalRGB(),
         .selection_background = if (options.config.@"selection-background") |bg|
@@ -821,6 +823,12 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
         screen.cursor.x,
     );
 
+    const color = self.cursor_color orelse terminal.color.RGB{
+        .r = 0xFF,
+        .g = 0xFF,
+        .b = 0xFF,
+    };
+
     self.cells.appendAssumeCapacity(.{
         .mode = GPUCellMode.fromCursor(self.cursor_style),
         .grid_col = @intCast(u16, screen.cursor.x),
@@ -830,9 +838,9 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
         .fg_g = 0,
         .fg_b = 0,
         .fg_a = 0,
-        .bg_r = 0xFF,
-        .bg_g = 0xFF,
-        .bg_b = 0xFF,
+        .bg_r = color.r,
+        .bg_g = color.g,
+        .bg_b = color.b,
         .bg_a = 255,
     });
 }

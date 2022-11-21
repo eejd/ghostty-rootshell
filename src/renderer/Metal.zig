@@ -47,6 +47,7 @@ focused: bool,
 /// blinking.
 cursor_visible: bool,
 cursor_style: renderer.CursorStyle,
+cursor_color: ?terminal.color.RGB,
 
 /// Default foreground color
 foreground: terminal.color.RGB,
@@ -240,6 +241,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .focused = true,
         .cursor_visible = true,
         .cursor_style = .box,
+        .cursor_color = if (options.config.@"cursor-color") |col| col.toTerminalRGB() else null,
         .background = options.config.background.toTerminalRGB(),
         .foreground = options.config.foreground.toTerminalRGB(),
         .selection_background = if (options.config.@"selection-background") |bg|
@@ -921,6 +923,12 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         screen.cursor.x,
     );
 
+    const color = self.cursor_color orelse terminal.color.RGB{
+        .r = 0xFF,
+        .g = 0xFF,
+        .b = 0xFF,
+    };
+
     self.cells.appendAssumeCapacity(.{
         .mode = GPUCellMode.fromCursor(self.cursor_style),
         .grid_pos = .{
@@ -928,7 +936,7 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
             @intToFloat(f32, screen.cursor.y),
         },
         .cell_width = if (cell.attrs.wide) 2 else 1,
-        .color = .{ 0xFF, 0xFF, 0xFF, 0xFF },
+        .color = .{ color.r, color.g, color.b, 0xFF },
     });
 }
 
