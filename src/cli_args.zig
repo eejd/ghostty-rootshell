@@ -356,17 +356,36 @@ pub fn LineIterator(comptime ReaderType: type) type {
             const buf = buf: {
                 while (true) {
                     // Read the full line
-                    const entry = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch {
+                    var entry = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch {
                         // TODO: handle errors
                         unreachable;
                     } orelse return null;
 
                     // Trim any whitespace around it
-                    const trim = std.mem.trim(u8, entry, " \t");
-                    if (trim.len != entry.len) std.mem.copy(u8, entry, trim);
+                    const whitespace = " \t";
+                    const trim = std.mem.trim(u8, entry, whitespace);
+                    if (trim.len != entry.len) {
+                        std.mem.copy(u8, entry, trim);
+                        entry = entry[0..trim.len];
+                    }
 
-                    // Ignore empty lines
-                    if (entry.len > 0 and entry[0] != '#') break :buf entry[0..trim.len];
+                    // Ignore blank lines and comments
+                    if (entry.len == 0 or entry[0] == '#') continue;
+
+                    // Trim spaces around '='
+                    if (mem.indexOf(u8, entry, "=")) |idx| {
+                        const key = std.mem.trim(u8, entry[0..idx], whitespace);
+                        const value = std.mem.trim(u8, entry[idx + 1 ..], whitespace);
+                        const len = key.len + value.len + 1;
+                        if (entry.len != len) {
+                            std.mem.copy(u8, entry, key);
+                            entry[key.len] = '=';
+                            std.mem.copy(u8, entry[key.len + 1 ..], value);
+                            entry = entry[0..len];
+                        }
+                    }
+
+                    break :buf entry;
                 }
             };
 
@@ -387,7 +406,7 @@ test "LineIterator" {
     const testing = std.testing;
     var fbs = std.io.fixedBufferStream(
         \\A
-        \\B
+        \\B=42
         \\C
         \\
         \\# A comment
@@ -399,7 +418,7 @@ test "LineIterator" {
 
     var iter = lineIterator(fbs.reader());
     try testing.expectEqualStrings("--A", iter.next().?);
-    try testing.expectEqualStrings("--B", iter.next().?);
+    try testing.expectEqualStrings("--B=42", iter.next().?);
     try testing.expectEqualStrings("--C", iter.next().?);
     try testing.expectEqualStrings("--D", iter.next().?);
     try testing.expectEqualStrings("--E", iter.next().?);
@@ -413,6 +432,16 @@ test "LineIterator end in newline" {
 
     var iter = lineIterator(fbs.reader());
     try testing.expectEqualStrings("--A", iter.next().?);
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+}
+
+test "LineIterator spaces around '='" {
+    const testing = std.testing;
+    var fbs = std.io.fixedBufferStream("A = B\n\n");
+
+    var iter = lineIterator(fbs.reader());
+    try testing.expectEqualStrings("--A=B", iter.next().?);
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
 }
