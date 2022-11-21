@@ -44,7 +44,7 @@ April 2022.
 
 | Platform / Package  | Links | Notes |
 | ----------| ----- | ----- |
-| macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | Not signed or notarized |
+| macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | |
 | Linux | [Build from Source](#developing-ghostty)  | No binary packages today |
 | Windows | n/a | Not supported yet |
 
@@ -151,7 +151,9 @@ than 5 MB on all platforms. The debug version is around 70MB.
 
 When targeting macOS, a macOS application bundle will be created at
 `zig-out/Ghostty.app`. This can be copied as-is and used like a normal app.
-This app will be not be signed or notarized.
+This app will be not be signed or notarized. Note that
+[official continuous builds are available](https://github.com/mitchellh/ghostty/releases/tag/tip)
+that are both signed and notarized.
 
 When running the app, logs are available via macOS unified logging such
 as `Console.app`. The easiest way I've found is to just use the CLI:
