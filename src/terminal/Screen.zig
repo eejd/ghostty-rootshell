@@ -64,6 +64,9 @@ const fastmem = @import("../fastmem.zig");
 
 const log = std.log.scoped(.screen);
 
+/// Whitespace characters for selection purposes
+const whitespace = &[_]u32{ 0, ' ', '\t' };
+
 /// Cursor represents the cursor state.
 pub const Cursor = struct {
     // x, y where the cursor currently exists (0-indexed). This x/y is
@@ -1096,6 +1099,104 @@ pub fn clearHistory(self: *Screen) void {
     self.viewport = 0;
 }
 
+/// Select the line under the given point. This will select across soft-wrapped
+/// lines and will omit the leading and trailing whitespace. If the point is
+/// over whitespace but the line has non-whitespace characters elsewhere, the
+/// line will be selected.
+pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Impossible to select anything outside of the area we've written.
+    const y_max = self.rowsWritten() - 1;
+    if (pt.y > y_max or pt.x >= self.cols) return null;
+
+    // The real start of the row is the first row in the soft-wrap.
+    const start_row: usize = start_row: {
+        if (pt.y == 0) break :start_row 0;
+
+        var y: usize = pt.y - 1;
+        while (true) {
+            const current = self.getRow(.{ .screen = y });
+            if (!current.header().flags.wrap) break :start_row y + 1;
+            if (y == 0) break :start_row y;
+        }
+        unreachable;
+    };
+
+    // The real end of the row is the final row in the soft-wrap.
+    const end_row: usize = end_row: {
+        var y: usize = pt.y;
+        while (y < y_max) : (y += 1) {
+            const current = self.getRow(.{ .screen = y });
+            if (y == y_max or !current.header().flags.wrap) break :end_row y;
+        }
+        unreachable;
+    };
+
+    // Go forward from the start to find the first non-whitespace character.
+    const start: point.ScreenPoint = start: {
+        var y: usize = start_row;
+        while (y <= y_max) : (y += 1) {
+            const current_row = self.getRow(.{ .screen = y });
+            var x: usize = 0;
+            while (x < self.cols) : (x += 1) {
+                const cell = current_row.getCell(x);
+
+                // Empty is whitespace
+                if (cell.empty()) continue;
+
+                // Non-empty means we found it.
+                const this_whitespace = std.mem.indexOfAny(
+                    u32,
+                    whitespace,
+                    &[_]u32{cell.char},
+                ) != null;
+                if (this_whitespace) continue;
+
+                break :start .{ .x = x, .y = y };
+            }
+        }
+
+        // There is no start point and therefore no line that can be selected.
+        return null;
+    };
+
+    // Go backward from the end to find the first non-whitespace character.
+    const end: point.ScreenPoint = end: {
+        var y: usize = end_row;
+        while (true) {
+            const current_row = self.getRow(.{ .screen = y });
+
+            var x: usize = 0;
+            while (x < self.cols) : (x += 1) {
+                const real_x = self.cols - x - 1;
+                const cell = current_row.getCell(real_x);
+
+                // Empty or whitespace, ignore.
+                if (cell.empty()) continue;
+                const this_whitespace = std.mem.indexOfAny(
+                    u32,
+                    whitespace,
+                    &[_]u32{cell.char},
+                ) != null;
+                if (this_whitespace) continue;
+
+                // Got it
+                break :end .{ .x = real_x, .y = y };
+            }
+
+            if (y == 0) break;
+            y -= 1;
+        }
+
+        // There is no start point and therefore no line that can be selected.
+        return null;
+    };
+
+    return Selection{
+        .start = start,
+        .end = end,
+    };
+}
+
 /// Select the word under the given point. A word is any consecutive series
 /// of characters that are exclusively whitespace or exclusively non-whitespace.
 /// A selection can span multiple physical lines if they are soft-wrapped.
@@ -1116,7 +1217,6 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     if (start_cell.empty()) return null;
 
     // Determine if we are whitespace or not to determine what our boundary is.
-    const whitespace = &[_]u32{ 0, ' ', '\t' };
     const expect_whitespace = std.mem.indexOfAny(u32, whitespace, &[_]u32{start_cell.char}) != null;
 
     // Go forwards to find our end boundary
@@ -2551,6 +2651,109 @@ test "Screen: clone one line viewport" {
         var contents = try s2.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABC", contents);
+    }
+}
+
+test "Screen: selectLine" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 10, 0);
+    defer s.deinit();
+    try s.testWriteString("ABC  DEF\n 123\n456");
+
+    // Outside of active area
+    try testing.expect(s.selectLine(.{ .x = 13, .y = 0 }) == null);
+    try testing.expect(s.selectLine(.{ .x = 0, .y = 5 }) == null);
+
+    // Going forward
+    {
+        const sel = s.selectLine(.{ .x = 0, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 7), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Going backward
+    {
+        const sel = s.selectLine(.{ .x = 7, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 7), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Going forward and backward
+    {
+        const sel = s.selectLine(.{ .x = 3, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 7), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Outside active area
+    {
+        const sel = s.selectLine(.{ .x = 9, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 7), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+}
+
+test "Screen: selectLine across soft-wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    try s.testWriteString(" 12 34012   \n 123");
+
+    // Going forward
+    {
+        const sel = s.selectLine(.{ .x = 1, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 3), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+}
+
+test "Screen: selectLine across soft-wrap ignores blank lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    try s.testWriteString(" 12 34012             \n 123");
+
+    // Going forward
+    {
+        const sel = s.selectLine(.{ .x = 1, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 3), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // Going backward
+    {
+        const sel = s.selectLine(.{ .x = 1, .y = 1 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 3), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // Going forward and backward
+    {
+        const sel = s.selectLine(.{ .x = 3, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 3), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
     }
 }
 
