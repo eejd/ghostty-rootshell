@@ -27,8 +27,6 @@ Improvements:
 
 * scrollback: configurable
 * selection on top/bottom should scroll up/down (while extending selection)
-* double-click to select a word
-* triple-click to select a line
 * shift-click and drag to continue selection
 
 Mac:
