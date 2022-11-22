@@ -147,6 +147,12 @@ pub const Config = struct {
     @"clipboard-read": bool = false,
     @"clipboard-write": bool = true,
 
+    /// The time in milliseconds between clicks to consider a click a repeat
+    /// (double, triple, etc.) or an entirely new single click. A value of
+    /// zero will use a platform-specific default. The default on macOS
+    /// is determined by the OS settings. On every other platform it is 500ms.
+    @"click-repeat-interval": u32 = 0,
+
     /// Additional configuration files to read.
     @"config-file": RepeatableString = .{},
 
@@ -318,6 +324,11 @@ pub const Config = struct {
         // If we have the special value "inherit" then set it to null which
         // does the same. In the future we should change to a tagged union.
         if (std.mem.eql(u8, wd, "inherit")) self.@"working-directory" = null;
+
+        // Default our click interval
+        if (self.@"click-repeat-interval" == 0) {
+            self.@"click-repeat-interval" = 500;
+        }
     }
 };
 

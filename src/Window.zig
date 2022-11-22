@@ -395,7 +395,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         },
         .renderer_thr = undefined,
         .mouse = .{},
-        .mouse_interval = 500 * 1_000_000, // 500ms
+        .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
         .io = io,
         .io_thread = io_thread,
         .io_thr = undefined,
