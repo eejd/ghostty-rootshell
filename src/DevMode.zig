@@ -53,6 +53,8 @@ pub fn update(self: *const DevMode) !void {
                     .borders_inner_v = true,
                     .borders_outer_v = true,
                 })) {
+                    defer imgui.endTable();
+
                     // Setup headers
                     imgui.tableSetupColumn("Key", .{}, 0);
                     imgui.tableSetupColumn("Value", .{}, 0);
@@ -64,7 +66,12 @@ pub fn update(self: *const DevMode) !void {
                     imgui.text("font-family");
                     _ = imgui.tableNextColumn();
                     imgui.text((try std.fmt.bufPrintZ(&buf, "{any}", .{config.@"font-family"})).ptr);
-                    defer imgui.endTable();
+
+                    imgui.tableNextRow(0);
+                    _ = imgui.tableNextColumn();
+                    imgui.text("click-repeat-interval");
+                    _ = imgui.tableNextColumn();
+                    imgui.text((try std.fmt.bufPrintZ(&buf, "{d}", .{config.@"click-repeat-interval"})).ptr);
                 }
 
                 if (imgui.treeNode("Raw Config (Advanced & Ugly)", .{})) {
@@ -110,7 +117,7 @@ pub fn update(self: *const DevMode) !void {
     }
 
     // Just demo for now
-    imgui.showDemoWindow(null);
+    // imgui.showDemoWindow(null);
 }
 
 /// Render the scene and return the draw data. The caller must be imgui-aware
