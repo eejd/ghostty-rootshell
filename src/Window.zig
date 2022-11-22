@@ -1562,7 +1562,16 @@ fn mouseButtonCallback(
                     log.err("error scheduling render in mouseButtinCallback err={}", .{err});
             },
 
-            2 => log.info("DoublE CLICk", .{}),
+            // Double click, select the word under our  mouse
+            2 => {
+                const sel_ = win.io.terminal.screen.selectWord(win.mouse.left_click_point);
+                if (sel_) |sel| {
+                    win.io.terminal.selection = sel;
+                    win.queueRender() catch |err|
+                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                }
+            },
+
             3 => log.info("TRIPLE CLICK", .{}),
 
             // We should be bounded by 1 to 3

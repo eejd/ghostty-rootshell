@@ -1098,7 +1098,10 @@ pub fn clearHistory(self: *Screen) void {
 
 /// Select the word under the given point. A word is any consecutive series
 /// of characters that are exclusively whitespace or exclusively non-whitespace.
-/// A selection can span multiple physical lines.
+/// A selection can span multiple physical lines if they are soft-wrapped.
+///
+/// This will return null if a selection is impossible. The only scenario
+/// this happens is if the point pt is outside of the written screen space.
 pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
@@ -1118,36 +1121,16 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
 
     // Go forwards to find our end boundary
     const end: point.ScreenPoint = boundary: {
-        //var y: usize = pt.y;
-        var x: usize = pt.x;
         var prev: point.ScreenPoint = pt;
-        while (x < self.cols) : (x += 1) {
-            const cell = row.getCell(x);
-
-            // If we reached an empty cell its always a boundary
-            if (cell.empty()) break :boundary prev;
-
-            // If we do not match our expected set, we hit a boundary
-            const this_whitespace = std.mem.indexOfAny(u32, whitespace, &[_]u32{cell.char}) != null;
-            if (this_whitespace != expect_whitespace) break :boundary prev;
-
-            // Increase our prev
-            prev.x = x;
-        }
-
-        break :boundary .{ .x = self.cols - 1, .y = y_max };
-    };
-
-    // Go backwards to find our start boundary
-    const start: point.ScreenPoint = boundary: {
-        var current_row = row;
-        var prev: point.ScreenPoint = pt;
-
         var y: usize = pt.y;
-        while (true) {
-            var x: usize = pt.x;
-            while (x > 0) : (x -= 1) {
-                const cell = current_row.getCell(x - 1);
+        var x: usize = pt.x;
+        while (y < y_max) : (y += 1) {
+            const current_row = self.getRow(.{ .screen = y });
+
+            // Go through all the remainining cells on this row until
+            // we reach a boundary condition.
+            while (x < self.cols) : (x += 1) {
+                const cell = current_row.getCell(x);
 
                 // If we reached an empty cell its always a boundary
                 if (cell.empty()) break :boundary prev;
@@ -1160,8 +1143,43 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
                 ) != null;
                 if (this_whitespace != expect_whitespace) break :boundary prev;
 
+                // Increase our prev
+                prev.x = x;
+                prev.y = y;
+            }
+
+            // If we aren't wrapping, then we're done this is a boundary.
+            if (!current_row.header().flags.wrap) break :boundary prev;
+
+            // If we are wrapping, reset some values and search the next line.
+            x = 0;
+        }
+
+        break :boundary .{ .x = self.cols - 1, .y = y_max };
+    };
+
+    // Go backwards to find our start boundary
+    const start: point.ScreenPoint = boundary: {
+        var current_row = row;
+        var prev: point.ScreenPoint = pt;
+
+        var y: usize = pt.y;
+        var x: usize = pt.x;
+        while (true) {
+            // Go through all the remainining cells on this row until
+            // we reach a boundary condition.
+            while (x > 0) : (x -= 1) {
+                const cell = current_row.getCell(x - 1);
+                const this_whitespace = std.mem.indexOfAny(
+                    u32,
+                    whitespace,
+                    &[_]u32{cell.char},
+                ) != null;
+                if (this_whitespace != expect_whitespace) break :boundary prev;
+
                 // Update our prev
                 prev.x = x - 1;
+                prev.y = y;
             }
 
             // If we're at the start, we need to check if the previous line wrapped.
@@ -1172,14 +1190,17 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
             // If we're at the end, we're done!
             if (y == 0) break;
 
-            // Update our prev y
-            prev.y = y;
-
             // If the previous row did not wrap, then we're done. Otherwise
             // we keep searching.
             y -= 1;
             current_row = self.getRow(.{ .screen = y });
             if (!current_row.header().flags.wrap) break :boundary prev;
+
+            // Set x to start at the first non-empty cell
+            x = self.cols;
+            while (x > 0) : (x -= 1) {
+                if (!current_row.getCell(x - 1).empty()) break;
+            }
         }
 
         break :boundary .{ .x = 0, .y = 0 };
@@ -2542,6 +2563,7 @@ test "Screen: selectWord" {
     try s.testWriteString("ABC  DEF\n 123\n456");
 
     // Outside of active area
+    try testing.expect(s.selectWord(.{ .x = 9, .y = 0 }) == null);
     try testing.expect(s.selectWord(.{ .x = 0, .y = 5 }) == null);
 
     // Going forward
@@ -2589,7 +2611,86 @@ test "Screen: selectWord" {
         try testing.expectEqual(@as(usize, 1), sel.end.y);
     }
 
-    // TODO: test going backwards up a line
+    // End of screen
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 2 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 2), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 2), sel.end.y);
+    }
+}
+
+test "Screen: selectWord across soft-wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    try s.testWriteString(" 1234012\n 123");
+
+    // Going forward
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // Going backward
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 1 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // Going forward and backward
+    {
+        const sel = s.selectWord(.{ .x = 3, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+}
+
+test "Screen: selectWord whitespace across soft-wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1       1\n 123");
+
+    // Going forward
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // Going backward
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 1 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // Going forward and backward
+    {
+        const sel = s.selectWord(.{ .x = 3, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 1), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
 }
 
 test "Screen: scrollRegionUp single" {
