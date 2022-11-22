@@ -1562,7 +1562,7 @@ fn mouseButtonCallback(
                     log.err("error scheduling render in mouseButtinCallback err={}", .{err});
             },
 
-            // Double click, select the word under our  mouse
+            // Double click, select the word under our mouse
             2 => {
                 const sel_ = win.io.terminal.screen.selectWord(win.mouse.left_click_point);
                 if (sel_) |sel| {
@@ -1572,7 +1572,15 @@ fn mouseButtonCallback(
                 }
             },
 
-            3 => log.info("TRIPLE CLICK", .{}),
+            // Triple click, select the line under our mouse
+            3 => {
+                const sel_ = win.io.terminal.screen.selectLine(win.mouse.left_click_point);
+                if (sel_) |sel| {
+                    win.io.terminal.selection = sel;
+                    win.queueRender() catch |err|
+                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                }
+            },
 
             // We should be bounded by 1 to 3
             else => unreachable,
@@ -1648,7 +1656,7 @@ fn cursorPosCallback(
     switch (win.mouse.left_click_count) {
         1 => win.dragLeftClickSingle(screen_point, xpos),
         2 => win.dragLeftClickDouble(screen_point),
-        3 => {}, // TODO
+        3 => win.dragLeftClickTriple(screen_point),
         else => unreachable,
     }
 }
@@ -1665,6 +1673,31 @@ fn dragLeftClickDouble(
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectWord(self.mouse.left_click_point) orelse {
+        self.io.terminal.selection = word;
+        return;
+    };
+
+    // Grow our selection
+    if (screen_point.before(self.mouse.left_click_point)) {
+        sel.start = word.start;
+    } else {
+        sel.end = word.end;
+    }
+    self.io.terminal.selection = sel;
+}
+
+/// Triple-click dragging moves the selection one "line" at a time.
+fn dragLeftClickTriple(
+    self: *Window,
+    screen_point: terminal.point.ScreenPoint,
+) void {
+    // Get the word under our current point. If there isn't a word, do nothing.
+    const word = self.io.terminal.screen.selectLine(screen_point) orelse return;
+
+    // Get our selection to grow it. If we don't have a selection, start it now.
+    // We may not have a selection if we started our dbl-click in an area
+    // that had no data, then we dragged our mouse into an area with data.
+    var sel = self.io.terminal.screen.selectLine(self.mouse.left_click_point) orelse {
         self.io.terminal.selection = word;
         return;
     };

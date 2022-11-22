@@ -1117,6 +1117,7 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
             const current = self.getRow(.{ .screen = y });
             if (!current.header().flags.wrap) break :start_row y + 1;
             if (y == 0) break :start_row y;
+            y -= 1;
         }
         unreachable;
     };
