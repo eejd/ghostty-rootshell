@@ -75,6 +75,7 @@ renderer_thr: std.Thread,
 
 /// Mouse state.
 mouse: Mouse,
+mouse_interval: u64,
 
 /// The terminal IO handler.
 io: termio.Impl,
@@ -116,6 +117,12 @@ const Mouse = struct {
     /// stable during scrolling relative to the window.
     left_click_xpos: f64 = 0,
     left_click_ypos: f64 = 0,
+
+    /// The count of clicks to count double and triple clicks and so on.
+    /// The left click time was the last time the left click was done. This
+    /// is always set on the first left click.
+    left_click_count: u8 = 0,
+    left_click_time: std.time.Instant = undefined,
 
     /// The last x/y sent for mouse reports.
     event_point: terminal.point.Viewport = .{},
@@ -388,6 +395,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         },
         .renderer_thr = undefined,
         .mouse = .{},
+        .mouse_interval = 500 * 1_000_000, // 500ms
         .io = io,
         .io_thread = io_thread,
         .io_thr = undefined,
@@ -1525,11 +1533,40 @@ fn mouseButtonCallback(
         win.mouse.left_click_xpos = pos.xpos;
         win.mouse.left_click_ypos = pos.ypos;
 
-        // Selection is always cleared
-        if (win.io.terminal.selection != null) {
-            win.io.terminal.selection = null;
-            win.queueRender() catch |err|
-                log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+        // Setup our click counter and timer
+        if (std.time.Instant.now()) |now| {
+            // If we have mouse clicks, then we check if the time elapsed
+            // is less than and our interval and if so, increase the count.
+            if (win.mouse.left_click_count > 0) {
+                const since = now.since(win.mouse.left_click_time);
+                if (since > win.mouse_interval) {
+                    win.mouse.left_click_count = 0;
+                }
+            }
+
+            win.mouse.left_click_time = now;
+            win.mouse.left_click_count += 1;
+
+            // We only support up to triple-clicks.
+            if (win.mouse.left_click_count > 3) win.mouse.left_click_count = 1;
+        } else |err| {
+            win.mouse.left_click_count = 1;
+            log.err("error reading time, mouse multi-click won't work err={}", .{err});
+        }
+
+        switch (win.mouse.left_click_count) {
+            // First mouse click, clear selection
+            1 => if (win.io.terminal.selection != null) {
+                win.io.terminal.selection = null;
+                win.queueRender() catch |err|
+                    log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+            },
+
+            2 => log.info("DoublE CLICk", .{}),
+            3 => log.info("TRIPLE CLICK", .{}),
+
+            // We should be bounded by 1 to 3
+            else => unreachable,
         }
     }
 }
