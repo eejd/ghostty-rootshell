@@ -5,6 +5,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const inputpkg = @import("input.zig");
 const passwd = @import("passwd.zig");
 const terminal = @import("terminal/main.zig");
+const internal_os = @import("os/main.zig");
 
 const log = std.log.scoped(.config);
 
@@ -327,7 +328,7 @@ pub const Config = struct {
 
         // Default our click interval
         if (self.@"click-repeat-interval" == 0) {
-            self.@"click-repeat-interval" = 500;
+            self.@"click-repeat-interval" = internal_os.clickInterval() orelse 500;
         }
     }
 };
