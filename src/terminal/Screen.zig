@@ -1124,7 +1124,7 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
         var prev: point.ScreenPoint = pt;
         var y: usize = pt.y;
         var x: usize = pt.x;
-        while (y < y_max) : (y += 1) {
+        while (y <= y_max) : (y += 1) {
             const current_row = self.getRow(.{ .screen = y });
 
             // Go through all the remainining cells on this row until
