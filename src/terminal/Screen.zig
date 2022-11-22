@@ -1096,6 +1096,101 @@ pub fn clearHistory(self: *Screen) void {
     self.viewport = 0;
 }
 
+/// Select the word under the given point. A word is any consecutive series
+/// of characters that are exclusively whitespace or exclusively non-whitespace.
+/// A selection can span multiple physical lines.
+pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Impossible to select anything outside of the area we've written.
+    const y_max = self.rowsWritten() - 1;
+    if (pt.y > y_max) return null;
+
+    // Get our row
+    const row = self.getRow(.{ .screen = pt.y });
+    const start_cell = row.getCell(pt.x);
+
+    // If our cell is empty we can't select a word, because we can't select
+    // areas where the screen is not yet written.
+    if (start_cell.empty()) return null;
+
+    // Determine if we are whitespace or not to determine what our boundary is.
+    const whitespace = &[_]u32{ 0, ' ', '\t' };
+    const expect_whitespace = std.mem.indexOfAny(u32, whitespace, &[_]u32{start_cell.char}) != null;
+
+    // Go forwards to find our end boundary
+    const end: point.ScreenPoint = boundary: {
+        //var y: usize = pt.y;
+        var x: usize = pt.x;
+        var prev: point.ScreenPoint = pt;
+        while (x < self.cols) : (x += 1) {
+            const cell = row.getCell(x);
+
+            // If we reached an empty cell its always a boundary
+            if (cell.empty()) break :boundary prev;
+
+            // If we do not match our expected set, we hit a boundary
+            const this_whitespace = std.mem.indexOfAny(u32, whitespace, &[_]u32{cell.char}) != null;
+            if (this_whitespace != expect_whitespace) break :boundary prev;
+
+            // Increase our prev
+            prev.x = x;
+        }
+
+        break :boundary .{ .x = self.cols - 1, .y = y_max };
+    };
+
+    // Go backwards to find our start boundary
+    const start: point.ScreenPoint = boundary: {
+        var current_row = row;
+        var prev: point.ScreenPoint = pt;
+
+        var y: usize = pt.y;
+        while (true) {
+            var x: usize = pt.x;
+            while (x > 0) : (x -= 1) {
+                const cell = current_row.getCell(x - 1);
+
+                // If we reached an empty cell its always a boundary
+                if (cell.empty()) break :boundary prev;
+
+                // If we do not match our expected set, we hit a boundary
+                const this_whitespace = std.mem.indexOfAny(
+                    u32,
+                    whitespace,
+                    &[_]u32{cell.char},
+                ) != null;
+                if (this_whitespace != expect_whitespace) break :boundary prev;
+
+                // Update our prev
+                prev.x = x - 1;
+            }
+
+            // If we're at the start, we need to check if the previous line wrapped.
+            // If we are wrapped, we continue searching. If we are not wrapped,
+            // then we've hit a boundary.
+            assert(prev.x == 0);
+
+            // If we're at the end, we're done!
+            if (y == 0) break;
+
+            // Update our prev y
+            prev.y = y;
+
+            // If the previous row did not wrap, then we're done. Otherwise
+            // we keep searching.
+            y -= 1;
+            current_row = self.getRow(.{ .screen = y });
+            if (!current_row.header().flags.wrap) break :boundary prev;
+        }
+
+        break :boundary .{ .x = 0, .y = 0 };
+    };
+
+    return Selection{
+        .start = start,
+        .end = end,
+    };
+}
+
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
@@ -2436,6 +2531,65 @@ test "Screen: clone one line viewport" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABC", contents);
     }
+}
+
+test "Screen: selectWord" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 10, 0);
+    defer s.deinit();
+    try s.testWriteString("ABC  DEF\n 123\n456");
+
+    // Outside of active area
+    try testing.expect(s.selectWord(.{ .x = 0, .y = 5 }) == null);
+
+    // Going forward
+    {
+        const sel = s.selectWord(.{ .x = 0, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Going backward
+    {
+        const sel = s.selectWord(.{ .x = 2, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Going forward and backward
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Whitespace
+    {
+        const sel = s.selectWord(.{ .x = 3, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 3), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 4), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Whitespace single char
+    {
+        const sel = s.selectWord(.{ .x = 0, .y = 1 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 1), sel.start.y);
+        try testing.expectEqual(@as(usize, 0), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+
+    // TODO: test going backwards up a line
 }
 
 test "Screen: scrollRegionUp single" {
