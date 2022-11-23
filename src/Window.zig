@@ -1527,6 +1527,18 @@ fn mouseButtonCallback(
             return;
         });
 
+        // If we move our cursor too much between clicks then we reset
+        // the multi-click state.
+        if (win.mouse.left_click_count > 0) {
+            const max_distance = win.cell_size.width;
+            const distance = @sqrt(
+                std.math.pow(f64, pos.xpos - win.mouse.left_click_xpos, 2) +
+                    std.math.pow(f64, pos.ypos - win.mouse.left_click_ypos, 2),
+            );
+
+            if (distance > max_distance) win.mouse.left_click_count = 0;
+        }
+
         // Store it
         const point = win.posToViewport(pos.xpos, pos.ypos);
         win.mouse.left_click_point = point.toScreen(&win.io.terminal.screen);
