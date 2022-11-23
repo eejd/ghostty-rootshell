@@ -928,7 +928,7 @@ pub fn updateCell(
         var i: usize = 0;
         if (colors.bg != null) i += 1;
         if (!cell.empty()) i += 1;
-        if (cell.attrs.underline) i += 1;
+        if (cell.attrs.underline != .none) i += 1;
         if (cell.attrs.strikethrough) i += 1;
         break :needed i;
     };
@@ -1002,7 +1002,7 @@ pub fn updateCell(
         });
     }
 
-    if (cell.attrs.underline) {
+    if (cell.attrs.underline != .none) {
         self.cells.appendAssumeCapacity(.{
             .mode = .underline,
             .grid_col = @intCast(u16, x),

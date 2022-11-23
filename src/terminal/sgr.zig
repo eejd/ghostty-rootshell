@@ -31,7 +31,7 @@ pub const Attribute = union(enum) {
     faint: void,
 
     /// Underline the text
-    underline: void,
+    underline: Underline,
     reset_underline: void,
 
     /// Blink the text
@@ -75,6 +75,15 @@ pub const Attribute = union(enum) {
         g: u8,
         b: u8,
     };
+
+    pub const Underline = enum(u3) {
+        none = 0,
+        single = 1,
+        double = 2,
+        curly = 3,
+        dotted = 4,
+        dashed = 5,
+    };
 };
 
 /// Parser parses the attributes from a list of SGR parameters.
@@ -107,7 +116,7 @@ pub const Parser = struct {
 
             3 => return Attribute{ .italic = {} },
 
-            4 => return Attribute{ .underline = {} },
+            4 => return Attribute{ .underline = .single },
 
             5 => return Attribute{ .blink = {} },
 

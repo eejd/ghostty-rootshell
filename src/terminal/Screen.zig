@@ -56,6 +56,7 @@ const Allocator = std.mem.Allocator;
 
 const utf8proc = @import("utf8proc");
 const trace = @import("tracy").trace;
+const sgr = @import("sgr.zig");
 const color = @import("color.zig");
 const point = @import("point.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
@@ -167,10 +168,10 @@ pub const Cell = struct {
         bold: bool = false,
         italic: bool = false,
         faint: bool = false,
-        underline: bool = false,
         blink: bool = false,
         inverse: bool = false,
         strikethrough: bool = false,
+        underline: sgr.Attribute.Underline = .none,
 
         /// True if this is a wide character. This char takes up
         /// two cells. The following cell ALWAYS is a space.
@@ -241,7 +242,7 @@ pub const Cell = struct {
     }
 
     test {
-        //log.warn("CELL={} {}", .{ @sizeOf(Cell), @alignOf(Cell) });
+        //log.warn("CELL={} bits={} {}", .{ @sizeOf(Cell), @bitSizeOf(Cell), @alignOf(Cell) });
         try std.testing.expectEqual(12, @sizeOf(Cell));
     }
 };

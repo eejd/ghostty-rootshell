@@ -911,7 +911,7 @@ pub fn updateCell(
         });
     }
 
-    if (cell.attrs.underline) {
+    if (cell.attrs.underline != .none) {
         self.cells.appendAssumeCapacity(.{
             .mode = .underline,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
