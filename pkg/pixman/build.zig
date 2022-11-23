@@ -22,10 +22,10 @@ pub const Options = struct {};
 pub fn build(b: *std.build.Builder) !void {
     const target = b.standardTargetOptions(.{});
     const mode = b.standardReleaseOptions();
-    _ = target;
-    _ = mode;
 
     const tests = b.addTestExe("pixman-test", "main.zig");
+    tests.setBuildMode(mode);
+    tests.setTarget(target);
     _ = try link(b, tests, .{});
     tests.install();
 
