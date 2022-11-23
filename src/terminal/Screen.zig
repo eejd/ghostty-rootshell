@@ -1454,7 +1454,12 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
 /// Returns the raw text associated with a selection. This will unwrap
 /// soft-wrapped edges. The returned slice is owned by the caller and allocated
 /// using alloc, not the allocator associated with the screen (unless they match).
-pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]const u8 {
+pub fn selectionString(
+    self: *Screen,
+    alloc: Allocator,
+    sel: Selection,
+    trim: bool,
+) ![:0]const u8 {
     // Get the slices for the string
     const slices = self.selectionSlices(sel);
 
@@ -1472,6 +1477,21 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
                     // We use each row header as an opportunity to "count"
                     // a new row, and therefore count a possible newline.
                     count += 1;
+
+                    // If we have runtime safety, then we can have invalidly
+                    // tagged cells because all cells are headers by default.
+                    // This isn't an issue in prod builds because the zero values
+                    // we use are correct by default.
+                    if (std.debug.runtime_safety) {
+                        if (cell.header.id == 0) {
+                            std.mem.set(
+                                StorageCell,
+                                slice[i + 1 .. i + 1 + self.cols],
+                                .{ .cell = .{} },
+                            );
+                        }
+                    }
+
                     continue;
                 }
 
@@ -1534,6 +1554,24 @@ pub fn selectionString(self: *Screen, alloc: Allocator, sel: Selection) ![:0]con
 
     // Remove our trailing newline, its never correct.
     if (buf[buf_i - 1] == '\n') buf_i -= 1;
+
+    // Remove any trailing spaces on lines. We could do optimize this by
+    // doing this in the loop above but this isn't very hot path code and
+    // this is simple.
+    if (trim) {
+        var it = std.mem.tokenize(u8, buf[0..buf_i], "\n");
+        buf_i = 0;
+        while (it.next()) |line| {
+            const trimmed = std.mem.trimRight(u8, line, " \t");
+            std.mem.copy(u8, buf[buf_i..], trimmed);
+            buf_i += trimmed.len;
+            buf[buf_i] = '\n';
+            buf_i += 1;
+        }
+
+        // Remove our trailing newline again
+        if (buf_i > 0) buf_i -= 1;
+    }
 
     // Add null termination
     buf[buf_i] = 0;
@@ -3094,7 +3132,7 @@ test "Screen: clear history" {
     }
 }
 
-test "Screen: selectionString" {
+test "Screen: selectionString basic" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -3107,9 +3145,71 @@ test "Screen: selectionString" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 0, .y = 1 },
             .end = .{ .x = 2, .y = 2 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString trim space" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1AB  \n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 2, .y = 1 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "1AB\n2EF";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // No trim
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 2, .y = 1 },
+        }, false);
+        defer alloc.free(contents);
+        const expected = "1AB  \n2EF";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString trim empty line" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    const str = "1AB  \n\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 2, .y = 2 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "1AB\n\n2EF";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // No trim
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 2, .y = 2 },
+        }, false);
+        defer alloc.free(contents);
+        const expected = "1AB  \n     \n2EF";
         try testing.expectEqualStrings(expected, contents);
     }
 }
@@ -3127,7 +3227,7 @@ test "Screen: selectionString soft wrap" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 0, .y = 1 },
             .end = .{ .x = 2, .y = 2 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = "2EFGH3IJ";
         try testing.expectEqualStrings(expected, contents);
@@ -3153,7 +3253,7 @@ test "Screen: selectionString wrap around" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 0, .y = 1 },
             .end = .{ .x = 2, .y = 2 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJ";
         try testing.expectEqualStrings(expected, contents);
@@ -3173,7 +3273,7 @@ test "Screen: selectionString wide char" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 0, .y = 0 },
             .end = .{ .x = 3, .y = 0 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = str;
         try testing.expectEqualStrings(expected, contents);
@@ -3183,7 +3283,7 @@ test "Screen: selectionString wide char" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 0, .y = 0 },
             .end = .{ .x = 2, .y = 0 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = str;
         try testing.expectEqualStrings(expected, contents);
@@ -3193,7 +3293,7 @@ test "Screen: selectionString wide char" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 3, .y = 0 },
             .end = .{ .x = 3, .y = 0 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = "⚡";
         try testing.expectEqualStrings(expected, contents);
@@ -3213,7 +3313,7 @@ test "Screen: selectionString wide char with header" {
         var contents = try s.selectionString(alloc, .{
             .start = .{ .x = 0, .y = 0 },
             .end = .{ .x = 4, .y = 0 },
-        });
+        }, true);
         defer alloc.free(contents);
         const expected = str;
         try testing.expectEqualStrings(expected, contents);

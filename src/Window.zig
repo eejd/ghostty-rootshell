@@ -987,6 +987,7 @@ fn keyCallback(
                         var buf = win.io.terminal.screen.selectionString(
                             win.alloc,
                             sel,
+                            win.config.@"clipboard-trim-trailing-spaces",
                         ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;

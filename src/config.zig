@@ -148,6 +148,10 @@ pub const Config = struct {
     @"clipboard-read": bool = false,
     @"clipboard-write": bool = true,
 
+    /// Trims trailing whitespace on data that is copied to the clipboard.
+    /// This does not affect data sent to the clipboard via "clipboard-write".
+    @"clipboard-trim-trailing-spaces": bool = true,
+
     /// The time in milliseconds between clicks to consider a click a repeat
     /// (double, triple, etc.) or an entirely new single click. A value of
     /// zero will use a platform-specific default. The default on macOS
