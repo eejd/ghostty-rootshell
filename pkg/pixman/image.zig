@@ -56,7 +56,7 @@ test "create and destroy" {
     try testing.expect(img.unref());
 }
 
-test "fill boxes" {
+test "fill boxes a1" {
     const testing = std.testing;
     const alloc = testing.allocator;
 

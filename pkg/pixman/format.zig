@@ -108,3 +108,11 @@ test "bpp" {
     try testing.expectEqual(@as(u32, 4), FormatCode.g4.bpp());
     try testing.expectEqual(@as(u32, 8), FormatCode.g8.bpp());
 }
+
+test "stride" {
+    const testing = std.testing;
+
+    try testing.expectEqual(@as(c_int, 4), FormatCode.g1.strideForWidth(10));
+    try testing.expectEqual(@as(c_int, 8), FormatCode.g4.strideForWidth(10));
+    try testing.expectEqual(@as(c_int, 12), FormatCode.g8.strideForWidth(10));
+}

@@ -74,3 +74,13 @@ pub const Box32 = extern struct {
     x2: i32,
     y2: i32,
 };
+
+pub const Indexed = extern struct {
+    color: bool,
+    rgba: [256]u32,
+    ent: [32768]u8,
+};
+
+test {
+    std.testing.refAllDecls(@This());
+}
