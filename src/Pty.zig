@@ -55,6 +55,19 @@ pub fn open(size: winsize) !Pty {
         @ptrCast([*c]c.struct_winsize, &sizeCopy),
     ) < 0)
         return error.OpenptyFailed;
+    errdefer {
+        _ = std.os.system.close(master_fd);
+        _ = std.os.system.close(slave_fd);
+    }
+
+    // Enable UTF-8 mode. I think this is on by default on Linux but it
+    // is NOT on by default on macOS so we ensure that it is always set.
+    var attrs: c.termios = undefined;
+    if (c.tcgetattr(master_fd, &attrs) != 0)
+        return error.OpenptyFailed;
+    attrs.c_iflag |= c.IUTF8;
+    if (c.tcsetattr(master_fd, c.TCSANOW, &attrs) != 0)
+        return error.OpenptyFailed;
 
     return Pty{
         .master = master_fd,
