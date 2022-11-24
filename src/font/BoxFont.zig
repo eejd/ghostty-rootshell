@@ -174,6 +174,23 @@ fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
         0x251e => self.draw_box_drawings_up_heavy_and_right_down_light(img),
         0x251f => self.draw_box_drawings_down_heavy_and_right_up_light(img),
 
+        0x2520 => self.draw_box_drawings_vertical_heavy_and_right_light(img),
+        0x2521 => self.draw_box_drawings_down_light_and_right_up_heavy(img),
+        0x2522 => self.draw_box_drawings_up_light_and_right_down_heavy(img),
+        0x2523 => self.draw_box_drawings_heavy_vertical_and_right(img),
+        0x2524 => self.draw_box_drawings_light_vertical_and_left(img),
+        0x2525 => self.draw_box_drawings_vertical_light_and_left_heavy(img),
+        0x2526 => self.draw_box_drawings_up_heavy_and_left_down_light(img),
+        0x2527 => self.draw_box_drawings_down_heavy_and_left_up_light(img),
+        0x2528 => self.draw_box_drawings_vertical_heavy_and_left_light(img),
+        0x2529 => self.draw_box_drawings_down_light_and_left_up_heavy(img),
+        0x252a => self.draw_box_drawings_up_light_and_left_down_heavy(img),
+        0x252b => self.draw_box_drawings_heavy_vertical_and_left(img),
+        0x252c => self.draw_box_drawings_light_down_and_horizontal(img),
+        0x252d => self.draw_box_drawings_left_heavy_and_right_down_light(img),
+        0x252e => self.draw_box_drawings_right_heavy_and_left_down_light(img),
+        0x252f => self.draw_box_drawings_down_light_and_horizontal_heavy(img),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -366,6 +383,94 @@ fn draw_box_drawings_down_heavy_and_right_up_light(self: BoxFont, img: *pixman.I
     self.hline_middle_right(img, .light, .light);
     self.vline_middle_up(img, .light, .light);
     self.vline_middle_down(img, .heavy, .light);
+}
+
+fn draw_box_drawings_vertical_heavy_and_right_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_box_drawings_down_light_and_right_up_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_up_light_and_right_down_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_box_drawings_heavy_vertical_and_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_box_drawings_light_vertical_and_left(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.vline_middle(img, .light);
+}
+
+fn draw_box_drawings_vertical_light_and_left_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .heavy);
+    self.vline_middle(img, .light);
+}
+
+fn draw_box_drawings_up_heavy_and_left_down_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.vline_middle_up(img, .heavy, .light);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_down_heavy_and_left_up_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .light);
+}
+
+fn draw_box_drawings_vertical_heavy_and_left_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_box_drawings_down_light_and_left_up_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_up_light_and_left_down_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_box_drawings_heavy_vertical_and_left(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_box_drawings_light_down_and_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .light);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_left_heavy_and_right_down_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .heavy);
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_right_heavy_and_left_down_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.hline_middle_right(img, .light, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_down_light_and_horizontal_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .heavy);
+    self.vline_middle_down(img, .light, .light);
 }
 
 fn draw_box_drawings_dash_horizontal(
