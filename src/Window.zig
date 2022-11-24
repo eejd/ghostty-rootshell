@@ -296,10 +296,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .thickness = 2,
     };
 
-    // TEST
-    const idx = (try font_group.indexForCodepoint(alloc, 0x2500, .regular, null)).?;
-    _ = try font_group.renderGlyph(alloc, idx, 0x2500, null);
-
     // Convert our padding from points to pixels
     const padding_x = (@intToFloat(f32, config.@"window-padding-x") * x_dpi) / 72;
     const padding_y = (@intToFloat(f32, config.@"window-padding-y") * y_dpi) / 72;

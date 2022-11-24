@@ -282,7 +282,6 @@ pub fn renderGlyph(
             alloc,
             atlas,
             glyph_index,
-            self.size,
         ),
     };
 

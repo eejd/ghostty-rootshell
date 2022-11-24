@@ -18,7 +18,8 @@ const log = std.log.scoped(.box_font);
 width: u32,
 height: u32,
 
-/// Base thickness value for lines of the box. This is in points.
+/// Base thickness value for lines of the box. This is in pixels. If you
+/// want to do any DPI scaling, it is expected to be done earlier.
 thickness: u32,
 
 /// We use alpha-channel-only images for the box font so white causes
@@ -51,13 +52,11 @@ pub fn renderGlyph(
     alloc: Allocator,
     atlas: *Atlas,
     cp: u32,
-    font_size: font.face.DesiredSize,
 ) !font.Glyph {
     assert(atlas.format == .greyscale);
 
     // TODO: render depending on cp
     _ = cp;
-    _ = font_size;
 
     // Determine the config for our image buffer. The images we draw
     // for boxes are always 8bpp
@@ -175,7 +174,6 @@ test "all" {
         alloc,
         &atlas_greyscale,
         0x2500,
-        .{ .points = 12 },
     );
     try testing.expectEqual(@as(u32, face.width), glyph.width);
     try testing.expectEqual(@as(u32, face.height), glyph.height);
