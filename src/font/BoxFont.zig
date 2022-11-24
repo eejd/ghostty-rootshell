@@ -208,6 +208,23 @@ fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
         0x253e => self.draw_right_heavy_and_left_vertical_light(img),
         0x253f => self.draw_vertical_light_and_horizontal_heavy(img),
 
+        0x2540 => self.draw_up_heavy_and_down_horizontal_light(img),
+        0x2541 => self.draw_down_heavy_and_up_horizontal_light(img),
+        0x2542 => self.draw_vertical_heavy_and_horizontal_light(img),
+        0x2543 => self.draw_left_up_heavy_and_right_down_light(img),
+        0x2544 => self.draw_right_up_heavy_and_left_down_light(img),
+        0x2545 => self.draw_left_down_heavy_and_right_up_light(img),
+        0x2546 => self.draw_right_down_heavy_and_left_up_light(img),
+        0x2547 => self.draw_down_light_and_up_horizontal_heavy(img),
+        0x2548 => self.draw_up_light_and_down_horizontal_heavy(img),
+        0x2549 => self.draw_right_light_and_left_vertical_heavy(img),
+        0x254a => self.draw_left_light_and_right_vertical_heavy(img),
+        0x254b => self.draw_heavy_vertical_and_horizontal(img),
+        0x254c => self.draw_light_double_dash_horizontal(img),
+        0x254d => self.draw_heavy_double_dash_horizontal(img),
+        0x254e => self.draw_light_double_dash_vertical(img),
+        0x254f => self.draw_heavy_double_dash_vertical(img),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -576,6 +593,116 @@ fn draw_right_heavy_and_left_vertical_light(self: BoxFont, img: *pixman.Image) v
 fn draw_vertical_light_and_horizontal_heavy(self: BoxFont, img: *pixman.Image) void {
     self.hline_middle(img, .heavy);
     self.vline_middle(img, .light);
+}
+
+fn draw_up_heavy_and_down_horizontal_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .light);
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_down_heavy_and_up_horizontal_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .light);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .light);
+}
+
+fn draw_vertical_heavy_and_horizontal_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .light);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_left_up_heavy_and_right_down_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_right_up_heavy_and_left_down_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_left_down_heavy_and_right_up_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_right_down_heavy_and_left_up_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_down_light_and_up_horizontal_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .heavy);
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_up_light_and_down_horizontal_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .heavy);
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_right_light_and_left_vertical_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_left_light_and_right_vertical_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_heavy_vertical_and_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .heavy);
+    self.vline_middle(img, .heavy);
+}
+
+fn draw_light_double_dash_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.draw_dash_horizontal(
+        img,
+        2,
+        Thickness.light.height(self.thickness),
+        Thickness.light.height(self.thickness),
+    );
+}
+
+fn draw_heavy_double_dash_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.draw_dash_horizontal(
+        img,
+        2,
+        Thickness.heavy.height(self.thickness),
+        Thickness.heavy.height(self.thickness),
+    );
+}
+
+fn draw_light_double_dash_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.draw_dash_vertical(
+        img,
+        2,
+        Thickness.light.height(self.thickness),
+        Thickness.heavy.height(self.thickness),
+    );
+}
+
+fn draw_heavy_double_dash_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.draw_dash_vertical(
+        img,
+        2,
+        Thickness.heavy.height(self.thickness),
+        Thickness.heavy.height(self.thickness),
+    );
 }
 
 fn draw_dash_horizontal(
