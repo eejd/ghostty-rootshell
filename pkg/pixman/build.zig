@@ -87,6 +87,10 @@ pub fn buildPixman(
 
         "-DSIZEOF_LONG=8",
         "-DPACKAGE=foo",
+
+        // There is ubsan
+        "-fno-sanitize=undefined",
+        "-fno-sanitize-trap=undefined",
     });
 
     if (!target.isWindows()) {
