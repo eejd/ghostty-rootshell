@@ -967,7 +967,7 @@ pub fn updateCell(
 
         // If we're rendering a color font, we use the color atlas
         const presentation = try self.font_group.group.presentationFromIndex(shaper_run.font_index);
-        var mode: GPUCellMode = switch (presentation) {
+        const mode: GPUCellMode = switch (presentation) {
             .text => .fg,
             .emoji => .fg_color,
         };
