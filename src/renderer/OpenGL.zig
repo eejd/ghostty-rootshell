@@ -501,6 +501,12 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
 
+    // Set the cell size of the box font
+    if (self.font_group.group.box_font) |*box| {
+        box.width = @floatToInt(u32, self.cell_size.width);
+        box.height = @floatToInt(u32, self.cell_size.height);
+    }
+
     // Notify the window that the cell size changed.
     _ = self.window_mailbox.push(.{
         .cell_size = new_cell_size,

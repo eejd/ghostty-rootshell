@@ -237,7 +237,19 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
     return null;
 }
 
-/// Return the Face represented by a given FontIndex.
+/// Returns the presentation for a specific font index. This is useful for
+/// determining what atlas is needed.
+pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
+    if (index.special()) |sp| switch (sp) {
+        .box => return .text,
+    };
+
+    const face = try self.faceFromIndex(index);
+    return face.presentation;
+}
+
+/// Return the Face represented by a given FontIndex. Note that special
+/// fonts (i.e. box glyphs) do not have a face.
 pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
     if (index.special() != null) return error.SpecialHasNoFace;
     const deferred = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
