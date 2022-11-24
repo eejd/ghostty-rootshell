@@ -1,6 +1,14 @@
 //! This file contains functions for drawing the box drawing characters
 //! (https://en.wikipedia.org/wiki/Box-drawing_character) and related
 //! characters that are provided by the terminal.
+//!
+//! The box drawing logic is based off similar logic in Kitty and Foot.
+//! The primary drawing code was ported directly and slightly modified from Foot
+//! (https://codeberg.org/dnkl/foot/). Foot is licensed under the MIT
+//! license and is copyright 2019 Daniel Eklöf.
+//!
+//! The modifications made are primarily around spacing, DPI calculations,
+//! and adapting the code to our atlas model.
 const BoxFont = @This();
 
 const std = @import("std");
@@ -42,7 +50,7 @@ const Thickness = enum {
     fn height(self: Thickness, base: u32) u32 {
         return switch (self) {
             .light => base,
-            .heavy => base * 3,
+            .heavy => base * 2,
         };
     }
 };
@@ -140,14 +148,14 @@ fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
         0x2505 => self.draw_box_drawings_heavy_triple_dash_horizontal(img),
         0x2506 => self.draw_box_drawings_light_triple_dash_vertical(img),
         0x2507 => self.draw_box_drawings_heavy_triple_dash_vertical(img),
-        // 0x2508 => self.draw_box_drawings_light_quadruple_dash_horizontal(img),
-        // 0x2509 => self.draw_box_drawings_heavy_quadruple_dash_horizontal(img),
-        // 0x250a => self.draw_box_drawings_light_quadruple_dash_vertical(img),
-        // 0x250b => self.draw_box_drawings_heavy_quadruple_dash_vertical(img),
-        // 0x250c => self.draw_box_drawings_light_down_and_right(img),
-        // 0x250d => self.draw_box_drawings_down_light_and_right_heavy(img),
-        // 0x250e => self.draw_box_drawings_down_heavy_and_right_light(img),
-        // 0x250f => self.draw_box_drawings_heavy_down_and_right(img),
+        0x2508 => self.draw_box_drawings_light_quadruple_dash_horizontal(img),
+        0x2509 => self.draw_box_drawings_heavy_quadruple_dash_horizontal(img),
+        0x250a => self.draw_box_drawings_light_quadruple_dash_vertical(img),
+        0x250b => self.draw_box_drawings_heavy_quadruple_dash_vertical(img),
+        0x250c => self.draw_box_drawings_light_down_and_right(img),
+        0x250d => self.draw_box_drawings_down_light_and_right_heavy(img),
+        0x250e => self.draw_box_drawings_down_heavy_and_right_light(img),
+        0x250f => self.draw_box_drawings_heavy_down_and_right(img),
         else => return error.InvalidCodepoint,
     }
 }
@@ -202,6 +210,62 @@ fn draw_box_drawings_heavy_triple_dash_vertical(self: BoxFont, img: *pixman.Imag
         Thickness.heavy.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
+}
+
+fn draw_box_drawings_light_quadruple_dash_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_horizontal(
+        img,
+        4,
+        Thickness.light.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_heavy_quadruple_dash_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_horizontal(
+        img,
+        4,
+        Thickness.heavy.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_light_quadruple_dash_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_vertical(
+        img,
+        4,
+        Thickness.light.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_heavy_quadruple_dash_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_vertical(
+        img,
+        4,
+        Thickness.heavy.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_light_down_and_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_down_light_and_right_heavy(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .light, .heavy);
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_box_drawings_down_heavy_and_right_light(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .light);
+}
+
+fn draw_box_drawings_heavy_down_and_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .heavy, .heavy);
+    self.vline_middle_down(img, .heavy, .heavy);
 }
 
 fn draw_box_drawings_dash_horizontal(
@@ -341,9 +405,77 @@ fn vline_middle(self: BoxFont, img: *pixman.Image, thickness: Thickness) void {
     self.vline(img, 0, self.height, (self.width - thick_px) / 2, thick_px);
 }
 
+fn vline_middle_up(
+    self: BoxFont,
+    img: *pixman.Image,
+    vthickness: Thickness,
+    hthickness: Thickness,
+) void {
+    const hthick_px = hthickness.height(self.thickness);
+    const vthick_px = vthickness.height(self.thickness);
+    self.vline(
+        img,
+        0,
+        (self.height + hthick_px) / 2,
+        (self.width - vthick_px) / 2,
+        vthick_px,
+    );
+}
+
+fn vline_middle_down(
+    self: BoxFont,
+    img: *pixman.Image,
+    vthickness: Thickness,
+    hthickness: Thickness,
+) void {
+    const hthick_px = hthickness.height(self.thickness);
+    const vthick_px = vthickness.height(self.thickness);
+    self.vline(
+        img,
+        (self.height - hthick_px) / 2,
+        self.height,
+        (self.width - vthick_px) / 2,
+        vthick_px,
+    );
+}
+
 fn hline_middle(self: BoxFont, img: *pixman.Image, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
     self.hline(img, 0, self.width, (self.height - thick_px) / 2, thick_px);
+}
+
+fn hline_middle_left(
+    self: BoxFont,
+    img: *pixman.Image,
+    vthickness: Thickness,
+    hthickness: Thickness,
+) void {
+    const hthick_px = hthickness.height(self.thickness);
+    const vthick_px = vthickness.height(self.thickness);
+    self.hline(
+        img,
+        0,
+        (self.width + vthick_px) / 2,
+        (self.height - hthick_px) / 2,
+        hthick_px,
+    );
+}
+
+fn hline_middle_right(
+    self: BoxFont,
+    img: *pixman.Image,
+    vthickness: Thickness,
+    hthickness: Thickness,
+) void {
+    const hthick_px = hthickness.height(self.thickness);
+    const vthick_px = vthickness.height(self.thickness);
+    self.hline(
+        img,
+        (self.width - vthick_px) / 2,
+        self.width,
+        (self.height - hthick_px) / 2,
+        hthick_px,
+    );
 }
 
 fn vline(
