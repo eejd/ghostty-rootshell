@@ -212,6 +212,7 @@ fn addDeps(
     step.addPackage(imgui.pkg);
     step.addPackage(glfw.pkg);
     step.addPackage(libuv.pkg);
+    step.addPackage(pixman.pkg);
     step.addPackage(stb_image_resize.pkg);
     step.addPackage(utf8proc.pkg);
 
