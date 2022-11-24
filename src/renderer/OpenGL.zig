@@ -958,7 +958,6 @@ pub fn updateCell(
     // If the cell has a character, draw it
     if (cell.char > 0) {
         // Render
-        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             shaper_run.font_index,
@@ -967,8 +966,11 @@ pub fn updateCell(
         );
 
         // If we're rendering a color font, we use the color atlas
-        var mode: GPUCellMode = .fg;
-        if (face.presentation == .emoji) mode = .fg_color;
+        const presentation = try self.font_group.group.presentationFromIndex(shaper_run.font_index);
+        var mode: GPUCellMode = switch (presentation) {
+            .text => .fg,
+            .emoji => .fg_color,
+        };
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,

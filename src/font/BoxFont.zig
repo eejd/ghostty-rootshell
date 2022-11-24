@@ -11,6 +11,8 @@ const pixman = @import("pixman");
 const font = @import("main.zig");
 const Atlas = @import("../Atlas.zig");
 
+const log = std.log.scoped(.box_font);
+
 /// The cell width and height because the boxes are fit perfectly
 /// into a cell so that they all properly connect with zero spacing.
 width: u32,
@@ -49,11 +51,13 @@ pub fn renderGlyph(
     alloc: Allocator,
     atlas: *Atlas,
     cp: u32,
+    font_size: font.face.DesiredSize,
 ) !font.Glyph {
     assert(atlas.format == .greyscale);
 
     // TODO: render depending on cp
     _ = cp;
+    _ = font_size;
 
     // Determine the config for our image buffer. The images we draw
     // for boxes are always 8bpp
@@ -114,11 +118,16 @@ pub fn renderGlyph(
         atlas.set(region, buffer);
     }
 
+    // Our coordinates start at the BOTTOM for our renderers so we have to
+    // specify an offset of the full height because we rendered a full size
+    // cell.
+    const offset_y = @intCast(i32, self.height);
+
     return font.Glyph{
         .width = self.width,
         .height = self.height,
         .offset_x = 0,
-        .offset_y = 0,
+        .offset_y = offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @intToFloat(f32, self.width),
@@ -130,8 +139,8 @@ fn draw_box_drawings_light_horizontal(self: BoxFont, img: *pixman.Image) void {
 }
 
 fn hline_middle(self: BoxFont, img: *pixman.Image, thickness: Thickness) void {
-    const height = thickness.height(self.thickness);
-    self.hline(img, 0, self.width, (self.height - height) / 2, height);
+    const thick_px = thickness.height(self.thickness);
+    self.hline(img, 0, self.width, (self.height - thick_px) / 2, thick_px);
 }
 
 fn hline(
@@ -162,7 +171,12 @@ test "all" {
     defer atlas_greyscale.deinit(alloc);
 
     const face: BoxFont = .{ .width = 18, .height = 36, .thickness = 2 };
-    const glyph = try face.renderGlyph(alloc, &atlas_greyscale, 0x2500);
+    const glyph = try face.renderGlyph(
+        alloc,
+        &atlas_greyscale,
+        0x2500,
+        .{ .points = 12 },
+    );
     try testing.expectEqual(@as(u32, face.width), glyph.width);
     try testing.expectEqual(@as(u32, face.height), glyph.height);
 }
