@@ -47,8 +47,13 @@ size: font.face.DesiredSize,
 faces: StyleArray,
 
 /// If discovery is available, we'll look up fonts where we can't find
-/// the codepoint.
+/// the codepoint. This can be set after initialization.
 discover: ?font.Discover = null,
+
+/// Set this to a non-null value to enable box font glyph drawing. If this
+/// isn't enabled we'll just fall through to trying to use regular fonts
+/// to render box glyphs.
+box_font: ?font.BoxFont = null,
 
 pub fn init(
     alloc: Allocator,
@@ -89,7 +94,7 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace)
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
-    if (list.items.len >= FontIndex.special_start - 1) return error.GroupFull;
+    if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
 
     try list.append(alloc, face);
 }
@@ -119,16 +124,22 @@ pub const FontIndex = packed struct {
     const idx_bits = 8 - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
     pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
 
-    /// Special indexes. They start at "special_start" and are guaranteed
-    /// to not be less than that.
-    pub const special_start = std.math.maxInt(IndexInt);
+    /// The special-case fonts that we support.
+    pub const Special = enum(IndexInt) {
+        // We start all special fonts at this index so they can be detected.
+        pub const start = std.math.maxInt(IndexInt);
 
-    /// Our box drawing font is always specified by box_index. This font
-    /// is rendered just-in-time using 2D graphics APIs.
-    pub const box: FontIndex = .{ .idx = special_start };
+        /// Box drawing, this is rendered JIT using 2D graphics APIs.
+        box = start,
+    };
 
     style: Style = .regular,
     idx: IndexInt = 0,
+
+    /// Initialize a special font index.
+    pub fn initSpecial(v: Special) FontIndex {
+        return .{ .style = .regular, .idx = @enumToInt(v) };
+    }
 
     /// Convert to int
     pub fn int(self: FontIndex) u8 {
@@ -138,8 +149,9 @@ pub const FontIndex = packed struct {
     /// Returns true if this is a "special" index which doesn't map to
     /// a real font face. We can still render it but there is no face for
     /// this font.
-    pub fn special(self: FontIndex) bool {
-        return self.idx >= special_start;
+    pub fn special(self: FontIndex) ?Special {
+        if (self.idx < Special.start) return null;
+        return @intToEnum(Special, self.idx);
     }
 
     test {
@@ -167,13 +179,16 @@ pub fn indexForCodepoint(
     p: ?Presentation,
 ) ?FontIndex {
     // If this is a box drawing glyph, we use the special font index. This
-    // will force special logic where we'll render this ourselves.
-    if (switch (cp) {
-        // "Box Drawing" block
-        0x2500...0x257F => true,
-        else => false,
-    }) {
-        return FontIndex.box;
+    // will force special logic where we'll render this ourselves. If we don't
+    // have a box font set, then we just try to use regular fonts.
+    if (self.box_font != null) {
+        if (switch (cp) {
+            // "Box Drawing" block
+            0x2500...0x257F => true,
+            else => false,
+        }) {
+            return FontIndex.initSpecial(.box);
+        }
     }
 
     // If we can find the exact value, then return that.
@@ -224,7 +239,7 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 
 /// Return the Face represented by a given FontIndex.
 pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
-    if (index.special()) return error.SpecialHasNoFace;
+    if (index.special() != null) return error.SpecialHasNoFace;
     const deferred = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try deferred.load(self.lib, self.size);
     return deferred.face.?;
@@ -249,7 +264,14 @@ pub fn renderGlyph(
     glyph_index: u32,
     max_height: ?u16,
 ) !Glyph {
-    // TODO: render special faces here
+    // Special-case fonts are rendered directly.
+    if (index.special()) |sp| switch (sp) {
+        .box => return try self.box_font.?.renderGlyph(
+            alloc,
+            atlas,
+            glyph_index,
+        ),
+    };
 
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try face.load(self.lib, self.size);
@@ -313,6 +335,11 @@ test {
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
     }
+
+    // Box glyph should be null since we didn't set a box font
+    {
+        try testing.expect(group.indexForCodepoint(0x1FB00, .regular, null) == null);
+    }
 }
 
 test "box glyph" {
@@ -328,10 +355,13 @@ test "box glyph" {
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
 
+    // Set box font
+    group.box_font = font.BoxFont{ .width = 18, .height = 36, .thickness = 2 };
+
     // Should find a box glyph
     const idx = group.indexForCodepoint(0x2500, .regular, null).?;
     try testing.expectEqual(Style.regular, idx.style);
-    try testing.expectEqual(@as(FontIndex.IndexInt, FontIndex.box.idx), idx.idx);
+    try testing.expectEqual(@enumToInt(FontIndex.Special.box), idx.idx);
 
     // Should render it
     const glyph = try group.renderGlyph(
@@ -341,7 +371,7 @@ test "box glyph" {
         0x2500,
         null,
     );
-    _ = glyph;
+    try testing.expectEqual(@as(u32, 36), glyph.height);
 }
 
 test "resize" {
