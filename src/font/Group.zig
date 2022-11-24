@@ -4,6 +4,10 @@
 //! a codepoint doesn't map cleanly. For example, if a user requests a bold
 //! char and it doesn't exist we can fallback to a regular non-bold char so
 //! we show SOMETHING.
+//!
+//! Note this is made specifically for terminals so it has some features
+//! that aren't generally helpful, such as detecting and drawing the terminal
+//! box glyphs and requiring cell sizes for such glyphs.
 const Group = @This();
 
 const std = @import("std");
@@ -82,7 +86,12 @@ pub fn deinit(self: *Group) void {
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
 pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace) !void {
-    try self.faces.getPtr(style).append(alloc, face);
+    const list = self.faces.getPtr(style);
+
+    // We have some special indexes so we must never pass those.
+    if (list.items.len >= FontIndex.special_start - 1) return error.GroupFull;
+
+    try list.append(alloc, face);
 }
 
 /// Resize the fonts to the desired size.
@@ -110,12 +119,27 @@ pub const FontIndex = packed struct {
     const idx_bits = 8 - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
     pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
 
+    /// Special indexes. They start at "special_start" and are guaranteed
+    /// to not be less than that.
+    pub const special_start = std.math.maxInt(IndexInt);
+
+    /// Our box drawing font is always specified by box_index. This font
+    /// is rendered just-in-time using 2D graphics APIs.
+    pub const box: FontIndex = .{ .idx = special_start };
+
     style: Style = .regular,
     idx: IndexInt = 0,
 
     /// Convert to int
     pub fn int(self: FontIndex) u8 {
         return @bitCast(u8, self);
+    }
+
+    /// Returns true if this is a "special" index which doesn't map to
+    /// a real font face. We can still render it but there is no face for
+    /// this font.
+    pub fn special(self: FontIndex) bool {
+        return self.idx >= special_start;
     }
 
     test {
@@ -142,6 +166,16 @@ pub fn indexForCodepoint(
     style: Style,
     p: ?Presentation,
 ) ?FontIndex {
+    // If this is a box drawing glyph, we use the special font index. This
+    // will force special logic where we'll render this ourselves.
+    if (switch (cp) {
+        // "Box Drawing" block
+        0x2500...0x257F => true,
+        else => false,
+    }) {
+        return FontIndex.box;
+    }
+
     // If we can find the exact value, then return that.
     if (self.indexForCodepointExact(cp, style, p)) |value| return value;
 
@@ -190,6 +224,7 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 
 /// Return the Face represented by a given FontIndex.
 pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
+    if (index.special()) return error.SpecialHasNoFace;
     const deferred = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try deferred.load(self.lib, self.size);
     return deferred.face.?;
@@ -214,6 +249,8 @@ pub fn renderGlyph(
     glyph_index: u32,
     max_height: ?u16,
 ) !Glyph {
+    // TODO: render special faces here
+
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try face.load(self.lib, self.size);
     return try face.face.?.renderGlyph(alloc, atlas, glyph_index, max_height);
@@ -276,6 +313,35 @@ test {
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
     }
+}
+
+test "box glyph" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var group = try init(alloc, lib, .{ .points = 12 });
+    defer group.deinit();
+
+    // Should find a box glyph
+    const idx = group.indexForCodepoint(0x2500, .regular, null).?;
+    try testing.expectEqual(Style.regular, idx.style);
+    try testing.expectEqual(@as(FontIndex.IndexInt, FontIndex.box.idx), idx.idx);
+
+    // Should render it
+    const glyph = try group.renderGlyph(
+        alloc,
+        &atlas_greyscale,
+        idx,
+        0x2500,
+        null,
+    );
+    _ = glyph;
 }
 
 test "resize" {
