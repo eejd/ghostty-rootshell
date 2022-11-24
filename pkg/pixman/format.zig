@@ -96,8 +96,8 @@ pub const FormatCode = enum(c_uint) {
         const val = @enumToInt(self);
         const v1 = val >> ofs;
         const v2 = @as(c_uint, 1) << num;
-        const v3 = @intCast(u5, val >> 22);
-        return ((v1 & (v2 - 1)) << (v3 & 3));
+        const v3 = @intCast(u5, (val >> 22) & 3);
+        return ((v1 & (v2 - 1)) << v3);
     }
 };
 
@@ -106,4 +106,5 @@ test "bpp" {
 
     try testing.expectEqual(@as(u32, 1), FormatCode.g1.bpp());
     try testing.expectEqual(@as(u32, 4), FormatCode.g4.bpp());
+    try testing.expectEqual(@as(u32, 8), FormatCode.g8.bpp());
 }
