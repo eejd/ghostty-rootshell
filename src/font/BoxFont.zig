@@ -55,9 +55,6 @@ pub fn renderGlyph(
 ) !font.Glyph {
     assert(atlas.format == .greyscale);
 
-    // TODO: render depending on cp
-    _ = cp;
-
     // Determine the config for our image buffer. The images we draw
     // for boxes are always 8bpp
     const format: pixman.FormatCode = .a8;
@@ -79,7 +76,7 @@ pub fn renderGlyph(
     );
     defer _ = img.unref();
 
-    self.draw_box_drawings_light_horizontal(img);
+    try self.draw(img, cp);
 
     // Reserve our region in the atlas and render the glyph to it.
     const region = try atlas.reserve(alloc, self.width, self.height);
@@ -133,13 +130,72 @@ pub fn renderGlyph(
     };
 }
 
+fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
+    switch (cp) {
+        0x2500 => self.draw_box_drawings_light_horizontal(img),
+        0x2501 => self.draw_box_drawings_heavy_horizontal(img),
+        0x2502 => self.draw_box_drawings_light_vertical(img),
+        0x2503 => self.draw_box_drawings_heavy_vertical(img),
+        // 0x2504 => self.draw_box_drawings_light_triple_dash_horizontal(img),
+        // 0x2505 => self.draw_box_drawings_heavy_triple_dash_horizontal(img),
+        // 0x2506 => self.draw_box_drawings_light_triple_dash_vertical(img),
+        // 0x2507 => self.draw_box_drawings_heavy_triple_dash_vertical(img),
+        // 0x2508 => self.draw_box_drawings_light_quadruple_dash_horizontal(img),
+        // 0x2509 => self.draw_box_drawings_heavy_quadruple_dash_horizontal(img),
+        // 0x250a => self.draw_box_drawings_light_quadruple_dash_vertical(img),
+        // 0x250b => self.draw_box_drawings_heavy_quadruple_dash_vertical(img),
+        // 0x250c => self.draw_box_drawings_light_down_and_right(img),
+        // 0x250d => self.draw_box_drawings_down_light_and_right_heavy(img),
+        // 0x250e => self.draw_box_drawings_down_heavy_and_right_light(img),
+        // 0x250f => self.draw_box_drawings_heavy_down_and_right(img),
+        else => return error.InvalidCodepoint,
+    }
+}
+
 fn draw_box_drawings_light_horizontal(self: BoxFont, img: *pixman.Image) void {
     self.hline_middle(img, .light);
+}
+
+fn draw_box_drawings_heavy_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle(img, .heavy);
+}
+
+fn draw_box_drawings_light_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle(img, .light);
+}
+
+fn draw_box_drawings_heavy_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle(img, .heavy);
+}
+
+fn vline_middle(self: BoxFont, img: *pixman.Image, thickness: Thickness) void {
+    const thick_px = thickness.height(self.thickness);
+    self.vline(img, 0, self.height, (self.width - thick_px) / 2, thick_px);
 }
 
 fn hline_middle(self: BoxFont, img: *pixman.Image, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
     self.hline(img, 0, self.width, (self.height - thick_px) / 2, thick_px);
+}
+
+fn vline(
+    self: BoxFont,
+    img: *pixman.Image,
+    y1: u32,
+    y2: u32,
+    x: u32,
+    thickness_px: u32,
+) void {
+    const boxes = &[_]pixman.Box32{
+        .{
+            .x1 = @intCast(i32, @min(@max(x, 0), self.width)),
+            .x2 = @intCast(i32, @min(@max(x + thickness_px, 0), self.width)),
+            .y1 = @intCast(i32, @min(@max(y1, 0), self.height)),
+            .y2 = @intCast(i32, @min(@max(y2, 0), self.height)),
+        },
+    };
+
+    img.fillBoxes(.src, white, boxes) catch {};
 }
 
 fn hline(
