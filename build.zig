@@ -264,6 +264,7 @@ fn addDeps(
         step.linkSystemLibrary("harfbuzz");
         step.linkSystemLibrary("libpng");
         step.linkSystemLibrary("libuv");
+        step.linkSystemLibrary("pixman-1");
         step.linkSystemLibrary("zlib");
 
         if (enable_fontconfig) step.linkSystemLibrary("fontconfig");
