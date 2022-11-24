@@ -136,10 +136,10 @@ fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
         0x2501 => self.draw_box_drawings_heavy_horizontal(img),
         0x2502 => self.draw_box_drawings_light_vertical(img),
         0x2503 => self.draw_box_drawings_heavy_vertical(img),
-        // 0x2504 => self.draw_box_drawings_light_triple_dash_horizontal(img),
-        // 0x2505 => self.draw_box_drawings_heavy_triple_dash_horizontal(img),
-        // 0x2506 => self.draw_box_drawings_light_triple_dash_vertical(img),
-        // 0x2507 => self.draw_box_drawings_heavy_triple_dash_vertical(img),
+        0x2504 => self.draw_box_drawings_light_triple_dash_horizontal(img),
+        0x2505 => self.draw_box_drawings_heavy_triple_dash_horizontal(img),
+        0x2506 => self.draw_box_drawings_light_triple_dash_vertical(img),
+        0x2507 => self.draw_box_drawings_heavy_triple_dash_vertical(img),
         // 0x2508 => self.draw_box_drawings_light_quadruple_dash_horizontal(img),
         // 0x2509 => self.draw_box_drawings_heavy_quadruple_dash_horizontal(img),
         // 0x250a => self.draw_box_drawings_light_quadruple_dash_vertical(img),
@@ -166,6 +166,174 @@ fn draw_box_drawings_light_vertical(self: BoxFont, img: *pixman.Image) void {
 
 fn draw_box_drawings_heavy_vertical(self: BoxFont, img: *pixman.Image) void {
     self.vline_middle(img, .heavy);
+}
+
+fn draw_box_drawings_light_triple_dash_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_horizontal(
+        img,
+        3,
+        Thickness.light.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_heavy_triple_dash_horizontal(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_horizontal(
+        img,
+        3,
+        Thickness.heavy.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_light_triple_dash_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_vertical(
+        img,
+        3,
+        Thickness.light.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_heavy_triple_dash_vertical(self: BoxFont, img: *pixman.Image) void {
+    self.draw_box_drawings_dash_vertical(
+        img,
+        3,
+        Thickness.heavy.height(self.thickness),
+        @max(4, Thickness.light.height(self.thickness)),
+    );
+}
+
+fn draw_box_drawings_dash_horizontal(
+    self: BoxFont,
+    img: *pixman.Image,
+    count: u8,
+    thick_px: u32,
+    gap: u32,
+) void {
+    assert(count >= 2 and count <= 4);
+
+    // The number of gaps we have is one less than the number of dashes.
+    // "- - -" => 2 gaps
+    const gap_count = count - 1;
+
+    // Determine the width of our dashes
+    const dash_width = dash_width: {
+        var gap_i = gap;
+        var dash_width = (self.width - (gap_count * gap_i)) / count;
+        while (dash_width <= 0 and gap_i > 1) {
+            gap_i -= 1;
+            dash_width = (self.width - (gap_count * gap_i)) / count;
+        }
+
+        // If we can't fit any dashes then we just render a horizontal line.
+        if (dash_width <= 0) {
+            self.hline_middle(img, .light);
+            return;
+        }
+
+        break :dash_width dash_width;
+    };
+
+    // Our total width should be less than our real width
+    assert(count * dash_width + gap_count * gap <= self.width);
+    const remaining = self.width - count * dash_width - gap_count * gap;
+
+    var x: [4]u32 = .{0} ** 4;
+    var w: [4]u32 = .{dash_width} ** 4;
+    x[1] = x[0] + w[0] + gap;
+    if (count == 2)
+        w[1] = self.width - x[1]
+    else if (count == 3)
+        w[1] += remaining
+    else
+        w[1] += remaining / 2;
+
+    if (count >= 3) {
+        x[2] = x[1] + w[1] + gap;
+        if (count == 3)
+            w[2] = self.width - x[2]
+        else
+            w[2] += remaining - remaining / 2;
+    }
+
+    if (count >= 4) {
+        x[3] = x[2] + w[2] + gap;
+        w[3] = self.width - x[3];
+    }
+
+    self.hline(img, x[0], x[0] + w[0], (self.height - thick_px) / 2, thick_px);
+    self.hline(img, x[1], x[1] + w[1], (self.height - thick_px) / 2, thick_px);
+    if (count >= 3)
+        self.hline(img, x[2], x[2] + w[2], (self.height - thick_px) / 2, thick_px);
+    if (count >= 4)
+        self.hline(img, x[3], x[3] + w[3], (self.height - thick_px) / 2, thick_px);
+}
+
+fn draw_box_drawings_dash_vertical(
+    self: BoxFont,
+    img: *pixman.Image,
+    count: u8,
+    thick_px: u32,
+    gap: u32,
+) void {
+    assert(count >= 2 and count <= 4);
+
+    // The number of gaps we have is one less than the number of dashes.
+    // "- - -" => 2 gaps
+    const gap_count = count - 1;
+
+    // Determine the height of our dashes
+    const dash_height = dash_height: {
+        var gap_i = gap;
+        var dash_height = (self.height - (gap_count * gap_i)) / count;
+        while (dash_height <= 0 and gap_i > 1) {
+            gap_i -= 1;
+            dash_height = (self.height - (gap_count * gap_i)) / count;
+        }
+
+        // If we can't fit any dashes then we just render a horizontal line.
+        if (dash_height <= 0) {
+            self.vline_middle(img, .light);
+            return;
+        }
+
+        break :dash_height dash_height;
+    };
+
+    // Our total height should be less than our real height
+    assert(count * dash_height + gap_count * gap <= self.height);
+    const remaining = self.height - count * dash_height - gap_count * gap;
+
+    var y: [4]u32 = .{0} ** 4;
+    var h: [4]u32 = .{dash_height} ** 4;
+    y[1] = y[0] + h[0] + gap;
+    if (count == 2)
+        h[1] = self.height - y[1]
+    else if (count == 3)
+        h[1] += remaining
+    else
+        h[1] += remaining / 2;
+
+    if (count >= 3) {
+        y[2] = y[1] + h[1] + gap;
+        if (count == 3)
+            h[2] = self.height - y[2]
+        else
+            h[2] += remaining - remaining / 2;
+    }
+
+    if (count >= 4) {
+        y[3] = y[2] + h[2] + gap;
+        h[3] = self.height - y[3];
+    }
+
+    self.vline(img, y[0], y[0] + h[0], (self.width - thick_px) / 2, thick_px);
+    self.vline(img, y[1], y[1] + h[1], (self.width - thick_px) / 2, thick_px);
+    if (count >= 3)
+        self.vline(img, y[2], y[2] + h[2], (self.width - thick_px) / 2, thick_px);
+    if (count >= 4)
+        self.vline(img, y[3], y[3] + h[3], (self.width - thick_px) / 2, thick_px);
 }
 
 fn vline_middle(self: BoxFont, img: *pixman.Image, thickness: Thickness) void {
