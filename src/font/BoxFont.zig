@@ -290,6 +290,14 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
         0x258e => self.draw_left_one_quarter_block(img),
         0x258f => self.draw_left_one_eighth_block(img),
 
+        0x2590 => self.draw_right_half_block(img),
+        0x2591 => self.draw_light_shade(img),
+        0x2592 => self.draw_medium_shade(img),
+        0x2593 => self.draw_dark_shade(img),
+        0x2594 => self.draw_upper_one_eighth_block(img),
+        0x2595 => self.draw_right_one_eighth_block(img),
+        0x2596...0x259f => self.draw_quadrant(img, cp),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1340,6 +1348,133 @@ fn draw_vertical_one_eighth_block_n(self: BoxFont, img: *pixman.Image, n: u32) v
 
 fn draw_left_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
     self.draw_vertical_one_eighth_block_n(img, 0);
+}
+
+fn draw_right_half_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_pixman_shade(self: BoxFont, img: *pixman.Image, v: u16) void {
+    const rects = &[_]pixman.Rectangle16{
+        .{
+            .x = 0,
+            .y = 0,
+            .width = @intCast(u16, self.width),
+            .height = @intCast(u16, self.height),
+        },
+    };
+
+    img.fillRectangles(
+        .src,
+        .{ .red = 0, .green = 0, .blue = 0, .alpha = v },
+        rects,
+    ) catch {};
+}
+
+fn draw_light_shade(self: BoxFont, img: *pixman.Image) void {
+    self.draw_pixman_shade(img, 0x4000);
+}
+
+fn draw_medium_shade(self: BoxFont, img: *pixman.Image) void {
+    self.draw_pixman_shade(img, 0x8000);
+}
+
+fn draw_dark_shade(self: BoxFont, img: *pixman.Image) void {
+    self.draw_pixman_shade(img, 0xc000);
+}
+
+fn draw_horizontal_one_eighth_block_n(self: BoxFont, img: *pixman.Image, n: u32) void {
+    const y = @floatToInt(u32, @round(@intToFloat(f64, n) * @intToFloat(f64, self.height) / 8));
+    const h = @floatToInt(u32, @round(@intToFloat(f64, self.height) / 8));
+    self.rect(img, 0, y, self.width, y + h);
+}
+
+fn draw_upper_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_horizontal_one_eighth_block_n(img, 0);
+}
+
+fn draw_right_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        self.width - @floatToInt(u32, @round(@intToFloat(f64, self.width) / 8)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn quad_upper_left(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @ceil(@intToFloat(f64, self.width) / 2)),
+        @floatToInt(u32, @ceil(@intToFloat(f64, self.height) / 2)),
+    );
+}
+
+fn quad_upper_right(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        @floatToInt(u32, @floor(@intToFloat(f64, self.width) / 2)),
+        0,
+        self.width,
+        @floatToInt(u32, @ceil(@intToFloat(f64, self.height) / 2)),
+    );
+}
+
+fn quad_lower_left(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        @floatToInt(u32, @floor(@intToFloat(f64, self.height) / 2)),
+        @floatToInt(u32, @ceil(@intToFloat(f64, self.width) / 2)),
+        self.height,
+    );
+}
+
+fn quad_lower_right(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        @floatToInt(u32, @floor(@intToFloat(f64, self.width) / 2)),
+        @floatToInt(u32, @floor(@intToFloat(f64, self.height) / 2)),
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_quadrant(self: BoxFont, img: *pixman.Image, cp: u32) void {
+    const UPPER_LEFT: u8 = 1 << 0;
+    const UPPER_RIGHT: u8 = 1 << 1;
+    const LOWER_LEFT: u8 = 1 << 2;
+    const LOWER_RIGHT: u8 = 1 << 3;
+    const matrix: [10]u8 = .{
+        LOWER_LEFT,
+        LOWER_RIGHT,
+        UPPER_LEFT,
+        UPPER_LEFT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT,
+        UPPER_LEFT | UPPER_RIGHT | LOWER_RIGHT,
+        UPPER_RIGHT,
+        UPPER_RIGHT | LOWER_LEFT,
+        UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+    };
+
+    assert(cp >= 0x2596 and cp <= 0x259f);
+    const idx = cp - 0x2596;
+    const encoded = matrix[idx];
+
+    if (encoded & UPPER_LEFT == UPPER_LEFT) self.quad_upper_left(img);
+    if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.quad_upper_right(img);
+    if (encoded & LOWER_LEFT == LOWER_LEFT) self.quad_lower_left(img);
+    if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.quad_lower_right(img);
 }
 
 fn draw_light_arc(
