@@ -19,6 +19,14 @@ pub const Image = opaque {
         )) orelse return pixman.Error.PixmanFailure;
     }
 
+    pub fn createSolidFill(
+        color: pixman.Color,
+    ) pixman.Error!*Image {
+        return @ptrCast(?*Image, c.pixman_image_create_solid_fill(
+            @ptrCast(*const c.pixman_color_t, &color),
+        )) orelse return pixman.Error.PixmanFailure;
+    }
+
     pub fn unref(self: *Image) bool {
         return c.pixman_image_unref(@ptrCast(*c.pixman_image_t, self)) == 1;
     }
@@ -88,6 +96,31 @@ pub const Image = opaque {
             @ptrCast(*const c.pixman_trapezoid_t, &trap),
             x_off,
             y_off,
+        );
+    }
+
+    pub fn compositeTriangles(
+        self: *Image,
+        op: pixman.Op,
+        src: *Image,
+        mask_format: pixman.FormatCode,
+        x_src: c_int,
+        y_src: c_int,
+        x_dst: c_int,
+        y_dst: c_int,
+        tris: []const pixman.Triangle,
+    ) void {
+        c.pixman_composite_triangles(
+            @enumToInt(op),
+            @ptrCast(*c.pixman_image_t, src),
+            @ptrCast(*c.pixman_image_t, self),
+            @enumToInt(mask_format),
+            x_src,
+            y_src,
+            x_dst,
+            y_dst,
+            @intCast(c_int, tris.len),
+            @ptrCast([*c]const c.pixman_triangle_t, tris.ptr),
         );
     }
 };

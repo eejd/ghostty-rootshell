@@ -302,6 +302,13 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
 
         0x1FB00...0x1FB3B => self.draw_sextant(img, cp),
 
+        0x1fb3c...0x1fb40,
+        0x1fb47...0x1fb4b,
+        0x1fb57...0x1fb5b,
+        0x1fb62...0x1fb66,
+        0x1fb6c...0x1fb6f,
+        => try self.draw_wedge_triangle(img, cp),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1658,17 +1665,8 @@ fn draw_sextant(self: BoxFont, img: *pixman.Image, cp: u32) void {
     const idx = cp - 0x1fb00;
     const encoded = matrix[idx];
 
-    const x_halfs: [2]u32 = .{
-        @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
-        @floatToInt(u32, @intToFloat(f64, self.width) / 2),
-    };
-
-    const y_thirds: [2]u32 = switch (@mod(self.height, 3)) {
-        0 => .{ self.height / 3, 2 * self.height / 3 },
-        1 => .{ self.height / 3, 2 * self.height / 3 + 1 },
-        2 => .{ self.height / 3 + 1, 2 * self.height / 3 },
-        else => unreachable,
-    };
+    const x_halfs = self.xHalfs();
+    const y_thirds = self.yThirds();
 
     if (encoded & UPPER_LEFT > 0) self.rect(img, 0, 0, x_halfs[0], y_thirds[0]);
     if (encoded & MIDDLE_LEFT > 0) self.rect(img, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
@@ -1676,6 +1674,381 @@ fn draw_sextant(self: BoxFont, img: *pixman.Image, cp: u32) void {
     if (encoded & UPPER_RIGHT > 0) self.rect(img, x_halfs[1], 0, self.width, y_thirds[0]);
     if (encoded & MIDDLE_RIGHT > 0) self.rect(img, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
     if (encoded & LOWER_RIGHT > 0) self.rect(img, x_halfs[1], y_thirds[1], self.width, self.height);
+}
+
+fn xHalfs(self: BoxFont) [2]u32 {
+    return .{
+        @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
+        @floatToInt(u32, @intToFloat(f64, self.width) / 2),
+    };
+}
+
+fn yThirds(self: BoxFont) [2]u32 {
+    return switch (@mod(self.height, 3)) {
+        0 => .{ self.height / 3, 2 * self.height / 3 },
+        1 => .{ self.height / 3, 2 * self.height / 3 + 1 },
+        2 => .{ self.height / 3 + 1, 2 * self.height / 3 },
+        else => unreachable,
+    };
+}
+
+fn draw_wedge_triangle(self: BoxFont, img: *pixman.Image, cp: u32) !void {
+    const width = self.width;
+    const height = self.height;
+
+    const x_halfs = self.xHalfs();
+    const y_thirds = self.yThirds();
+    const halfs0 = x_halfs[0];
+    const halfs1 = x_halfs[1];
+    const thirds0 = y_thirds[0];
+    const thirds1 = y_thirds[1];
+
+    var p1_x: u32 = 0;
+    var p2_x: u32 = 0;
+    var p3_x: u32 = 0;
+    var p1_y: u32 = 0;
+    var p2_y: u32 = 0;
+    var p3_y: u32 = 0;
+
+    switch (cp) {
+        0x1fb3c => {
+            p3_x = halfs0;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb52 => {
+            p3_x = halfs0;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb3d => {
+            p3_x = width;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb53 => {
+            p3_x = width;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb3e => {
+            p3_x = halfs0;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb54 => {
+            p3_x = halfs0;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb3f => {
+            p3_x = width;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb55 => {
+            p3_x = width;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb40, 0x1fb56 => {
+            p3_x = halfs0;
+            p1_y = 0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb47 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb5d => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb48 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb5e => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p1_y = thirds1;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb49 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb5f => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb4a => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb60 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p1_y = thirds0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb4b, 0x1fb61 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p1_y = 0;
+            p2_y = height;
+            p3_y = height;
+        },
+
+        0x1fb57 => {
+            p3_x = halfs0;
+            p2_y = thirds0;
+        },
+
+        0x1fb41 => {
+            p3_x = halfs0;
+            p2_y = thirds0;
+        },
+
+        0x1fb58 => {
+            p3_x = width;
+            p2_y = thirds0;
+        },
+
+        0x1fb42 => {
+            p3_x = width;
+            p2_y = thirds0;
+        },
+
+        0x1fb59 => {
+            p3_x = halfs0;
+            p2_y = thirds1;
+        },
+
+        0x1fb43 => {
+            p3_x = halfs0;
+            p2_y = thirds1;
+        },
+
+        0x1fb5a => {
+            p3_x = width;
+            p2_y = thirds1;
+        },
+
+        0x1fb44 => {
+            p3_x = width;
+            p2_y = thirds1;
+        },
+
+        0x1fb5b, 0x1fb45 => {
+            p3_x = halfs0;
+            p2_y = height;
+        },
+
+        0x1fb62 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p2_y = thirds0;
+        },
+
+        0x1fb4c => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p2_y = thirds0;
+        },
+
+        0x1fb63 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p2_y = thirds0;
+        },
+
+        0x1fb4d => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p2_y = thirds0;
+        },
+
+        0x1fb64 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p2_y = thirds1;
+        },
+
+        0x1fb4e => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p2_y = thirds1;
+        },
+
+        0x1fb65 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p2_y = thirds1;
+        },
+
+        0x1fb4f => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = 0;
+            p2_y = thirds1;
+        },
+
+        0x1fb66, 0x1fb50 => {
+            p1_x = width;
+            p2_x = width;
+            p3_x = halfs1;
+            p2_y = height;
+        },
+
+        0x1fb46 => {
+            p1_x = 0;
+            p1_y = thirds1;
+            p2_x = width;
+            p2_y = thirds0;
+            p3_x = width;
+            p3_y = p1_y;
+        },
+
+        0x1fb51 => {
+            p1_x = 0;
+            p1_y = thirds0;
+            p2_x = 0;
+            p2_y = thirds1;
+            p3_x = width;
+            p3_y = p2_y;
+        },
+
+        0x1fb5c => {
+            p1_x = 0;
+            p1_y = thirds0;
+            p2_x = 0;
+            p2_y = thirds1;
+            p3_x = width;
+            p3_y = p1_y;
+        },
+
+        0x1fb67 => {
+            p1_x = 0;
+            p1_y = thirds0;
+            p2_x = width;
+            p2_y = p1_y;
+            p3_x = width;
+            p3_y = thirds1;
+        },
+
+        0x1fb6c, 0x1fb68 => {
+            p1_x = 0;
+            p1_y = 0;
+            p2_x = halfs0;
+            p2_y = height / 2;
+            p3_x = 0;
+            p3_y = height;
+        },
+
+        0x1fb6d, 0x1fb69 => {
+            p1_x = 0;
+            p1_y = 0;
+            p2_x = halfs1;
+            p2_y = height / 2;
+            p3_x = width;
+            p3_y = 0;
+        },
+
+        0x1fb6e, 0x1fb6a => {
+            p1_x = width;
+            p1_y = 0;
+            p2_x = halfs1;
+            p2_y = height / 2;
+            p3_x = width;
+            p3_y = height;
+        },
+
+        0x1fb6f, 0x1fb6b => {
+            p1_x = 0;
+            p1_y = height;
+            p2_x = halfs1;
+            p2_y = height / 2;
+            p3_x = width;
+            p3_y = height;
+        },
+
+        else => unreachable,
+    }
+
+    const tris = &[_]pixman.Triangle{
+        .{
+            .p1 = .{ .x = pixman.Fixed.init(p1_x), .y = pixman.Fixed.init(p1_y) },
+            .p2 = .{ .x = pixman.Fixed.init(p2_x), .y = pixman.Fixed.init(p2_y) },
+            .p3 = .{ .x = pixman.Fixed.init(p3_x), .y = pixman.Fixed.init(p3_y) },
+        },
+    };
+
+    const src = try pixman.Image.createSolidFill(white);
+    defer _ = src.unref();
+    img.compositeTriangles(.over, src, .a8, 0, 0, 0, 0, tris);
 }
 
 fn draw_light_arc(

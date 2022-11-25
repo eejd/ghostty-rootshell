@@ -93,6 +93,12 @@ pub const LineFixed = extern struct {
     p2: PointFixed,
 };
 
+pub const Triangle = extern struct {
+    p1: PointFixed,
+    p2: PointFixed,
+    p3: PointFixed,
+};
+
 pub const Trapezoid = extern struct {
     top: Fixed,
     bottom: Fixed,
