@@ -273,6 +273,23 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
         0x257e => self.draw_heavy_left_and_light_right(img),
         0x257f => self.draw_heavy_up_and_light_down(img),
 
+        0x2580 => self.draw_upper_half_block(img),
+        0x2581 => self.draw_lower_one_eighth_block(img),
+        0x2582 => self.draw_lower_one_quarter_block(img),
+        0x2583 => self.draw_lower_three_eighths_block(img),
+        0x2584 => self.draw_lower_half_block(img),
+        0x2585 => self.draw_lower_five_eighths_block(img),
+        0x2586 => self.draw_lower_three_quarters_block(img),
+        0x2587 => self.draw_lower_seven_eighths_block(img),
+        0x2588 => self.draw_full_block(img),
+        0x2589 => self.draw_left_seven_eighths_block(img),
+        0x258a => self.draw_left_three_quarters_block(img),
+        0x258b => self.draw_left_five_eighths_block(img),
+        0x258c => self.draw_left_half_block(img),
+        0x258d => self.draw_left_three_eighths_block(img),
+        0x258e => self.draw_left_one_quarter_block(img),
+        0x258f => self.draw_left_one_eighth_block(img),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1139,6 +1156,192 @@ fn draw_heavy_up_and_light_down(self: BoxFont, img: *pixman.Image) void {
     self.vline_middle_down(img, .light, .light);
 }
 
+fn draw_upper_half_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(img, 0, 0, self.width, self.height / 2);
+}
+
+fn draw_lower_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(img, 0, self.height - (self.height / 8), self.width, self.height);
+}
+
+fn draw_lower_one_quarter_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(img, 0, self.height - (self.height / 4), self.width, self.height);
+}
+
+fn draw_lower_three_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        self.height - @floatToInt(u32, @round(3 * @intToFloat(f64, self.height) / 8)),
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_lower_half_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        self.height - @floatToInt(u32, @round(@intToFloat(f64, self.height) / 2)),
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_lower_five_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        self.height - @floatToInt(u32, @round(5 * @intToFloat(f64, self.height) / 8)),
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_lower_three_quarters_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        self.height - @floatToInt(u32, @round(3 * @intToFloat(f64, self.height) / 4)),
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_lower_seven_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        self.height - @floatToInt(u32, @round(7 * @intToFloat(f64, self.height) / 8)),
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_upper_one_quarter_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        self.width,
+        @floatToInt(u32, @round(@intToFloat(f64, self.height) / 4)),
+    );
+}
+
+fn draw_upper_three_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        self.width,
+        @floatToInt(u32, @round(3 * @intToFloat(f64, self.height) / 8)),
+    );
+}
+
+fn draw_upper_five_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        self.width,
+        @floatToInt(u32, @round(5 * @intToFloat(f64, self.height) / 8)),
+    );
+}
+
+fn draw_upper_three_quarters_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        self.width,
+        @floatToInt(u32, @round(3 * @intToFloat(f64, self.height) / 4)),
+    );
+}
+
+fn draw_upper_seven_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        self.width,
+        @floatToInt(u32, @round(7 * @intToFloat(f64, self.height) / 8)),
+    );
+}
+
+fn draw_full_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(img, 0, 0, self.width, self.height);
+}
+
+fn draw_left_seven_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @round(7 * @intToFloat(f64, self.width) / 8)),
+        self.height,
+    );
+}
+
+fn draw_left_three_quarters_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 4)),
+        self.height,
+    );
+}
+
+fn draw_left_five_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @round(5 * @intToFloat(f64, self.width) / 8)),
+        self.height,
+    );
+}
+
+fn draw_left_half_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
+        self.height,
+    );
+}
+
+fn draw_left_three_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 8)),
+        self.height,
+    );
+}
+
+fn draw_left_one_quarter_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        0,
+        0,
+        @floatToInt(u32, @round(@intToFloat(f64, self.width) / 4)),
+        self.height,
+    );
+}
+
+fn draw_vertical_one_eighth_block_n(self: BoxFont, img: *pixman.Image, n: u32) void {
+    const x = @floatToInt(u32, @round(@intToFloat(f64, n) * @intToFloat(f64, self.width) / 8));
+    const w = @floatToInt(u32, @round(@intToFloat(f64, self.width) / 8));
+    self.rect(img, x, 0, x + w, self.height);
+}
+
+fn draw_left_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_vertical_one_eighth_block_n(img, 0);
+}
+
 fn draw_light_arc(
     self: BoxFont,
     alloc: Allocator,
@@ -1626,6 +1829,26 @@ fn hline(
             .x2 = @intCast(i32, @min(@max(x2, 0), self.width)),
             .y1 = @intCast(i32, @min(@max(y, 0), self.height)),
             .y2 = @intCast(i32, @min(@max(y + thickness_px, 0), self.height)),
+        },
+    };
+
+    img.fillBoxes(.src, white, boxes) catch {};
+}
+
+fn rect(
+    self: BoxFont,
+    img: *pixman.Image,
+    x1: u32,
+    y1: u32,
+    x2: u32,
+    y2: u32,
+) void {
+    const boxes = &[_]pixman.Box32{
+        .{
+            .x1 = @intCast(i32, @min(@max(x1, 0), self.width)),
+            .y1 = @intCast(i32, @min(@max(y1, 0), self.height)),
+            .x2 = @intCast(i32, @min(@max(x2, 0), self.width)),
+            .y2 = @intCast(i32, @min(@max(y2, 0), self.height)),
         },
     };
 
