@@ -225,6 +225,23 @@ fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
         0x254e => self.draw_light_double_dash_vertical(img),
         0x254f => self.draw_heavy_double_dash_vertical(img),
 
+        0x2550 => self.draw_double_horizontal(img),
+        0x2551 => self.draw_double_vertical(img),
+        0x2552 => self.draw_down_single_and_right_double(img),
+        0x2553 => self.draw_down_double_and_right_single(img),
+        0x2554 => self.draw_double_down_and_right(img),
+        0x2555 => self.draw_down_single_and_left_double(img),
+        0x2556 => self.draw_down_double_and_left_single(img),
+        0x2557 => self.draw_double_down_and_left(img),
+        0x2558 => self.draw_up_single_and_right_double(img),
+        0x2559 => self.draw_up_double_and_right_single(img),
+        0x255a => self.draw_double_up_and_right(img),
+        0x255b => self.draw_up_single_and_left_double(img),
+        0x255c => self.draw_up_double_and_left_single(img),
+        0x255d => self.draw_double_up_and_left(img),
+        0x255e => self.draw_vertical_single_and_right_double(img),
+        0x255f => self.draw_vertical_double_and_right_single(img),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -703,6 +720,149 @@ fn draw_heavy_double_dash_vertical(self: BoxFont, img: *pixman.Image) void {
         Thickness.heavy.height(self.thickness),
         Thickness.heavy.height(self.thickness),
     );
+}
+
+fn draw_double_horizontal(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const mid = (self.height - thick_px * 3) / 2;
+    self.hline(img, 0, self.width, mid, thick_px);
+    self.hline(img, 0, self.width, mid + 2 * thick_px, thick_px);
+}
+
+fn draw_double_vertical(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const mid = (self.width - thick_px * 3) / 2;
+    self.vline(img, 0, self.height, mid, thick_px);
+    self.vline(img, 0, self.height, mid + 2 * thick_px, thick_px);
+}
+
+fn draw_down_single_and_right_double(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px) / 2;
+    self.vline_middle_down(img, .light, .light);
+    self.hline(img, vmid, self.width, hmid, thick_px);
+    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_down_double_and_right_single(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.hline_middle_right(img, .light, .light);
+    self.vline(img, hmid, self.height, vmid, thick_px);
+    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
+}
+
+fn draw_double_down_and_right(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.vline(img, hmid, self.height, vmid, thick_px);
+    self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(img, vmid, self.width, hmid, thick_px);
+    self.hline(img, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_down_single_and_left_double(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width + thick_px) / 2;
+    self.vline_middle_down(img, .light, .light);
+    self.hline(img, 0, vmid, hmid, thick_px);
+    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_down_double_and_left_single(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.hline_middle_left(img, .light, .light);
+    self.vline(img, hmid, self.height, vmid, thick_px);
+    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
+}
+
+fn draw_double_down_and_left(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.vline(img, hmid + 2 * thick_px, self.height, vmid, thick_px);
+    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(img, 0, vmid + 2 * thick_px, hmid, thick_px);
+    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_up_single_and_right_double(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px) / 2;
+    self.vline_middle_up(img, .light, .light);
+    self.hline(img, vmid, self.width, hmid, thick_px);
+    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_up_double_and_right_single(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height + thick_px) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.hline_middle_right(img, .light, .light);
+    self.vline(img, 0, hmid, vmid, thick_px);
+    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
+}
+
+fn draw_double_up_and_right(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.vline(img, 0, hmid + 2 * thick_px, vmid, thick_px);
+    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.hline(img, vmid + 2 * thick_px, self.width, hmid, thick_px);
+    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_up_single_and_left_double(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width + thick_px) / 2;
+    self.vline_middle_up(img, .light, .light);
+    self.hline(img, 0, vmid, hmid, thick_px);
+    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_up_double_and_left_single(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height + thick_px) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.hline_middle_left(img, .light, .light);
+    self.vline(img, 0, hmid, vmid, thick_px);
+    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
+}
+
+fn draw_double_up_and_left(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.vline(img, 0, hmid + 0 * thick_px + thick_px, vmid, thick_px);
+    self.vline(img, 0, hmid + 2 * thick_px + thick_px, vmid + 2 * thick_px, thick_px);
+    self.hline(img, 0, vmid, hmid, thick_px);
+    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_vertical_single_and_right_double(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const hmid = (self.height - thick_px * 3) / 2;
+    const vmid = (self.width - thick_px) / 2;
+    self.vline_middle(img, .light);
+    self.hline(img, vmid, self.width, hmid, thick_px);
+    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+}
+
+fn draw_vertical_double_and_right_single(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const vmid = (self.width - thick_px * 3) / 2;
+    self.hline(img, vmid + 2 * thick_px, self.width, (self.height - thick_px) / 2, thick_px);
+    self.vline(img, 0, self.height, vmid, thick_px);
+    self.vline(img, 0, self.height, vmid + 2 * thick_px, thick_px);
 }
 
 fn draw_dash_horizontal(
