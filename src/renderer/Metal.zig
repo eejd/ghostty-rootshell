@@ -772,7 +772,7 @@ fn rebuildCells(
         var iter = self.font_shaper.runIterator(self.font_group, row);
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
-                assert(try self.updateCell(
+                if (self.updateCell(
                     term_selection,
                     screen,
                     row.getCell(shaper_cell.x),
@@ -780,7 +780,15 @@ fn rebuildCells(
                     run,
                     shaper_cell.x,
                     y,
-                ));
+                )) |update| {
+                    assert(update);
+                } else |err| {
+                    log.warn("error building cell, will be invalid x={} y={}, err={}", .{
+                        shaper_cell.x,
+                        y,
+                        err,
+                    });
+                }
             }
         }
 
