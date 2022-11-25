@@ -69,8 +69,9 @@ pub fn renderGlyph(
     const stride = format.strideForWidth(self.width);
     const len = @intCast(usize, stride * @intCast(c_int, self.height));
 
-    // Allocate our buffer
-    var data = try alloc.alloc(u32, len);
+    // Allocate our buffer. pixman uses []u32 so we divide our length
+    // by 4 since u32 / u8 = 4.
+    var data = try alloc.alloc(u32, len / 4);
     defer alloc.free(data);
     std.mem.set(u32, data, 0);
 
@@ -84,15 +85,14 @@ pub fn renderGlyph(
     );
     defer _ = img.unref();
 
-    try self.draw(img, cp);
+    try self.draw(alloc, img, cp);
 
     // Reserve our region in the atlas and render the glyph to it.
     const region = try atlas.reserve(alloc, self.width, self.height);
     if (region.width > 0 and region.height > 0) {
         // Convert our []u32 to []u8 since we use 8bpp formats
         assert(format.bpp() == 8);
-        const len_u8 = len * 4;
-        const data_u8 = @alignCast(@alignOf(u8), @ptrCast([*]u8, data.ptr)[0..len_u8]);
+        const data_u8 = @alignCast(@alignOf(u8), @ptrCast([*]u8, data.ptr)[0..len]);
 
         const depth = atlas.format.depth();
 
@@ -138,7 +138,7 @@ pub fn renderGlyph(
     };
 }
 
-fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
+fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
     switch (cp) {
         0x2500 => self.draw_light_horizontal(img),
         0x2501 => self.draw_heavy_horizontal(img),
@@ -255,6 +255,7 @@ fn draw(self: BoxFont, img: *pixman.Image, cp: u32) !void {
         0x256a => self.draw_vertical_single_and_horizontal_double(img),
         0x256b => self.draw_vertical_double_and_horizontal_single(img),
         0x256c => self.draw_double_vertical_and_horizontal(img),
+        0x256d...0x2570 => try self.draw_light_arc(alloc, img, cp),
 
         else => return error.InvalidCodepoint,
     }
@@ -1005,6 +1006,249 @@ fn draw_double_vertical_and_horizontal(self: BoxFont, img: *pixman.Image) void {
     self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
 }
 
+fn draw_light_arc(
+    self: BoxFont,
+    alloc: Allocator,
+    img: *pixman.Image,
+    cp: u32,
+) !void {
+    const supersample = 4;
+    const height = self.height * supersample;
+    const width = self.width * supersample;
+    const stride = pixman.FormatCode.a8.strideForWidth(width);
+
+    // Allocate our buffer
+    var data = try alloc.alloc(u8, height * @intCast(u32, stride));
+    defer alloc.free(data);
+    std.mem.set(u8, data, 0);
+
+    const height_pixels = self.height;
+    const width_pixels = self.width;
+    const thick_pixels = Thickness.light.height(self.thickness);
+    const thick = thick_pixels * supersample;
+
+    const circle_inner_edge = (@min(width_pixels, height_pixels) - thick_pixels) / 2;
+
+    // We want to draw the quartercircle by filling small circles (with r =
+    // thickness/2.) whose centers are on its edge. This means to get the
+    // radius of the quartercircle, we add the exact half thickness to the
+    // radius of the inner circle.
+    var c_r: f64 = @intToFloat(f64, circle_inner_edge) + @intToFloat(f64, thick_pixels) / 2;
+
+    // We need to draw short lines from the end of the quartercircle to the
+    // box-edges, store one endpoint (the other is the edge of the
+    // quartercircle) in these vars.
+    var vert_to: u32 = 0;
+    var hor_to: u32 = 0;
+
+    // Coordinates of the circle-center.
+    var c_x: u32 = 0;
+    var c_y: u32 = 0;
+
+    // For a given y there are up to two solutions for the circle-equation.
+    // Set to -1 for the left, and 1 for the right hemisphere.
+    var circle_hemisphere: i32 = 0;
+
+    // The quarter circle only has to be evaluated for a small range of
+    // y-values.
+    var y_min: u32 = 0;
+    var y_max: u32 = 0;
+
+    switch (cp) {
+        '╭' => {
+            // Don't use supersampled coordinates yet, we want to align actual
+            // pixels.
+            //
+            // pixel-coordinates of the lower edge of the right line and the
+            // right edge of the bottom line.
+            const right_bottom_edge = (height_pixels + thick_pixels) / 2;
+            const bottom_right_edge = (width_pixels + thick_pixels) / 2;
+
+            // find coordinates of circle-center.
+            c_y = right_bottom_edge + circle_inner_edge;
+            c_x = bottom_right_edge + circle_inner_edge;
+
+            // we want to render the left, not the right hemisphere of the circle.
+            circle_hemisphere = -1;
+
+            // don't evaluate beyond c_y, the vertical line is drawn there.
+            y_min = 0;
+            y_max = c_y;
+
+            // the vertical line should extend to the bottom of the box, the
+            // horizontal to the right.
+            vert_to = height_pixels;
+            hor_to = width_pixels;
+        },
+        '╮' => {
+            const left_bottom_edge = (height_pixels + thick_pixels) / 2;
+            const bottom_left_edge = (width_pixels - thick_pixels) / 2;
+
+            c_y = left_bottom_edge + circle_inner_edge;
+            c_x = bottom_left_edge - circle_inner_edge;
+
+            circle_hemisphere = 1;
+
+            y_min = 0;
+            y_max = c_y;
+
+            vert_to = height_pixels;
+            hor_to = 0;
+        },
+        '╰' => {
+            const right_top_edge = (height_pixels - thick_pixels) / 2;
+            const top_right_edge = (width_pixels + thick_pixels) / 2;
+
+            c_y = right_top_edge - circle_inner_edge;
+            c_x = top_right_edge + circle_inner_edge;
+
+            circle_hemisphere = -1;
+
+            y_min = c_y;
+            y_max = height_pixels;
+
+            vert_to = 0;
+            hor_to = width_pixels;
+        },
+        '╯' => {
+            const left_top_edge = (height_pixels - thick_pixels) / 2;
+            const top_left_edge = (width_pixels - thick_pixels) / 2;
+
+            c_y = left_top_edge - circle_inner_edge;
+            c_x = top_left_edge - circle_inner_edge;
+
+            circle_hemisphere = 1;
+
+            y_min = c_y;
+            y_max = height_pixels;
+
+            vert_to = 0;
+            hor_to = 0;
+        },
+
+        else => {},
+    }
+
+    // store for horizontal+vertical line.
+    const c_x_pixels = c_x;
+    const c_y_pixels = c_y;
+
+    // Bring coordinates from pixel-grid to supersampled grid.
+    c_r *= supersample;
+    c_x *= supersample;
+    c_y *= supersample;
+
+    y_min *= supersample;
+    y_max *= supersample;
+
+    const c_r2 = c_r * c_r;
+
+    // To prevent gaps in the circle, each pixel is sampled multiple times.
+    // As the quartercircle ends (vertically) in the middle of a pixel, an
+    // uneven number helps hit that exactly.
+    {
+        var i: f64 = @intToFloat(f64, y_min) * 16;
+        while (i <= @intToFloat(f64, y_max) * 16) : (i += 1) {
+            const y = i / 16;
+            const x = x: {
+                // circle_hemisphere * sqrt(c_r2 - (y - c_y) * (y - c_y)) + c_x;
+                const hemi = @intToFloat(f64, circle_hemisphere);
+                const y_part = y - @intToFloat(f64, c_y);
+                const y_squared = y_part * y_part;
+                const sqrt = @sqrt(c_r2 - y_squared);
+                const f_c_x = @intToFloat(f64, c_x);
+
+                // We need to detect overflows and just skip this i
+                const a = hemi * sqrt;
+                const b = a + f_c_x;
+
+                // If the float math didn't work, ignore.
+                if (std.math.isNan(b)) continue;
+
+                break :x b;
+            };
+
+            const row = @floatToInt(i32, @round(y));
+            const col = @floatToInt(i32, @round(x));
+            if (col < 0) continue;
+
+            // rectangle big enough to fit entire circle with radius thick/2.
+            const row1 = row - @intCast(i32, thick / 2 + 1);
+            const row2 = row + @intCast(i32, thick / 2 + 1);
+            const col1 = col - @intCast(i32, thick / 2 + 1);
+            const col2 = col + @intCast(i32, thick / 2 + 1);
+
+            const row_start = @min(row1, row2);
+            const row_end = @max(row1, row2);
+            const col_start = @min(col1, col2);
+            const col_end = @max(col1, col2);
+
+            assert(row_end > row_start);
+            assert(col_end > col_start);
+
+            // draw circle with radius thick/2 around x,y.
+            // this is accomplished by rejecting pixels where the distance from
+            // their center to x,y is greater than thick/2.
+            var r: i32 = @max(row_start, 0);
+            const r_end = @max(@min(row_end, @intCast(i32, height)), 0);
+            while (r < r_end) : (r += 1) {
+                const r_midpoint = @intToFloat(f64, r) + 0.5;
+
+                var c: i32 = @max(col_start, 0);
+                const c_end = @max(@min(col_end, @intCast(i32, width)), 0);
+                while (c < c_end) : (c += 1) {
+                    const c_midpoint = @intToFloat(f64, c) + 0.5;
+
+                    // vector from point on quartercircle to midpoint of the current pixel.
+                    const center_midpoint_x = c_midpoint - x;
+                    const center_midpoint_y = r_midpoint - y;
+
+                    // distance from current point to circle-center.
+                    const dist = @sqrt(center_midpoint_x * center_midpoint_x + center_midpoint_y * center_midpoint_y);
+                    // skip if midpoint of pixel is outside the circle.
+                    if (dist > @intToFloat(f64, thick) / 2) continue;
+
+                    const idx = @intCast(usize, r * stride + c);
+                    data[idx] = 0xff;
+                }
+            }
+        }
+    }
+
+    // Downsample
+    {
+        // We want to convert our []u32 to []u8 since we use an 8bpp format
+        var data_u32 = img.getData();
+        const len_u8 = data_u32.len * 4;
+        var real_data = @alignCast(@alignOf(u8), @ptrCast([*]u8, data_u32.ptr)[0..len_u8]);
+        const real_stride = img.getStride();
+
+        var r: u32 = 0;
+        while (r < self.height) : (r += 1) {
+            var c: u32 = 0;
+            while (c < self.width) : (c += 1) {
+                var total: u32 = 0;
+                var i: usize = 0;
+                while (i < supersample) : (i += 1) {
+                    var j: usize = 0;
+                    while (j < supersample) : (j += 1) {
+                        const idx = (r * supersample + i) * @intCast(usize, stride) + c * supersample + j;
+                        total += data[idx];
+                    }
+                }
+
+                const average = @intCast(u8, @min(total / (supersample * supersample), 0xff));
+                const idx = r * @intCast(usize, real_stride) + c;
+                real_data[idx] = average;
+            }
+        }
+    }
+
+    // draw vertical/horizontal lines from quartercircle-edge to box-edge.
+    self.vline(img, @min(c_y_pixels, vert_to), @max(c_y_pixels, vert_to), (width_pixels - thick_pixels) / 2, thick_pixels);
+    self.hline(img, @min(c_x_pixels, hor_to), @max(c_x_pixels, hor_to), (height_pixels - thick_pixels) / 2, thick_pixels);
+}
+
 fn draw_dash_horizontal(
     self: BoxFont,
     img: *pixman.Image,
@@ -1259,15 +1503,19 @@ test "all" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
+    var cp: u32 = 0x2500;
+    const end = 0x2570;
+    while (cp <= end) : (cp += 1) {
+        var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+        defer atlas_greyscale.deinit(alloc);
 
-    const face: BoxFont = .{ .width = 18, .height = 36, .thickness = 2 };
-    const glyph = try face.renderGlyph(
-        alloc,
-        &atlas_greyscale,
-        0x2500,
-    );
-    try testing.expectEqual(@as(u32, face.width), glyph.width);
-    try testing.expectEqual(@as(u32, face.height), glyph.height);
+        const face: BoxFont = .{ .width = 18, .height = 36, .thickness = 2 };
+        const glyph = try face.renderGlyph(
+            alloc,
+            &atlas_greyscale,
+            cp,
+        );
+        try testing.expectEqual(@as(u32, face.width), glyph.width);
+        try testing.expectEqual(@as(u32, face.height), glyph.height);
+    }
 }
