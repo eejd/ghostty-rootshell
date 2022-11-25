@@ -23,6 +23,30 @@ pub const Image = opaque {
         return c.pixman_image_unref(@ptrCast(*c.pixman_image_t, self)) == 1;
     }
 
+    /// A variant of getDataUnsafe that sets the length of the slice to
+    /// height * stride. Its possible the buffer is larger but this is the
+    /// known safe values. If you KNOW the buffer is larger you can use the
+    /// unsafe variant.
+    pub fn getData(self: *Image) []u32 {
+        const height = self.getHeight();
+        const stride = self.getStride();
+        const ptr = self.getDataUnsafe();
+        const len = @intCast(usize, height * stride);
+        return ptr[0..len];
+    }
+
+    pub fn getDataUnsafe(self: *Image) [*]u32 {
+        return c.pixman_image_get_data(@ptrCast(*c.pixman_image_t, self));
+    }
+
+    pub fn getHeight(self: *Image) c_int {
+        return c.pixman_image_get_height(@ptrCast(*c.pixman_image_t, self));
+    }
+
+    pub fn getStride(self: *Image) c_int {
+        return c.pixman_image_get_stride(@ptrCast(*c.pixman_image_t, self));
+    }
+
     pub fn fillBoxes(
         self: *Image,
         op: pixman.Op,
@@ -53,6 +77,9 @@ test "create and destroy" {
     defer alloc.free(data);
     std.mem.set(u32, data, 0);
     const img = try Image.createBitsNoClear(.g1, width, height, data.ptr, stride);
+    try testing.expectEqual(@as(c_int, height), img.getHeight());
+    try testing.expectEqual(@as(c_int, stride), img.getStride());
+    try testing.expect(img.getData().len == height * stride);
     try testing.expect(img.unref());
 }
 
