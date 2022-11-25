@@ -352,6 +352,19 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
         0x1fb85 => self.draw_upper_three_quarters_block(img),
         0x1fb86 => self.draw_upper_seven_eighths_block(img),
 
+        0x1fb7c => self.draw_left_and_lower_one_eighth_block(img),
+        0x1fb7d => self.draw_left_and_upper_one_eighth_block(img),
+        0x1fb7e => self.draw_right_and_upper_one_eighth_block(img),
+        0x1fb7f => self.draw_right_and_lower_one_eighth_block(img),
+        0x1fb80 => self.draw_upper_and_lower_one_eighth_block(img),
+        0x1fb81 => self.draw_horizontal_one_eighth_1358_block(img),
+
+        0x1fb87 => self.draw_right_one_quarter_block(img),
+        0x1fb88 => self.draw_right_three_eighths_block(img),
+        0x1fb89 => self.draw_right_five_eighths_block(img),
+        0x1fb8a => self.draw_right_three_quarters_block(img),
+        0x1fb8b => self.draw_right_seven_eighths_block(img),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1457,6 +1470,88 @@ fn draw_right_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
     self.rect(
         img,
         self.width - @floatToInt(u32, @round(@intToFloat(f64, self.width) / 8)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_left_and_lower_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_left_one_eighth_block(img);
+    self.draw_lower_one_eighth_block(img);
+}
+
+fn draw_left_and_upper_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_left_one_eighth_block(img);
+    self.draw_upper_one_eighth_block(img);
+}
+
+fn draw_right_and_upper_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_right_one_eighth_block(img);
+    self.draw_upper_one_eighth_block(img);
+}
+
+fn draw_right_and_lower_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_right_one_eighth_block(img);
+    self.draw_lower_one_eighth_block(img);
+}
+
+fn draw_upper_and_lower_one_eighth_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_upper_one_eighth_block(img);
+    self.draw_lower_one_eighth_block(img);
+}
+
+fn draw_horizontal_one_eighth_1358_block(self: BoxFont, img: *pixman.Image) void {
+    self.draw_upper_one_eighth_block(img);
+    self.draw_horizontal_one_eighth_block_n(img, 2);
+    self.draw_horizontal_one_eighth_block_n(img, 4);
+    self.draw_lower_one_eighth_block(img);
+}
+
+fn draw_right_one_quarter_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        self.width - @floatToInt(u32, @round(@intToFloat(f64, self.width) / 4)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_right_three_quarters_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        self.width - @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 4)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_right_three_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        self.width - @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 8)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_right_five_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        self.width - @floatToInt(u32, @round(5 * @intToFloat(f64, self.width) / 8)),
+        0,
+        self.width,
+        self.height,
+    );
+}
+
+fn draw_right_seven_eighths_block(self: BoxFont, img: *pixman.Image) void {
+    self.rect(
+        img,
+        self.width - @floatToInt(u32, @round(7 * @intToFloat(f64, self.width) / 8)),
         0,
         self.width,
         self.height,
