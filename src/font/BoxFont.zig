@@ -316,6 +316,22 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
         0x1FB68...0x1FB6B,
         => try self.draw_wedge_triangle_inverted(img, cp),
 
+        0x1FB46,
+        0x1FB51,
+        0x1FB5C,
+        0x1FB67,
+        => try self.draw_wedge_triangle_and_box(img, cp),
+
+        0x1FB9A => {
+            try self.draw_wedge_triangle(img, 0x1fb6d);
+            try self.draw_wedge_triangle(img, 0x1fb6f);
+        },
+
+        0x1FB9B => {
+            try self.draw_wedge_triangle(img, 0x1fb6c);
+            try self.draw_wedge_triangle(img, 0x1fb6e);
+        },
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -2076,6 +2092,32 @@ fn draw_wedge_triangle_inverted(self: BoxFont, img: *pixman.Image, cp: u32) !voi
         @intCast(u16, self.width),
         @intCast(u16, self.height),
     );
+}
+
+fn draw_wedge_triangle_and_box(self: BoxFont, img: *pixman.Image, cp: u32) !void {
+    try self.draw_wedge_triangle(img, cp);
+
+    const y_thirds = self.yThirds();
+    const box: pixman.Box32 = switch (cp) {
+        0x1fb46, 0x1fb51 => .{
+            .x1 = 0,
+            .y1 = @intCast(i32, y_thirds[1]),
+            .x2 = @intCast(i32, self.width),
+            .y2 = @intCast(i32, self.height),
+        },
+
+        0x1fb5c, 0x1fb67 => .{
+            .x1 = 0,
+            .y1 = 0,
+            .x2 = @intCast(i32, self.width),
+            .y2 = @intCast(i32, y_thirds[0]),
+        },
+
+        else => unreachable,
+    };
+
+    const boxes = &[_]pixman.Box32{box};
+    img.fillBoxes(.src, white, boxes) catch {};
 }
 
 fn draw_light_arc(

@@ -209,6 +209,14 @@ pub fn indexForCodepoint(
             0x1FB68...0x1FB6B,
             => true,
 
+            0x1FB46,
+            0x1FB51,
+            0x1FB5C,
+            0x1FB67,
+            0x1FB9A,
+            0x1FB9B,
+            => true,
+
             else => false,
         }) {
             return FontIndex.initSpecial(.box);
