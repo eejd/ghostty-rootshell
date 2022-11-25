@@ -31,3 +31,6 @@
 [submodule "vendor/cimgui"]
 	path = vendor/cimgui
 	url = https://github.com/cimgui/cimgui.git
+[submodule "vendor/pixman"]
+	path = vendor/pixman
+	url = https://github.com/freedesktop/pixman.git

@@ -31,6 +31,7 @@
 , libXi
 , libXinerama
 , libXrandr
+, pixman
 , zlib
 }:
 let
@@ -87,6 +88,7 @@ in mkShell rec {
     harfbuzz
     libpng
     libuv
+    pixman
     zlib
 
     libX11

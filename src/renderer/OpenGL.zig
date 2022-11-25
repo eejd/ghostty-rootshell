@@ -501,6 +501,12 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
 
+    // Set the cell size of the box font
+    if (self.font_group.group.box_font) |*box| {
+        box.width = @floatToInt(u32, self.cell_size.width);
+        box.height = @floatToInt(u32, self.cell_size.height);
+    }
+
     // Notify the window that the cell size changed.
     _ = self.window_mailbox.push(.{
         .cell_size = new_cell_size,
@@ -763,7 +769,7 @@ pub fn rebuildCells(
         var iter = self.font_shaper.runIterator(self.font_group, row);
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
-                assert(try self.updateCell(
+                if (self.updateCell(
                     term_selection,
                     screen,
                     row.getCell(shaper_cell.x),
@@ -771,7 +777,15 @@ pub fn rebuildCells(
                     run,
                     shaper_cell.x,
                     y,
-                ));
+                )) |update| {
+                    assert(update);
+                } else |err| {
+                    log.warn("error building cell, will be invalid x={} y={}, err={}", .{
+                        shaper_cell.x,
+                        y,
+                        err,
+                    });
+                }
             }
         }
 
@@ -952,7 +966,6 @@ pub fn updateCell(
     // If the cell has a character, draw it
     if (cell.char > 0) {
         // Render
-        const face = try self.font_group.group.faceFromIndex(shaper_run.font_index);
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             shaper_run.font_index,
@@ -961,8 +974,11 @@ pub fn updateCell(
         );
 
         // If we're rendering a color font, we use the color atlas
-        var mode: GPUCellMode = .fg;
-        if (face.presentation == .emoji) mode = .fg_color;
+        const presentation = try self.font_group.group.presentationFromIndex(shaper_run.font_index);
+        const mode: GPUCellMode = switch (presentation) {
+            .text => .fg,
+            .emoji => .fg_color,
+        };
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,

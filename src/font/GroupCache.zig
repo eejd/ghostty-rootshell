@@ -132,8 +132,10 @@ pub fn renderGlyph(
     if (gop.found_existing) return gop.value_ptr.*;
 
     // Uncached, render it
-    const face = try self.group.faceFromIndex(index);
-    const atlas: *Atlas = if (face.presentation == .emoji) &self.atlas_color else &self.atlas_greyscale;
+    const atlas: *Atlas = switch (try self.group.presentationFromIndex(index)) {
+        .text => &self.atlas_greyscale,
+        .emoji => &self.atlas_color,
+    };
     const glyph = self.group.renderGlyph(
         alloc,
         atlas,

@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 const harfbuzz = @import("harfbuzz");
 const trace = @import("tracy").trace;
 const Atlas = @import("../Atlas.zig");
+const font = @import("main.zig");
 const Face = @import("main.zig").Face;
 const DeferredFace = @import("main.zig").DeferredFace;
 const Group = @import("main.zig").Group;
@@ -56,14 +57,18 @@ pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: we do not want to hardcode these
-    const hb_feats = &[_]harfbuzz.Feature{
-        harfbuzz.Feature.fromString("dlig").?,
-        harfbuzz.Feature.fromString("liga").?,
-    };
+    // We only do shaping if the font is not a special-case. For special-case
+    // fonts, the codepoint == glyph_index so we don't need to run any shaping.
+    if (run.font_index.special() == null) {
+        // TODO: we do not want to hardcode these
+        const hb_feats = &[_]harfbuzz.Feature{
+            harfbuzz.Feature.fromString("dlig").?,
+            harfbuzz.Feature.fromString("liga").?,
+        };
 
-    const face = try run.group.group.faceFromIndex(run.font_index);
-    harfbuzz.shape(face.hb_font, self.hb_buf, hb_feats);
+        const face = try run.group.group.faceFromIndex(run.font_index);
+        harfbuzz.shape(face.hb_font, self.hb_buf, hb_feats);
+    }
 
     // If our buffer is empty, we short-circuit the rest of the work
     // return nothing.
@@ -565,6 +570,47 @@ test "shape Chinese characters" {
         try testing.expectEqual(@as(u16, 0), cells[1].x);
         try testing.expectEqual(@as(u16, 0), cells[2].x);
         try testing.expectEqual(@as(u16, 1), cells[3].x);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "shape box glyphs" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    // Setup the box font
+    testdata.cache.group.box_font = font.BoxFont{
+        .width = 18,
+        .height = 36,
+        .thickness = 2,
+    };
+
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(0x2500, buf[buf_idx..]); // horiz line
+    buf_idx += try std.unicode.utf8Encode(0x2501, buf[buf_idx..]); //
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
+
+    // Get our run iterator
+    var shaper = testdata.shaper;
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+        try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 2), cells.len);
+        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index);
+        try testing.expectEqual(@as(u16, 0), cells[0].x);
+        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index);
+        try testing.expectEqual(@as(u16, 1), cells[1].x);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
