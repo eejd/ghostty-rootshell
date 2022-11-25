@@ -300,6 +300,8 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
 
         0x2800...0x28FF => self.draw_braille(img, cp),
 
+        0x1FB00...0x1FB3B => self.draw_sextant(img, cp),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1572,6 +1574,108 @@ fn draw_braille(self: BoxFont, img: *pixman.Image, cp: u32) void {
         self.rect(img, x[0], y[3], x[0] + w, y[3] + w);
     if (sym & 128 > 0)
         self.rect(img, x[1], y[3], x[1] + w, y[3] + w);
+}
+
+fn draw_sextant(self: BoxFont, img: *pixman.Image, cp: u32) void {
+    const UPPER_LEFT: u8 = 1 << 0;
+    const MIDDLE_LEFT: u8 = 1 << 1;
+    const LOWER_LEFT: u8 = 1 << 2;
+    const UPPER_RIGHT: u8 = 1 << 3;
+    const MIDDLE_RIGHT: u8 = 1 << 4;
+    const LOWER_RIGHT: u8 = 1 << 5;
+
+    const matrix: [60]u8 = .{
+        // U+1fb00 - U+1fb0f
+        UPPER_LEFT,
+        UPPER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT,
+        MIDDLE_LEFT,
+        UPPER_LEFT | MIDDLE_LEFT,
+        UPPER_RIGHT | MIDDLE_LEFT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT,
+        MIDDLE_RIGHT,
+        UPPER_LEFT | MIDDLE_RIGHT,
+        UPPER_RIGHT | MIDDLE_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT,
+        MIDDLE_LEFT | MIDDLE_RIGHT,
+        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT,
+        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT,
+        LOWER_LEFT,
+
+        // U+1fb10 - U+1fb1f
+        UPPER_LEFT | LOWER_LEFT,
+        UPPER_RIGHT | LOWER_LEFT,
+        UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT,
+        MIDDLE_LEFT | LOWER_LEFT,
+        UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT,
+        MIDDLE_RIGHT | LOWER_LEFT,
+        UPPER_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
+        UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT,
+        MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
+        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
+        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
+        LOWER_RIGHT,
+        UPPER_LEFT | LOWER_RIGHT,
+
+        // U+1fb20 - U+1fb2f
+        UPPER_RIGHT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | LOWER_RIGHT,
+        MIDDLE_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | MIDDLE_LEFT | LOWER_RIGHT,
+        UPPER_RIGHT | MIDDLE_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | LOWER_RIGHT,
+        MIDDLE_RIGHT | LOWER_RIGHT,
+        UPPER_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT | LOWER_RIGHT,
+        MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
+        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
+        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
+        LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+
+        // U+1fb30 - U+1fb3b
+        UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
+        MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+    };
+
+    assert(cp >= 0x1fb00 and cp <= 0x1fb3b);
+    const idx = cp - 0x1fb00;
+    const encoded = matrix[idx];
+
+    const x_halfs: [2]u32 = .{
+        @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
+        @floatToInt(u32, @intToFloat(f64, self.width) / 2),
+    };
+
+    const y_thirds: [2]u32 = switch (@mod(self.height, 3)) {
+        0 => .{ self.height / 3, 2 * self.height / 3 },
+        1 => .{ self.height / 3, 2 * self.height / 3 + 1 },
+        2 => .{ self.height / 3 + 1, 2 * self.height / 3 },
+        else => unreachable,
+    };
+
+    if (encoded & UPPER_LEFT > 0) self.rect(img, 0, 0, x_halfs[0], y_thirds[0]);
+    if (encoded & MIDDLE_LEFT > 0) self.rect(img, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
+    if (encoded & LOWER_LEFT > 0) self.rect(img, 0, y_thirds[1], x_halfs[0], self.height);
+    if (encoded & UPPER_RIGHT > 0) self.rect(img, x_halfs[1], 0, self.width, y_thirds[0]);
+    if (encoded & MIDDLE_RIGHT > 0) self.rect(img, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
+    if (encoded & LOWER_RIGHT > 0) self.rect(img, x_halfs[1], y_thirds[1], self.width, self.height);
 }
 
 fn draw_light_arc(

@@ -192,6 +192,9 @@ pub fn indexForCodepoint(
             // "Braille" block
             0x2800...0x28FF => true,
 
+            // "Symbols for Legacy Computing" block
+            0x1FB00...0x1FB3B => true,
+
             else => false,
         }) {
             return FontIndex.initSpecial(.box);
