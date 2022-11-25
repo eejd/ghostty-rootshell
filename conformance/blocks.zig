@@ -80,4 +80,20 @@ pub fn main() !void {
             try stdout.print("\n\n", .{});
         }
     }
+
+    {
+        try stdout.print("\x1b[4mOther\x1b[0m\n", .{});
+        var i: usize = 0x1FB70;
+        var step: usize = 32;
+        const end = 0x1FB8B;
+        while (i <= end) : (i += step) {
+            var j: usize = 0;
+            while (j < step) : (j += 1) {
+                const v = i + j;
+                if (v <= end) try stdout.print("{u} ", .{@intCast(u21, v)});
+            }
+
+            try stdout.print("\n\n", .{});
+        }
+    }
 }

@@ -332,6 +332,26 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
             try self.draw_wedge_triangle(img, 0x1fb6e);
         },
 
+        0x1FB70 => self.draw_vertical_one_eighth_block_n(img, 1),
+        0x1FB71 => self.draw_vertical_one_eighth_block_n(img, 2),
+        0x1FB72 => self.draw_vertical_one_eighth_block_n(img, 3),
+        0x1FB73 => self.draw_vertical_one_eighth_block_n(img, 4),
+        0x1FB74 => self.draw_vertical_one_eighth_block_n(img, 5),
+        0x1FB75 => self.draw_vertical_one_eighth_block_n(img, 6),
+
+        0x1FB76 => self.draw_horizontal_one_eighth_block_n(img, 1),
+        0x1FB77 => self.draw_horizontal_one_eighth_block_n(img, 2),
+        0x1FB78 => self.draw_horizontal_one_eighth_block_n(img, 3),
+        0x1FB79 => self.draw_horizontal_one_eighth_block_n(img, 4),
+        0x1FB7A => self.draw_horizontal_one_eighth_block_n(img, 5),
+        0x1FB7B => self.draw_horizontal_one_eighth_block_n(img, 6),
+
+        0x1fb82 => self.draw_upper_one_quarter_block(img),
+        0x1fb83 => self.draw_upper_three_eighths_block(img),
+        0x1fb84 => self.draw_upper_five_eighths_block(img),
+        0x1fb85 => self.draw_upper_three_quarters_block(img),
+        0x1fb86 => self.draw_upper_seven_eighths_block(img),
+
         else => return error.InvalidCodepoint,
     }
 }
