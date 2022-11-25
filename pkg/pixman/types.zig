@@ -100,6 +100,13 @@ pub const Trapezoid = extern struct {
     right: LineFixed,
 };
 
+pub const Rectangle16 = extern struct {
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+};
+
 pub const Box32 = extern struct {
     x1: i32,
     y1: i32,

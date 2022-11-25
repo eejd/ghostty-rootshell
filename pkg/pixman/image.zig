@@ -62,6 +62,21 @@ pub const Image = opaque {
         ) == 0) return pixman.Error.PixmanFailure;
     }
 
+    pub fn fillRectangles(
+        self: *Image,
+        op: pixman.Op,
+        color: pixman.Color,
+        rects: []const pixman.Rectangle16,
+    ) pixman.Error!void {
+        if (c.pixman_image_fill_rectangles(
+            @enumToInt(op),
+            @ptrCast(*c.pixman_image_t, self),
+            @ptrCast(*const c.pixman_color_t, &color),
+            @intCast(c_int, rects.len),
+            @ptrCast([*c]const c.pixman_rectangle16_t, rects.ptr),
+        ) == 0) return pixman.Error.PixmanFailure;
+    }
+
     pub fn rasterizeTrapezoid(
         self: *Image,
         trap: pixman.Trapezoid,
