@@ -257,6 +257,22 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
         0x256c => self.draw_double_vertical_and_horizontal(img),
         0x256d...0x2570 => try self.draw_light_arc(alloc, img, cp),
 
+        0x2571 => self.draw_light_diagonal_upper_right_to_lower_left(img),
+        0x2572 => self.draw_light_diagonal_upper_left_to_lower_right(img),
+        0x2573 => self.draw_light_diagonal_cross(img),
+        0x2574 => self.draw_light_left(img),
+        0x2575 => self.draw_light_up(img),
+        0x2576 => self.draw_light_right(img),
+        0x2577 => self.draw_light_down(img),
+        0x2578 => self.draw_heavy_left(img),
+        0x2579 => self.draw_heavy_up(img),
+        0x257a => self.draw_heavy_right(img),
+        0x257b => self.draw_heavy_down(img),
+        0x257c => self.draw_light_left_and_heavy_right(img),
+        0x257d => self.draw_light_up_and_heavy_down(img),
+        0x257e => self.draw_heavy_left_and_light_right(img),
+        0x257f => self.draw_heavy_up_and_light_down(img),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1004,6 +1020,123 @@ fn draw_double_vertical_and_horizontal(self: BoxFont, img: *pixman.Image) void {
     self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
     self.vline(img, hmid + 2 * thick_px, self.height, vmid, thick_px);
     self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
+}
+
+fn draw_light_diagonal_upper_right_to_lower_left(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    img.rasterizeTrapezoid(.{
+        .top = pixman.Fixed.init(0),
+        .bottom = pixman.Fixed.init(self.height),
+        .left = .{
+            .p1 = .{
+                .x = pixman.Fixed.init(@intToFloat(f64, self.width) - @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(0),
+            },
+
+            .p2 = .{
+                .x = pixman.Fixed.init(0 - @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(self.height),
+            },
+        },
+        .right = .{
+            .p1 = .{
+                .x = pixman.Fixed.init(@intToFloat(f64, self.width) + @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(0),
+            },
+
+            .p2 = .{
+                .x = pixman.Fixed.init(0 + @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(self.height),
+            },
+        },
+    }, 0, 0);
+}
+
+fn draw_light_diagonal_upper_left_to_lower_right(self: BoxFont, img: *pixman.Image) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    img.rasterizeTrapezoid(.{
+        .top = pixman.Fixed.init(0),
+        .bottom = pixman.Fixed.init(self.height),
+        .left = .{
+            .p1 = .{
+                .x = pixman.Fixed.init(0 - @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(0),
+            },
+
+            .p2 = .{
+                .x = pixman.Fixed.init(@intToFloat(f64, self.width) - @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(self.height),
+            },
+        },
+        .right = .{
+            .p1 = .{
+                .x = pixman.Fixed.init(0 + @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(0),
+            },
+
+            .p2 = .{
+                .x = pixman.Fixed.init(@intToFloat(f64, self.width) + @intToFloat(f64, thick_px) / 2),
+                .y = pixman.Fixed.init(self.height),
+            },
+        },
+    }, 0, 0);
+}
+
+fn draw_light_diagonal_cross(self: BoxFont, img: *pixman.Image) void {
+    self.draw_light_diagonal_upper_right_to_lower_left(img);
+    self.draw_light_diagonal_upper_left_to_lower_right(img);
+}
+
+fn draw_light_left(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+}
+
+fn draw_light_up(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle_up(img, .light, .light);
+}
+
+fn draw_light_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .light, .light);
+}
+
+fn draw_light_down(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle_down(img, .light, .light);
+}
+
+fn draw_heavy_left(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+}
+
+fn draw_heavy_up(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle_up(img, .heavy, .heavy);
+}
+
+fn draw_heavy_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_right(img, .heavy, .heavy);
+}
+
+fn draw_heavy_down(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_light_left_and_heavy_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .light, .light);
+    self.hline_middle_right(img, .heavy, .heavy);
+}
+
+fn draw_light_up_and_heavy_down(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle_up(img, .light, .light);
+    self.vline_middle_down(img, .heavy, .heavy);
+}
+
+fn draw_heavy_left_and_light_right(self: BoxFont, img: *pixman.Image) void {
+    self.hline_middle_left(img, .heavy, .heavy);
+    self.hline_middle_right(img, .light, .light);
+}
+
+fn draw_heavy_up_and_light_down(self: BoxFont, img: *pixman.Image) void {
+    self.vline_middle_up(img, .heavy, .heavy);
+    self.vline_middle_down(img, .light, .light);
 }
 
 fn draw_light_arc(

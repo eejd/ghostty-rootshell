@@ -185,6 +185,10 @@ pub fn indexForCodepoint(
         if (switch (cp) {
             // "Box Drawing" block
             0x2500...0x257F => true,
+
+            // "Block Elements" block
+            0x2580...0x259f => true,
+
             else => false,
         }) {
             return FontIndex.initSpecial(.box);
