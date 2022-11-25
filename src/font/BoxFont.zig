@@ -298,6 +298,8 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
         0x2595 => self.draw_right_one_eighth_block(img),
         0x2596...0x259f => self.draw_quadrant(img, cp),
 
+        0x2800...0x28FF => self.draw_braille(img, cp),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -1475,6 +1477,101 @@ fn draw_quadrant(self: BoxFont, img: *pixman.Image, cp: u32) void {
     if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.quad_upper_right(img);
     if (encoded & LOWER_LEFT == LOWER_LEFT) self.quad_lower_left(img);
     if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.quad_lower_right(img);
+}
+
+fn draw_braille(self: BoxFont, img: *pixman.Image, cp: u32) void {
+    var w: u32 = @min(self.width / 4, self.height / 8);
+    var x_spacing: u32 = self.width / 4;
+    var y_spacing: u32 = self.height / 8;
+    var x_margin: u32 = x_spacing / 2;
+    var y_margin: u32 = y_spacing / 2;
+
+    var x_px_left: u32 = self.width - 2 * x_margin - x_spacing - 2 * w;
+    var y_px_left: u32 = self.height - 2 * y_margin - 3 * y_spacing - 4 * w;
+
+    // First, try hard to ensure the DOT width is non-zero
+    if (x_px_left >= 2 and y_px_left >= 4 and w == 0) {
+        w += 1;
+        x_px_left -= 2;
+        y_px_left -= 4;
+    }
+
+    // Second, prefer a non-zero margin
+    if (x_px_left >= 2 and x_margin == 0) {
+        x_margin = 1;
+        x_px_left -= 2;
+    }
+    if (y_px_left >= 2 and y_margin == 0) {
+        y_margin = 1;
+        y_px_left -= 2;
+    }
+
+    // Third, increase spacing
+    if (x_px_left >= 1) {
+        x_spacing += 1;
+        x_px_left -= 1;
+    }
+    if (y_px_left >= 3) {
+        y_spacing += 1;
+        y_px_left -= 3;
+    }
+
+    // Fourth, margins (“spacing”, but on the sides)
+    if (x_px_left >= 2) {
+        x_margin += 1;
+        x_px_left -= 2;
+    }
+    if (y_px_left >= 2) {
+        y_margin += 1;
+        y_px_left -= 2;
+    }
+
+    // Last - increase dot width
+    if (x_px_left >= 2 and y_px_left >= 4) {
+        w += 1;
+        x_px_left -= 2;
+        y_px_left -= 4;
+    }
+
+    assert(x_px_left <= 1 or y_px_left <= 1);
+    assert(2 * x_margin + 2 * w + x_spacing <= self.width);
+    assert(2 * y_margin + 4 * w + 3 * y_spacing <= self.height);
+
+    const x = [2]u32{ x_margin, x_margin + w + x_spacing };
+    const y = y: {
+        var y: [4]u32 = undefined;
+        y[0] = y_margin;
+        y[1] = y[0] + w + y_spacing;
+        y[2] = y[1] + w + y_spacing;
+        y[3] = y[2] + w + y_spacing;
+        break :y y;
+    };
+
+    assert(cp >= 0x2800);
+    assert(cp <= 0x28ff);
+    const sym = cp - 0x2800;
+
+    // Left side
+    if (sym & 1 > 0)
+        self.rect(img, x[0], y[0], x[0] + w, y[0] + w);
+    if (sym & 2 > 0)
+        self.rect(img, x[0], y[1], x[0] + w, y[1] + w);
+    if (sym & 4 > 0)
+        self.rect(img, x[0], y[2], x[0] + w, y[2] + w);
+
+    // Right side
+    if (sym & 8 > 0)
+        self.rect(img, x[1], y[0], x[1] + w, y[0] + w);
+    if (sym & 16 > 0)
+        self.rect(img, x[1], y[1], x[1] + w, y[1] + w);
+    if (sym & 32 > 0)
+        self.rect(img, x[1], y[2], x[1] + w, y[2] + w);
+
+    // 8-dot patterns
+    if (sym & 64 > 0)
+        self.rect(img, x[0], y[3], x[0] + w, y[3] + w);
+    if (sym & 128 > 0)
+        self.rect(img, x[1], y[3], x[1] + w, y[3] + w);
 }
 
 fn draw_light_arc(

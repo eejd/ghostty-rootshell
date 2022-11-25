@@ -189,6 +189,9 @@ pub fn indexForCodepoint(
             // "Block Elements" block
             0x2580...0x259f => true,
 
+            // "Braille" block
+            0x2800...0x28FF => true,
+
             else => false,
         }) {
             return FontIndex.initSpecial(.box);
