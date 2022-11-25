@@ -99,6 +99,36 @@ pub const Image = opaque {
         );
     }
 
+    pub fn composite(
+        self: *Image,
+        op: pixman.Op,
+        src: *Image,
+        mask: ?*Image,
+        src_x: i16,
+        src_y: i16,
+        mask_x: i16,
+        mask_y: i16,
+        dest_x: i16,
+        dest_y: i16,
+        width: u16,
+        height: u16,
+    ) void {
+        c.pixman_image_composite(
+            @enumToInt(op),
+            @ptrCast(*c.pixman_image_t, src),
+            @ptrCast(?*c.pixman_image_t, mask),
+            @ptrCast(*c.pixman_image_t, self),
+            src_x,
+            src_y,
+            mask_x,
+            mask_y,
+            dest_x,
+            dest_y,
+            width,
+            height,
+        );
+    }
+
     pub fn compositeTriangles(
         self: *Image,
         op: pixman.Op,

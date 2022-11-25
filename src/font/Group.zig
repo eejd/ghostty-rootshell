@@ -194,11 +194,19 @@ pub fn indexForCodepoint(
 
             // "Symbols for Legacy Computing" block
             0x1FB00...0x1FB3B => true,
+
             0x1FB3C...0x1FB40,
             0x1FB47...0x1FB4B,
             0x1FB57...0x1FB5B,
             0x1FB62...0x1FB66,
             0x1FB6C...0x1FB6F,
+            => true,
+
+            0x1FB41...0x1FB45,
+            0x1FB4C...0x1FB50,
+            0x1FB52...0x1FB56,
+            0x1FB5D...0x1FB61,
+            0x1FB68...0x1FB6B,
             => true,
 
             else => false,

@@ -302,12 +302,19 @@ fn draw(self: BoxFont, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
 
         0x1FB00...0x1FB3B => self.draw_sextant(img, cp),
 
-        0x1fb3c...0x1fb40,
-        0x1fb47...0x1fb4b,
-        0x1fb57...0x1fb5b,
-        0x1fb62...0x1fb66,
-        0x1fb6c...0x1fb6f,
+        0x1FB3C...0x1FB40,
+        0x1FB47...0x1FB4B,
+        0x1FB57...0x1FB5B,
+        0x1FB62...0x1FB66,
+        0x1FB6C...0x1FB6F,
         => try self.draw_wedge_triangle(img, cp),
+
+        0x1FB41...0x1FB45,
+        0x1FB4C...0x1FB50,
+        0x1FB52...0x1FB56,
+        0x1FB5D...0x1FB61,
+        0x1FB68...0x1FB6B,
+        => try self.draw_wedge_triangle_inverted(img, cp),
 
         else => return error.InvalidCodepoint,
     }
@@ -2049,6 +2056,26 @@ fn draw_wedge_triangle(self: BoxFont, img: *pixman.Image, cp: u32) !void {
     const src = try pixman.Image.createSolidFill(white);
     defer _ = src.unref();
     img.compositeTriangles(.over, src, .a8, 0, 0, 0, 0, tris);
+}
+
+fn draw_wedge_triangle_inverted(self: BoxFont, img: *pixman.Image, cp: u32) !void {
+    try self.draw_wedge_triangle(img, cp);
+
+    const src = try pixman.Image.createSolidFill(white);
+    defer _ = src.unref();
+    img.composite(
+        .out,
+        src,
+        null,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        @intCast(u16, self.width),
+        @intCast(u16, self.height),
+    );
 }
 
 fn draw_light_arc(
