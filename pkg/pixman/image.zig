@@ -61,6 +61,20 @@ pub const Image = opaque {
             @ptrCast([*c]const c.pixman_box32_t, boxes.ptr),
         ) == 0) return pixman.Error.PixmanFailure;
     }
+
+    pub fn rasterizeTrapezoid(
+        self: *Image,
+        trap: pixman.Trapezoid,
+        x_off: c_int,
+        y_off: c_int,
+    ) void {
+        c.pixman_rasterize_trapezoid(
+            @ptrCast(*c.pixman_image_t, self),
+            @ptrCast(*const c.pixman_trapezoid_t, &trap),
+            x_off,
+            y_off,
+        );
+    }
 };
 
 test "create and destroy" {

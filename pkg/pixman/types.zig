@@ -68,6 +68,38 @@ pub const Color = extern struct {
     alpha: u16,
 };
 
+pub const Fixed = enum(i32) {
+    _,
+
+    pub fn init(v: anytype) Fixed {
+        return switch (@TypeOf(v)) {
+            comptime_int, u32 => @intToEnum(Fixed, v << 16),
+            f64 => @intToEnum(Fixed, @floatToInt(i32, v * 65536)),
+            else => {
+                @compileLog(@TypeOf(v));
+                @compileError("unsupported type");
+            },
+        };
+    }
+};
+
+pub const PointFixed = extern struct {
+    x: Fixed,
+    y: Fixed,
+};
+
+pub const LineFixed = extern struct {
+    p1: PointFixed,
+    p2: PointFixed,
+};
+
+pub const Trapezoid = extern struct {
+    top: Fixed,
+    bottom: Fixed,
+    left: LineFixed,
+    right: LineFixed,
+};
+
 pub const Box32 = extern struct {
     x1: i32,
     y1: i32,
