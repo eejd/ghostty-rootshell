@@ -1,4 +1,4 @@
-//! Delete Line (DL) - Esc [ M
+//! Outputs various box glyphs for testing.
 const std = @import("std");
 
 pub fn main() !void {
