@@ -501,12 +501,6 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
 
-    // Set the cell size of the box font
-    if (self.font_group.group.sprite) |*sprite| {
-        sprite.width = @floatToInt(u32, self.cell_size.width);
-        sprite.height = @floatToInt(u32, self.cell_size.height);
-    }
-
     // Notify the window that the cell size changed.
     _ = self.window_mailbox.push(.{
         .cell_size = new_cell_size,
@@ -529,6 +523,14 @@ fn resetFontMetrics(
         break :metrics face.metrics;
     };
     log.debug("cell dimensions={}", .{metrics});
+
+    // Set details for our sprite font
+    font_group.group.sprite = font.sprite.Face{
+        .width = @floatToInt(u32, metrics.cell_width),
+        .height = @floatToInt(u32, metrics.cell_height),
+        .thickness = 2,
+        .underline_position = @floatToInt(u32, metrics.underline_position),
+    };
 
     // Set our uniforms that rely on metrics
     const pbind = try program.use();
@@ -1003,17 +1005,30 @@ pub fn updateCell(
     }
 
     if (cell.attrs.underline != .none) {
+        const sprite: font.Sprite = switch (cell.attrs.underline) {
+            .none => unreachable,
+            .single => .underline,
+            .double => .underline_double,
+            else => .underline,
+        };
+
+        const underline_glyph = try self.font_group.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @enumToInt(sprite),
+            null,
+        );
         self.cells.appendAssumeCapacity(.{
-            .mode = .underline,
+            .mode = .fg,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .grid_width = cell.widthLegacy(),
-            .glyph_x = 0,
-            .glyph_y = 0,
-            .glyph_width = 0,
-            .glyph_height = 0,
-            .glyph_offset_x = 0,
-            .glyph_offset_y = 0,
+            .glyph_x = underline_glyph.atlas_x,
+            .glyph_y = underline_glyph.atlas_y,
+            .glyph_width = underline_glyph.width,
+            .glyph_height = underline_glyph.height,
+            .glyph_offset_x = underline_glyph.offset_x,
+            .glyph_offset_y = underline_glyph.offset_y,
             .fg_r = colors.fg.r,
             .fg_g = colors.fg.g,
             .fg_b = colors.fg.b,
