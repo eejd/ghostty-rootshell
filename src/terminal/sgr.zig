@@ -91,6 +91,9 @@ pub const Parser = struct {
     params: []const u16,
     idx: usize = 0,
 
+    /// True if the separator is a colon
+    colon: bool = false,
+
     /// Next returns the next attribute or null if there are no more attributes.
     pub fn next(self: *Parser) ?Attribute {
         if (self.idx > self.params.len) return null;
@@ -116,7 +119,35 @@ pub const Parser = struct {
 
             3 => return Attribute{ .italic = {} },
 
-            4 => return Attribute{ .underline = .single },
+            4 => blk: {
+                if (self.colon) {
+                    switch (slice.len) {
+                        // 0 is unreachable because we're here and we read
+                        // an element to get here.
+                        0 => unreachable,
+
+                        // 1 is unreachable because we can't have a colon
+                        // separator if there are no separators.
+                        1 => unreachable,
+
+                        // 2 means we have a specific underline style.
+                        2 => {
+                            self.idx += 1;
+                            switch (slice[1]) {
+                                0 => return Attribute{ .reset_underline = {} },
+                                1 => return Attribute{ .underline = .single },
+                                2 => return Attribute{ .underline = .double },
+                                else => break :blk,
+                            }
+                        },
+
+                        // Colon-separated must only be 2.
+                        else => break :blk,
+                    }
+                }
+
+                return Attribute{ .underline = .single };
+            },
 
             5 => return Attribute{ .blink = {} },
 
@@ -215,6 +246,11 @@ fn testParse(params: []const u16) Attribute {
     return p.next().?;
 }
 
+fn testParseColon(params: []const u16) Attribute {
+    var p: Parser = .{ .params = params, .colon = true };
+    return p.next().?;
+}
+
 test "sgr: Parser" {
     try testing.expect(testParse(&[_]u16{}) == .unset);
     try testing.expect(testParse(&[_]u16{0}) == .unset);
@@ -281,6 +317,25 @@ test "sgr: underline" {
     {
         const v = testParse(&[_]u16{24});
         try testing.expect(v == .reset_underline);
+    }
+}
+
+test "sgr: underline styles" {
+    {
+        const v = testParseColon(&[_]u16{ 4, 2 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .double);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 0 });
+        try testing.expect(v == .reset_underline);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 1 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .single);
     }
 }
 

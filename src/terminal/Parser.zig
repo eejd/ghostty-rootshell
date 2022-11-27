@@ -79,6 +79,10 @@ pub const Action = union(enum) {
         intermediates: []u8,
         params: []u16,
         final: u8,
+        sep: Sep,
+
+        /// The separator used for CSI params.
+        pub const Sep = enum { semicolon, colon };
 
         // Implement formatter for logging
         pub fn format(
@@ -392,6 +396,11 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                     .intermediates = self.intermediates[0..self.intermediates_idx],
                     .params = self.params[0..self.params_idx],
                     .final = c,
+                    .sep = switch (self.params_sep) {
+                        .none, .semicolon => .semicolon,
+                        .colon => .colon,
+                        .mixed => unreachable,
+                    },
                 },
             };
         },
