@@ -289,13 +289,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // Pre-calculate our initial cell size ourselves.
     const cell_size = try renderer.CellSize.init(alloc, font_group);
 
-    // Setup our box font
-    font_group.group.sprite = font.sprite.Face{
-        .width = @floatToInt(u32, cell_size.width),
-        .height = @floatToInt(u32, cell_size.height),
-        .thickness = 2,
-    };
-
     // Convert our padding from points to pixels
     const padding_x = (@intToFloat(f32, config.@"window-padding-x") * x_dpi) / 72;
     const padding_y = (@intToFloat(f32, config.@"window-padding-y") * y_dpi) / 72;

@@ -117,13 +117,13 @@ pub fn writeAtlas(self: *Canvas, alloc: Allocator, atlas: *Atlas) !Atlas.Region 
 
 /// Draw and fill a rectangle. This is the main primitive for drawing
 /// lines as well (which are just generally skinny rectangles...)
-pub fn rect(self: *Canvas, v: Rect, color: pixman.Color) void {
+pub fn rect(self: *Canvas, v: Rect, color: Color) void {
     const boxes = &[_]pixman.Box32{
         .{
             .x1 = @intCast(i32, v.x),
             .y1 = @intCast(i32, v.y),
-            .x2 = @intCast(i32, v.width),
-            .y2 = @intCast(i32, v.height),
+            .x2 = @intCast(i32, v.x + v.width),
+            .y2 = @intCast(i32, v.y + v.height),
         },
     };
 

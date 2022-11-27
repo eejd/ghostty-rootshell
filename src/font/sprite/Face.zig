@@ -17,8 +17,10 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
+const Sprite = font.sprite.Sprite;
 const Atlas = @import("../../Atlas.zig");
 const Box = @import("Box.zig");
+const underline = @import("underline.zig");
 
 /// The cell width and height.
 width: u32,
@@ -27,6 +29,9 @@ height: u32,
 /// Base thickness value for lines of sprites. This is in pixels. If you
 /// want to do any DPI scaling, it is expected to be done earlier.
 thickness: u32,
+
+/// The position fo the underline.
+underline_position: u32 = 0,
 
 /// Returns true if the codepoint exists in our sprite font.
 pub fn hasCodepoint(self: Face, cp: u32, p: ?font.Presentation) bool {
@@ -47,25 +52,42 @@ pub fn renderGlyph(
     if (std.debug.runtime_safety) assert(self.hasCodepoint(cp, null));
 
     // Safe to ".?" because of the above assertion.
-    switch (Kind.init(cp).?) {
-        .box => {
+    return switch (Kind.init(cp).?) {
+        .box => box: {
             const f: Box = .{
                 .width = self.width,
                 .height = self.height,
                 .thickness = self.thickness,
             };
 
-            return try f.renderGlyph(alloc, atlas, cp);
+            break :box try f.renderGlyph(alloc, atlas, cp);
         },
-    }
+
+        .underline => try underline.renderGlyph(
+            alloc,
+            atlas,
+            @intToEnum(Sprite, cp),
+            self.width,
+            self.height,
+            self.underline_position,
+            self.thickness,
+        ),
+    };
 }
 
 /// Kind of sprites we have. Drawing is implemented separately for each kind.
 const Kind = enum {
     box,
+    underline,
 
     pub fn init(cp: u32) ?Kind {
         return switch (cp) {
+            Sprite.start...Sprite.end => switch (@intToEnum(Sprite, cp)) {
+                .underline,
+                .underline_double,
+                => .underline,
+            },
+
             // Box fonts
             0x2500...0x257F, // "Box Drawing" block
             0x2580...0x259F, // "Block Elements" block
