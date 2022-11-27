@@ -137,7 +137,10 @@ pub const Parser = struct {
                                 0 => return Attribute{ .reset_underline = {} },
                                 1 => return Attribute{ .underline = .single },
                                 2 => return Attribute{ .underline = .double },
-                                else => break :blk,
+
+                                // For unknown underline styles, just render
+                                // a single underline.
+                                else => return Attribute{ .underline = .single },
                             }
                         },
 
