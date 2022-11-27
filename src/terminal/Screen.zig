@@ -1760,6 +1760,11 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         errdefer self.storage.deinit(self.alloc);
         defer old.storage.deinit(self.alloc);
 
+        // Copy grapheme map
+        self.graphemes = .{};
+        errdefer self.deinitGraphemes();
+        defer old.deinitGraphemes();
+
         // Convert our cursor coordinates to screen coordinates because
         // we may have to reflow the cursor if the line it is on is unwrapped.
         const cursor_pos = (point.Viewport{
@@ -1913,6 +1918,11 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         self.storage = try StorageBuf.init(self.alloc, buf_size);
         errdefer self.storage.deinit(self.alloc);
         defer old.storage.deinit(self.alloc);
+
+        // Copy grapheme map
+        self.graphemes = .{};
+        errdefer self.deinitGraphemes();
+        defer old.deinitGraphemes();
 
         // Convert our cursor coordinates to screen coordinates because
         // we may have to reflow the cursor if the line it is on is moved.
@@ -3728,6 +3738,44 @@ test "Screen: resize more cols no reflow" {
     }
 }
 
+test "Screen: resize more cols grapheme map" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Attach graphemes to all the columns
+    {
+        var iter = s.rowIterator(.viewport);
+        while (iter.next()) |row| {
+            var col: usize = 0;
+            while (col < s.cols) : (col += 1) {
+                try row.attachGrapheme(col, 0xFE0F);
+            }
+        }
+    }
+
+    const cursor = s.cursor;
+    try s.resize(3, 10);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
 test "Screen: resize more cols with reflow that fits full width" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -4031,6 +4079,46 @@ test "Screen: resize less cols no reflow" {
     defer s.deinit();
     const str = "1AB\n2EF\n3IJ";
     try s.testWriteString(str);
+    s.cursor.x = 0;
+    s.cursor.y = 0;
+    const cursor = s.cursor;
+    try s.resize(3, 3);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize less cols with graphemes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1AB\n2EF\n3IJ";
+    try s.testWriteString(str);
+
+    // Attach graphemes to all the columns
+    {
+        var iter = s.rowIterator(.viewport);
+        while (iter.next()) |row| {
+            var col: usize = 0;
+            while (col < 3) : (col += 1) {
+                try row.attachGrapheme(col, 0xFE0F);
+            }
+        }
+    }
+
     s.cursor.x = 0;
     s.cursor.y = 0;
     const cursor = s.cursor;
