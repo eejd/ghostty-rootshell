@@ -51,6 +51,10 @@ pub const Image = opaque {
         return c.pixman_image_get_height(@ptrCast(*c.pixman_image_t, self));
     }
 
+    pub fn getWidth(self: *Image) c_int {
+        return c.pixman_image_get_width(@ptrCast(*c.pixman_image_t, self));
+    }
+
     pub fn getStride(self: *Image) c_int {
         return c.pixman_image_get_stride(@ptrCast(*c.pixman_image_t, self));
     }
