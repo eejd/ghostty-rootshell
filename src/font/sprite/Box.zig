@@ -61,66 +61,15 @@ pub fn renderGlyph(
     atlas: *Atlas,
     cp: u32,
 ) !font.Glyph {
-    assert(atlas.format == .greyscale);
+    // Create the canvas we'll use to draw
+    var canvas = try font.sprite.Canvas.init(alloc, self.width, self.height);
+    defer canvas.deinit(alloc);
 
-    // Determine the config for our image buffer. The images we draw
-    // for boxes are always 8bpp
-    const format: pixman.FormatCode = .a8;
-    const stride = format.strideForWidth(self.width);
-    const len = @intCast(usize, stride * @intCast(c_int, self.height));
+    // Perform the actual drawing
+    try self.draw(alloc, canvas.image, cp);
 
-    // Allocate our buffer. pixman uses []u32 so we divide our length
-    // by 4 since u32 / u8 = 4.
-    var data = try alloc.alloc(u32, len / 4);
-    defer alloc.free(data);
-    std.mem.set(u32, data, 0);
-
-    // Create the image we'll draw to
-    const img = try pixman.Image.createBitsNoClear(
-        format,
-        @intCast(c_int, self.width),
-        @intCast(c_int, self.height),
-        data.ptr,
-        stride,
-    );
-    defer _ = img.unref();
-
-    try self.draw(alloc, img, cp);
-
-    // Reserve our region in the atlas and render the glyph to it.
-    const region = try atlas.reserve(alloc, self.width, self.height);
-    if (region.width > 0 and region.height > 0) {
-        // Convert our []u32 to []u8 since we use 8bpp formats
-        assert(format.bpp() == 8);
-        const data_u8 = @alignCast(@alignOf(u8), @ptrCast([*]u8, data.ptr)[0..len]);
-
-        const depth = atlas.format.depth();
-
-        // We can avoid a buffer copy if our atlas width and bitmap
-        // width match and the bitmap pitch is just the width (meaning
-        // the data is tightly packed).
-        const needs_copy = !(self.width * depth == stride);
-
-        // If we need to copy the data, we copy it into a temporary buffer.
-        const buffer = if (needs_copy) buffer: {
-            var temp = try alloc.alloc(u8, self.width * self.height * depth);
-            var dst_ptr = temp;
-            var src_ptr = data_u8.ptr;
-            var i: usize = 0;
-            while (i < self.height) : (i += 1) {
-                std.mem.copy(u8, dst_ptr, src_ptr[0 .. self.width * depth]);
-                dst_ptr = dst_ptr[self.width * depth ..];
-                src_ptr += @intCast(usize, stride);
-            }
-            break :buffer temp;
-        } else data_u8[0..(self.width * self.height * depth)];
-        defer if (buffer.ptr != data_u8.ptr) alloc.free(buffer);
-
-        // Write the glyph information into the atlas
-        assert(region.width == self.width);
-        assert(region.height == self.height);
-        atlas.set(region, buffer);
-    }
+    // Write the drawing to the atlas
+    const region = try canvas.writeAtlas(alloc, atlas);
 
     // Our coordinates start at the BOTTOM for our renderers so we have to
     // specify an offset of the full height because we rendered a full size
@@ -1428,19 +1377,19 @@ fn draw_right_half_block(self: Box, img: *pixman.Image) void {
 }
 
 fn draw_pixman_shade(self: Box, img: *pixman.Image, v: u16) void {
-    const rects = &[_]pixman.Rectangle16{
+    const boxes = &[_]pixman.Box32{
         .{
-            .x = 0,
-            .y = 0,
-            .width = @intCast(u16, self.width),
-            .height = @intCast(u16, self.height),
+            .x1 = 0,
+            .y1 = 0,
+            .x2 = @intCast(i32, self.width),
+            .y2 = @intCast(i32, self.height),
         },
     };
 
-    img.fillRectangles(
+    img.fillBoxes(
         .src,
         .{ .red = 0, .green = 0, .blue = 0, .alpha = v },
-        rects,
+        boxes,
     ) catch {};
 }
 
