@@ -774,7 +774,10 @@ pub fn init(
 
 pub fn deinit(self: *Screen) void {
     self.storage.deinit(self.alloc);
+    self.deinitGraphemes();
+}
 
+fn deinitGraphemes(self: *Screen) void {
     var grapheme_it = self.graphemes.valueIterator();
     while (grapheme_it.next()) |data| data.deinit(self.alloc);
     self.graphemes.deinit(self.alloc);
@@ -1683,6 +1686,12 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // rewrite the screen
     self.viewport = 0;
     self.history = 0;
+
+    // Reset our grapheme map and ensure the old one is deallocated
+    // on success.
+    self.graphemes = .{};
+    errdefer self.deinitGraphemes();
+    defer old.deinitGraphemes();
 
     // Rewrite all our rows
     var y: usize = 0;
@@ -3565,6 +3574,47 @@ test "Screen: resize (no reflow) empty screen" {
     // This is the primary test for this test, we want to ensure we
     // always have at least enough capacity for our rows.
     try testing.expectEqual(@as(usize, 10), s.rowsCapacity());
+}
+
+test "Screen: resize (no reflow) grapheme copy" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Attach graphemes to all the columns
+    {
+        var iter = s.rowIterator(.viewport);
+        while (iter.next()) |row| {
+            var col: usize = 0;
+            while (col < s.cols) : (col += 1) {
+                try row.attachGrapheme(col, 0xFE0F);
+            }
+        }
+    }
+
+    // Clear dirty rows
+    {
+        var iter = s.rowIterator(.viewport);
+        while (iter.next()) |row| row.setDirty(false);
+    }
+
+    // Resize
+    try s.resizeWithoutReflow(10, 5);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Everything should be dirty
+    {
+        var iter = s.rowIterator(.viewport);
+        while (iter.next()) |row| try testing.expect(row.isDirty());
+    }
 }
 
 test "Screen: resize more rows no scrollback" {
