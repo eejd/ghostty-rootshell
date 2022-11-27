@@ -137,6 +137,8 @@ pub const Parser = struct {
                                 0 => return Attribute{ .reset_underline = {} },
                                 1 => return Attribute{ .underline = .single },
                                 2 => return Attribute{ .underline = .double },
+                                4 => return Attribute{ .underline = .dotted },
+                                5 => return Attribute{ .underline = .dashed },
 
                                 // For unknown underline styles, just render
                                 // a single underline.
@@ -339,6 +341,18 @@ test "sgr: underline styles" {
         const v = testParseColon(&[_]u16{ 4, 1 });
         try testing.expect(v == .underline);
         try testing.expect(v.underline == .single);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 4 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .dotted);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 5 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .dashed);
     }
 }
 
