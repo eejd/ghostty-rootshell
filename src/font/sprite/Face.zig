@@ -86,6 +86,7 @@ const Kind = enum {
                 .underline,
                 .underline_double,
                 .underline_dotted,
+                .underline_dashed,
                 => .underline,
             },
 

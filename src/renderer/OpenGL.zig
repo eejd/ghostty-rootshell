@@ -1010,6 +1010,7 @@ pub fn updateCell(
             .single => .underline,
             .double => .underline_double,
             .dotted => .underline_dotted,
+            .dashed => .underline_dashed,
             else => .underline,
         };
 

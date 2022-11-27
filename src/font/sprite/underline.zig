@@ -70,6 +70,7 @@ const Draw = struct {
             .underline => self.drawSingle(canvas),
             .underline_double => self.drawDouble(canvas),
             .underline_dotted => self.drawDotted(canvas),
+            .underline_dashed => self.drawDashed(canvas),
         }
     }
 
@@ -110,6 +111,21 @@ const Draw = struct {
                 .x = i * dot_width,
                 .y = self.pos,
                 .width = dot_width,
+                .height = self.thickness,
+            }, .on);
+        }
+    }
+
+    /// Draw a dashed underline.
+    fn drawDashed(self: Draw, canvas: *font.sprite.Canvas) void {
+        const dash_width = self.width / 3 + 1;
+        const dash_count = (self.width / dash_width) + 1;
+        var i: u32 = 0;
+        while (i < dash_count) : (i += 2) {
+            canvas.rect(.{
+                .x = i * dash_width,
+                .y = self.pos,
+                .width = dash_width,
                 .height = self.thickness,
             }, .on);
         }

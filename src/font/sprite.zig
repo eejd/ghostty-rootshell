@@ -17,6 +17,7 @@ pub const Sprite = enum(u32) {
     underline = start,
     underline_double = start + 1,
     underline_dotted = start + 2,
+    underline_dashed = start + 3,
 
     // Note: we don't currently put the box drawing glyphs in here because
     // there are a LOT and I'm lazy. What I want to do is spend more time
