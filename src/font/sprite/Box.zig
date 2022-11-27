@@ -66,7 +66,7 @@ pub fn renderGlyph(
     defer canvas.deinit(alloc);
 
     // Perform the actual drawing
-    try self.draw(alloc, canvas.image, cp);
+    try self.draw(alloc, &canvas, cp);
 
     // Write the drawing to the atlas
     const region = try canvas.writeAtlas(alloc, atlas);
@@ -87,7 +87,11 @@ pub fn renderGlyph(
     };
 }
 
-fn draw(self: Box, alloc: Allocator, img: *pixman.Image, cp: u32) !void {
+fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void {
+    // We currently just draw directly to the pixman image, we should
+    // abstract drawing more and switch to that eventually.
+    const img = canvas.image;
+
     switch (cp) {
         0x2500 => self.draw_light_horizontal(img),
         0x2501 => self.draw_heavy_horizontal(img),

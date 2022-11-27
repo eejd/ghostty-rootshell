@@ -8,8 +8,31 @@ const Allocator = std.mem.Allocator;
 const pixman = @import("pixman");
 const Atlas = @import("../../Atlas.zig");
 
+/// The underlying image.
 image: *pixman.Image,
+
+/// The raw data buffer.
 data: []u32,
+
+pub const Rect = struct {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+};
+
+/// We only use alpha-channel so a pixel can only be "on" or "off".
+pub const Color = enum {
+    on,
+    off,
+
+    fn pixmanColor(self: Color) pixman.Color {
+        return switch (self) {
+            .on => .{ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF },
+            .off => .{ .red = 0, .green = 0, .blue = 0, .alpha = 0 },
+        };
+    }
+};
 
 pub fn init(alloc: Allocator, width: u32, height: u32) !Canvas {
     // Determine the config for our image buffer. The images we draw
@@ -90,4 +113,19 @@ pub fn writeAtlas(self: *Canvas, alloc: Allocator, atlas: *Atlas) !Atlas.Region 
     }
 
     return region;
+}
+
+/// Draw and fill a rectangle. This is the main primitive for drawing
+/// lines as well (which are just generally skinny rectangles...)
+pub fn rect(self: *Canvas, v: Rect, color: pixman.Color) void {
+    const boxes = &[_]pixman.Box32{
+        .{
+            .x1 = @intCast(i32, v.x),
+            .y1 = @intCast(i32, v.y),
+            .x2 = @intCast(i32, v.width),
+            .y2 = @intCast(i32, v.height),
+        },
+    };
+
+    self.image.fillBoxes(.src, color.pixmanColor(), boxes) catch {};
 }
