@@ -69,6 +69,7 @@ const Draw = struct {
         switch (sprite) {
             .underline => self.drawSingle(canvas),
             .underline_double => self.drawDouble(canvas),
+            .underline_dotted => self.drawDotted(canvas),
         }
     }
 
@@ -97,6 +98,21 @@ const Draw = struct {
             .width = self.width,
             .height = self.thickness,
         }, .on);
+    }
+
+    /// Draw a dotted underline.
+    fn drawDotted(self: Draw, canvas: *font.sprite.Canvas) void {
+        const dot_width = @max(self.thickness, 3);
+        const dot_count = self.width / dot_width;
+        var i: u32 = 0;
+        while (i < dot_count) : (i += 2) {
+            canvas.rect(.{
+                .x = i * dot_width,
+                .y = self.pos,
+                .width = dot_width,
+                .height = self.thickness,
+            }, .on);
+        }
     }
 };
 

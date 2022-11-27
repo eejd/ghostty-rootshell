@@ -85,6 +85,7 @@ const Kind = enum {
             Sprite.start...Sprite.end => switch (@intToEnum(Sprite, cp)) {
                 .underline,
                 .underline_double,
+                .underline_dotted,
                 => .underline,
             },
 
