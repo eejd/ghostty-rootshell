@@ -290,7 +290,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     const cell_size = try renderer.CellSize.init(alloc, font_group);
 
     // Setup our box font
-    font_group.group.box_font = font.BoxFont{
+    font_group.group.sprite = font.sprite.Face{
         .width = @floatToInt(u32, cell_size.width),
         .height = @floatToInt(u32, cell_size.height),
         .thickness = 2,

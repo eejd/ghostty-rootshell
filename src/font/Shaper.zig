@@ -582,7 +582,7 @@ test "shape box glyphs" {
     defer testdata.deinit();
 
     // Setup the box font
-    testdata.cache.group.box_font = font.BoxFont{
+    testdata.cache.group.sprite = font.sprite.Face{
         .width = 18,
         .height = 36,
         .thickness = 2,

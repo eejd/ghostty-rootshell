@@ -502,9 +502,9 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     self.cell_size = new_cell_size;
 
     // Set the cell size of the box font
-    if (self.font_group.group.box_font) |*box| {
-        box.width = @floatToInt(u32, self.cell_size.width);
-        box.height = @floatToInt(u32, self.cell_size.height);
+    if (self.font_group.group.sprite) |*sprite| {
+        sprite.width = @floatToInt(u32, self.cell_size.width);
+        sprite.height = @floatToInt(u32, self.cell_size.height);
     }
 
     // Notify the window that the cell size changed.

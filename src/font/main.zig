@@ -1,7 +1,6 @@
 const std = @import("std");
 const build_options = @import("build_options");
 
-pub const BoxFont = @import("BoxFont.zig");
 pub const discovery = @import("discovery.zig");
 pub const face = @import("face.zig");
 pub const DeferredFace = @import("DeferredFace.zig");
@@ -11,6 +10,7 @@ pub const GroupCache = @import("GroupCache.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const Library = @import("Library.zig");
 pub const Shaper = @import("Shaper.zig");
+pub const sprite = @import("sprite.zig");
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
 

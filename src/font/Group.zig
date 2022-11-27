@@ -50,10 +50,11 @@ faces: StyleArray,
 /// the codepoint. This can be set after initialization.
 discover: ?font.Discover = null,
 
-/// Set this to a non-null value to enable box font glyph drawing. If this
+/// Set this to a non-null value to enable sprite glyph drawing. If this
 /// isn't enabled we'll just fall through to trying to use regular fonts
-/// to render box glyphs.
-box_font: ?font.BoxFont = null,
+/// to render sprite glyphs. But more than likely, if this isn't set then
+/// terminal rendering will look wrong.
+sprite: ?font.sprite.Face = null,
 
 pub fn init(
     alloc: Allocator,
@@ -129,8 +130,8 @@ pub const FontIndex = packed struct {
         // We start all special fonts at this index so they can be detected.
         pub const start = std.math.maxInt(IndexInt);
 
-        /// Box drawing, this is rendered JIT using 2D graphics APIs.
-        box = start,
+        /// Sprite drawing, this is rendered JIT using 2D graphics APIs.
+        sprite = start,
     };
 
     style: Style = .regular,
@@ -178,50 +179,11 @@ pub fn indexForCodepoint(
     style: Style,
     p: ?Presentation,
 ) ?FontIndex {
-    // If this is a box drawing glyph, we use the special font index. This
-    // will force special logic where we'll render this ourselves. If we don't
-    // have a box font set, then we just try to use regular fonts.
-    if (self.box_font != null) {
-        if (switch (cp) {
-            // "Box Drawing" block
-            0x2500...0x257F => true,
-
-            // "Block Elements" block
-            0x2580...0x259f => true,
-
-            // "Braille" block
-            0x2800...0x28FF => true,
-
-            // "Symbols for Legacy Computing" block
-            0x1FB00...0x1FB3B => true,
-
-            0x1FB3C...0x1FB40,
-            0x1FB47...0x1FB4B,
-            0x1FB57...0x1FB5B,
-            0x1FB62...0x1FB66,
-            0x1FB6C...0x1FB6F,
-            => true,
-
-            0x1FB41...0x1FB45,
-            0x1FB4C...0x1FB50,
-            0x1FB52...0x1FB56,
-            0x1FB5D...0x1FB61,
-            0x1FB68...0x1FB6B,
-            => true,
-
-            0x1FB46,
-            0x1FB51,
-            0x1FB5C,
-            0x1FB67,
-            0x1FB9A,
-            0x1FB9B,
-            => true,
-
-            0x1FB70...0x1FB8B => true,
-
-            else => false,
-        }) {
-            return FontIndex.initSpecial(.box);
+    // If we have sprite drawing enabled, check if our sprite face can
+    // handle this.
+    if (self.sprite) |sprite| {
+        if (sprite.hasCodepoint(cp, p)) {
+            return FontIndex.initSpecial(.sprite);
         }
     }
 
@@ -275,7 +237,7 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 /// determining what atlas is needed.
 pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
     if (index.special()) |sp| switch (sp) {
-        .box => return .text,
+        .sprite => return .text,
     };
 
     const face = try self.faceFromIndex(index);
@@ -312,7 +274,7 @@ pub fn renderGlyph(
 ) !Glyph {
     // Special-case fonts are rendered directly.
     if (index.special()) |sp| switch (sp) {
-        .box => return try self.box_font.?.renderGlyph(
+        .sprite => return try self.sprite.?.renderGlyph(
             alloc,
             atlas,
             glyph_index,
@@ -402,12 +364,12 @@ test "box glyph" {
     defer group.deinit();
 
     // Set box font
-    group.box_font = font.BoxFont{ .width = 18, .height = 36, .thickness = 2 };
+    group.sprite = font.sprite.Face{ .width = 18, .height = 36, .thickness = 2 };
 
     // Should find a box glyph
     const idx = group.indexForCodepoint(0x2500, .regular, null).?;
     try testing.expectEqual(Style.regular, idx.style);
-    try testing.expectEqual(@enumToInt(FontIndex.Special.box), idx.idx);
+    try testing.expectEqual(@enumToInt(FontIndex.Special.sprite), idx.idx);
 
     // Should render it
     const glyph = try group.renderGlyph(
