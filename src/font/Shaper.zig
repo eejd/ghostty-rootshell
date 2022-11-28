@@ -182,7 +182,7 @@ pub const RunIterator = struct {
             // for unknown glyphs.
             const font_idx_opt = (try self.group.indexForCodepoint(
                 alloc,
-                if (cell.empty()) ' ' else cell.char,
+                if (cell.empty() or cell.char == 0) ' ' else cell.char,
                 style,
                 presentation,
             )) orelse (try self.group.indexForCodepoint(
