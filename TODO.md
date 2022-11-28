@@ -41,4 +41,4 @@ Major Features:
 * Sixels: https://saitoha.github.io/libsixel/
 * Kitty keyboard protocol: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 * Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/
-* Colored/styled underlines: https://sw.kovidgoyal.net/kitty/underlines/
+* Colored underlines: https://sw.kovidgoyal.net/kitty/underlines/
