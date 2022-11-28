@@ -7,7 +7,6 @@ const glfw = @import("glfw");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const Atlas = @import("../Atlas.zig");
 const font = @import("../font/main.zig");
 const imgui = @import("imgui");
 const renderer = @import("../renderer.zig");

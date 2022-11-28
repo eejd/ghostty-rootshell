@@ -207,7 +207,6 @@ fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
 }
 
 test {
-    _ = @import("Atlas.zig");
     _ = @import("Pty.zig");
     _ = @import("Command.zig");
     _ = @import("TempDir.zig");

@@ -19,7 +19,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
-const fastmem = @import("fastmem.zig");
+const fastmem = @import("../fastmem.zig");
 
 /// Data is the raw texture data.
 data: []u8,

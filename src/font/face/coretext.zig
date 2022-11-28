@@ -4,7 +4,6 @@ const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
-const Atlas = @import("../../Atlas.zig");
 
 pub const Face = struct {
     /// Our font face
@@ -99,7 +98,7 @@ pub const Face = struct {
     pub fn renderGlyph(
         self: Face,
         alloc: Allocator,
-        atlas: *Atlas,
+        atlas: *font.Atlas,
         glyph_index: u32,
         max_height: ?u16,
     ) !font.Glyph {
@@ -343,7 +342,7 @@ test {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
     const name = try macos.foundation.String.createWithBytes("Monaco", .utf8, false);
@@ -391,7 +390,7 @@ test "in-memory" {
     const alloc = testing.allocator;
     const testFont = @import("../test.zig").fontRegular;
 
-    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
     var lib = try font.Library.init();

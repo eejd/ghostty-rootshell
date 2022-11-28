@@ -1,6 +1,7 @@
 const std = @import("std");
 const build_options = @import("build_options");
 
+pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
 pub const face = @import("face.zig");
 pub const DeferredFace = @import("DeferredFace.zig");

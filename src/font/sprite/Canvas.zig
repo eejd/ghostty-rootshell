@@ -6,7 +6,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const pixman = @import("pixman");
-const Atlas = @import("../../Atlas.zig");
+const font = @import("../main.zig");
 
 /// The underlying image.
 image: *pixman.Image,
@@ -70,7 +70,7 @@ pub fn deinit(self: *Canvas, alloc: Allocator) void {
 }
 
 /// Write the data in this drawing to the atlas.
-pub fn writeAtlas(self: *Canvas, alloc: Allocator, atlas: *Atlas) !Atlas.Region {
+pub fn writeAtlas(self: *Canvas, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
     assert(atlas.format == .greyscale);
 
     const width = @intCast(u32, self.image.getWidth());

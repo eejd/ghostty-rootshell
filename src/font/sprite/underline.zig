@@ -13,12 +13,11 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const Sprite = font.sprite.Sprite;
-const Atlas = @import("../../Atlas.zig");
 
 /// Draw an underline.
 pub fn renderGlyph(
     alloc: Allocator,
-    atlas: *Atlas,
+    atlas: *font.Atlas,
     sprite: Sprite,
     width: u32,
     height: u32,
@@ -172,7 +171,7 @@ test "single" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     _ = try renderGlyph(
@@ -190,7 +189,7 @@ test "curly" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     _ = try renderGlyph(

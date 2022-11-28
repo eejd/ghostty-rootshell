@@ -6,7 +6,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const harfbuzz = @import("harfbuzz");
 const trace = @import("tracy").trace;
-const Atlas = @import("../Atlas.zig");
 const font = @import("main.zig");
 const Face = @import("main.zig").Face;
 const DeferredFace = @import("main.zig").DeferredFace;

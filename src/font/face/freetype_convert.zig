@@ -3,7 +3,7 @@
 //! to do this (likely using SIMD), but I started simple.
 const std = @import("std");
 const freetype = @import("freetype");
-const Atlas = @import("../../Atlas.zig");
+const font = @import("../main.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
@@ -22,7 +22,7 @@ pub const Func = std.meta.FnPtr(fn (Allocator, Bitmap) Allocator.Error!Bitmap);
 /// Alias for the freetype FT_Bitmap type to make it easier to type.
 pub const Bitmap = freetype.c.struct_FT_Bitmap_;
 
-const AtlasArray = std.EnumArray(Atlas.Format, ?Func);
+const AtlasArray = std.EnumArray(font.Atlas.Format, ?Func);
 
 fn genMap() Map {
     var result: Map = undefined;

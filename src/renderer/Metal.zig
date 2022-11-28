@@ -10,7 +10,6 @@ const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
-const Atlas = @import("../Atlas.zig");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -1017,7 +1016,7 @@ fn syncCells(
 /// Sync the atlas data to the given texture. This copies the bytes
 /// associated with the atlas to the given texture. If the atlas no longer
 /// fits into the texture, the texture will be resized.
-fn syncAtlasTexture(device: objc.Object, atlas: *const Atlas, texture: *objc.Object) !void {
+fn syncAtlasTexture(device: objc.Object, atlas: *const font.Atlas, texture: *objc.Object) !void {
     const width = texture.getProperty(c_ulong, "width");
     if (atlas.size > width) {
         // Free our old texture
@@ -1284,7 +1283,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
 }
 
 /// Initialize a MTLTexture object for the given atlas.
-fn initAtlasTexture(device: objc.Object, atlas: *const Atlas) !objc.Object {
+fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object {
     // Determine our pixel format
     const pixel_format: MTLPixelFormat = switch (atlas.format) {
         .greyscale => .r8unorm,

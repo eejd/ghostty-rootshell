@@ -5,7 +5,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-const Atlas = @import("../Atlas.zig");
 const font = @import("main.zig");
 const Face = @import("main.zig").Face;
 const DeferredFace = @import("main.zig").DeferredFace;
@@ -30,8 +29,8 @@ group: Group,
 
 /// The texture atlas to store renders in. The GroupCache has to store these
 /// because the cached Glyph result is dependent on the Atlas.
-atlas_greyscale: Atlas,
-atlas_color: Atlas,
+atlas_greyscale: font.Atlas,
+atlas_color: font.Atlas,
 
 const CodepointKey = struct {
     style: Style,
@@ -46,9 +45,9 @@ const GlyphKey = struct {
 
 /// The GroupCache takes ownership of Group and will free it.
 pub fn init(alloc: Allocator, group: Group) !GroupCache {
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     errdefer atlas_greyscale.deinit(alloc);
-    var atlas_color = try Atlas.init(alloc, 512, .rgba);
+    var atlas_color = try font.Atlas.init(alloc, 512, .rgba);
     errdefer atlas_color.deinit(alloc);
 
     var result: GroupCache = .{
@@ -132,7 +131,7 @@ pub fn renderGlyph(
     if (gop.found_existing) return gop.value_ptr.*;
 
     // Uncached, render it
-    const atlas: *Atlas = switch (try self.group.presentationFromIndex(index)) {
+    const atlas: *font.Atlas = switch (try self.group.presentationFromIndex(index)) {
         .text => &self.atlas_greyscale,
         .emoji => &self.atlas_color,
     };
@@ -169,7 +168,7 @@ test {
     const testFont = @import("test.zig").fontRegular;
     // const testEmoji = @import("test.zig").fontEmoji;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     var lib = try Library.init();
@@ -238,7 +237,7 @@ test "resize" {
     const testFont = @import("test.zig").fontRegular;
     // const testEmoji = @import("test.zig").fontEmoji;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     var lib = try Library.init();

@@ -18,7 +18,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const Sprite = font.sprite.Sprite;
-const Atlas = @import("../../Atlas.zig");
 const Box = @import("Box.zig");
 const underline = @import("underline.zig");
 
@@ -46,7 +45,7 @@ pub fn hasCodepoint(self: Face, cp: u32, p: ?font.Presentation) bool {
 pub fn renderGlyph(
     self: Face,
     alloc: Allocator,
-    atlas: *Atlas,
+    atlas: *font.Atlas,
     cp: u32,
 ) !font.Glyph {
     if (std.debug.runtime_safety) assert(self.hasCodepoint(cp, null));

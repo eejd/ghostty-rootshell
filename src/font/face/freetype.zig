@@ -12,7 +12,6 @@ const resize = @import("stb_image_resize");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const Atlas = @import("../../Atlas.zig");
 const font = @import("../main.zig");
 const Glyph = font.Glyph;
 const Library = font.Library;
@@ -123,7 +122,7 @@ pub const Face = struct {
     pub fn renderGlyph(
         self: Face,
         alloc: Allocator,
-        atlas: *Atlas,
+        atlas: *font.Atlas,
         glyph_index: u32,
         max_height: ?u16,
     ) !Glyph {
@@ -152,7 +151,7 @@ pub const Face = struct {
         // or color depth is as expected on the texture atlas. If format is null
         // it means there is no native color format for our Atlas and we must try
         // conversion.
-        const format: ?Atlas.Format = switch (bitmap_ft.pixel_mode) {
+        const format: ?font.Atlas.Format = switch (bitmap_ft.pixel_mode) {
             freetype.c.FT_PIXEL_MODE_MONO => null,
             freetype.c.FT_PIXEL_MODE_GRAY => .greyscale,
             freetype.c.FT_PIXEL_MODE_BGRA => .rgba,
@@ -476,7 +475,7 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
@@ -508,7 +507,7 @@ test "color emoji" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var atlas = try Atlas.init(alloc, 512, .rgba);
+    var atlas = try font.Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
@@ -532,7 +531,7 @@ test "metrics" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var atlas = try Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
@@ -568,7 +567,7 @@ test "mono to rgba" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var atlas = try Atlas.init(alloc, 512, .rgba);
+    var atlas = try font.Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(lib, testFont, .{ .points = 12 });

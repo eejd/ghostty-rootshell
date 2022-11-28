@@ -7,7 +7,7 @@ const imgui = @import("imgui");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
-const Atlas = @import("Atlas.zig");
+const font = @import("font/main.zig");
 const Window = @import("Window.zig");
 const renderer = @import("renderer.zig");
 const Config = @import("config.zig").Config;
@@ -141,7 +141,7 @@ fn helpMarker(desc: [:0]const u8) void {
     }
 }
 
-fn atlasInfo(self: *const DevMode, atlas: *Atlas, tex: ?usize) !void {
+fn atlasInfo(self: *const DevMode, atlas: *font.Atlas, tex: ?usize) !void {
     _ = self;
 
     imgui.text("Dimensions: %d x %d", atlas.size, atlas.size);

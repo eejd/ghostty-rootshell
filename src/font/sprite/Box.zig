@@ -17,7 +17,6 @@ const Allocator = std.mem.Allocator;
 
 const pixman = @import("pixman");
 const font = @import("../main.zig");
-const Atlas = @import("../../Atlas.zig");
 
 const log = std.log.scoped(.box_font);
 
@@ -58,7 +57,7 @@ const Thickness = enum {
 pub fn renderGlyph(
     self: Box,
     alloc: Allocator,
-    atlas: *Atlas,
+    atlas: *font.Atlas,
     cp: u32,
 ) !font.Glyph {
     // Create the canvas we'll use to draw
@@ -2708,7 +2707,7 @@ test "all" {
     var cp: u32 = 0x2500;
     const end = 0x2570;
     while (cp <= end) : (cp += 1) {
-        var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+        var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
         defer atlas_greyscale.deinit(alloc);
 
         const face: Box = .{ .width = 18, .height = 36, .thickness = 2 };

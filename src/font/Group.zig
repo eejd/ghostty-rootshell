@@ -15,7 +15,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const font = @import("main.zig");
-const Atlas = @import("../Atlas.zig");
 const DeferredFace = @import("main.zig").DeferredFace;
 const Face = @import("main.zig").Face;
 const Library = @import("main.zig").Library;
@@ -267,7 +266,7 @@ pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
 pub fn renderGlyph(
     self: Group,
     alloc: Allocator,
-    atlas: *Atlas,
+    atlas: *font.Atlas,
     index: FontIndex,
     glyph_index: u32,
     max_height: ?u16,
@@ -293,7 +292,7 @@ test {
     const testEmoji = @import("test.zig").fontEmoji;
     const testEmojiText = @import("test.zig").fontEmojiText;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     var lib = try Library.init();
@@ -354,7 +353,7 @@ test "box glyph" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     var lib = try Library.init();
@@ -387,7 +386,7 @@ test "resize" {
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
 
     var lib = try Library.init();
@@ -452,7 +451,7 @@ test "discover monospace with fontconfig and freetype" {
     try group.addFace(alloc, .regular, (try it.next()).?);
 
     // Should find all visible ASCII
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas_greyscale.deinit(alloc);
     var i: u32 = 32;
     while (i < 127) : (i += 1) {
