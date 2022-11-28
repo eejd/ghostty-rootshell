@@ -137,7 +137,6 @@ const GPUCellMode = enum(u8) {
     cursor_rect = 3,
     cursor_rect_hollow = 4,
     cursor_bar = 5,
-    underline = 6,
     strikethrough = 8,
 
     // Non-exhaustive because masks change it
@@ -180,8 +179,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     const pbind = try program.use();
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("underline_position", metrics.underline_position);
-    try program.setUniform("underline_thickness", metrics.underline_thickness);
     try program.setUniform("strikethrough_position", metrics.strikethrough_position);
     try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 
@@ -536,8 +533,6 @@ fn resetFontMetrics(
     const pbind = try program.use();
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("underline_position", metrics.underline_position);
-    try program.setUniform("underline_thickness", metrics.underline_thickness);
     try program.setUniform("strikethrough_position", metrics.strikethrough_position);
     try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 

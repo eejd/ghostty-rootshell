@@ -102,8 +102,6 @@ const GPUUniforms = extern struct {
     cell_size: [2]f32,
 
     /// Metrics for underline/strikethrough
-    underline_position: f32,
-    underline_thickness: f32,
     strikethrough_position: f32,
     strikethrough_thickness: f32,
 };
@@ -115,7 +113,6 @@ const GPUCellMode = enum(u8) {
     cursor_rect = 3,
     cursor_rect_hollow = 4,
     cursor_bar = 5,
-    underline = 6,
     strikethrough = 8,
 
     pub fn fromCursor(cursor: renderer.CursorStyle) GPUCellMode {
@@ -267,8 +264,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
-            .underline_position = metrics.underline_position,
-            .underline_thickness = metrics.underline_thickness,
             .strikethrough_position = metrics.strikethrough_position,
             .strikethrough_thickness = metrics.strikethrough_thickness,
         },
@@ -405,8 +400,6 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     self.uniforms = .{
         .projection_matrix = self.uniforms.projection_matrix,
         .cell_size = .{ new_cell_size.width, new_cell_size.height },
-        .underline_position = metrics.underline_position,
-        .underline_thickness = metrics.underline_thickness,
         .strikethrough_position = metrics.strikethrough_position,
         .strikethrough_thickness = metrics.strikethrough_thickness,
     };
@@ -717,8 +710,6 @@ pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
             -1 * padding.top,
         ),
         .cell_size = .{ self.cell_size.width, self.cell_size.height },
-        .underline_position = old.underline_position,
-        .underline_thickness = old.underline_thickness,
         .strikethrough_position = old.strikethrough_position,
         .strikethrough_thickness = old.strikethrough_thickness,
     };
