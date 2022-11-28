@@ -8,15 +8,12 @@ enum Mode : uint8_t {
     MODE_CURSOR_RECT = 3u,
     MODE_CURSOR_RECT_HOLLOW = 4u,
     MODE_CURSOR_BAR = 5u,
-    MODE_UNDERLINE = 6u,
     MODE_STRIKETHROUGH = 8u,
 };
 
 struct Uniforms {
   float4x4 projection_matrix;
   float2 cell_size;
-  float underline_position;
-  float underline_thickness;
   float strikethrough_position;
   float strikethrough_thickness;
 };
@@ -154,22 +151,6 @@ vertex VertexOut uber_vertex(
     break;
   }
 
-  case MODE_UNDERLINE: {
-    // Underline Y value is just our thickness
-    float2 underline_size = float2(cell_size_scaled.x, uniforms.underline_thickness);
-
-    // Position the underline where we are told to
-    float2 underline_offset = float2(cell_size_scaled.x, uniforms.underline_position);
-
-    // Go to the bottom of the cell, take away the size of the
-    // underline, and that is our position. We also float it slightly
-    // above the bottom.
-    cell_pos = cell_pos + underline_offset - (underline_size * position);
-
-    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
-    break;
-  }
-
   case MODE_STRIKETHROUGH: {
     // Strikethrough Y value is just our thickness
     float2 strikethrough_size = float2(cell_size_scaled.x, uniforms.strikethrough_thickness);
@@ -257,9 +238,6 @@ fragment float4 uber_fragment(
   }
 
   case MODE_CURSOR_BAR:
-    return in.color;
-
-  case MODE_UNDERLINE:
     return in.color;
 
   case MODE_STRIKETHROUGH:

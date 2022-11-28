@@ -379,12 +379,12 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.faint = true;
         },
 
-        .underline => {
-            self.screen.cursor.pen.attrs.underline = true;
+        .underline => |v| {
+            self.screen.cursor.pen.attrs.underline = v;
         },
 
         .reset_underline => {
-            self.screen.cursor.pen.attrs.underline = false;
+            self.screen.cursor.pen.attrs.underline = .none;
         },
 
         .blink => {

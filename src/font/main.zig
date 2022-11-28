@@ -11,6 +11,7 @@ pub const Glyph = @import("Glyph.zig");
 pub const Library = @import("Library.zig");
 pub const Shaper = @import("Shaper.zig");
 pub const sprite = @import("sprite.zig");
+pub const Sprite = sprite.Sprite;
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
 
@@ -59,6 +60,9 @@ pub const Presentation = enum(u1) {
     text = 0, // U+FE0E
     emoji = 1, // U+FEOF
 };
+
+/// A FontIndex that can be used to use the sprite font directly.
+pub const sprite_index = Group.FontIndex.initSpecial(.sprite);
 
 test {
     @import("std").testing.refAllDecls(@This());

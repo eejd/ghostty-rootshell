@@ -31,7 +31,7 @@ pub const Attribute = union(enum) {
     faint: void,
 
     /// Underline the text
-    underline: void,
+    underline: Underline,
     reset_underline: void,
 
     /// Blink the text
@@ -75,12 +75,24 @@ pub const Attribute = union(enum) {
         g: u8,
         b: u8,
     };
+
+    pub const Underline = enum(u3) {
+        none = 0,
+        single = 1,
+        double = 2,
+        curly = 3,
+        dotted = 4,
+        dashed = 5,
+    };
 };
 
 /// Parser parses the attributes from a list of SGR parameters.
 pub const Parser = struct {
     params: []const u16,
     idx: usize = 0,
+
+    /// True if the separator is a colon
+    colon: bool = false,
 
     /// Next returns the next attribute or null if there are no more attributes.
     pub fn next(self: *Parser) ?Attribute {
@@ -107,7 +119,41 @@ pub const Parser = struct {
 
             3 => return Attribute{ .italic = {} },
 
-            4 => return Attribute{ .underline = {} },
+            4 => blk: {
+                if (self.colon) {
+                    switch (slice.len) {
+                        // 0 is unreachable because we're here and we read
+                        // an element to get here.
+                        0 => unreachable,
+
+                        // 1 is unreachable because we can't have a colon
+                        // separator if there are no separators.
+                        1 => unreachable,
+
+                        // 2 means we have a specific underline style.
+                        2 => {
+                            self.idx += 1;
+                            switch (slice[1]) {
+                                0 => return Attribute{ .reset_underline = {} },
+                                1 => return Attribute{ .underline = .single },
+                                2 => return Attribute{ .underline = .double },
+                                3 => return Attribute{ .underline = .curly },
+                                4 => return Attribute{ .underline = .dotted },
+                                5 => return Attribute{ .underline = .dashed },
+
+                                // For unknown underline styles, just render
+                                // a single underline.
+                                else => return Attribute{ .underline = .single },
+                            }
+                        },
+
+                        // Colon-separated must only be 2.
+                        else => break :blk,
+                    }
+                }
+
+                return Attribute{ .underline = .single };
+            },
 
             5 => return Attribute{ .blink = {} },
 
@@ -206,6 +252,11 @@ fn testParse(params: []const u16) Attribute {
     return p.next().?;
 }
 
+fn testParseColon(params: []const u16) Attribute {
+    var p: Parser = .{ .params = params, .colon = true };
+    return p.next().?;
+}
+
 test "sgr: Parser" {
     try testing.expect(testParse(&[_]u16{}) == .unset);
     try testing.expect(testParse(&[_]u16{0}) == .unset);
@@ -272,6 +323,37 @@ test "sgr: underline" {
     {
         const v = testParse(&[_]u16{24});
         try testing.expect(v == .reset_underline);
+    }
+}
+
+test "sgr: underline styles" {
+    {
+        const v = testParseColon(&[_]u16{ 4, 2 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .double);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 0 });
+        try testing.expect(v == .reset_underline);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 1 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .single);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 4 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .dotted);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 4, 5 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .dashed);
     }
 }
 

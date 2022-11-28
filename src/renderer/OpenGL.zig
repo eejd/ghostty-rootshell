@@ -137,7 +137,6 @@ const GPUCellMode = enum(u8) {
     cursor_rect = 3,
     cursor_rect_hollow = 4,
     cursor_bar = 5,
-    underline = 6,
     strikethrough = 8,
 
     // Non-exhaustive because masks change it
@@ -180,8 +179,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     const pbind = try program.use();
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("underline_position", metrics.underline_position);
-    try program.setUniform("underline_thickness", metrics.underline_thickness);
     try program.setUniform("strikethrough_position", metrics.strikethrough_position);
     try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 
@@ -501,12 +498,6 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
 
-    // Set the cell size of the box font
-    if (self.font_group.group.sprite) |*sprite| {
-        sprite.width = @floatToInt(u32, self.cell_size.width);
-        sprite.height = @floatToInt(u32, self.cell_size.height);
-    }
-
     // Notify the window that the cell size changed.
     _ = self.window_mailbox.push(.{
         .cell_size = new_cell_size,
@@ -530,12 +521,18 @@ fn resetFontMetrics(
     };
     log.debug("cell dimensions={}", .{metrics});
 
+    // Set details for our sprite font
+    font_group.group.sprite = font.sprite.Face{
+        .width = @floatToInt(u32, metrics.cell_width),
+        .height = @floatToInt(u32, metrics.cell_height),
+        .thickness = 2,
+        .underline_position = @floatToInt(u32, metrics.underline_position),
+    };
+
     // Set our uniforms that rely on metrics
     const pbind = try program.use();
     defer pbind.unbind();
     try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("underline_position", metrics.underline_position);
-    try program.setUniform("underline_thickness", metrics.underline_thickness);
     try program.setUniform("strikethrough_position", metrics.strikethrough_position);
     try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 
@@ -928,7 +925,7 @@ pub fn updateCell(
         var i: usize = 0;
         if (colors.bg != null) i += 1;
         if (!cell.empty()) i += 1;
-        if (cell.attrs.underline) i += 1;
+        if (cell.attrs.underline != .none) i += 1;
         if (cell.attrs.strikethrough) i += 1;
         break :needed i;
     };
@@ -1002,18 +999,33 @@ pub fn updateCell(
         });
     }
 
-    if (cell.attrs.underline) {
+    if (cell.attrs.underline != .none) {
+        const sprite: font.Sprite = switch (cell.attrs.underline) {
+            .none => unreachable,
+            .single => .underline,
+            .double => .underline_double,
+            .dotted => .underline_dotted,
+            .dashed => .underline_dashed,
+            .curly => .underline_curly,
+        };
+
+        const underline_glyph = try self.font_group.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @enumToInt(sprite),
+            null,
+        );
         self.cells.appendAssumeCapacity(.{
-            .mode = .underline,
+            .mode = .fg,
             .grid_col = @intCast(u16, x),
             .grid_row = @intCast(u16, y),
             .grid_width = cell.widthLegacy(),
-            .glyph_x = 0,
-            .glyph_y = 0,
-            .glyph_width = 0,
-            .glyph_height = 0,
-            .glyph_offset_x = 0,
-            .glyph_offset_y = 0,
+            .glyph_x = underline_glyph.atlas_x,
+            .glyph_y = underline_glyph.atlas_y,
+            .glyph_width = underline_glyph.width,
+            .glyph_height = underline_glyph.height,
+            .glyph_offset_x = underline_glyph.offset_x,
+            .glyph_offset_y = underline_glyph.offset_y,
             .fg_r = colors.fg.r,
             .fg_g = colors.fg.g,
             .fg_b = colors.fg.b,

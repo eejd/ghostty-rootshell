@@ -383,7 +383,7 @@ pub fn Stream(comptime Handler: type) type {
 
                 // SGR - Select Graphic Rendition
                 'm' => if (@hasDecl(T, "setAttribute")) {
-                    var p: sgr.Parser = .{ .params = action.params };
+                    var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
                     while (p.next()) |attr| try self.handler.setAttribute(attr);
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
