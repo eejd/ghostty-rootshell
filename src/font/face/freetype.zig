@@ -187,9 +187,10 @@ pub const Face = struct {
         // the atlas and force resizes quite frequently. We pay some CPU cost
         // up front to resize the glyph to avoid significant CPU cost to resize
         // and copy the atlas.
+        const bitmap_original = bitmap_converted orelse bitmap_ft;
         const bitmap_resized: ?freetype.c.struct_FT_Bitmap_ = resized: {
             const max = max_height orelse break :resized null;
-            const bm = bitmap_converted orelse bitmap_ft;
+            const bm = bitmap_original;
             if (bm.rows <= max) break :resized null;
 
             var result = bm;
@@ -230,6 +231,23 @@ pub const Face = struct {
         const bitmap = bitmap_resized orelse (bitmap_converted orelse bitmap_ft);
         const tgt_w = bitmap.width;
         const tgt_h = bitmap.rows;
+
+        // If we resized our bitmap, we need to recalculate some metrics that
+        // we use such as the top/left offsets. These need to be scaled by the
+        // same ratio as the resize.
+        const glyph_metrics = if (bitmap_resized) |bm| metrics: {
+            // Our ratio for the resize
+            const ratio = ratio: {
+                const new = @intToFloat(f64, bm.rows);
+                const old = @intToFloat(f64, bitmap_original.rows);
+                break :ratio new / old;
+            };
+
+            var copy = glyph.*;
+            copy.bitmap_top = @floatToInt(c_int, @round(@intToFloat(f64, copy.bitmap_top) * ratio));
+            copy.bitmap_left = @floatToInt(c_int, @round(@intToFloat(f64, copy.bitmap_left) * ratio));
+            break :metrics copy;
+        } else glyph.*;
 
         const region = try atlas.reserve(alloc, tgt_w, tgt_h);
 
@@ -280,18 +298,18 @@ pub const Face = struct {
             // baseline calculation. The baseline calculation is so that everything
             // is properly centered when we render it out into a monospace grid.
             // Note: we add here because our X/Y is actually reversed, adding goes UP.
-            break :offset_y glyph.*.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
+            break :offset_y glyph_metrics.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
         };
 
         // Store glyph metadata
         return Glyph{
             .width = tgt_w,
             .height = tgt_h,
-            .offset_x = glyph.*.bitmap_left,
+            .offset_x = glyph_metrics.bitmap_left,
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
-            .advance_x = f26dot6ToFloat(glyph.*.advance.x),
+            .advance_x = f26dot6ToFloat(glyph_metrics.advance.x),
         };
     }
 
