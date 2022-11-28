@@ -42,6 +42,17 @@ pub const RenditionAspect = enum(u16) {
 /// values correspond to the `?`-prefixed modes, since those are the ones
 /// of primary interest. The enum value is the mode value.
 pub const Mode = enum(u16) {
+    /// This control function selects the sequences the arrow keys send.
+    /// You can use the four arrow keys to move the cursor through the current
+    /// page or to send special application commands.
+    ///
+    /// If the DECCKM function is set, then the arrow keys send application
+    /// sequences to the host.
+    ///
+    /// If the DECCKM function is reset, then the arrow keys send ANSI cursor
+    /// sequences to the host.
+    cursor_keys = 1,
+
     /// Change terminal wide between 80 and 132 column mode. When set
     /// (with ?40 set), resizes terminal to 132 columns and keeps it that
     /// wide. When unset, resizes to 80 columns.

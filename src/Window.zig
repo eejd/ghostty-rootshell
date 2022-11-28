@@ -980,6 +980,29 @@ fn keyCallback(
                     win.io_thread.wakeup.send() catch {};
                 },
 
+                .cursor_key => |ck| {
+                    // We send a different sequence depending on if we're
+                    // in cursor keys mode. We're in "normal" mode if cursor
+                    // keys mdoe is NOT set.
+                    const normal = normal: {
+                        win.renderer_state.mutex.lock();
+                        defer win.renderer_state.mutex.unlock();
+                        break :normal !win.io.terminal.modes.cursor_keys;
+                    };
+
+                    if (normal) {
+                        _ = win.io_thread.mailbox.push(.{
+                            .write_stable = ck.normal,
+                        }, .{ .forever = {} });
+                    } else {
+                        _ = win.io_thread.mailbox.push(.{
+                            .write_stable = ck.application,
+                        }, .{ .forever = {} });
+                    }
+
+                    win.io_thread.wakeup.send() catch {};
+                },
+
                 .copy_to_clipboard => {
                     // We can read from the renderer state without holding
                     // the lock because only we will write to this field.

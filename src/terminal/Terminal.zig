@@ -72,6 +72,7 @@ previous_char: ?u21 = null,
 modes: packed struct {
     const Self = @This();
 
+    cursor_keys: bool = false, // 1
     reverse_colors: bool = false, // 5,
     origin: bool = false, // 6
     autowrap: bool = true, // 7

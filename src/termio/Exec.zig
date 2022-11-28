@@ -627,6 +627,10 @@ const StreamHandler = struct {
 
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
         switch (mode) {
+            .cursor_keys => {
+                self.terminal.modes.cursor_keys = enabled;
+            },
+
             .reverse_colors => {
                 self.terminal.modes.reverse_colors = enabled;
 

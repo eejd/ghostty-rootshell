@@ -15,6 +15,7 @@ action: Action,
 
 pub const Error = error{
     InvalidFormat,
+    InvalidAction,
 };
 
 /// Parse the format "ctrl+a=csi:A" into a binding. The format is
@@ -101,6 +102,9 @@ pub fn parse(input: []const u8) !Binding {
                         break :action @unionInit(Action, field.name, param);
                     },
 
+                    // Cursor keys can't be set currently
+                    Action.CursorKey => return Error.InvalidAction,
+
                     else => unreachable,
                 }
             }
@@ -127,6 +131,10 @@ pub const Action = union(enum) {
     /// without the CSI header ("ESC ]" or "\x1b]").
     csi: []const u8,
 
+    /// Send data to the pty depending on whether cursor key mode is
+    /// enabled ("application") or disabled ("normal").
+    cursor_key: CursorKey,
+
     /// Copy and paste.
     copy_to_clipboard: void,
     paste_from_clipboard: void,
@@ -152,6 +160,11 @@ pub const Action = union(enum) {
 
     /// Quit ghostty
     quit: void,
+
+    pub const CursorKey = struct {
+        normal: []const u8,
+        application: []const u8,
+    };
 };
 
 /// Trigger is the associated key state that can trigger an action.

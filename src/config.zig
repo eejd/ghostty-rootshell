@@ -190,12 +190,31 @@ pub const Config = struct {
             .{ .paste_from_clipboard = {} },
         );
 
-        try result.keybind.set.put(alloc, .{ .key = .up }, .{ .csi = "A" });
-        try result.keybind.set.put(alloc, .{ .key = .down }, .{ .csi = "B" });
-        try result.keybind.set.put(alloc, .{ .key = .right }, .{ .csi = "C" });
-        try result.keybind.set.put(alloc, .{ .key = .left }, .{ .csi = "D" });
-        try result.keybind.set.put(alloc, .{ .key = .home }, .{ .csi = "H" });
-        try result.keybind.set.put(alloc, .{ .key = .end }, .{ .csi = "F" });
+        try result.keybind.set.put(alloc, .{ .key = .up }, .{ .cursor_key = .{
+            .normal = "\x1b[A",
+            .application = "\x1bOA",
+        } });
+        try result.keybind.set.put(alloc, .{ .key = .down }, .{ .cursor_key = .{
+            .normal = "\x1b[B",
+            .application = "\x1bOB",
+        } });
+        try result.keybind.set.put(alloc, .{ .key = .right }, .{ .cursor_key = .{
+            .normal = "\x1b[C",
+            .application = "\x1bOC",
+        } });
+        try result.keybind.set.put(alloc, .{ .key = .left }, .{ .cursor_key = .{
+            .normal = "\x1b[D",
+            .application = "\x1bOD",
+        } });
+        try result.keybind.set.put(alloc, .{ .key = .home }, .{ .cursor_key = .{
+            .normal = "\x1b[H",
+            .application = "\x1bOH",
+        } });
+        try result.keybind.set.put(alloc, .{ .key = .end }, .{ .cursor_key = .{
+            .normal = "\x1b[F",
+            .application = "\x1bOF",
+        } });
+
         try result.keybind.set.put(alloc, .{ .key = .page_up }, .{ .csi = "5~" });
         try result.keybind.set.put(alloc, .{ .key = .page_down }, .{ .csi = "6~" });
 
