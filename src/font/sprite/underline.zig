@@ -71,6 +71,7 @@ const Draw = struct {
             .underline_double => self.drawDouble(canvas),
             .underline_dotted => self.drawDotted(canvas),
             .underline_dashed => self.drawDashed(canvas),
+            .underline_curly => self.drawCurly(canvas),
         }
     }
 
@@ -130,6 +131,41 @@ const Draw = struct {
             }, .on);
         }
     }
+
+    /// Draw a curly underline. Thanks to Wez Furlong for providing
+    /// the basic math structure for this since I was lazy with the
+    /// geometry.
+    fn drawCurly(self: Draw, canvas: *font.sprite.Canvas) void {
+        // This is the lowest that the curl can go.
+        const y_max = self.height - 1;
+
+        // The full heightof the wave can be from the bottom to the
+        // underline position. We also calculate our starting y which is
+        // slightly below our descender since our wave will move about that.
+        const wave_height = @intToFloat(f64, y_max - self.pos);
+        const half_height = wave_height / 4;
+        const y = self.pos + @floatToInt(u32, half_height);
+
+        const x_factor = (2 * std.math.pi) / @intToFloat(f64, self.width);
+        var x: u32 = 0;
+        while (x < self.width) : (x += 1) {
+            const vertical = @floatToInt(
+                u32,
+                (-1 * half_height) * @sin(@intToFloat(f64, x) * x_factor) + half_height,
+            );
+
+            var row: u32 = 0;
+            while (row < self.thickness) : (row += 1) {
+                const y1 = @min(row + y + vertical, y_max);
+                canvas.rect(.{
+                    .x = x,
+                    .y = y1,
+                    .width = 1,
+                    .height = 1,
+                }, .on);
+            }
+        }
+    }
 };
 
 test "single" {
@@ -143,6 +179,24 @@ test "single" {
         alloc,
         &atlas_greyscale,
         .underline,
+        36,
+        18,
+        9,
+        2,
+    );
+}
+
+test "curly" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    _ = try renderGlyph(
+        alloc,
+        &atlas_greyscale,
+        .underline_curly,
         36,
         18,
         9,

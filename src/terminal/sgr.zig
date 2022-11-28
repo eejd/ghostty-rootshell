@@ -137,6 +137,7 @@ pub const Parser = struct {
                                 0 => return Attribute{ .reset_underline = {} },
                                 1 => return Attribute{ .underline = .single },
                                 2 => return Attribute{ .underline = .double },
+                                3 => return Attribute{ .underline = .curly },
                                 4 => return Attribute{ .underline = .dotted },
                                 5 => return Attribute{ .underline = .dashed },
 

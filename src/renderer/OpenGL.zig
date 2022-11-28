@@ -1011,7 +1011,7 @@ pub fn updateCell(
             .double => .underline_double,
             .dotted => .underline_dotted,
             .dashed => .underline_dashed,
-            else => .underline,
+            .curly => .underline_curly,
         };
 
         const underline_glyph = try self.font_group.renderGlyph(
