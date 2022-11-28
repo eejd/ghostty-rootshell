@@ -171,6 +171,14 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
     log.debug("cell dimensions={}", .{metrics});
 
+    // Set the sprite font up
+    options.font_group.group.sprite = font.sprite.Face{
+        .width = @floatToInt(u32, metrics.cell_width),
+        .height = @floatToInt(u32, metrics.cell_height),
+        .thickness = 2,
+        .underline_position = @floatToInt(u32, metrics.underline_position),
+    };
+
     // Create the font shaper. We initially create a shaper that can support
     // a width of 160 which is a common width for modern screens to help
     // avoid allocations later.
@@ -408,11 +416,13 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
 
-    // Set the cell size of the box font
-    if (self.font_group.group.sprite) |*sprite| {
-        sprite.width = @floatToInt(u32, self.cell_size.width);
-        sprite.height = @floatToInt(u32, self.cell_size.height);
-    }
+    // Set the sprite font up
+    self.font_group.group.sprite = font.sprite.Face{
+        .width = @floatToInt(u32, self.cell_size.width),
+        .height = @floatToInt(u32, self.cell_size.height),
+        .thickness = 2,
+        .underline_position = @floatToInt(u32, metrics.underline_position),
+    };
 
     // Notify the window that the cell size changed.
     _ = self.window_mailbox.push(.{
@@ -912,11 +922,30 @@ pub fn updateCell(
     }
 
     if (cell.attrs.underline != .none) {
+        const sprite: font.Sprite = switch (cell.attrs.underline) {
+            .none => unreachable,
+            .single => .underline,
+            .double => .underline_double,
+            .dotted => .underline_dotted,
+            .dashed => .underline_dashed,
+            .curly => .underline_curly,
+        };
+
+        const glyph = try self.font_group.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @enumToInt(sprite),
+            null,
+        );
+
         self.cells.appendAssumeCapacity(.{
-            .mode = .underline,
+            .mode = .fg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
+            .glyph_size = .{ glyph.width, glyph.height },
+            .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
         });
     }
 
