@@ -1716,8 +1716,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // The cursor is normally in active coordinates, but by converting to
     // screen we can accomodate keeping it on the same place if we retain
     // the same scrollback.
-    const old_y = @max(old.cursor.y, old.rows - 1);
-    const old_cursor_y_screen = RowIndexTag.active.index(old_y).toScreen(&old).screen;
+    const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
     self.cursor.x = @min(old.cursor.x, self.cols - 1);
     self.cursor.y = if (old_cursor_y_screen <= RowIndexTag.screen.maxLen(self))
         old_cursor_y_screen -| self.history
