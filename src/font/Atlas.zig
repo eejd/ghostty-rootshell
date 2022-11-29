@@ -76,7 +76,7 @@ pub const Error = error{
 
 /// A region within the texture atlas. These can be acquired using the
 /// "reserve" function. A region reservation is required to write data.
-pub const Region = struct {
+pub const Region = extern struct {
     x: u32,
     y: u32,
     width: u32,
@@ -297,6 +297,64 @@ pub fn clear(self: *Atlas) void {
     // to avoid artifacting when sampling the texture.
     self.nodes.appendAssumeCapacity(.{ .x = 1, .y = 1, .width = self.size - 2 });
 }
+
+/// The wasm-compatible API. This lacks documentation unless the API differs
+/// from the standard Zig API. To learn what a function does, just look one
+/// level deeper to what Zig function is called and read the documentation there.
+///
+/// To export this from Zig, use `usingnamespace Wasm` in some top-level
+/// space and it will be exported.
+pub const Wasm = struct {
+    // If you're copying this file (Atlas.zig) out to a separate project,
+    // just replace this with the allocator you want to use.
+    const wasm = @import("../wasm.zig");
+    const alloc = wasm.alloc;
+
+    const FormatInt = @typeInfo(Format).Enum.tag_type;
+    export const ATLAS_FORMAT_GREYSCALE: u8 = @enumToInt(Format.greyscale);
+    export const ATLAS_FORMAT_RGB: u8 = @enumToInt(Format.rgb);
+    export const ATLAS_FORMAT_RGBA: u8 = @enumToInt(Format.rgba);
+
+    export fn atlas_new(size: u32, format: u8) ?*Atlas {
+        const atlas = init(
+            alloc,
+            size,
+            @intToEnum(Format, @intCast(FormatInt, format)),
+        ) catch return null;
+        const result = alloc.create(Atlas) catch return null;
+        result.* = atlas;
+        return result;
+    }
+
+    export fn atlas_reserve(self: *Atlas, width: u32, height: u32) Region {
+        return self.reserve(alloc, width, height) catch .{
+            .x = 0,
+            .y = 0,
+            .width = 0,
+            .height = 0,
+        };
+    }
+
+    export fn atlas_set(self: *Atlas, reg: Region, data: [*]const u8, len: usize) void {
+        self.set(reg, data[0..len]);
+    }
+
+    export fn atlas_grow(self: *Atlas, size_new: u32) bool {
+        self.grow(alloc, size_new) catch return false;
+        return true;
+    }
+
+    export fn atlas_clear(self: *Atlas) void {
+        self.clear();
+    }
+
+    export fn atlas_free(ptr: ?*Atlas) void {
+        if (ptr) |v| {
+            v.deinit(alloc);
+            alloc.destroy(v);
+        }
+    }
+};
 
 test "exact fit" {
     const alloc = testing.allocator;

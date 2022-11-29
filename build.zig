@@ -106,11 +106,11 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
-    // term.wasm
+    // wasm
     {
         const wasm = b.addSharedLibrary(
-            "ghostty-term",
-            "src/terminal/main_wasm.zig",
+            "ghostty-wasm",
+            "src/main_wasm.zig",
             .{ .unversioned = {} },
         );
         wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
@@ -122,7 +122,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.addPackage(utf8proc.pkg);
         _ = try utf8proc.link(b, wasm);
 
-        const step = b.step("term-wasm", "Build the terminal.wasm library");
+        const step = b.step("wasm", "Build the wasm library");
         step.dependOn(&wasm.step);
     }
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const build_options = @import("build_options");
 
 pub const Atlas = @import("Atlas.zig");
@@ -15,6 +16,10 @@ pub const sprite = @import("sprite.zig");
 pub const Sprite = sprite.Sprite;
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
+
+pub usingnamespace if (builtin.target.isWasm()) struct {
+    pub usingnamespace Atlas.Wasm;
+} else struct {};
 
 /// Build options
 pub const options: struct {
