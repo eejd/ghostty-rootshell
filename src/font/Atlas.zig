@@ -49,10 +49,10 @@ modified: bool = false,
 /// updated in-place.
 resized: bool = false,
 
-pub const Format = enum {
-    greyscale,
-    rgb,
-    rgba,
+pub const Format = enum(u8) {
+    greyscale = 0,
+    rgb = 1,
+    rgba = 2,
 
     pub fn depth(self: Format) u8 {
         return switch (self) {
@@ -310,33 +310,33 @@ pub const Wasm = struct {
     const wasm = @import("../wasm.zig");
     const alloc = wasm.alloc;
 
-    const FormatInt = @typeInfo(Format).Enum.tag_type;
-    export const ATLAS_FORMAT_GREYSCALE: u8 = @enumToInt(Format.greyscale);
-    export const ATLAS_FORMAT_RGB: u8 = @enumToInt(Format.rgb);
-    export const ATLAS_FORMAT_RGBA: u8 = @enumToInt(Format.rgba);
-
     export fn atlas_new(size: u32, format: u8) ?*Atlas {
         const atlas = init(
             alloc,
             size,
-            @intToEnum(Format, @intCast(FormatInt, format)),
+            @intToEnum(Format, format),
         ) catch return null;
         const result = alloc.create(Atlas) catch return null;
         result.* = atlas;
         return result;
     }
 
-    export fn atlas_reserve(self: *Atlas, width: u32, height: u32) Region {
-        return self.reserve(alloc, width, height) catch .{
-            .x = 0,
-            .y = 0,
-            .width = 0,
-            .height = 0,
-        };
+    /// The return value for this should be freed by the caller with "free".
+    export fn atlas_reserve(self: *Atlas, width: u32, height: u32) ?*Region {
+        return atlas_reserve_(self, width, height) catch return null;
     }
 
-    export fn atlas_set(self: *Atlas, reg: Region, data: [*]const u8, len: usize) void {
-        self.set(reg, data[0..len]);
+    fn atlas_reserve_(self: *Atlas, width: u32, height: u32) !*Region {
+        const reg = try self.reserve(alloc, width, height);
+        const result = try alloc.create(Region);
+        errdefer alloc.destroy(result);
+        _ = try wasm.toHostOwned(result);
+        result.* = reg;
+        return result;
+    }
+
+    export fn atlas_set(self: *Atlas, reg: *Region, data: [*]const u8, len: usize) void {
+        self.set(reg.*, data[0..len]);
     }
 
     export fn atlas_grow(self: *Atlas, size_new: u32) bool {
@@ -353,6 +353,22 @@ pub const Wasm = struct {
             v.deinit(alloc);
             alloc.destroy(v);
         }
+    }
+
+    test "happy path" {
+        var atlas = atlas_new(512, @enumToInt(Format.greyscale)).?;
+        defer atlas_free(atlas);
+
+        const reg = atlas_reserve(atlas, 2, 2).?;
+        defer alloc.destroy(reg);
+        try testing.expect(wasm.isHostOwned(reg));
+        defer wasm.toModuleOwned(reg);
+        try testing.expect(reg.width > 0);
+
+        const data = &[_]u8{ 1, 2, 3, 4 };
+        try testing.expect(!atlas.modified);
+        atlas_set(atlas, reg, data, data.len);
+        try testing.expect(atlas.modified);
     }
 };
 

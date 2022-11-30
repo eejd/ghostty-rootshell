@@ -68,6 +68,8 @@ pub fn deinit(self: *DeferredFace) void {
         .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
         .coretext => if (self.ct) |*ct| ct.deinit(),
         .freetype => {},
+        // TODO
+        .web_canvas => unreachable,
     }
     self.* = undefined;
 }
@@ -90,6 +92,9 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
         },
 
         .freetype => {},
+
+        // TODO
+        .web_canvas => unreachable,
     }
 
     return "TODO: built-in font names";
@@ -121,6 +126,9 @@ pub fn load(
 
             return;
         },
+
+        // TODO
+        .web_canvas => unreachable,
 
         // Unreachable because we must be already loaded or have the
         // proper configuration for one of the other deferred mechanisms.
@@ -244,6 +252,9 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
                 return ct.font.getGlyphsForCharacters(unichars[0..len], glyphs[0..len]);
             }
         },
+
+        // TODO
+        .web_canvas => unreachable,
 
         .freetype => {},
     }

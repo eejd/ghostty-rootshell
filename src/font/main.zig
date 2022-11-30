@@ -25,12 +25,7 @@ pub usingnamespace if (builtin.target.isWasm()) struct {
 pub const options: struct {
     backend: Backend,
 } = .{
-    .backend = if (build_options.coretext)
-        .coretext
-    else if (build_options.fontconfig)
-        .fontconfig_freetype
-    else
-        .freetype,
+    .backend = Backend.default(),
 };
 
 pub const Backend = enum {
@@ -43,13 +38,36 @@ pub const Backend = enum {
     /// CoreText for both font discovery and rendering (macOS).
     coretext,
 
+    /// Use the browser font system and the Canvas API (wasm). This limits
+    /// the available fonts to browser fonts (anything Canvas natively
+    /// supports).
+    web_canvas,
+
+    /// Returns the default backend for a build environment. This is
+    /// meant to be called at comptime.
+    pub fn default() Backend {
+        // Wasm only supports browser at the moment.
+        if (builtin.target.isWasm()) return .web_canvas;
+
+        return if (build_options.coretext)
+            .coretext
+        else if (build_options.fontconfig)
+            .fontconfig_freetype
+        else
+            .freetype;
+    }
+
     /// Helper that just returns true if we should be using freetype. This
     /// is used for tests.
     pub fn freetype(self: Backend) bool {
         return switch (self) {
             .freetype, .fontconfig_freetype => true,
-            .coretext => false,
+            .coretext, .web_canvas => false,
         };
+    }
+
+    test "default can run at comptime" {
+        _ = comptime default();
     }
 };
 
@@ -71,5 +89,11 @@ pub const Presentation = enum(u1) {
 pub const sprite_index = Group.FontIndex.initSpecial(.sprite);
 
 test {
-    @import("std").testing.refAllDecls(@This());
+    // For non-wasm we want to test everything we can
+    if (!comptime builtin.target.isWasm()) {
+        @import("std").testing.refAllDecls(@This());
+        return;
+    }
+
+    _ = Atlas;
 }
