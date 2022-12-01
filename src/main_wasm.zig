@@ -3,6 +3,3 @@
 
 pub usingnamespace @import("wasm.zig");
 pub usingnamespace @import("font/main.zig");
-
-// TODO: temporary while we dev this
-pub usingnamespace @import("font/face/web_canvas.zig");
