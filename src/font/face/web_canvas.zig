@@ -49,6 +49,8 @@ pub const Face = struct {
         const canvas = try doc.call(js.Object, "createElement", .{js.string("canvas")});
         errdefer canvas.deinit();
 
+        log.debug("face initialized: {s}", .{raw});
+
         return Face{
             .alloc = alloc,
             .font_str = font_str,

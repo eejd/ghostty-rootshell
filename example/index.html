@@ -1,36 +1,11 @@
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="utf-8">
-		<title>WASM Example</title>
-	</head>
-	<body>
-		<script>
-			const importObject = {
-				module: {},
-				env: {
-					// memory: new WebAssembly.Memory({ initial: 256 }),
-				}
-			};
-
-			fetch('ghostty-wasm.wasm').then(response =>
-				response.arrayBuffer()
-			).then(bytes =>
-				WebAssembly.instantiate(bytes, importObject)
-			).then(results => {
-				const {
-					atlas_new,
-					atlas_free,
-					atlas_reserve,
-					free,
-					memory,
-				} = results.instance.exports;
-
-				const atlas = atlas_new(512, 0);
-				const reg = atlas_reserve(atlas, 10, 10);
-				free(reg);
-				atlas_free(atlas);
-			});
-		</script>
-	</body>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>Ghostty Example</title>
+    <script type="module" src="app.ts"></script>
+  </head>
+  <body>
+	Open your console, we are just debugging here.
+  </body>
 </html>
