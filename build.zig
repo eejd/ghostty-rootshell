@@ -137,6 +137,7 @@ pub fn build(b: *std.build.Builder) !void {
         const main_test = b.addTest("src/main_wasm.zig");
         main_test.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
         main_test.addOptions("build_options", exe_options);
+        main_test.addPackage(js.pkg);
         test_step.dependOn(&main_test.step);
     }
 

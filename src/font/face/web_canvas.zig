@@ -73,7 +73,7 @@ pub const Face = struct {
 
 /// The wasm-compatible API.
 pub const Wasm = struct {
-    const wasm = @import("../../wasm.zig");
+    const wasm = @import("../../os/wasm.zig");
     const alloc = wasm.alloc;
 
     export fn face_new(ptr: [*]const u8, len: usize, pts: u16) ?*Face {

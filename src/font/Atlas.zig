@@ -307,7 +307,7 @@ pub fn clear(self: *Atlas) void {
 pub const Wasm = struct {
     // If you're copying this file (Atlas.zig) out to a separate project,
     // just replace this with the allocator you want to use.
-    const wasm = @import("../wasm.zig");
+    const wasm = @import("../os/wasm.zig");
     const alloc = wasm.alloc;
 
     export fn atlas_new(size: u32, format: u8) ?*Atlas {
