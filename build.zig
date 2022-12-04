@@ -7,6 +7,7 @@ const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.zig");
 const imgui = @import("pkg/imgui/build.zig");
+const js = @import("vendor/zig-js/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
@@ -233,6 +234,11 @@ fn addDeps(
         step.addPackage(objc.pkg);
         step.addPackage(macos.pkg);
         _ = try macos.link(b, step, .{});
+    }
+
+    // Wasm
+    if (step.target.getCpuArch() == .wasm32) {
+        step.addPackage(js.pkg);
     }
 
     // We always statically compile glad
