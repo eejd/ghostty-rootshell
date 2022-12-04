@@ -13,21 +13,23 @@
 				}
 			};
 
-			fetch('ghostty-term.wasm').then(response =>
+			fetch('ghostty-wasm.wasm').then(response =>
 				response.arrayBuffer()
 			).then(bytes =>
 				WebAssembly.instantiate(bytes, importObject)
 			).then(results => {
 				const {
-					terminal_new,
-					terminal_free,
-					terminal_print,
+					atlas_new,
+					atlas_free,
+					atlas_reserve,
+					free,
+					memory,
 				} = results.instance.exports;
 
-				const term = terminal_new(80, 80);
-				console.log(term);
-				terminal_free(term);
-				terminal_print('a');
+				const atlas = atlas_new(512, 0);
+				const reg = atlas_reserve(atlas, 10, 10);
+				free(reg);
+				atlas_free(atlas);
 			});
 		</script>
 	</body>

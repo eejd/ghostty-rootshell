@@ -73,6 +73,9 @@ pub fn build(b: *std.build.Builder) !void {
         "Build and install test executables with 'build'",
     ) orelse false;
 
+    // We can use wasmtime to test wasm
+    b.enable_wasmtime = true;
+
     // Add our benchmarks
     try benchSteps(b, target, mode);
 
@@ -106,11 +109,11 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
-    // term.wasm
+    // wasm
     {
         const wasm = b.addSharedLibrary(
-            "ghostty-term",
-            "src/terminal/main_wasm.zig",
+            "ghostty-wasm",
+            "src/main_wasm.zig",
             .{ .unversioned = {} },
         );
         wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
@@ -122,8 +125,17 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.addPackage(utf8proc.pkg);
         _ = try utf8proc.link(b, wasm);
 
-        const step = b.step("term-wasm", "Build the terminal.wasm library");
+        const step = b.step("wasm", "Build the wasm library");
         step.dependOn(&wasm.step);
+
+        // We support tests via wasmtime. wasmtime uses WASI so this
+        // isn't an exact match to our freestanding target above but
+        // it lets us test some basic functionality.
+        const test_step = b.step("test-wasm", "Run all tests for wasm");
+        const main_test = b.addTest("src/main_wasm.zig");
+        main_test.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+        main_test.addOptions("build_options", exe_options);
+        test_step.dependOn(&main_test.step);
     }
 
     // Run
