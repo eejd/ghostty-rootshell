@@ -17,8 +17,10 @@ pub const Sprite = sprite.Sprite;
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
 
+/// If we're targeting wasm then we export some wasm APIs.
 pub usingnamespace if (builtin.target.isWasm()) struct {
     pub usingnamespace Atlas.Wasm;
+    pub usingnamespace face.web_canvas.Wasm;
 } else struct {};
 
 /// Build options

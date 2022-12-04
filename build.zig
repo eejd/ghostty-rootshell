@@ -122,6 +122,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setOutputDir("zig-out");
 
         // Wasm-specific deps
+        wasm.addPackage(js.pkg);
         wasm.addPackage(tracylib.pkg);
         wasm.addPackage(utf8proc.pkg);
         _ = try utf8proc.link(b, wasm);
