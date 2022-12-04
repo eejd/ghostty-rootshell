@@ -2,6 +2,7 @@
 
 , gdb
 , glxinfo
+, nodejs
 , parallel
 , pkg-config
 , python
@@ -63,6 +64,9 @@ in mkShell rec {
     scdoc
     zig
     zip
+
+    # For web and wasm stuff
+    nodejs
 
     # Testing
     gdb
