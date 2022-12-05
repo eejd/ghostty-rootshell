@@ -47,8 +47,8 @@ fetch(url.href).then(response =>
   const font_ptr = malloc(font.byteLength);
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
-  // Call whatever example you want:
-  const face = face_new(font_ptr, font.byteLength, 72);
+  // Initialize our font face
+  const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
   free(font_ptr);
 
   // Render a glyph

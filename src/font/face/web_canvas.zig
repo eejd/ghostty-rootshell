@@ -121,13 +121,17 @@ pub const Face = struct {
             const bounding_right = try metrics.get(f32, "actualBoundingBoxRight");
             if (bounding_right > 0) break :width bounding_right;
             break :width try metrics.get(f32, "width");
-        }));
+        })) + 1;
 
         // Height is our ascender + descender for this char
         const asc = try metrics.get(f32, "actualBoundingBoxAscent");
         const desc = try metrics.get(f32, "actualBoundingBoxDescent");
         const left = try metrics.get(f32, "actualBoundingBoxLeft");
-        const height = @floatToInt(u32, @ceil(asc + desc));
+        const height = @floatToInt(u32, @ceil(asc + desc)) + 1;
+
+        // Note: width and height both get "+ 1" added to them above. This
+        // is important so that there is a 1px border around the glyph to avoid
+        // any clipping in the atlas.
 
         // Resize canvas to match the glyph size exactly
         {
@@ -163,8 +167,8 @@ pub const Face = struct {
         try ctx.set("fillStyle", js.string("black"));
         try ctx.call(void, "fillText", .{
             glyph_str,
-            left,
-            asc,
+            left + 1,
+            asc + 1,
         });
 
         // Read the image data and get it into a []u8 on our side
