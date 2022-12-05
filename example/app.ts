@@ -41,8 +41,8 @@ fetch(url.href).then(response =>
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
     // Call whatever example you want:
-    const face = face_new(font_ptr, font.byteLength);
-    face_free(face);
+    const face = face_new(font_ptr, font.byteLength, 14);
+    //face_free(face);
   } finally {
     free(font_ptr);
   }

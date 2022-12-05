@@ -49,27 +49,94 @@ pub const Face = struct {
         const canvas = try doc.call(js.Object, "createElement", .{js.string("canvas")});
         errdefer canvas.deinit();
 
-        log.debug("face initialized: {s}", .{raw});
-
-        return Face{
+        var result = Face{
             .alloc = alloc,
             .font_str = font_str,
             .size = size,
+            // TODO: figure out how we're going to do emoji with web canvas
+            .presentation = .text,
 
             .canvas = canvas,
 
-            // TODO: real metrics
+            // We're going to calculate these right after initialization.
             .metrics = undefined,
-
-            // TODO: figure out how we're going to do emoji with web canvas
-            .presentation = .text,
         };
+        try result.calcMetrics();
+
+        log.debug("face initialized: {s}", .{raw});
+        return result;
     }
 
     pub fn deinit(self: *Face) void {
         self.alloc.free(self.font_str);
         self.canvas.deinit();
         self.* = undefined;
+    }
+
+    /// Calculate the metrics associated with a given face.
+    fn calcMetrics(self: *Face) !void {
+        // This will return the same context on subsequent calls so it
+        // is important to reset it.
+        const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
+        defer ctx.deinit();
+
+        // Set our context font
+        var font_val = try std.fmt.allocPrint(
+            self.alloc,
+            "{d}px {s}",
+            .{ self.size.points, self.font_str },
+        );
+        defer self.alloc.free(font_val);
+        try ctx.set("font", js.string(font_val));
+
+        // If the font property didn't change, then the font set didn't work.
+        // We do this check because it is very easy to put an invalid font
+        // in and this at least makes it show up in the logs.
+        {
+            const check = try ctx.getAlloc(js.String, self.alloc, "font");
+            defer self.alloc.free(check);
+            if (!std.mem.eql(u8, font_val, check)) {
+                log.warn("canvas font didn't set, fonts may be broken, expected={s} got={s}", .{
+                    font_val,
+                    check,
+                });
+            }
+        }
+
+        // Cell width is the width of our M text
+        const cell_width: f32 = cell_width: {
+            const metrics = try ctx.call(js.Object, "measureText", .{js.string("M")});
+            defer metrics.deinit();
+            break :cell_width try metrics.get(f32, "actualBoundingBoxRight");
+        };
+
+        // To get the cell height we render a high and low character and get
+        // the total of the ascent and descent. This should equal our
+        // pixel height but this is a more surefire way to get it.
+        const height_metrics = try ctx.call(js.Object, "measureText", .{js.string("M_")});
+        defer height_metrics.deinit();
+        const asc = try height_metrics.get(f32, "actualBoundingBoxAscent");
+        const desc = try height_metrics.get(f32, "actualBoundingBoxDescent");
+        const cell_height = asc + desc;
+        const cell_baseline = desc;
+
+        // There isn't a declared underline position for canvas measurements
+        // so we just go 1 under the cell height to match freetype logic
+        // at this time (our freetype logic).
+        const underline_position = cell_height - 1;
+        const underline_thickness: f32 = 1;
+
+        self.metrics = .{
+            .cell_width = cell_width,
+            .cell_height = cell_height,
+            .cell_baseline = cell_baseline,
+            .underline_position = underline_position,
+            .underline_thickness = underline_thickness,
+            .strikethrough_position = underline_position,
+            .strikethrough_thickness = underline_thickness,
+        };
+
+        log.debug("metrics font={s} value={}", .{ font_val, self.metrics });
     }
 };
 
