@@ -426,6 +426,7 @@ pub const Wasm = struct {
             const Uint8ClampedArray = try js.global.get(js.Object, "Uint8ClampedArray");
             defer Uint8ClampedArray.deinit();
             const arr = try Uint8ClampedArray.new(.{ mem_buf, buf.ptr, buf.len });
+            defer arr.deinit();
 
             // Create the image data from our array
             const ImageData = try js.global.get(js.Object, "ImageData");
@@ -435,6 +436,7 @@ pub const Wasm = struct {
 
             break :data data;
         };
+        defer image_data.deinit();
 
         // Draw it
         try ctx.call(void, "putImageData", .{ image_data, 0, 0 });

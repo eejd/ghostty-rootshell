@@ -126,6 +126,7 @@ pub const Face = struct {
         // Height is our ascender + descender for this char
         const asc = try metrics.get(f32, "actualBoundingBoxAscent");
         const desc = try metrics.get(f32, "actualBoundingBoxDescent");
+        const left = try metrics.get(f32, "actualBoundingBoxLeft");
         const height = @floatToInt(u32, @ceil(asc + desc));
 
         // Resize canvas to match the glyph size exactly
@@ -148,11 +149,6 @@ pub const Face = struct {
         const ctx = try self.context();
         defer ctx.deinit();
 
-        // We use top alignment because our renderer handles all the
-        // baseline and so on so we just want a top-left rendered glyph
-        // by itself.
-        try ctx.set("textBaseline", js.string("top"));
-
         // Draw background
         try ctx.set("fillStyle", js.string("transparent"));
         try ctx.call(void, "fillRect", .{
@@ -163,11 +159,12 @@ pub const Face = struct {
         });
 
         // Draw glyph
+        // TODO: may need a +1 on the left/asc here to avoid clipping
         try ctx.set("fillStyle", js.string("black"));
         try ctx.call(void, "fillText", .{
             glyph_str,
-            0,
-            0,
+            left,
+            asc,
         });
 
         // Read the image data and get it into a []u8 on our side
