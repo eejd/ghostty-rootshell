@@ -26,6 +26,10 @@ fetch(url.href).then(response =>
     free,
     face_new,
     face_free,
+    face_render_glyph,
+    face_debug_canvas,
+    atlas_new,
+    atlas_free,
   } = results.instance.exports;
   // Give us access to the zjs value for debugging.
   globalThis.zjs = zjs;
@@ -34,16 +38,23 @@ fetch(url.href).then(response =>
   // Initialize our zig-js memory
   zjs.memory = memory;
 
+  // Create our atlas
+  const atlas = atlas_new(512, 0 /* greyscale */);
+
   // Create some memory for our string
   const font = new TextEncoder().encode("monospace");
   const font_ptr = malloc(font.byteLength);
-  try {
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
-    // Call whatever example you want:
-    const face = face_new(font_ptr, font.byteLength, 14);
+  // Call whatever example you want:
+  const face = face_new(font_ptr, font.byteLength, 144);
+  free(font_ptr);
+
+  // Render a glyph
+  face_render_glyph(face, atlas, "A".codePointAt(0));
+
+  // Debug our canvas
+  face_debug_canvas(face);
+
     //face_free(face);
-  } finally {
-    free(font_ptr);
-  }
 });

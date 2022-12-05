@@ -73,41 +73,120 @@ pub const Face = struct {
         self.* = undefined;
     }
 
-    /// Calculate the metrics associated with a given face.
-    fn calcMetrics(self: *Face) !void {
-        // This will return the same context on subsequent calls so it
-        // is important to reset it.
-        const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
+    /// Resize the font in-place. If this succeeds, the caller is responsible
+    /// for clearing any glyph caches, font atlas data, etc.
+    pub fn setSize(self: *Face, size: font.face.DesiredSize) !void {
+        const old = self.size;
+        self.size = size;
+        errdefer self.size = old;
+        try self.calcMetrics();
+    }
+
+    /// Returns the glyph index for the given Unicode code point. For canvas,
+    /// we support every glyph and the ID is just the codepoint since we don't
+    /// have access to the underlying tables anyways. We let the browser deal
+    /// with bad codepoints.
+    pub fn glyphIndex(self: Face, cp: u32) ?u32 {
+        _ = self;
+        return cp;
+    }
+
+    /// Render a glyph using the glyph index. The rendered glyph is stored in the
+    /// given texture atlas.
+    pub fn renderGlyph(
+        self: Face,
+        alloc: Allocator,
+        atlas: *font.Atlas,
+        glyph_index: u32,
+        max_height: ?u16,
+    ) !font.Glyph {
+        // Encode our glyph into UTF-8 so we can build a JS string out of it.
+        var utf8: [4]u8 = undefined;
+        const utf8_len = try std.unicode.utf8Encode(@intCast(u21, glyph_index), &utf8);
+        const glyph_str = js.string(utf8[0..utf8_len]);
+
+        // Get our drawing context
+        const measure_ctx = try self.context();
+        defer measure_ctx.deinit();
+
+        // Get the width and height of the render
+        const metrics = try measure_ctx.call(js.Object, "measureText", .{glyph_str});
+        defer metrics.deinit();
+        const width: u32 = @floatToInt(u32, @ceil(width: {
+            // We prefer the bounding box since it is tighter but certain
+            // text such as emoji do not have a bounding box set so we use
+            // the full run width instead.
+            const bounding_right = try metrics.get(f32, "actualBoundingBoxRight");
+            if (bounding_right > 0) break :width bounding_right;
+            break :width try metrics.get(f32, "width");
+        }));
+
+        // Height is our ascender + descender for this char
+        const asc = try metrics.get(f32, "actualBoundingBoxAscent");
+        const desc = try metrics.get(f32, "actualBoundingBoxDescent");
+        const height = @floatToInt(u32, @ceil(asc + desc));
+
+        // Resize canvas to match the glyph size exactly
+        {
+            try self.canvas.set("width", width);
+            try self.canvas.set("height", height);
+
+            const width_str = try std.fmt.allocPrint(alloc, "{d}px", .{width});
+            defer alloc.free(width_str);
+            const height_str = try std.fmt.allocPrint(alloc, "{d}px", .{height});
+            defer alloc.free(height_str);
+
+            const style = try self.canvas.get(js.Object, "style");
+            defer style.deinit();
+            try style.set("width", js.string(width_str));
+            try style.set("height", js.string(height_str));
+        }
+
+        // Reload our context since we resized the canvas
+        const ctx = try self.context();
         defer ctx.deinit();
 
-        // Set our context font
-        var font_val = try std.fmt.allocPrint(
-            self.alloc,
-            "{d}px {s}",
-            .{ self.size.points, self.font_str },
-        );
-        defer self.alloc.free(font_val);
-        try ctx.set("font", js.string(font_val));
+        // Set our alignment different since we want it centered exactly
+        try ctx.set("textBaseline", js.string("top"));
 
-        // If the font property didn't change, then the font set didn't work.
-        // We do this check because it is very easy to put an invalid font
-        // in and this at least makes it show up in the logs.
-        {
-            const check = try ctx.getAlloc(js.String, self.alloc, "font");
-            defer self.alloc.free(check);
-            if (!std.mem.eql(u8, font_val, check)) {
-                log.warn("canvas font didn't set, fonts may be broken, expected={s} got={s}", .{
-                    font_val,
-                    check,
-                });
-            }
-        }
+        // Draw background
+        try ctx.set("fillStyle", js.string("transparent"));
+        try ctx.call(void, "fillRect", .{
+            @as(u32, 0),
+            @as(u32, 0),
+            width,
+            height,
+        });
+
+        // Draw glyph
+        try ctx.set("fillStyle", js.string("black"));
+        try ctx.call(void, "fillText", .{
+            glyph_str,
+            width / 2,
+            height / 2,
+        });
+
+        _ = atlas;
+        _ = max_height;
+        return error.Unimplemented;
+    }
+
+    /// Calculate the metrics associated with a given face.
+    fn calcMetrics(self: *Face) !void {
+        const ctx = try self.context();
+        defer ctx.deinit();
 
         // Cell width is the width of our M text
         const cell_width: f32 = cell_width: {
             const metrics = try ctx.call(js.Object, "measureText", .{js.string("M")});
             defer metrics.deinit();
-            break :cell_width try metrics.get(f32, "actualBoundingBoxRight");
+
+            // We prefer the bounding box since it is tighter but certain
+            // text such as emoji do not have a bounding box set so we use
+            // the full run width instead.
+            const bounding_right = try metrics.get(f32, "actualBoundingBoxRight");
+            if (bounding_right > 0) break :cell_width bounding_right;
+            break :cell_width try metrics.get(f32, "width");
         };
 
         // To get the cell height we render a high and low character and get
@@ -136,7 +215,45 @@ pub const Face = struct {
             .strikethrough_thickness = underline_thickness,
         };
 
-        log.debug("metrics font={s} value={}", .{ font_val, self.metrics });
+        log.debug("metrics font={s} value={}", .{ self.font_str, self.metrics });
+    }
+
+    /// Returns the 2d context configured for drawing
+    fn context(self: Face) !js.Object {
+        // This will return the same context on subsequent calls so it
+        // is important to reset it.
+        const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
+        errdefer ctx.deinit();
+
+        // Clear the canvas
+        {
+            const width = try self.canvas.get(f64, "width");
+            const height = try self.canvas.get(f64, "height");
+            try ctx.call(void, "clearRect", .{ 0, 0, width, height });
+        }
+
+        // Set our context font
+        var font_val = try std.fmt.allocPrint(
+            self.alloc,
+            "{d}px {s}",
+            .{ self.size.points, self.font_str },
+        );
+        defer self.alloc.free(font_val);
+        try ctx.set("font", js.string(font_val));
+
+        // If the font property didn't change, then the font set didn't work.
+        // We do this check because it is very easy to put an invalid font
+        // in and this at least makes it show up in the logs.
+        const check = try ctx.getAlloc(js.String, self.alloc, "font");
+        defer self.alloc.free(check);
+        if (!std.mem.eql(u8, font_val, check)) {
+            log.warn("canvas font didn't set, fonts may be broken, expected={s} got={s}", .{
+                font_val,
+                check,
+            });
+        }
+
+        return ctx;
     }
 };
 
@@ -164,5 +281,47 @@ pub const Wasm = struct {
             v.deinit();
             alloc.destroy(v);
         }
+    }
+
+    /// Resulting pointer must be freed using the global "free".
+    export fn face_render_glyph(
+        face: *Face,
+        atlas: *font.Atlas,
+        codepoint: u32,
+    ) ?*font.Glyph {
+        return face_render_glyph_(face, atlas, codepoint) catch |err| {
+            log.warn("error rendering glyph err={}", .{err});
+            return null;
+        };
+    }
+
+    export fn face_debug_canvas(face: *Face) void {
+        face_debug_canvas_(face) catch |err| {
+            log.warn("error adding debug canvas err={}", .{err});
+        };
+    }
+
+    fn face_debug_canvas_(face: *Face) !void {
+        const doc = try js.global.get(js.Object, "document");
+        defer doc.deinit();
+
+        const elem = try doc.call(
+            ?js.Object,
+            "getElementById",
+            .{js.string("face-canvas")},
+        ) orelse return error.CanvasContainerNotFound;
+        defer elem.deinit();
+
+        try elem.call(void, "append", .{face.canvas});
+    }
+
+    fn face_render_glyph_(face: *Face, atlas: *font.Atlas, codepoint: u32) !*font.Glyph {
+        const glyph = try face.renderGlyph(alloc, atlas, codepoint, null);
+
+        const result = try alloc.create(font.Glyph);
+        errdefer alloc.destroy(result);
+        _ = try wasm.toHostOwned(result);
+        result.* = glyph;
+        return result;
     }
 };

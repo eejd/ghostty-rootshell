@@ -113,7 +113,7 @@ pub const Face = struct {
 
     /// Returns true if this font is colored. This can be used by callers to
     /// determine what kind of atlas to pass in.
-    pub fn hasColor(self: Face) bool {
+    fn hasColor(self: Face) bool {
         return self.face.hasColor();
     }
 
