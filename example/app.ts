@@ -30,6 +30,7 @@ fetch(url.href).then(response =>
     face_debug_canvas,
     atlas_new,
     atlas_free,
+    atlas_debug_canvas,
   } = results.instance.exports;
   // Give us access to the zjs value for debugging.
   globalThis.zjs = zjs;
@@ -47,14 +48,21 @@ fetch(url.href).then(response =>
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
   // Call whatever example you want:
-  const face = face_new(font_ptr, font.byteLength, 144);
+  const face = face_new(font_ptr, font.byteLength, 72);
   free(font_ptr);
 
   // Render a glyph
-  face_render_glyph(face, atlas, "A".codePointAt(0));
+  for (let i = 33; i <= 126; i++) {
+    face_render_glyph(face, atlas, i);
+  }
+  // face_render_glyph(face, atlas, "A".codePointAt(0));
 
   // Debug our canvas
   face_debug_canvas(face);
+
+  // Debug our atlas canvas
+  const id = atlas_debug_canvas(atlas);
+  document.getElementById("atlas-canvas").append(zjs.deleteValue(id));
 
     //face_free(face);
 });

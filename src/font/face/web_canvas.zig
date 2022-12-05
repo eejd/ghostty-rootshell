@@ -215,7 +215,7 @@ pub const Face = struct {
         defer alloc.free(bitmap_a8);
         var i: usize = 0;
         while (i < bitmap_a8.len) : (i += 1) {
-            bitmap_a8[i] = bitmap[i * 4];
+            bitmap_a8[i] = bitmap[(i * 4) + 3];
         }
 
         // Put it in our atlas
