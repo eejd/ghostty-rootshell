@@ -163,7 +163,6 @@ pub const Face = struct {
         });
 
         // Draw glyph
-        // TODO: may need a +1 on the left/asc here to avoid clipping
         try ctx.set("fillStyle", js.string("black"));
         try ctx.call(void, "fillText", .{
             glyph_str,

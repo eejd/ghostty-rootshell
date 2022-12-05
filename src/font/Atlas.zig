@@ -392,7 +392,7 @@ pub const Wasm = struct {
         // This will return the same context on subsequent calls so it
         // is important to reset it.
         const ctx = try canvas.call(js.Object, "getContext", .{js.string("2d")});
-        errdefer ctx.deinit();
+        defer ctx.deinit();
 
         // We need to draw pixels so this is format dependent.
         var buf: []u8 = switch (self.format) {

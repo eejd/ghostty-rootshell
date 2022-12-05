@@ -55,6 +55,7 @@ fetch(url.href).then(response =>
   for (let i = 33; i <= 126; i++) {
     face_render_glyph(face, atlas, i);
   }
+  //face_render_glyph(face, atlas, "橋".codePointAt(0));
   //face_render_glyph(face, atlas, "p".codePointAt(0));
 
   // Debug our canvas
