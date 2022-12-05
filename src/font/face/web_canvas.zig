@@ -100,6 +100,8 @@ pub const Face = struct {
         glyph_index: u32,
         max_height: ?u16,
     ) !font.Glyph {
+        _ = max_height;
+
         // Encode our glyph into UTF-8 so we can build a JS string out of it.
         var utf8: [4]u8 = undefined;
         const utf8_len = try std.unicode.utf8Encode(@intCast(u21, glyph_index), &utf8);
@@ -146,7 +148,9 @@ pub const Face = struct {
         const ctx = try self.context();
         defer ctx.deinit();
 
-        // Set our alignment different since we want it centered exactly
+        // We use top alignment because our renderer handles all the
+        // baseline and so on so we just want a top-left rendered glyph
+        // by itself.
         try ctx.set("textBaseline", js.string("top"));
 
         // Draw background
@@ -162,13 +166,72 @@ pub const Face = struct {
         try ctx.set("fillStyle", js.string("black"));
         try ctx.call(void, "fillText", .{
             glyph_str,
-            width / 2,
-            height / 2,
+            0,
+            0,
         });
 
-        _ = atlas;
-        _ = max_height;
-        return error.Unimplemented;
+        // Read the image data and get it into a []u8 on our side
+        const bitmap: []u8 = bitmap: {
+            // Read the raw bitmap data and get the "data" value which is a
+            // Uint8ClampedArray.
+            const data = try ctx.call(js.Object, "getImageData", .{ 0, 0, width, height });
+            defer data.deinit();
+            const src_array = try data.get(js.Object, "data");
+            defer src_array.deinit();
+
+            // Allocate our local memory to copy the data to.
+            const len = try src_array.get(u32, "length");
+            var bitmap = try alloc.alloc(u8, @intCast(usize, len));
+            errdefer alloc.free(bitmap);
+
+            // Create our target Uint8Array that we can use to copy from src.
+            const mem_array = mem_array: {
+                // Get our runtime memory
+                const mem = try js.runtime.get(js.Object, "memory");
+                defer mem.deinit();
+                const buf = try mem.get(js.Object, "buffer");
+                defer buf.deinit();
+
+                // Construct our array to peer into our memory
+                const Uint8Array = try js.global.get(js.Object, "Uint8Array");
+                defer Uint8Array.deinit();
+                const mem_array = try Uint8Array.new(.{ buf, bitmap.ptr });
+                errdefer mem_array.deinit();
+
+                break :mem_array mem_array;
+            };
+            defer mem_array.deinit();
+
+            // Copy
+            try mem_array.call(void, "set", .{src_array});
+
+            break :bitmap bitmap;
+        };
+        defer alloc.free(bitmap);
+
+        // The bitmap is in RGBA format and we just want alpha8.
+        assert(@mod(bitmap.len, 4) == 0);
+        var bitmap_a8 = try alloc.alloc(u8, bitmap.len / 4);
+        defer alloc.free(bitmap_a8);
+        var i: usize = 0;
+        while (i < bitmap_a8.len) : (i += 1) {
+            bitmap_a8[i] = bitmap[i * 4];
+        }
+
+        // Put it in our atlas
+        const region = try atlas.reserve(alloc, width, height);
+        if (region.width > 0 and region.height > 0) atlas.set(region, bitmap_a8);
+
+        return font.Glyph{
+            .width = width,
+            .height = height,
+            // TODO: this can't be right
+            .offset_x = 0,
+            .offset_y = 0,
+            .atlas_x = region.x,
+            .atlas_y = region.y,
+            .advance_x = 0,
+        };
     }
 
     /// Calculate the metrics associated with a given face.
