@@ -63,17 +63,18 @@ fetch(url.href).then(response =>
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
   // Initialize our deferred face
-  const df = deferred_face_new(font_ptr, font.byteLength);
+  // const df = deferred_face_new(font_ptr, font.byteLength, 0 /* text */);
   //deferred_face_load(df, 72 /* size */);
   //const face = deferred_face_face(df);
 
   // Initialize our font face
   //const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
-  free(font_ptr);
+  //free(font_ptr);
 
   // Create our group
   const group = group_new(72 /* size */);
-  group_add_face(group, 0, df);
+  group_add_face(group, 0 /* regular */, deferred_face_new(font_ptr, font.byteLength, 0 /* text */));
+  group_add_face(group, 0 /* regular */, deferred_face_new(font_ptr, font.byteLength, 1 /* emoji */));
 
   // Create our group cache
   const group_cache = group_cache_new(group);
@@ -84,6 +85,14 @@ fetch(url.href).then(response =>
     group_cache_render_glyph(group_cache, font_idx, i, 0);
     //face_render_glyph(face, atlas, i);
   }
+
+  const emoji = ["🐏","🌞","🌚","🍱","💿","🐈","📃","📀","🕡","🙃"];
+  for (let i = 0; i < emoji.length; i++) {
+    const cp = emoji[i].codePointAt(0);
+    const font_idx = group_cache_index_for_codepoint(group_cache, cp, 0, 1 /* emoji */);
+    group_cache_render_glyph(group_cache, font_idx, cp, 0);
+  }
+
   //face_render_glyph(face, atlas, "橋".codePointAt(0));
   //face_render_glyph(face, atlas, "p".codePointAt(0));
 

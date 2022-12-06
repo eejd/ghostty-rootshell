@@ -71,6 +71,9 @@ pub const WebCanvas = struct {
     /// The string to use for the "font" attribute for the canvas
     font_str: [:0]const u8,
 
+    /// The presentation for this font.
+    presentation: Presentation,
+
     pub fn deinit(self: *WebCanvas) void {
         self.alloc.free(self.font_str);
         self.* = undefined;
@@ -227,7 +230,7 @@ fn loadWebCanvas(
 ) !void {
     assert(self.face == null);
     const wc = self.wc.?;
-    self.face = try Face.initNamed(wc.alloc, wc.font_str, size);
+    self.face = try Face.initNamed(wc.alloc, wc.font_str, size, wc.presentation);
 }
 
 /// Returns true if this face can satisfy the given codepoint and
@@ -283,7 +286,13 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
 
         // Canvas always has the codepoint because we have no way of
         // really checking and we let the browser handle it.
-        .web_canvas => return true,
+        .web_canvas => {
+            if (self.wc) |wc| {
+                if (p) |desired| if (wc.presentation != desired) return false;
+            }
+
+            return true;
+        },
 
         .freetype => {},
     }
@@ -298,14 +307,14 @@ pub const Wasm = struct {
     const wasm = @import("../os/wasm.zig");
     const alloc = wasm.alloc;
 
-    export fn deferred_face_new(ptr: [*]const u8, len: usize) ?*DeferredFace {
-        return deferred_face_new_(ptr, len) catch |err| {
+    export fn deferred_face_new(ptr: [*]const u8, len: usize, presentation: u16) ?*DeferredFace {
+        return deferred_face_new_(ptr, len, presentation) catch |err| {
             log.warn("error creating deferred face err={}", .{err});
             return null;
         };
     }
 
-    fn deferred_face_new_(ptr: [*]const u8, len: usize) !*DeferredFace {
+    fn deferred_face_new_(ptr: [*]const u8, len: usize, presentation: u16) !*DeferredFace {
         var font_str = try alloc.dupeZ(u8, ptr[0..len]);
         errdefer alloc.free(font_str);
 
@@ -313,6 +322,7 @@ pub const Wasm = struct {
             .wc = .{
                 .alloc = alloc,
                 .font_str = font_str,
+                .presentation = @intToEnum(font.Presentation, presentation),
             },
         };
         errdefer face.deinit();
