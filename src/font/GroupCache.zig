@@ -231,6 +231,88 @@ test {
     }
 }
 
+/// The wasm-compatible API.
+pub const Wasm = struct {
+    const wasm = @import("../os/wasm.zig");
+    const alloc = wasm.alloc;
+
+    export fn group_cache_new(group: *Group) ?*GroupCache {
+        return group_cache_new_(group) catch null;
+    }
+
+    fn group_cache_new_(group: *Group) !*GroupCache {
+        var gc = try GroupCache.init(alloc, group.*);
+        errdefer gc.deinit(alloc);
+
+        var result = try alloc.create(GroupCache);
+        errdefer alloc.destroy(result);
+        result.* = gc;
+        return result;
+    }
+
+    export fn group_cache_free(ptr: ?*GroupCache) void {
+        if (ptr) |v| {
+            v.deinit(alloc);
+            alloc.destroy(v);
+        }
+    }
+
+    export fn group_cache_set_size(self: *GroupCache, size: u16) void {
+        return self.setSize(.{ .points = size }) catch |err| {
+            log.warn("error setting group cache size err={}", .{err});
+            return;
+        };
+    }
+
+    /// Presentation is negative for doesn't matter.
+    export fn group_cache_index_for_codepoint(self: *GroupCache, cp: u32, style: u16, p: i16) i16 {
+        const presentation = if (p < 0) null else @intToEnum(Presentation, p);
+        if (self.indexForCodepoint(
+            alloc,
+            cp,
+            @intToEnum(Style, style),
+            presentation,
+        )) |idx| {
+            return @intCast(i16, @bitCast(u8, idx orelse return -1));
+        } else |err| {
+            log.warn("error getting index for codepoint from group cache size err={}", .{err});
+            return -1;
+        }
+    }
+
+    export fn group_cache_render_glyph(
+        self: *GroupCache,
+        idx: i16,
+        cp: u32,
+        max_height: u16,
+    ) ?*Glyph {
+        return group_cache_render_glyph_(self, idx, cp, max_height) catch |err| {
+            log.warn("error rendering group cache glyph err={}", .{err});
+            return null;
+        };
+    }
+
+    fn group_cache_render_glyph_(
+        self: *GroupCache,
+        idx_: i16,
+        cp: u32,
+        max_height_: u16,
+    ) !*Glyph {
+        const idx = @bitCast(Group.FontIndex, @intCast(u8, idx_));
+        const max_height = if (max_height_ <= 0) null else max_height_;
+        const glyph = try self.renderGlyph(alloc, idx, cp, max_height);
+
+        var result = try alloc.create(Glyph);
+        errdefer alloc.destroy(result);
+        result.* = glyph;
+        return result;
+    }
+
+    export fn group_cache_atlas_greyscale(self: *GroupCache) *font.Atlas {
+        return &self.atlas_greyscale;
+    }
+};
+
 test "resize" {
     const testing = std.testing;
     const alloc = testing.allocator;
