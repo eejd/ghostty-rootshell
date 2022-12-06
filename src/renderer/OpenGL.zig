@@ -162,7 +162,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     // Create the initial font shaper
     var shape_buf = try alloc.alloc(font.shape.Cell, 1);
     errdefer alloc.free(shape_buf);
-    var shaper = try font.Shaper.init(shape_buf);
+    var shaper = try font.Shaper.init(alloc, shape_buf);
     errdefer shaper.deinit();
 
     // Create our shader

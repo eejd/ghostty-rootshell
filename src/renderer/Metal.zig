@@ -180,7 +180,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // avoid allocations later.
     var shape_buf = try alloc.alloc(font.shape.Cell, 160);
     errdefer alloc.free(shape_buf);
-    var font_shaper = try font.Shaper.init(shape_buf);
+    var font_shaper = try font.Shaper.init(alloc, shape_buf);
     errdefer font_shaper.deinit();
 
     // Initialize our Metal buffers
