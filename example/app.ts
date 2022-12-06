@@ -28,6 +28,10 @@ fetch(url.href).then(response =>
     face_free,
     face_render_glyph,
     face_debug_canvas,
+    deferred_face_new,
+    deferred_face_free,
+    deferred_face_load,
+    deferred_face_face,
     atlas_new,
     atlas_free,
     atlas_debug_canvas,
@@ -47,8 +51,13 @@ fetch(url.href).then(response =>
   const font_ptr = malloc(font.byteLength);
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
+  // Initialize our deferred face
+  const df = deferred_face_new(font_ptr, font.byteLength);
+  deferred_face_load(df, 72 /* size */);
+  const face = deferred_face_face(df);
+
   // Initialize our font face
-  const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
+  //const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
   free(font_ptr);
 
   // Render a glyph
