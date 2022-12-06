@@ -6,11 +6,13 @@ pub const web_canvas = @import("face/web_canvas.zig");
 
 /// Face implementation for the compile options.
 pub const Face = switch (options.backend) {
-    .fontconfig_freetype => freetype.Face,
-    .coretext => freetype.Face,
-    //.coretext => coretext.Face,
+    .freetype,
+    .fontconfig_freetype,
+    .coretext_freetype,
+    => freetype.Face,
+
+    .coretext => coretext.Face,
     .web_canvas => web_canvas.Face,
-    else => unreachable,
 };
 
 /// If a DPI can't be calculated, this DPI is used. This is probably

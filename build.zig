@@ -121,6 +121,8 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
 
+        wasm.addOptions("build_options", exe_options);
+
         // Wasm-specific deps
         wasm.addPackage(js.pkg);
         wasm.addPackage(tracylib.pkg);

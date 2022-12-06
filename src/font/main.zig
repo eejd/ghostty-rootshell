@@ -10,16 +10,17 @@ pub const Face = face.Face;
 pub const Group = @import("Group.zig");
 pub const GroupCache = @import("GroupCache.zig");
 pub const Glyph = @import("Glyph.zig");
-pub const Library = @import("Library.zig");
 pub const Shaper = @import("Shaper.zig");
 pub const sprite = @import("sprite.zig");
 pub const Sprite = sprite.Sprite;
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
+pub usingnamespace @import("library.zig");
 
 /// If we're targeting wasm then we export some wasm APIs.
 pub usingnamespace if (builtin.target.isWasm()) struct {
     pub usingnamespace Atlas.Wasm;
+    pub usingnamespace Group.Wasm;
     pub usingnamespace face.web_canvas.Wasm;
 } else struct {};
 
@@ -37,8 +38,11 @@ pub const Backend = enum {
     /// Fontconfig for font discovery and FreeType for font rendering.
     fontconfig_freetype,
 
-    /// CoreText for both font discovery and rendering (macOS).
+    /// CoreText for both font discovery for rendering (macOS).
     coretext,
+
+    /// CoreText for font discovery and FreeType for rendering (macOS).
+    coretext_freetype,
 
     /// Use the browser font system and the Canvas API (wasm). This limits
     /// the available fonts to browser fonts (anything Canvas natively

@@ -285,6 +285,26 @@ pub fn renderGlyph(
     return try face.face.?.renderGlyph(alloc, atlas, glyph_index, max_height);
 }
 
+/// The wasm-compatible API.
+pub const Wasm = struct {
+    const wasm = @import("../os/wasm.zig");
+    const alloc = wasm.alloc;
+
+    export fn group_new(pts: u16) ?*Group {
+        return group_new_(pts) catch null;
+    }
+
+    fn group_new_(pts: u16) !*Group {
+        var group = try Group.init(alloc, .{}, .{ .points = pts });
+        errdefer group.deinit();
+
+        var result = try alloc.create(Group);
+        errdefer alloc.destroy(result);
+        result.* = group;
+        return result;
+    }
+};
+
 test {
     const testing = std.testing;
     const alloc = testing.allocator;
