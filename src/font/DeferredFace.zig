@@ -8,6 +8,7 @@ const DeferredFace = @This();
 
 const std = @import("std");
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 const fontconfig = @import("fontconfig");
 const macos = @import("macos");
 const font = @import("main.zig");
@@ -15,6 +16,8 @@ const options = @import("main.zig").options;
 const Library = @import("main.zig").Library;
 const Face = @import("main.zig").Face;
 const Presentation = @import("main.zig").Presentation;
+
+const log = std.log.scoped(.deferred_face);
 
 /// The loaded face (once loaded).
 face: ?Face = null,
@@ -26,6 +29,10 @@ fc: if (options.backend == .fontconfig_freetype) ?Fontconfig else void =
 /// CoreText
 ct: if (font.Discover == font.discovery.CoreText) ?CoreText else void =
     if (font.Discover == font.discovery.CoreText) null else {},
+
+/// Canvas
+wc: if (options.backend == .web_canvas) ?WebCanvas else void =
+    if (options.backend == .web_canvas) null else {},
 
 /// Fontconfig specific data. This is only present if building with fontconfig.
 pub const Fontconfig = struct {
@@ -56,6 +63,20 @@ pub const CoreText = struct {
     }
 };
 
+/// WebCanvas specific data. This is only present when building with canvas.
+pub const WebCanvas = struct {
+    /// The allocator to use for fonts
+    alloc: Allocator,
+
+    /// The string to use for the "font" attribute for the canvas
+    font_str: [:0]const u8,
+
+    pub fn deinit(self: *WebCanvas) void {
+        self.alloc.free(self.font_str);
+        self.* = undefined;
+    }
+};
+
 /// Initialize a deferred face that is already pre-loaded. The deferred face
 /// takes ownership over the loaded face, deinit will deinit the loaded face.
 pub fn initLoaded(face: Face) DeferredFace {
@@ -68,8 +89,7 @@ pub fn deinit(self: *DeferredFace) void {
         .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
         .coretext, .coretext_freetype => if (self.ct) |*ct| ct.deinit(),
         .freetype => {},
-        // TODO
-        .web_canvas => unreachable,
+        .web_canvas => if (self.wc) |*wc| wc.deinit(),
     }
     self.* = undefined;
 }
@@ -83,6 +103,8 @@ pub inline fn loaded(self: DeferredFace) bool {
 /// face so it doesn't have to be freed.
 pub fn name(self: DeferredFace) ![:0]const u8 {
     switch (options.backend) {
+        .freetype => {},
+
         .fontconfig_freetype => if (self.fc) |fc|
             return (try fc.pattern.get(.fullname, 0)).string,
 
@@ -91,10 +113,7 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
             return display_name.cstringPtr(.utf8) orelse "<unsupported internal encoding>";
         },
 
-        .freetype => {},
-
-        // TODO
-        .web_canvas => unreachable,
+        .web_canvas => if (self.wc) |wc| return wc.font_str,
     }
 
     return "TODO: built-in font names";
@@ -125,8 +144,10 @@ pub fn load(
             return;
         },
 
-        // TODO
-        .web_canvas => unreachable,
+        .web_canvas => {
+            try self.loadWebCanvas(size);
+            return;
+        },
 
         // Unreachable because we must be already loaded or have the
         // proper configuration for one of the other deferred mechanisms.
@@ -200,6 +221,15 @@ fn loadCoreTextFreetype(
     self.face = try Face.initFile(lib, buf[0..path_slice.len :0], 0, size);
 }
 
+fn loadWebCanvas(
+    self: *DeferredFace,
+    size: font.face.DesiredSize,
+) !void {
+    assert(self.face == null);
+    const wc = self.wc.?;
+    self.face = try Face.initNamed(wc.alloc, wc.font_str, size);
+}
+
 /// Returns true if this face can satisfy the given codepoint and
 /// presentation. If presentation is null, then it just checks if the
 /// codepoint is present at all.
@@ -251,8 +281,9 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
             }
         },
 
-        // TODO
-        .web_canvas => unreachable,
+        // Canvas always has the codepoint because we have no way of
+        // really checking and we let the browser handle it.
+        .web_canvas => return true,
 
         .freetype => {},
     }
@@ -261,6 +292,57 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     // if we're not using a discovery mechanism, the face MUST be loaded.
     unreachable;
 }
+
+/// The wasm-compatible API.
+pub const Wasm = struct {
+    const wasm = @import("../os/wasm.zig");
+    const alloc = wasm.alloc;
+
+    export fn deferred_face_new(ptr: [*]const u8, len: usize) ?*DeferredFace {
+        return deferred_face_new_(ptr, len) catch |err| {
+            log.warn("error creating deferred face err={}", .{err});
+            return null;
+        };
+    }
+
+    fn deferred_face_new_(ptr: [*]const u8, len: usize) !*DeferredFace {
+        var font_str = try alloc.dupeZ(u8, ptr[0..len]);
+        errdefer alloc.free(font_str);
+
+        var face: DeferredFace = .{
+            .wc = .{
+                .alloc = alloc,
+                .font_str = font_str,
+            },
+        };
+        errdefer face.deinit();
+
+        var result = try alloc.create(DeferredFace);
+        errdefer alloc.destroy(result);
+        result.* = face;
+        return result;
+    }
+
+    export fn deferred_face_free(ptr: ?*DeferredFace) void {
+        if (ptr) |v| {
+            v.deinit();
+            alloc.destroy(v);
+        }
+    }
+
+    export fn deferred_face_load(self: *DeferredFace, pts: u16) void {
+        self.load(.{}, .{ .points = pts }) catch |err| {
+            log.warn("error loading deferred face err={}", .{err});
+            return;
+        };
+    }
+
+    /// Caller should not free this, the face is owned by the deferred face.
+    export fn deferred_face_face(self: *DeferredFace) ?*Face {
+        assert(self.loaded());
+        return &self.face.?;
+    }
+};
 
 test "preloaded" {
     const testing = std.testing;

@@ -28,6 +28,20 @@ fetch(url.href).then(response =>
     face_free,
     face_render_glyph,
     face_debug_canvas,
+    deferred_face_new,
+    deferred_face_free,
+    deferred_face_load,
+    deferred_face_face,
+    group_new,
+    group_free,
+    group_add_face,
+    group_index_for_codepoint,
+    group_render_glyph,
+    group_cache_new,
+    group_cache_free,
+    group_cache_index_for_codepoint,
+    group_cache_render_glyph,
+    group_cache_atlas_greyscale,
     atlas_new,
     atlas_free,
     atlas_debug_canvas,
@@ -40,28 +54,43 @@ fetch(url.href).then(response =>
   zjs.memory = memory;
 
   // Create our atlas
-  const atlas = atlas_new(512, 0 /* greyscale */);
+  // const atlas = atlas_new(512, 0 /* greyscale */);
 
   // Create some memory for our string
   const font = new TextEncoder().encode("monospace");
   const font_ptr = malloc(font.byteLength);
     new Uint8Array(memory.buffer, font_ptr).set(font);
 
+  // Initialize our deferred face
+  const df = deferred_face_new(font_ptr, font.byteLength);
+  //deferred_face_load(df, 72 /* size */);
+  //const face = deferred_face_face(df);
+
   // Initialize our font face
-  const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
+  //const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
   free(font_ptr);
+
+  // Create our group
+  const group = group_new(72 /* size */);
+  group_add_face(group, 0, df);
+
+  // Create our group cache
+  const group_cache = group_cache_new(group);
 
   // Render a glyph
   for (let i = 33; i <= 126; i++) {
-    face_render_glyph(face, atlas, i);
+    const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
+    group_cache_render_glyph(group_cache, font_idx, i, 0);
+    //face_render_glyph(face, atlas, i);
   }
   //face_render_glyph(face, atlas, "橋".codePointAt(0));
   //face_render_glyph(face, atlas, "p".codePointAt(0));
 
   // Debug our canvas
-  face_debug_canvas(face);
+  //face_debug_canvas(face);
 
   // Debug our atlas canvas
+  const atlas = group_cache_atlas_greyscale(group_cache);
   const id = atlas_debug_canvas(atlas);
   document.getElementById("atlas-canvas").append(zjs.deleteValue(id));
 
