@@ -19,8 +19,7 @@ pub const Face = struct {
     /// The size we currently have set.
     size: font.face.DesiredSize,
 
-    /// The presentation for this font. This is a heuristic since fonts don't have
-    /// a way to declare this. We just assume a font with color is an emoji font.
+    /// The presentation for this font.
     presentation: font.Presentation,
 
     /// Metrics for this font face. These are useful for renderers.
@@ -34,10 +33,15 @@ pub const Face = struct {
     /// size is always added via the `size` parameter.
     ///
     /// The raw value is copied so the caller can free it after it is gone.
+    ///
+    /// The presentation is given here directly because the browser gives
+    /// us no easy way to determine the presentation we want for this font.
+    /// Callers should just tell us what to expect.
     pub fn initNamed(
         alloc: Allocator,
         raw: []const u8,
         size: font.face.DesiredSize,
+        presentation: font.Presentation,
     ) !Face {
         // Copy our font string because we're going to have to reuse it.
         const font_str = try alloc.dupe(u8, raw);
@@ -53,8 +57,7 @@ pub const Face = struct {
             .alloc = alloc,
             .font_str = font_str,
             .size = size,
-            // TODO: figure out how we're going to do emoji with web canvas
-            .presentation = .text,
+            .presentation = presentation,
 
             .canvas = canvas,
 
@@ -123,11 +126,17 @@ pub const Face = struct {
             break :width try metrics.get(f32, "width");
         })) + 1;
 
-        // Height is our ascender + descender for this char
+        const left = try metrics.get(f32, "actualBoundingBoxLeft");
         const asc = try metrics.get(f32, "actualBoundingBoxAscent");
         const desc = try metrics.get(f32, "actualBoundingBoxDescent");
-        const left = try metrics.get(f32, "actualBoundingBoxLeft");
-        const height = @floatToInt(u32, @ceil(asc + desc)) + 1;
+
+        // On Firefox on Linux, the bounding box is broken in some cases for
+        // ideographic glyphs (such as emoji). We detect this and behave
+        // differently.
+        const broken_bbox = asc + desc < 0.001;
+
+        // Height is our ascender + descender for this char
+        const height = if (!broken_bbox) @floatToInt(u32, @ceil(asc + desc)) + 1 else width;
 
         // Note: width and height both get "+ 1" added to them above. This
         // is important so that there is a 1px border around the glyph to avoid
@@ -153,6 +162,12 @@ pub const Face = struct {
         const ctx = try self.context();
         defer ctx.deinit();
 
+        // For the broken bounding box case we render ideographic baselines
+        // so that we just render the glyph fully in the box with no offsets.
+        if (broken_bbox) {
+            try ctx.set("textBaseline", js.string("ideographic"));
+        }
+
         // Draw background
         try ctx.set("fillStyle", js.string("transparent"));
         try ctx.call(void, "fillRect", .{
@@ -167,7 +182,7 @@ pub const Face = struct {
         try ctx.call(void, "fillText", .{
             glyph_str,
             left + 1,
-            asc + 1,
+            if (!broken_bbox) asc + 1 else @intToFloat(f32, height),
         });
 
         // Read the image data and get it into a []u8 on our side
@@ -209,18 +224,31 @@ pub const Face = struct {
         };
         defer alloc.free(bitmap);
 
-        // The bitmap is in RGBA format and we just want alpha8.
-        assert(@mod(bitmap.len, 4) == 0);
-        var bitmap_a8 = try alloc.alloc(u8, bitmap.len / 4);
-        defer alloc.free(bitmap_a8);
-        var i: usize = 0;
-        while (i < bitmap_a8.len) : (i += 1) {
-            bitmap_a8[i] = bitmap[(i * 4) + 3];
-        }
+        // Convert the format of the bitmap if necessary
+        const bitmap_formatted: []u8 = switch (atlas.format) {
+            // Bitmap is already in RGBA
+            .rgba => bitmap,
+
+            // Convert down to A8
+            .greyscale => a8: {
+                assert(@mod(bitmap.len, 4) == 0);
+                var bitmap_a8 = try alloc.alloc(u8, bitmap.len / 4);
+                errdefer alloc.free(bitmap_a8);
+                var i: usize = 0;
+                while (i < bitmap_a8.len) : (i += 1) {
+                    bitmap_a8[i] = bitmap[(i * 4) + 3];
+                }
+
+                break :a8 bitmap_a8;
+            },
+
+            else => return error.UnsupportedAtlasFormat,
+        };
+        defer if (bitmap_formatted.ptr != bitmap.ptr) alloc.free(bitmap_formatted);
 
         // Put it in our atlas
         const region = try atlas.reserve(alloc, width, height);
-        if (region.width > 0 and region.height > 0) atlas.set(region, bitmap_a8);
+        if (region.width > 0 and region.height > 0) atlas.set(region, bitmap_formatted);
 
         return font.Glyph{
             .width = width,
@@ -325,12 +353,17 @@ pub const Wasm = struct {
     const wasm = @import("../../os/wasm.zig");
     const alloc = wasm.alloc;
 
-    export fn face_new(ptr: [*]const u8, len: usize, pts: u16) ?*Face {
-        return face_new_(ptr, len, pts) catch null;
+    export fn face_new(ptr: [*]const u8, len: usize, pts: u16, p: u16) ?*Face {
+        return face_new_(ptr, len, pts, p) catch null;
     }
 
-    fn face_new_(ptr: [*]const u8, len: usize, pts: u16) !*Face {
-        var face = try Face.initNamed(alloc, ptr[0..len], .{ .points = pts });
+    fn face_new_(ptr: [*]const u8, len: usize, pts: u16, presentation: u16) !*Face {
+        var face = try Face.initNamed(
+            alloc,
+            ptr[0..len],
+            .{ .points = pts },
+            @intToEnum(font.Presentation, presentation),
+        );
         errdefer face.deinit();
 
         var result = try alloc.create(Face);
