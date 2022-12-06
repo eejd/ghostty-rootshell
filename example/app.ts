@@ -32,6 +32,11 @@ fetch(url.href).then(response =>
     deferred_face_free,
     deferred_face_load,
     deferred_face_face,
+    group_new,
+    group_free,
+    group_add_face,
+    group_index_for_codepoint,
+    group_render_glyph,
     atlas_new,
     atlas_free,
     atlas_debug_canvas,
@@ -53,22 +58,28 @@ fetch(url.href).then(response =>
 
   // Initialize our deferred face
   const df = deferred_face_new(font_ptr, font.byteLength);
-  deferred_face_load(df, 72 /* size */);
-  const face = deferred_face_face(df);
+  //deferred_face_load(df, 72 /* size */);
+  //const face = deferred_face_face(df);
 
   // Initialize our font face
   //const face = face_new(font_ptr, font.byteLength, 72 /* size in px */);
   free(font_ptr);
 
+  // Create our group
+  const group = group_new(72 /* size */);
+  group_add_face(group, 0, df);
+
   // Render a glyph
   for (let i = 33; i <= 126; i++) {
-    face_render_glyph(face, atlas, i);
+    const font_idx = group_index_for_codepoint(group, i, 0, -1);
+    group_render_glyph(group, atlas, font_idx, i, 0);
+    //face_render_glyph(face, atlas, i);
   }
   //face_render_glyph(face, atlas, "橋".codePointAt(0));
   //face_render_glyph(face, atlas, "p".codePointAt(0));
 
   // Debug our canvas
-  face_debug_canvas(face);
+  //face_debug_canvas(face);
 
   // Debug our atlas canvas
   const id = atlas_debug_canvas(atlas);

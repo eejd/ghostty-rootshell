@@ -119,7 +119,7 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
 }
 
 /// This represents a specific font in the group.
-pub const FontIndex = packed struct {
+pub const FontIndex = packed struct(u8) {
     /// The number of bits we use for the index.
     const idx_bits = 8 - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
     pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
@@ -272,13 +272,16 @@ pub fn renderGlyph(
     max_height: ?u16,
 ) !Glyph {
     // Special-case fonts are rendered directly.
-    if (index.special()) |sp| switch (sp) {
-        .sprite => return try self.sprite.?.renderGlyph(
-            alloc,
-            atlas,
-            glyph_index,
-        ),
-    };
+    // TODO: web_canvas
+    if (options.backend != .web_canvas) {
+        if (index.special()) |sp| switch (sp) {
+            .sprite => return try self.sprite.?.renderGlyph(
+                alloc,
+                atlas,
+                glyph_index,
+            ),
+        };
+    }
 
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try face.load(self.lib, self.size);
@@ -301,6 +304,68 @@ pub const Wasm = struct {
         var result = try alloc.create(Group);
         errdefer alloc.destroy(result);
         result.* = group;
+        return result;
+    }
+
+    export fn group_free(ptr: ?*Group) void {
+        if (ptr) |v| {
+            v.deinit();
+            alloc.destroy(v);
+        }
+    }
+
+    export fn group_add_face(self: *Group, style: u16, face: *font.DeferredFace) void {
+        return self.addFace(alloc, @intToEnum(Style, style), face.*) catch |err| {
+            log.warn("error adding face to group err={}", .{err});
+            return;
+        };
+    }
+
+    export fn group_set_size(self: *Group, size: u16) void {
+        return self.setSize(.{ .points = size }) catch |err| {
+            log.warn("error setting group size err={}", .{err});
+            return;
+        };
+    }
+
+    /// Presentation is negative for doesn't matter.
+    export fn group_index_for_codepoint(self: *Group, cp: u32, style: u16, p: i16) i16 {
+        const presentation = if (p < 0) null else @intToEnum(Presentation, p);
+        const idx = self.indexForCodepoint(
+            cp,
+            @intToEnum(Style, style),
+            presentation,
+        ) orelse return -1;
+        return @intCast(i16, @bitCast(u8, idx));
+    }
+
+    export fn group_render_glyph(
+        self: *Group,
+        atlas: *font.Atlas,
+        idx: i16,
+        cp: u32,
+        max_height: u16,
+    ) ?*Glyph {
+        return group_render_glyph_(self, atlas, idx, cp, max_height) catch |err| {
+            log.warn("error rendering group glyph err={}", .{err});
+            return null;
+        };
+    }
+
+    fn group_render_glyph_(
+        self: *Group,
+        atlas: *font.Atlas,
+        idx_: i16,
+        cp: u32,
+        max_height_: u16,
+    ) !*Glyph {
+        const idx = @bitCast(FontIndex, @intCast(u8, idx_));
+        const max_height = if (max_height_ <= 0) null else max_height_;
+        const glyph = try self.renderGlyph(alloc, atlas, idx, cp, max_height);
+
+        var result = try alloc.create(Glyph);
+        errdefer alloc.destroy(result);
+        result.* = glyph;
         return result;
     }
 };
