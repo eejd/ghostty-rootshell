@@ -28,6 +28,11 @@ pub const EraseLine = csi.EraseLine;
 pub const TabClear = csi.TabClear;
 pub const Attribute = sgr.Attribute;
 
+/// If we're targeting wasm then we export some wasm APIs.
+pub usingnamespace if (builtin.target.isWasm()) struct {
+    pub usingnamespace @import("wasm.zig");
+} else struct {};
+
 test {
     @import("std").testing.refAllDecls(@This());
 }

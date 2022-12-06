@@ -8,12 +8,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Terminal = @import("main.zig").Terminal;
-
-// The allocator that we want to use.
-const alloc = if (builtin.link_libc)
-    std.heap.c_allocator
-else
-    std.heap.page_allocator;
+const wasm = @import("../os/wasm.zig");
+const alloc = wasm.alloc;
 
 export fn terminal_new(cols: usize, rows: usize) ?*Terminal {
     const term = Terminal.init(alloc, cols, rows) catch return null;
@@ -31,6 +27,6 @@ export fn terminal_free(ptr: ?*Terminal) void {
 
 export fn terminal_print(ptr: ?*Terminal, char: u32) void {
     if (ptr) |t| {
-        t.print(@intCast(u21, char)) catch return null;
+        t.print(@intCast(u21, char)) catch return;
     }
 }
