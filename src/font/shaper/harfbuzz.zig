@@ -22,11 +22,11 @@ pub const Shaper = struct {
     hb_buf: harfbuzz.Buffer,
 
     /// The shared memory used for shaping results.
-    cell_buf: []Cell,
+    cell_buf: []font.shape.Cell,
 
     /// The cell_buf argument is the buffer to use for storing shaped results.
     /// This should be at least the number of columns in the terminal.
-    pub fn init(cell_buf: []Cell) !Shaper {
+    pub fn init(cell_buf: []font.shape.Cell) !Shaper {
         return Shaper{
             .hb_buf = try harfbuzz.Buffer.create(),
             .cell_buf = cell_buf,
@@ -40,8 +40,12 @@ pub const Shaper = struct {
     /// Returns an iterator that returns one text run at a time for the
     /// given terminal row. Note that text runs are are only valid one at a time
     /// for a Shaper struct since they share state.
-    pub fn runIterator(self: *Shaper, group: *GroupCache, row: terminal.Screen.Row) RunIterator {
-        return .{ .shaper = self, .group = group, .row = row };
+    pub fn runIterator(
+        self: *Shaper,
+        group: *GroupCache,
+        row: terminal.Screen.Row,
+    ) font.shape.RunIterator {
+        return .{ .hooks = .{ .shaper = self }, .group = group, .row = row };
     }
 
     /// Shape the given text run. The text run must be the immediately previous
@@ -51,7 +55,7 @@ pub const Shaper = struct {
     /// The return value is only valid until the next shape call is called.
     ///
     /// If there is not enough space in the cell buffer, an error is returned.
-    pub fn shape(self: *Shaper, run: TextRun) ![]Cell {
+    pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]font.shape.Cell {
         const tracy = trace(@src());
         defer tracy.end();
 
@@ -94,135 +98,22 @@ pub const Shaper = struct {
         return self.cell_buf[0..info.len];
     }
 
-    pub const Cell = struct {
-        /// The column that this cell occupies. Since a set of shaper cells is
-        /// always on the same line, only the X is stored. It is expected the
-        /// caller has access to the original screen cell.
-        x: u16,
-
-        /// The glyph index for this cell. The font index to use alongside
-        /// this cell is available in the text run.
-        glyph_index: u32,
-    };
-
-    /// A single text run. A text run is only valid for one Shaper and
-    /// until the next run is created.
-    pub const TextRun = struct {
-        /// The offset in the row where this run started
-        offset: u16,
-
-        /// The total number of cells produced by this run.
-        cells: u16,
-
-        /// The font group that built this run.
-        group: *GroupCache,
-
-        /// The font index to use for the glyphs of this run.
-        font_index: Group.FontIndex,
-    };
-
-    pub const RunIterator = struct {
+    /// The hooks for RunIterator.
+    pub const RunIteratorHook = struct {
         shaper: *Shaper,
-        group: *GroupCache,
-        row: terminal.Screen.Row,
-        i: usize = 0,
 
-        pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
-            const tracy = trace(@src());
-            defer tracy.end();
-
-            // Trim the right side of a row that might be empty
-            const max: usize = max: {
-                var j: usize = self.row.lenCells();
-                while (j > 0) : (j -= 1) if (!self.row.getCell(j - 1).empty()) break;
-                break :max j;
-            };
-
-            // We're over at the max
-            if (self.i >= max) return null;
-
-            // Track the font for our curent run
-            var current_font: Group.FontIndex = .{};
-
+        pub fn prepare(self: RunIteratorHook) !void {
             // Reset the buffer for our current run
             self.shaper.hb_buf.reset();
             self.shaper.hb_buf.setContentType(.unicode);
+        }
 
-            // Go through cell by cell and accumulate while we build our run.
-            var j: usize = self.i;
-            while (j < max) : (j += 1) {
-                const cluster = j;
-                const cell = self.row.getCell(j);
+        pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
+            self.shaper.hb_buf.add(cp, cluster);
+        }
 
-                // If we're a spacer, then we ignore it
-                if (cell.attrs.wide_spacer_tail) continue;
-
-                const style: Style = if (cell.attrs.bold)
-                    .bold
-                else
-                    .regular;
-
-                // Determine the presentation format for this glyph.
-                const presentation: ?Presentation = if (cell.attrs.grapheme) p: {
-                    // We only check the FIRST codepoint because I believe the
-                    // presentation format must be directly adjacent to the codepoint.
-                    var it = self.row.codepointIterator(j);
-                    if (it.next()) |cp| {
-                        if (cp == 0xFE0E) break :p Presentation.text;
-                        if (cp == 0xFE0F) break :p Presentation.emoji;
-                    }
-
-                    break :p null;
-                } else null;
-
-                // Determine the font for this cell. We'll use fallbacks
-                // manually here to try replacement chars and then a space
-                // for unknown glyphs.
-                const font_idx_opt = (try self.group.indexForCodepoint(
-                    alloc,
-                    if (cell.empty() or cell.char == 0) ' ' else cell.char,
-                    style,
-                    presentation,
-                )) orelse (try self.group.indexForCodepoint(
-                    alloc,
-                    0xFFFD,
-                    style,
-                    .text,
-                )) orelse
-                    try self.group.indexForCodepoint(alloc, ' ', style, .text);
-                const font_idx = font_idx_opt.?;
-                //log.warn("char={x} idx={}", .{ cell.char, font_idx });
-                if (j == self.i) current_font = font_idx;
-
-                // If our fonts are not equal, then we're done with our run.
-                if (font_idx.int() != current_font.int()) break;
-
-                // Continue with our run
-                self.shaper.hb_buf.add(cell.char, @intCast(u32, cluster));
-
-                // If this cell is part of a grapheme cluster, add all the grapheme
-                // data points.
-                if (cell.attrs.grapheme) {
-                    var it = self.row.codepointIterator(j);
-                    while (it.next()) |cp| {
-                        if (cp == 0xFE0E or cp == 0xFE0F) continue;
-                        self.shaper.hb_buf.add(cp, @intCast(u32, cluster));
-                    }
-                }
-            }
-
-            // Finalize our buffer
+        pub fn finalize(self: RunIteratorHook) !void {
             self.shaper.hb_buf.guessSegmentProperties();
-
-            // Move our cursor. Must defer since we use self.i below.
-            defer self.i = j;
-
-            return TextRun{
-                .offset = @intCast(u16, self.i),
-                .cells = @intCast(u16, j - self.i),
-                .group = self.group,
-                .font_index = current_font,
-            };
         }
     };
 };
@@ -619,7 +510,7 @@ const TestShaper = struct {
     shaper: Shaper,
     cache: *GroupCache,
     lib: Library,
-    cell_buf: []Shaper.Cell,
+    cell_buf: []font.shape.Cell,
 
     pub fn deinit(self: *TestShaper) void {
         self.shaper.deinit();
@@ -653,7 +544,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
     try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
     try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
-    var cell_buf = try alloc.alloc(Shaper.Cell, 80);
+    var cell_buf = try alloc.alloc(font.shape.Cell, 80);
     errdefer alloc.free(cell_buf);
 
     var shaper = try Shaper.init(cell_buf);
