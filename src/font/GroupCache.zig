@@ -311,6 +311,10 @@ pub const Wasm = struct {
     export fn group_cache_atlas_greyscale(self: *GroupCache) *font.Atlas {
         return &self.atlas_greyscale;
     }
+
+    export fn group_cache_atlas_color(self: *GroupCache) *font.Atlas {
+        return &self.atlas_color;
+    }
 };
 
 test "resize" {

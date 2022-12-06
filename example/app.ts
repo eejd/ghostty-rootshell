@@ -42,6 +42,7 @@ fetch(url.href).then(response =>
     group_cache_index_for_codepoint,
     group_cache_render_glyph,
     group_cache_atlas_greyscale,
+    group_cache_atlas_color,
     atlas_new,
     atlas_free,
     atlas_debug_canvas,
@@ -90,9 +91,17 @@ fetch(url.href).then(response =>
   //face_debug_canvas(face);
 
   // Debug our atlas canvas
-  const atlas = group_cache_atlas_greyscale(group_cache);
-  const id = atlas_debug_canvas(atlas);
-  document.getElementById("atlas-canvas").append(zjs.deleteValue(id));
+  {
+    const atlas = group_cache_atlas_greyscale(group_cache);
+    const id = atlas_debug_canvas(atlas);
+    document.getElementById("atlas-canvas").append(zjs.deleteValue(id));
+  }
+
+  {
+    const atlas = group_cache_atlas_color(group_cache);
+    const id = atlas_debug_canvas(atlas);
+    document.getElementById("atlas-color-canvas").append(zjs.deleteValue(id));
+  }
 
     //face_free(face);
 });
