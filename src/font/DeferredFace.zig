@@ -24,8 +24,8 @@ fc: if (options.backend == .fontconfig_freetype) ?Fontconfig else void =
     if (options.backend == .fontconfig_freetype) null else {},
 
 /// CoreText
-ct: if (options.backend == .coretext) ?CoreText else void =
-    if (options.backend == .coretext) null else {},
+ct: if (font.Discover == font.discovery.CoreText) ?CoreText else void =
+    if (font.Discover == font.discovery.CoreText) null else {},
 
 /// Fontconfig specific data. This is only present if building with fontconfig.
 pub const Fontconfig = struct {
@@ -66,7 +66,7 @@ pub fn deinit(self: *DeferredFace) void {
     if (self.face) |*face| face.deinit();
     switch (options.backend) {
         .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
-        .coretext => if (self.ct) |*ct| ct.deinit(),
+        .coretext, .coretext_freetype => if (self.ct) |*ct| ct.deinit(),
         .freetype => {},
         // TODO
         .web_canvas => unreachable,
@@ -86,7 +86,7 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
         .fontconfig_freetype => if (self.fc) |fc|
             return (try fc.pattern.get(.fullname, 0)).string,
 
-        .coretext => if (self.ct) |ct| {
+        .coretext, .coretext_freetype => if (self.ct) |ct| {
             const display_name = ct.font.copyDisplayName();
             return display_name.cstringPtr(.utf8) orelse "<unsupported internal encoding>";
         },
@@ -116,14 +116,12 @@ pub fn load(
         },
 
         .coretext => {
-            // It is possible to use CoreText with Freetype so we support
-            // both here.
-            switch (font.Face) {
-                @import("face/freetype.zig").Face => try self.loadCoreTextFreetype(lib, size),
-                @import("face/coretext.zig").Face => try self.loadCoreText(lib, size),
-                else => unreachable,
-            }
+            try self.loadCoreText(lib, size);
+            return;
+        },
 
+        .coretext_freetype => {
+            try self.loadCoreTextFreetype(lib, size);
             return;
         },
 
@@ -239,7 +237,7 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
             }
         },
 
-        .coretext => {
+        .coretext, .coretext_freetype => {
             // If we are using coretext, we check the loaded CT font.
             if (self.ct) |ct| {
                 // Turn UTF-32 into UTF-16 for CT API

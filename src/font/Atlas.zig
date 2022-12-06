@@ -21,6 +21,8 @@ const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const fastmem = @import("../fastmem.zig");
 
+const log = std.log.scoped(.atlas);
+
 /// Data is the raw texture data.
 data: []u8,
 
@@ -307,8 +309,9 @@ pub fn clear(self: *Atlas) void {
 pub const Wasm = struct {
     // If you're copying this file (Atlas.zig) out to a separate project,
     // just replace this with the allocator you want to use.
-    const wasm = @import("../wasm.zig");
+    const wasm = @import("../os/wasm.zig");
     const alloc = wasm.alloc;
+    const js = @import("zig-js");
 
     export fn atlas_new(size: u32, format: u8) ?*Atlas {
         const atlas = init(
@@ -319,6 +322,13 @@ pub const Wasm = struct {
         const result = alloc.create(Atlas) catch return null;
         result.* = atlas;
         return result;
+    }
+
+    export fn atlas_free(ptr: ?*Atlas) void {
+        if (ptr) |v| {
+            v.deinit(alloc);
+            alloc.destroy(v);
+        }
     }
 
     /// The return value for this should be freed by the caller with "free".
@@ -348,11 +358,91 @@ pub const Wasm = struct {
         self.clear();
     }
 
-    export fn atlas_free(ptr: ?*Atlas) void {
-        if (ptr) |v| {
-            v.deinit(alloc);
-            alloc.destroy(v);
+    /// This creates a Canvas element identified by the id returned that
+    /// the caller can draw into the DOM to visualize the atlas. The returned
+    /// ID must be freed from the JS runtime by calling "zigjs.deleteValue".
+    export fn atlas_debug_canvas(self: *Atlas) u32 {
+        return atlas_debug_canvas_(self) catch |err| {
+            log.warn("error dumping atlas canvas err={}", .{err});
+            return 0;
+        };
+    }
+
+    fn atlas_debug_canvas_(self: *Atlas) !u32 {
+        // Create our canvas
+        const doc = try js.global.get(js.Object, "document");
+        defer doc.deinit();
+        const canvas = try doc.call(js.Object, "createElement", .{js.string("canvas")});
+        errdefer canvas.deinit();
+
+        // Setup our canvas size
+        {
+            try canvas.set("width", self.size);
+            try canvas.set("height", self.size);
+
+            const width_str = try std.fmt.allocPrint(alloc, "{d}px", .{self.size});
+            defer alloc.free(width_str);
+
+            const style = try canvas.get(js.Object, "style");
+            defer style.deinit();
+            try style.set("width", js.string(width_str));
+            try style.set("height", js.string(width_str));
         }
+
+        // This will return the same context on subsequent calls so it
+        // is important to reset it.
+        const ctx = try canvas.call(js.Object, "getContext", .{js.string("2d")});
+        defer ctx.deinit();
+
+        // We need to draw pixels so this is format dependent.
+        var buf: []u8 = switch (self.format) {
+            // RGBA is the native ImageData format
+            .rgba => self.data,
+
+            .greyscale => buf: {
+                // Convert from A8 to RGBA so every 4th byte is set to a value.
+                var buf: []u8 = try alloc.alloc(u8, self.data.len * 4);
+                errdefer alloc.free(buf);
+                std.mem.set(u8, buf, 0);
+                for (self.data) |value, i| {
+                    buf[(i * 4) + 3] = value;
+                }
+                break :buf buf;
+            },
+
+            else => return error.UnsupportedAtlasFormat,
+        };
+        defer if (buf.ptr != self.data.ptr) alloc.free(buf);
+
+        // Create an ImageData from our buffer and then write it to the canvas
+        const image_data: js.Object = data: {
+            // Get our runtime memory
+            const mem = try js.runtime.get(js.Object, "memory");
+            defer mem.deinit();
+            const mem_buf = try mem.get(js.Object, "buffer");
+            defer mem_buf.deinit();
+
+            // Create an array that points to our buffer
+            const Uint8ClampedArray = try js.global.get(js.Object, "Uint8ClampedArray");
+            defer Uint8ClampedArray.deinit();
+            const arr = try Uint8ClampedArray.new(.{ mem_buf, buf.ptr, buf.len });
+            defer arr.deinit();
+
+            // Create the image data from our array
+            const ImageData = try js.global.get(js.Object, "ImageData");
+            defer ImageData.deinit();
+            const data = try ImageData.new(.{ arr, self.size, self.size });
+            errdefer data.deinit();
+
+            break :data data;
+        };
+        defer image_data.deinit();
+
+        // Draw it
+        try ctx.call(void, "putImageData", .{ image_data, 0, 0 });
+
+        const id = @bitCast(js.Ref, @enumToInt(canvas.value)).id;
+        return id;
     }
 
     test "happy path" {

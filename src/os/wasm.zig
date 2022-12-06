@@ -37,6 +37,18 @@ pub export fn malloc(len: usize) ?[*]u8 {
     return alloc_(len) catch return null;
 }
 
+fn alloc_(len: usize) ![*]u8 {
+    // Create the allocation
+    const slice = try alloc.alloc(u8, len);
+    errdefer alloc.free(slice);
+
+    // Store the size so we can deallocate later
+    try allocs.putNoClobber(alloc, slice.ptr, slice.len);
+    errdefer _ = allocs.remove(slice.ptr);
+
+    return slice.ptr;
+}
+
 /// Free an allocation from malloc.
 pub export fn free(ptr: ?[*]u8) void {
     if (ptr) |v| {
@@ -77,18 +89,6 @@ pub fn isHostOwned(ptr: anytype) bool {
 pub fn toModuleOwned(ptr: anytype) void {
     const casted = @intToPtr([*]u8, @ptrToInt(ptr));
     _ = allocs.remove(casted);
-}
-
-fn alloc_(len: usize) ![*]u8 {
-    // Create the allocation
-    const slice = try alloc.alloc(u8, len);
-    errdefer alloc.free(slice);
-
-    // Store the size so we can deallocate later
-    try allocs.putNoClobber(alloc, slice.ptr, slice.len);
-    errdefer _ = allocs.remove(slice.ptr);
-
-    return slice.ptr;
 }
 
 test "basics" {

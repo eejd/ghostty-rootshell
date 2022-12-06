@@ -7,6 +7,7 @@ const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.zig");
 const imgui = @import("pkg/imgui/build.zig");
+const js = @import("vendor/zig-js/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
@@ -120,7 +121,10 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
 
+        wasm.addOptions("build_options", exe_options);
+
         // Wasm-specific deps
+        wasm.addPackage(js.pkg);
         wasm.addPackage(tracylib.pkg);
         wasm.addPackage(utf8proc.pkg);
         _ = try utf8proc.link(b, wasm);
@@ -135,6 +139,7 @@ pub fn build(b: *std.build.Builder) !void {
         const main_test = b.addTest("src/main_wasm.zig");
         main_test.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
         main_test.addOptions("build_options", exe_options);
+        main_test.addPackage(js.pkg);
         test_step.dependOn(&main_test.step);
     }
 
@@ -233,6 +238,11 @@ fn addDeps(
         step.addPackage(objc.pkg);
         step.addPackage(macos.pkg);
         _ = try macos.link(b, step, .{});
+    }
+
+    // Wasm
+    if (step.target.getCpuArch() == .wasm32) {
+        step.addPackage(js.pkg);
     }
 
     // We always statically compile glad
