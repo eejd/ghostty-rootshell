@@ -10,9 +10,10 @@ const log = std.log.scoped(.discovery);
 
 /// Discover implementation for the compile options.
 pub const Discover = switch (options.backend) {
+    .freetype => void, // no discovery
     .fontconfig_freetype => Fontconfig,
-    .coretext => CoreText,
-    else => void,
+    .coretext, .coretext_freetype => CoreText,
+    .web_canvas => void, // no discovery
 };
 
 /// Descriptor is used to search for fonts. The only required field
