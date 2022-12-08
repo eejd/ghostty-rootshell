@@ -286,12 +286,29 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
 
         // Canvas always has the codepoint because we have no way of
         // really checking and we let the browser handle it.
-        .web_canvas => {
-            if (self.wc) |wc| {
-                if (p) |desired| if (wc.presentation != desired) return false;
-            }
+        .web_canvas => if (self.wc) |wc| {
+            // Fast-path if we have a specific presentation and we
+            // don't match, then it is definitely not this face.
+            if (p) |desired| if (wc.presentation != desired) return false;
 
-            return true;
+            // Slow-path: we initialize the font, render it, and check
+            // if it works and the presentation matches.
+            var face = Face.initNamed(
+                wc.alloc,
+                wc.font_str,
+                .{ .points = 12 },
+                wc.presentation,
+            ) catch |err| {
+                log.warn("failed to init face for codepoint check " ++
+                    "face={s} err={}", .{
+                    wc.font_str,
+                    err,
+                });
+
+                return false;
+            };
+            defer face.deinit();
+            return face.glyphIndex(cp) != null;
         },
 
         .freetype => {},

@@ -129,7 +129,7 @@ pub const Wasm = struct {
 
             var iter = self.runIterator(group, row);
             while (try iter.next(alloc)) |run| {
-                log.info("y={} run={}", .{ y, run });
+                log.info("y={} run={d} idx={}", .{ y, run.cells, run.font_index });
             }
         }
     }
