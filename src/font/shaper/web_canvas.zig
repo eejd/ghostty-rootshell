@@ -119,7 +119,15 @@ pub const Wasm = struct {
         // Create a terminal and print all our characters into it.
         var term = try terminal.Terminal.init(alloc, self.cell_buf.len, 80);
         defer term.deinit(alloc);
-        for (str) |c| try term.print(c);
+
+        // Iterate over unicode codepoints and add to terminal
+        {
+            const view = try std.unicode.Utf8View.init(str);
+            var iter = view.iterator();
+            while (iter.nextCodepoint()) |c| {
+                try term.print(c);
+            }
+        }
 
         // Iterate over the rows and print out all the runs we get.
         var rowIter = term.screen.rowIterator(.viewport);
