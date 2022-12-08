@@ -46,6 +46,9 @@ fetch(url.href).then(response =>
     atlas_new,
     atlas_free,
     atlas_debug_canvas,
+    shaper_new,
+    shaper_free,
+    shaper_test,
   } = results.instance.exports;
   // Give us access to the zjs value for debugging.
   globalThis.zjs = zjs;
@@ -54,13 +57,19 @@ fetch(url.href).then(response =>
   // Initialize our zig-js memory
   zjs.memory = memory;
 
+  // Helpers
+  const makeStr = (str) => {
+    const utf8 = new TextEncoder().encode(str);
+    const ptr = malloc(utf8.byteLength);
+    new Uint8Array(memory.buffer, ptr).set(utf8);
+    return { ptr: ptr, len: utf8.byteLength };
+  };
+
   // Create our atlas
   // const atlas = atlas_new(512, 0 /* greyscale */);
 
   // Create some memory for our string
-  const font = new TextEncoder().encode("monospace");
-  const font_ptr = malloc(font.byteLength);
-    new Uint8Array(memory.buffer, font_ptr).set(font);
+  const font_name = makeStr("monospace");
 
   // Initialize our deferred face
   // const df = deferred_face_new(font_ptr, font.byteLength, 0 /* text */);
@@ -73,8 +82,8 @@ fetch(url.href).then(response =>
 
   // Create our group
   const group = group_new(72 /* size */);
-  group_add_face(group, 0 /* regular */, deferred_face_new(font_ptr, font.byteLength, 0 /* text */));
-  group_add_face(group, 0 /* regular */, deferred_face_new(font_ptr, font.byteLength, 1 /* emoji */));
+  group_add_face(group, 0 /* regular */, deferred_face_new(font_name.ptr, font_name.len, 0 /* text */));
+  group_add_face(group, 0 /* regular */, deferred_face_new(font_name.ptr, font_name.len, 1 /* emoji */));
 
   // Create our group cache
   const group_cache = group_cache_new(group);
@@ -111,6 +120,11 @@ fetch(url.href).then(response =>
     const id = atlas_debug_canvas(atlas);
     document.getElementById("atlas-color-canvas").append(zjs.deleteValue(id));
   }
+
+  // Let's try shaping
+  const shaper = shaper_new(120);
+  const input = makeStr("hello");
+  shaper_test(shaper, group_cache, input.ptr, input.len);
 
     //face_free(face);
 });
