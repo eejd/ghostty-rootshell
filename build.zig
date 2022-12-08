@@ -124,10 +124,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.addOptions("build_options", exe_options);
 
         // Wasm-specific deps
-        wasm.addPackage(js.pkg);
-        wasm.addPackage(tracylib.pkg);
-        wasm.addPackage(utf8proc.pkg);
-        _ = try utf8proc.link(b, wasm);
+        try addDeps(b, wasm, true);
 
         const step = b.step("wasm", "Build the wasm library");
         step.dependOn(&wasm.step);
@@ -139,7 +136,7 @@ pub fn build(b: *std.build.Builder) !void {
         const main_test = b.addTest("src/main_wasm.zig");
         main_test.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
         main_test.addOptions("build_options", exe_options);
-        main_test.addPackage(js.pkg);
+        try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
     }
 
@@ -222,6 +219,20 @@ fn addDeps(
     step: *std.build.LibExeObjStep,
     static: bool,
 ) !void {
+    // Wasm we do manually since it is such a different build.
+    if (step.target.getCpuArch() == .wasm32) {
+        // We link this package but its a no-op since Tracy
+        // never actualy WORKS with wasm.
+        step.addPackage(tracylib.pkg);
+        step.addPackage(utf8proc.pkg);
+        step.addPackage(js.pkg);
+
+        // utf8proc
+        _ = try utf8proc.link(b, step);
+
+        return;
+    }
+
     // We always need the Zig packages
     if (enable_fontconfig) step.addPackage(fontconfig.pkg);
     step.addPackage(freetype.pkg);
@@ -238,11 +249,6 @@ fn addDeps(
         step.addPackage(objc.pkg);
         step.addPackage(macos.pkg);
         _ = try macos.link(b, step, .{});
-    }
-
-    // Wasm
-    if (step.target.getCpuArch() == .wasm32) {
-        step.addPackage(js.pkg);
     }
 
     // We always statically compile glad
