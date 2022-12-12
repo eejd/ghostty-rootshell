@@ -71,7 +71,6 @@ pub const Shaper = struct {
     /// returned.
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]font.shape.Cell {
         // TODO: memory check that cell_buf can fit results
-        _ = run;
 
         const codepoints = self.run_buf.items(.codepoint);
         const clusters = self.run_buf.items(.cluster);
@@ -143,9 +142,47 @@ pub const Shaper = struct {
                     .glyph_index = codepoints[start],
                 },
 
+                // We must have multiple codepoints (see assert above). In
+                // this case we UTF-8 encode the codepoints and send them
+                // to the face to reserve a private glyph index.
                 else => {
-                    unreachable;
-                    // TODO;
+                    // UTF-8 encode the codepoints in this cluster.
+                    const cluster = cluster: {
+                        const cluster_points = codepoints[start..i];
+                        assert(cluster_points.len == len);
+
+                        const buf_len = buf_len: {
+                            var acc: usize = 0;
+                            for (cluster_points) |cp| {
+                                acc += try std.unicode.utf8CodepointSequenceLength(
+                                    @intCast(u21, cp),
+                                );
+                            }
+
+                            break :buf_len acc;
+                        };
+
+                        var buf = try self.alloc.alloc(u8, buf_len);
+                        errdefer self.alloc.free(buf);
+                        var buf_i: usize = 0;
+                        for (cluster_points) |cp| {
+                            buf_i += try std.unicode.utf8Encode(
+                                @intCast(u21, cp),
+                                buf[buf_i..],
+                            );
+                        }
+
+                        break :cluster buf;
+                    };
+                    defer self.alloc.free(cluster);
+
+                    var face = try run.group.group.faceFromIndex(run.font_index);
+                    const index = try face.graphemeGlyphIndex(cluster);
+
+                    self.cell_buf[cur] = .{
+                        .x = @intCast(u16, clusters[start]),
+                        .glyph_index = index,
+                    };
                 },
             }
 

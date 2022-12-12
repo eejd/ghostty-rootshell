@@ -9,6 +9,10 @@ const font = @import("../main.zig");
 const log = std.log.scoped(.font_face);
 
 pub const Face = struct {
+    /// See graphemes field for more details.
+    const grapheme_start: u32 = 0x10FFFF + 1;
+    const grapheme_end: u32 = std.math.maxInt(u32);
+
     /// The web canvas face makes use of an allocator when interacting
     /// with the JS environment.
     alloc: Allocator,
@@ -27,6 +31,13 @@ pub const Face = struct {
 
     /// The canvas element that we will reuse to render glyphs
     canvas: js.Object,
+
+    /// The map to store multi-codepoint grapheme clusters that are rendered.
+    /// We use 1 above the maximum unicode codepoint up to the max 32-bit
+    /// unsigned integer to store the "glyph index" for graphemes.
+    grapheme_to_glyph: std.StringHashMapUnmanaged(u32) = .{},
+    glyph_to_grapheme: std.AutoHashMapUnmanaged(u32, []u8) = .{},
+    grapheme_next: u32 = grapheme_start,
 
     /// Initialize a web canvas font with a "raw" value. The "raw" value can
     /// be any valid value for a CSS "font" property EXCLUDING the size. The
@@ -72,6 +83,12 @@ pub const Face = struct {
 
     pub fn deinit(self: *Face) void {
         self.alloc.free(self.font_str);
+        self.grapheme_to_glyph.deinit(self.alloc);
+        {
+            var it = self.glyph_to_grapheme.valueIterator();
+            while (it.next()) |value| self.alloc.free(value.*);
+            self.glyph_to_grapheme.deinit(self.alloc);
+        }
         self.canvas.deinit();
         self.* = undefined;
     }
@@ -130,6 +147,34 @@ pub const Face = struct {
         }
 
         return .text;
+    }
+
+    /// Returns the glyph index for the given grapheme cluster. The same
+    /// cluster will always map to the same glyph index. This does not render
+    /// the grapheme at this time, only reserves the index.
+    pub fn graphemeGlyphIndex(self: *Face, cluster: []const u8) error{OutOfMemory}!u32 {
+        // If we already have this stored then return it
+        const gop = try self.grapheme_to_glyph.getOrPut(self.alloc, cluster);
+        if (gop.found_existing) return gop.value_ptr.*;
+        errdefer _ = self.grapheme_to_glyph.remove(cluster);
+
+        // We don't have it stored. Ensure we have space to store. The
+        // next will be "0" if we're out of space due to unsigned int wrapping.
+        if (self.grapheme_next == 0) return error.OutOfMemory;
+
+        // Copy the cluster for our reverse mapping
+        const copy = try self.alloc.dupe(u8, cluster);
+        errdefer self.alloc.free(copy);
+
+        // Grow space for the reverse mapping
+        try self.glyph_to_grapheme.ensureUnusedCapacity(self.alloc, 1);
+
+        // Store it
+        gop.value_ptr.* = self.grapheme_next;
+        self.glyph_to_grapheme.putAssumeCapacity(self.grapheme_next, copy);
+
+        self.grapheme_next +%= 1;
+        return gop.value_ptr.*;
     }
 
     /// Render a glyph using the glyph index. The rendered glyph is stored
