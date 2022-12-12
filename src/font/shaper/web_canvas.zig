@@ -1,13 +1,33 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const utf8proc = @import("utf8proc");
 const font = @import("../main.zig");
 const terminal = @import("../../terminal/main.zig");
 
 const log = std.log.scoped(.font_shaper);
 
 pub const Shaper = struct {
-    const RunBuf = std.ArrayList(u32);
+    const RunBuf = std.MultiArrayList(struct {
+        /// The codepoint for this cell. This must be used in conjunction
+        /// with cluster to find the total set of codepoints for a given
+        /// cell. See cluster for more information.
+        codepoint: u32,
+
+        /// Cluster is set to the X value of the cell that this codepoint
+        /// is part of. Note that a cell can have multiple codepoints
+        /// with zero-width joiners (ZWJ) and such. Note that terminals
+        /// do NOT handle full extended grapheme clustering well so it
+        /// is possible a single grapheme extends multiple clusters.
+        /// For example, skin tone emoji thumbs up may show up as two
+        /// clusters: one with thumbs up and the ZWJ, and a second
+        /// cluster with the tone block. It is up to the shaper to handle
+        /// shaping these together into a single glyph, if it wishes.
+        cluster: u32,
+    });
+
+    /// The allocator used for run_buf.
+    alloc: Allocator,
 
     /// The shared memory used for shaping results.
     cell_buf: []font.shape.Cell,
@@ -19,13 +39,14 @@ pub const Shaper = struct {
     /// This should be at least the number of columns in the terminal.
     pub fn init(alloc: Allocator, cell_buf: []font.shape.Cell) !Shaper {
         return Shaper{
+            .alloc = alloc,
             .cell_buf = cell_buf,
-            .run_buf = try RunBuf.initCapacity(alloc, cell_buf.len),
+            .run_buf = .{},
         };
     }
 
     pub fn deinit(self: *Shaper) void {
-        self.run_buf.deinit();
+        self.run_buf.deinit(self.alloc);
         self.* = undefined;
     }
 
@@ -40,17 +61,99 @@ pub const Shaper = struct {
         return .{ .hooks = .{ .shaper = self }, .group = group, .row = row };
     }
 
-    /// Shape the given text run. The text run must be the immediately previous
-    /// text run that was iterated since the text run does share state with the
-    /// Shaper struct.
+    /// Shape the given text run. The text run must be the immediately
+    /// previous text run that was iterated since the text run does share
+    /// state with the Shaper struct.
     ///
     /// The return value is only valid until the next shape call is called.
     ///
-    /// If there is not enough space in the cell buffer, an error is returned.
+    /// If there is not enough space in the cell buffer, an error is
+    /// returned.
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]font.shape.Cell {
-        _ = self;
+        // TODO: memory check that cell_buf can fit results
         _ = run;
-        return error.Unimplemented;
+
+        const codepoints = self.run_buf.items(.codepoint);
+        const clusters = self.run_buf.items(.cluster);
+        assert(codepoints.len == clusters.len);
+
+        switch (codepoints.len) {
+            // Special cases: if we have no codepoints (is this possible?)
+            // then our result is also an empty cell run.
+            0 => return self.cell_buf[0..0],
+
+            // If we have only 1 codepoint, then we assume that it is
+            // a single grapheme and just let it through. At this point,
+            // we can't have any more information to do anything else.
+            1 => {
+                self.cell_buf[0] = .{
+                    .x = @intCast(u16, clusters[0]),
+                    .glyph_index = codepoints[0],
+                };
+
+                return self.cell_buf[0..1];
+            },
+
+            else => {},
+        }
+
+        // We know we have at least two codepoints, so we now go through
+        // each and perform grapheme clustering.
+        //
+        // Note that due to limitations of canvas, we can NOT support
+        // font ligatures. However, we do support grapheme clustering.
+        // This means we can render things like skin tone emoji but
+        // we can't render things like single glyph "=>".
+        var break_state: i32 = 0;
+        var cp1 = @intCast(u21, codepoints[0]);
+
+        var start: usize = 0;
+        var i: usize = 1;
+        var cur: usize = 0;
+        while (i <= codepoints.len) : (i += 1) {
+            // We loop to codepoints.len so that we can handle the end
+            // case. In the end case, we always assume it is a grapheme
+            // break. This isn't strictly true but its how terminals
+            // work today.
+            const grapheme_break = i == codepoints.len or blk: {
+                const cp2 = @intCast(u21, codepoints[i]);
+                defer cp1 = cp2;
+
+                break :blk utf8proc.graphemeBreakStateful(
+                    cp1,
+                    cp2,
+                    &break_state,
+                );
+            };
+
+            // If this is NOT a grapheme break, cp2 is part of a single
+            // grapheme cluster and we expect there could be more. We
+            // move on to the next codepoint to try again.
+            if (!grapheme_break) continue;
+
+            // This IS a grapheme break, meaning that cp2 is NOT part
+            // of cp1. So we need to render the prior grapheme.
+            const len = i - start;
+            assert(len > 0);
+            switch (len) {
+                // If we have only a single codepoint then just render it
+                // as-is.
+                1 => self.cell_buf[cur] = .{
+                    .x = @intCast(u16, clusters[start]),
+                    .glyph_index = codepoints[start],
+                },
+
+                else => {
+                    unreachable;
+                    // TODO;
+                },
+            }
+
+            start = i;
+            cur += 1;
+        }
+
+        return self.cell_buf[0..cur];
     }
 
     /// The hooks for RunIterator.
@@ -59,12 +162,18 @@ pub const Shaper = struct {
 
         pub fn prepare(self: RunIteratorHook) !void {
             // Reset the buffer for our current run
-            self.shaper.run_buf.clearRetainingCapacity();
+            self.shaper.run_buf.shrinkRetainingCapacity(0);
         }
 
-        pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
-            _ = cluster;
-            try self.shaper.run_buf.append(cp);
+        pub fn addCodepoint(
+            self: RunIteratorHook,
+            cp: u32,
+            cluster: u32,
+        ) !void {
+            try self.shaper.run_buf.append(self.shaper.alloc, .{
+                .codepoint = cp,
+                .cluster = cluster,
+            });
         }
 
         pub fn finalize(self: RunIteratorHook) !void {
@@ -137,7 +246,13 @@ pub const Wasm = struct {
 
             var iter = self.runIterator(group, row);
             while (try iter.next(alloc)) |run| {
-                log.info("y={} run={d} idx={}", .{ y, run.cells, run.font_index });
+                const cells = try self.shape(run);
+                log.info("y={} run={d} shape={any} idx={}", .{
+                    y,
+                    run.cells,
+                    cells,
+                    run.font_index,
+                });
             }
         }
     }
