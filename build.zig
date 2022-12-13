@@ -120,8 +120,10 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
-
         wasm.addOptions("build_options", exe_options);
+
+        // Stack protector adds extern requirements that we don't satisfy.
+        wasm.stack_protector = false;
 
         // Wasm-specific deps
         try addDeps(b, wasm, true);
