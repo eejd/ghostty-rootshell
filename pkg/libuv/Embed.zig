@@ -23,7 +23,7 @@ mutex: Mutex,
 cond: Cond,
 ready: bool = false,
 terminate: BoolAtomic,
-callback: std.meta.FnPtr(fn () void),
+callback: *const fn () void,
 thread: ?Thread,
 
 /// Initialize a new embedder. The callback is called when libuv should
@@ -31,7 +31,7 @@ thread: ?Thread,
 pub fn init(
     alloc: Allocator,
     loop: Loop,
-    callback: std.meta.FnPtr(fn () void),
+    callback: *const fn () void,
 ) !Embed {
     return Embed{
         .loop = loop,

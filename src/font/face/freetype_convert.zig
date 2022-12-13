@@ -17,7 +17,7 @@ pub const Map = [freetype.c.FT_PIXEL_MODE_MAX]AtlasArray;
 /// to be exactly `width * rows * depth` long for freeing it. The caller must
 /// free the bitmap buffer. The depth is the depth of the atlas format in the
 /// map.
-pub const Func = std.meta.FnPtr(fn (Allocator, Bitmap) Allocator.Error!Bitmap);
+pub const Func = *const fn (Allocator, Bitmap) Allocator.Error!Bitmap;
 
 /// Alias for the freetype FT_Bitmap type to make it easier to type.
 pub const Bitmap = freetype.c.struct_FT_Bitmap_;
