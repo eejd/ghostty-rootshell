@@ -98,7 +98,7 @@ fetch(url.href).then(response =>
   const emoji = ["🐏","🌞","🌚","🍱","💿","🐈","📃","📀","🕡","🙃"];
   for (let i = 0; i < emoji.length; i++) {
     const cp = emoji[i].codePointAt(0);
-    const font_idx = group_cache_index_for_codepoint(group_cache, cp, 0, 1 /* emoji */);
+    const font_idx = group_cache_index_for_codepoint(group_cache, cp, 0, -1 /* best choice */);
     group_cache_render_glyph(group_cache, font_idx, cp, 0);
   }
 
@@ -107,6 +107,16 @@ fetch(url.href).then(response =>
 
   // Debug our canvas
   //face_debug_canvas(face);
+
+  // Let's try shaping
+  const shaper = shaper_new(120);
+  //const input = makeStr("hello🐏");
+  const input = makeStr("hello🐏👍🏽");
+  shaper_test(shaper, group_cache, input.ptr, input.len);
+
+  const cp = 1114112;
+  const font_idx = group_cache_index_for_codepoint(group_cache, cp, 0, -1 /* best choice */);
+  group_cache_render_glyph(group_cache, font_idx, cp, -1);
 
   // Debug our atlas canvas
   {
@@ -120,11 +130,6 @@ fetch(url.href).then(response =>
     const id = atlas_debug_canvas(atlas);
     document.getElementById("atlas-color-canvas").append(zjs.deleteValue(id));
   }
-
-  // Let's try shaping
-  const shaper = shaper_new(120);
-  const input = makeStr("hello");
-  shaper_test(shaper, group_cache, input.ptr, input.len);
 
     //face_free(face);
 });
