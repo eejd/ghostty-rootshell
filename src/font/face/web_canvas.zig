@@ -107,6 +107,12 @@ pub const Face = struct {
     /// have access to the underlying tables anyways. We let the browser deal
     /// with bad codepoints.
     pub fn glyphIndex(self: Face, cp: u32) ?u32 {
+        // If this is a multi-codepoint grapheme then we only check if
+        // we actually know about it.
+        if (cp >= grapheme_start) {
+            if (!self.glyph_to_grapheme.contains(cp)) return null;
+        }
+
         // Render the glyph to determine if it is colored or not. We
         // have to do this because the browser will always try to render
         // whatever we give it and we have no API to determine color.
@@ -342,8 +348,20 @@ pub const Face = struct {
     ) !RenderedGlyph {
         // Encode our glyph to UTF-8 so we can build a JS string out of it.
         var utf8: [4]u8 = undefined;
-        const utf8_len = try std.unicode.utf8Encode(@intCast(u21, glyph_index), &utf8);
-        const glyph_str = js.string(utf8[0..utf8_len]);
+        const glyph_str = glyph_str: {
+            // If we are a normal glyph then we are a single codepoint and
+            // we just UTF8 encode it as-is.
+            if (glyph_index < grapheme_start) {
+                const utf8_len = try std.unicode.utf8Encode(@intCast(u21, glyph_index), &utf8);
+                break :glyph_str js.string(utf8[0..utf8_len]);
+            }
+
+            // We are a multi-codepoint glyph so we have to read the glyph
+            // from the map and it is already utf8 encoded.
+            const slice = self.glyph_to_grapheme.get(glyph_index) orelse
+                return error.UnknownGraphemeCluster;
+            break :glyph_str js.string(slice);
+        };
 
         // Get our drawing context
         const measure_ctx = try self.context();
