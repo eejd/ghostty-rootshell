@@ -60,7 +60,7 @@ pub const Backend = enum {
         if (builtin.target.isWasm()) return .web_canvas;
 
         return if (build_options.coretext)
-            .coretext
+            .coretext_freetype
         else if (build_options.fontconfig)
             .fontconfig_freetype
         else
