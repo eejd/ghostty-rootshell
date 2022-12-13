@@ -245,11 +245,11 @@ pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
 
 /// Return the Face represented by a given FontIndex. Note that special
 /// fonts (i.e. box glyphs) do not have a face.
-pub fn faceFromIndex(self: Group, index: FontIndex) !Face {
+pub fn faceFromIndex(self: Group, index: FontIndex) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
     const deferred = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try deferred.load(self.lib, self.size);
-    return deferred.face.?;
+    return &deferred.face.?;
 }
 
 /// Render a glyph by glyph index into the given font atlas and return
@@ -554,5 +554,29 @@ test "discover monospace with fontconfig and freetype" {
             glyph_index,
             null,
         );
+    }
+}
+
+test "faceFromIndex returns pointer" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
+    defer group.deinit();
+
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+
+    {
+        const idx = group.indexForCodepoint('A', .regular, null).?;
+        const face1 = try group.faceFromIndex(idx);
+        const face2 = try group.faceFromIndex(idx);
+        try testing.expectEqual(@ptrToInt(face1), @ptrToInt(face2));
     }
 }

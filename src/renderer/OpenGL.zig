@@ -160,9 +160,9 @@ const GPUCellMode = enum(u8) {
 
 pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     // Create the initial font shaper
-    var shape_buf = try alloc.alloc(font.Shaper.Cell, 1);
+    var shape_buf = try alloc.alloc(font.shape.Cell, 1);
     errdefer alloc.free(shape_buf);
-    var shaper = try font.Shaper.init(shape_buf);
+    var shaper = try font.Shaper.init(alloc, shape_buf);
     errdefer shaper.deinit();
 
     // Create our shader
@@ -863,8 +863,8 @@ pub fn updateCell(
     selection: ?terminal.Selection,
     screen: *terminal.Screen,
     cell: terminal.Screen.Cell,
-    shaper_cell: font.Shaper.Cell,
-    shaper_run: font.Shaper.TextRun,
+    shaper_cell: font.shape.Cell,
+    shaper_run: font.shape.TextRun,
     x: usize,
     y: usize,
 ) !bool {
@@ -1101,7 +1101,7 @@ pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     }
 
     // Update our shaper
-    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, grid_size.columns * 2);
+    var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
     errdefer self.alloc.free(shape_buf);
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;

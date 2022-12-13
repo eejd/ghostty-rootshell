@@ -178,9 +178,9 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // Create the font shaper. We initially create a shaper that can support
     // a width of 160 which is a common width for modern screens to help
     // avoid allocations later.
-    var shape_buf = try alloc.alloc(font.Shaper.Cell, 160);
+    var shape_buf = try alloc.alloc(font.shape.Cell, 160);
     errdefer alloc.free(shape_buf);
-    var font_shaper = try font.Shaper.init(shape_buf);
+    var font_shaper = try font.Shaper.init(alloc, shape_buf);
     errdefer font_shaper.deinit();
 
     // Initialize our Metal buffers
@@ -691,7 +691,7 @@ pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
 
     // Update our shaper
     // TODO: don't reallocate if it is close enough (but bigger)
-    var shape_buf = try self.alloc.alloc(font.Shaper.Cell, grid_size.columns * 2);
+    var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
     errdefer self.alloc.free(shape_buf);
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
@@ -817,8 +817,8 @@ pub fn updateCell(
     selection: ?terminal.Selection,
     screen: *terminal.Screen,
     cell: terminal.Screen.Cell,
-    shaper_cell: font.Shaper.Cell,
-    shaper_run: font.Shaper.TextRun,
+    shaper_cell: font.shape.Cell,
+    shaper_run: font.shape.TextRun,
     x: usize,
     y: usize,
 ) !bool {

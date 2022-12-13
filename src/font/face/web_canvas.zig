@@ -9,6 +9,10 @@ const font = @import("../main.zig");
 const log = std.log.scoped(.font_face);
 
 pub const Face = struct {
+    /// See graphemes field for more details.
+    const grapheme_start: u32 = 0x10FFFF + 1;
+    const grapheme_end: u32 = std.math.maxInt(u32);
+
     /// The web canvas face makes use of an allocator when interacting
     /// with the JS environment.
     alloc: Allocator,
@@ -27,6 +31,13 @@ pub const Face = struct {
 
     /// The canvas element that we will reuse to render glyphs
     canvas: js.Object,
+
+    /// The map to store multi-codepoint grapheme clusters that are rendered.
+    /// We use 1 above the maximum unicode codepoint up to the max 32-bit
+    /// unsigned integer to store the "glyph index" for graphemes.
+    grapheme_to_glyph: std.StringHashMapUnmanaged(u32) = .{},
+    glyph_to_grapheme: std.AutoHashMapUnmanaged(u32, []u8) = .{},
+    grapheme_next: u32 = grapheme_start,
 
     /// Initialize a web canvas font with a "raw" value. The "raw" value can
     /// be any valid value for a CSS "font" property EXCLUDING the size. The
@@ -72,6 +83,12 @@ pub const Face = struct {
 
     pub fn deinit(self: *Face) void {
         self.alloc.free(self.font_str);
+        self.grapheme_to_glyph.deinit(self.alloc);
+        {
+            var it = self.glyph_to_grapheme.valueIterator();
+            while (it.next()) |value| self.alloc.free(value.*);
+            self.glyph_to_grapheme.deinit(self.alloc);
+        }
         self.canvas.deinit();
         self.* = undefined;
     }
@@ -90,12 +107,84 @@ pub const Face = struct {
     /// have access to the underlying tables anyways. We let the browser deal
     /// with bad codepoints.
     pub fn glyphIndex(self: Face, cp: u32) ?u32 {
-        _ = self;
+        // If this is a multi-codepoint grapheme then we only check if
+        // we actually know about it.
+        if (cp >= grapheme_start) {
+            if (!self.glyph_to_grapheme.contains(cp)) return null;
+        }
+
+        // Render the glyph to determine if it is colored or not. We
+        // have to do this because the browser will always try to render
+        // whatever we give it and we have no API to determine color.
+        //
+        // We don't want to say yes to the wrong presentation because
+        // it will go into the wrong Atlas.
+        const p: font.Presentation = if (cp <= 255) .text else p: {
+            break :p self.glyphPresentation(cp) catch {
+                // In this case, we assume we are unable to render
+                // this glyph and therefore jus say we don't support it.
+                return null;
+            };
+        };
+        if (p != self.presentation) return null;
+
         return cp;
     }
 
-    /// Render a glyph using the glyph index. The rendered glyph is stored in the
-    /// given texture atlas.
+    /// This determines the presentation of the glyph by literally
+    /// inspecting the image data to look for any color. This isn't
+    /// super performant but we don't have a better choice given the
+    /// canvas APIs.
+    fn glyphPresentation(
+        self: Face,
+        cp: u32,
+    ) !font.Presentation {
+        // Render the glyph
+        var render = try self.renderGlyphInternal(self.alloc, cp);
+        defer render.deinit();
+
+        // Inspect the image data for any non-zeros in the RGB value.
+        // NOTE(perf): this is an easy candidate for SIMD.
+        var i: usize = 0;
+        while (i < render.bitmap.len) : (i += 4) {
+            if (render.bitmap[i] > 0 or
+                render.bitmap[i + 1] > 0 or
+                render.bitmap[i + 2] > 0) return .emoji;
+        }
+
+        return .text;
+    }
+
+    /// Returns the glyph index for the given grapheme cluster. The same
+    /// cluster will always map to the same glyph index. This does not render
+    /// the grapheme at this time, only reserves the index.
+    pub fn graphemeGlyphIndex(self: *Face, cluster: []const u8) error{OutOfMemory}!u32 {
+        // If we already have this stored then return it
+        const gop = try self.grapheme_to_glyph.getOrPut(self.alloc, cluster);
+        if (gop.found_existing) return gop.value_ptr.*;
+        errdefer _ = self.grapheme_to_glyph.remove(cluster);
+
+        // We don't have it stored. Ensure we have space to store. The
+        // next will be "0" if we're out of space due to unsigned int wrapping.
+        if (self.grapheme_next == 0) return error.OutOfMemory;
+
+        // Copy the cluster for our reverse mapping
+        const copy = try self.alloc.dupe(u8, cluster);
+        errdefer self.alloc.free(copy);
+
+        // Grow space for the reverse mapping
+        try self.glyph_to_grapheme.ensureUnusedCapacity(self.alloc, 1);
+
+        // Store it
+        gop.value_ptr.* = self.grapheme_next;
+        self.glyph_to_grapheme.putAssumeCapacity(self.grapheme_next, copy);
+
+        self.grapheme_next +%= 1;
+        return gop.value_ptr.*;
+    }
+
+    /// Render a glyph using the glyph index. The rendered glyph is stored
+    /// in the given texture atlas.
     pub fn renderGlyph(
         self: Face,
         alloc: Allocator,
@@ -105,10 +194,174 @@ pub const Face = struct {
     ) !font.Glyph {
         _ = max_height;
 
-        // Encode our glyph into UTF-8 so we can build a JS string out of it.
+        var render = try self.renderGlyphInternal(alloc, glyph_index);
+        defer render.deinit();
+
+        // Convert the format of the bitmap if necessary
+        const bitmap_formatted: []u8 = switch (atlas.format) {
+            // Bitmap is already in RGBA
+            .rgba => render.bitmap,
+
+            // Convert down to A8
+            .greyscale => a8: {
+                assert(@mod(render.bitmap.len, 4) == 0);
+                var bitmap_a8 = try alloc.alloc(u8, render.bitmap.len / 4);
+                errdefer alloc.free(bitmap_a8);
+                var i: usize = 0;
+                while (i < bitmap_a8.len) : (i += 1) {
+                    bitmap_a8[i] = render.bitmap[(i * 4) + 3];
+                }
+
+                break :a8 bitmap_a8;
+            },
+
+            else => return error.UnsupportedAtlasFormat,
+        };
+        defer if (bitmap_formatted.ptr != render.bitmap.ptr) {
+            alloc.free(bitmap_formatted);
+        };
+
+        // Put it in our atlas
+        const region = try atlas.reserve(alloc, render.width, render.height);
+        if (region.width > 0 and region.height > 0) {
+            atlas.set(region, bitmap_formatted);
+        }
+
+        return font.Glyph{
+            .width = render.width,
+            .height = render.height,
+            // TODO: this can't be right
+            .offset_x = 0,
+            .offset_y = 0,
+            .atlas_x = region.x,
+            .atlas_y = region.y,
+            .advance_x = 0,
+        };
+    }
+
+    /// Calculate the metrics associated with a given face.
+    fn calcMetrics(self: *Face) !void {
+        const ctx = try self.context();
+        defer ctx.deinit();
+
+        // Cell width is the width of our M text
+        const cell_width: f32 = cell_width: {
+            const metrics = try ctx.call(js.Object, "measureText", .{js.string("M")});
+            defer metrics.deinit();
+
+            // We prefer the bounding box since it is tighter but certain
+            // text such as emoji do not have a bounding box set so we use
+            // the full run width instead.
+            const bounding_right = try metrics.get(f32, "actualBoundingBoxRight");
+            if (bounding_right > 0) break :cell_width bounding_right;
+            break :cell_width try metrics.get(f32, "width");
+        };
+
+        // To get the cell height we render a high and low character and get
+        // the total of the ascent and descent. This should equal our
+        // pixel height but this is a more surefire way to get it.
+        const height_metrics = try ctx.call(js.Object, "measureText", .{js.string("M_")});
+        defer height_metrics.deinit();
+        const asc = try height_metrics.get(f32, "actualBoundingBoxAscent");
+        const desc = try height_metrics.get(f32, "actualBoundingBoxDescent");
+        const cell_height = asc + desc;
+        const cell_baseline = desc;
+
+        // There isn't a declared underline position for canvas measurements
+        // so we just go 1 under the cell height to match freetype logic
+        // at this time (our freetype logic).
+        const underline_position = cell_height - 1;
+        const underline_thickness: f32 = 1;
+
+        self.metrics = .{
+            .cell_width = cell_width,
+            .cell_height = cell_height,
+            .cell_baseline = cell_baseline,
+            .underline_position = underline_position,
+            .underline_thickness = underline_thickness,
+            .strikethrough_position = underline_position,
+            .strikethrough_thickness = underline_thickness,
+        };
+
+        log.debug("metrics font={s} value={}", .{ self.font_str, self.metrics });
+    }
+
+    /// Returns the 2d context configured for drawing
+    fn context(self: Face) !js.Object {
+        // This will return the same context on subsequent calls so it
+        // is important to reset it.
+        const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
+        errdefer ctx.deinit();
+
+        // Clear the canvas
+        {
+            const width = try self.canvas.get(f64, "width");
+            const height = try self.canvas.get(f64, "height");
+            try ctx.call(void, "clearRect", .{ 0, 0, width, height });
+        }
+
+        // Set our context font
+        var font_val = try std.fmt.allocPrint(
+            self.alloc,
+            "{d}px {s}",
+            .{ self.size.points, self.font_str },
+        );
+        defer self.alloc.free(font_val);
+        try ctx.set("font", js.string(font_val));
+
+        // If the font property didn't change, then the font set didn't work.
+        // We do this check because it is very easy to put an invalid font
+        // in and this at least makes it show up in the logs.
+        const check = try ctx.getAlloc(js.String, self.alloc, "font");
+        defer self.alloc.free(check);
+        if (!std.mem.eql(u8, font_val, check)) {
+            log.warn("canvas font didn't set, fonts may be broken, expected={s} got={s}", .{
+                font_val,
+                check,
+            });
+        }
+
+        return ctx;
+    }
+
+    /// An internal (web-canvas-only) format for rendered glyphs
+    /// since we do render passes in multiple different situations.
+    const RenderedGlyph = struct {
+        alloc: Allocator,
+        metrics: js.Object,
+        width: u32,
+        height: u32,
+        bitmap: []u8,
+
+        pub fn deinit(self: *RenderedGlyph) void {
+            self.metrics.deinit();
+            self.alloc.free(self.bitmap);
+            self.* = undefined;
+        }
+    };
+
+    /// Shared logic for rendering a glyph.
+    fn renderGlyphInternal(
+        self: Face,
+        alloc: Allocator,
+        glyph_index: u32,
+    ) !RenderedGlyph {
+        // Encode our glyph to UTF-8 so we can build a JS string out of it.
         var utf8: [4]u8 = undefined;
-        const utf8_len = try std.unicode.utf8Encode(@intCast(u21, glyph_index), &utf8);
-        const glyph_str = js.string(utf8[0..utf8_len]);
+        const glyph_str = glyph_str: {
+            // If we are a normal glyph then we are a single codepoint and
+            // we just UTF8 encode it as-is.
+            if (glyph_index < grapheme_start) {
+                const utf8_len = try std.unicode.utf8Encode(@intCast(u21, glyph_index), &utf8);
+                break :glyph_str js.string(utf8[0..utf8_len]);
+            }
+
+            // We are a multi-codepoint glyph so we have to read the glyph
+            // from the map and it is already utf8 encoded.
+            const slice = self.glyph_to_grapheme.get(glyph_index) orelse
+                return error.UnknownGraphemeCluster;
+            break :glyph_str js.string(slice);
+        };
 
         // Get our drawing context
         const measure_ctx = try self.context();
@@ -116,7 +369,7 @@ pub const Face = struct {
 
         // Get the width and height of the render
         const metrics = try measure_ctx.call(js.Object, "measureText", .{glyph_str});
-        defer metrics.deinit();
+        errdefer metrics.deinit();
         const width: u32 = @floatToInt(u32, @ceil(width: {
             // We prefer the bounding box since it is tighter but certain
             // text such as emoji do not have a bounding box set so we use
@@ -222,129 +475,15 @@ pub const Face = struct {
 
             break :bitmap bitmap;
         };
-        defer alloc.free(bitmap);
+        errdefer alloc.free(bitmap);
 
-        // Convert the format of the bitmap if necessary
-        const bitmap_formatted: []u8 = switch (atlas.format) {
-            // Bitmap is already in RGBA
-            .rgba => bitmap,
-
-            // Convert down to A8
-            .greyscale => a8: {
-                assert(@mod(bitmap.len, 4) == 0);
-                var bitmap_a8 = try alloc.alloc(u8, bitmap.len / 4);
-                errdefer alloc.free(bitmap_a8);
-                var i: usize = 0;
-                while (i < bitmap_a8.len) : (i += 1) {
-                    bitmap_a8[i] = bitmap[(i * 4) + 3];
-                }
-
-                break :a8 bitmap_a8;
-            },
-
-            else => return error.UnsupportedAtlasFormat,
-        };
-        defer if (bitmap_formatted.ptr != bitmap.ptr) alloc.free(bitmap_formatted);
-
-        // Put it in our atlas
-        const region = try atlas.reserve(alloc, width, height);
-        if (region.width > 0 and region.height > 0) atlas.set(region, bitmap_formatted);
-
-        return font.Glyph{
+        return RenderedGlyph{
+            .alloc = alloc,
+            .metrics = metrics,
             .width = width,
             .height = height,
-            // TODO: this can't be right
-            .offset_x = 0,
-            .offset_y = 0,
-            .atlas_x = region.x,
-            .atlas_y = region.y,
-            .advance_x = 0,
+            .bitmap = bitmap,
         };
-    }
-
-    /// Calculate the metrics associated with a given face.
-    fn calcMetrics(self: *Face) !void {
-        const ctx = try self.context();
-        defer ctx.deinit();
-
-        // Cell width is the width of our M text
-        const cell_width: f32 = cell_width: {
-            const metrics = try ctx.call(js.Object, "measureText", .{js.string("M")});
-            defer metrics.deinit();
-
-            // We prefer the bounding box since it is tighter but certain
-            // text such as emoji do not have a bounding box set so we use
-            // the full run width instead.
-            const bounding_right = try metrics.get(f32, "actualBoundingBoxRight");
-            if (bounding_right > 0) break :cell_width bounding_right;
-            break :cell_width try metrics.get(f32, "width");
-        };
-
-        // To get the cell height we render a high and low character and get
-        // the total of the ascent and descent. This should equal our
-        // pixel height but this is a more surefire way to get it.
-        const height_metrics = try ctx.call(js.Object, "measureText", .{js.string("M_")});
-        defer height_metrics.deinit();
-        const asc = try height_metrics.get(f32, "actualBoundingBoxAscent");
-        const desc = try height_metrics.get(f32, "actualBoundingBoxDescent");
-        const cell_height = asc + desc;
-        const cell_baseline = desc;
-
-        // There isn't a declared underline position for canvas measurements
-        // so we just go 1 under the cell height to match freetype logic
-        // at this time (our freetype logic).
-        const underline_position = cell_height - 1;
-        const underline_thickness: f32 = 1;
-
-        self.metrics = .{
-            .cell_width = cell_width,
-            .cell_height = cell_height,
-            .cell_baseline = cell_baseline,
-            .underline_position = underline_position,
-            .underline_thickness = underline_thickness,
-            .strikethrough_position = underline_position,
-            .strikethrough_thickness = underline_thickness,
-        };
-
-        log.debug("metrics font={s} value={}", .{ self.font_str, self.metrics });
-    }
-
-    /// Returns the 2d context configured for drawing
-    fn context(self: Face) !js.Object {
-        // This will return the same context on subsequent calls so it
-        // is important to reset it.
-        const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
-        errdefer ctx.deinit();
-
-        // Clear the canvas
-        {
-            const width = try self.canvas.get(f64, "width");
-            const height = try self.canvas.get(f64, "height");
-            try ctx.call(void, "clearRect", .{ 0, 0, width, height });
-        }
-
-        // Set our context font
-        var font_val = try std.fmt.allocPrint(
-            self.alloc,
-            "{d}px {s}",
-            .{ self.size.points, self.font_str },
-        );
-        defer self.alloc.free(font_val);
-        try ctx.set("font", js.string(font_val));
-
-        // If the font property didn't change, then the font set didn't work.
-        // We do this check because it is very easy to put an invalid font
-        // in and this at least makes it show up in the logs.
-        const check = try ctx.getAlloc(js.String, self.alloc, "font");
-        defer self.alloc.free(check);
-        if (!std.mem.eql(u8, font_val, check)) {
-            log.warn("canvas font didn't set, fonts may be broken, expected={s} got={s}", .{
-                font_val,
-                check,
-            });
-        }
-
-        return ctx;
     }
 };
 
