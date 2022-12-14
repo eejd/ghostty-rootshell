@@ -59,6 +59,8 @@ pub const Trapezoid = struct {
 
 /// We only use alpha-channel so a pixel can only be "on" or "off".
 pub const Color = enum(u8) {
+    const CSS_BUF_MAX = 24;
+
     on = 255,
     off = 0,
     _,
@@ -71,6 +73,12 @@ pub const Color = enum(u8) {
         const unscaled = @intToFloat(f32, @enumToInt(self));
         const scaled = @floatToInt(u16, (unscaled * max_u16) / max);
         return .{ .red = 0, .green = 0, .blue = 0, .alpha = scaled };
+    }
+
+    fn cssColor(self: Color, buf: []u8) ![]u8 {
+        return try std.fmt.bufPrint(buf, "rgba(0, 0, 0, {:.2})", .{
+            @intToFloat(f32, @enumToInt(self)) / 255,
+        });
     }
 };
 
@@ -121,9 +129,14 @@ const WebCanvasImpl = struct {
     }
 
     pub fn rect(self: *WebCanvasImpl, v: Rect, color: Color) void {
-        _ = self;
-        _ = v;
-        _ = color;
+        const ctx = self.context(color) catch return;
+        defer ctx.deinit();
+        ctx.call(void, "fillRect", .{
+            @intCast(u32, v.x),
+            @intCast(u32, v.y),
+            v.width,
+            v.height,
+        }) catch return;
     }
 
     pub fn trapezoid(self: *WebCanvasImpl, t: Trapezoid) void {
@@ -147,6 +160,20 @@ const WebCanvasImpl = struct {
         _ = op;
         _ = src;
         _ = dest;
+    }
+
+    fn context(self: WebCanvasImpl, fill: ?Color) !js.Object {
+        const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
+        errdefer ctx.deinit();
+
+        // Set our fill color
+        if (fill) |c| {
+            var buf: [Color.CSS_BUF_MAX]u8 = undefined;
+            const color = try c.cssColor(&buf);
+            try ctx.set("fillStyle", js.string(color));
+        }
+
+        return ctx;
     }
 
     pub fn writeAtlas(self: *WebCanvasImpl, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
