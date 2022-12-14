@@ -78,7 +78,7 @@ const Draw = struct {
     fn drawSingle(self: Draw, canvas: *font.sprite.Canvas) void {
         canvas.rect(.{
             .x = 0,
-            .y = self.pos,
+            .y = @intCast(i32, self.pos),
             .width = self.width,
             .height = self.thickness,
         }, .on);
@@ -88,14 +88,14 @@ const Draw = struct {
     fn drawDouble(self: Draw, canvas: *font.sprite.Canvas) void {
         canvas.rect(.{
             .x = 0,
-            .y = self.pos,
+            .y = @intCast(i32, self.pos),
             .width = self.width,
             .height = self.thickness,
         }, .on);
 
         canvas.rect(.{
             .x = 0,
-            .y = self.pos + (self.thickness * 2),
+            .y = @intCast(i32, self.pos + (self.thickness * 2)),
             .width = self.width,
             .height = self.thickness,
         }, .on);
@@ -108,8 +108,8 @@ const Draw = struct {
         var i: u32 = 0;
         while (i < dot_count) : (i += 2) {
             canvas.rect(.{
-                .x = i * dot_width,
-                .y = self.pos,
+                .x = @intCast(i32, i * dot_width),
+                .y = @intCast(i32, self.pos),
                 .width = dot_width,
                 .height = self.thickness,
             }, .on);
@@ -123,8 +123,8 @@ const Draw = struct {
         var i: u32 = 0;
         while (i < dash_count) : (i += 2) {
             canvas.rect(.{
-                .x = i * dash_width,
-                .y = self.pos,
+                .x = @intCast(i32, i * dash_width),
+                .y = @intCast(i32, self.pos),
                 .width = dash_width,
                 .height = self.thickness,
             }, .on);
@@ -157,8 +157,8 @@ const Draw = struct {
             while (row < self.thickness) : (row += 1) {
                 const y1 = @min(row + y + vertical, y_max);
                 canvas.rect(.{
-                    .x = x,
-                    .y = y1,
+                    .x = @intCast(i32, x),
+                    .y = @intCast(i32, y1),
                     .width = 1,
                     .height = 1,
                 }, .on);

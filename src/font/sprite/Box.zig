@@ -15,7 +15,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-const pixman = @import("pixman");
 const font = @import("../main.zig");
 
 const log = std.log.scoped(.box_font);
@@ -28,15 +27,6 @@ height: u32,
 /// Base thickness value for lines of the box. This is in pixels. If you
 /// want to do any DPI scaling, it is expected to be done earlier.
 thickness: u32,
-
-/// We use alpha-channel-only images for the box font so white causes
-/// a pixel to be shown.
-const white: pixman.Color = .{
-    .red = 0xFFFF,
-    .green = 0xFFFF,
-    .blue = 0xFFFF,
-    .alpha = 0xFFFF,
-};
 
 /// The thickness of a line.
 const Thickness = enum {
@@ -87,1117 +77,1113 @@ pub fn renderGlyph(
 }
 
 fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void {
-    // We currently just draw directly to the pixman image, we should
-    // abstract drawing more and switch to that eventually.
-    const img = canvas.image;
-
     switch (cp) {
-        0x2500 => self.draw_light_horizontal(img),
-        0x2501 => self.draw_heavy_horizontal(img),
-        0x2502 => self.draw_light_vertical(img),
-        0x2503 => self.draw_heavy_vertical(img),
-        0x2504 => self.draw_light_triple_dash_horizontal(img),
-        0x2505 => self.draw_heavy_triple_dash_horizontal(img),
-        0x2506 => self.draw_light_triple_dash_vertical(img),
-        0x2507 => self.draw_heavy_triple_dash_vertical(img),
-        0x2508 => self.draw_light_quadruple_dash_horizontal(img),
-        0x2509 => self.draw_heavy_quadruple_dash_horizontal(img),
-        0x250a => self.draw_light_quadruple_dash_vertical(img),
-        0x250b => self.draw_heavy_quadruple_dash_vertical(img),
-        0x250c => self.draw_light_down_and_right(img),
-        0x250d => self.draw_down_light_and_right_heavy(img),
-        0x250e => self.draw_down_heavy_and_right_light(img),
-        0x250f => self.draw_heavy_down_and_right(img),
+        0x2500 => self.draw_light_horizontal(canvas),
+        0x2501 => self.draw_heavy_horizontal(canvas),
+        0x2502 => self.draw_light_vertical(canvas),
+        0x2503 => self.draw_heavy_vertical(canvas),
+        0x2504 => self.draw_light_triple_dash_horizontal(canvas),
+        0x2505 => self.draw_heavy_triple_dash_horizontal(canvas),
+        0x2506 => self.draw_light_triple_dash_vertical(canvas),
+        0x2507 => self.draw_heavy_triple_dash_vertical(canvas),
+        0x2508 => self.draw_light_quadruple_dash_horizontal(canvas),
+        0x2509 => self.draw_heavy_quadruple_dash_horizontal(canvas),
+        0x250a => self.draw_light_quadruple_dash_vertical(canvas),
+        0x250b => self.draw_heavy_quadruple_dash_vertical(canvas),
+        0x250c => self.draw_light_down_and_right(canvas),
+        0x250d => self.draw_down_light_and_right_heavy(canvas),
+        0x250e => self.draw_down_heavy_and_right_light(canvas),
+        0x250f => self.draw_heavy_down_and_right(canvas),
 
-        0x2510 => self.draw_light_down_and_left(img),
-        0x2511 => self.draw_down_light_and_left_heavy(img),
-        0x2512 => self.draw_down_heavy_and_left_light(img),
-        0x2513 => self.draw_heavy_down_and_left(img),
-        0x2514 => self.draw_light_up_and_right(img),
-        0x2515 => self.draw_up_light_and_right_heavy(img),
-        0x2516 => self.draw_up_heavy_and_right_light(img),
-        0x2517 => self.draw_heavy_up_and_right(img),
-        0x2518 => self.draw_light_up_and_left(img),
-        0x2519 => self.draw_up_light_and_left_heavy(img),
-        0x251a => self.draw_up_heavy_and_left_light(img),
-        0x251b => self.draw_heavy_up_and_left(img),
-        0x251c => self.draw_light_vertical_and_right(img),
-        0x251d => self.draw_vertical_light_and_right_heavy(img),
-        0x251e => self.draw_up_heavy_and_right_down_light(img),
-        0x251f => self.draw_down_heavy_and_right_up_light(img),
+        0x2510 => self.draw_light_down_and_left(canvas),
+        0x2511 => self.draw_down_light_and_left_heavy(canvas),
+        0x2512 => self.draw_down_heavy_and_left_light(canvas),
+        0x2513 => self.draw_heavy_down_and_left(canvas),
+        0x2514 => self.draw_light_up_and_right(canvas),
+        0x2515 => self.draw_up_light_and_right_heavy(canvas),
+        0x2516 => self.draw_up_heavy_and_right_light(canvas),
+        0x2517 => self.draw_heavy_up_and_right(canvas),
+        0x2518 => self.draw_light_up_and_left(canvas),
+        0x2519 => self.draw_up_light_and_left_heavy(canvas),
+        0x251a => self.draw_up_heavy_and_left_light(canvas),
+        0x251b => self.draw_heavy_up_and_left(canvas),
+        0x251c => self.draw_light_vertical_and_right(canvas),
+        0x251d => self.draw_vertical_light_and_right_heavy(canvas),
+        0x251e => self.draw_up_heavy_and_right_down_light(canvas),
+        0x251f => self.draw_down_heavy_and_right_up_light(canvas),
 
-        0x2520 => self.draw_vertical_heavy_and_right_light(img),
-        0x2521 => self.draw_down_light_and_right_up_heavy(img),
-        0x2522 => self.draw_up_light_and_right_down_heavy(img),
-        0x2523 => self.draw_heavy_vertical_and_right(img),
-        0x2524 => self.draw_light_vertical_and_left(img),
-        0x2525 => self.draw_vertical_light_and_left_heavy(img),
-        0x2526 => self.draw_up_heavy_and_left_down_light(img),
-        0x2527 => self.draw_down_heavy_and_left_up_light(img),
-        0x2528 => self.draw_vertical_heavy_and_left_light(img),
-        0x2529 => self.draw_down_light_and_left_up_heavy(img),
-        0x252a => self.draw_up_light_and_left_down_heavy(img),
-        0x252b => self.draw_heavy_vertical_and_left(img),
-        0x252c => self.draw_light_down_and_horizontal(img),
-        0x252d => self.draw_left_heavy_and_right_down_light(img),
-        0x252e => self.draw_right_heavy_and_left_down_light(img),
-        0x252f => self.draw_down_light_and_horizontal_heavy(img),
+        0x2520 => self.draw_vertical_heavy_and_right_light(canvas),
+        0x2521 => self.draw_down_light_and_right_up_heavy(canvas),
+        0x2522 => self.draw_up_light_and_right_down_heavy(canvas),
+        0x2523 => self.draw_heavy_vertical_and_right(canvas),
+        0x2524 => self.draw_light_vertical_and_left(canvas),
+        0x2525 => self.draw_vertical_light_and_left_heavy(canvas),
+        0x2526 => self.draw_up_heavy_and_left_down_light(canvas),
+        0x2527 => self.draw_down_heavy_and_left_up_light(canvas),
+        0x2528 => self.draw_vertical_heavy_and_left_light(canvas),
+        0x2529 => self.draw_down_light_and_left_up_heavy(canvas),
+        0x252a => self.draw_up_light_and_left_down_heavy(canvas),
+        0x252b => self.draw_heavy_vertical_and_left(canvas),
+        0x252c => self.draw_light_down_and_horizontal(canvas),
+        0x252d => self.draw_left_heavy_and_right_down_light(canvas),
+        0x252e => self.draw_right_heavy_and_left_down_light(canvas),
+        0x252f => self.draw_down_light_and_horizontal_heavy(canvas),
 
-        0x2530 => self.draw_down_heavy_and_horizontal_light(img),
-        0x2531 => self.draw_right_light_and_left_down_heavy(img),
-        0x2532 => self.draw_left_light_and_right_down_heavy(img),
-        0x2533 => self.draw_heavy_down_and_horizontal(img),
-        0x2534 => self.draw_light_up_and_horizontal(img),
-        0x2535 => self.draw_left_heavy_and_right_up_light(img),
-        0x2536 => self.draw_right_heavy_and_left_up_light(img),
-        0x2537 => self.draw_up_light_and_horizontal_heavy(img),
-        0x2538 => self.draw_up_heavy_and_horizontal_light(img),
-        0x2539 => self.draw_right_light_and_left_up_heavy(img),
-        0x253a => self.draw_left_light_and_right_up_heavy(img),
-        0x253b => self.draw_heavy_up_and_horizontal(img),
-        0x253c => self.draw_light_vertical_and_horizontal(img),
-        0x253d => self.draw_left_heavy_and_right_vertical_light(img),
-        0x253e => self.draw_right_heavy_and_left_vertical_light(img),
-        0x253f => self.draw_vertical_light_and_horizontal_heavy(img),
+        0x2530 => self.draw_down_heavy_and_horizontal_light(canvas),
+        0x2531 => self.draw_right_light_and_left_down_heavy(canvas),
+        0x2532 => self.draw_left_light_and_right_down_heavy(canvas),
+        0x2533 => self.draw_heavy_down_and_horizontal(canvas),
+        0x2534 => self.draw_light_up_and_horizontal(canvas),
+        0x2535 => self.draw_left_heavy_and_right_up_light(canvas),
+        0x2536 => self.draw_right_heavy_and_left_up_light(canvas),
+        0x2537 => self.draw_up_light_and_horizontal_heavy(canvas),
+        0x2538 => self.draw_up_heavy_and_horizontal_light(canvas),
+        0x2539 => self.draw_right_light_and_left_up_heavy(canvas),
+        0x253a => self.draw_left_light_and_right_up_heavy(canvas),
+        0x253b => self.draw_heavy_up_and_horizontal(canvas),
+        0x253c => self.draw_light_vertical_and_horizontal(canvas),
+        0x253d => self.draw_left_heavy_and_right_vertical_light(canvas),
+        0x253e => self.draw_right_heavy_and_left_vertical_light(canvas),
+        0x253f => self.draw_vertical_light_and_horizontal_heavy(canvas),
 
-        0x2540 => self.draw_up_heavy_and_down_horizontal_light(img),
-        0x2541 => self.draw_down_heavy_and_up_horizontal_light(img),
-        0x2542 => self.draw_vertical_heavy_and_horizontal_light(img),
-        0x2543 => self.draw_left_up_heavy_and_right_down_light(img),
-        0x2544 => self.draw_right_up_heavy_and_left_down_light(img),
-        0x2545 => self.draw_left_down_heavy_and_right_up_light(img),
-        0x2546 => self.draw_right_down_heavy_and_left_up_light(img),
-        0x2547 => self.draw_down_light_and_up_horizontal_heavy(img),
-        0x2548 => self.draw_up_light_and_down_horizontal_heavy(img),
-        0x2549 => self.draw_right_light_and_left_vertical_heavy(img),
-        0x254a => self.draw_left_light_and_right_vertical_heavy(img),
-        0x254b => self.draw_heavy_vertical_and_horizontal(img),
-        0x254c => self.draw_light_double_dash_horizontal(img),
-        0x254d => self.draw_heavy_double_dash_horizontal(img),
-        0x254e => self.draw_light_double_dash_vertical(img),
-        0x254f => self.draw_heavy_double_dash_vertical(img),
+        0x2540 => self.draw_up_heavy_and_down_horizontal_light(canvas),
+        0x2541 => self.draw_down_heavy_and_up_horizontal_light(canvas),
+        0x2542 => self.draw_vertical_heavy_and_horizontal_light(canvas),
+        0x2543 => self.draw_left_up_heavy_and_right_down_light(canvas),
+        0x2544 => self.draw_right_up_heavy_and_left_down_light(canvas),
+        0x2545 => self.draw_left_down_heavy_and_right_up_light(canvas),
+        0x2546 => self.draw_right_down_heavy_and_left_up_light(canvas),
+        0x2547 => self.draw_down_light_and_up_horizontal_heavy(canvas),
+        0x2548 => self.draw_up_light_and_down_horizontal_heavy(canvas),
+        0x2549 => self.draw_right_light_and_left_vertical_heavy(canvas),
+        0x254a => self.draw_left_light_and_right_vertical_heavy(canvas),
+        0x254b => self.draw_heavy_vertical_and_horizontal(canvas),
+        0x254c => self.draw_light_double_dash_horizontal(canvas),
+        0x254d => self.draw_heavy_double_dash_horizontal(canvas),
+        0x254e => self.draw_light_double_dash_vertical(canvas),
+        0x254f => self.draw_heavy_double_dash_vertical(canvas),
 
-        0x2550 => self.draw_double_horizontal(img),
-        0x2551 => self.draw_double_vertical(img),
-        0x2552 => self.draw_down_single_and_right_double(img),
-        0x2553 => self.draw_down_double_and_right_single(img),
-        0x2554 => self.draw_double_down_and_right(img),
-        0x2555 => self.draw_down_single_and_left_double(img),
-        0x2556 => self.draw_down_double_and_left_single(img),
-        0x2557 => self.draw_double_down_and_left(img),
-        0x2558 => self.draw_up_single_and_right_double(img),
-        0x2559 => self.draw_up_double_and_right_single(img),
-        0x255a => self.draw_double_up_and_right(img),
-        0x255b => self.draw_up_single_and_left_double(img),
-        0x255c => self.draw_up_double_and_left_single(img),
-        0x255d => self.draw_double_up_and_left(img),
-        0x255e => self.draw_vertical_single_and_right_double(img),
-        0x255f => self.draw_vertical_double_and_right_single(img),
+        0x2550 => self.draw_double_horizontal(canvas),
+        0x2551 => self.draw_double_vertical(canvas),
+        0x2552 => self.draw_down_single_and_right_double(canvas),
+        0x2553 => self.draw_down_double_and_right_single(canvas),
+        0x2554 => self.draw_double_down_and_right(canvas),
+        0x2555 => self.draw_down_single_and_left_double(canvas),
+        0x2556 => self.draw_down_double_and_left_single(canvas),
+        0x2557 => self.draw_double_down_and_left(canvas),
+        0x2558 => self.draw_up_single_and_right_double(canvas),
+        0x2559 => self.draw_up_double_and_right_single(canvas),
+        0x255a => self.draw_double_up_and_right(canvas),
+        0x255b => self.draw_up_single_and_left_double(canvas),
+        0x255c => self.draw_up_double_and_left_single(canvas),
+        0x255d => self.draw_double_up_and_left(canvas),
+        0x255e => self.draw_vertical_single_and_right_double(canvas),
+        0x255f => self.draw_vertical_double_and_right_single(canvas),
 
-        0x2560 => self.draw_double_vertical_and_right(img),
-        0x2561 => self.draw_vertical_single_and_left_double(img),
-        0x2562 => self.draw_vertical_double_and_left_single(img),
-        0x2563 => self.draw_double_vertical_and_left(img),
-        0x2564 => self.draw_down_single_and_horizontal_double(img),
-        0x2565 => self.draw_down_double_and_horizontal_single(img),
-        0x2566 => self.draw_double_down_and_horizontal(img),
-        0x2567 => self.draw_up_single_and_horizontal_double(img),
-        0x2568 => self.draw_up_double_and_horizontal_single(img),
-        0x2569 => self.draw_double_up_and_horizontal(img),
-        0x256a => self.draw_vertical_single_and_horizontal_double(img),
-        0x256b => self.draw_vertical_double_and_horizontal_single(img),
-        0x256c => self.draw_double_vertical_and_horizontal(img),
-        0x256d...0x2570 => try self.draw_light_arc(alloc, img, cp),
+        0x2560 => self.draw_double_vertical_and_right(canvas),
+        0x2561 => self.draw_vertical_single_and_left_double(canvas),
+        0x2562 => self.draw_vertical_double_and_left_single(canvas),
+        0x2563 => self.draw_double_vertical_and_left(canvas),
+        0x2564 => self.draw_down_single_and_horizontal_double(canvas),
+        0x2565 => self.draw_down_double_and_horizontal_single(canvas),
+        0x2566 => self.draw_double_down_and_horizontal(canvas),
+        0x2567 => self.draw_up_single_and_horizontal_double(canvas),
+        0x2568 => self.draw_up_double_and_horizontal_single(canvas),
+        0x2569 => self.draw_double_up_and_horizontal(canvas),
+        0x256a => self.draw_vertical_single_and_horizontal_double(canvas),
+        0x256b => self.draw_vertical_double_and_horizontal_single(canvas),
+        0x256c => self.draw_double_vertical_and_horizontal(canvas),
+        0x256d...0x2570 => try self.draw_light_arc(alloc, canvas, cp),
 
-        0x2571 => self.draw_light_diagonal_upper_right_to_lower_left(img),
-        0x2572 => self.draw_light_diagonal_upper_left_to_lower_right(img),
-        0x2573 => self.draw_light_diagonal_cross(img),
-        0x2574 => self.draw_light_left(img),
-        0x2575 => self.draw_light_up(img),
-        0x2576 => self.draw_light_right(img),
-        0x2577 => self.draw_light_down(img),
-        0x2578 => self.draw_heavy_left(img),
-        0x2579 => self.draw_heavy_up(img),
-        0x257a => self.draw_heavy_right(img),
-        0x257b => self.draw_heavy_down(img),
-        0x257c => self.draw_light_left_and_heavy_right(img),
-        0x257d => self.draw_light_up_and_heavy_down(img),
-        0x257e => self.draw_heavy_left_and_light_right(img),
-        0x257f => self.draw_heavy_up_and_light_down(img),
+        0x2571 => self.draw_light_diagonal_upper_right_to_lower_left(canvas),
+        0x2572 => self.draw_light_diagonal_upper_left_to_lower_right(canvas),
+        0x2573 => self.draw_light_diagonal_cross(canvas),
+        0x2574 => self.draw_light_left(canvas),
+        0x2575 => self.draw_light_up(canvas),
+        0x2576 => self.draw_light_right(canvas),
+        0x2577 => self.draw_light_down(canvas),
+        0x2578 => self.draw_heavy_left(canvas),
+        0x2579 => self.draw_heavy_up(canvas),
+        0x257a => self.draw_heavy_right(canvas),
+        0x257b => self.draw_heavy_down(canvas),
+        0x257c => self.draw_light_left_and_heavy_right(canvas),
+        0x257d => self.draw_light_up_and_heavy_down(canvas),
+        0x257e => self.draw_heavy_left_and_light_right(canvas),
+        0x257f => self.draw_heavy_up_and_light_down(canvas),
 
-        0x2580 => self.draw_upper_half_block(img),
-        0x2581 => self.draw_lower_one_eighth_block(img),
-        0x2582 => self.draw_lower_one_quarter_block(img),
-        0x2583 => self.draw_lower_three_eighths_block(img),
-        0x2584 => self.draw_lower_half_block(img),
-        0x2585 => self.draw_lower_five_eighths_block(img),
-        0x2586 => self.draw_lower_three_quarters_block(img),
-        0x2587 => self.draw_lower_seven_eighths_block(img),
-        0x2588 => self.draw_full_block(img),
-        0x2589 => self.draw_left_seven_eighths_block(img),
-        0x258a => self.draw_left_three_quarters_block(img),
-        0x258b => self.draw_left_five_eighths_block(img),
-        0x258c => self.draw_left_half_block(img),
-        0x258d => self.draw_left_three_eighths_block(img),
-        0x258e => self.draw_left_one_quarter_block(img),
-        0x258f => self.draw_left_one_eighth_block(img),
+        0x2580 => self.draw_upper_half_block(canvas),
+        0x2581 => self.draw_lower_one_eighth_block(canvas),
+        0x2582 => self.draw_lower_one_quarter_block(canvas),
+        0x2583 => self.draw_lower_three_eighths_block(canvas),
+        0x2584 => self.draw_lower_half_block(canvas),
+        0x2585 => self.draw_lower_five_eighths_block(canvas),
+        0x2586 => self.draw_lower_three_quarters_block(canvas),
+        0x2587 => self.draw_lower_seven_eighths_block(canvas),
+        0x2588 => self.draw_full_block(canvas),
+        0x2589 => self.draw_left_seven_eighths_block(canvas),
+        0x258a => self.draw_left_three_quarters_block(canvas),
+        0x258b => self.draw_left_five_eighths_block(canvas),
+        0x258c => self.draw_left_half_block(canvas),
+        0x258d => self.draw_left_three_eighths_block(canvas),
+        0x258e => self.draw_left_one_quarter_block(canvas),
+        0x258f => self.draw_left_one_eighth_block(canvas),
 
-        0x2590 => self.draw_right_half_block(img),
-        0x2591 => self.draw_light_shade(img),
-        0x2592 => self.draw_medium_shade(img),
-        0x2593 => self.draw_dark_shade(img),
-        0x2594 => self.draw_upper_one_eighth_block(img),
-        0x2595 => self.draw_right_one_eighth_block(img),
-        0x2596...0x259f => self.draw_quadrant(img, cp),
+        0x2590 => self.draw_right_half_block(canvas),
+        0x2591 => self.draw_light_shade(canvas),
+        0x2592 => self.draw_medium_shade(canvas),
+        0x2593 => self.draw_dark_shade(canvas),
+        0x2594 => self.draw_upper_one_eighth_block(canvas),
+        0x2595 => self.draw_right_one_eighth_block(canvas),
+        0x2596...0x259f => self.draw_quadrant(canvas, cp),
 
-        0x2800...0x28FF => self.draw_braille(img, cp),
+        0x2800...0x28FF => self.draw_braille(canvas, cp),
 
-        0x1FB00...0x1FB3B => self.draw_sextant(img, cp),
+        0x1FB00...0x1FB3B => self.draw_sextant(canvas, cp),
 
         0x1FB3C...0x1FB40,
         0x1FB47...0x1FB4B,
         0x1FB57...0x1FB5B,
         0x1FB62...0x1FB66,
         0x1FB6C...0x1FB6F,
-        => try self.draw_wedge_triangle(img, cp),
+        => try self.draw_wedge_triangle(canvas, cp),
 
         0x1FB41...0x1FB45,
         0x1FB4C...0x1FB50,
         0x1FB52...0x1FB56,
         0x1FB5D...0x1FB61,
         0x1FB68...0x1FB6B,
-        => try self.draw_wedge_triangle_inverted(img, cp),
+        => try self.draw_wedge_triangle_inverted(alloc, canvas, cp),
 
         0x1FB46,
         0x1FB51,
         0x1FB5C,
         0x1FB67,
-        => try self.draw_wedge_triangle_and_box(img, cp),
+        => try self.draw_wedge_triangle_and_box(canvas, cp),
 
         0x1FB9A => {
-            try self.draw_wedge_triangle(img, 0x1fb6d);
-            try self.draw_wedge_triangle(img, 0x1fb6f);
+            try self.draw_wedge_triangle(canvas, 0x1fb6d);
+            try self.draw_wedge_triangle(canvas, 0x1fb6f);
         },
 
         0x1FB9B => {
-            try self.draw_wedge_triangle(img, 0x1fb6c);
-            try self.draw_wedge_triangle(img, 0x1fb6e);
+            try self.draw_wedge_triangle(canvas, 0x1fb6c);
+            try self.draw_wedge_triangle(canvas, 0x1fb6e);
         },
 
-        0x1FB70 => self.draw_vertical_one_eighth_block_n(img, 1),
-        0x1FB71 => self.draw_vertical_one_eighth_block_n(img, 2),
-        0x1FB72 => self.draw_vertical_one_eighth_block_n(img, 3),
-        0x1FB73 => self.draw_vertical_one_eighth_block_n(img, 4),
-        0x1FB74 => self.draw_vertical_one_eighth_block_n(img, 5),
-        0x1FB75 => self.draw_vertical_one_eighth_block_n(img, 6),
+        0x1FB70 => self.draw_vertical_one_eighth_block_n(canvas, 1),
+        0x1FB71 => self.draw_vertical_one_eighth_block_n(canvas, 2),
+        0x1FB72 => self.draw_vertical_one_eighth_block_n(canvas, 3),
+        0x1FB73 => self.draw_vertical_one_eighth_block_n(canvas, 4),
+        0x1FB74 => self.draw_vertical_one_eighth_block_n(canvas, 5),
+        0x1FB75 => self.draw_vertical_one_eighth_block_n(canvas, 6),
 
-        0x1FB76 => self.draw_horizontal_one_eighth_block_n(img, 1),
-        0x1FB77 => self.draw_horizontal_one_eighth_block_n(img, 2),
-        0x1FB78 => self.draw_horizontal_one_eighth_block_n(img, 3),
-        0x1FB79 => self.draw_horizontal_one_eighth_block_n(img, 4),
-        0x1FB7A => self.draw_horizontal_one_eighth_block_n(img, 5),
-        0x1FB7B => self.draw_horizontal_one_eighth_block_n(img, 6),
+        0x1FB76 => self.draw_horizontal_one_eighth_block_n(canvas, 1),
+        0x1FB77 => self.draw_horizontal_one_eighth_block_n(canvas, 2),
+        0x1FB78 => self.draw_horizontal_one_eighth_block_n(canvas, 3),
+        0x1FB79 => self.draw_horizontal_one_eighth_block_n(canvas, 4),
+        0x1FB7A => self.draw_horizontal_one_eighth_block_n(canvas, 5),
+        0x1FB7B => self.draw_horizontal_one_eighth_block_n(canvas, 6),
 
-        0x1fb82 => self.draw_upper_one_quarter_block(img),
-        0x1fb83 => self.draw_upper_three_eighths_block(img),
-        0x1fb84 => self.draw_upper_five_eighths_block(img),
-        0x1fb85 => self.draw_upper_three_quarters_block(img),
-        0x1fb86 => self.draw_upper_seven_eighths_block(img),
+        0x1fb82 => self.draw_upper_one_quarter_block(canvas),
+        0x1fb83 => self.draw_upper_three_eighths_block(canvas),
+        0x1fb84 => self.draw_upper_five_eighths_block(canvas),
+        0x1fb85 => self.draw_upper_three_quarters_block(canvas),
+        0x1fb86 => self.draw_upper_seven_eighths_block(canvas),
 
-        0x1fb7c => self.draw_left_and_lower_one_eighth_block(img),
-        0x1fb7d => self.draw_left_and_upper_one_eighth_block(img),
-        0x1fb7e => self.draw_right_and_upper_one_eighth_block(img),
-        0x1fb7f => self.draw_right_and_lower_one_eighth_block(img),
-        0x1fb80 => self.draw_upper_and_lower_one_eighth_block(img),
-        0x1fb81 => self.draw_horizontal_one_eighth_1358_block(img),
+        0x1fb7c => self.draw_left_and_lower_one_eighth_block(canvas),
+        0x1fb7d => self.draw_left_and_upper_one_eighth_block(canvas),
+        0x1fb7e => self.draw_right_and_upper_one_eighth_block(canvas),
+        0x1fb7f => self.draw_right_and_lower_one_eighth_block(canvas),
+        0x1fb80 => self.draw_upper_and_lower_one_eighth_block(canvas),
+        0x1fb81 => self.draw_horizontal_one_eighth_1358_block(canvas),
 
-        0x1fb87 => self.draw_right_one_quarter_block(img),
-        0x1fb88 => self.draw_right_three_eighths_block(img),
-        0x1fb89 => self.draw_right_five_eighths_block(img),
-        0x1fb8a => self.draw_right_three_quarters_block(img),
-        0x1fb8b => self.draw_right_seven_eighths_block(img),
+        0x1fb87 => self.draw_right_one_quarter_block(canvas),
+        0x1fb88 => self.draw_right_three_eighths_block(canvas),
+        0x1fb89 => self.draw_right_five_eighths_block(canvas),
+        0x1fb8a => self.draw_right_three_quarters_block(canvas),
+        0x1fb8b => self.draw_right_seven_eighths_block(canvas),
 
         else => return error.InvalidCodepoint,
     }
 }
 
-fn draw_light_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
+fn draw_light_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
 }
 
-fn draw_heavy_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
+fn draw_heavy_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
 }
 
-fn draw_light_vertical(self: Box, img: *pixman.Image) void {
-    self.vline_middle(img, .light);
+fn draw_light_vertical(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_heavy_vertical(self: Box, img: *pixman.Image) void {
-    self.vline_middle(img, .heavy);
+fn draw_heavy_vertical(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_light_triple_dash_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_light_triple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
-        img,
+        canvas,
         3,
         Thickness.light.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_heavy_triple_dash_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_heavy_triple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
-        img,
+        canvas,
         3,
         Thickness.heavy.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_light_triple_dash_vertical(self: Box, img: *pixman.Image) void {
+fn draw_light_triple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_vertical(
-        img,
+        canvas,
         3,
         Thickness.light.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_heavy_triple_dash_vertical(self: Box, img: *pixman.Image) void {
+fn draw_heavy_triple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_vertical(
-        img,
+        canvas,
         3,
         Thickness.heavy.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_light_quadruple_dash_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_light_quadruple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
-        img,
+        canvas,
         4,
         Thickness.light.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_heavy_quadruple_dash_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_heavy_quadruple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
-        img,
+        canvas,
         4,
         Thickness.heavy.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_light_quadruple_dash_vertical(self: Box, img: *pixman.Image) void {
+fn draw_light_quadruple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_vertical(
-        img,
+        canvas,
         4,
         Thickness.light.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_heavy_quadruple_dash_vertical(self: Box, img: *pixman.Image) void {
+fn draw_heavy_quadruple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_vertical(
-        img,
+        canvas,
         4,
         Thickness.heavy.height(self.thickness),
         @max(4, Thickness.light.height(self.thickness)),
     );
 }
 
-fn draw_light_down_and_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_down(img, .light, .light);
+fn draw_light_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_light_and_right_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_down_light_and_right_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_heavy_and_right_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .light);
+fn draw_down_heavy_and_right_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .light);
 }
 
-fn draw_heavy_down_and_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_heavy_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_light_down_and_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle_down(img, .light, .light);
+fn draw_light_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_light_and_left_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_down_light_and_left_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_heavy_and_left_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .light);
+fn draw_down_heavy_and_left_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .light);
 }
 
-fn draw_heavy_down_and_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_heavy_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_light_up_and_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .light, .light);
+fn draw_light_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_up_light_and_right_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .heavy);
-    self.vline_middle_up(img, .light, .light);
+fn draw_up_light_and_right_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_up_heavy_and_right_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .heavy, .light);
+fn draw_up_heavy_and_right_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .heavy, .light);
 }
 
-fn draw_heavy_up_and_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
+fn draw_heavy_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
 }
 
-fn draw_light_up_and_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle_up(img, .light, .light);
+fn draw_light_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_up_light_and_left_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .heavy);
-    self.vline_middle_up(img, .light, .light);
+fn draw_up_light_and_left_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_up_heavy_and_left_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle_up(img, .heavy, .light);
+fn draw_up_heavy_and_left_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle_up(canvas, .heavy, .light);
 }
 
-fn draw_heavy_up_and_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
+fn draw_heavy_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
 }
 
-fn draw_light_vertical_and_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle(img, .light);
+fn draw_light_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_vertical_light_and_right_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .heavy);
-    self.vline_middle(img, .light);
+fn draw_vertical_light_and_right_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .heavy);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_up_heavy_and_right_down_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .heavy, .light);
-    self.vline_middle_down(img, .light, .light);
+fn draw_up_heavy_and_right_down_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .heavy, .light);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_heavy_and_right_up_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .light);
+fn draw_down_heavy_and_right_up_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .light);
 }
 
-fn draw_vertical_heavy_and_right_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle(img, .heavy);
+fn draw_vertical_heavy_and_right_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_down_light_and_right_up_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_down_light_and_right_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_up_light_and_right_down_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_up_light_and_right_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_vertical_and_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle(img, .heavy);
+fn draw_heavy_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_light_vertical_and_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle(img, .light);
+fn draw_light_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_vertical_light_and_left_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .heavy);
-    self.vline_middle(img, .light);
+fn draw_vertical_light_and_left_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .heavy);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_up_heavy_and_left_down_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle_up(img, .heavy, .light);
-    self.vline_middle_down(img, .light, .light);
+fn draw_up_heavy_and_left_down_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle_up(canvas, .heavy, .light);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_heavy_and_left_up_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .light);
+fn draw_down_heavy_and_left_up_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .light);
 }
 
-fn draw_vertical_heavy_and_left_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.vline_middle(img, .heavy);
+fn draw_vertical_heavy_and_left_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_down_light_and_left_up_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_down_light_and_left_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_up_light_and_left_down_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_up_light_and_left_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_vertical_and_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.vline_middle(img, .heavy);
+fn draw_heavy_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_light_down_and_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_down(img, .light, .light);
+fn draw_light_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_left_heavy_and_right_down_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_down(img, .light, .light);
+fn draw_left_heavy_and_right_down_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_right_heavy_and_left_down_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .light, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_right_heavy_and_left_down_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .light, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_light_and_horizontal_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_down_light_and_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_heavy_and_horizontal_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_down(img, .heavy, .light);
+fn draw_down_heavy_and_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_down(canvas, .heavy, .light);
 }
 
-fn draw_right_light_and_left_down_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_right_light_and_left_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_left_light_and_right_down_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_left_light_and_right_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_down_and_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_heavy_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_light_up_and_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_up(img, .light, .light);
+fn draw_light_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_left_heavy_and_right_up_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .light, .light);
+fn draw_left_heavy_and_right_up_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_right_heavy_and_left_up_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .light, .heavy);
-    self.vline_middle_up(img, .light, .light);
+fn draw_right_heavy_and_left_up_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .light, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_up_light_and_horizontal_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_up(img, .light, .light);
+fn draw_up_light_and_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_up_heavy_and_horizontal_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_up(img, .heavy, .light);
+fn draw_up_heavy_and_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_up(canvas, .heavy, .light);
 }
 
-fn draw_right_light_and_left_up_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .heavy, .heavy);
+fn draw_right_light_and_left_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .heavy, .heavy);
 }
 
-fn draw_left_light_and_right_up_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
+fn draw_left_light_and_right_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_up_and_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
+fn draw_heavy_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
 }
 
-fn draw_light_vertical_and_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle(img, .light);
+fn draw_light_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_left_heavy_and_right_vertical_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle(img, .light);
+fn draw_left_heavy_and_right_vertical_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_right_heavy_and_left_vertical_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .light, .heavy);
-    self.vline_middle(img, .light);
+fn draw_right_heavy_and_left_vertical_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .light, .heavy);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_vertical_light_and_horizontal_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle(img, .light);
+fn draw_vertical_light_and_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle(canvas, .light);
 }
 
-fn draw_up_heavy_and_down_horizontal_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_up_heavy_and_down_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_down_heavy_and_up_horizontal_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .light);
+fn draw_down_heavy_and_up_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .light);
 }
 
-fn draw_vertical_heavy_and_horizontal_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .light);
-    self.vline_middle(img, .heavy);
+fn draw_vertical_heavy_and_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .light);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_left_up_heavy_and_right_down_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_left_up_heavy_and_right_down_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_right_up_heavy_and_left_down_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_right_up_heavy_and_left_down_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_left_down_heavy_and_right_up_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_left_down_heavy_and_right_up_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_right_down_heavy_and_left_up_light(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_right_down_heavy_and_left_up_light(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_down_light_and_up_horizontal_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_down_light_and_up_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_up_light_and_down_horizontal_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_up_light_and_down_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_right_light_and_left_vertical_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.hline_middle_right(img, .light, .light);
-    self.vline_middle(img, .heavy);
+fn draw_right_light_and_left_vertical_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_left_light_and_right_vertical_heavy(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .heavy, .heavy);
-    self.vline_middle(img, .heavy);
+fn draw_left_light_and_right_vertical_heavy(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .heavy, .heavy);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_heavy_vertical_and_horizontal(self: Box, img: *pixman.Image) void {
-    self.hline_middle(img, .heavy);
-    self.vline_middle(img, .heavy);
+fn draw_heavy_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle(canvas, .heavy);
+    self.vline_middle(canvas, .heavy);
 }
 
-fn draw_light_double_dash_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_light_double_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
-        img,
+        canvas,
         2,
         Thickness.light.height(self.thickness),
         Thickness.light.height(self.thickness),
     );
 }
 
-fn draw_heavy_double_dash_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_heavy_double_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
-        img,
+        canvas,
         2,
         Thickness.heavy.height(self.thickness),
         Thickness.heavy.height(self.thickness),
     );
 }
 
-fn draw_light_double_dash_vertical(self: Box, img: *pixman.Image) void {
+fn draw_light_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_vertical(
-        img,
+        canvas,
         2,
         Thickness.light.height(self.thickness),
         Thickness.heavy.height(self.thickness),
     );
 }
 
-fn draw_heavy_double_dash_vertical(self: Box, img: *pixman.Image) void {
+fn draw_heavy_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_vertical(
-        img,
+        canvas,
         2,
         Thickness.heavy.height(self.thickness),
         Thickness.heavy.height(self.thickness),
     );
 }
 
-fn draw_double_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_double_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const mid = (self.height - thick_px * 3) / 2;
-    self.hline(img, 0, self.width, mid, thick_px);
-    self.hline(img, 0, self.width, mid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, self.width, mid, thick_px);
+    self.hline(canvas, 0, self.width, mid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_vertical(self: Box, img: *pixman.Image) void {
+fn draw_double_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const mid = (self.width - thick_px * 3) / 2;
-    self.vline(img, 0, self.height, mid, thick_px);
-    self.vline(img, 0, self.height, mid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, self.height, mid, thick_px);
+    self.vline(canvas, 0, self.height, mid + 2 * thick_px, thick_px);
 }
 
-fn draw_down_single_and_right_double(self: Box, img: *pixman.Image) void {
+fn draw_down_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px) / 2;
-    self.vline_middle_down(img, .light, .light);
-    self.hline(img, vmid, self.width, hmid, thick_px);
-    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline_middle_down(canvas, .light, .light);
+    self.hline(canvas, vmid, self.width, hmid, thick_px);
+    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_down_double_and_right_single(self: Box, img: *pixman.Image) void {
+fn draw_down_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle_right(img, .light, .light);
-    self.vline(img, hmid, self.height, vmid, thick_px);
-    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline(canvas, hmid, self.height, vmid, thick_px);
+    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_down_and_right(self: Box, img: *pixman.Image) void {
+fn draw_double_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, hmid, self.height, vmid, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
-    self.hline(img, vmid, self.width, hmid, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, hmid, self.height, vmid, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, vmid, self.width, hmid, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_down_single_and_left_double(self: Box, img: *pixman.Image) void {
+fn draw_down_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width + thick_px) / 2;
-    self.vline_middle_down(img, .light, .light);
-    self.hline(img, 0, vmid, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.vline_middle_down(canvas, .light, .light);
+    self.hline(canvas, 0, vmid, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_down_double_and_left_single(self: Box, img: *pixman.Image) void {
+fn draw_down_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle_left(img, .light, .light);
-    self.vline(img, hmid, self.height, vmid, thick_px);
-    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline(canvas, hmid, self.height, vmid, thick_px);
+    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_down_and_left(self: Box, img: *pixman.Image) void {
+fn draw_double_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
-    self.hline(img, 0, vmid + 2 * thick_px, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
+    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, vmid + 2 * thick_px, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_up_single_and_right_double(self: Box, img: *pixman.Image) void {
+fn draw_up_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px) / 2;
-    self.vline_middle_up(img, .light, .light);
-    self.hline(img, vmid, self.width, hmid, thick_px);
-    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline_middle_up(canvas, .light, .light);
+    self.hline(canvas, vmid, self.width, hmid, thick_px);
+    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_up_double_and_right_single(self: Box, img: *pixman.Image) void {
+fn draw_up_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height + thick_px) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle_right(img, .light, .light);
-    self.vline(img, 0, hmid, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.hline_middle_right(canvas, .light, .light);
+    self.vline(canvas, 0, hmid, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_up_and_right(self: Box, img: *pixman.Image) void {
+fn draw_double_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, 0, hmid + 2 * thick_px, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, hmid + 2 * thick_px, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
+    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_up_single_and_left_double(self: Box, img: *pixman.Image) void {
+fn draw_up_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width + thick_px) / 2;
-    self.vline_middle_up(img, .light, .light);
-    self.hline(img, 0, vmid, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.vline_middle_up(canvas, .light, .light);
+    self.hline(canvas, 0, vmid, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_up_double_and_left_single(self: Box, img: *pixman.Image) void {
+fn draw_up_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height + thick_px) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle_left(img, .light, .light);
-    self.vline(img, 0, hmid, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.hline_middle_left(canvas, .light, .light);
+    self.vline(canvas, 0, hmid, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_up_and_left(self: Box, img: *pixman.Image) void {
+fn draw_double_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, 0, hmid + 0 * thick_px + thick_px, vmid, thick_px);
-    self.vline(img, 0, hmid + 2 * thick_px + thick_px, vmid + 2 * thick_px, thick_px);
-    self.hline(img, 0, vmid, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, hmid + 0 * thick_px + thick_px, vmid, thick_px);
+    self.vline(canvas, 0, hmid + 2 * thick_px + thick_px, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, vmid, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_vertical_single_and_right_double(self: Box, img: *pixman.Image) void {
+fn draw_vertical_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px) / 2;
-    self.vline_middle(img, .light);
-    self.hline(img, vmid, self.width, hmid, thick_px);
-    self.hline(img, vmid, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline_middle(canvas, .light);
+    self.hline(canvas, vmid, self.width, hmid, thick_px);
+    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_vertical_double_and_right_single(self: Box, img: *pixman.Image) void {
+fn draw_vertical_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline(img, vmid + 2 * thick_px, self.width, (self.height - thick_px) / 2, thick_px);
-    self.vline(img, 0, self.height, vmid, thick_px);
-    self.vline(img, 0, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, (self.height - thick_px) / 2, thick_px);
+    self.vline(canvas, 0, self.height, vmid, thick_px);
+    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_vertical_and_right(self: Box, img: *pixman.Image) void {
+fn draw_double_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, 0, self.height, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, self.height, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_vertical_single_and_left_double(self: Box, img: *pixman.Image) void {
+fn draw_vertical_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width + thick_px) / 2;
-    self.vline_middle(img, .light);
-    self.hline(img, 0, vmid, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.vline_middle(canvas, .light);
+    self.hline(canvas, 0, vmid, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_vertical_double_and_left_single(self: Box, img: *pixman.Image) void {
+fn draw_vertical_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline(img, 0, vmid, (self.height - thick_px) / 2, thick_px);
-    self.vline(img, 0, self.height, vmid, thick_px);
-    self.vline(img, 0, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, vmid, (self.height - thick_px) / 2, thick_px);
+    self.vline(canvas, 0, self.height, vmid, thick_px);
+    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_vertical_and_left(self: Box, img: *pixman.Image) void {
+fn draw_double_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, 0, self.height, vmid + 2 * thick_px, thick_px);
-    self.vline(img, 0, hmid, vmid, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.hline(img, 0, vmid + thick_px, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, hmid, vmid, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
+    self.hline(canvas, 0, vmid + thick_px, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_down_single_and_horizontal_double(self: Box, img: *pixman.Image) void {
+fn draw_down_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
-    self.vline(img, hmid + 2 * thick_px, self.height, (self.width - thick_px) / 2, thick_px);
-    self.hline(img, 0, self.width, hmid, thick_px);
-    self.hline(img, 0, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, (self.width - thick_px) / 2, thick_px);
+    self.hline(canvas, 0, self.width, hmid, thick_px);
+    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_down_double_and_horizontal_single(self: Box, img: *pixman.Image) void {
+fn draw_down_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle(img, .light);
-    self.vline(img, hmid, self.height, vmid, thick_px);
-    self.vline(img, hmid, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline_middle(canvas, .light);
+    self.vline(canvas, hmid, self.height, vmid, thick_px);
+    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_down_and_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_double_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline(img, 0, self.width, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, self.width, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_up_single_and_horizontal_double(self: Box, img: *pixman.Image) void {
+fn draw_up_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px) / 2;
-    self.vline(img, 0, hmid, vmid, thick_px);
-    self.hline(img, 0, self.width, hmid, thick_px);
-    self.hline(img, 0, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, hmid, vmid, thick_px);
+    self.hline(canvas, 0, self.width, hmid, thick_px);
+    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_up_double_and_horizontal_single(self: Box, img: *pixman.Image) void {
+fn draw_up_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle(img, .light);
-    self.vline(img, 0, hmid, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.hline_middle(canvas, .light);
+    self.vline(canvas, 0, hmid, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_up_and_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_double_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.vline(img, 0, hmid, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.hline(img, 0, vmid + thick_px, hmid, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(img, 0, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, hmid, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, vmid + thick_px, hmid, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
+    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_vertical_single_and_horizontal_double(self: Box, img: *pixman.Image) void {
+fn draw_vertical_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
-    self.vline_middle(img, .light);
-    self.hline(img, 0, self.width, hmid, thick_px);
-    self.hline(img, 0, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline_middle(canvas, .light);
+    self.hline(canvas, 0, self.width, hmid, thick_px);
+    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
 }
 
-fn draw_vertical_double_and_horizontal_single(self: Box, img: *pixman.Image) void {
+fn draw_vertical_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline_middle(img, .light);
-    self.vline(img, 0, self.height, vmid, thick_px);
-    self.vline(img, 0, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline_middle(canvas, .light);
+    self.vline(canvas, 0, self.height, vmid, thick_px);
+    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_double_vertical_and_horizontal(self: Box, img: *pixman.Image) void {
+fn draw_double_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height - thick_px * 3) / 2;
     const vmid = (self.width - thick_px * 3) / 2;
-    self.hline(img, 0, vmid, hmid, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(img, 0, vmid, hmid + 2 * thick_px, thick_px);
-    self.hline(img, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
-    self.vline(img, 0, hmid + thick_px, vmid, thick_px);
-    self.vline(img, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.vline(img, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, vmid, hmid, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
+    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
+    self.vline(canvas, 0, hmid + thick_px, vmid, thick_px);
+    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
+    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
 }
 
-fn draw_light_diagonal_upper_right_to_lower_left(self: Box, img: *pixman.Image) void {
+fn draw_light_diagonal_upper_right_to_lower_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    img.rasterizeTrapezoid(.{
-        .top = pixman.Fixed.init(0),
-        .bottom = pixman.Fixed.init(self.height),
+    canvas.trapezoid(.{
+        .top = 0,
+        .bottom = @intCast(i32, self.height),
         .left = .{
             .p1 = .{
-                .x = pixman.Fixed.init(@intToFloat(f64, self.width) - @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(0),
+                .x = @floatToInt(i32, @intToFloat(f64, self.width) - @intToFloat(f64, thick_px) / 2),
+                .y = 0,
             },
 
             .p2 = .{
-                .x = pixman.Fixed.init(0 - @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(self.height),
+                .x = @floatToInt(i32, 0 - @intToFloat(f64, thick_px) / 2),
+                .y = @intCast(i32, self.height),
             },
         },
         .right = .{
             .p1 = .{
-                .x = pixman.Fixed.init(@intToFloat(f64, self.width) + @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(0),
+                .x = @floatToInt(i32, @intToFloat(f64, self.width) + @intToFloat(f64, thick_px) / 2),
+                .y = 0,
             },
 
             .p2 = .{
-                .x = pixman.Fixed.init(0 + @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(self.height),
+                .x = @floatToInt(i32, 0 + @intToFloat(f64, thick_px) / 2),
+                .y = @intCast(i32, self.height),
             },
         },
-    }, 0, 0);
+    });
 }
 
-fn draw_light_diagonal_upper_left_to_lower_right(self: Box, img: *pixman.Image) void {
+fn draw_light_diagonal_upper_left_to_lower_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    img.rasterizeTrapezoid(.{
-        .top = pixman.Fixed.init(0),
-        .bottom = pixman.Fixed.init(self.height),
+    canvas.trapezoid(.{
+        .top = 0,
+        .bottom = @intCast(i32, self.height),
         .left = .{
             .p1 = .{
-                .x = pixman.Fixed.init(0 - @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(0),
+                .x = @floatToInt(i32, 0 - @intToFloat(f64, thick_px) / 2),
+                .y = 0,
             },
 
             .p2 = .{
-                .x = pixman.Fixed.init(@intToFloat(f64, self.width) - @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(self.height),
+                .x = @floatToInt(i32, @intToFloat(f64, self.width) - @intToFloat(f64, thick_px) / 2),
+                .y = @intCast(i32, self.height),
             },
         },
         .right = .{
             .p1 = .{
-                .x = pixman.Fixed.init(0 + @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(0),
+                .x = @floatToInt(i32, 0 + @intToFloat(f64, thick_px) / 2),
+                .y = 0,
             },
 
             .p2 = .{
-                .x = pixman.Fixed.init(@intToFloat(f64, self.width) + @intToFloat(f64, thick_px) / 2),
-                .y = pixman.Fixed.init(self.height),
+                .x = @floatToInt(i32, @intToFloat(f64, self.width) + @intToFloat(f64, thick_px) / 2),
+                .y = @intCast(i32, self.height),
             },
         },
-    }, 0, 0);
+    });
 }
 
-fn draw_light_diagonal_cross(self: Box, img: *pixman.Image) void {
-    self.draw_light_diagonal_upper_right_to_lower_left(img);
-    self.draw_light_diagonal_upper_left_to_lower_right(img);
+fn draw_light_diagonal_cross(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_light_diagonal_upper_right_to_lower_left(canvas);
+    self.draw_light_diagonal_upper_left_to_lower_right(canvas);
 }
 
-fn draw_light_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
+fn draw_light_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
 }
 
-fn draw_light_up(self: Box, img: *pixman.Image) void {
-    self.vline_middle_up(img, .light, .light);
+fn draw_light_up(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle_up(canvas, .light, .light);
 }
 
-fn draw_light_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .light, .light);
+fn draw_light_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .light, .light);
 }
 
-fn draw_light_down(self: Box, img: *pixman.Image) void {
-    self.vline_middle_down(img, .light, .light);
+fn draw_light_down(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_heavy_left(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
+fn draw_heavy_left(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_up(self: Box, img: *pixman.Image) void {
-    self.vline_middle_up(img, .heavy, .heavy);
+fn draw_heavy_up(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle_up(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_right(img, .heavy, .heavy);
+fn draw_heavy_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_right(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_down(self: Box, img: *pixman.Image) void {
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_heavy_down(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_light_left_and_heavy_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .light, .light);
-    self.hline_middle_right(img, .heavy, .heavy);
+fn draw_light_left_and_heavy_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .light, .light);
+    self.hline_middle_right(canvas, .heavy, .heavy);
 }
 
-fn draw_light_up_and_heavy_down(self: Box, img: *pixman.Image) void {
-    self.vline_middle_up(img, .light, .light);
-    self.vline_middle_down(img, .heavy, .heavy);
+fn draw_light_up_and_heavy_down(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle_up(canvas, .light, .light);
+    self.vline_middle_down(canvas, .heavy, .heavy);
 }
 
-fn draw_heavy_left_and_light_right(self: Box, img: *pixman.Image) void {
-    self.hline_middle_left(img, .heavy, .heavy);
-    self.hline_middle_right(img, .light, .light);
+fn draw_heavy_left_and_light_right(self: Box, canvas: *font.sprite.Canvas) void {
+    self.hline_middle_left(canvas, .heavy, .heavy);
+    self.hline_middle_right(canvas, .light, .light);
 }
 
-fn draw_heavy_up_and_light_down(self: Box, img: *pixman.Image) void {
-    self.vline_middle_up(img, .heavy, .heavy);
-    self.vline_middle_down(img, .light, .light);
+fn draw_heavy_up_and_light_down(self: Box, canvas: *font.sprite.Canvas) void {
+    self.vline_middle_up(canvas, .heavy, .heavy);
+    self.vline_middle_down(canvas, .light, .light);
 }
 
-fn draw_upper_half_block(self: Box, img: *pixman.Image) void {
-    self.rect(img, 0, 0, self.width, self.height / 2);
+fn draw_upper_half_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.rect(canvas, 0, 0, self.width, self.height / 2);
 }
 
-fn draw_lower_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.rect(img, 0, self.height - (self.height / 8), self.width, self.height);
+fn draw_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.rect(canvas, 0, self.height - (self.height / 8), self.width, self.height);
 }
 
-fn draw_lower_one_quarter_block(self: Box, img: *pixman.Image) void {
-    self.rect(img, 0, self.height - (self.height / 4), self.width, self.height);
+fn draw_lower_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.rect(canvas, 0, self.height - (self.height / 4), self.width, self.height);
 }
 
-fn draw_lower_three_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_lower_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         self.height - @floatToInt(u32, @round(3 * @intToFloat(f64, self.height) / 8)),
         self.width,
@@ -1205,9 +1191,9 @@ fn draw_lower_three_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_lower_half_block(self: Box, img: *pixman.Image) void {
+fn draw_lower_half_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         self.height - @floatToInt(u32, @round(@intToFloat(f64, self.height) / 2)),
         self.width,
@@ -1215,9 +1201,9 @@ fn draw_lower_half_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_lower_five_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_lower_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         self.height - @floatToInt(u32, @round(5 * @intToFloat(f64, self.height) / 8)),
         self.width,
@@ -1225,9 +1211,9 @@ fn draw_lower_five_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_lower_three_quarters_block(self: Box, img: *pixman.Image) void {
+fn draw_lower_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         self.height - @floatToInt(u32, @round(3 * @intToFloat(f64, self.height) / 4)),
         self.width,
@@ -1235,9 +1221,9 @@ fn draw_lower_three_quarters_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_lower_seven_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_lower_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         self.height - @floatToInt(u32, @round(7 * @intToFloat(f64, self.height) / 8)),
         self.width,
@@ -1245,9 +1231,9 @@ fn draw_lower_seven_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_upper_one_quarter_block(self: Box, img: *pixman.Image) void {
+fn draw_upper_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         self.width,
@@ -1255,9 +1241,9 @@ fn draw_upper_one_quarter_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_upper_three_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_upper_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         self.width,
@@ -1265,9 +1251,9 @@ fn draw_upper_three_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_upper_five_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_upper_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         self.width,
@@ -1275,9 +1261,9 @@ fn draw_upper_five_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_upper_three_quarters_block(self: Box, img: *pixman.Image) void {
+fn draw_upper_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         self.width,
@@ -1285,9 +1271,9 @@ fn draw_upper_three_quarters_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_upper_seven_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_upper_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         self.width,
@@ -1295,13 +1281,13 @@ fn draw_upper_seven_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_full_block(self: Box, img: *pixman.Image) void {
-    self.rect(img, 0, 0, self.width, self.height);
+fn draw_full_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.rect(canvas, 0, 0, self.width, self.height);
 }
 
-fn draw_left_seven_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_left_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @round(7 * @intToFloat(f64, self.width) / 8)),
@@ -1309,9 +1295,9 @@ fn draw_left_seven_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_left_three_quarters_block(self: Box, img: *pixman.Image) void {
+fn draw_left_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 4)),
@@ -1319,9 +1305,9 @@ fn draw_left_three_quarters_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_left_five_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_left_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @round(5 * @intToFloat(f64, self.width) / 8)),
@@ -1329,9 +1315,9 @@ fn draw_left_five_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_left_half_block(self: Box, img: *pixman.Image) void {
+fn draw_left_half_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
@@ -1339,9 +1325,9 @@ fn draw_left_half_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_left_three_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_left_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 8)),
@@ -1349,9 +1335,9 @@ fn draw_left_three_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_left_one_quarter_block(self: Box, img: *pixman.Image) void {
+fn draw_left_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @round(@intToFloat(f64, self.width) / 4)),
@@ -1359,19 +1345,19 @@ fn draw_left_one_quarter_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_vertical_one_eighth_block_n(self: Box, img: *pixman.Image, n: u32) void {
+fn draw_vertical_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
     const x = @floatToInt(u32, @round(@intToFloat(f64, n) * @intToFloat(f64, self.width) / 8));
     const w = @floatToInt(u32, @round(@intToFloat(f64, self.width) / 8));
-    self.rect(img, x, 0, x + w, self.height);
+    self.rect(canvas, x, 0, x + w, self.height);
 }
 
-fn draw_left_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_vertical_one_eighth_block_n(img, 0);
+fn draw_left_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_vertical_one_eighth_block_n(canvas, 0);
 }
 
-fn draw_right_half_block(self: Box, img: *pixman.Image) void {
+fn draw_right_half_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         @floatToInt(u32, @round(@intToFloat(f64, self.width) / 2)),
         0,
         self.width,
@@ -1379,48 +1365,40 @@ fn draw_right_half_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_pixman_shade(self: Box, img: *pixman.Image, v: u16) void {
-    const boxes = &[_]pixman.Box32{
-        .{
-            .x1 = 0,
-            .y1 = 0,
-            .x2 = @intCast(i32, self.width),
-            .y2 = @intCast(i32, self.height),
-        },
-    };
-
-    img.fillBoxes(
-        .src,
-        .{ .red = 0, .green = 0, .blue = 0, .alpha = v },
-        boxes,
-    ) catch {};
+fn draw_pixman_shade(self: Box, canvas: *font.sprite.Canvas, v: u16) void {
+    canvas.rect((font.sprite.Box{
+        .x1 = 0,
+        .y1 = 0,
+        .x2 = @intCast(i32, self.width),
+        .y2 = @intCast(i32, self.height),
+    }).rect(), @intToEnum(font.sprite.Color, v));
 }
 
-fn draw_light_shade(self: Box, img: *pixman.Image) void {
-    self.draw_pixman_shade(img, 0x4000);
+fn draw_light_shade(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_pixman_shade(canvas, 0x40);
 }
 
-fn draw_medium_shade(self: Box, img: *pixman.Image) void {
-    self.draw_pixman_shade(img, 0x8000);
+fn draw_medium_shade(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_pixman_shade(canvas, 0x80);
 }
 
-fn draw_dark_shade(self: Box, img: *pixman.Image) void {
-    self.draw_pixman_shade(img, 0xc000);
+fn draw_dark_shade(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_pixman_shade(canvas, 0xc0);
 }
 
-fn draw_horizontal_one_eighth_block_n(self: Box, img: *pixman.Image, n: u32) void {
+fn draw_horizontal_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
     const y = @floatToInt(u32, @round(@intToFloat(f64, n) * @intToFloat(f64, self.height) / 8));
     const h = @floatToInt(u32, @round(@intToFloat(f64, self.height) / 8));
-    self.rect(img, 0, y, self.width, y + h);
+    self.rect(canvas, 0, y, self.width, y + h);
 }
 
-fn draw_upper_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_horizontal_one_eighth_block_n(img, 0);
+fn draw_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_horizontal_one_eighth_block_n(canvas, 0);
 }
 
-fn draw_right_one_eighth_block(self: Box, img: *pixman.Image) void {
+fn draw_right_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         self.width - @floatToInt(u32, @round(@intToFloat(f64, self.width) / 8)),
         0,
         self.width,
@@ -1428,41 +1406,41 @@ fn draw_right_one_eighth_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_left_and_lower_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_left_one_eighth_block(img);
-    self.draw_lower_one_eighth_block(img);
+fn draw_left_and_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_left_one_eighth_block(canvas);
+    self.draw_lower_one_eighth_block(canvas);
 }
 
-fn draw_left_and_upper_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_left_one_eighth_block(img);
-    self.draw_upper_one_eighth_block(img);
+fn draw_left_and_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_left_one_eighth_block(canvas);
+    self.draw_upper_one_eighth_block(canvas);
 }
 
-fn draw_right_and_upper_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_right_one_eighth_block(img);
-    self.draw_upper_one_eighth_block(img);
+fn draw_right_and_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_right_one_eighth_block(canvas);
+    self.draw_upper_one_eighth_block(canvas);
 }
 
-fn draw_right_and_lower_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_right_one_eighth_block(img);
-    self.draw_lower_one_eighth_block(img);
+fn draw_right_and_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_right_one_eighth_block(canvas);
+    self.draw_lower_one_eighth_block(canvas);
 }
 
-fn draw_upper_and_lower_one_eighth_block(self: Box, img: *pixman.Image) void {
-    self.draw_upper_one_eighth_block(img);
-    self.draw_lower_one_eighth_block(img);
+fn draw_upper_and_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_upper_one_eighth_block(canvas);
+    self.draw_lower_one_eighth_block(canvas);
 }
 
-fn draw_horizontal_one_eighth_1358_block(self: Box, img: *pixman.Image) void {
-    self.draw_upper_one_eighth_block(img);
-    self.draw_horizontal_one_eighth_block_n(img, 2);
-    self.draw_horizontal_one_eighth_block_n(img, 4);
-    self.draw_lower_one_eighth_block(img);
+fn draw_horizontal_one_eighth_1358_block(self: Box, canvas: *font.sprite.Canvas) void {
+    self.draw_upper_one_eighth_block(canvas);
+    self.draw_horizontal_one_eighth_block_n(canvas, 2);
+    self.draw_horizontal_one_eighth_block_n(canvas, 4);
+    self.draw_lower_one_eighth_block(canvas);
 }
 
-fn draw_right_one_quarter_block(self: Box, img: *pixman.Image) void {
+fn draw_right_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         self.width - @floatToInt(u32, @round(@intToFloat(f64, self.width) / 4)),
         0,
         self.width,
@@ -1470,9 +1448,9 @@ fn draw_right_one_quarter_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_right_three_quarters_block(self: Box, img: *pixman.Image) void {
+fn draw_right_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         self.width - @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 4)),
         0,
         self.width,
@@ -1480,9 +1458,9 @@ fn draw_right_three_quarters_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_right_three_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_right_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         self.width - @floatToInt(u32, @round(3 * @intToFloat(f64, self.width) / 8)),
         0,
         self.width,
@@ -1490,9 +1468,9 @@ fn draw_right_three_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_right_five_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_right_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         self.width - @floatToInt(u32, @round(5 * @intToFloat(f64, self.width) / 8)),
         0,
         self.width,
@@ -1500,9 +1478,9 @@ fn draw_right_five_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_right_seven_eighths_block(self: Box, img: *pixman.Image) void {
+fn draw_right_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         self.width - @floatToInt(u32, @round(7 * @intToFloat(f64, self.width) / 8)),
         0,
         self.width,
@@ -1510,9 +1488,9 @@ fn draw_right_seven_eighths_block(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn quad_upper_left(self: Box, img: *pixman.Image) void {
+fn quad_upper_left(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         0,
         @floatToInt(u32, @ceil(@intToFloat(f64, self.width) / 2)),
@@ -1520,9 +1498,9 @@ fn quad_upper_left(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn quad_upper_right(self: Box, img: *pixman.Image) void {
+fn quad_upper_right(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         @floatToInt(u32, @floor(@intToFloat(f64, self.width) / 2)),
         0,
         self.width,
@@ -1530,9 +1508,9 @@ fn quad_upper_right(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn quad_lower_left(self: Box, img: *pixman.Image) void {
+fn quad_lower_left(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         0,
         @floatToInt(u32, @floor(@intToFloat(f64, self.height) / 2)),
         @floatToInt(u32, @ceil(@intToFloat(f64, self.width) / 2)),
@@ -1540,9 +1518,9 @@ fn quad_lower_left(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn quad_lower_right(self: Box, img: *pixman.Image) void {
+fn quad_lower_right(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
-        img,
+        canvas,
         @floatToInt(u32, @floor(@intToFloat(f64, self.width) / 2)),
         @floatToInt(u32, @floor(@intToFloat(f64, self.height) / 2)),
         self.width,
@@ -1550,7 +1528,7 @@ fn quad_lower_right(self: Box, img: *pixman.Image) void {
     );
 }
 
-fn draw_quadrant(self: Box, img: *pixman.Image, cp: u32) void {
+fn draw_quadrant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     const UPPER_LEFT: u8 = 1 << 0;
     const UPPER_RIGHT: u8 = 1 << 1;
     const LOWER_LEFT: u8 = 1 << 2;
@@ -1572,13 +1550,13 @@ fn draw_quadrant(self: Box, img: *pixman.Image, cp: u32) void {
     const idx = cp - 0x2596;
     const encoded = matrix[idx];
 
-    if (encoded & UPPER_LEFT == UPPER_LEFT) self.quad_upper_left(img);
-    if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.quad_upper_right(img);
-    if (encoded & LOWER_LEFT == LOWER_LEFT) self.quad_lower_left(img);
-    if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.quad_lower_right(img);
+    if (encoded & UPPER_LEFT == UPPER_LEFT) self.quad_upper_left(canvas);
+    if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.quad_upper_right(canvas);
+    if (encoded & LOWER_LEFT == LOWER_LEFT) self.quad_lower_left(canvas);
+    if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.quad_lower_right(canvas);
 }
 
-fn draw_braille(self: Box, img: *pixman.Image, cp: u32) void {
+fn draw_braille(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     var w: u32 = @min(self.width / 4, self.height / 8);
     var x_spacing: u32 = self.width / 4;
     var y_spacing: u32 = self.height / 8;
@@ -1652,28 +1630,28 @@ fn draw_braille(self: Box, img: *pixman.Image, cp: u32) void {
 
     // Left side
     if (sym & 1 > 0)
-        self.rect(img, x[0], y[0], x[0] + w, y[0] + w);
+        self.rect(canvas, x[0], y[0], x[0] + w, y[0] + w);
     if (sym & 2 > 0)
-        self.rect(img, x[0], y[1], x[0] + w, y[1] + w);
+        self.rect(canvas, x[0], y[1], x[0] + w, y[1] + w);
     if (sym & 4 > 0)
-        self.rect(img, x[0], y[2], x[0] + w, y[2] + w);
+        self.rect(canvas, x[0], y[2], x[0] + w, y[2] + w);
 
     // Right side
     if (sym & 8 > 0)
-        self.rect(img, x[1], y[0], x[1] + w, y[0] + w);
+        self.rect(canvas, x[1], y[0], x[1] + w, y[0] + w);
     if (sym & 16 > 0)
-        self.rect(img, x[1], y[1], x[1] + w, y[1] + w);
+        self.rect(canvas, x[1], y[1], x[1] + w, y[1] + w);
     if (sym & 32 > 0)
-        self.rect(img, x[1], y[2], x[1] + w, y[2] + w);
+        self.rect(canvas, x[1], y[2], x[1] + w, y[2] + w);
 
     // 8-dot patterns
     if (sym & 64 > 0)
-        self.rect(img, x[0], y[3], x[0] + w, y[3] + w);
+        self.rect(canvas, x[0], y[3], x[0] + w, y[3] + w);
     if (sym & 128 > 0)
-        self.rect(img, x[1], y[3], x[1] + w, y[3] + w);
+        self.rect(canvas, x[1], y[3], x[1] + w, y[3] + w);
 }
 
-fn draw_sextant(self: Box, img: *pixman.Image, cp: u32) void {
+fn draw_sextant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     const UPPER_LEFT: u8 = 1 << 0;
     const MIDDLE_LEFT: u8 = 1 << 1;
     const LOWER_LEFT: u8 = 1 << 2;
@@ -1758,12 +1736,12 @@ fn draw_sextant(self: Box, img: *pixman.Image, cp: u32) void {
     const x_halfs = self.xHalfs();
     const y_thirds = self.yThirds();
 
-    if (encoded & UPPER_LEFT > 0) self.rect(img, 0, 0, x_halfs[0], y_thirds[0]);
-    if (encoded & MIDDLE_LEFT > 0) self.rect(img, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
-    if (encoded & LOWER_LEFT > 0) self.rect(img, 0, y_thirds[1], x_halfs[0], self.height);
-    if (encoded & UPPER_RIGHT > 0) self.rect(img, x_halfs[1], 0, self.width, y_thirds[0]);
-    if (encoded & MIDDLE_RIGHT > 0) self.rect(img, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
-    if (encoded & LOWER_RIGHT > 0) self.rect(img, x_halfs[1], y_thirds[1], self.width, self.height);
+    if (encoded & UPPER_LEFT > 0) self.rect(canvas, 0, 0, x_halfs[0], y_thirds[0]);
+    if (encoded & MIDDLE_LEFT > 0) self.rect(canvas, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
+    if (encoded & LOWER_LEFT > 0) self.rect(canvas, 0, y_thirds[1], x_halfs[0], self.height);
+    if (encoded & UPPER_RIGHT > 0) self.rect(canvas, x_halfs[1], 0, self.width, y_thirds[0]);
+    if (encoded & MIDDLE_RIGHT > 0) self.rect(canvas, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
+    if (encoded & LOWER_RIGHT > 0) self.rect(canvas, x_halfs[1], y_thirds[1], self.width, self.height);
 }
 
 fn xHalfs(self: Box) [2]u32 {
@@ -1782,7 +1760,7 @@ fn yThirds(self: Box) [2]u32 {
     };
 }
 
-fn draw_wedge_triangle(self: Box, img: *pixman.Image, cp: u32) !void {
+fn draw_wedge_triangle(self: Box, canvas: *font.sprite.Canvas, cp: u32) !void {
     const width = self.width;
     const height = self.height;
 
@@ -2128,44 +2106,36 @@ fn draw_wedge_triangle(self: Box, img: *pixman.Image, cp: u32) !void {
         else => unreachable,
     }
 
-    const tris = &[_]pixman.Triangle{
-        .{
-            .p1 = .{ .x = pixman.Fixed.init(p1_x), .y = pixman.Fixed.init(p1_y) },
-            .p2 = .{ .x = pixman.Fixed.init(p2_x), .y = pixman.Fixed.init(p2_y) },
-            .p3 = .{ .x = pixman.Fixed.init(p3_x), .y = pixman.Fixed.init(p3_y) },
-        },
-    };
-
-    const src = try pixman.Image.createSolidFill(white);
-    defer _ = src.unref();
-    img.compositeTriangles(.over, src, .a8, 0, 0, 0, 0, tris);
+    canvas.triangle(.{
+        .p1 = .{ .x = @intCast(i32, p1_x), .y = @intCast(i32, p1_y) },
+        .p2 = .{ .x = @intCast(i32, p2_x), .y = @intCast(i32, p2_y) },
+        .p3 = .{ .x = @intCast(i32, p3_x), .y = @intCast(i32, p3_y) },
+    }, .on);
 }
 
-fn draw_wedge_triangle_inverted(self: Box, img: *pixman.Image, cp: u32) !void {
-    try self.draw_wedge_triangle(img, cp);
+fn draw_wedge_triangle_inverted(
+    self: Box,
+    alloc: Allocator,
+    canvas: *font.sprite.Canvas,
+    cp: u32,
+) !void {
+    try self.draw_wedge_triangle(canvas, cp);
 
-    const src = try pixman.Image.createSolidFill(white);
-    defer _ = src.unref();
-    img.composite(
-        .out,
-        src,
-        null,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        @intCast(u16, self.width),
-        @intCast(u16, self.height),
+    var src = try font.sprite.Canvas.init(alloc, self.width, self.height);
+    src.rect(.{ .x = 0, .y = 0, .width = self.width, .height = self.height }, .on);
+    defer src.deinit(alloc);
+    canvas.composite(
+        .destination_out,
+        &src,
+        .{ .x = 0, .y = 0, .width = self.width, .height = self.height },
     );
 }
 
-fn draw_wedge_triangle_and_box(self: Box, img: *pixman.Image, cp: u32) !void {
-    try self.draw_wedge_triangle(img, cp);
+fn draw_wedge_triangle_and_box(self: Box, canvas: *font.sprite.Canvas, cp: u32) !void {
+    try self.draw_wedge_triangle(canvas, cp);
 
     const y_thirds = self.yThirds();
-    const box: pixman.Box32 = switch (cp) {
+    const box: font.sprite.Box = switch (cp) {
         0x1fb46, 0x1fb51 => .{
             .x1 = 0,
             .y1 = @intCast(i32, y_thirds[1]),
@@ -2183,25 +2153,22 @@ fn draw_wedge_triangle_and_box(self: Box, img: *pixman.Image, cp: u32) !void {
         else => unreachable,
     };
 
-    const boxes = &[_]pixman.Box32{box};
-    img.fillBoxes(.src, white, boxes) catch {};
+    canvas.rect(box.rect(), .on);
 }
 
 fn draw_light_arc(
     self: Box,
     alloc: Allocator,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     cp: u32,
 ) !void {
     const supersample = 4;
     const height = self.height * supersample;
     const width = self.width * supersample;
-    const stride = pixman.FormatCode.a8.strideForWidth(width);
 
-    // Allocate our buffer
-    var data = try alloc.alloc(u8, height * @intCast(u32, stride));
-    defer alloc.free(data);
-    std.mem.set(u8, data, 0);
+    // Allocate our supersample sized canvas
+    var supercanvas = try font.sprite.Canvas.init(alloc, width, height);
+    defer supercanvas.deinit(alloc);
 
     const height_pixels = self.height;
     const width_pixels = self.width;
@@ -2389,50 +2356,59 @@ fn draw_light_arc(
                     // skip if midpoint of pixel is outside the circle.
                     if (dist > @intToFloat(f64, thick) / 2) continue;
 
-                    const idx = @intCast(usize, r * stride + c);
-                    data[idx] = 0xff;
+                    // Set our pixel
+                    supercanvas.rect(.{ .x = c, .y = r, .width = 1, .height = 1 }, .on);
                 }
             }
         }
     }
 
     // Downsample
-    {
-        // We want to convert our []u32 to []u8 since we use an 8bpp format
-        var data_u32 = img.getData();
-        const len_u8 = data_u32.len * 4;
-        var real_data = @alignCast(@alignOf(u8), @ptrCast([*]u8, data_u32.ptr)[0..len_u8]);
-        const real_stride = img.getStride();
-
-        var r: u32 = 0;
-        while (r < self.height) : (r += 1) {
-            var c: u32 = 0;
-            while (c < self.width) : (c += 1) {
-                var total: u32 = 0;
-                var i: usize = 0;
-                while (i < supersample) : (i += 1) {
-                    var j: usize = 0;
-                    while (j < supersample) : (j += 1) {
-                        const idx = (r * supersample + i) * @intCast(usize, stride) + c * supersample + j;
-                        total += data[idx];
-                    }
-                }
-
-                const average = @intCast(u8, @min(total / (supersample * supersample), 0xff));
-                const idx = r * @intCast(usize, real_stride) + c;
-                real_data[idx] = average;
-            }
-        }
-    }
+    // {
+    //     var ss_data = try supercanvas.getData(alloc);
+    //     defer alloc.free(ss_data);
+    //
+    //     var r: u32 = 0;
+    //     while (r < self.height) : (r += 1) {
+    //         var c: u32 = 0;
+    //         while (c < self.width) : (c += 1) {
+    //             var total: u32 = 0;
+    //             var i: usize = 0;
+    //             while (i < supersample) : (i += 1) {
+    //                 var j: usize = 0;
+    //                 while (j < supersample) : (j += 1) {
+    //                     const idx = (r * supersample + i) * (c * supersample) + (c * supersample + j);
+    //                     total += ss_data[idx];
+    //                     // const idx = (r * supersample + i) * @intCast(usize, stride) + c * supersample + j;
+    //                     //total += data[idx];
+    //                 }
+    //             }
+    //
+    //             const average = @intCast(u8, @min(total / (supersample * supersample), 0xff));
+    //             canvas.rect(
+    //                 .{
+    //                     .x = @intCast(i32, c),
+    //                     .y = @intCast(i32, r),
+    //                     .width = 1,
+    //                     .height = 1,
+    //                 },
+    //                 @intToEnum(font.sprite.Color, average),
+    //             );
+    //
+    //             // const idx = r * @intCast(usize, real_stride) + c;
+    //             // real_data[idx] = average;
+    //         }
+    //     }
+    // }
 
     // draw vertical/horizontal lines from quartercircle-edge to box-edge.
-    self.vline(img, @min(c_y_pixels, vert_to), @max(c_y_pixels, vert_to), (width_pixels - thick_pixels) / 2, thick_pixels);
-    self.hline(img, @min(c_x_pixels, hor_to), @max(c_x_pixels, hor_to), (height_pixels - thick_pixels) / 2, thick_pixels);
+    self.vline(canvas, @min(c_y_pixels, vert_to), @max(c_y_pixels, vert_to), (width_pixels - thick_pixels) / 2, thick_pixels);
+    self.hline(canvas, @min(c_x_pixels, hor_to), @max(c_x_pixels, hor_to), (height_pixels - thick_pixels) / 2, thick_pixels);
 }
 
 fn draw_dash_horizontal(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     count: u8,
     thick_px: u32,
     gap: u32,
@@ -2454,7 +2430,7 @@ fn draw_dash_horizontal(
 
         // If we can't fit any dashes then we just render a horizontal line.
         if (dash_width <= 0) {
-            self.hline_middle(img, .light);
+            self.hline_middle(canvas, .light);
             return;
         }
 
@@ -2488,17 +2464,17 @@ fn draw_dash_horizontal(
         w[3] = self.width - x[3];
     }
 
-    self.hline(img, x[0], x[0] + w[0], (self.height - thick_px) / 2, thick_px);
-    self.hline(img, x[1], x[1] + w[1], (self.height - thick_px) / 2, thick_px);
+    self.hline(canvas, x[0], x[0] + w[0], (self.height - thick_px) / 2, thick_px);
+    self.hline(canvas, x[1], x[1] + w[1], (self.height - thick_px) / 2, thick_px);
     if (count >= 3)
-        self.hline(img, x[2], x[2] + w[2], (self.height - thick_px) / 2, thick_px);
+        self.hline(canvas, x[2], x[2] + w[2], (self.height - thick_px) / 2, thick_px);
     if (count >= 4)
-        self.hline(img, x[3], x[3] + w[3], (self.height - thick_px) / 2, thick_px);
+        self.hline(canvas, x[3], x[3] + w[3], (self.height - thick_px) / 2, thick_px);
 }
 
 fn draw_dash_vertical(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     count: u8,
     thick_px: u32,
     gap: u32,
@@ -2520,7 +2496,7 @@ fn draw_dash_vertical(
 
         // If we can't fit any dashes then we just render a horizontal line.
         if (dash_height <= 0) {
-            self.vline_middle(img, .light);
+            self.vline_middle(canvas, .light);
             return;
         }
 
@@ -2554,29 +2530,29 @@ fn draw_dash_vertical(
         h[3] = self.height - y[3];
     }
 
-    self.vline(img, y[0], y[0] + h[0], (self.width - thick_px) / 2, thick_px);
-    self.vline(img, y[1], y[1] + h[1], (self.width - thick_px) / 2, thick_px);
+    self.vline(canvas, y[0], y[0] + h[0], (self.width - thick_px) / 2, thick_px);
+    self.vline(canvas, y[1], y[1] + h[1], (self.width - thick_px) / 2, thick_px);
     if (count >= 3)
-        self.vline(img, y[2], y[2] + h[2], (self.width - thick_px) / 2, thick_px);
+        self.vline(canvas, y[2], y[2] + h[2], (self.width - thick_px) / 2, thick_px);
     if (count >= 4)
-        self.vline(img, y[3], y[3] + h[3], (self.width - thick_px) / 2, thick_px);
+        self.vline(canvas, y[3], y[3] + h[3], (self.width - thick_px) / 2, thick_px);
 }
 
-fn vline_middle(self: Box, img: *pixman.Image, thickness: Thickness) void {
+fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
-    self.vline(img, 0, self.height, (self.width - thick_px) / 2, thick_px);
+    self.vline(canvas, 0, self.height, (self.width - thick_px) / 2, thick_px);
 }
 
 fn vline_middle_up(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     vthickness: Thickness,
     hthickness: Thickness,
 ) void {
     const hthick_px = hthickness.height(self.thickness);
     const vthick_px = vthickness.height(self.thickness);
     self.vline(
-        img,
+        canvas,
         0,
         (self.height + hthick_px) / 2,
         (self.width - vthick_px) / 2,
@@ -2586,14 +2562,14 @@ fn vline_middle_up(
 
 fn vline_middle_down(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     vthickness: Thickness,
     hthickness: Thickness,
 ) void {
     const hthick_px = hthickness.height(self.thickness);
     const vthick_px = vthickness.height(self.thickness);
     self.vline(
-        img,
+        canvas,
         (self.height - hthick_px) / 2,
         self.height,
         (self.width - vthick_px) / 2,
@@ -2601,21 +2577,21 @@ fn vline_middle_down(
     );
 }
 
-fn hline_middle(self: Box, img: *pixman.Image, thickness: Thickness) void {
+fn hline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
-    self.hline(img, 0, self.width, (self.height - thick_px) / 2, thick_px);
+    self.hline(canvas, 0, self.width, (self.height - thick_px) / 2, thick_px);
 }
 
 fn hline_middle_left(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     vthickness: Thickness,
     hthickness: Thickness,
 ) void {
     const hthick_px = hthickness.height(self.thickness);
     const vthick_px = vthickness.height(self.thickness);
     self.hline(
-        img,
+        canvas,
         0,
         (self.width + vthick_px) / 2,
         (self.height - hthick_px) / 2,
@@ -2625,14 +2601,14 @@ fn hline_middle_left(
 
 fn hline_middle_right(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     vthickness: Thickness,
     hthickness: Thickness,
 ) void {
     const hthick_px = hthickness.height(self.thickness);
     const vthick_px = vthickness.height(self.thickness);
     self.hline(
-        img,
+        canvas,
         (self.width - vthick_px) / 2,
         self.width,
         (self.height - hthick_px) / 2,
@@ -2642,62 +2618,50 @@ fn hline_middle_right(
 
 fn vline(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     y1: u32,
     y2: u32,
     x: u32,
     thickness_px: u32,
 ) void {
-    const boxes = &[_]pixman.Box32{
-        .{
-            .x1 = @intCast(i32, @min(@max(x, 0), self.width)),
-            .x2 = @intCast(i32, @min(@max(x + thickness_px, 0), self.width)),
-            .y1 = @intCast(i32, @min(@max(y1, 0), self.height)),
-            .y2 = @intCast(i32, @min(@max(y2, 0), self.height)),
-        },
-    };
-
-    img.fillBoxes(.src, white, boxes) catch {};
+    canvas.rect((font.sprite.Box{
+        .x1 = @intCast(i32, @min(@max(x, 0), self.width)),
+        .x2 = @intCast(i32, @min(@max(x + thickness_px, 0), self.width)),
+        .y1 = @intCast(i32, @min(@max(y1, 0), self.height)),
+        .y2 = @intCast(i32, @min(@max(y2, 0), self.height)),
+    }).rect(), .on);
 }
 
 fn hline(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     x1: u32,
     x2: u32,
     y: u32,
     thickness_px: u32,
 ) void {
-    const boxes = &[_]pixman.Box32{
-        .{
-            .x1 = @intCast(i32, @min(@max(x1, 0), self.width)),
-            .x2 = @intCast(i32, @min(@max(x2, 0), self.width)),
-            .y1 = @intCast(i32, @min(@max(y, 0), self.height)),
-            .y2 = @intCast(i32, @min(@max(y + thickness_px, 0), self.height)),
-        },
-    };
-
-    img.fillBoxes(.src, white, boxes) catch {};
+    canvas.rect((font.sprite.Box{
+        .x1 = @intCast(i32, @min(@max(x1, 0), self.width)),
+        .x2 = @intCast(i32, @min(@max(x2, 0), self.width)),
+        .y1 = @intCast(i32, @min(@max(y, 0), self.height)),
+        .y2 = @intCast(i32, @min(@max(y + thickness_px, 0), self.height)),
+    }).rect(), .on);
 }
 
 fn rect(
     self: Box,
-    img: *pixman.Image,
+    canvas: *font.sprite.Canvas,
     x1: u32,
     y1: u32,
     x2: u32,
     y2: u32,
 ) void {
-    const boxes = &[_]pixman.Box32{
-        .{
-            .x1 = @intCast(i32, @min(@max(x1, 0), self.width)),
-            .y1 = @intCast(i32, @min(@max(y1, 0), self.height)),
-            .x2 = @intCast(i32, @min(@max(x2, 0), self.width)),
-            .y2 = @intCast(i32, @min(@max(y2, 0), self.height)),
-        },
-    };
-
-    img.fillBoxes(.src, white, boxes) catch {};
+    canvas.rect((font.sprite.Box{
+        .x1 = @intCast(i32, @min(@max(x1, 0), self.width)),
+        .y1 = @intCast(i32, @min(@max(y1, 0), self.height)),
+        .x2 = @intCast(i32, @min(@max(x2, 0), self.width)),
+        .y2 = @intCast(i32, @min(@max(y2, 0), self.height)),
+    }).rect(), .on);
 }
 
 test "all" {

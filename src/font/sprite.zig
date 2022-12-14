@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const Canvas = @import("sprite/Canvas.zig");
+pub usingnamespace @import("sprite/canvas.zig");
 pub const Face = @import("sprite/Face.zig");
 
 /// Sprites are represented as special codepoints outside of the Unicode
