@@ -255,34 +255,4 @@ const PixmanImpl = struct {
             @intCast(u16, dest.height),
         );
     }
-
-    /// Returns a copy of the raw pixel data in A8 format. The returned value
-    /// must be freed by the caller. The returned data always has a stride
-    /// exactly equivalent to the width.
-    pub fn getData(self: *const Canvas, alloc: Allocator) ![]u8 {
-        const width = @intCast(u32, self.image.getWidth());
-        const height = @intCast(u32, self.image.getHeight());
-        const stride = self.image.getStride();
-
-        var result = try alloc.alloc(u8, height * width);
-        errdefer alloc.free(result);
-
-        // We want to convert our []u32 to []u8 since we use an 8bpp format
-        const data = @alignCast(
-            @alignOf(u8),
-            @ptrCast([*]u8, self.data.ptr)[0 .. self.data.len * 4],
-        );
-
-        // Convert our strided data
-        var dst_ptr = result;
-        var src_ptr = data.ptr;
-        var i: usize = 0;
-        while (i < height) : (i += 1) {
-            std.mem.copy(u8, dst_ptr, src_ptr[0..width]);
-            dst_ptr = dst_ptr[width..];
-            src_ptr += @intCast(usize, stride);
-        }
-
-        return result;
-    }
 };
