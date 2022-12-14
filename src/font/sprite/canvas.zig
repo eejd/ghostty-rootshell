@@ -86,11 +86,17 @@ pub const Color = enum(u8) {
 pub const CompositionOp = enum {
     // Note: more can be added here as needed.
 
-    destination_out,
+    source_out,
 
     fn pixmanOp(self: CompositionOp) pixman.Op {
         return switch (self) {
-            .destination_out => .out,
+            .source_out => .out,
+        };
+    }
+
+    fn jsOp(self: CompositionOp) js.String {
+        return switch (self) {
+            .source_out => js.string("source-out"),
         };
     }
 };
@@ -151,9 +157,14 @@ const WebCanvasImpl = struct {
     }
 
     pub fn triangle(self: *WebCanvasImpl, t: Triangle, color: Color) void {
-        _ = self;
-        _ = t;
-        _ = color;
+        const ctx = self.context(color) catch return;
+        defer ctx.deinit();
+
+        ctx.call(void, "beginPath", .{}) catch return;
+        ctx.call(void, "moveTo", .{ t.p1.x, t.p1.y }) catch return;
+        ctx.call(void, "lineTo", .{ t.p2.x, t.p2.y }) catch return;
+        ctx.call(void, "lineTo", .{ t.p3.x, t.p3.y }) catch return;
+        ctx.call(void, "fill", .{}) catch return;
     }
 
     pub fn composite(
@@ -162,15 +173,28 @@ const WebCanvasImpl = struct {
         src: *const WebCanvasImpl,
         dest: Rect,
     ) void {
-        _ = self;
-        _ = op;
-        _ = src;
-        _ = dest;
+        const ctx = self.context(Color.on) catch return;
+        defer ctx.deinit();
+
+        // Set our compositing operation
+        ctx.set("globalCompositeOperation", op.jsOp()) catch return;
+
+        // Composite
+        ctx.call(void, "drawImage", .{
+            src.canvas,
+            dest.x,
+            dest.y,
+            dest.width,
+            dest.height,
+        }) catch return;
     }
 
     fn context(self: WebCanvasImpl, fill: ?Color) !js.Object {
         const ctx = try self.canvas.call(js.Object, "getContext", .{js.string("2d")});
         errdefer ctx.deinit();
+
+        // Reset our composite operation
+        try ctx.set("globalCompositeOperation", js.string("source-over"));
 
         // Set our fill color
         if (fill) |c| {

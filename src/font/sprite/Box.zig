@@ -2125,7 +2125,7 @@ fn draw_wedge_triangle_inverted(
     src.rect(.{ .x = 0, .y = 0, .width = self.width, .height = self.height }, .on);
     defer src.deinit(alloc);
     canvas.composite(
-        .destination_out,
+        .source_out,
         &src,
         .{ .x = 0, .y = 0, .width = self.width, .height = self.height },
     );
