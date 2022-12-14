@@ -3,6 +3,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const js = @import("zig-js");
 const pixman = @import("pixman");
 const font = @import("../main.zig");
 
@@ -91,7 +92,70 @@ pub const Canvas = switch (font.options.backend) {
     else => PixmanImpl,
 };
 
-const WebCanvasImpl = struct {};
+const WebCanvasImpl = struct {
+    /// The canvas element that is our final image.
+    canvas: js.Object,
+
+    pub fn init(alloc: Allocator, width: u32, height: u32) !WebCanvasImpl {
+        _ = alloc;
+
+        // Create our canvas that we're going to continue to reuse.
+        const doc = try js.global.get(js.Object, "document");
+        defer doc.deinit();
+        const canvas = try doc.call(js.Object, "createElement", .{js.string("canvas")});
+        errdefer canvas.deinit();
+
+        // Set our dimensions.
+        try canvas.set("width", width);
+        try canvas.set("height", height);
+
+        return WebCanvasImpl{
+            .canvas = canvas,
+        };
+    }
+
+    pub fn deinit(self: *WebCanvasImpl, alloc: Allocator) void {
+        _ = alloc;
+        self.canvas.deinit();
+        self.* = undefined;
+    }
+
+    pub fn rect(self: *WebCanvasImpl, v: Rect, color: Color) void {
+        _ = self;
+        _ = v;
+        _ = color;
+    }
+
+    pub fn trapezoid(self: *WebCanvasImpl, t: Trapezoid) void {
+        _ = self;
+        _ = t;
+    }
+
+    pub fn triangle(self: *WebCanvasImpl, t: Triangle, color: Color) void {
+        _ = self;
+        _ = t;
+        _ = color;
+    }
+
+    pub fn composite(
+        self: *WebCanvasImpl,
+        op: CompositionOp,
+        src: *const WebCanvasImpl,
+        dest: Rect,
+    ) void {
+        _ = self;
+        _ = op;
+        _ = src;
+        _ = dest;
+    }
+
+    pub fn writeAtlas(self: *WebCanvasImpl, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
+        _ = self;
+        _ = alloc;
+        _ = atlas;
+        return error.Unimplemented;
+    }
+};
 
 const PixmanImpl = struct {
     /// The underlying image.

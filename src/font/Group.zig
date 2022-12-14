@@ -272,16 +272,13 @@ pub fn renderGlyph(
     max_height: ?u16,
 ) !Glyph {
     // Special-case fonts are rendered directly.
-    // TODO: web_canvas
-    if (options.backend != .web_canvas) {
-        if (index.special()) |sp| switch (sp) {
-            .sprite => return try self.sprite.?.renderGlyph(
-                alloc,
-                atlas,
-                glyph_index,
-            ),
-        };
-    }
+    if (index.special()) |sp| switch (sp) {
+        .sprite => return try self.sprite.?.renderGlyph(
+            alloc,
+            atlas,
+            glyph_index,
+        ),
+    };
 
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try face.load(self.lib, self.size);
