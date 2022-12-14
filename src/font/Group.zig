@@ -311,6 +311,29 @@ pub const Wasm = struct {
         }
     }
 
+    export fn group_init_sprite_face(self: *Group) void {
+        return group_init_sprite_face_(self) catch |err| {
+            log.warn("error initializing sprite face err={}", .{err});
+            return;
+        };
+    }
+
+    fn group_init_sprite_face_(self: *Group) !void {
+        const metrics = metrics: {
+            const index = self.indexForCodepoint('M', .regular, .text).?;
+            const face = try self.faceFromIndex(index);
+            break :metrics face.metrics;
+        };
+
+        // Set details for our sprite font
+        self.sprite = font.sprite.Face{
+            .width = @floatToInt(u32, metrics.cell_width),
+            .height = @floatToInt(u32, metrics.cell_height),
+            .thickness = 2,
+            .underline_position = @floatToInt(u32, metrics.underline_position),
+        };
+    }
+
     export fn group_add_face(self: *Group, style: u16, face: *font.DeferredFace) void {
         return self.addFace(alloc, @intToEnum(Style, style), face.*) catch |err| {
             log.warn("error adding face to group err={}", .{err});

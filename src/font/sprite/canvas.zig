@@ -104,6 +104,10 @@ const WebCanvasImpl = struct {
     /// The canvas element that is our final image.
     canvas: js.Object,
 
+    /// Store the dimensions for easy access later.
+    width: u32,
+    height: u32,
+
     pub fn init(alloc: Allocator, width: u32, height: u32) !WebCanvasImpl {
         _ = alloc;
 
@@ -119,6 +123,8 @@ const WebCanvasImpl = struct {
 
         return WebCanvasImpl{
             .canvas = canvas,
+            .width = width,
+            .height = height,
         };
     }
 
@@ -177,10 +183,81 @@ const WebCanvasImpl = struct {
     }
 
     pub fn writeAtlas(self: *WebCanvasImpl, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
-        _ = self;
-        _ = alloc;
-        _ = atlas;
-        return error.Unimplemented;
+        assert(atlas.format == .greyscale);
+
+        // Reload our context since we resized the canvas
+        const ctx = try self.context(null);
+        defer ctx.deinit();
+
+        // Set our width/height. Set to vars in case we just query the canvas later.
+        const width = self.width;
+        const height = self.height;
+
+        // Read the image data and get it into a []u8 on our side
+        const bitmap: []u8 = bitmap: {
+            // Read the raw bitmap data and get the "data" value which is a
+            // Uint8ClampedArray.
+            const data = try ctx.call(js.Object, "getImageData", .{ 0, 0, width, height });
+            defer data.deinit();
+            const src_array = try data.get(js.Object, "data");
+            defer src_array.deinit();
+
+            // Allocate our local memory to copy the data to.
+            const len = try src_array.get(u32, "length");
+            var bitmap = try alloc.alloc(u8, @intCast(usize, len));
+            errdefer alloc.free(bitmap);
+
+            // Create our target Uint8Array that we can use to copy from src.
+            const mem_array = mem_array: {
+                // Get our runtime memory
+                const mem = try js.runtime.get(js.Object, "memory");
+                defer mem.deinit();
+                const buf = try mem.get(js.Object, "buffer");
+                defer buf.deinit();
+
+                // Construct our array to peer into our memory
+                const Uint8Array = try js.global.get(js.Object, "Uint8Array");
+                defer Uint8Array.deinit();
+                const mem_array = try Uint8Array.new(.{ buf, bitmap.ptr });
+                errdefer mem_array.deinit();
+
+                break :mem_array mem_array;
+            };
+            defer mem_array.deinit();
+
+            // Copy
+            try mem_array.call(void, "set", .{src_array});
+
+            break :bitmap bitmap;
+        };
+        errdefer alloc.free(bitmap);
+
+        // Convert the format of the bitmap to A8 since the raw canvas data
+        // is in RGBA.
+        // NOTE(mitchellh): do we need a 1px buffer to avoid artifacts?
+        const bitmap_a8: []u8 = a8: {
+            assert(@mod(bitmap.len, 4) == 0);
+            assert(bitmap.len == width * height * 4);
+            var bitmap_a8 = try alloc.alloc(u8, bitmap.len / 4);
+            errdefer alloc.free(bitmap_a8);
+            var i: usize = 0;
+            while (i < bitmap_a8.len) : (i += 1) {
+                bitmap_a8[i] = bitmap[(i * 4) + 3];
+            }
+
+            break :a8 bitmap_a8;
+        };
+        defer alloc.free(bitmap_a8);
+
+        // Write the glyph information into the atlas
+        const region = try atlas.reserve(alloc, width, height);
+        if (region.width > 0 and region.height > 0) {
+            assert(region.width == width);
+            assert(region.height == height);
+            atlas.set(region, bitmap_a8);
+        }
+
+        return region;
     }
 };
 
