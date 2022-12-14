@@ -262,25 +262,25 @@ const PixmanImpl = struct {
     pub fn getData(self: *const Canvas, alloc: Allocator) ![]u8 {
         const width = @intCast(u32, self.image.getWidth());
         const height = @intCast(u32, self.image.getHeight());
+        const stride = self.image.getStride();
 
         var result = try alloc.alloc(u8, height * width);
         errdefer alloc.free(result);
 
         // We want to convert our []u32 to []u8 since we use an 8bpp format
-        var data_u32 = self.image.getData();
-        const len_u8 = data_u32.len * 4;
-        var real_data = @alignCast(@alignOf(u8), @ptrCast([*]u8, data_u32.ptr)[0..len_u8]);
-        const real_stride = self.image.getStride();
+        const data = @alignCast(
+            @alignOf(u8),
+            @ptrCast([*]u8, self.data.ptr)[0 .. self.data.len * 4],
+        );
 
         // Convert our strided data
-        var r: u32 = 0;
-        while (r < height) : (r += 1) {
-            var c: u32 = 0;
-            while (c < width) : (c += 1) {
-                const src = r * @intCast(usize, real_stride) + c;
-                const dst = (r * c) + c;
-                result[dst] = real_data[src];
-            }
+        var dst_ptr = result;
+        var src_ptr = data.ptr;
+        var i: usize = 0;
+        while (i < height) : (i += 1) {
+            std.mem.copy(u8, dst_ptr, src_ptr[0..width]);
+            dst_ptr = dst_ptr[width..];
+            src_ptr += @intCast(usize, stride);
         }
 
         return result;

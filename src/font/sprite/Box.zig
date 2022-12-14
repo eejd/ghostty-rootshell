@@ -2167,8 +2167,9 @@ fn draw_light_arc(
     const width = self.width * supersample;
 
     // Allocate our supersample sized canvas
-    var supercanvas = try font.sprite.Canvas.init(alloc, width, height);
-    defer supercanvas.deinit(alloc);
+    var ss_data = try alloc.alloc(u8, height * width);
+    defer alloc.free(ss_data);
+    std.mem.set(u8, ss_data, 0);
 
     const height_pixels = self.height;
     const width_pixels = self.width;
@@ -2357,49 +2358,42 @@ fn draw_light_arc(
                     if (dist > @intToFloat(f64, thick) / 2) continue;
 
                     // Set our pixel
-                    supercanvas.rect(.{ .x = c, .y = r, .width = 1, .height = 1 }, .on);
+                    const idx = @intCast(usize, r * @intCast(i32, width) + c);
+                    ss_data[idx] = 0xFF;
                 }
             }
         }
     }
 
     // Downsample
-    // {
-    //     var ss_data = try supercanvas.getData(alloc);
-    //     defer alloc.free(ss_data);
-    //
-    //     var r: u32 = 0;
-    //     while (r < self.height) : (r += 1) {
-    //         var c: u32 = 0;
-    //         while (c < self.width) : (c += 1) {
-    //             var total: u32 = 0;
-    //             var i: usize = 0;
-    //             while (i < supersample) : (i += 1) {
-    //                 var j: usize = 0;
-    //                 while (j < supersample) : (j += 1) {
-    //                     const idx = (r * supersample + i) * (c * supersample) + (c * supersample + j);
-    //                     total += ss_data[idx];
-    //                     // const idx = (r * supersample + i) * @intCast(usize, stride) + c * supersample + j;
-    //                     //total += data[idx];
-    //                 }
-    //             }
-    //
-    //             const average = @intCast(u8, @min(total / (supersample * supersample), 0xff));
-    //             canvas.rect(
-    //                 .{
-    //                     .x = @intCast(i32, c),
-    //                     .y = @intCast(i32, r),
-    //                     .width = 1,
-    //                     .height = 1,
-    //                 },
-    //                 @intToEnum(font.sprite.Color, average),
-    //             );
-    //
-    //             // const idx = r * @intCast(usize, real_stride) + c;
-    //             // real_data[idx] = average;
-    //         }
-    //     }
-    // }
+    {
+        var r: u32 = 0;
+        while (r < self.height) : (r += 1) {
+            var c: u32 = 0;
+            while (c < self.width) : (c += 1) {
+                var total: u32 = 0;
+                var i: usize = 0;
+                while (i < supersample) : (i += 1) {
+                    var j: usize = 0;
+                    while (j < supersample) : (j += 1) {
+                        const idx = (r * supersample + i) * width + (c * supersample + j);
+                        total += ss_data[idx];
+                    }
+                }
+
+                const average = @intCast(u8, @min(total / (supersample * supersample), 0xff));
+                canvas.rect(
+                    .{
+                        .x = @intCast(i32, c),
+                        .y = @intCast(i32, r),
+                        .width = 1,
+                        .height = 1,
+                    },
+                    @intToEnum(font.sprite.Color, average),
+                );
+            }
+        }
+    }
 
     // draw vertical/horizontal lines from quartercircle-edge to box-edge.
     self.vline(canvas, @min(c_y_pixels, vert_to), @max(c_y_pixels, vert_to), (width_pixels - thick_pixels) / 2, thick_pixels);
