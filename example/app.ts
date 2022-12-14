@@ -35,6 +35,7 @@ fetch(url.href).then(response =>
     group_new,
     group_free,
     group_add_face,
+    group_init_sprite_face,
     group_index_for_codepoint,
     group_render_glyph,
     group_cache_new,
@@ -81,25 +82,49 @@ fetch(url.href).then(response =>
   //free(font_ptr);
 
   // Create our group
-  const group = group_new(72 /* size */);
+  const group = group_new(32 /* size */);
   group_add_face(group, 0 /* regular */, deferred_face_new(font_name.ptr, font_name.len, 0 /* text */));
   group_add_face(group, 0 /* regular */, deferred_face_new(font_name.ptr, font_name.len, 1 /* emoji */));
+
+  // Initialize our sprite font, without this we just use the browser.
+  group_init_sprite_face(group);
 
   // Create our group cache
   const group_cache = group_cache_new(group);
 
   // Render a glyph
-  for (let i = 33; i <= 126; i++) {
+  // for (let i = 33; i <= 126; i++) {
+  //   const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
+  //   group_cache_render_glyph(group_cache, font_idx, i, 0);
+  //   //face_render_glyph(face, atlas, i);
+  // }
+  //
+  // const emoji = ["🐏","🌞","🌚","🍱","💿","🐈","📃","📀","🕡","🙃"];
+  // for (let i = 0; i < emoji.length; i++) {
+  //   const cp = emoji[i].codePointAt(0);
+  //   const font_idx = group_cache_index_for_codepoint(group_cache, cp, 0, -1 /* best choice */);
+  //   group_cache_render_glyph(group_cache, font_idx, cp, 0);
+  // }
+
+  for (let i = 0x2500; i <= 0x257F; i++) {
     const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
     group_cache_render_glyph(group_cache, font_idx, i, 0);
-    //face_render_glyph(face, atlas, i);
   }
-
-  const emoji = ["🐏","🌞","🌚","🍱","💿","🐈","📃","📀","🕡","🙃"];
-  for (let i = 0; i < emoji.length; i++) {
-    const cp = emoji[i].codePointAt(0);
-    const font_idx = group_cache_index_for_codepoint(group_cache, cp, 0, -1 /* best choice */);
-    group_cache_render_glyph(group_cache, font_idx, cp, 0);
+  for (let i = 0x2580; i <= 0x259f; i++) {
+    const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
+    group_cache_render_glyph(group_cache, font_idx, i, 0);
+  }
+  for (let i = 0x2800; i <= 0x28FF; i++) {
+    const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
+    group_cache_render_glyph(group_cache, font_idx, i, 0);
+  }
+  for (let i = 0x1FB00; i <= 0x1FB3B; i++) {
+    const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
+    group_cache_render_glyph(group_cache, font_idx, i, 0);
+  }
+  for (let i = 0x1FB3C; i <= 0x1FB6B; i++) {
+    const font_idx = group_cache_index_for_codepoint(group_cache, i, 0, -1);
+    group_cache_render_glyph(group_cache, font_idx, i, 0);
   }
 
   //face_render_glyph(face, atlas, "橋".codePointAt(0));

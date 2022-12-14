@@ -73,7 +73,7 @@ pub const Fixed = enum(i32) {
 
     pub fn init(v: anytype) Fixed {
         return switch (@TypeOf(v)) {
-            comptime_int, u32 => @intToEnum(Fixed, v << 16),
+            comptime_int, i32, u32 => @intToEnum(Fixed, v << 16),
             f64 => @intToEnum(Fixed, @floatToInt(i32, v * 65536)),
             else => {
                 @compileLog(@TypeOf(v));

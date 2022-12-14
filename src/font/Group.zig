@@ -272,16 +272,13 @@ pub fn renderGlyph(
     max_height: ?u16,
 ) !Glyph {
     // Special-case fonts are rendered directly.
-    // TODO: web_canvas
-    if (options.backend != .web_canvas) {
-        if (index.special()) |sp| switch (sp) {
-            .sprite => return try self.sprite.?.renderGlyph(
-                alloc,
-                atlas,
-                glyph_index,
-            ),
-        };
-    }
+    if (index.special()) |sp| switch (sp) {
+        .sprite => return try self.sprite.?.renderGlyph(
+            alloc,
+            atlas,
+            glyph_index,
+        ),
+    };
 
     const face = &self.faces.get(index.style).items[@intCast(usize, index.idx)];
     try face.load(self.lib, self.size);
@@ -312,6 +309,29 @@ pub const Wasm = struct {
             v.deinit();
             alloc.destroy(v);
         }
+    }
+
+    export fn group_init_sprite_face(self: *Group) void {
+        return group_init_sprite_face_(self) catch |err| {
+            log.warn("error initializing sprite face err={}", .{err});
+            return;
+        };
+    }
+
+    fn group_init_sprite_face_(self: *Group) !void {
+        const metrics = metrics: {
+            const index = self.indexForCodepoint('M', .regular, .text).?;
+            const face = try self.faceFromIndex(index);
+            break :metrics face.metrics;
+        };
+
+        // Set details for our sprite font
+        self.sprite = font.sprite.Face{
+            .width = @floatToInt(u32, metrics.cell_width),
+            .height = @floatToInt(u32, metrics.cell_height),
+            .thickness = 2,
+            .underline_position = @floatToInt(u32, metrics.underline_position),
+        };
     }
 
     export fn group_add_face(self: *Group, style: u16, face: *font.DeferredFace) void {
