@@ -152,8 +152,15 @@ const WebCanvasImpl = struct {
     }
 
     pub fn trapezoid(self: *WebCanvasImpl, t: Trapezoid) void {
-        _ = self;
-        _ = t;
+        const ctx = self.context(.on) catch return;
+        defer ctx.deinit();
+
+        ctx.call(void, "beginPath", .{}) catch return;
+        ctx.call(void, "moveTo", .{ t.left.p1.x, t.left.p1.y }) catch return;
+        ctx.call(void, "lineTo", .{ t.right.p1.x, t.right.p1.y }) catch return;
+        ctx.call(void, "lineTo", .{ t.right.p2.x, t.right.p2.y }) catch return;
+        ctx.call(void, "lineTo", .{ t.left.p2.x, t.left.p2.y }) catch return;
+        ctx.call(void, "fill", .{}) catch return;
     }
 
     pub fn triangle(self: *WebCanvasImpl, t: Triangle, color: Color) void {
