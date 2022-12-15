@@ -654,6 +654,10 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         // UTF-8 or ASCII is used as-is
         if (set == .utf8 or set == .ascii) break :c unmapped_c;
 
+        // If we're outside of ASCII range this is an invalid value in
+        // this table so we just return space.
+        if (unmapped_c > std.math.maxInt(u8)) break :c ' ';
+
         // Get our lookup table and map it
         const table = set.table();
         break :c @intCast(u21, table[@intCast(u8, unmapped_c)]);
@@ -1499,6 +1503,26 @@ test "Terminal: print charset" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("```◆", str);
+    }
+}
+
+test "Terminal: print charset outside of ASCII" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // G1 should have no effect
+    t.configureCharset(.G1, .dec_special);
+    t.configureCharset(.G2, .dec_special);
+    t.configureCharset(.G3, .dec_special);
+
+    // Basic grid writing
+    t.configureCharset(.G0, .dec_special);
+    try t.print('`');
+    try t.print(0x1F600);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("◆  ", str);
     }
 }
 
