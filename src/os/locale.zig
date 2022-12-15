@@ -14,7 +14,13 @@ pub fn ensureLocale() void {
     // OS. When launching from the CLI, LANG is usually set by the parent
     // process.
     if (comptime builtin.target.isDarwin()) {
-        if (std.os.getenv("LANG") == null) {
+        // Set the lang if it is not set or if its empty.
+        const set_lang = if (std.os.getenv("LANG")) |lang|
+            lang.len == 0
+        else
+            true;
+
+        if (set_lang) {
             setLangFromCocoa();
         }
     }
@@ -28,6 +34,20 @@ pub fn ensureLocale() void {
 /// This sets the LANG environment variable based on the macOS system
 /// preferences selected locale settings.
 fn setLangFromCocoa() void {
+    // Unknown Zig bug where in debug mode we can't pull the cocoa
+    // value without crashing so we just force it to en_US.UTF-8.
+    // Debug mode is only used for testing so to avoid this, devs can
+    // just set LANG manually!
+    if (builtin.mode == .Debug) {
+        log.warn("in debug mode, we always set LANG to en_US.UTF-8 if not set", .{});
+        if (setenv("LANG", "en_US.UTF-8", 1) < 0) {
+            log.err("error setting locale env var", .{});
+            return;
+        }
+
+        return;
+    }
+
     const pool = objc.AutoreleasePool.init();
     defer pool.deinit();
 
