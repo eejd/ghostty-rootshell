@@ -73,7 +73,6 @@ pub fn Stream(comptime Handler: type) type {
             tracy.value(@intCast(u64, c));
             defer tracy.end();
 
-            // log.warn("C0: {}", .{c});
             switch (@intToEnum(ansi.C0, c)) {
                 .NUL => {},
 
@@ -122,6 +121,8 @@ pub fn Stream(comptime Handler: type) type {
                     try self.handler.invokeCharset(.GL, .G0, false)
                 else
                     log.warn("unimplemented invokeCharset: {x}", .{c}),
+
+                else => log.warn("invalid C0 character, ignoring: {x}", .{c}),
             }
         }
 

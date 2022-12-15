@@ -23,6 +23,10 @@ pub const C0 = enum(u7) {
     SO = 0x0E,
     /// Shift in
     SI = 0x0F,
+
+    // Non-exhaustive so that @intToEnum never fails since the inputs are
+    // user-generated.
+    _,
 };
 
 /// The SGR rendition aspects that can be set, sometimes known as attributes.
