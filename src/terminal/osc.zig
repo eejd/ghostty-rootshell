@@ -149,6 +149,12 @@ pub const Parser = struct {
 
     /// Consume the next character c and advance the parser state.
     pub fn next(self: *Parser, c: u8) void {
+        // If our buffer is full then we're invalid.
+        if (self.buf_idx >= self.buf.len) {
+            self.state = .invalid;
+            return;
+        }
+
         // We store everything in the buffer so we can do a better job
         // logging if we get to an invalid command.
         self.buf[self.buf_idx] = c;
@@ -497,4 +503,15 @@ test "OSC: get/set clipboard" {
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 's');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
+}
+
+test "OSC: longer than buffer" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "a" ** (Parser.MAX_BUF + 2);
+    for (input) |ch| p.next(ch);
+
+    try testing.expect(p.end() == null);
 }
