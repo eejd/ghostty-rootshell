@@ -443,7 +443,13 @@ pub const Row = struct {
         assert(cell.attrs.grapheme);
 
         const key = self.getId() + x + 1;
-        const data = self.screen.graphemes.get(key).?;
+        const data: GraphemeData = self.screen.graphemes.get(key) orelse data: {
+            // This is probably a bug somewhere in our internal state,
+            // but we don't want to just hard crash so its easier to just
+            // have zero codepoints.
+            log.debug("cell with grapheme flag but no grapheme data", .{});
+            break :data .{ .zero = {} };
+        };
         return .{ .data = data };
     }
 };
@@ -485,6 +491,8 @@ pub const CodepointIterator = struct {
 
     pub fn next(self: *CodepointIterator) ?u21 {
         switch (self.data) {
+            .zero => return null,
+
             .one => |v| {
                 if (self.i >= 1) return null;
                 self.i += 1;
@@ -629,6 +637,7 @@ pub const GraphemeData = union(enum) {
     // []u21 is sizeof([4]u21) anyways so if we can store avoid small allocations
     // we prefer it. Grapheme clusters are almost always <= 4 codepoints.
 
+    zero: void,
     one: u21,
     two: [2]u21,
     three: [3]u21,
@@ -645,6 +654,7 @@ pub const GraphemeData = union(enum) {
     /// Append the codepoint cp to the grapheme data.
     pub fn append(self: *GraphemeData, alloc: Allocator, cp: u21) !void {
         switch (self.*) {
+            .zero => self.* = .{ .one = cp },
             .one => |v| self.* = .{ .two = .{ v, cp } },
             .two => |v| self.* = .{ .three = .{ v[0], v[1], cp } },
             .three => |v| self.* = .{ .four = .{ v[0], v[1], v[2], cp } },
