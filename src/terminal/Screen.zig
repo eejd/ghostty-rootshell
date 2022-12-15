@@ -940,7 +940,10 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
     // in the entire screen buffer.
     const top_y = top.toScreen(self).screen;
     const bot_y = bottom.toScreen(self).screen;
-    assert(bot_y > top_y);
+
+    // If top is outside of the range of bot, we do nothing.
+    if (top_y >= bot_y) return;
+
     assert(count <= (bot_y - top_y));
 
     // Get the storage pointer for the full scroll region. We're going to
@@ -2979,6 +2982,23 @@ test "Screen: scrollRegionUp single" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n3IJKL\n\n4ABCD", contents);
+    }
+}
+
+test "Screen: scrollRegionUp same line" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    s.scrollRegionUp(.{ .active = 1 }, .{ .active = 1 }, 1);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL\n4ABCD", contents);
     }
 }
 
