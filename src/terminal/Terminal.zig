@@ -1226,6 +1226,9 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // Rare, but happens
+    if (count == 0) return;
+
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
 
@@ -1788,6 +1791,16 @@ test "Terminal: insertLines" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A\n\n\nB\nC", str);
     }
+}
+
+test "Terminal: insertLines zero" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 2, 5);
+    defer t.deinit(alloc);
+
+    // This should do nothing
+    t.setCursorPos(1, 1);
+    try t.insertLines(0);
 }
 
 test "Terminal: insertLines with scroll region" {
