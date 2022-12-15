@@ -672,7 +672,7 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         const spacer_cell = row.getCellPtr(x);
         spacer_cell.attrs.wide_spacer_tail = false;
 
-        if (self.screen.cursor.x <= 1) {
+        if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
         }
     } else if (cell.attrs.wide_spacer_tail) {
@@ -1413,6 +1413,18 @@ test "Terminal: zero-width character at start" {
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+}
+
+test "Terminal: print over wide char at 0,0" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    try t.print(0x1F600); // Smiley face
+    t.setCursorPos(0, 0);
+    try t.print('A'); // Smiley face
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
 }
 
 test "Terminal: soft wrap" {
