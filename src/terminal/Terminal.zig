@@ -566,6 +566,15 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // Attach zero-width characters to our cell as grapheme data.
     if (width == 0) {
+        // If we're at cell zero, then this is malformed data and we don't
+        // print anything or even store this. Zero-width characters are ALWAYS
+        // attached to some other non-zero-width character at the time of
+        // writing.
+        if (self.screen.cursor.x == 0) {
+            log.warn("zero-width character with no prior character, ignoring", .{});
+            return;
+        }
+
         // Find our previous cell
         const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
         const prev: usize = prev: {
@@ -1389,6 +1398,18 @@ test "Terminal: input with no control characters" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("hello", str);
     }
+}
+
+test "Terminal: zero-width character at start" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // This used to crash the terminal. This is not allowed so we should
+    // just ignore it.
+    try t.print(0x200D);
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 }
 
 test "Terminal: soft wrap" {
