@@ -21,6 +21,8 @@ const Sprite = font.sprite.Sprite;
 const Box = @import("Box.zig");
 const underline = @import("underline.zig");
 
+const log = std.log.scoped(.font_sprite);
+
 /// The cell width and height.
 width: u32,
 height: u32,
@@ -48,7 +50,12 @@ pub fn renderGlyph(
     atlas: *font.Atlas,
     cp: u32,
 ) !font.Glyph {
-    if (std.debug.runtime_safety) assert(self.hasCodepoint(cp, null));
+    if (std.debug.runtime_safety) {
+        if (!self.hasCodepoint(cp, null)) {
+            log.err("invalid codepoint cp={x}", .{cp});
+            unreachable; // crash
+        }
+    }
 
     // Safe to ".?" because of the above assertion.
     return switch (Kind.init(cp).?) {
