@@ -245,7 +245,10 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
     // In debug mode, we log bad state transitions.
     if (builtin.mode == .Debug) {
         if (next_state == .anywhere) {
-            log.warn("state transition to 'anywhere', likely bug: {x}", .{c});
+            log.debug(
+                "state transition to 'anywhere' from '{}', likely binary input: {x}",
+                .{ self.state, c },
+            );
         }
     }
 

@@ -38,7 +38,7 @@ fn genTableType() type {
     const max_u8 = std.math.maxInt(u8);
     const stateInfo = @typeInfo(State);
     const max_state = stateInfo.Enum.fields.len;
-    return [max_u8][max_state]Transition;
+    return [max_u8 + 1][max_state]Transition;
 }
 
 /// Function to generate the full state transition table for VT emulation.
@@ -47,9 +47,9 @@ fn genTable() Table {
     var result: Table = undefined;
 
     // Initialize everything so every state transition exists
-    var i: u8 = 0;
+    var i: usize = 0;
     while (i < result.len) : (i += 1) {
-        var j: u8 = 0;
+        var j: usize = 0;
         while (j < result[0].len) : (j += 1) {
             result[i][j] = transition(.anywhere, .none);
         }
