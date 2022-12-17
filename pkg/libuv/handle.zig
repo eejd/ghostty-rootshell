@@ -36,7 +36,7 @@ pub fn Handle(comptime T: type) type {
                         // the T. This is mutable because a lot of the libuv APIs
                         // are non-const but modifying it makes no sense.
                         var param: T = .{ .handle = @ptrCast(HandleType, handle) };
-                        @call(.{ .modifier = .always_inline }, f, .{&param});
+                        @call(.always_inline, f, .{&param});
                     }
                 }).callback
             else

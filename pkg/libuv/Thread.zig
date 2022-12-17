@@ -20,7 +20,7 @@ pub fn init(
 ) !Thread {
     const CWrapper = struct {
         pub fn wrapper(_: ?*const anyopaque) callconv(.C) void {
-            @call(.{ .modifier = .always_inline }, callback, .{});
+            @call(.always_inline, callback, .{});
         }
     };
 
@@ -42,7 +42,7 @@ pub fn initData(
 
     const CWrapper = struct {
         pub fn wrapper(arg: ?*anyopaque) callconv(.C) void {
-            @call(.{ .modifier = .always_inline }, callback, .{
+            @call(.always_inline, callback, .{
                 @ptrCast(Data, @alignCast(@alignOf(dataInfo.Pointer.child), arg)),
             });
         }

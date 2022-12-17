@@ -33,7 +33,7 @@ pub fn start(self: Prepare, comptime cb: fn (*Prepare) void) !void {
     const Wrapper = struct {
         pub fn callback(arg: [*c]c.uv_prepare_t) callconv(.C) void {
             var newSelf: Prepare = .{ .handle = arg };
-            @call(.{ .modifier = .always_inline }, cb, .{&newSelf});
+            @call(.always_inline, cb, .{&newSelf});
         }
     };
 

@@ -21,7 +21,7 @@ pub fn init(alloc: Allocator, loop: Loop, comptime cb: fn (*Async) void) !Async 
     const Wrapper = struct {
         pub fn callback(arg: [*c]c.uv_async_t) callconv(.C) void {
             var newSelf: Async = .{ .handle = arg };
-            @call(.{ .modifier = .always_inline }, cb, .{&newSelf});
+            @call(.always_inline, cb, .{&newSelf});
         }
     };
 

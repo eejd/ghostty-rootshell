@@ -33,7 +33,7 @@ pub fn start(self: Idle, comptime cb: fn (*Idle) void) !void {
     const Wrapper = struct {
         pub fn callback(arg: [*c]c.uv_idle_t) callconv(.C) void {
             var newSelf: Idle = .{ .handle = arg };
-            @call(.{ .modifier = .always_inline }, cb, .{&newSelf});
+            @call(.always_inline, cb, .{&newSelf});
         }
     };
 

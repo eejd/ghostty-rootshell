@@ -44,7 +44,7 @@ pub fn Stream(comptime T: type) type {
             const Wrapper = struct {
                 fn callback(cbreq: [*c]c.uv_write_t, status: c_int) callconv(.C) void {
                     var newreq: WriteReq = .{ .req = cbreq };
-                    @call(.{ .modifier = .always_inline }, cb, .{
+                    @call(.always_inline, cb, .{
                         &newreq,
                         @intCast(i32, status),
                     });
@@ -90,7 +90,7 @@ pub fn Stream(comptime T: type) type {
                     buf: [*c]c.uv_buf_t,
                 ) callconv(.C) void {
                     var param: T = .{ .handle = @ptrCast(HandleType, cbhandle) };
-                    const result = @call(.{ .modifier = .always_inline }, alloc_cb, .{
+                    const result = @call(.always_inline, alloc_cb, .{
                         &param,
                         cbsize,
                     });
@@ -111,7 +111,7 @@ pub fn Stream(comptime T: type) type {
                     cbbuf: [*c]const c.uv_buf_t,
                 ) callconv(.C) void {
                     var param: T = .{ .handle = @ptrCast(HandleType, cbhandle) };
-                    @call(.{ .modifier = .always_inline }, read_cb, .{
+                    @call(.always_inline, read_cb, .{
                         &param,
                         cbnread,
                         cbbuf.*.base[0..cbbuf.*.len],

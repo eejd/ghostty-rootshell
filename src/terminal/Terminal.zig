@@ -597,7 +597,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     switch (width) {
         // Single cell is very easy: just write in the cell
-        1 => _ = @call(.{ .modifier = .always_inline }, self.printCell, .{c}),
+        1 => _ = @call(.always_inline, self.printCell, .{c}),
 
         // Wide character requires a spacer. We print this by
         // using two cells: the first is flagged "wide" and has the

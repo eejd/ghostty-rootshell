@@ -39,7 +39,7 @@ pub fn start(
     const Wrapper = struct {
         pub fn callback(handle: [*c]c.uv_timer_t) callconv(.C) void {
             var newSelf: Timer = .{ .handle = handle };
-            @call(.{ .modifier = .always_inline }, cb, .{&newSelf});
+            @call(.always_inline, cb, .{&newSelf});
         }
     };
 
