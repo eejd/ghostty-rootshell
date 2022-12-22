@@ -42,7 +42,7 @@ pub fn parse(input: []const u8) !Binding {
             // Check if its a modifier
             const modsInfo = @typeInfo(key.Mods).Struct;
             inline for (modsInfo.fields) |field| {
-                if (field.field_type == bool) {
+                if (field.type == bool) {
                     if (std.mem.eql(u8, part, field.name)) {
                         // Repeat not allowed
                         if (@field(result.mods, field.name)) return Error.InvalidFormat;
@@ -90,7 +90,7 @@ pub fn parse(input: []const u8) !Binding {
         inline for (actionInfo.fields) |field| {
             if (std.mem.eql(u8, action, field.name)) {
                 // If the field type is void we expect no value
-                switch (field.field_type) {
+                switch (field.type) {
                     void => {
                         if (colonIdx != null) return Error.InvalidFormat;
                         break :action @unionInit(Action, field.name, {});

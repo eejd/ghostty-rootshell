@@ -14,7 +14,7 @@ pub fn Handle(comptime T: type) type {
     return struct {
         // note: this has to be here: https://github.com/ziglang/zig/issues/11367
         const tInfo = @typeInfo(T).Struct;
-        const HandleType = tInfo.fields[0].field_type;
+        const HandleType = tInfo.fields[0].type;
 
         // Request handle to be closed. close_cb will be called asynchronously
         // after this call. This MUST be called on each handle before memory

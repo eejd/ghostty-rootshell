@@ -126,23 +126,23 @@ fn MsgSendFn(
 
     // Build up our argument types.
     const Fn = std.builtin.Type.Fn;
-    const args: []Fn.Param = args: {
+    const params: []Fn.Param = params: {
         var acc: [argsInfo.fields.len + 2]Fn.Param = undefined;
 
         // First argument is always the target and selector.
-        acc[0] = .{ .arg_type = Target, .is_generic = false, .is_noalias = false };
-        acc[1] = .{ .arg_type = c.SEL, .is_generic = false, .is_noalias = false };
+        acc[0] = .{ .type = Target, .is_generic = false, .is_noalias = false };
+        acc[1] = .{ .type = c.SEL, .is_generic = false, .is_noalias = false };
 
         // Remaining arguments depend on the args given, in the order given
         for (argsInfo.fields) |field, i| {
             acc[i + 2] = .{
-                .arg_type = field.field_type,
+                .type = field.type,
                 .is_generic = false,
                 .is_noalias = false,
             };
         }
 
-        break :args &acc;
+        break :params &acc;
     };
 
     // Copy the alignment of a normal function type so equality works
@@ -156,7 +156,7 @@ fn MsgSendFn(
             .is_generic = false,
             .is_var_args = false,
             .return_type = Return,
-            .args = args,
+            .params = params,
         },
     });
 }

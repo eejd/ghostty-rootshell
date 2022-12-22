@@ -87,9 +87,9 @@ fn parseIntoField(
             // For optional fields, we just treat it as the child type.
             // This lets optional fields default to null but get set by
             // the CLI.
-            const Field = switch (@typeInfo(field.field_type)) {
+            const Field = switch (@typeInfo(field.type)) {
                 .Optional => |opt| opt.child,
-                else => field.field_type,
+                else => field.type,
             };
             const fieldInfo = @typeInfo(Field);
 
@@ -97,7 +97,7 @@ fn parseIntoField(
             // that to set the value.
             if (fieldInfo == .Struct and @hasDecl(Field, "parseCLI")) {
                 const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
-                switch (fnInfo.args.len) {
+                switch (fnInfo.params.len) {
                     // 1 arg = (input) => output
                     1 => @field(dst, field.name) = try Field.parseCLI(value),
 
@@ -291,11 +291,11 @@ test "parseIntoField: unsigned numbers" {
     const alloc = arena.allocator();
 
     var data: struct {
-        @"u8": u8,
+        u8: u8,
     } = undefined;
 
     try parseIntoField(@TypeOf(data), alloc, &data, "u8", "1");
-    try testing.expectEqual(@as(u8, 1), data.@"u8");
+    try testing.expectEqual(@as(u8, 1), data.u8);
 }
 
 test "parseIntoField: optional field" {
