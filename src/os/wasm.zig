@@ -1,12 +1,17 @@
 //! This file contains helpers for wasm compilation.
 const std = @import("std");
 const builtin = @import("builtin");
+const options = @import("build_options");
 
 comptime {
     if (!builtin.target.isWasm()) {
         @compileError("wasm.zig should only be analyzed for wasm32 builds");
     }
 }
+
+/// True if we're in shared memory mode. If true, then the memory buffer
+/// in JS will be backed by a SharedArrayBuffer and some behaviors change.
+pub const shared_mem = options.wasm_shared;
 
 /// The allocator to use in wasm environments.
 ///

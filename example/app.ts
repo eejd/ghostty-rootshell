@@ -4,9 +4,11 @@ const zjs = new ZigJS();
 const importObject = {
   module: {},
   env: {
+    memory: new WebAssembly.Memory({ initial: 25, maximum: 65536, shared: true }),
     log: (ptr: number, len: number) => {
-      const view = new DataView(zjs.memory.buffer, ptr, Number(len));
-      const str = new TextDecoder('utf-8').decode(view);
+      const arr = new Uint8ClampedArray(zjs.memory.buffer, ptr, len);
+      const data = arr.slice();
+      const str = new TextDecoder('utf-8').decode(data);
       console.log(str);
     },
   },
@@ -20,8 +22,8 @@ fetch(url.href).then(response =>
 ).then(bytes =>
   WebAssembly.instantiate(bytes, importObject)
 ).then(results => {
+  const memory = importObject.env.memory;
   const {
-    memory,
     malloc,
     free,
     face_new,

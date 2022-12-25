@@ -112,15 +112,43 @@ pub fn build(b: *std.build.Builder) !void {
 
     // wasm
     {
+        // Build our Wasm target.
+        const wasm_target: std.zig.CrossTarget = .{
+            .cpu_arch = .wasm32,
+            .os_tag = .freestanding,
+            .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
+            .cpu_features_add = std.Target.wasm.featureSet(&.{
+                // We use this to explicitly request shared memory.
+                .atomics,
+
+                // Not explicitly used but compiler could use them if they want.
+                .bulk_memory,
+                .reference_types,
+                .sign_ext,
+            }),
+        };
+
+        // Whether we're using wasm shared memory. Some behaviors change.
+        // For now we require this but I wanted to make the code handle both
+        // up front.
+        const wasm_shared: bool = true;
+        exe_options.addOption(bool, "wasm_shared", wasm_shared);
+
         const wasm = b.addSharedLibrary(
             "ghostty-wasm",
             "src/main_wasm.zig",
             .{ .unversioned = {} },
         );
-        wasm.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
+        wasm.setTarget(wasm_target);
         wasm.setBuildMode(mode);
         wasm.setOutputDir("zig-out");
         wasm.addOptions("build_options", exe_options);
+
+        // So that we can use web workers with our wasm binary
+        wasm.import_memory = true;
+        wasm.initial_memory = 65536 * 25;
+        wasm.max_memory = 65536 * 65536; // Maximum number of pages in wasm32
+        wasm.shared_memory = wasm_shared;
 
         // Stack protector adds extern requirements that we don't satisfy.
         wasm.stack_protector = false;
@@ -136,7 +164,7 @@ pub fn build(b: *std.build.Builder) !void {
         // it lets us test some basic functionality.
         const test_step = b.step("test-wasm", "Run all tests for wasm");
         const main_test = b.addTest("src/main_wasm.zig");
-        main_test.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+        main_test.setTarget(wasm_target);
         main_test.addOptions("build_options", exe_options);
         try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
