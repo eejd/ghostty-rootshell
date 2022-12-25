@@ -423,9 +423,17 @@ pub const Wasm = struct {
             defer mem_buf.deinit();
 
             // Create an array that points to our buffer
-            const Uint8ClampedArray = try js.global.get(js.Object, "Uint8ClampedArray");
-            defer Uint8ClampedArray.deinit();
-            const arr = try Uint8ClampedArray.new(.{ mem_buf, buf.ptr, buf.len });
+            const arr = arr: {
+                const Uint8ClampedArray = try js.global.get(js.Object, "Uint8ClampedArray");
+                defer Uint8ClampedArray.deinit();
+                const arr = try Uint8ClampedArray.new(.{ mem_buf, buf.ptr, buf.len });
+                if (!wasm.shared_mem) break :arr arr;
+
+                // If we're sharing memory then we have to copy the data since
+                // we can't set ImageData directly using a SharedArrayBuffer.
+                defer arr.deinit();
+                break :arr try arr.call(js.Object, "slice", .{});
+            };
             defer arr.deinit();
 
             // Create the image data from our array
