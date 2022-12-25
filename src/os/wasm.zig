@@ -19,14 +19,10 @@ pub const shared_mem = options.wasm_shared;
 /// unless toHostOwned is called on them. In this case, the caller is expected
 /// to call free. If a pointer is NOT host-owned, then the wasm module is
 /// expected to call the normal alloc.free/destroy functions.
-///
-/// TODO: we should NOT be using page_allocator because we're getting
-/// full 64kb pages for every allocation. I plan on changing this to the
-/// new stdlib wasm allocator once that is merged and available.
 pub const alloc = if (builtin.is_test)
     std.testing.allocator
 else
-    std.heap.page_allocator;
+    std.heap.wasm_allocator;
 
 /// For host-owned allocations:
 /// We need to keep track of our own pointer lengths because Zig
