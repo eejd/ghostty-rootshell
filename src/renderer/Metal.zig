@@ -10,6 +10,7 @@ const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
+const apprt = @import("../apprt.zig");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -124,7 +125,7 @@ const GPUCellMode = enum(u8) {
 };
 
 /// Returns the hints that we want for this
-pub fn windowHints() glfw.Window.Hints {
+pub fn glfwWindowHints() glfw.Window.Hints {
     return .{
         .client_api = .no_api,
         // .cocoa_graphics_switching = builtin.os.tag == .macos,
@@ -134,8 +135,8 @@ pub fn windowHints() glfw.Window.Hints {
 
 /// This is called early right after window creation to setup our
 /// window surface as necessary.
-pub fn windowInit(window: glfw.Window) !void {
-    _ = window;
+pub fn windowInit(win: apprt.runtime.Window) !void {
+    _ = win;
 
     // We don't do anything else here because we want to set everything
     // else up during actual initialization.
@@ -303,9 +304,12 @@ pub fn deinit(self: *Metal) void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeWindowInit(self: *const Metal, window: glfw.Window) !void {
+pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
     // Set our window backing layer to be our swapchain
-    const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(window).?);
+    const nswindow = switch (apprt.runtime) {
+        apprt.glfw => objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?),
+        else => @compileError("unsupported apprt for metal"),
+    };
     const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
     contentView.setProperty("layer", self.swapchain.value);
     contentView.setProperty("wantsLayer", true);
@@ -319,11 +323,11 @@ pub fn finalizeWindowInit(self: *const Metal, window: glfw.Window) !void {
 }
 
 /// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const Metal, window: glfw.Window) !void {
+pub fn initDevMode(self: *const Metal, win: apprt.runtime.Window) !void {
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOther(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, window.handle),
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, win.window.handle),
             true,
         ));
         assert(imgui.ImplMetal.init(self.device.value));
@@ -341,9 +345,9 @@ pub fn deinitDevMode(self: *const Metal) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(self: *const Metal, window: glfw.Window) !void {
+pub fn threadEnter(self: *const Metal, win: apprt.runtime.Window) !void {
     _ = self;
-    _ = window;
+    _ = win;
 
     // Metal requires no per-thread state.
 }
@@ -425,10 +429,10 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *Metal,
-    window: glfw.Window,
+    win: apprt.runtime.Window,
     state: *renderer.State,
 ) !void {
-    _ = window;
+    _ = win;
 
     // Data we extract out of the critical area.
     const Critical = struct {
