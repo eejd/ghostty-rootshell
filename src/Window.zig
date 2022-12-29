@@ -30,6 +30,7 @@ const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
+const WindowingSystem = @import("window.zig").System;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -46,6 +47,9 @@ alloc: Allocator,
 
 /// The app that this window is a part of.
 app: *App,
+
+/// The windowing system state
+windowing_system: WindowingSystem,
 
 /// The font structures
 font_lib: font.Library,
@@ -135,6 +139,10 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
+    // Create the windowing system
+    var winsys = try WindowingSystem.init(app);
+    winsys.deinit();
+
     // Create our window
     const window = try glfw.Window.create(640, 480, "ghostty", null, null, Renderer.windowHints());
     errdefer window.destroy();
@@ -151,6 +159,16 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         // All windows within a tab bar must have a matching tabbing ID.
         // The app sets this up for us.
         nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
+    }
+
+    // Create the cursor
+    const cursor = try glfw.Cursor.createStandard(.ibeam);
+    errdefer cursor.destroy();
+    if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
+        // We only set our cursor if we're NOT on Mac, or if we are then the
+        // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
+        // since we use a tab group.
+        try window.setCursor(cursor);
     }
 
     // Determine our DPI configurations so we can properly configure
@@ -322,23 +340,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         cell_size,
     );
 
-    // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
-    // but is otherwise somewhat arbitrary.
-    try window.setSizeLimits(.{
-        .width = @floatToInt(u32, cell_size.width * 10),
-        .height = @floatToInt(u32, cell_size.height * 4),
-    }, .{ .width = null, .height = null });
-
-    // Create the cursor
-    const cursor = try glfw.Cursor.createStandard(.ibeam);
-    errdefer cursor.destroy();
-    if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
-        // We only set our cursor if we're NOT on Mac, or if we are then the
-        // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
-        // since we use a tab group.
-        try window.setCursor(cursor);
-    }
-
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
     mutex.* = .{};
@@ -377,6 +378,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     self.* = .{
         .alloc = alloc,
         .app = app,
+        .windowing_system = winsys,
         .font_lib = font_lib,
         .font_group = font_group,
         .font_size = font_size,
@@ -408,6 +410,13 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
     };
     errdefer if (DevMode.enabled) self.imgui_ctx.destroy();
+
+    // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
+    // but is otherwise somewhat arbitrary.
+    try window.setSizeLimits(.{
+        .width = @floatToInt(u32, cell_size.width * 10),
+        .height = @floatToInt(u32, cell_size.height * 4),
+    }, .{ .width = null, .height = null });
 
     // Setup our callbacks and user data
     window.setUserPointer(self);
