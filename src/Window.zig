@@ -141,44 +141,19 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
     // Create the windowing system
     var winsys = try WindowingSystem.init(app);
-    winsys.deinit();
+    errdefer winsys.deinit();
 
-    // Create our window
-    const window = try glfw.Window.create(640, 480, "ghostty", null, null, Renderer.windowHints());
-    errdefer window.destroy();
-    try Renderer.windowInit(window);
-
-    // On Mac, enable tabbing
-    if (comptime builtin.target.isDarwin()) {
-        const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
-        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(window).?);
-
-        // Tabbing mode enables tabbing at all
-        nswindow.setProperty("tabbingMode", NSWindowTabbingMode.automatic);
-
-        // All windows within a tab bar must have a matching tabbing ID.
-        // The app sets this up for us.
-        nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
-    }
-
-    // Create the cursor
-    const cursor = try glfw.Cursor.createStandard(.ibeam);
-    errdefer cursor.destroy();
-    if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
-        // We only set our cursor if we're NOT on Mac, or if we are then the
-        // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
-        // since we use a tab group.
-        try window.setCursor(cursor);
-    }
+    // Initialize our renderer with our initialized windowing system.
+    try Renderer.windowInit(winsys);
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
-    const content_scale = try window.getContentScale();
-    const x_dpi = content_scale.x_scale * font.face.default_dpi;
-    const y_dpi = content_scale.y_scale * font.face.default_dpi;
+    const content_scale = try winsys.getContentScale();
+    const x_dpi = content_scale.x * font.face.default_dpi;
+    const y_dpi = content_scale.y * font.face.default_dpi;
     log.debug("xscale={} yscale={} xdpi={} ydpi={}", .{
-        content_scale.x_scale,
-        content_scale.y_scale,
+        content_scale.x,
+        content_scale.y,
         x_dpi,
         y_dpi,
     });
@@ -330,7 +305,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer renderer_impl.deinit();
 
     // Calculate our grid size based on known dimensions.
-    const window_size = try window.getSize();
+    const window_size = try winsys.getSize();
     const screen_size: renderer.ScreenSize = .{
         .width = window_size.width,
         .height = window_size.height,
@@ -348,7 +323,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // Create the renderer thread
     var render_thread = try renderer.Thread.init(
         alloc,
-        window,
+        winsys,
         &self.renderer,
         &self.renderer_state,
     );
@@ -382,8 +357,8 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .font_lib = font_lib,
         .font_group = font_group,
         .font_size = font_size,
-        .window = window,
-        .cursor = cursor,
+        .window = winsys.window,
+        .cursor = winsys.cursor,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
         .renderer_state = .{
@@ -413,21 +388,22 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
-    try window.setSizeLimits(.{
-        .width = @floatToInt(u32, cell_size.width * 10),
-        .height = @floatToInt(u32, cell_size.height * 4),
-    }, .{ .width = null, .height = null });
+    // TODO:
+    // try window.setSizeLimits(.{
+    //     .width = @floatToInt(u32, cell_size.width * 10),
+    //     .height = @floatToInt(u32, cell_size.height * 4),
+    // }, .{ .width = null, .height = null });
 
     // Setup our callbacks and user data
-    window.setUserPointer(self);
-    window.setSizeCallback(sizeCallback);
-    window.setCharCallback(charCallback);
-    window.setKeyCallback(keyCallback);
-    window.setFocusCallback(focusCallback);
-    window.setRefreshCallback(refreshCallback);
-    window.setScrollCallback(scrollCallback);
-    window.setCursorPosCallback(cursorPosCallback);
-    window.setMouseButtonCallback(mouseButtonCallback);
+    winsys.window.setUserPointer(self);
+    winsys.window.setSizeCallback(sizeCallback);
+    winsys.window.setCharCallback(charCallback);
+    winsys.window.setKeyCallback(keyCallback);
+    winsys.window.setFocusCallback(focusCallback);
+    winsys.window.setRefreshCallback(refreshCallback);
+    winsys.window.setScrollCallback(scrollCallback);
+    winsys.window.setCursorPosCallback(cursorPosCallback);
+    winsys.window.setMouseButtonCallback(mouseButtonCallback);
 
     // Call our size callback which handles all our retina setup
     // Note: this shouldn't be necessary and when we clean up the window
@@ -435,7 +411,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
     sizeCallback(
-        window,
+        winsys.window,
         @intCast(i32, window_size.width),
         @intCast(i32, window_size.height),
     );
@@ -461,12 +437,12 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         DevMode.instance.window = self;
 
         // Let our renderer setup
-        try renderer_impl.initDevMode(window);
+        try renderer_impl.initDevMode(winsys);
     }
 
     // Give the renderer one more opportunity to finalize any window
     // setup on the main thread prior to spinning up the rendering thread.
-    try renderer_impl.finalizeWindowInit(window);
+    try renderer_impl.finalizeWindowInit(winsys);
 
     // Start our renderer thread
     self.renderer_thr = try std.Thread.spawn(
@@ -495,7 +471,7 @@ pub fn destroy(self: *Window) void {
         self.renderer_thr.join();
 
         // We need to become the active rendering thread again
-        self.renderer.threadEnter(self.window) catch unreachable;
+        self.renderer.threadEnter(self.windowing_system) catch unreachable;
         self.renderer_thread.deinit();
 
         // If we are devmode-owning, clean that up.
@@ -525,51 +501,7 @@ pub fn destroy(self: *Window) void {
         self.io.deinit();
     }
 
-    var tabgroup_opt: if (builtin.target.isDarwin()) ?objc.Object else void = undefined;
-    if (comptime builtin.target.isDarwin()) {
-        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
-        const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
-
-        // On macOS versions prior to Ventura, we lose window focus on tab close
-        // for some reason. We manually fix this by keeping track of the tab
-        // group and just selecting the next window.
-        if (internal_os.macosVersionAtLeast(13, 0, 0))
-            tabgroup_opt = null
-        else
-            tabgroup_opt = tabgroup;
-
-        const windows = tabgroup.getProperty(objc.Object, "windows");
-        switch (windows.getProperty(usize, "count")) {
-            // If we're going down to one window our tab bar is going to be
-            // destroyed so unset it so that the later logic doesn't try to
-            // use it.
-            1 => tabgroup_opt = null,
-
-            // If our tab bar is visible and we are going down to 1 window,
-            // hide the tab bar. The check is "2" because our current window
-            // is still present.
-            2 => if (tabgroup.getProperty(bool, "tabBarVisible")) {
-                nswindow.msgSend(void, objc.sel("toggleTabBar:"), .{nswindow.value});
-            },
-
-            else => {},
-        }
-    }
-
-    self.window.destroy();
-
-    // If we have a tabgroup set, we want to manually focus the next window.
-    // We should NOT have to do this usually, see the comments above.
-    if (comptime builtin.target.isDarwin()) {
-        if (tabgroup_opt) |tabgroup| {
-            const selected = tabgroup.getProperty(objc.Object, "selectedWindow");
-            selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
-        }
-    }
-
-    // We can destroy the cursor right away. glfw will just revert any
-    // windows using it to the default.
-    self.cursor.destroy();
+    self.windowing_system.deinit();
 
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();

@@ -18,6 +18,7 @@ const math = @import("../math.zig");
 const lru = @import("../lru.zig");
 const DevMode = @import("../DevMode.zig");
 const Window = @import("../Window.zig");
+const window = @import("../window.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -350,7 +351,7 @@ fn resetCellsLRU(self: *OpenGL) void {
 }
 
 /// Returns the hints that we want for this
-pub fn windowHints() glfw.Window.Hints {
+pub fn glfwWindowHints() glfw.Window.Hints {
     return .{
         .context_version_major = 3,
         .context_version_minor = 3,
@@ -363,10 +364,10 @@ pub fn windowHints() glfw.Window.Hints {
 
 /// This is called early right after window creation to setup our
 /// window surface as necessary.
-pub fn windowInit(window: glfw.Window) !void {
+pub fn windowInit(winsys: window.System) !void {
     // Treat this like a thread entry
     const self: OpenGL = undefined;
-    try self.threadEnter(window);
+    try self.threadEnter(winsys);
 
     // Blending for text
     try gl.enable(gl.c.GL_BLEND);
@@ -380,40 +381,23 @@ pub fn windowInit(window: glfw.Window) !void {
     //         log.debug("OpenGL extension available name={s}", .{ext});
     //     }
     // }
-
-    if (builtin.mode == .Debug) {
-        // Get our physical DPI - debug only because we don't have a use for
-        // this but the logging of it may be useful
-        const monitor = window.getMonitor() orelse monitor: {
-            log.warn("window had null monitor, getting primary monitor", .{});
-            break :monitor glfw.Monitor.getPrimary().?;
-        };
-        const physical_size = monitor.getPhysicalSize();
-        const video_mode = try monitor.getVideoMode();
-        const physical_x_dpi = @intToFloat(f32, video_mode.getWidth()) / (@intToFloat(f32, physical_size.width_mm) / 25.4);
-        const physical_y_dpi = @intToFloat(f32, video_mode.getHeight()) / (@intToFloat(f32, physical_size.height_mm) / 25.4);
-        log.debug("physical dpi x={} y={}", .{
-            physical_x_dpi,
-            physical_y_dpi,
-        });
-    }
 }
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeWindowInit(self: *const OpenGL, window: glfw.Window) !void {
+pub fn finalizeWindowInit(self: *const OpenGL, winsys: window.System) !void {
     _ = self;
-    _ = window;
+    _ = winsys;
 }
 
 /// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const OpenGL, window: glfw.Window) !void {
+pub fn initDevMode(self: *const OpenGL, winsys: window.System) !void {
     _ = self;
 
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, window.handle),
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, winsys.window.handle),
             true,
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
@@ -431,7 +415,7 @@ pub fn deinitDevMode(self: *const OpenGL) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(self: *const OpenGL, window: glfw.Window) !void {
+pub fn threadEnter(self: *const OpenGL, winsys: window.System) !void {
     _ = self;
 
     // We need to make the OpenGL context current. OpenGL requires
@@ -439,7 +423,7 @@ pub fn threadEnter(self: *const OpenGL, window: glfw.Window) !void {
     // ensures that the context switches over to our thread. Important:
     // the prior thread MUST have detached the context prior to calling
     // this entrypoint.
-    try glfw.makeContextCurrent(window);
+    try glfw.makeContextCurrent(winsys.window);
     errdefer glfw.makeContextCurrent(null) catch |err|
         log.warn("failed to cleanup OpenGL context err={}", .{err});
     try glfw.swapInterval(1);
@@ -541,7 +525,7 @@ fn resetFontMetrics(
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *OpenGL,
-    window: glfw.Window,
+    winsys: window.System,
     state: *renderer.State,
 ) !void {
     // Data we extract out of the critical area.
@@ -657,7 +641,7 @@ pub fn render(
     }
 
     // Swap our window buffers
-    try window.swapBuffers();
+    try winsys.window.swapBuffers();
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a

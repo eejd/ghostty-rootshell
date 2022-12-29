@@ -4,9 +4,9 @@ pub const Thread = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const glfw = @import("glfw");
 const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
+const window = @import("../window.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const tracy = @import("tracy");
 const trace = tracy.trace;
@@ -37,8 +37,8 @@ render_h: libuv.Timer,
 /// The timer used for cursor blinking
 cursor_h: libuv.Timer,
 
-/// The windo we're rendering to.
-window: glfw.Window,
+/// The window  we're rendering to.
+window: window.System,
 
 /// The underlying renderer implementation.
 renderer: *renderer.Renderer,
@@ -55,7 +55,7 @@ mailbox: *Mailbox,
 /// is up to the caller to start the thread with the threadMain entrypoint.
 pub fn init(
     alloc: Allocator,
-    window: glfw.Window,
+    win: window.System,
     renderer_impl: *renderer.Renderer,
     state: *renderer.State,
 ) !Thread {
@@ -120,7 +120,7 @@ pub fn init(
         .stop = stop_h,
         .render_h = render_h,
         .cursor_h = cursor_timer,
-        .window = window,
+        .window = win,
         .renderer = renderer_impl,
         .state = state,
         .mailbox = mailbox,
