@@ -7,9 +7,9 @@ const Window = @This();
 
 // TODO: eventually, I want to extract Window.zig into the "window" package
 // so we can also have alternate implementations (i.e. not glfw).
-const message = @import("window/message.zig");
-pub const Mailbox = message.Mailbox;
-pub const Message = message.Message;
+const apprt = @import("apprt.zig");
+pub const Mailbox = apprt.Window.Mailbox;
+pub const Message = apprt.Window.Message;
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -30,7 +30,6 @@ const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
-const WindowingSystem = @import("window.zig").System;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -49,7 +48,7 @@ alloc: Allocator,
 app: *App,
 
 /// The windowing system state
-windowing_system: WindowingSystem,
+windowing_system: apprt.runtime.Window,
 
 /// The font structures
 font_lib: font.Library,
@@ -140,7 +139,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer alloc.destroy(self);
 
     // Create the windowing system
-    var winsys = try WindowingSystem.init(app);
+    var winsys = try apprt.runtime.Window.init(app);
     errdefer winsys.deinit();
 
     // Initialize our renderer with our initialized windowing system.

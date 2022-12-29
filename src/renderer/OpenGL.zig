@@ -7,6 +7,7 @@ const glfw = @import("glfw");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
+const apprt = @import("../apprt.zig");
 const font = @import("../font/main.zig");
 const imgui = @import("imgui");
 const renderer = @import("../renderer.zig");
@@ -18,7 +19,6 @@ const math = @import("../math.zig");
 const lru = @import("../lru.zig");
 const DevMode = @import("../DevMode.zig");
 const Window = @import("../Window.zig");
-const window = @import("../window.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -364,10 +364,10 @@ pub fn glfwWindowHints() glfw.Window.Hints {
 
 /// This is called early right after window creation to setup our
 /// window surface as necessary.
-pub fn windowInit(winsys: window.System) !void {
+pub fn windowInit(win: apprt.runtime.Window) !void {
     // Treat this like a thread entry
     const self: OpenGL = undefined;
-    try self.threadEnter(winsys);
+    try self.threadEnter(win);
 
     // Blending for text
     try gl.enable(gl.c.GL_BLEND);
@@ -385,19 +385,19 @@ pub fn windowInit(winsys: window.System) !void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeWindowInit(self: *const OpenGL, winsys: window.System) !void {
+pub fn finalizeWindowInit(self: *const OpenGL, win: apprt.runtime.Window) !void {
     _ = self;
-    _ = winsys;
+    _ = win;
 }
 
 /// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const OpenGL, winsys: window.System) !void {
+pub fn initDevMode(self: *const OpenGL, win: apprt.runtime.Window) !void {
     _ = self;
 
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, winsys.window.handle),
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, win.window.handle),
             true,
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
@@ -415,7 +415,7 @@ pub fn deinitDevMode(self: *const OpenGL) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(self: *const OpenGL, winsys: window.System) !void {
+pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
     _ = self;
 
     // We need to make the OpenGL context current. OpenGL requires
@@ -423,7 +423,7 @@ pub fn threadEnter(self: *const OpenGL, winsys: window.System) !void {
     // ensures that the context switches over to our thread. Important:
     // the prior thread MUST have detached the context prior to calling
     // this entrypoint.
-    try glfw.makeContextCurrent(winsys.window);
+    try glfw.makeContextCurrent(win.window);
     errdefer glfw.makeContextCurrent(null) catch |err|
         log.warn("failed to cleanup OpenGL context err={}", .{err});
     try glfw.swapInterval(1);
@@ -525,7 +525,7 @@ fn resetFontMetrics(
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *OpenGL,
-    winsys: window.System,
+    win: apprt.runtime.Window,
     state: *renderer.State,
 ) !void {
     // Data we extract out of the critical area.
@@ -641,7 +641,7 @@ pub fn render(
     }
 
     // Swap our window buffers
-    try winsys.window.swapBuffers();
+    try win.window.swapBuffers();
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a

@@ -6,7 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
-const window = @import("../window.zig");
+const apprt = @import("../apprt.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const tracy = @import("tracy");
 const trace = tracy.trace;
@@ -38,7 +38,7 @@ render_h: libuv.Timer,
 cursor_h: libuv.Timer,
 
 /// The window  we're rendering to.
-window: window.System,
+window: apprt.runtime.Window,
 
 /// The underlying renderer implementation.
 renderer: *renderer.Renderer,
@@ -55,7 +55,7 @@ mailbox: *Mailbox,
 /// is up to the caller to start the thread with the threadMain entrypoint.
 pub fn init(
     alloc: Allocator,
-    win: window.System,
+    win: apprt.runtime.Window,
     renderer_impl: *renderer.Renderer,
     state: *renderer.State,
 ) !Thread {
