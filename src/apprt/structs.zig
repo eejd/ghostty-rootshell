@@ -11,3 +11,9 @@ pub const WindowSize = struct {
     width: u32,
     height: u32,
 };
+
+/// The position of the cursor in pixels.
+pub const CursorPos = struct {
+    x: f32,
+    y: f32,
+};

@@ -91,6 +91,9 @@ pub const Window = struct {
         win.setKeyCallback(keyCallback);
         win.setFocusCallback(focusCallback);
         win.setRefreshCallback(refreshCallback);
+        win.setScrollCallback(scrollCallback);
+        win.setCursorPosCallback(cursorPosCallback);
+        win.setMouseButtonCallback(mouseButtonCallback);
 
         // Build our result
         return Window{
@@ -164,10 +167,43 @@ pub const Window = struct {
         return apprt.WindowSize{ .width = size.width, .height = size.height };
     }
 
+    /// Returns the cursor position in scaled pixels relative to the
+    /// upper-left of the window.
+    pub fn getCursorPos(self: *const Window) !apprt.CursorPos {
+        const unscaled_pos = try self.window.getCursorPos();
+        const pos = try self.cursorPosToPixels(unscaled_pos);
+        return apprt.CursorPos{
+            .x = @floatCast(f32, pos.xpos),
+            .y = @floatCast(f32, pos.ypos),
+        };
+    }
+
     /// Set the flag that notes this window should be closed for the next
     /// iteration of the event loop.
     pub fn setShouldClose(self: *Window) void {
         self.window.setShouldClose(true);
+    }
+
+    /// The cursor position from glfw directly is in screen coordinates but
+    /// all our interface works in pixels.
+    fn cursorPosToPixels(self: *const Window, pos: glfw.Window.CursorPos) !glfw.Window.CursorPos {
+        // The cursor position is in screen coordinates but we
+        // want it in pixels. we need to get both the size of the
+        // window in both to get the ratio to make the conversion.
+        const size = try self.window.getSize();
+        const fb_size = try self.window.getFramebufferSize();
+
+        // If our framebuffer and screen are the same, then there is no scaling
+        // happening and we can short-circuit by returning the pos as-is.
+        if (fb_size.width == size.width and fb_size.height == size.height)
+            return pos;
+
+        const x_scale = @intToFloat(f64, fb_size.width) / @intToFloat(f64, size.width);
+        const y_scale = @intToFloat(f64, fb_size.height) / @intToFloat(f64, size.height);
+        return .{
+            .xpos = pos.xpos * x_scale,
+            .ypos = pos.ypos * y_scale,
+        };
     }
 
     fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
@@ -371,6 +407,83 @@ pub const Window = struct {
         const core_win = window.getUserPointer(CoreWindow) orelse return;
         core_win.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        core_win.scrollCallback(xoff, yoff) catch |err| {
+            log.err("error in scroll callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn cursorPosCallback(
+        window: glfw.Window,
+        unscaled_xpos: f64,
+        unscaled_ypos: f64,
+    ) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+
+        // Convert our unscaled x/y to scaled.
+        const pos = core_win.windowing_system.cursorPosToPixels(.{
+            .xpos = unscaled_xpos,
+            .ypos = unscaled_ypos,
+        }) catch |err| {
+            log.err(
+                "error converting cursor pos to scaled pixels in cursor pos callback err={}",
+                .{err},
+            );
+            return;
+        };
+
+        core_win.cursorPosCallback(.{
+            .x = @floatCast(f32, pos.xpos),
+            .y = @floatCast(f32, pos.ypos),
+        }) catch |err| {
+            log.err("error in cursor pos callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn mouseButtonCallback(
+        window: glfw.Window,
+        glfw_button: glfw.MouseButton,
+        glfw_action: glfw.Action,
+        glfw_mods: glfw.Mods,
+    ) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+
+        // Convert glfw button to input button
+        const mods = @bitCast(input.Mods, glfw_mods);
+        const button: input.MouseButton = switch (glfw_button) {
+            .left => .left,
+            .right => .right,
+            .middle => .middle,
+            .four => .four,
+            .five => .five,
+            .six => .six,
+            .seven => .seven,
+            .eight => .eight,
+        };
+        const action: input.MouseButtonState = switch (glfw_action) {
+            .press => .press,
+            .release => .release,
+            else => unreachable,
+        };
+
+        core_win.mouseButtonCallback(action, button, mods) catch |err| {
+            log.err("error in scroll callback err={}", .{err});
             return;
         };
     }

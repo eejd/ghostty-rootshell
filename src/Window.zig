@@ -393,11 +393,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     //     .height = @floatToInt(u32, cell_size.height * 4),
     // }, .{ .width = null, .height = null });
 
-    // Setup our callbacks and user data
-    winsys.window.setScrollCallback(scrollCallback);
-    winsys.window.setCursorPosCallback(cursorPosCallback);
-    winsys.window.setMouseButtonCallback(mouseButtonCallback);
-
     // Call our size callback which handles all our retina setup
     // Note: this shouldn't be necessary and when we clean up the window
     // init stuff we should get rid of this. But this is required because
@@ -648,28 +643,6 @@ pub fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
 /// practical.
 fn queueRender(self: *const Window) !void {
     try self.renderer_thread.wakeup.send();
-}
-
-/// The cursor position from glfw directly is in screen coordinates but
-/// all our internal state works in pixels.
-fn cursorPosToPixels(self: Window, pos: glfw.Window.CursorPos) glfw.Window.CursorPos {
-    // The cursor position is in screen coordinates but we
-    // want it in pixels. we need to get both the size of the
-    // window in both to get the ratio to make the conversion.
-    const size = self.window.getSize() catch unreachable;
-    const fb_size = self.window.getFramebufferSize() catch unreachable;
-
-    // If our framebuffer and screen are the same, then there is no scaling
-    // happening and we can short-circuit by returning the pos as-is.
-    if (fb_size.width == size.width and fb_size.height == size.height)
-        return pos;
-
-    const x_scale = @intToFloat(f64, fb_size.width) / @intToFloat(f64, size.width);
-    const y_scale = @intToFloat(f64, fb_size.height) / @intToFloat(f64, size.height);
-    return .{
-        .xpos = pos.xpos * x_scale,
-        .ypos = pos.ypos * y_scale,
-    };
 }
 
 pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
@@ -1049,17 +1022,14 @@ pub fn refreshCallback(self: *Window) !void {
     try self.queueRender();
 }
 
-fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
+pub fn scrollCallback(self: *Window, xoff: f64, yoff: f64) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.queueRender() catch |err|
-            log.err("error scheduling render timer err={}", .{err});
+        try self.queueRender();
 
         // If the mouse event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
@@ -1072,33 +1042,25 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     // Positive is up
     const sign: isize = if (yoff > 0) -1 else 1;
-    const delta: isize = sign * @max(@divFloor(win.grid_size.rows, 15), 1);
+    const delta: isize = sign * @max(@divFloor(self.grid_size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
 
     {
-        win.renderer_state.mutex.lock();
-        defer win.renderer_state.mutex.unlock();
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
 
         // Modify our viewport, this requires a lock since it affects rendering
-        win.io.terminal.scrollViewport(.{ .delta = delta }) catch |err|
-            log.err("error scrolling viewport err={}", .{err});
+        try self.io.terminal.scrollViewport(.{ .delta = delta });
 
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.
         if (yoff != 0) {
-            const pos = window.getCursorPos() catch |err| {
-                log.err("error reading cursor position: {}", .{err});
-                return;
-            };
-
-            win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
-                log.err("error reporting mouse event: {}", .{err});
-                return;
-            };
+            const pos = try self.windowing_system.getCursorPos();
+            try self.mouseReport(if (yoff < 0) .five else .four, .press, self.mouse.mods, pos);
         }
     }
 
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 }
 
 /// The type of action to report for a mouse event.
@@ -1109,7 +1071,7 @@ fn mouseReport(
     button: ?input.MouseButton,
     action: MouseReportAction,
     mods: input.Mods,
-    unscaled_pos: glfw.Window.CursorPos,
+    pos: apprt.CursorPos,
 ) !void {
     // TODO: posToViewport currently clamps to the window boundary,
     // do we want to not report mouse events at all outside the window?
@@ -1137,8 +1099,7 @@ fn mouseReport(
     }
 
     // This format reports X/Y
-    const pos = self.cursorPosToPixels(unscaled_pos);
-    const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
+    const viewport_point = self.posToViewport(pos.x, pos.y);
 
     // Record our new point
     self.mouse.event_point = viewport_point;
@@ -1281,8 +1242,8 @@ fn mouseReport(
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
-                pos.xpos,
-                pos.ypos,
+                pos.x,
+                pos.y,
                 final,
             });
 
@@ -1300,22 +1261,19 @@ fn mouseReport(
     try self.io_thread.wakeup.send();
 }
 
-fn mouseButtonCallback(
-    window: glfw.Window,
-    glfw_button: glfw.MouseButton,
-    glfw_action: glfw.Action,
-    mods: glfw.Mods,
-) void {
+pub fn mouseButtonCallback(
+    self: *Window,
+    action: input.MouseButtonState,
+    button: input.MouseButton,
+    mods: input.Mods,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.queueRender() catch |err|
-            log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+        try self.queueRender();
 
         // If the mouse event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
@@ -1323,125 +1281,96 @@ fn mouseButtonCallback(
         } else |_| {}
     }
 
-    // Convert glfw button to input button
-    const button: input.MouseButton = switch (glfw_button) {
-        .left => .left,
-        .right => .right,
-        .middle => .middle,
-        .four => .four,
-        .five => .five,
-        .six => .six,
-        .seven => .seven,
-        .eight => .eight,
-    };
-    const action: input.MouseButtonState = switch (glfw_action) {
-        .press => .press,
-        .release => .release,
-        else => unreachable,
-    };
-
     // Always record our latest mouse state
-    win.mouse.click_state[@enumToInt(button)] = action;
-    win.mouse.mods = @bitCast(input.Mods, mods);
+    self.mouse.click_state[@enumToInt(button)] = action;
+    self.mouse.mods = @bitCast(input.Mods, mods);
 
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
 
     // Report mouse events if enabled
-    if (win.io.terminal.modes.mouse_event != .none) {
-        const pos = window.getCursorPos() catch |err| {
-            log.err("error reading cursor position: {}", .{err});
-            return;
-        };
+    if (self.io.terminal.modes.mouse_event != .none) {
+        const pos = try self.windowing_system.getCursorPos();
 
         const report_action: MouseReportAction = switch (action) {
             .press => .press,
             .release => .release,
         };
 
-        win.mouseReport(
+        try self.mouseReport(
             button,
             report_action,
-            win.mouse.mods,
+            self.mouse.mods,
             pos,
-        ) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
+        );
     }
 
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
-        const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
-            log.err("error reading cursor position: {}", .{err});
-            return;
-        });
+        const pos = try self.windowing_system.getCursorPos();
 
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
-        if (win.mouse.left_click_count > 0) {
-            const max_distance = win.cell_size.width;
+        if (self.mouse.left_click_count > 0) {
+            const max_distance = self.cell_size.width;
             const distance = @sqrt(
-                std.math.pow(f64, pos.xpos - win.mouse.left_click_xpos, 2) +
-                    std.math.pow(f64, pos.ypos - win.mouse.left_click_ypos, 2),
+                std.math.pow(f64, pos.x - self.mouse.left_click_xpos, 2) +
+                    std.math.pow(f64, pos.y - self.mouse.left_click_ypos, 2),
             );
 
-            if (distance > max_distance) win.mouse.left_click_count = 0;
+            if (distance > max_distance) self.mouse.left_click_count = 0;
         }
 
         // Store it
-        const point = win.posToViewport(pos.xpos, pos.ypos);
-        win.mouse.left_click_point = point.toScreen(&win.io.terminal.screen);
-        win.mouse.left_click_xpos = pos.xpos;
-        win.mouse.left_click_ypos = pos.ypos;
+        const point = self.posToViewport(pos.x, pos.y);
+        self.mouse.left_click_point = point.toScreen(&self.io.terminal.screen);
+        self.mouse.left_click_xpos = pos.x;
+        self.mouse.left_click_ypos = pos.y;
 
         // Setup our click counter and timer
         if (std.time.Instant.now()) |now| {
             // If we have mouse clicks, then we check if the time elapsed
             // is less than and our interval and if so, increase the count.
-            if (win.mouse.left_click_count > 0) {
-                const since = now.since(win.mouse.left_click_time);
-                if (since > win.mouse_interval) {
-                    win.mouse.left_click_count = 0;
+            if (self.mouse.left_click_count > 0) {
+                const since = now.since(self.mouse.left_click_time);
+                if (since > self.mouse_interval) {
+                    self.mouse.left_click_count = 0;
                 }
             }
 
-            win.mouse.left_click_time = now;
-            win.mouse.left_click_count += 1;
+            self.mouse.left_click_time = now;
+            self.mouse.left_click_count += 1;
 
             // We only support up to triple-clicks.
-            if (win.mouse.left_click_count > 3) win.mouse.left_click_count = 1;
+            if (self.mouse.left_click_count > 3) self.mouse.left_click_count = 1;
         } else |err| {
-            win.mouse.left_click_count = 1;
+            self.mouse.left_click_count = 1;
             log.err("error reading time, mouse multi-click won't work err={}", .{err});
         }
 
-        switch (win.mouse.left_click_count) {
+        switch (self.mouse.left_click_count) {
             // First mouse click, clear selection
-            1 => if (win.io.terminal.selection != null) {
-                win.io.terminal.selection = null;
-                win.queueRender() catch |err|
-                    log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+            1 => if (self.io.terminal.selection != null) {
+                self.io.terminal.selection = null;
+                try self.queueRender();
             },
 
             // Double click, select the word under our mouse
             2 => {
-                const sel_ = win.io.terminal.screen.selectWord(win.mouse.left_click_point);
+                const sel_ = self.io.terminal.screen.selectWord(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    win.io.terminal.selection = sel;
-                    win.queueRender() catch |err|
-                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                    self.io.terminal.selection = sel;
+                    try self.queueRender();
                 }
             },
 
             // Triple click, select the line under our mouse
             3 => {
-                const sel_ = win.io.terminal.screen.selectLine(win.mouse.left_click_point);
+                const sel_ = self.io.terminal.screen.selectLine(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    win.io.terminal.selection = sel;
-                    win.queueRender() catch |err|
-                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                    self.io.terminal.selection = sel;
+                    try self.queueRender();
                 }
             },
 
@@ -1451,21 +1380,17 @@ fn mouseButtonCallback(
     }
 }
 
-fn cursorPosCallback(
-    window: glfw.Window,
-    unscaled_xpos: f64,
-    unscaled_ypos: f64,
-) void {
+pub fn cursorPosCallback(
+    self: *Window,
+    pos: apprt.CursorPos,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.queueRender() catch |err|
-            log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+        try self.queueRender();
 
         // If the mouse event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
@@ -1474,25 +1399,19 @@ fn cursorPosCallback(
     }
 
     // We are reading/writing state for the remainder
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
 
     // Do a mouse report
-    if (win.io.terminal.modes.mouse_event != .none) {
+    if (self.io.terminal.modes.mouse_event != .none) {
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
-        const button: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
+        const button: ?input.MouseButton = button: for (self.mouse.click_state) |state, i| {
             if (state == .press)
                 break :button @intToEnum(input.MouseButton, i);
         } else null;
 
-        win.mouseReport(button, .motion, win.mouse.mods, .{
-            .xpos = unscaled_xpos,
-            .ypos = unscaled_ypos,
-        }) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
+        try self.mouseReport(button, .motion, self.mouse.mods, pos);
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
@@ -1500,26 +1419,24 @@ fn cursorPosCallback(
     }
 
     // If the cursor isn't clicked currently, it doesn't matter
-    if (win.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
+    if (self.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
 
     // All roads lead to requiring a re-render at this pont.
-    win.queueRender() catch |err|
-        log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+    try self.queueRender();
 
     // Convert to pixels from screen coords
-    const pos = win.cursorPosToPixels(.{ .xpos = unscaled_xpos, .ypos = unscaled_ypos });
-    const xpos = pos.xpos;
-    const ypos = pos.ypos;
+    const xpos = pos.x;
+    const ypos = pos.y;
 
     // Convert to points
-    const viewport_point = win.posToViewport(xpos, ypos);
-    const screen_point = viewport_point.toScreen(&win.io.terminal.screen);
+    const viewport_point = self.posToViewport(xpos, ypos);
+    const screen_point = viewport_point.toScreen(&self.io.terminal.screen);
 
     // Handle dragging depending on click count
-    switch (win.mouse.left_click_count) {
-        1 => win.dragLeftClickSingle(screen_point, xpos),
-        2 => win.dragLeftClickDouble(screen_point),
-        3 => win.dragLeftClickTriple(screen_point),
+    switch (self.mouse.left_click_count) {
+        1 => self.dragLeftClickSingle(screen_point, xpos),
+        2 => self.dragLeftClickDouble(screen_point),
+        3 => self.dragLeftClickTriple(screen_point),
         else => unreachable,
     }
 }
