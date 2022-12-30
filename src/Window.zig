@@ -7,9 +7,9 @@ const Window = @This();
 
 // TODO: eventually, I want to extract Window.zig into the "window" package
 // so we can also have alternate implementations (i.e. not glfw).
-const message = @import("window/message.zig");
-pub const Mailbox = message.Mailbox;
-pub const Message = message.Message;
+const apprt = @import("apprt.zig");
+pub const Mailbox = apprt.Window.Mailbox;
+pub const Message = apprt.Window.Message;
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -47,16 +47,13 @@ alloc: Allocator,
 /// The app that this window is a part of.
 app: *App,
 
+/// The windowing system state
+window: apprt.runtime.Window,
+
 /// The font structures
 font_lib: font.Library,
 font_group: *font.GroupCache,
 font_size: font.face.DesiredSize,
-
-/// The glfw window handle.
-window: glfw.Window,
-
-/// The glfw mouse cursor handle.
-cursor: glfw.Cursor,
 
 /// Imgui context
 imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
@@ -135,32 +132,21 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
-    // Create our window
-    const window = try glfw.Window.create(640, 480, "ghostty", null, null, Renderer.windowHints());
-    errdefer window.destroy();
+    // Create the windowing system
+    var window = try apprt.runtime.Window.init(app, self);
+    errdefer window.deinit();
+
+    // Initialize our renderer with our initialized windowing system.
     try Renderer.windowInit(window);
-
-    // On Mac, enable tabbing
-    if (comptime builtin.target.isDarwin()) {
-        const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
-        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(window).?);
-
-        // Tabbing mode enables tabbing at all
-        nswindow.setProperty("tabbingMode", NSWindowTabbingMode.automatic);
-
-        // All windows within a tab bar must have a matching tabbing ID.
-        // The app sets this up for us.
-        nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
-    }
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
     const content_scale = try window.getContentScale();
-    const x_dpi = content_scale.x_scale * font.face.default_dpi;
-    const y_dpi = content_scale.y_scale * font.face.default_dpi;
+    const x_dpi = content_scale.x * font.face.default_dpi;
+    const y_dpi = content_scale.y * font.face.default_dpi;
     log.debug("xscale={} yscale={} xdpi={} ydpi={}", .{
-        content_scale.x_scale,
-        content_scale.y_scale,
+        content_scale.x,
+        content_scale.y,
         x_dpi,
         y_dpi,
     });
@@ -322,23 +308,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         cell_size,
     );
 
-    // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
-    // but is otherwise somewhat arbitrary.
-    try window.setSizeLimits(.{
-        .width = @floatToInt(u32, cell_size.width * 10),
-        .height = @floatToInt(u32, cell_size.height * 4),
-    }, .{ .width = null, .height = null });
-
-    // Create the cursor
-    const cursor = try glfw.Cursor.createStandard(.ibeam);
-    errdefer cursor.destroy();
-    if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
-        // We only set our cursor if we're NOT on Mac, or if we are then the
-        // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
-        // since we use a tab group.
-        try window.setCursor(cursor);
-    }
-
     // The mutex used to protect our renderer state.
     var mutex = try alloc.create(std.Thread.Mutex);
     mutex.* = .{};
@@ -377,11 +346,10 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     self.* = .{
         .alloc = alloc,
         .app = app,
+        .window = window,
         .font_lib = font_lib,
         .font_group = font_group,
         .font_size = font_size,
-        .window = window,
-        .cursor = cursor,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
         .renderer_state = .{
@@ -409,27 +377,19 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     };
     errdefer if (DevMode.enabled) self.imgui_ctx.destroy();
 
-    // Setup our callbacks and user data
-    window.setUserPointer(self);
-    window.setSizeCallback(sizeCallback);
-    window.setCharCallback(charCallback);
-    window.setKeyCallback(keyCallback);
-    window.setFocusCallback(focusCallback);
-    window.setRefreshCallback(refreshCallback);
-    window.setScrollCallback(scrollCallback);
-    window.setCursorPosCallback(cursorPosCallback);
-    window.setMouseButtonCallback(mouseButtonCallback);
+    // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
+    // but is otherwise somewhat arbitrary.
+    try window.setSizeLimits(.{
+        .width = @floatToInt(u32, cell_size.width * 10),
+        .height = @floatToInt(u32, cell_size.height * 4),
+    }, null);
 
     // Call our size callback which handles all our retina setup
     // Note: this shouldn't be necessary and when we clean up the window
     // init stuff we should get rid of this. But this is required because
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
-    sizeCallback(
-        window,
-        @intCast(i32, window_size.width),
-        @intCast(i32, window_size.height),
-    );
+    try self.sizeCallback(window_size);
 
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
@@ -516,51 +476,7 @@ pub fn destroy(self: *Window) void {
         self.io.deinit();
     }
 
-    var tabgroup_opt: if (builtin.target.isDarwin()) ?objc.Object else void = undefined;
-    if (comptime builtin.target.isDarwin()) {
-        const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
-        const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
-
-        // On macOS versions prior to Ventura, we lose window focus on tab close
-        // for some reason. We manually fix this by keeping track of the tab
-        // group and just selecting the next window.
-        if (internal_os.macosVersionAtLeast(13, 0, 0))
-            tabgroup_opt = null
-        else
-            tabgroup_opt = tabgroup;
-
-        const windows = tabgroup.getProperty(objc.Object, "windows");
-        switch (windows.getProperty(usize, "count")) {
-            // If we're going down to one window our tab bar is going to be
-            // destroyed so unset it so that the later logic doesn't try to
-            // use it.
-            1 => tabgroup_opt = null,
-
-            // If our tab bar is visible and we are going down to 1 window,
-            // hide the tab bar. The check is "2" because our current window
-            // is still present.
-            2 => if (tabgroup.getProperty(bool, "tabBarVisible")) {
-                nswindow.msgSend(void, objc.sel("toggleTabBar:"), .{nswindow.value});
-            },
-
-            else => {},
-        }
-    }
-
-    self.window.destroy();
-
-    // If we have a tabgroup set, we want to manually focus the next window.
-    // We should NOT have to do this usually, see the comments above.
-    if (comptime builtin.target.isDarwin()) {
-        if (tabgroup_opt) |tabgroup| {
-            const selected = tabgroup.getProperty(objc.Object, "selectedWindow");
-            selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
-        }
-    }
-
-    // We can destroy the cursor right away. glfw will just revert any
-    // windows using it to the default.
-    self.cursor.destroy();
+    self.window.deinit();
 
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
@@ -579,10 +495,16 @@ pub fn shouldClose(self: Window) bool {
 pub fn addWindow(self: Window, other: *Window) void {
     assert(builtin.target.isDarwin());
 
+    // This has a hard dependency on GLFW currently. If we want to support
+    // this in other windowing systems we should abstract this. This is NOT
+    // the right interface.
+    const self_win = glfwNative.getCocoaWindow(self.window.window).?;
+    const other_win = glfwNative.getCocoaWindow(other.window.window).?;
+
     const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
-    const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
+    const nswindow = objc.Object.fromId(self_win);
     nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
-        objc.Object.fromId(glfwNative.getCocoaWindow(other.window).?),
+        objc.Object.fromId(other_win),
         NSWindowOrderingMode.above,
     });
 }
@@ -596,7 +518,7 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@ptrCast([*:0]const u8, v), 0);
             log.debug("changing title \"{s}\"", .{slice});
-            try self.window.setTitle(slice.ptr);
+            try self.window.setTitle(slice);
         },
 
         .cell_size => |size| try self.setCellSize(size),
@@ -620,7 +542,7 @@ fn clipboardRead(self: *const Window, kind: u8) !void {
         return;
     }
 
-    const data = glfw.getClipboardString() catch |err| {
+    const data = self.window.getClipboardString() catch |err| {
         log.warn("error reading clipboard: {}", .{err});
         return;
     };
@@ -668,7 +590,7 @@ fn clipboardWrite(self: *const Window, data: []const u8) !void {
     try dec.decode(buf, data);
     assert(buf[buf.len] == 0);
 
-    glfw.setClipboardString(buf) catch |err| {
+    self.window.setClipboardString(buf) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -720,136 +642,90 @@ fn queueRender(self: *const Window) !void {
     try self.renderer_thread.wakeup.send();
 }
 
-/// The cursor position from glfw directly is in screen coordinates but
-/// all our internal state works in pixels.
-fn cursorPosToPixels(self: Window, pos: glfw.Window.CursorPos) glfw.Window.CursorPos {
-    // The cursor position is in screen coordinates but we
-    // want it in pixels. we need to get both the size of the
-    // window in both to get the ratio to make the conversion.
-    const size = self.window.getSize() catch unreachable;
-    const fb_size = self.window.getFramebufferSize() catch unreachable;
-
-    // If our framebuffer and screen are the same, then there is no scaling
-    // happening and we can short-circuit by returning the pos as-is.
-    if (fb_size.width == size.width and fb_size.height == size.height)
-        return pos;
-
-    const x_scale = @intToFloat(f64, fb_size.width) / @intToFloat(f64, size.width);
-    const y_scale = @intToFloat(f64, fb_size.height) / @intToFloat(f64, size.height);
-    return .{
-        .xpos = pos.xpos * x_scale,
-        .ypos = pos.ypos * y_scale,
-    };
-}
-
-fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
+pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    // glfw gives us signed integers, but negative width/height is n
-    // non-sensical so we use unsigned throughout, so assert.
-    assert(width >= 0);
-    assert(height >= 0);
-
-    // Get our framebuffer size since this will give us the size in pixels
-    // whereas width/height in this callback is in screen coordinates. For
-    // Retina displays (or any other displays that have a scale factor),
-    // these will not match.
-    const px_size = window.getFramebufferSize() catch |err| err: {
-        log.err("error querying window size in pixels, will use screen size err={}", .{err});
-        break :err glfw.Window.Size{
-            .width = @intCast(u32, width),
-            .height = @intCast(u32, height),
-        };
-    };
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // TODO: if our screen size didn't change, then we should avoid the
     // overhead of inter-thread communication
 
     // Save our screen size
-    win.screen_size = .{
-        .width = px_size.width,
-        .height = px_size.height,
+    self.screen_size = .{
+        .width = size.width,
+        .height = size.height,
     };
 
     // Recalculate our grid size
-    win.grid_size = renderer.GridSize.init(
-        win.screen_size.subPadding(win.padding),
-        win.cell_size,
+    self.grid_size = renderer.GridSize.init(
+        self.screen_size.subPadding(self.padding),
+        self.cell_size,
     );
-    if (win.grid_size.columns < 5 and (win.padding.left > 0 or win.padding.right > 0)) {
+    if (self.grid_size.columns < 5 and (self.padding.left > 0 or self.padding.right > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
-    if (win.grid_size.rows < 2 and (win.padding.top > 0 or win.padding.bottom > 0)) {
+    if (self.grid_size.rows < 2 and (self.padding.top > 0 or self.padding.bottom > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
 
     // Mail the renderer
-    _ = win.renderer_thread.mailbox.push(.{
-        .screen_size = win.screen_size,
+    _ = self.renderer_thread.mailbox.push(.{
+        .screen_size = self.screen_size,
     }, .{ .forever = {} });
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 
     // Mail the IO thread
-    _ = win.io_thread.mailbox.push(.{
+    _ = self.io_thread.mailbox.push(.{
         .resize = .{
-            .grid_size = win.grid_size,
-            .screen_size = win.screen_size,
-            .padding = win.padding,
+            .grid_size = self.grid_size,
+            .screen_size = self.screen_size,
+            .padding = self.padding,
         },
     }, .{ .forever = {} });
-    win.io_thread.wakeup.send() catch {};
+    try self.io_thread.wakeup.send();
 }
 
-fn charCallback(window: glfw.Window, codepoint: u21) void {
+pub fn charCallback(self: *Window, codepoint: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // Dev Mode
     if (DevMode.enabled and DevMode.instance.visible) {
         // If the event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
             if (io.cval().WantCaptureKeyboard) {
-                win.queueRender() catch |err|
-                    log.err("error scheduling render timer err={}", .{err});
+                try self.queueRender();
             }
         } else |_| {}
     }
 
     // Ignore if requested. See field docs for more information.
-    if (win.ignore_char) {
-        win.ignore_char = false;
+    if (self.ignore_char) {
+        self.ignore_char = false;
         return;
     }
 
     // Critical area
     {
-        win.renderer_state.mutex.lock();
-        defer win.renderer_state.mutex.unlock();
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
 
         // Clear the selction if we have one.
-        if (win.io.terminal.selection != null) {
-            win.io.terminal.selection = null;
-            win.queueRender() catch |err|
-                log.err("error scheduling render in charCallback err={}", .{err});
+        if (self.io.terminal.selection != null) {
+            self.io.terminal.selection = null;
+            try self.queueRender();
         }
 
         // We want to scroll to the bottom
         // TODO: detect if we're at the bottom to avoid the render call here.
-        win.io.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
-            log.err("error scrolling viewport err={}", .{err});
+        try self.io.terminal.scrollViewport(.{ .bottom = {} });
     }
 
     // Ask our IO thread to write the data
     var data: termio.Message.WriteReq.Small.Array = undefined;
     data[0] = @intCast(u8, codepoint);
-    _ = win.io_thread.mailbox.push(.{
+    _ = self.io_thread.mailbox.push(.{
         .write_small = .{
             .data = data,
             .len = 1,
@@ -857,113 +733,40 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
     }, .{ .forever = {} });
 
     // After sending all our messages we have to notify our IO thread
-    win.io_thread.wakeup.send() catch {};
+    try self.io_thread.wakeup.send();
 }
 
-fn keyCallback(
-    window: glfw.Window,
-    key: glfw.Key,
-    scancode: i32,
-    action: glfw.Action,
-    mods: glfw.Mods,
-) void {
+pub fn keyCallback(
+    self: *Window,
+    action: input.Action,
+    key: input.Key,
+    mods: input.Mods,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // Dev Mode
     if (DevMode.enabled and DevMode.instance.visible) {
         // If the event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
             if (io.cval().WantCaptureKeyboard) {
-                win.queueRender() catch |err|
-                    log.err("error scheduling render timer err={}", .{err});
+                try self.queueRender();
             }
         } else |_| {}
     }
 
     // Reset the ignore char setting. If we didn't handle the char
     // by here, we aren't going to get it so we just reset this.
-    win.ignore_char = false;
-
-    //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
-    _ = scancode;
+    self.ignore_char = false;
 
     if (action == .press or action == .repeat) {
-        // Convert our glfw input into a platform agnostic trigger. When we
-        // extract the platform out of this file, we'll pull a lot of this out
-        // into a function. For now, this is the only place we do it so we just
-        // put it right here.
         const trigger: input.Binding.Trigger = .{
-            .mods = @bitCast(input.Mods, mods),
-            .key = switch (key) {
-                .a => .a,
-                .b => .b,
-                .c => .c,
-                .d => .d,
-                .e => .e,
-                .f => .f,
-                .g => .g,
-                .h => .h,
-                .i => .i,
-                .j => .j,
-                .k => .k,
-                .l => .l,
-                .m => .m,
-                .n => .n,
-                .o => .o,
-                .p => .p,
-                .q => .q,
-                .r => .r,
-                .s => .s,
-                .t => .t,
-                .u => .u,
-                .v => .v,
-                .w => .w,
-                .x => .x,
-                .y => .y,
-                .z => .z,
-                .zero => .zero,
-                .one => .one,
-                .two => .three,
-                .three => .four,
-                .four => .four,
-                .five => .five,
-                .six => .six,
-                .seven => .seven,
-                .eight => .eight,
-                .nine => .nine,
-                .up => .up,
-                .down => .down,
-                .right => .right,
-                .left => .left,
-                .home => .home,
-                .end => .end,
-                .page_up => .page_up,
-                .page_down => .page_down,
-                .escape => .escape,
-                .F1 => .f1,
-                .F2 => .f2,
-                .F3 => .f3,
-                .F4 => .f4,
-                .F5 => .f5,
-                .F6 => .f6,
-                .F7 => .f7,
-                .F8 => .f8,
-                .F9 => .f9,
-                .F10 => .f10,
-                .F11 => .f11,
-                .F12 => .f12,
-                .grave_accent => .grave_accent,
-                .minus => .minus,
-                .equal => .equal,
-                else => .invalid,
-            },
+            .mods = mods,
+            .key = key,
         };
 
         //log.warn("BINDING TRIGGER={}", .{trigger});
-        if (win.config.keybind.set.get(trigger)) |binding_action| {
+        if (self.config.keybind.set.get(trigger)) |binding_action| {
             //log.warn("BINDING ACTION={}", .{binding_action});
 
             switch (binding_action) {
@@ -971,13 +774,13 @@ fn keyCallback(
                 .ignore => {},
 
                 .csi => |data| {
-                    _ = win.io_thread.mailbox.push(.{
+                    _ = self.io_thread.mailbox.push(.{
                         .write_stable = "\x1B[",
                     }, .{ .forever = {} });
-                    _ = win.io_thread.mailbox.push(.{
+                    _ = self.io_thread.mailbox.push(.{
                         .write_stable = data,
                     }, .{ .forever = {} });
-                    win.io_thread.wakeup.send() catch {};
+                    try self.io_thread.wakeup.send();
                 },
 
                 .cursor_key => |ck| {
@@ -985,39 +788,39 @@ fn keyCallback(
                     // in cursor keys mode. We're in "normal" mode if cursor
                     // keys mdoe is NOT set.
                     const normal = normal: {
-                        win.renderer_state.mutex.lock();
-                        defer win.renderer_state.mutex.unlock();
-                        break :normal !win.io.terminal.modes.cursor_keys;
+                        self.renderer_state.mutex.lock();
+                        defer self.renderer_state.mutex.unlock();
+                        break :normal !self.io.terminal.modes.cursor_keys;
                     };
 
                     if (normal) {
-                        _ = win.io_thread.mailbox.push(.{
+                        _ = self.io_thread.mailbox.push(.{
                             .write_stable = ck.normal,
                         }, .{ .forever = {} });
                     } else {
-                        _ = win.io_thread.mailbox.push(.{
+                        _ = self.io_thread.mailbox.push(.{
                             .write_stable = ck.application,
                         }, .{ .forever = {} });
                     }
 
-                    win.io_thread.wakeup.send() catch {};
+                    try self.io_thread.wakeup.send();
                 },
 
                 .copy_to_clipboard => {
                     // We can read from the renderer state without holding
                     // the lock because only we will write to this field.
-                    if (win.io.terminal.selection) |sel| {
-                        var buf = win.io.terminal.screen.selectionString(
-                            win.alloc,
+                    if (self.io.terminal.selection) |sel| {
+                        var buf = self.io.terminal.screen.selectionString(
+                            self.alloc,
                             sel,
-                            win.config.@"clipboard-trim-trailing-spaces",
+                            self.config.@"clipboard-trim-trailing-spaces",
                         ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;
                         };
-                        defer win.alloc.free(buf);
+                        defer self.alloc.free(buf);
 
-                        glfw.setClipboardString(buf) catch |err| {
+                        self.window.setClipboardString(buf) catch |err| {
                             log.err("error setting clipboard string err={}", .{err});
                             return;
                         };
@@ -1025,106 +828,106 @@ fn keyCallback(
                 },
 
                 .paste_from_clipboard => {
-                    const data = glfw.getClipboardString() catch |err| {
+                    const data = self.window.getClipboardString() catch |err| {
                         log.warn("error reading clipboard: {}", .{err});
                         return;
                     };
 
                     if (data.len > 0) {
                         const bracketed = bracketed: {
-                            win.renderer_state.mutex.lock();
-                            defer win.renderer_state.mutex.unlock();
-                            break :bracketed win.io.terminal.modes.bracketed_paste;
+                            self.renderer_state.mutex.lock();
+                            defer self.renderer_state.mutex.unlock();
+                            break :bracketed self.io.terminal.modes.bracketed_paste;
                         };
 
                         if (bracketed) {
-                            _ = win.io_thread.mailbox.push(.{
+                            _ = self.io_thread.mailbox.push(.{
                                 .write_stable = "\x1B[200~",
                             }, .{ .forever = {} });
                         }
 
-                        _ = win.io_thread.mailbox.push(termio.Message.writeReq(
-                            win.alloc,
+                        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                            self.alloc,
                             data,
-                        ) catch unreachable, .{ .forever = {} });
+                        ), .{ .forever = {} });
 
                         if (bracketed) {
-                            _ = win.io_thread.mailbox.push(.{
+                            _ = self.io_thread.mailbox.push(.{
                                 .write_stable = "\x1B[201~",
                             }, .{ .forever = {} });
                         }
 
-                        win.io_thread.wakeup.send() catch {};
+                        try self.io_thread.wakeup.send();
                     }
                 },
 
                 .increase_font_size => |delta| {
                     log.debug("increase font size={}", .{delta});
 
-                    var size = win.font_size;
+                    var size = self.font_size;
                     size.points +|= delta;
-                    win.setFontSize(size);
+                    self.setFontSize(size);
                 },
 
                 .decrease_font_size => |delta| {
                     log.debug("decrease font size={}", .{delta});
 
-                    var size = win.font_size;
+                    var size = self.font_size;
                     size.points = @max(1, size.points -| delta);
-                    win.setFontSize(size);
+                    self.setFontSize(size);
                 },
 
                 .reset_font_size => {
                     log.debug("reset font size", .{});
 
-                    var size = win.font_size;
-                    size.points = win.config.@"font-size";
-                    win.setFontSize(size);
+                    var size = self.font_size;
+                    size.points = self.config.@"font-size";
+                    self.setFontSize(size);
                 },
 
                 .toggle_dev_mode => if (DevMode.enabled) {
                     DevMode.instance.visible = !DevMode.instance.visible;
-                    win.queueRender() catch unreachable;
+                    try self.queueRender();
                 } else log.warn("dev mode was not compiled into this binary", .{}),
 
                 .new_window => {
-                    _ = win.app.mailbox.push(.{
+                    _ = self.app.mailbox.push(.{
                         .new_window = .{
-                            .font_size = if (win.config.@"window-inherit-font-size")
-                                win.font_size
+                            .font_size = if (self.config.@"window-inherit-font-size")
+                                self.font_size
                             else
                                 null,
                         },
                     }, .{ .instant = {} });
-                    win.app.wakeup();
+                    self.app.wakeup();
                 },
 
                 .new_tab => {
-                    _ = win.app.mailbox.push(.{
+                    _ = self.app.mailbox.push(.{
                         .new_tab = .{
-                            .parent = win,
+                            .parent = self,
 
-                            .font_size = if (win.config.@"window-inherit-font-size")
-                                win.font_size
+                            .font_size = if (self.config.@"window-inherit-font-size")
+                                self.font_size
                             else
                                 null,
                         },
                     }, .{ .instant = {} });
-                    win.app.wakeup();
+                    self.app.wakeup();
                 },
 
-                .close_window => win.window.setShouldClose(true),
+                .close_window => self.window.setShouldClose(),
 
                 .quit => {
-                    _ = win.app.mailbox.push(.{
+                    _ = self.app.mailbox.push(.{
                         .quit = {},
                     }, .{ .instant = {} });
-                    win.app.wakeup();
+                    self.app.wakeup();
                 },
             }
 
             // Bindings always result in us ignoring the char if printable
-            win.ignore_char = true;
+            self.ignore_char = true;
 
             // No matter what, if there is a binding then we are done.
             return;
@@ -1133,7 +936,7 @@ fn keyCallback(
         // Handle non-printables
         const char: u8 = char: {
             const mods_int = @bitCast(u8, mods);
-            const ctrl_only = @bitCast(u8, glfw.Mods{ .control = true });
+            const ctrl_only = @bitCast(u8, input.Mods{ .ctrl = true });
 
             // If we're only pressing control, check if this is a character
             // we convert to a non-printable.
@@ -1184,7 +987,7 @@ fn keyCallback(
             // Ask our IO thread to write the data
             var data: termio.Message.WriteReq.Small.Array = undefined;
             data[0] = @intCast(u8, char);
-            _ = win.io_thread.mailbox.push(.{
+            _ = self.io_thread.mailbox.push(.{
                 .write_small = .{
                     .data = data,
                     .len = 1,
@@ -1192,47 +995,34 @@ fn keyCallback(
             }, .{ .forever = {} });
 
             // After sending all our messages we have to notify our IO thread
-            win.io_thread.wakeup.send() catch {};
+            try self.io_thread.wakeup.send();
         }
     }
 }
 
-fn focusCallback(window: glfw.Window, focused: bool) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
-
+pub fn focusCallback(self: *Window, focused: bool) !void {
     // Notify our render thread of the new state
-    _ = win.renderer_thread.mailbox.push(.{
+    _ = self.renderer_thread.mailbox.push(.{
         .focus = focused,
     }, .{ .forever = {} });
 
     // Schedule render which also drains our mailbox
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 }
 
-fn refreshCallback(window: glfw.Window) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
-
+pub fn refreshCallback(self: *Window) !void {
     // The point of this callback is to schedule a render, so do that.
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 }
 
-fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
+pub fn scrollCallback(self: *Window, xoff: f64, yoff: f64) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.queueRender() catch |err|
-            log.err("error scheduling render timer err={}", .{err});
+        try self.queueRender();
 
         // If the mouse event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
@@ -1245,33 +1035,25 @@ fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
 
     // Positive is up
     const sign: isize = if (yoff > 0) -1 else 1;
-    const delta: isize = sign * @max(@divFloor(win.grid_size.rows, 15), 1);
+    const delta: isize = sign * @max(@divFloor(self.grid_size.rows, 15), 1);
     log.info("scroll: delta={}", .{delta});
 
     {
-        win.renderer_state.mutex.lock();
-        defer win.renderer_state.mutex.unlock();
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
 
         // Modify our viewport, this requires a lock since it affects rendering
-        win.io.terminal.scrollViewport(.{ .delta = delta }) catch |err|
-            log.err("error scrolling viewport err={}", .{err});
+        try self.io.terminal.scrollViewport(.{ .delta = delta });
 
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.
         if (yoff != 0) {
-            const pos = window.getCursorPos() catch |err| {
-                log.err("error reading cursor position: {}", .{err});
-                return;
-            };
-
-            win.mouseReport(if (yoff < 0) .five else .four, .press, win.mouse.mods, pos) catch |err| {
-                log.err("error reporting mouse event: {}", .{err});
-                return;
-            };
+            const pos = try self.window.getCursorPos();
+            try self.mouseReport(if (yoff < 0) .five else .four, .press, self.mouse.mods, pos);
         }
     }
 
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 }
 
 /// The type of action to report for a mouse event.
@@ -1282,7 +1064,7 @@ fn mouseReport(
     button: ?input.MouseButton,
     action: MouseReportAction,
     mods: input.Mods,
-    unscaled_pos: glfw.Window.CursorPos,
+    pos: apprt.CursorPos,
 ) !void {
     // TODO: posToViewport currently clamps to the window boundary,
     // do we want to not report mouse events at all outside the window?
@@ -1310,8 +1092,7 @@ fn mouseReport(
     }
 
     // This format reports X/Y
-    const pos = self.cursorPosToPixels(unscaled_pos);
-    const viewport_point = self.posToViewport(pos.xpos, pos.ypos);
+    const viewport_point = self.posToViewport(pos.x, pos.y);
 
     // Record our new point
     self.mouse.event_point = viewport_point;
@@ -1454,8 +1235,8 @@ fn mouseReport(
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
-                pos.xpos,
-                pos.ypos,
+                pos.x,
+                pos.y,
                 final,
             });
 
@@ -1473,22 +1254,19 @@ fn mouseReport(
     try self.io_thread.wakeup.send();
 }
 
-fn mouseButtonCallback(
-    window: glfw.Window,
-    glfw_button: glfw.MouseButton,
-    glfw_action: glfw.Action,
-    mods: glfw.Mods,
-) void {
+pub fn mouseButtonCallback(
+    self: *Window,
+    action: input.MouseButtonState,
+    button: input.MouseButton,
+    mods: input.Mods,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.queueRender() catch |err|
-            log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+        try self.queueRender();
 
         // If the mouse event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
@@ -1496,125 +1274,96 @@ fn mouseButtonCallback(
         } else |_| {}
     }
 
-    // Convert glfw button to input button
-    const button: input.MouseButton = switch (glfw_button) {
-        .left => .left,
-        .right => .right,
-        .middle => .middle,
-        .four => .four,
-        .five => .five,
-        .six => .six,
-        .seven => .seven,
-        .eight => .eight,
-    };
-    const action: input.MouseButtonState = switch (glfw_action) {
-        .press => .press,
-        .release => .release,
-        else => unreachable,
-    };
-
     // Always record our latest mouse state
-    win.mouse.click_state[@enumToInt(button)] = action;
-    win.mouse.mods = @bitCast(input.Mods, mods);
+    self.mouse.click_state[@enumToInt(button)] = action;
+    self.mouse.mods = @bitCast(input.Mods, mods);
 
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
 
     // Report mouse events if enabled
-    if (win.io.terminal.modes.mouse_event != .none) {
-        const pos = window.getCursorPos() catch |err| {
-            log.err("error reading cursor position: {}", .{err});
-            return;
-        };
+    if (self.io.terminal.modes.mouse_event != .none) {
+        const pos = try self.window.getCursorPos();
 
         const report_action: MouseReportAction = switch (action) {
             .press => .press,
             .release => .release,
         };
 
-        win.mouseReport(
+        try self.mouseReport(
             button,
             report_action,
-            win.mouse.mods,
+            self.mouse.mods,
             pos,
-        ) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
+        );
     }
 
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
-        const pos = win.cursorPosToPixels(window.getCursorPos() catch |err| {
-            log.err("error reading cursor position: {}", .{err});
-            return;
-        });
+        const pos = try self.window.getCursorPos();
 
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
-        if (win.mouse.left_click_count > 0) {
-            const max_distance = win.cell_size.width;
+        if (self.mouse.left_click_count > 0) {
+            const max_distance = self.cell_size.width;
             const distance = @sqrt(
-                std.math.pow(f64, pos.xpos - win.mouse.left_click_xpos, 2) +
-                    std.math.pow(f64, pos.ypos - win.mouse.left_click_ypos, 2),
+                std.math.pow(f64, pos.x - self.mouse.left_click_xpos, 2) +
+                    std.math.pow(f64, pos.y - self.mouse.left_click_ypos, 2),
             );
 
-            if (distance > max_distance) win.mouse.left_click_count = 0;
+            if (distance > max_distance) self.mouse.left_click_count = 0;
         }
 
         // Store it
-        const point = win.posToViewport(pos.xpos, pos.ypos);
-        win.mouse.left_click_point = point.toScreen(&win.io.terminal.screen);
-        win.mouse.left_click_xpos = pos.xpos;
-        win.mouse.left_click_ypos = pos.ypos;
+        const point = self.posToViewport(pos.x, pos.y);
+        self.mouse.left_click_point = point.toScreen(&self.io.terminal.screen);
+        self.mouse.left_click_xpos = pos.x;
+        self.mouse.left_click_ypos = pos.y;
 
         // Setup our click counter and timer
         if (std.time.Instant.now()) |now| {
             // If we have mouse clicks, then we check if the time elapsed
             // is less than and our interval and if so, increase the count.
-            if (win.mouse.left_click_count > 0) {
-                const since = now.since(win.mouse.left_click_time);
-                if (since > win.mouse_interval) {
-                    win.mouse.left_click_count = 0;
+            if (self.mouse.left_click_count > 0) {
+                const since = now.since(self.mouse.left_click_time);
+                if (since > self.mouse_interval) {
+                    self.mouse.left_click_count = 0;
                 }
             }
 
-            win.mouse.left_click_time = now;
-            win.mouse.left_click_count += 1;
+            self.mouse.left_click_time = now;
+            self.mouse.left_click_count += 1;
 
             // We only support up to triple-clicks.
-            if (win.mouse.left_click_count > 3) win.mouse.left_click_count = 1;
+            if (self.mouse.left_click_count > 3) self.mouse.left_click_count = 1;
         } else |err| {
-            win.mouse.left_click_count = 1;
+            self.mouse.left_click_count = 1;
             log.err("error reading time, mouse multi-click won't work err={}", .{err});
         }
 
-        switch (win.mouse.left_click_count) {
+        switch (self.mouse.left_click_count) {
             // First mouse click, clear selection
-            1 => if (win.io.terminal.selection != null) {
-                win.io.terminal.selection = null;
-                win.queueRender() catch |err|
-                    log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+            1 => if (self.io.terminal.selection != null) {
+                self.io.terminal.selection = null;
+                try self.queueRender();
             },
 
             // Double click, select the word under our mouse
             2 => {
-                const sel_ = win.io.terminal.screen.selectWord(win.mouse.left_click_point);
+                const sel_ = self.io.terminal.screen.selectWord(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    win.io.terminal.selection = sel;
-                    win.queueRender() catch |err|
-                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                    self.io.terminal.selection = sel;
+                    try self.queueRender();
                 }
             },
 
             // Triple click, select the line under our mouse
             3 => {
-                const sel_ = win.io.terminal.screen.selectLine(win.mouse.left_click_point);
+                const sel_ = self.io.terminal.screen.selectLine(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    win.io.terminal.selection = sel;
-                    win.queueRender() catch |err|
-                        log.err("error scheduling render in mouseButtinCallback err={}", .{err});
+                    self.io.terminal.selection = sel;
+                    try self.queueRender();
                 }
             },
 
@@ -1624,21 +1373,17 @@ fn mouseButtonCallback(
     }
 }
 
-fn cursorPosCallback(
-    window: glfw.Window,
-    unscaled_xpos: f64,
-    unscaled_ypos: f64,
-) void {
+pub fn cursorPosCallback(
+    self: *Window,
+    pos: apprt.CursorPos,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // If our dev mode window is visible then we always schedule a render on
     // cursor move because the cursor might touch our windows.
     if (DevMode.enabled and DevMode.instance.visible) {
-        win.queueRender() catch |err|
-            log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+        try self.queueRender();
 
         // If the mouse event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
@@ -1647,25 +1392,19 @@ fn cursorPosCallback(
     }
 
     // We are reading/writing state for the remainder
-    win.renderer_state.mutex.lock();
-    defer win.renderer_state.mutex.unlock();
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
 
     // Do a mouse report
-    if (win.io.terminal.modes.mouse_event != .none) {
+    if (self.io.terminal.modes.mouse_event != .none) {
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
-        const button: ?input.MouseButton = button: for (win.mouse.click_state) |state, i| {
+        const button: ?input.MouseButton = button: for (self.mouse.click_state) |state, i| {
             if (state == .press)
                 break :button @intToEnum(input.MouseButton, i);
         } else null;
 
-        win.mouseReport(button, .motion, win.mouse.mods, .{
-            .xpos = unscaled_xpos,
-            .ypos = unscaled_ypos,
-        }) catch |err| {
-            log.err("error reporting mouse event: {}", .{err});
-            return;
-        };
+        try self.mouseReport(button, .motion, self.mouse.mods, pos);
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
@@ -1673,26 +1412,24 @@ fn cursorPosCallback(
     }
 
     // If the cursor isn't clicked currently, it doesn't matter
-    if (win.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
+    if (self.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
 
     // All roads lead to requiring a re-render at this pont.
-    win.queueRender() catch |err|
-        log.err("error scheduling render timer in cursorPosCallback err={}", .{err});
+    try self.queueRender();
 
     // Convert to pixels from screen coords
-    const pos = win.cursorPosToPixels(.{ .xpos = unscaled_xpos, .ypos = unscaled_ypos });
-    const xpos = pos.xpos;
-    const ypos = pos.ypos;
+    const xpos = pos.x;
+    const ypos = pos.y;
 
     // Convert to points
-    const viewport_point = win.posToViewport(xpos, ypos);
-    const screen_point = viewport_point.toScreen(&win.io.terminal.screen);
+    const viewport_point = self.posToViewport(xpos, ypos);
+    const screen_point = viewport_point.toScreen(&self.io.terminal.screen);
 
     // Handle dragging depending on click count
-    switch (win.mouse.left_click_count) {
-        1 => win.dragLeftClickSingle(screen_point, xpos),
-        2 => win.dragLeftClickDouble(screen_point),
-        3 => win.dragLeftClickTriple(screen_point),
+    switch (self.mouse.left_click_count) {
+        1 => self.dragLeftClickSingle(screen_point, xpos),
+        2 => self.dragLeftClickDouble(screen_point),
+        3 => self.dragLeftClickTriple(screen_point),
         else => unreachable,
     }
 }
