@@ -139,7 +139,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer alloc.destroy(self);
 
     // Create the windowing system
-    var winsys = try apprt.runtime.Window.init(app);
+    var winsys = try apprt.runtime.Window.init(app, self);
     errdefer winsys.deinit();
 
     // Initialize our renderer with our initialized windowing system.
@@ -394,8 +394,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // }, .{ .width = null, .height = null });
 
     // Setup our callbacks and user data
-    winsys.window.setUserPointer(self);
-    winsys.window.setSizeCallback(sizeCallback);
     winsys.window.setCharCallback(charCallback);
     winsys.window.setKeyCallback(keyCallback);
     winsys.window.setFocusCallback(focusCallback);
@@ -409,11 +407,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // init stuff we should get rid of this. But this is required because
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
-    sizeCallback(
-        winsys.window,
-        @intCast(i32, window_size.width),
-        @intCast(i32, window_size.height),
-    );
+    try self.sizeCallback(window_size);
 
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
@@ -682,67 +676,48 @@ fn cursorPosToPixels(self: Window, pos: glfw.Window.CursorPos) glfw.Window.Curso
     };
 }
 
-fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
+pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    // glfw gives us signed integers, but negative width/height is n
-    // non-sensical so we use unsigned throughout, so assert.
-    assert(width >= 0);
-    assert(height >= 0);
-
-    // Get our framebuffer size since this will give us the size in pixels
-    // whereas width/height in this callback is in screen coordinates. For
-    // Retina displays (or any other displays that have a scale factor),
-    // these will not match.
-    const px_size = window.getFramebufferSize() catch |err| err: {
-        log.err("error querying window size in pixels, will use screen size err={}", .{err});
-        break :err glfw.Window.Size{
-            .width = @intCast(u32, width),
-            .height = @intCast(u32, height),
-        };
-    };
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // TODO: if our screen size didn't change, then we should avoid the
     // overhead of inter-thread communication
 
     // Save our screen size
-    win.screen_size = .{
-        .width = px_size.width,
-        .height = px_size.height,
+    self.screen_size = .{
+        .width = size.width,
+        .height = size.height,
     };
 
     // Recalculate our grid size
-    win.grid_size = renderer.GridSize.init(
-        win.screen_size.subPadding(win.padding),
-        win.cell_size,
+    self.grid_size = renderer.GridSize.init(
+        self.screen_size.subPadding(self.padding),
+        self.cell_size,
     );
-    if (win.grid_size.columns < 5 and (win.padding.left > 0 or win.padding.right > 0)) {
+    if (self.grid_size.columns < 5 and (self.padding.left > 0 or self.padding.right > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
-    if (win.grid_size.rows < 2 and (win.padding.top > 0 or win.padding.bottom > 0)) {
+    if (self.grid_size.rows < 2 and (self.padding.top > 0 or self.padding.bottom > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
 
     // Mail the renderer
-    _ = win.renderer_thread.mailbox.push(.{
-        .screen_size = win.screen_size,
+    _ = self.renderer_thread.mailbox.push(.{
+        .screen_size = self.screen_size,
     }, .{ .forever = {} });
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 
     // Mail the IO thread
-    _ = win.io_thread.mailbox.push(.{
+    _ = self.io_thread.mailbox.push(.{
         .resize = .{
-            .grid_size = win.grid_size,
-            .screen_size = win.screen_size,
-            .padding = win.padding,
+            .grid_size = self.grid_size,
+            .screen_size = self.screen_size,
+            .padding = self.padding,
         },
     }, .{ .forever = {} });
-    win.io_thread.wakeup.send() catch {};
+    try self.io_thread.wakeup.send();
 }
 
 fn charCallback(window: glfw.Window, codepoint: u21) void {

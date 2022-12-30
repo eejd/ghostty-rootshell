@@ -14,6 +14,7 @@ const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
+const CoreWindow = @import("../Window.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -29,7 +30,7 @@ pub const Window = struct {
     /// The glfw mouse cursor handle.
     cursor: glfw.Cursor,
 
-    pub fn init(app: *const App) !Window {
+    pub fn init(app: *const App, core_win: *CoreWindow) !Window {
         // Create our window
         const win = try glfw.Window.create(
             640,
@@ -80,6 +81,10 @@ pub const Window = struct {
             // since we use a tab group.
             try win.setCursor(cursor);
         }
+
+        // Set our callbacks
+        win.setUserPointer(core_win);
+        win.setSizeCallback(sizeCallback);
 
         // Build our result
         return Window{
@@ -141,9 +146,35 @@ pub const Window = struct {
         return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
     }
 
-    /// Returns the size of the window in screen coordinates.
+    /// Returns the size of the window in pixels. The pixel size may
+    /// not match screen coordinate size but we should be able to convert
+    /// back and forth using getContentScale.
     pub fn getSize(self: *const Window) !apprt.WindowSize {
-        const size = try self.window.getSize();
+        const size = self.window.getFramebufferSize() catch |err| err: {
+            log.err("error querying window size in pixels, will use screen size err={}", .{err});
+            break :err try self.window.getSize();
+        };
+
         return apprt.WindowSize{ .width = size.width, .height = size.height };
+    }
+
+    fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
+        _ = width;
+        _ = height;
+
+        // Get the size. We are given a width/height but this is in screen
+        // coordinates and we want raw pixels. The core window uses the content
+        // scale to scale appropriately.
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const size = core_win.windowing_system.getSize() catch |err| {
+            log.err("error querying window size for size callback err={}", .{err});
+            return;
+        };
+
+        // Call the primary callback.
+        core_win.sizeCallback(size) catch |err| {
+            log.err("error in size callback err={}", .{err});
+            return;
+        };
     }
 };
