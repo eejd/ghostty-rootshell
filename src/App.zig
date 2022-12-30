@@ -6,7 +6,7 @@ const App = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
-const glfw = @import("glfw");
+const apprt = @import("apprt.zig");
 const Window = @import("Window.zig");
 const tracy = @import("tracy");
 const Config = @import("config.zig").Config;
@@ -26,6 +26,9 @@ pub const Mailbox = BlockingQueue(Message, 64);
 
 /// General purpose allocator
 alloc: Allocator,
+
+/// The runtime for this app.
+runtime: apprt.runtime.App,
 
 /// The list of windows that are currently open
 windows: WindowList,
@@ -59,9 +62,9 @@ pub const Darwin = struct {
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
 pub fn create(alloc: Allocator, config: *const Config) !*App {
-    // Initialize glfw
-    try glfw.init(.{});
-    errdefer glfw.terminate();
+    // Initialize app runtime
+    var app_backend = try apprt.runtime.App.init();
+    errdefer app_backend.terminate();
 
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
@@ -74,6 +77,7 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     errdefer alloc.destroy(app);
     app.* = .{
         .alloc = alloc,
+        .runtime = app_backend,
         .windows = .{},
         .config = config,
         .mailbox = mailbox,
@@ -117,22 +121,21 @@ pub fn destroy(self: *App) void {
     self.alloc.destroy(self);
 
     // Close our windowing runtime
-    glfw.terminate();
+    self.runtime.terminate();
 }
 
 /// Wake up the app event loop. This should be called after any messages
 /// are sent to the mailbox.
 pub fn wakeup(self: App) void {
-    _ = self;
-    glfw.postEmptyEvent() catch {};
+    self.runtime.wakeup() catch return;
 }
 
 /// Run the main event loop for the application. This blocks until the
 /// application quits or every window is closed.
 pub fn run(self: *App) !void {
     while (!self.quit and self.windows.items.len > 0) {
-        // Block for any glfw events.
-        try glfw.waitEvents();
+        // Block for any events.
+        try self.runtime.wait();
 
         // If any windows are closing, destroy them
         var i: usize = 0;

@@ -10,12 +10,12 @@ const Allocator = std.mem.Allocator;
 const trace = @import("tracy").trace;
 const glfw = @import("glfw");
 const objc = @import("objc");
-const App = @import("../App.zig");
 const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
+const CoreApp = @import("../App.zig");
 const CoreWindow = @import("../Window.zig");
 
 // Get native API access on certain platforms so we can do more customization.
@@ -25,6 +25,30 @@ const glfwNative = glfw.Native(.{
 
 const log = std.log.scoped(.glfw);
 
+pub const App = struct {
+    pub fn init() !App {
+        try glfw.init(.{});
+        return .{};
+    }
+
+    pub fn terminate(self: App) void {
+        _ = self;
+        glfw.terminate();
+    }
+
+    /// Wakeup the event loop. This should be able to be called from any thread.
+    pub fn wakeup(self: App) !void {
+        _ = self;
+        try glfw.postEmptyEvent();
+    }
+
+    /// Wait for events in the event loop to process.
+    pub fn wait(self: App) !void {
+        _ = self;
+        try glfw.waitEvents();
+    }
+};
+
 pub const Window = struct {
     /// The glfw window handle
     window: glfw.Window,
@@ -32,7 +56,7 @@ pub const Window = struct {
     /// The glfw mouse cursor handle.
     cursor: glfw.Cursor,
 
-    pub fn init(app: *const App, core_win: *CoreWindow) !Window {
+    pub fn init(app: *const CoreApp, core_win: *CoreWindow) !Window {
         // Create our window
         const win = try glfw.Window.create(
             640,
