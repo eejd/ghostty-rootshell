@@ -89,6 +89,8 @@ pub const Window = struct {
         win.setSizeCallback(sizeCallback);
         win.setCharCallback(charCallback);
         win.setKeyCallback(keyCallback);
+        win.setFocusCallback(focusCallback);
+        win.setRefreshCallback(refreshCallback);
 
         // Build our result
         return Window{
@@ -347,6 +349,28 @@ pub const Window = struct {
         const core_win = window.getUserPointer(CoreWindow) orelse return;
         core_win.keyCallback(action, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn focusCallback(window: glfw.Window, focused: bool) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        core_win.focusCallback(focused) catch |err| {
+            log.err("error in focus callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn refreshCallback(window: glfw.Window) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        core_win.refreshCallback() catch |err| {
+            log.err("error in refresh callback err={}", .{err});
             return;
         };
     }

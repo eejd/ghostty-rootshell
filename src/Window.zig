@@ -394,8 +394,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // }, .{ .width = null, .height = null });
 
     // Setup our callbacks and user data
-    winsys.window.setFocusCallback(focusCallback);
-    winsys.window.setRefreshCallback(refreshCallback);
     winsys.window.setScrollCallback(scrollCallback);
     winsys.window.setCursorPosCallback(cursorPosCallback);
     winsys.window.setMouseButtonCallback(mouseButtonCallback);
@@ -1036,29 +1034,19 @@ pub fn keyCallback(
     }
 }
 
-fn focusCallback(window: glfw.Window, focused: bool) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
-
+pub fn focusCallback(self: *Window, focused: bool) !void {
     // Notify our render thread of the new state
-    _ = win.renderer_thread.mailbox.push(.{
+    _ = self.renderer_thread.mailbox.push(.{
         .focus = focused,
     }, .{ .forever = {} });
 
     // Schedule render which also drains our mailbox
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 }
 
-fn refreshCallback(window: glfw.Window) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
-
+pub fn refreshCallback(self: *Window) !void {
     // The point of this callback is to schedule a render, so do that.
-    win.queueRender() catch unreachable;
+    try self.queueRender();
 }
 
 fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
