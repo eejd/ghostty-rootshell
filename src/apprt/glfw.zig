@@ -184,6 +184,15 @@ pub const Window = struct {
         self.window.setShouldClose(true);
     }
 
+    /// Returns true if the window is flagged to close.
+    pub fn shouldClose(self: *const Window) bool {
+        return self.window.shouldClose();
+    }
+
+    pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
+        try self.window.setTitle(slice.ptr);
+    }
+
     /// The cursor position from glfw directly is in screen coordinates but
     /// all our interface works in pixels.
     fn cursorPosToPixels(self: *const Window, pos: glfw.Window.CursorPos) !glfw.Window.CursorPos {

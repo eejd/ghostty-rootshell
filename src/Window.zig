@@ -55,12 +55,6 @@ font_lib: font.Library,
 font_group: *font.GroupCache,
 font_size: font.face.DesiredSize,
 
-/// The glfw window handle.
-window: glfw.Window,
-
-/// The glfw mouse cursor handle.
-cursor: glfw.Cursor,
-
 /// Imgui context
 imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 
@@ -356,8 +350,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         .font_lib = font_lib,
         .font_group = font_group,
         .font_size = font_size,
-        .window = winsys.window,
-        .cursor = winsys.cursor,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
         .renderer_state = .{
@@ -497,7 +489,7 @@ pub fn destroy(self: *Window) void {
 }
 
 pub fn shouldClose(self: Window) bool {
-    return self.window.shouldClose();
+    return self.windowing_system.shouldClose();
 }
 
 /// Add a window to the tab group of this window.
@@ -521,7 +513,7 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@ptrCast([*:0]const u8, v), 0);
             log.debug("changing title \"{s}\"", .{slice});
-            try self.window.setTitle(slice.ptr);
+            try self.windowing_system.setTitle(slice);
         },
 
         .cell_size => |size| try self.setCellSize(size),
