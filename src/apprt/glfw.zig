@@ -194,6 +194,20 @@ pub const Window = struct {
         try self.window.setTitle(slice.ptr);
     }
 
+    /// Read the clipboard. The windowing system is responsible for allocating
+    /// a buffer as necessary. This should be a stable pointer until the next
+    /// time getClipboardString is called.
+    pub fn getClipboardString(self: *const Window) ![:0]const u8 {
+        _ = self;
+        return try glfw.getClipboardString();
+    }
+
+    /// Set the clipboard.
+    pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
+        _ = self;
+        try glfw.setClipboardString(val);
+    }
+
     /// The cursor position from glfw directly is in screen coordinates but
     /// all our interface works in pixels.
     fn cursorPosToPixels(self: *const Window, pos: glfw.Window.CursorPos) !glfw.Window.CursorPos {

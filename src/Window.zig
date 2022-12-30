@@ -543,7 +543,7 @@ fn clipboardRead(self: *const Window, kind: u8) !void {
         return;
     }
 
-    const data = glfw.getClipboardString() catch |err| {
+    const data = self.windowing_system.getClipboardString() catch |err| {
         log.warn("error reading clipboard: {}", .{err});
         return;
     };
@@ -591,7 +591,7 @@ fn clipboardWrite(self: *const Window, data: []const u8) !void {
     try dec.decode(buf, data);
     assert(buf[buf.len] == 0);
 
-    glfw.setClipboardString(buf) catch |err| {
+    self.windowing_system.setClipboardString(buf) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -821,7 +821,7 @@ pub fn keyCallback(
                         };
                         defer self.alloc.free(buf);
 
-                        glfw.setClipboardString(buf) catch |err| {
+                        self.windowing_system.setClipboardString(buf) catch |err| {
                             log.err("error setting clipboard string err={}", .{err});
                             return;
                         };
@@ -829,7 +829,7 @@ pub fn keyCallback(
                 },
 
                 .paste_from_clipboard => {
-                    const data = glfw.getClipboardString() catch |err| {
+                    const data = self.windowing_system.getClipboardString() catch |err| {
                         log.warn("error reading clipboard: {}", .{err});
                         return;
                     };
