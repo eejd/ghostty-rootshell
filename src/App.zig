@@ -203,7 +203,7 @@ fn setQuit(self: *App) !void {
 
     // Mark that all our windows should close
     for (self.windows.items) |window| {
-        window.windowing_system.setShouldClose();
+        window.window.setShouldClose();
     }
 }
 

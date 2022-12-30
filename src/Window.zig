@@ -48,7 +48,7 @@ alloc: Allocator,
 app: *App,
 
 /// The windowing system state
-windowing_system: apprt.runtime.Window,
+window: apprt.runtime.Window,
 
 /// The font structures
 font_lib: font.Library,
@@ -133,15 +133,15 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer alloc.destroy(self);
 
     // Create the windowing system
-    var winsys = try apprt.runtime.Window.init(app, self);
-    errdefer winsys.deinit();
+    var window = try apprt.runtime.Window.init(app, self);
+    errdefer window.deinit();
 
     // Initialize our renderer with our initialized windowing system.
-    try Renderer.windowInit(winsys);
+    try Renderer.windowInit(window);
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
-    const content_scale = try winsys.getContentScale();
+    const content_scale = try window.getContentScale();
     const x_dpi = content_scale.x * font.face.default_dpi;
     const y_dpi = content_scale.y * font.face.default_dpi;
     log.debug("xscale={} yscale={} xdpi={} ydpi={}", .{
@@ -298,7 +298,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     errdefer renderer_impl.deinit();
 
     // Calculate our grid size based on known dimensions.
-    const window_size = try winsys.getSize();
+    const window_size = try window.getSize();
     const screen_size: renderer.ScreenSize = .{
         .width = window_size.width,
         .height = window_size.height,
@@ -316,7 +316,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // Create the renderer thread
     var render_thread = try renderer.Thread.init(
         alloc,
-        winsys,
+        window,
         &self.renderer,
         &self.renderer_state,
     );
@@ -346,7 +346,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     self.* = .{
         .alloc = alloc,
         .app = app,
-        .windowing_system = winsys,
+        .window = window,
         .font_lib = font_lib,
         .font_group = font_group,
         .font_size = font_size,
@@ -413,12 +413,12 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
         DevMode.instance.window = self;
 
         // Let our renderer setup
-        try renderer_impl.initDevMode(winsys);
+        try renderer_impl.initDevMode(window);
     }
 
     // Give the renderer one more opportunity to finalize any window
     // setup on the main thread prior to spinning up the rendering thread.
-    try renderer_impl.finalizeWindowInit(winsys);
+    try renderer_impl.finalizeWindowInit(window);
 
     // Start our renderer thread
     self.renderer_thr = try std.Thread.spawn(
@@ -447,7 +447,7 @@ pub fn destroy(self: *Window) void {
         self.renderer_thr.join();
 
         // We need to become the active rendering thread again
-        self.renderer.threadEnter(self.windowing_system) catch unreachable;
+        self.renderer.threadEnter(self.window) catch unreachable;
         self.renderer_thread.deinit();
 
         // If we are devmode-owning, clean that up.
@@ -477,7 +477,7 @@ pub fn destroy(self: *Window) void {
         self.io.deinit();
     }
 
-    self.windowing_system.deinit();
+    self.window.deinit();
 
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
@@ -489,7 +489,7 @@ pub fn destroy(self: *Window) void {
 }
 
 pub fn shouldClose(self: Window) bool {
-    return self.windowing_system.shouldClose();
+    return self.window.shouldClose();
 }
 
 /// Add a window to the tab group of this window.
@@ -499,8 +499,8 @@ pub fn addWindow(self: Window, other: *Window) void {
     // This has a hard dependency on GLFW currently. If we want to support
     // this in other windowing systems we should abstract this. This is NOT
     // the right interface.
-    const self_win = glfwNative.getCocoaWindow(self.windowing_system.window).?;
-    const other_win = glfwNative.getCocoaWindow(other.windowing_system.window).?;
+    const self_win = glfwNative.getCocoaWindow(self.window.window).?;
+    const other_win = glfwNative.getCocoaWindow(other.window.window).?;
 
     const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
     const nswindow = objc.Object.fromId(self_win);
@@ -519,7 +519,7 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@ptrCast([*:0]const u8, v), 0);
             log.debug("changing title \"{s}\"", .{slice});
-            try self.windowing_system.setTitle(slice);
+            try self.window.setTitle(slice);
         },
 
         .cell_size => |size| try self.setCellSize(size),
@@ -543,7 +543,7 @@ fn clipboardRead(self: *const Window, kind: u8) !void {
         return;
     }
 
-    const data = self.windowing_system.getClipboardString() catch |err| {
+    const data = self.window.getClipboardString() catch |err| {
         log.warn("error reading clipboard: {}", .{err});
         return;
     };
@@ -591,7 +591,7 @@ fn clipboardWrite(self: *const Window, data: []const u8) !void {
     try dec.decode(buf, data);
     assert(buf[buf.len] == 0);
 
-    self.windowing_system.setClipboardString(buf) catch |err| {
+    self.window.setClipboardString(buf) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -821,7 +821,7 @@ pub fn keyCallback(
                         };
                         defer self.alloc.free(buf);
 
-                        self.windowing_system.setClipboardString(buf) catch |err| {
+                        self.window.setClipboardString(buf) catch |err| {
                             log.err("error setting clipboard string err={}", .{err});
                             return;
                         };
@@ -829,7 +829,7 @@ pub fn keyCallback(
                 },
 
                 .paste_from_clipboard => {
-                    const data = self.windowing_system.getClipboardString() catch |err| {
+                    const data = self.window.getClipboardString() catch |err| {
                         log.warn("error reading clipboard: {}", .{err});
                         return;
                     };
@@ -917,7 +917,7 @@ pub fn keyCallback(
                     self.app.wakeup();
                 },
 
-                .close_window => self.windowing_system.setShouldClose(),
+                .close_window => self.window.setShouldClose(),
 
                 .quit => {
                     _ = self.app.mailbox.push(.{
@@ -1049,7 +1049,7 @@ pub fn scrollCallback(self: *Window, xoff: f64, yoff: f64) !void {
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.
         if (yoff != 0) {
-            const pos = try self.windowing_system.getCursorPos();
+            const pos = try self.window.getCursorPos();
             try self.mouseReport(if (yoff < 0) .five else .four, .press, self.mouse.mods, pos);
         }
     }
@@ -1284,7 +1284,7 @@ pub fn mouseButtonCallback(
 
     // Report mouse events if enabled
     if (self.io.terminal.modes.mouse_event != .none) {
-        const pos = try self.windowing_system.getCursorPos();
+        const pos = try self.window.getCursorPos();
 
         const report_action: MouseReportAction = switch (action) {
             .press => .press,
@@ -1302,7 +1302,7 @@ pub fn mouseButtonCallback(
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
-        const pos = try self.windowing_system.getCursorPos();
+        const pos = try self.window.getCursorPos();
 
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.

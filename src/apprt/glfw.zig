@@ -238,7 +238,7 @@ pub const Window = struct {
         // coordinates and we want raw pixels. The core window uses the content
         // scale to scale appropriately.
         const core_win = window.getUserPointer(CoreWindow) orelse return;
-        const size = core_win.windowing_system.getSize() catch |err| {
+        const size = core_win.window.getSize() catch |err| {
             log.err("error querying window size for size callback err={}", .{err});
             return;
         };
@@ -457,7 +457,7 @@ pub const Window = struct {
         const core_win = window.getUserPointer(CoreWindow) orelse return;
 
         // Convert our unscaled x/y to scaled.
-        const pos = core_win.windowing_system.cursorPosToPixels(.{
+        const pos = core_win.window.cursorPosToPixels(.{
             .xpos = unscaled_xpos,
             .ypos = unscaled_ypos,
         }) catch |err| {
