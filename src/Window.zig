@@ -761,10 +761,6 @@ pub fn keyCallback(
     self.ignore_char = false;
 
     if (action == .press or action == .repeat) {
-        // Convert our glfw input into a platform agnostic trigger. When we
-        // extract the platform out of this file, we'll pull a lot of this out
-        // into a function. For now, this is the only place we do it so we just
-        // put it right here.
         const trigger: input.Binding.Trigger = .{
             .mods = mods,
             .key = key,
@@ -941,7 +937,7 @@ pub fn keyCallback(
         // Handle non-printables
         const char: u8 = char: {
             const mods_int = @bitCast(u8, mods);
-            const ctrl_only = @bitCast(u8, glfw.Mods{ .control = true });
+            const ctrl_only = @bitCast(u8, input.Mods{ .ctrl = true });
 
             // If we're only pressing control, check if this is a character
             // we convert to a non-printable.

@@ -189,6 +189,7 @@ pub const Window = struct {
         return self.window.shouldClose();
     }
 
+    /// Set the title of the window.
     pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
         try self.window.setTitle(slice.ptr);
     }
