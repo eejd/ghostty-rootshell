@@ -7,9 +7,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const trace = @import("tracy").trace;
 const glfw = @import("glfw");
 const objc = @import("objc");
 const App = @import("../App.zig");
+const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const Renderer = renderer.Renderer;
@@ -85,6 +87,8 @@ pub const Window = struct {
         // Set our callbacks
         win.setUserPointer(core_win);
         win.setSizeCallback(sizeCallback);
+        win.setCharCallback(charCallback);
+        win.setKeyCallback(keyCallback);
 
         // Build our result
         return Window{
@@ -158,6 +162,12 @@ pub const Window = struct {
         return apprt.WindowSize{ .width = size.width, .height = size.height };
     }
 
+    /// Set the flag that notes this window should be closed for the next
+    /// iteration of the event loop.
+    pub fn setShouldClose(self: *Window) void {
+        self.window.setShouldClose(true);
+    }
+
     fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         _ = width;
         _ = height;
@@ -174,6 +184,169 @@ pub const Window = struct {
         // Call the primary callback.
         core_win.sizeCallback(size) catch |err| {
             log.err("error in size callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn charCallback(window: glfw.Window, codepoint: u21) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        core_win.charCallback(codepoint) catch |err| {
+            log.err("error in char callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn keyCallback(
+        window: glfw.Window,
+        glfw_key: glfw.Key,
+        scancode: i32,
+        glfw_action: glfw.Action,
+        glfw_mods: glfw.Mods,
+    ) void {
+        _ = scancode;
+
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        // Convert our glfw types into our input types
+        const mods = @bitCast(input.Mods, glfw_mods);
+        const action: input.Action = switch (glfw_action) {
+            .release => .release,
+            .press => .press,
+            .repeat => .repeat,
+        };
+        const key: input.Key = switch (glfw_key) {
+            .a => .a,
+            .b => .b,
+            .c => .c,
+            .d => .d,
+            .e => .e,
+            .f => .f,
+            .g => .g,
+            .h => .h,
+            .i => .i,
+            .j => .j,
+            .k => .k,
+            .l => .l,
+            .m => .m,
+            .n => .n,
+            .o => .o,
+            .p => .p,
+            .q => .q,
+            .r => .r,
+            .s => .s,
+            .t => .t,
+            .u => .u,
+            .v => .v,
+            .w => .w,
+            .x => .x,
+            .y => .y,
+            .z => .z,
+            .zero => .zero,
+            .one => .one,
+            .two => .three,
+            .three => .four,
+            .four => .four,
+            .five => .five,
+            .six => .six,
+            .seven => .seven,
+            .eight => .eight,
+            .nine => .nine,
+            .up => .up,
+            .down => .down,
+            .right => .right,
+            .left => .left,
+            .home => .home,
+            .end => .end,
+            .page_up => .page_up,
+            .page_down => .page_down,
+            .escape => .escape,
+            .F1 => .f1,
+            .F2 => .f2,
+            .F3 => .f3,
+            .F4 => .f4,
+            .F5 => .f5,
+            .F6 => .f6,
+            .F7 => .f7,
+            .F8 => .f8,
+            .F9 => .f9,
+            .F10 => .f10,
+            .F11 => .f11,
+            .F12 => .f12,
+            .F13 => .f13,
+            .F14 => .f14,
+            .F15 => .f15,
+            .F16 => .f16,
+            .F17 => .f17,
+            .F18 => .f18,
+            .F19 => .f19,
+            .F20 => .f20,
+            .F21 => .f21,
+            .F22 => .f22,
+            .F23 => .f23,
+            .F24 => .f24,
+            .F25 => .f25,
+            .kp_0 => .kp_0,
+            .kp_1 => .kp_1,
+            .kp_2 => .kp_2,
+            .kp_3 => .kp_3,
+            .kp_4 => .kp_4,
+            .kp_5 => .kp_5,
+            .kp_6 => .kp_6,
+            .kp_7 => .kp_7,
+            .kp_8 => .kp_8,
+            .kp_9 => .kp_9,
+            .kp_decimal => .kp_decimal,
+            .kp_divide => .kp_divide,
+            .kp_multiply => .kp_multiply,
+            .kp_subtract => .kp_subtract,
+            .kp_add => .kp_add,
+            .kp_enter => .kp_enter,
+            .kp_equal => .kp_equal,
+            .grave_accent => .grave_accent,
+            .minus => .minus,
+            .equal => .equal,
+            .space => .space,
+            .semicolon => .semicolon,
+            .apostrophe => .apostrophe,
+            .comma => .comma,
+            .period => .period,
+            .slash => .slash,
+            .left_bracket => .left_bracket,
+            .right_bracket => .right_bracket,
+            .backslash => .backslash,
+            .enter => .enter,
+            .tab => .tab,
+            .backspace => .backspace,
+            .insert => .insert,
+            .delete => .delete,
+            .caps_lock => .caps_lock,
+            .scroll_lock => .scroll_lock,
+            .num_lock => .num_lock,
+            .print_screen => .print_screen,
+            .pause => .pause,
+            .left_shift => .left_shift,
+            .left_control => .left_control,
+            .left_alt => .left_alt,
+            .left_super => .left_super,
+            .right_shift => .right_shift,
+            .right_control => .right_control,
+            .right_alt => .right_alt,
+            .right_super => .right_super,
+
+            .menu,
+            .world_1,
+            .world_2,
+            .unknown,
+            => .invalid,
+        };
+
+        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        core_win.keyCallback(action, key, mods) catch |err| {
+            log.err("error in key callback err={}", .{err});
             return;
         };
     }

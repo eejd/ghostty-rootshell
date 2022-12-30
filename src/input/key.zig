@@ -13,6 +13,13 @@ pub const Mods = packed struct {
     _padding: u2 = 0,
 };
 
+/// The action associated with an input event.
+pub const Action = enum {
+    release,
+    press,
+    repeat,
+};
+
 /// The set of keys that can map to keybindings. These have no fixed enum
 /// values because we map platform-specific keys to this set. Note that
 /// this only needs to accomodate what maps to a key. If a key is not bound
@@ -61,10 +68,19 @@ pub const Key = enum {
     eight,
     nine,
 
-    // other
+    // puncuation
+    semicolon,
+    space,
+    apostrophe,
+    comma,
     grave_accent, // `
+    period,
+    slash,
     minus,
     equal,
+    left_bracket, // [
+    right_bracket, // ]
+    backslash, // /
 
     // control
     up,
@@ -73,10 +89,21 @@ pub const Key = enum {
     left,
     home,
     end,
+    insert,
+    delete,
+    caps_lock,
+    scroll_lock,
+    num_lock,
     page_up,
     page_down,
     escape,
+    enter,
+    tab,
+    backspace,
+    print_screen,
+    pause,
 
+    // function keys
     f1,
     f2,
     f3,
@@ -89,6 +116,48 @@ pub const Key = enum {
     f10,
     f11,
     f12,
+    f13,
+    f14,
+    f15,
+    f16,
+    f17,
+    f18,
+    f19,
+    f20,
+    f21,
+    f22,
+    f23,
+    f24,
+    f25,
+
+    // keypad
+    kp_0,
+    kp_1,
+    kp_2,
+    kp_3,
+    kp_4,
+    kp_5,
+    kp_6,
+    kp_7,
+    kp_8,
+    kp_9,
+    kp_decimal,
+    kp_divide,
+    kp_multiply,
+    kp_subtract,
+    kp_add,
+    kp_enter,
+    kp_equal,
+
+    // modifiers
+    left_shift,
+    left_control,
+    left_alt,
+    left_super,
+    right_shift,
+    right_control,
+    right_alt,
+    right_super,
 
     // To support more keys (there are obviously more!) add them here
     // and ensure the mapping is up to date in the Window key handler.

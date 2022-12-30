@@ -394,8 +394,6 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
     // }, .{ .width = null, .height = null });
 
     // Setup our callbacks and user data
-    winsys.window.setCharCallback(charCallback);
-    winsys.window.setKeyCallback(keyCallback);
     winsys.window.setFocusCallback(focusCallback);
     winsys.window.setRefreshCallback(refreshCallback);
     winsys.window.setScrollCallback(scrollCallback);
@@ -720,51 +718,46 @@ pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
     try self.io_thread.wakeup.send();
 }
 
-fn charCallback(window: glfw.Window, codepoint: u21) void {
+pub fn charCallback(self: *Window, codepoint: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // Dev Mode
     if (DevMode.enabled and DevMode.instance.visible) {
         // If the event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
             if (io.cval().WantCaptureKeyboard) {
-                win.queueRender() catch |err|
-                    log.err("error scheduling render timer err={}", .{err});
+                try self.queueRender();
             }
         } else |_| {}
     }
 
     // Ignore if requested. See field docs for more information.
-    if (win.ignore_char) {
-        win.ignore_char = false;
+    if (self.ignore_char) {
+        self.ignore_char = false;
         return;
     }
 
     // Critical area
     {
-        win.renderer_state.mutex.lock();
-        defer win.renderer_state.mutex.unlock();
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
 
         // Clear the selction if we have one.
-        if (win.io.terminal.selection != null) {
-            win.io.terminal.selection = null;
-            win.queueRender() catch |err|
-                log.err("error scheduling render in charCallback err={}", .{err});
+        if (self.io.terminal.selection != null) {
+            self.io.terminal.selection = null;
+            try self.queueRender();
         }
 
         // We want to scroll to the bottom
         // TODO: detect if we're at the bottom to avoid the render call here.
-        win.io.terminal.scrollViewport(.{ .bottom = {} }) catch |err|
-            log.err("error scrolling viewport err={}", .{err});
+        try self.io.terminal.scrollViewport(.{ .bottom = {} });
     }
 
     // Ask our IO thread to write the data
     var data: termio.Message.WriteReq.Small.Array = undefined;
     data[0] = @intCast(u8, codepoint);
-    _ = win.io_thread.mailbox.push(.{
+    _ = self.io_thread.mailbox.push(.{
         .write_small = .{
             .data = data,
             .len = 1,
@@ -772,38 +765,31 @@ fn charCallback(window: glfw.Window, codepoint: u21) void {
     }, .{ .forever = {} });
 
     // After sending all our messages we have to notify our IO thread
-    win.io_thread.wakeup.send() catch {};
+    try self.io_thread.wakeup.send();
 }
 
-fn keyCallback(
-    window: glfw.Window,
-    key: glfw.Key,
-    scancode: i32,
-    action: glfw.Action,
-    mods: glfw.Mods,
-) void {
+pub fn keyCallback(
+    self: *Window,
+    action: input.Action,
+    key: input.Key,
+    mods: input.Mods,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    const win = window.getUserPointer(Window) orelse return;
 
     // Dev Mode
     if (DevMode.enabled and DevMode.instance.visible) {
         // If the event was handled by imgui, ignore it.
         if (imgui.IO.get()) |io| {
             if (io.cval().WantCaptureKeyboard) {
-                win.queueRender() catch |err|
-                    log.err("error scheduling render timer err={}", .{err});
+                try self.queueRender();
             }
         } else |_| {}
     }
 
     // Reset the ignore char setting. If we didn't handle the char
     // by here, we aren't going to get it so we just reset this.
-    win.ignore_char = false;
-
-    //log.info("KEY {} {} {} {}", .{ key, scancode, mods, action });
-    _ = scancode;
+    self.ignore_char = false;
 
     if (action == .press or action == .repeat) {
         // Convert our glfw input into a platform agnostic trigger. When we
@@ -811,74 +797,12 @@ fn keyCallback(
         // into a function. For now, this is the only place we do it so we just
         // put it right here.
         const trigger: input.Binding.Trigger = .{
-            .mods = @bitCast(input.Mods, mods),
-            .key = switch (key) {
-                .a => .a,
-                .b => .b,
-                .c => .c,
-                .d => .d,
-                .e => .e,
-                .f => .f,
-                .g => .g,
-                .h => .h,
-                .i => .i,
-                .j => .j,
-                .k => .k,
-                .l => .l,
-                .m => .m,
-                .n => .n,
-                .o => .o,
-                .p => .p,
-                .q => .q,
-                .r => .r,
-                .s => .s,
-                .t => .t,
-                .u => .u,
-                .v => .v,
-                .w => .w,
-                .x => .x,
-                .y => .y,
-                .z => .z,
-                .zero => .zero,
-                .one => .one,
-                .two => .three,
-                .three => .four,
-                .four => .four,
-                .five => .five,
-                .six => .six,
-                .seven => .seven,
-                .eight => .eight,
-                .nine => .nine,
-                .up => .up,
-                .down => .down,
-                .right => .right,
-                .left => .left,
-                .home => .home,
-                .end => .end,
-                .page_up => .page_up,
-                .page_down => .page_down,
-                .escape => .escape,
-                .F1 => .f1,
-                .F2 => .f2,
-                .F3 => .f3,
-                .F4 => .f4,
-                .F5 => .f5,
-                .F6 => .f6,
-                .F7 => .f7,
-                .F8 => .f8,
-                .F9 => .f9,
-                .F10 => .f10,
-                .F11 => .f11,
-                .F12 => .f12,
-                .grave_accent => .grave_accent,
-                .minus => .minus,
-                .equal => .equal,
-                else => .invalid,
-            },
+            .mods = mods,
+            .key = key,
         };
 
         //log.warn("BINDING TRIGGER={}", .{trigger});
-        if (win.config.keybind.set.get(trigger)) |binding_action| {
+        if (self.config.keybind.set.get(trigger)) |binding_action| {
             //log.warn("BINDING ACTION={}", .{binding_action});
 
             switch (binding_action) {
@@ -886,13 +810,13 @@ fn keyCallback(
                 .ignore => {},
 
                 .csi => |data| {
-                    _ = win.io_thread.mailbox.push(.{
+                    _ = self.io_thread.mailbox.push(.{
                         .write_stable = "\x1B[",
                     }, .{ .forever = {} });
-                    _ = win.io_thread.mailbox.push(.{
+                    _ = self.io_thread.mailbox.push(.{
                         .write_stable = data,
                     }, .{ .forever = {} });
-                    win.io_thread.wakeup.send() catch {};
+                    try self.io_thread.wakeup.send();
                 },
 
                 .cursor_key => |ck| {
@@ -900,37 +824,37 @@ fn keyCallback(
                     // in cursor keys mode. We're in "normal" mode if cursor
                     // keys mdoe is NOT set.
                     const normal = normal: {
-                        win.renderer_state.mutex.lock();
-                        defer win.renderer_state.mutex.unlock();
-                        break :normal !win.io.terminal.modes.cursor_keys;
+                        self.renderer_state.mutex.lock();
+                        defer self.renderer_state.mutex.unlock();
+                        break :normal !self.io.terminal.modes.cursor_keys;
                     };
 
                     if (normal) {
-                        _ = win.io_thread.mailbox.push(.{
+                        _ = self.io_thread.mailbox.push(.{
                             .write_stable = ck.normal,
                         }, .{ .forever = {} });
                     } else {
-                        _ = win.io_thread.mailbox.push(.{
+                        _ = self.io_thread.mailbox.push(.{
                             .write_stable = ck.application,
                         }, .{ .forever = {} });
                     }
 
-                    win.io_thread.wakeup.send() catch {};
+                    try self.io_thread.wakeup.send();
                 },
 
                 .copy_to_clipboard => {
                     // We can read from the renderer state without holding
                     // the lock because only we will write to this field.
-                    if (win.io.terminal.selection) |sel| {
-                        var buf = win.io.terminal.screen.selectionString(
-                            win.alloc,
+                    if (self.io.terminal.selection) |sel| {
+                        var buf = self.io.terminal.screen.selectionString(
+                            self.alloc,
                             sel,
-                            win.config.@"clipboard-trim-trailing-spaces",
+                            self.config.@"clipboard-trim-trailing-spaces",
                         ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;
                         };
-                        defer win.alloc.free(buf);
+                        defer self.alloc.free(buf);
 
                         glfw.setClipboardString(buf) catch |err| {
                             log.err("error setting clipboard string err={}", .{err});
@@ -947,99 +871,99 @@ fn keyCallback(
 
                     if (data.len > 0) {
                         const bracketed = bracketed: {
-                            win.renderer_state.mutex.lock();
-                            defer win.renderer_state.mutex.unlock();
-                            break :bracketed win.io.terminal.modes.bracketed_paste;
+                            self.renderer_state.mutex.lock();
+                            defer self.renderer_state.mutex.unlock();
+                            break :bracketed self.io.terminal.modes.bracketed_paste;
                         };
 
                         if (bracketed) {
-                            _ = win.io_thread.mailbox.push(.{
+                            _ = self.io_thread.mailbox.push(.{
                                 .write_stable = "\x1B[200~",
                             }, .{ .forever = {} });
                         }
 
-                        _ = win.io_thread.mailbox.push(termio.Message.writeReq(
-                            win.alloc,
+                        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                            self.alloc,
                             data,
-                        ) catch unreachable, .{ .forever = {} });
+                        ), .{ .forever = {} });
 
                         if (bracketed) {
-                            _ = win.io_thread.mailbox.push(.{
+                            _ = self.io_thread.mailbox.push(.{
                                 .write_stable = "\x1B[201~",
                             }, .{ .forever = {} });
                         }
 
-                        win.io_thread.wakeup.send() catch {};
+                        try self.io_thread.wakeup.send();
                     }
                 },
 
                 .increase_font_size => |delta| {
                     log.debug("increase font size={}", .{delta});
 
-                    var size = win.font_size;
+                    var size = self.font_size;
                     size.points +|= delta;
-                    win.setFontSize(size);
+                    self.setFontSize(size);
                 },
 
                 .decrease_font_size => |delta| {
                     log.debug("decrease font size={}", .{delta});
 
-                    var size = win.font_size;
+                    var size = self.font_size;
                     size.points = @max(1, size.points -| delta);
-                    win.setFontSize(size);
+                    self.setFontSize(size);
                 },
 
                 .reset_font_size => {
                     log.debug("reset font size", .{});
 
-                    var size = win.font_size;
-                    size.points = win.config.@"font-size";
-                    win.setFontSize(size);
+                    var size = self.font_size;
+                    size.points = self.config.@"font-size";
+                    self.setFontSize(size);
                 },
 
                 .toggle_dev_mode => if (DevMode.enabled) {
                     DevMode.instance.visible = !DevMode.instance.visible;
-                    win.queueRender() catch unreachable;
+                    try self.queueRender();
                 } else log.warn("dev mode was not compiled into this binary", .{}),
 
                 .new_window => {
-                    _ = win.app.mailbox.push(.{
+                    _ = self.app.mailbox.push(.{
                         .new_window = .{
-                            .font_size = if (win.config.@"window-inherit-font-size")
-                                win.font_size
+                            .font_size = if (self.config.@"window-inherit-font-size")
+                                self.font_size
                             else
                                 null,
                         },
                     }, .{ .instant = {} });
-                    win.app.wakeup();
+                    self.app.wakeup();
                 },
 
                 .new_tab => {
-                    _ = win.app.mailbox.push(.{
+                    _ = self.app.mailbox.push(.{
                         .new_tab = .{
-                            .parent = win,
+                            .parent = self,
 
-                            .font_size = if (win.config.@"window-inherit-font-size")
-                                win.font_size
+                            .font_size = if (self.config.@"window-inherit-font-size")
+                                self.font_size
                             else
                                 null,
                         },
                     }, .{ .instant = {} });
-                    win.app.wakeup();
+                    self.app.wakeup();
                 },
 
-                .close_window => win.window.setShouldClose(true),
+                .close_window => self.windowing_system.setShouldClose(),
 
                 .quit => {
-                    _ = win.app.mailbox.push(.{
+                    _ = self.app.mailbox.push(.{
                         .quit = {},
                     }, .{ .instant = {} });
-                    win.app.wakeup();
+                    self.app.wakeup();
                 },
             }
 
             // Bindings always result in us ignoring the char if printable
-            win.ignore_char = true;
+            self.ignore_char = true;
 
             // No matter what, if there is a binding then we are done.
             return;
@@ -1099,7 +1023,7 @@ fn keyCallback(
             // Ask our IO thread to write the data
             var data: termio.Message.WriteReq.Small.Array = undefined;
             data[0] = @intCast(u8, char);
-            _ = win.io_thread.mailbox.push(.{
+            _ = self.io_thread.mailbox.push(.{
                 .write_small = .{
                     .data = data,
                     .len = 1,
@@ -1107,7 +1031,7 @@ fn keyCallback(
             }, .{ .forever = {} });
 
             // After sending all our messages we have to notify our IO thread
-            win.io_thread.wakeup.send() catch {};
+            try self.io_thread.wakeup.send();
         }
     }
 }
