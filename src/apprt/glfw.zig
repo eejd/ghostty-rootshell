@@ -149,6 +149,23 @@ pub const Window = struct {
         }
     }
 
+    /// Set the size limits of the window.
+    /// Note: this interface is not good, we should redo it if we plan
+    /// to use this more. i.e. you can't set max width but no max height,
+    /// or no mins.
+    pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
+        try self.window.setSizeLimits(.{
+            .width = min.width,
+            .height = min.height,
+        }, if (max_) |max| .{
+            .width = max.width,
+            .height = max.height,
+        } else .{
+            .width = null,
+            .height = null,
+        });
+    }
+
     /// Returns the content scale for the created window.
     pub fn getContentScale(self: *const Window) !apprt.ContentScale {
         const scale = try self.window.getContentScale();

@@ -379,11 +379,10 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
-    // TODO:
-    // try window.setSizeLimits(.{
-    //     .width = @floatToInt(u32, cell_size.width * 10),
-    //     .height = @floatToInt(u32, cell_size.height * 4),
-    // }, .{ .width = null, .height = null });
+    try window.setSizeLimits(.{
+        .width = @floatToInt(u32, cell_size.width * 10),
+        .height = @floatToInt(u32, cell_size.height * 4),
+    }, null);
 
     // Call our size callback which handles all our retina setup
     // Note: this shouldn't be necessary and when we clean up the window
