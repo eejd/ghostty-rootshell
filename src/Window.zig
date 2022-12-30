@@ -496,10 +496,16 @@ pub fn shouldClose(self: Window) bool {
 pub fn addWindow(self: Window, other: *Window) void {
     assert(builtin.target.isDarwin());
 
+    // This has a hard dependency on GLFW currently. If we want to support
+    // this in other windowing systems we should abstract this. This is NOT
+    // the right interface.
+    const self_win = glfwNative.getCocoaWindow(self.windowing_system.window).?;
+    const other_win = glfwNative.getCocoaWindow(other.windowing_system.window).?;
+
     const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
-    const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
+    const nswindow = objc.Object.fromId(self_win);
     nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
-        objc.Object.fromId(glfwNative.getCocoaWindow(other.window).?),
+        objc.Object.fromId(other_win),
         NSWindowOrderingMode.above,
     });
 }
