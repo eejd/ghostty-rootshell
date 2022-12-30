@@ -59,6 +59,10 @@ pub const Darwin = struct {
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
 pub fn create(alloc: Allocator, config: *const Config) !*App {
+    // Initialize glfw
+    try glfw.init(.{});
+    errdefer glfw.terminate();
+
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
@@ -111,6 +115,9 @@ pub fn destroy(self: *App) void {
     if (comptime builtin.target.isDarwin()) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
     self.alloc.destroy(self);
+
+    // Close our windowing runtime
+    glfw.terminate();
 }
 
 /// Wake up the app event loop. This should be called after any messages

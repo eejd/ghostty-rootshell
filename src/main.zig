@@ -131,10 +131,6 @@ pub fn main() !void {
     // We want to log all our errors
     glfw.setErrorCallback(glfwErrorCallback);
 
-    // Initialize glfw
-    try glfw.init(.{});
-    defer glfw.terminate();
-
     // Run our app
     var app = try App.create(alloc, &config);
     defer app.destroy();
