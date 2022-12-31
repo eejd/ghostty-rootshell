@@ -2,7 +2,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("build_options");
-const Target = @import("wasm/target.zig").Target;
 
 comptime {
     if (!builtin.target.isWasm()) {
