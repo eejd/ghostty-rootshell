@@ -26,6 +26,10 @@ fetch(url.href).then(response =>
   const {
     malloc,
     free,
+    config_new,
+    config_free,
+    config_load_string,
+    config_finalize,
     face_new,
     face_free,
     face_render_glyph,
@@ -67,6 +71,12 @@ fetch(url.href).then(response =>
     new Uint8Array(memory.buffer, ptr).set(utf8);
     return { ptr: ptr, len: utf8.byteLength };
   };
+
+  // Create our config
+  const config = config_new();
+  const config_str = makeStr("font-family = monospace");
+  config_load_string(config, config_str.ptr, config_str.len);
+  config_finalize(config);
 
   // Create our atlas
   // const atlas = atlas_new(512, 0 /* greyscale */);

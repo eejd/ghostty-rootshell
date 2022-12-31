@@ -314,33 +314,36 @@ pub const Config = struct {
         };
 
         // If we are missing either a command or home directory, we need
-        // to look up defaults which is kind of expensive.
+        // to look up defaults which is kind of expensive. We only do this
+        // on desktop.
         const wd_home = std.mem.eql(u8, "home", wd);
-        if (self.command == null or wd_home) command: {
-            const alloc = self._arena.?.allocator();
+        if (comptime !builtin.target.isWasm()) {
+            if (self.command == null or wd_home) command: {
+                const alloc = self._arena.?.allocator();
 
-            // First look up the command using the SHELL env var.
-            if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
-                log.debug("default shell source=env value={s}", .{value});
-                self.command = value;
+                // First look up the command using the SHELL env var.
+                if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
+                    log.debug("default shell source=env value={s}", .{value});
+                    self.command = value;
 
-                // If we don't need the working directory, then we can exit now.
-                if (!wd_home) break :command;
-            } else |_| {}
+                    // If we don't need the working directory, then we can exit now.
+                    if (!wd_home) break :command;
+                } else |_| {}
 
-            // We need the passwd entry for the remainder
-            const pw = try passwd.get(alloc);
-            if (self.command == null) {
-                if (pw.shell) |sh| {
-                    log.debug("default shell src=passwd value={s}", .{sh});
-                    self.command = sh;
+                // We need the passwd entry for the remainder
+                const pw = try passwd.get(alloc);
+                if (self.command == null) {
+                    if (pw.shell) |sh| {
+                        log.debug("default shell src=passwd value={s}", .{sh});
+                        self.command = sh;
+                    }
                 }
-            }
 
-            if (wd_home) {
-                if (pw.home) |home| {
-                    log.debug("default working directory src=passwd value={s}", .{home});
-                    self.@"working-directory" = home;
+                if (wd_home) {
+                    if (pw.home) |home| {
+                        log.debug("default working directory src=passwd value={s}", .{home});
+                        self.@"working-directory" = home;
+                    }
                 }
             }
         }
@@ -528,7 +531,7 @@ pub const Keybinds = struct {
 };
 
 // Wasm API.
-pub const Wasm = struct {
+pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     const wasm = @import("os/wasm.zig");
     const alloc = wasm.alloc;
     const cli_args = @import("cli_args.zig");
