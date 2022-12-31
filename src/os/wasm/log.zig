@@ -1,9 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const wasm = @import("../wasm.zig");
+const wasm_target = @import("target.zig");
 
 // Use the correct implementation
-pub usingnamespace if (wasm.target) |target| switch (target) {
+pub usingnamespace if (wasm_target.target) |target| switch (target) {
     .browser => Browser,
 } else struct {};
 

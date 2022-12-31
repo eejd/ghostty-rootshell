@@ -56,8 +56,8 @@ pub const Backend = enum {
     /// Returns the default backend for a build environment. This is
     /// meant to be called at comptime.
     pub fn default() Backend {
-        const wasm = @import("../os/wasm.zig");
-        if (wasm.target) |target| return switch (target) {
+        const wasm_target = @import("../os/wasm/target.zig");
+        if (wasm_target.target) |target| return switch (target) {
             .browser => .web_canvas,
         };
 

@@ -21,8 +21,8 @@ pub const State = @import("renderer/State.zig");
 
 /// The implementation to use for the renderer. This is comptime chosen
 /// so that every build has exactly one renderer implementation.
-const wasm = @import("os/wasm.zig");
-pub const Renderer = if (wasm.target) |target| switch (target) {
+const wasm_target = @import("os/wasm/target.zig");
+pub const Renderer = if (wasm_target.target) |target| switch (target) {
     .browser => WebGL,
 } else switch (builtin.os.tag) {
     .macos => Metal,
