@@ -8,6 +8,7 @@ pub usingnamespace @import("os/wasm/log.zig");
 pub usingnamespace @import("font/main.zig");
 pub usingnamespace @import("terminal/main.zig");
 pub usingnamespace @import("config.zig").Wasm;
+pub usingnamespace @import("App.zig").Wasm;
 
 // Set our log level. We try to get as much logging as possible but in
 // ReleaseSmall mode where we're optimizing for space, we elevate the

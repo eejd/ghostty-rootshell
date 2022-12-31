@@ -19,6 +19,7 @@ const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
+const WasmTarget = @import("src/os/wasm/target.zig").Target;
 
 // Build options, see the build options help for more info.
 var tracy: bool = false;
@@ -133,6 +134,11 @@ pub fn build(b: *std.build.Builder) !void {
         // up front.
         const wasm_shared: bool = true;
         exe_options.addOption(bool, "wasm_shared", wasm_shared);
+
+        // We want to support alternate wasm targets in the future (i.e.
+        // server side) so we have this now although its hardcoded.
+        const wasm_specific_target: WasmTarget = .browser;
+        exe_options.addOption(WasmTarget, "wasm_target", wasm_specific_target);
 
         const wasm = b.addSharedLibrary(
             "ghostty-wasm",

@@ -77,6 +77,7 @@ fetch(url.href).then(response =>
   const config_str = makeStr("font-family = monospace");
   config_load_string(config, config_str.ptr, config_str.len);
   config_finalize(config);
+  free(config_str.ptr);
 
   // Create our atlas
   // const atlas = atlas_new(512, 0 /* greyscale */);

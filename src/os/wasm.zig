@@ -2,6 +2,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("build_options");
+const Target = @import("wasm/target.zig").Target;
 
 comptime {
     if (!builtin.target.isWasm()) {
@@ -12,6 +13,16 @@ comptime {
 /// True if we're in shared memory mode. If true, then the memory buffer
 /// in JS will be backed by a SharedArrayBuffer and some behaviors change.
 pub const shared_mem = options.wasm_shared;
+
+/// Our specific target platform.
+pub const target: ?Target = if (!builtin.target.isWasm()) null else target: {
+    const result = @intToEnum(Target, @enumToInt(options.wasm_target));
+    // This maybe isn't necessary but I don't know if enums without a specific
+    // tag type and value are guaranteed to be the same between build.zig
+    // compilation and our own source compilation so I have this just in case.
+    std.debug.assert(std.mem.eql(u8, @tagName(result), @tagName(options.wasm_target)));
+    break :target result;
+};
 
 /// The allocator to use in wasm environments.
 ///

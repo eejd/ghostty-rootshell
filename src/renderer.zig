@@ -14,13 +14,17 @@ pub usingnamespace @import("renderer/message.zig");
 pub usingnamespace @import("renderer/size.zig");
 pub const Metal = @import("renderer/Metal.zig");
 pub const OpenGL = @import("renderer/OpenGL.zig");
+pub const WebGL = @import("renderer/WebGL.zig");
 pub const Options = @import("renderer/Options.zig");
 pub const Thread = @import("renderer/Thread.zig");
 pub const State = @import("renderer/State.zig");
 
 /// The implementation to use for the renderer. This is comptime chosen
 /// so that every build has exactly one renderer implementation.
-pub const Renderer = switch (builtin.os.tag) {
+const wasm = @import("os/wasm.zig");
+pub const Renderer = if (wasm.target) |target| switch (target) {
+    .browser => WebGL,
+} else switch (builtin.os.tag) {
     .macos => Metal,
     else => OpenGL,
 };

@@ -12,13 +12,16 @@ const builtin = @import("builtin");
 
 pub usingnamespace @import("apprt/structs.zig");
 pub const glfw = @import("apprt/glfw.zig");
+pub const browser = @import("apprt/browser.zig");
 pub const Window = @import("apprt/Window.zig");
 
 /// The implementation to use for the app runtime. This is comptime chosen
 /// so that every build has exactly one application runtime implementation.
 /// Note: it is very rare to use Runtime directly; most usage will use
 /// Window or something.
-pub const runtime = switch (builtin.os.tag) {
+pub const runtime = if (builtin.target.isWasm())
+    browser
+else switch (builtin.os.tag) {
     else => glfw,
 };
 
