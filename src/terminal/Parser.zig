@@ -607,6 +607,28 @@ test "osc: change window title (end in esc)" {
     }
 }
 
+// https://github.com/darrenstarr/VtNetCore/pull/14
+// Saw this on HN, decided to add a test case because why not.
+test "osc: 112 incomplete sequence" {
+    var p = init();
+    _ = p.next(0x1B);
+    _ = p.next(']');
+    _ = p.next('1');
+    _ = p.next('1');
+    _ = p.next('2');
+
+    {
+        const a = p.next(0x07);
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0].? == .osc_dispatch);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+
+        const cmd = a[0].?.osc_dispatch;
+        try testing.expect(cmd == .reset_cursor_color);
+    }
+}
+
 test "print: utf8 2 byte" {
     var p = init();
     var a: [3]?Action = undefined;
