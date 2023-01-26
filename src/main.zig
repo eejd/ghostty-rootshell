@@ -142,51 +142,53 @@ pub fn tracy_enabled() bool {
     return options.tracy_enabled;
 }
 
-// Our log level is always at least info in every build mode.
-pub const log_level: std.log.Level = switch (builtin.mode) {
-    .Debug => .debug,
-    else => .info,
-};
+pub const std_options = struct {
+    // Our log level is always at least info in every build mode.
+    pub const log_level: std.log.Level = switch (builtin.mode) {
+        .Debug => .debug,
+        else => .info,
+    };
 
-// The function std.log will call.
-pub fn log(
-    comptime level: std.log.Level,
-    comptime scope: @TypeOf(.EnumLiteral),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    // Stuff we can do before the lock
-    const level_txt = comptime level.asText();
-    const prefix = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+    // The function std.log will call.
+    pub fn logFn(
+        comptime level: std.log.Level,
+        comptime scope: @TypeOf(.EnumLiteral),
+        comptime format: []const u8,
+        args: anytype,
+    ) void {
+        // Stuff we can do before the lock
+        const level_txt = comptime level.asText();
+        const prefix = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
 
-    // Lock so we are thread-safe
-    std.debug.getStderrMutex().lock();
-    defer std.debug.getStderrMutex().unlock();
+        // Lock so we are thread-safe
+        std.debug.getStderrMutex().lock();
+        defer std.debug.getStderrMutex().unlock();
 
-    // On Mac, we use unified logging. To view this:
-    //
-    //   sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
-    //
-    if (builtin.os.tag == .macos) {
-        // Convert our levels to Mac levels
-        const mac_level: macos.os.LogType = switch (level) {
-            .debug => .debug,
-            .info => .info,
-            .warn => .err,
-            .err => .fault,
-        };
+        // On Mac, we use unified logging. To view this:
+        //
+        //   sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
+        //
+        if (builtin.os.tag == .macos) {
+            // Convert our levels to Mac levels
+            const mac_level: macos.os.LogType = switch (level) {
+                .debug => .debug,
+                .info => .info,
+                .warn => .err,
+                .err => .fault,
+            };
 
-        // Initialize a logger. This is slow to do on every operation
-        // but we shouldn't be logging too much.
-        const logger = macos.os.Log.create("com.mitchellh.ghostty", @tagName(scope));
-        defer logger.release();
-        logger.log(std.heap.c_allocator, mac_level, format, args);
+            // Initialize a logger. This is slow to do on every operation
+            // but we shouldn't be logging too much.
+            const logger = macos.os.Log.create("com.mitchellh.ghostty", @tagName(scope));
+            defer logger.release();
+            logger.log(std.heap.c_allocator, mac_level, format, args);
+        }
+
+        // Always try default to send to stderr
+        const stderr = std.io.getStdErr().writer();
+        nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
     }
-
-    // Always try default to send to stderr
-    const stderr = std.io.getStdErr().writer();
-    nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
-}
+};
 
 fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
     std.log.warn("glfw error={} message={s}", .{ code, desc });
