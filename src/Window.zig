@@ -492,7 +492,7 @@ pub fn shouldClose(self: Window) bool {
 }
 
 /// Add a window to the tab group of this window.
-pub fn addWindow(self: Window, other: *Window) void {
+pub fn addWindow(self: *Window, other: *Window) void {
     assert(builtin.target.isDarwin());
 
     // This has a hard dependency on GLFW currently. If we want to support
@@ -507,6 +507,19 @@ pub fn addWindow(self: Window, other: *Window) void {
         objc.Object.fromId(other_win),
         NSWindowOrderingMode.above,
     });
+
+    // Adding a new tab can cause the tab bar to appear which changes
+    // our viewport size. We need to call the size callback in order to
+    // update values. For example, we need this to set the proper mouse selection
+    // point in the grid.
+    const size = self.window.getSize() catch |err| {
+        log.err("error querying window size for size callback on new tab err={}", .{err});
+        return;
+    };
+    self.sizeCallback(size) catch |err| {
+        log.err("error in size callback from new tab err={}", .{err});
+        return;
+    };
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
