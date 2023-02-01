@@ -441,7 +441,7 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 pub fn destroy(self: *Window) void {
     {
         // Stop rendering thread
-        self.renderer_thread.stop.send() catch |err|
+        self.renderer_thread.stop.notify() catch |err|
             log.err("error notifying renderer thread to stop, may stall err={}", .{err});
         self.renderer_thr.join();
 
@@ -652,7 +652,7 @@ pub fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
 /// isn't guaranteed to happen immediately but it will happen as soon as
 /// practical.
 fn queueRender(self: *const Window) !void {
-    try self.renderer_thread.wakeup.send();
+    try self.renderer_thread.wakeup.notify();
 }
 
 pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {

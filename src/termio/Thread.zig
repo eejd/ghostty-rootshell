@@ -181,7 +181,7 @@ fn drainMailbox(self: *Thread) !void {
     // Trigger a redraw after we've drained so we don't waste cyces
     // messaging a redraw.
     if (redraw) {
-        try self.impl.renderer_wakeup.send();
+        try self.impl.renderer_wakeup.notify();
     }
 }
 

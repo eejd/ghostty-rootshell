@@ -11,6 +11,7 @@ const Window = @import("../Window.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
+const xev = @import("xev");
 const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
@@ -48,7 +49,7 @@ renderer_state: *renderer.State,
 
 /// A handle to wake up the renderer. This hints to the renderer that that
 /// a repaint should happen.
-renderer_wakeup: libuv.Async,
+renderer_wakeup: xev.Async,
 
 /// The mailbox for notifying the renderer of things.
 renderer_mailbox: *renderer.Thread.Mailbox,
@@ -320,7 +321,7 @@ const EventData = struct {
 
     /// A handle to wake up the renderer. This hints to the renderer that that
     /// a repaint should happen.
-    renderer_wakeup: libuv.Async,
+    renderer_wakeup: xev.Async,
 
     /// The mailbox for notifying the renderer of things.
     renderer_mailbox: *renderer.Thread.Mailbox,
@@ -362,7 +363,7 @@ const EventData = struct {
     /// isn't guaranteed to happen immediately but it will happen as soon as
     /// practical.
     inline fn queueRender(self: *EventData) !void {
-        try self.renderer_wakeup.send();
+        try self.renderer_wakeup.notify();
     }
 
     /// Queue a write to the pty.
