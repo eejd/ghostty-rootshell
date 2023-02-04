@@ -467,7 +467,7 @@ pub fn destroy(self: *Window) void {
 
     {
         // Stop our IO thread
-        self.io_thread.stop.send() catch |err|
+        self.io_thread.stop.notify() catch |err|
             log.err("error notifying io thread to stop, may stall err={}", .{err});
         self.io_thr.join();
         self.io_thread.deinit();
@@ -582,7 +582,7 @@ fn clipboardRead(self: *const Window, kind: u8) !void {
         self.alloc,
         buf,
     ), .{ .forever = {} });
-    self.io_thread.wakeup.send() catch {};
+    self.io_thread.wakeup.notify() catch {};
 }
 
 fn clipboardWrite(self: *const Window, data: []const u8) !void {
@@ -629,7 +629,7 @@ fn setCellSize(self: *Window, size: renderer.CellSize) !void {
             .padding = self.padding,
         },
     }, .{ .forever = {} });
-    self.io_thread.wakeup.send() catch {};
+    self.io_thread.wakeup.notify() catch {};
 }
 
 /// Change the font size.
@@ -696,7 +696,7 @@ pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
             .padding = self.padding,
         },
     }, .{ .forever = {} });
-    try self.io_thread.wakeup.send();
+    try self.io_thread.wakeup.notify();
 }
 
 pub fn charCallback(self: *Window, codepoint: u21) !void {
@@ -746,7 +746,7 @@ pub fn charCallback(self: *Window, codepoint: u21) !void {
     }, .{ .forever = {} });
 
     // After sending all our messages we have to notify our IO thread
-    try self.io_thread.wakeup.send();
+    try self.io_thread.wakeup.notify();
 }
 
 pub fn keyCallback(
@@ -793,7 +793,7 @@ pub fn keyCallback(
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = data,
                     }, .{ .forever = {} });
-                    try self.io_thread.wakeup.send();
+                    try self.io_thread.wakeup.notify();
                 },
 
                 .cursor_key => |ck| {
@@ -816,7 +816,7 @@ pub fn keyCallback(
                         }, .{ .forever = {} });
                     }
 
-                    try self.io_thread.wakeup.send();
+                    try self.io_thread.wakeup.notify();
                 },
 
                 .copy_to_clipboard => {
@@ -870,7 +870,7 @@ pub fn keyCallback(
                             }, .{ .forever = {} });
                         }
 
-                        try self.io_thread.wakeup.send();
+                        try self.io_thread.wakeup.notify();
                     }
                 },
 
@@ -1008,7 +1008,7 @@ pub fn keyCallback(
             }, .{ .forever = {} });
 
             // After sending all our messages we have to notify our IO thread
-            try self.io_thread.wakeup.send();
+            try self.io_thread.wakeup.notify();
         }
     }
 }
@@ -1264,7 +1264,7 @@ fn mouseReport(
     }
 
     // After sending all our messages we have to notify our IO thread
-    try self.io_thread.wakeup.send();
+    try self.io_thread.wakeup.notify();
 }
 
 pub fn mouseButtonCallback(

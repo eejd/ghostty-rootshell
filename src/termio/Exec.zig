@@ -202,30 +202,25 @@ fn killCommand(self: *Exec) !void {
     }
 }
 
-pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
+pub fn threadEnter(self: *Exec, loop: *xev.Loop) !ThreadData {
     assert(self.data == null);
-
-    // Get a copy to our allocator
-    const alloc_ptr = loop.getData(Allocator).?;
-    const alloc = alloc_ptr.*;
+    const alloc = self.alloc;
 
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
     errdefer alloc.destroy(ev_data_ptr);
 
     // Read data
-    var stream = try libuv.Tty.init(alloc, loop, self.pty.master);
-    errdefer stream.deinit(alloc);
-    stream.setData(ev_data_ptr);
-    try stream.readStart(ttyReadAlloc, ttyRead);
+    var stream = xev.Stream.initFd(self.pty.master);
+    errdefer stream.deinit();
 
     // Setup our event data before we start
     ev_data_ptr.* = .{
-        .read_arena = std.heap.ArenaAllocator.init(alloc),
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
         .data_stream = stream,
+        .loop = loop,
         .terminal_stream = .{
             .handler = .{
                 .alloc = self.alloc,
@@ -240,6 +235,16 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
 
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
+
+    // Start our stream read
+    stream.read(
+        loop,
+        &ev_data_ptr.data_stream_c_read,
+        .{ .slice = &ev_data_ptr.data_stream_buf },
+        EventData,
+        ev_data_ptr,
+        ttyRead,
+    );
 
     // Return our thread data
     return ThreadData{
@@ -307,11 +312,6 @@ const EventData = struct {
     // enough to satisfy most write requests. It must be a power of 2.
     const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
-    /// This is the arena allocator used for IO read buffers. Since we use
-    /// libuv under the covers, this lets us rarely heap allocate since we're
-    /// usually just reusing buffers from this.
-    read_arena: std.heap.ArenaAllocator,
-
     /// The stream parser. This parses the stream of escape codes and so on
     /// from the child process and calls callbacks in the stream handler.
     terminal_stream: terminal.Stream(StreamHandler),
@@ -327,11 +327,19 @@ const EventData = struct {
     renderer_mailbox: *renderer.Thread.Mailbox,
 
     /// The data stream is the main IO for the pty.
-    data_stream: libuv.Tty,
+    data_stream: xev.Stream,
+    data_stream_c_read: xev.Completion = .{},
+    data_stream_buf: [1024]u8 = undefined,
+
+    /// The event loop,
+    loop: *xev.Loop,
+
+    /// The write queue for the data stream.
+    write_queue: xev.Stream.WriteQueue = .{},
 
     /// This is the pool of available (unused) write requests. If you grab
     /// one from the pool, you must put it back when you're done!
-    write_req_pool: SegmentedPool(libuv.WriteReq.T, WRITE_REQ_PREALLOC) = .{},
+    write_req_pool: SegmentedPool(xev.Stream.WriteRequest, WRITE_REQ_PREALLOC) = .{},
 
     /// The pool of available buffers for writing to the pty.
     write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
@@ -341,8 +349,6 @@ const EventData = struct {
     last_cursor_reset: u64 = 0,
 
     pub fn deinit(self: *EventData, alloc: Allocator) void {
-        self.read_arena.deinit();
-
         // Clear our write pools. We know we aren't ever going to do
         // any more IO since we stop our data stream below so we can just
         // drop this.
@@ -350,13 +356,8 @@ const EventData = struct {
         self.write_buf_pool.deinit(alloc);
 
         // Stop our data stream
-        self.data_stream.readStop();
-        self.data_stream.close((struct {
-            fn callback(h: *libuv.Tty) void {
-                const handle_alloc = h.loop().getData(Allocator).?.*;
-                h.deinit(handle_alloc);
-            }
-        }).callback);
+        // TODO: close?
+        self.data_stream.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
@@ -376,9 +377,13 @@ const EventData = struct {
             const buf = try self.write_buf_pool.get();
             const end = @min(data.len, i + buf.len);
             fastmem.copy(u8, buf, data[i..end]);
-            try self.data_stream.write(
-                .{ .req = req },
-                &[1][]u8{buf[0..(end - i)]},
+            self.data_stream.queueWrite(
+                self.loop,
+                &self.write_queue,
+                req,
+                .{ .slice = buf[0..(end - i)] },
+                EventData,
+                self,
                 ttyWrite,
             );
 
@@ -387,62 +392,65 @@ const EventData = struct {
     }
 };
 
-fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
-    const tty = req.handle(libuv.Tty).?;
-    const ev = tty.getData(EventData).?;
+fn ttyWrite(
+    ev_: ?*EventData,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    _: xev.Stream,
+    _: xev.WriteBuffer,
+    r: xev.Stream.WriteError!usize,
+) xev.CallbackAction {
+    const ev = ev_.?;
     ev.write_req_pool.put();
     ev.write_buf_pool.put();
 
-    libuv.convertError(status) catch |err|
+    const d = r catch |err| {
         log.err("write error: {}", .{err});
-
+        return .disarm;
+    };
+    _ = d;
     //log.info("WROTE: {d}", .{status});
+
+    return .disarm;
 }
 
-fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
+fn ttyRead(
+    ev_: ?*EventData,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    _: xev.Stream,
+    read_buf: xev.ReadBuffer,
+    r: xev.Stream.ReadError!usize,
+) xev.CallbackAction {
     const zone = trace(@src());
     defer zone.end();
 
-    const ev = t.getData(EventData) orelse return null;
-    const alloc = ev.read_arena.allocator();
-    return alloc.alloc(u8, size) catch null;
-}
+    const ev = ev_.?;
+    const n = r catch |err| {
+        switch (err) {
+            error.EOF => return .disarm,
+            else => log.err("read error err={}", .{err}),
+        }
 
-fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
-    const zone = trace(@src());
-    defer zone.end();
-
-    const ev = t.getData(EventData).?;
-    defer {
-        const alloc = ev.read_arena.allocator();
-        alloc.free(buf);
-    }
+        return .rearm;
+    };
+    const buf = read_buf.slice[0..n];
 
     // log.info("DATA: {d}", .{n});
     // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
-
-    // First check for errors in the case n is less than 0.
-    libuv.convertError(@intCast(i32, n)) catch |err| {
-        switch (err) {
-            // ignore EOF because it should end the process.
-            libuv.Error.EOF => {},
-            else => log.err("read error: {}", .{err}),
-        }
-
-        return;
-    };
 
     // Whenever a character is typed, we ensure the cursor is in the
     // non-blink state so it is rendered if visible. If we're under
     // HEAVY read load, we don't want to send a ton of these so we
     // use a timer under the covers
-    const now = t.loop().now();
-    if (now - ev.last_cursor_reset > 500) {
-        ev.last_cursor_reset = now;
-        _ = ev.renderer_mailbox.push(.{
-            .reset_cursor_blink = {},
-        }, .{ .forever = {} });
-    }
+    // TODO
+    // const now = t.loop().now();
+    // if (now - ev.last_cursor_reset > 500) {
+    //     ev.last_cursor_reset = now;
+    //     _ = ev.renderer_mailbox.push(.{
+    //         .reset_cursor_blink = {},
+    //     }, .{ .forever = {} });
+    // }
 
     // We are modifying terminal state from here on out
     ev.renderer_state.mutex.lock();
@@ -489,6 +497,8 @@ fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
         ev.terminal_stream.nextSlice(buf[i..end]) catch |err|
             log.err("error processing terminal data: {}", .{err});
     }
+
+    return .rearm;
 }
 
 /// This is used as the handler for the terminal.Stream type. This is
