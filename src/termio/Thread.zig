@@ -5,7 +5,6 @@ pub const Thread = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const xev = @import("xev");
-const libuv = @import("libuv");
 const termio = @import("../termio.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const tracy = @import("tracy");

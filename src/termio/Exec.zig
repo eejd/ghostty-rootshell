@@ -12,7 +12,6 @@ const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
 const xev = @import("xev");
-const libuv = @import("libuv");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
 const trace = tracy.trace;

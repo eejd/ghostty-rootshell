@@ -10,7 +10,6 @@ const imgui = @import("pkg/imgui/build.zig");
 const js = @import("vendor/zig-js/build.zig");
 const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
-const libuv = @import("pkg/libuv/build.zig");
 const libpng = @import("pkg/libpng/build.zig");
 const macos = @import("pkg/macos/build.zig");
 const objc = @import("vendor/zig-objc/build.zig");
@@ -277,7 +276,6 @@ fn addDeps(
     step.addPackage(imgui.pkg);
     step.addPackage(glfw.pkg);
     step.addPackage(libxev.pkg);
-    step.addPackage(libuv.pkg);
     step.addPackage(pixman.pkg);
     step.addPackage(stb_image_resize.pkg);
     step.addPackage(utf8proc.pkg);
@@ -330,7 +328,6 @@ fn addDeps(
         step.linkSystemLibrary("freetype2");
         step.linkSystemLibrary("harfbuzz");
         step.linkSystemLibrary("libpng");
-        step.linkSystemLibrary("libuv");
         step.linkSystemLibrary("pixman-1");
         step.linkSystemLibrary("zlib");
 
@@ -379,10 +376,6 @@ fn addDeps(
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
         _ = pixman_step;
-
-        // Libuv
-        const libuv_step = try libuv.link(b, step);
-        system_sdk.include(b, libuv_step, .{});
 
         // Only Linux gets fontconfig
         if (enable_fontconfig) {
