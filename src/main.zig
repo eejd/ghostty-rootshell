@@ -7,6 +7,7 @@ const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
 const macos = @import("macos");
 const tracy = @import("tracy");
+const xev = @import("xev");
 const renderer = @import("renderer.zig");
 const xdg = @import("xdg.zig");
 const internal_os = @import("os/main.zig");
@@ -22,6 +23,7 @@ pub fn main() !void {
         std.log.info("dependency fontconfig={d}", .{fontconfig.version()});
     }
     std.log.info("renderer={}", .{renderer.Renderer});
+    std.log.info("libxev backend={}", .{xev.backend});
 
     // First things first, we fix our file descriptors
     internal_os.fixMaxFiles();

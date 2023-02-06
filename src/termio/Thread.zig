@@ -16,7 +16,7 @@ const log = std.log.scoped(.io_thread);
 /// The type used for sending messages to the IO thread. For now this is
 /// hardcoded with a capacity. We can make this a comptime parameter in
 /// the future if we want it configurable.
-const Mailbox = BlockingQueue(termio.Message, 64);
+pub const Mailbox = BlockingQueue(termio.Message, 64);
 
 /// Allocator used for some state
 alloc: std.mem.Allocator,
@@ -99,7 +99,7 @@ fn threadMain_(self: *Thread) !void {
 
     // Run our thread start/end callbacks. This allows the implementation
     // to hook into the event loop as needed.
-    var data = try self.impl.threadEnter(&self.loop);
+    var data = try self.impl.threadEnter(self);
     defer data.deinit();
     defer self.impl.threadExit(data);
 
