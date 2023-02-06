@@ -62,6 +62,8 @@ grid_size: renderer.GridSize,
 /// The data associated with the currently running thread.
 data: ?*EventData,
 
+io_thread: ?std.Thread,
+
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
@@ -151,6 +153,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .window_mailbox = opts.window_mailbox,
         .grid_size = opts.grid_size,
         .data = null,
+        .io_thread = null,
     };
 }
 
@@ -230,26 +233,52 @@ pub fn threadEnter(self: *Exec, loop: *xev.Loop) !ThreadData {
             },
         },
     };
-    errdefer ev_data_ptr.deinit();
+    errdefer ev_data_ptr.deinit(self.alloc);
 
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
 
-    // Start our stream read
-    stream.read(
-        loop,
-        &ev_data_ptr.data_stream_c_read,
-        .{ .slice = &ev_data_ptr.data_stream_buf },
-        EventData,
-        ev_data_ptr,
-        ttyRead,
+    self.io_thread = try std.Thread.spawn(
+        .{},
+        ioMain,
+        .{ self.pty.master, ev_data_ptr },
     );
+    self.io_thread.?.setName("io-reader") catch {};
+
+    // Start our stream read
+    // stream.read(
+    //     loop,
+    //     &ev_data_ptr.data_stream_c_read,
+    //     .{ .slice = &ev_data_ptr.data_stream_buf },
+    //     EventData,
+    //     ev_data_ptr,
+    //     ttyRead,
+    // );
 
     // Return our thread data
     return ThreadData{
         .alloc = alloc,
         .ev = ev_data_ptr,
     };
+}
+
+/// The main entrypoint for the thread.
+pub fn ioMain(fd: std.os.fd_t, ev: *EventData) void {
+    while (true) {
+        const n = std.os.read(fd, &ev.data_stream_buf) catch |err| {
+            log.err("READ ERROR err={}", .{err});
+            return;
+        };
+
+        _ = @call(.always_inline, ttyRead, .{
+            ev,
+            undefined,
+            undefined,
+            undefined,
+            .{ .slice = &ev.data_stream_buf },
+            n,
+        });
+    }
 }
 
 pub fn threadExit(self: *Exec, data: ThreadData) void {
