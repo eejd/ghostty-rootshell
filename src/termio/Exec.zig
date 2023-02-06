@@ -273,7 +273,7 @@ const EventData = struct {
 
     /// Last time the cursor was reset. This is used to prevent message
     /// flooding with cursor resets.
-    last_cursor_reset: u64 = 0,
+    last_cursor_reset: i64 = 0,
 
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         // Clear our write pools. We know we aren't ever going to do
@@ -543,14 +543,13 @@ const ReadThread = struct {
         // non-blink state so it is rendered if visible. If we're under
         // HEAVY read load, we don't want to send a ton of these so we
         // use a timer under the covers
-        // TODO
-        // const now = t.loop().now();
-        // if (now - ev.last_cursor_reset > 500) {
-        //     ev.last_cursor_reset = now;
-        //     _ = ev.renderer_mailbox.push(.{
-        //         .reset_cursor_blink = {},
-        //     }, .{ .forever = {} });
-        // }
+        const now = ev.loop.now();
+        if (now - ev.last_cursor_reset > 500) {
+            ev.last_cursor_reset = now;
+            _ = ev.renderer_mailbox.push(.{
+                .reset_cursor_blink = {},
+            }, .{ .forever = {} });
+        }
 
         // We are modifying terminal state from here on out
         ev.renderer_state.mutex.lock();
