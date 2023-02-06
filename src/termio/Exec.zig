@@ -100,9 +100,8 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     const alloc = self.alloc;
 
     // Start our subprocess
-    try self.subprocess.start(alloc);
+    const master_fd = try self.subprocess.start(alloc);
     errdefer self.subprocess.stop();
-    const master_fd = self.subprocess.pty.?.master;
 
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
@@ -317,6 +316,7 @@ fn ttyWrite(
     return .disarm;
 }
 
+/// Subprocess manages the lifecycle of the shell subprocess.
 const Subprocess = struct {
     cwd: ?[]const u8,
     env: std.process.EnvMap,
@@ -324,10 +324,11 @@ const Subprocess = struct {
     argv0_override: ?[]const u8,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
-
     pty: ?Pty = null,
     command: ?Command = null,
 
+    /// Initialize the subprocess. This will NOT start it, this only sets
+    /// up the internal state necessary to start it later.
     pub fn init(alloc: Allocator, opts: termio.Options) !Subprocess {
         // Determine the path to the binary we're executing
         const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
@@ -370,6 +371,7 @@ const Subprocess = struct {
         };
     }
 
+    /// Clean up the subprocess. This will stop the subprocess if it is started.
     pub fn deinit(self: *Subprocess, alloc: Allocator) void {
         self.stop();
         self.env.deinit();
@@ -378,7 +380,11 @@ const Subprocess = struct {
         self.* = undefined;
     }
 
-    pub fn start(self: *Subprocess, alloc: Allocator) !void {
+    /// Start the subprocess. If the subprocess is already started this
+    /// will crash.
+    pub fn start(self: *Subprocess, alloc: Allocator) !std.os.fd_t {
+        assert(self.pty == null and self.command == null);
+
         // Create our pty
         var pty = try Pty.open(.{
             .ws_row = @intCast(u16, self.grid_size.rows),
@@ -417,8 +423,11 @@ const Subprocess = struct {
         log.info("started subcommand path={s} pid={?}", .{ self.path, cmd.pid });
 
         self.command = cmd;
+        return pty.master;
     }
 
+    /// Stop the subprocess. This is safe to call anytime. This will wait
+    /// for the subprocess to end so it will block.
     pub fn stop(self: *Subprocess) void {
         // Close our PTY
         if (self.pty) |*pty| {
@@ -436,6 +445,7 @@ const Subprocess = struct {
         }
     }
 
+    /// Resize the pty subprocess. This is safe to call anytime.
     pub fn resize(
         self: *Subprocess,
         grid_size: renderer.GridSize,
