@@ -29,10 +29,7 @@ const c = @cImport({
 alloc: Allocator,
 
 /// This is the pty fd created for the subcommand.
-pty: Pty,
-
-/// This is the container for the subcommand.
-command: Command,
+subprocess: Subprocess,
 
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
@@ -62,77 +59,9 @@ grid_size: renderer.GridSize,
 /// The data associated with the currently running thread.
 data: ?*EventData,
 
-/// The thread that is started to read the data associated with the pty.
-read_thread: ?std.Thread,
-
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
-    // Create our pty
-    var pty = try Pty.open(.{
-        .ws_row = @intCast(u16, opts.grid_size.rows),
-        .ws_col = @intCast(u16, opts.grid_size.columns),
-        .ws_xpixel = @intCast(u16, opts.screen_size.width),
-        .ws_ypixel = @intCast(u16, opts.screen_size.height),
-    });
-    errdefer pty.deinit();
-
-    // Determine the path to the binary we're executing
-    const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
-        return error.CommandNotFound;
-    defer alloc.free(path);
-
-    // Set our env vars
-    var env = try std.process.getEnvMap(alloc);
-    defer env.deinit();
-    try env.put("TERM", "xterm-256color");
-    try env.put("COLORTERM", "truecolor");
-
-    // On macOS, we launch the program as a login shell. This is a Mac-specific
-    // behavior (see other terminals). Terminals in general should NOT be
-    // spawning login shells because well... we're not "logging in." The solution
-    // is to put dotfiles in "rc" variants rather than "_login" variants. But,
-    // history!
-    var argv0_buf: []u8 = undefined;
-    const args: []const []const u8 = if (comptime builtin.target.isDarwin()) args: {
-        // Get rid of the path
-        const argv0 = if (std.mem.lastIndexOf(u8, path, "/")) |idx|
-            path[idx + 1 ..]
-        else
-            path;
-
-        // Copy it with a hyphen so its a login shell
-        argv0_buf = try alloc.alloc(u8, argv0.len + 1);
-        argv0_buf[0] = '-';
-        std.mem.copy(u8, argv0_buf[1..], argv0);
-        break :args &[_][]const u8{argv0_buf};
-    } else &[_][]const u8{path};
-
-    // We can free the args buffer since it is only used for start.
-    // cmd retains a dangling pointer but we're not supposed to access it.
-    defer if (comptime builtin.target.isDarwin()) alloc.free(argv0_buf);
-
-    // Build our subcommand
-    var cmd: Command = .{
-        .path = path,
-        .args = args,
-        .env = &env,
-        .cwd = opts.config.@"working-directory",
-        .stdin = .{ .handle = pty.slave },
-        .stdout = .{ .handle = pty.slave },
-        .stderr = .{ .handle = pty.slave },
-        .pre_exec = (struct {
-            fn callback(cmd: *Command) void {
-                const p = cmd.getData(Pty) orelse unreachable;
-                p.childPreExec() catch |err|
-                    log.err("error initializing child: {}", .{err});
-            }
-        }).callback,
-        .data = &pty,
-    };
-    try cmd.start(alloc);
-    log.info("started subcommand path={s} pid={?}", .{ path, cmd.pid });
-
     // Create our terminal
     var term = try terminal.Terminal.init(
         alloc,
@@ -142,82 +71,45 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     errdefer term.deinit(alloc);
     term.color_palette = opts.config.palette.value;
 
+    var subprocess = try Subprocess.init(alloc, opts);
+    errdefer subprocess.deinit();
+
     return Exec{
         .alloc = alloc,
-        .pty = pty,
-        .command = cmd,
         .terminal = term,
         .terminal_stream = undefined,
+        .subprocess = subprocess,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
         .window_mailbox = opts.window_mailbox,
         .grid_size = opts.grid_size,
         .data = null,
-        .read_thread = null,
     };
 }
 
 pub fn deinit(self: *Exec) void {
-    // Kill our command
-    self.killCommand() catch |err|
-        log.err("error sending SIGHUP to command, may hang: {}", .{err});
-    _ = self.command.wait(false) catch |err|
-        log.err("error waiting for command to exit: {}", .{err});
-
-    // Wait for our reader thread to end
-    if (self.read_thread) |thr| thr.join();
+    self.subprocess.deinit(self.alloc);
 
     // Clean up our other members
     self.terminal.deinit(self.alloc);
-}
-
-/// Kill the underlying subprocess. This closes the pty file handle and
-/// sends a SIGHUP to the child process. This doesn't wait for the child
-/// process to be exited.
-fn killCommand(self: *Exec) !void {
-    // Close our PTY
-    self.pty.deinit();
-
-    // We need to get our process group ID and send a SIGHUP to it.
-    if (self.command.pid) |pid| {
-        const pgid_: ?c.pid_t = pgid: {
-            const pgid = c.getpgid(pid);
-
-            // Don't know why it would be zero but its not a valid pid
-            if (pgid == 0) break :pgid null;
-
-            // If the pid doesn't exist then... okay.
-            if (pgid == c.ESRCH) break :pgid null;
-
-            // If we have an error...
-            if (pgid < 0) {
-                log.warn("error getting pgid for kill", .{});
-                break :pgid null;
-            }
-
-            break :pgid pgid;
-        };
-
-        if (pgid_) |pgid| {
-            if (c.killpg(pgid, c.SIGHUP) < 0) {
-                log.warn("error killing process group pgid={}", .{pgid});
-                return error.KillFailed;
-            }
-        }
-    }
 }
 
 pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     assert(self.data == null);
     const alloc = self.alloc;
 
+    // Start our subprocess
+    try self.subprocess.start(alloc);
+    errdefer self.subprocess.stop();
+    const master_fd = self.subprocess.pty.?.master;
+
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
     errdefer alloc.destroy(ev_data_ptr);
 
     // Setup our stream so that we can write.
-    var stream = xev.Stream.initFd(self.pty.master);
+    var stream = xev.Stream.initFd(master_fd);
     errdefer stream.deinit();
 
     // Wakeup watcher for the writer thread.
@@ -249,24 +141,30 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     self.data = ev_data_ptr;
 
     // Start our reader thread
-    assert(self.read_thread == null);
-    self.read_thread = try std.Thread.spawn(
+    const read_thread = try std.Thread.spawn(
         .{},
         ReadThread.threadMain,
-        .{ self.pty.master, ev_data_ptr },
+        .{ master_fd, ev_data_ptr },
     );
-    self.read_thread.?.setName("io-reader") catch {};
+    read_thread.setName("io-reader") catch {};
 
     // Return our thread data
     return ThreadData{
         .alloc = alloc,
         .ev = ev_data_ptr,
+        .read_thread = read_thread,
     };
 }
 
 pub fn threadExit(self: *Exec, data: ThreadData) void {
-    _ = data;
+    // Clear out our data since we're not active anymore.
     self.data = null;
+
+    // Stop our subprocess
+    self.subprocess.stop();
+
+    // Wait for our reader thread to end
+    data.read_thread.join();
 }
 
 /// Resize the terminal.
@@ -276,15 +174,9 @@ pub fn resize(
     screen_size: renderer.ScreenSize,
     padding: renderer.Padding,
 ) !void {
-    const padded_size = screen_size.subPadding(padding);
-
     // Update the size of our pty
-    try self.pty.setSize(.{
-        .ws_row = @intCast(u16, grid_size.rows),
-        .ws_col = @intCast(u16, grid_size.columns),
-        .ws_xpixel = @intCast(u16, padded_size.width),
-        .ws_ypixel = @intCast(u16, padded_size.height),
-    });
+    const padded_size = screen_size.subPadding(padding);
+    try self.subprocess.resize(grid_size, padded_size);
 
     // Update our cached grid size
     self.grid_size = grid_size;
@@ -330,6 +222,9 @@ const ThreadData = struct {
 
     /// The data that is attached to the callbacks.
     ev: *EventData,
+
+    /// Our read thread
+    read_thread: std.Thread,
 
     pub fn deinit(self: *ThreadData) void {
         self.ev.deinit(self.alloc);
@@ -422,6 +317,175 @@ fn ttyWrite(
     return .disarm;
 }
 
+const Subprocess = struct {
+    cwd: ?[]const u8,
+    env: std.process.EnvMap,
+    path: []const u8,
+    argv0_override: ?[]const u8,
+    grid_size: renderer.GridSize,
+    screen_size: renderer.ScreenSize,
+
+    pty: ?Pty = null,
+    command: ?Command = null,
+
+    pub fn init(alloc: Allocator, opts: termio.Options) !Subprocess {
+        // Determine the path to the binary we're executing
+        const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
+            return error.CommandNotFound;
+        errdefer alloc.free(path);
+
+        // On macOS, we launch the program as a login shell. This is a Mac-specific
+        // behavior (see other terminals). Terminals in general should NOT be
+        // spawning login shells because well... we're not "logging in." The solution
+        // is to put dotfiles in "rc" variants rather than "_login" variants. But,
+        // history!
+        const argv0_override: ?[]const u8 = if (comptime builtin.target.isDarwin()) argv0: {
+            // Get rid of the path
+            const argv0 = if (std.mem.lastIndexOf(u8, path, "/")) |idx|
+                path[idx + 1 ..]
+            else
+                path;
+
+            // Copy it with a hyphen so its a login shell
+            const argv0_buf = try alloc.alloc(u8, argv0.len + 1);
+            argv0_buf[0] = '-';
+            std.mem.copy(u8, argv0_buf[1..], argv0);
+            break :argv0 argv0_buf;
+        } else null;
+        errdefer if (argv0_override) |buf| alloc.free(buf);
+
+        // Set our env vars
+        var env = try std.process.getEnvMap(alloc);
+        errdefer env.deinit();
+        try env.put("TERM", "xterm-256color");
+        try env.put("COLORTERM", "truecolor");
+
+        return .{
+            .env = env,
+            .cwd = opts.config.@"working-directory",
+            .path = path,
+            .argv0_override = argv0_override,
+            .grid_size = opts.grid_size,
+            .screen_size = opts.screen_size,
+        };
+    }
+
+    pub fn deinit(self: *Subprocess, alloc: Allocator) void {
+        self.stop();
+        self.env.deinit();
+        alloc.free(self.path);
+        if (self.argv0_override) |v| alloc.free(v);
+        self.* = undefined;
+    }
+
+    pub fn start(self: *Subprocess, alloc: Allocator) !void {
+        // Create our pty
+        var pty = try Pty.open(.{
+            .ws_row = @intCast(u16, self.grid_size.rows),
+            .ws_col = @intCast(u16, self.grid_size.columns),
+            .ws_xpixel = @intCast(u16, self.screen_size.width),
+            .ws_ypixel = @intCast(u16, self.screen_size.height),
+        });
+        self.pty = pty;
+        errdefer {
+            pty.deinit();
+            self.pty = null;
+        }
+
+        const args = &[_][]const u8{self.argv0_override orelse self.path};
+
+        // Build our subcommand
+        var cmd: Command = .{
+            .path = self.path,
+            .args = args,
+            .env = &self.env,
+            .cwd = self.cwd,
+            .stdin = .{ .handle = pty.slave },
+            .stdout = .{ .handle = pty.slave },
+            .stderr = .{ .handle = pty.slave },
+            .pre_exec = (struct {
+                fn callback(cmd: *Command) void {
+                    const p = cmd.getData(Pty) orelse unreachable;
+                    p.childPreExec() catch |err|
+                        log.err("error initializing child: {}", .{err});
+                }
+            }).callback,
+            .data = &self.pty.?,
+        };
+        try cmd.start(alloc);
+        errdefer killCommand(cmd);
+        log.info("started subcommand path={s} pid={?}", .{ self.path, cmd.pid });
+
+        self.command = cmd;
+    }
+
+    pub fn stop(self: *Subprocess) void {
+        // Close our PTY
+        if (self.pty) |*pty| {
+            pty.deinit();
+            self.pty = null;
+        }
+
+        // Kill our command
+        if (self.command) |*cmd| {
+            killCommand(cmd) catch |err|
+                log.err("error sending SIGHUP to command, may hang: {}", .{err});
+            _ = cmd.wait(false) catch |err|
+                log.err("error waiting for command to exit: {}", .{err});
+            self.command = null;
+        }
+    }
+
+    pub fn resize(
+        self: *Subprocess,
+        grid_size: renderer.GridSize,
+        screen_size: renderer.ScreenSize,
+    ) !void {
+        self.grid_size = grid_size;
+        self.screen_size = screen_size;
+
+        if (self.pty) |pty| {
+            try pty.setSize(.{
+                .ws_row = @intCast(u16, grid_size.rows),
+                .ws_col = @intCast(u16, grid_size.columns),
+                .ws_xpixel = @intCast(u16, screen_size.width),
+                .ws_ypixel = @intCast(u16, screen_size.height),
+            });
+        }
+    }
+
+    /// Kill the underlying subprocess. This sends a SIGHUP to the child
+    /// process. This doesn't wait for the child process to be exited.
+    fn killCommand(command: *Command) !void {
+        if (command.pid) |pid| {
+            const pgid_: ?c.pid_t = pgid: {
+                const pgid = c.getpgid(pid);
+
+                // Don't know why it would be zero but its not a valid pid
+                if (pgid == 0) break :pgid null;
+
+                // If the pid doesn't exist then... okay.
+                if (pgid == c.ESRCH) break :pgid null;
+
+                // If we have an error...
+                if (pgid < 0) {
+                    log.warn("error getting pgid for kill", .{});
+                    break :pgid null;
+                }
+
+                break :pgid pgid;
+            };
+
+            if (pgid_) |pgid| {
+                if (c.killpg(pgid, c.SIGHUP) < 0) {
+                    log.warn("error killing process group pgid={}", .{pgid});
+                    return error.KillFailed;
+                }
+            }
+        }
+    }
+};
+
 /// The read thread sits in a loop doing the following pseudo code:
 ///
 ///   while (true) { blocking_read(); exit_if_eof(); process(); }
@@ -440,11 +504,17 @@ const ReadThread = struct {
         var buf: [1024]u8 = undefined;
         while (true) {
             const n = std.os.read(fd, &buf) catch |err| {
-                log.err("READ ERROR err={}", .{err});
+                switch (err) {
+                    // This means our pty is closed. We're probably
+                    // gracefully shutting down.
+                    error.NotOpenForReading => log.info("io reader exiting", .{}),
+
+                    else => log.err("READ ERROR err={}", .{err}),
+                }
                 return;
             };
-            log.info("DATA: {d}", .{n});
 
+            // log.info("DATA: {d}", .{n});
             @call(.always_inline, process, .{ ev, buf[0..n] });
         }
     }

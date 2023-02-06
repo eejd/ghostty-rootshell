@@ -439,15 +439,14 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 }
 
 pub fn destroy(self: *Window) void {
+    // Stop rendering thread
     {
-        // Stop rendering thread
         self.renderer_thread.stop.notify() catch |err|
             log.err("error notifying renderer thread to stop, may stall err={}", .{err});
         self.renderer_thr.join();
 
         // We need to become the active rendering thread again
         self.renderer.threadEnter(self.window) catch unreachable;
-        self.renderer_thread.deinit();
 
         // If we are devmode-owning, clean that up.
         if (DevMode.enabled and DevMode.instance.window == self) {
@@ -460,21 +459,21 @@ pub fn destroy(self: *Window) void {
             // Uninitialize imgui
             self.imgui_ctx.destroy();
         }
-
-        // Deinit our renderer
-        self.renderer.deinit();
     }
 
+    // Stop our IO thread
     {
-        // Stop our IO thread
         self.io_thread.stop.notify() catch |err|
             log.err("error notifying io thread to stop, may stall err={}", .{err});
         self.io_thr.join();
-        self.io_thread.deinit();
-
-        // Deinitialize our terminal IO
-        self.io.deinit();
     }
+
+    // We need to deinit AFTER everything is stopped, since there are
+    // shared values between the two threads.
+    self.renderer_thread.deinit();
+    self.renderer.deinit();
+    self.io_thread.deinit();
+    self.io.deinit();
 
     self.window.deinit();
 
