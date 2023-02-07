@@ -429,12 +429,6 @@ const Subprocess = struct {
     /// Stop the subprocess. This is safe to call anytime. This will wait
     /// for the subprocess to end so it will block.
     pub fn stop(self: *Subprocess) void {
-        // Close our PTY
-        if (self.pty) |*pty| {
-            pty.deinit();
-            self.pty = null;
-        }
-
         // Kill our command
         if (self.command) |*cmd| {
             killCommand(cmd) catch |err|
@@ -442,6 +436,14 @@ const Subprocess = struct {
             _ = cmd.wait(false) catch |err|
                 log.err("error waiting for command to exit: {}", .{err});
             self.command = null;
+        }
+
+        // Close our PTY. We do this after killing our command because on
+        // macOS, close will block until all blocking operations read/write
+        // are done with it and our reader thread is probably still alive.
+        if (self.pty) |*pty| {
+            pty.deinit();
+            self.pty = null;
         }
     }
 
@@ -519,7 +521,10 @@ const ReadThread = struct {
                     // gracefully shutting down.
                     error.NotOpenForReading => log.info("io reader exiting", .{}),
 
-                    else => log.err("READ ERROR err={}", .{err}),
+                    else => {
+                        log.err("io reader error err={}", .{err});
+                        unreachable;
+                    },
                 }
                 return;
             };
