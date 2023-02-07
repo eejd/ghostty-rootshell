@@ -11,7 +11,7 @@ const Window = @import("../Window.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
-const libuv = @import("libuv");
+const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
 const trace = tracy.trace;
@@ -29,10 +29,7 @@ const c = @cImport({
 alloc: Allocator,
 
 /// This is the pty fd created for the subcommand.
-pty: Pty,
-
-/// This is the container for the subcommand.
-command: Command,
+subprocess: Subprocess,
 
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
@@ -48,7 +45,7 @@ renderer_state: *renderer.State,
 
 /// A handle to wake up the renderer. This hints to the renderer that that
 /// a repaint should happen.
-renderer_wakeup: libuv.Async,
+renderer_wakeup: xev.Async,
 
 /// The mailbox for notifying the renderer of things.
 renderer_mailbox: *renderer.Thread.Mailbox,
@@ -65,71 +62,6 @@ data: ?*EventData,
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
-    // Create our pty
-    var pty = try Pty.open(.{
-        .ws_row = @intCast(u16, opts.grid_size.rows),
-        .ws_col = @intCast(u16, opts.grid_size.columns),
-        .ws_xpixel = @intCast(u16, opts.screen_size.width),
-        .ws_ypixel = @intCast(u16, opts.screen_size.height),
-    });
-    errdefer pty.deinit();
-
-    // Determine the path to the binary we're executing
-    const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
-        return error.CommandNotFound;
-    defer alloc.free(path);
-
-    // Set our env vars
-    var env = try std.process.getEnvMap(alloc);
-    defer env.deinit();
-    try env.put("TERM", "xterm-256color");
-    try env.put("COLORTERM", "truecolor");
-
-    // On macOS, we launch the program as a login shell. This is a Mac-specific
-    // behavior (see other terminals). Terminals in general should NOT be
-    // spawning login shells because well... we're not "logging in." The solution
-    // is to put dotfiles in "rc" variants rather than "_login" variants. But,
-    // history!
-    var argv0_buf: []u8 = undefined;
-    const args: []const []const u8 = if (comptime builtin.target.isDarwin()) args: {
-        // Get rid of the path
-        const argv0 = if (std.mem.lastIndexOf(u8, path, "/")) |idx|
-            path[idx + 1 ..]
-        else
-            path;
-
-        // Copy it with a hyphen so its a login shell
-        argv0_buf = try alloc.alloc(u8, argv0.len + 1);
-        argv0_buf[0] = '-';
-        std.mem.copy(u8, argv0_buf[1..], argv0);
-        break :args &[_][]const u8{argv0_buf};
-    } else &[_][]const u8{path};
-
-    // We can free the args buffer since it is only used for start.
-    // cmd retains a dangling pointer but we're not supposed to access it.
-    defer if (comptime builtin.target.isDarwin()) alloc.free(argv0_buf);
-
-    // Build our subcommand
-    var cmd: Command = .{
-        .path = path,
-        .args = args,
-        .env = &env,
-        .cwd = opts.config.@"working-directory",
-        .stdin = .{ .handle = pty.slave },
-        .stdout = .{ .handle = pty.slave },
-        .stderr = .{ .handle = pty.slave },
-        .pre_exec = (struct {
-            fn callback(cmd: *Command) void {
-                const p = cmd.getData(Pty) orelse unreachable;
-                p.childPreExec() catch |err|
-                    log.err("error initializing child: {}", .{err});
-            }
-        }).callback,
-        .data = &pty,
-    };
-    try cmd.start(alloc);
-    log.info("started subcommand path={s} pid={?}", .{ path, cmd.pid });
-
     // Create our terminal
     var term = try terminal.Terminal.init(
         alloc,
@@ -139,12 +71,14 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     errdefer term.deinit(alloc);
     term.color_palette = opts.config.palette.value;
 
+    var subprocess = try Subprocess.init(alloc, opts);
+    errdefer subprocess.deinit();
+
     return Exec{
         .alloc = alloc,
-        .pty = pty,
-        .command = cmd,
         .terminal = term,
         .terminal_stream = undefined,
+        .subprocess = subprocess,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
@@ -155,76 +89,41 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
 }
 
 pub fn deinit(self: *Exec) void {
-    // Kill our command
-    self.killCommand() catch |err|
-        log.err("error sending SIGHUP to command, may hang: {}", .{err});
-    _ = self.command.wait(false) catch |err|
-        log.err("error waiting for command to exit: {}", .{err});
+    self.subprocess.deinit(self.alloc);
 
     // Clean up our other members
     self.terminal.deinit(self.alloc);
 }
 
-/// Kill the underlying subprocess. This closes the pty file handle and
-/// sends a SIGHUP to the child process. This doesn't wait for the child
-/// process to be exited.
-fn killCommand(self: *Exec) !void {
-    // Close our PTY
-    self.pty.deinit();
-
-    // We need to get our process group ID and send a SIGHUP to it.
-    if (self.command.pid) |pid| {
-        const pgid_: ?c.pid_t = pgid: {
-            const pgid = c.getpgid(pid);
-
-            // Don't know why it would be zero but its not a valid pid
-            if (pgid == 0) break :pgid null;
-
-            // If the pid doesn't exist then... okay.
-            if (pgid == c.ESRCH) break :pgid null;
-
-            // If we have an error...
-            if (pgid < 0) {
-                log.warn("error getting pgid for kill", .{});
-                break :pgid null;
-            }
-
-            break :pgid pgid;
-        };
-
-        if (pgid_) |pgid| {
-            if (c.killpg(pgid, c.SIGHUP) < 0) {
-                log.warn("error killing process group pgid={}", .{pgid});
-                return error.KillFailed;
-            }
-        }
-    }
-}
-
-pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
+pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     assert(self.data == null);
+    const alloc = self.alloc;
 
-    // Get a copy to our allocator
-    const alloc_ptr = loop.getData(Allocator).?;
-    const alloc = alloc_ptr.*;
+    // Start our subprocess
+    const master_fd = try self.subprocess.start(alloc);
+    errdefer self.subprocess.stop();
 
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
     errdefer alloc.destroy(ev_data_ptr);
 
-    // Read data
-    var stream = try libuv.Tty.init(alloc, loop, self.pty.master);
-    errdefer stream.deinit(alloc);
-    stream.setData(ev_data_ptr);
-    try stream.readStart(ttyReadAlloc, ttyRead);
+    // Setup our stream so that we can write.
+    var stream = xev.Stream.initFd(master_fd);
+    errdefer stream.deinit();
+
+    // Wakeup watcher for the writer thread.
+    var wakeup = try xev.Async.init();
+    errdefer wakeup.deinit();
 
     // Setup our event data before we start
     ev_data_ptr.* = .{
-        .read_arena = std.heap.ArenaAllocator.init(alloc),
+        .writer_mailbox = thread.mailbox,
+        .writer_wakeup = thread.wakeup,
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
         .data_stream = stream,
+        .loop = &thread.loop,
         .terminal_stream = .{
             .handler = .{
                 .alloc = self.alloc,
@@ -235,22 +134,36 @@ pub fn threadEnter(self: *Exec, loop: libuv.Loop) !ThreadData {
             },
         },
     };
-    errdefer ev_data_ptr.deinit();
+    errdefer ev_data_ptr.deinit(self.alloc);
 
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
+
+    // Start our reader thread
+    const read_thread = try std.Thread.spawn(
+        .{},
+        ReadThread.threadMain,
+        .{ master_fd, ev_data_ptr },
+    );
+    read_thread.setName("io-reader") catch {};
 
     // Return our thread data
     return ThreadData{
         .alloc = alloc,
         .ev = ev_data_ptr,
+        .read_thread = read_thread,
     };
 }
 
 pub fn threadExit(self: *Exec, data: ThreadData) void {
-    _ = data;
-
+    // Clear out our data since we're not active anymore.
     self.data = null;
+
+    // Stop our subprocess
+    self.subprocess.stop();
+
+    // Wait for our reader thread to end
+    data.read_thread.join();
 }
 
 /// Resize the terminal.
@@ -260,15 +173,9 @@ pub fn resize(
     screen_size: renderer.ScreenSize,
     padding: renderer.Padding,
 ) !void {
-    const padded_size = screen_size.subPadding(padding);
-
     // Update the size of our pty
-    try self.pty.setSize(.{
-        .ws_row = @intCast(u16, grid_size.rows),
-        .ws_col = @intCast(u16, grid_size.columns),
-        .ws_xpixel = @intCast(u16, padded_size.width),
-        .ws_ypixel = @intCast(u16, padded_size.height),
-    });
+    const padded_size = screen_size.subPadding(padding);
+    try self.subprocess.resize(grid_size, padded_size);
 
     // Update our cached grid size
     self.grid_size = grid_size;
@@ -284,7 +191,28 @@ pub fn resize(
 }
 
 pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
-    try self.data.?.queueWrite(data);
+    const ev = self.data.?;
+
+    // We go through and chunk the data if necessary to fit into
+    // our cached buffers that we can queue to the stream.
+    var i: usize = 0;
+    while (i < data.len) {
+        const req = try ev.write_req_pool.get();
+        const buf = try ev.write_buf_pool.get();
+        const end = @min(data.len, i + buf.len);
+        fastmem.copy(u8, buf, data[i..end]);
+        ev.data_stream.queueWrite(
+            ev.loop,
+            &ev.write_queue,
+            req,
+            .{ .slice = buf[0..(end - i)] },
+            EventData,
+            ev,
+            ttyWrite,
+        );
+
+        i = end;
+    }
 }
 
 const ThreadData = struct {
@@ -293,6 +221,9 @@ const ThreadData = struct {
 
     /// The data that is attached to the callbacks.
     ev: *EventData,
+
+    /// Our read thread
+    read_thread: std.Thread,
 
     pub fn deinit(self: *ThreadData) void {
         self.ev.deinit(self.alloc);
@@ -306,10 +237,9 @@ const EventData = struct {
     // enough to satisfy most write requests. It must be a power of 2.
     const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
-    /// This is the arena allocator used for IO read buffers. Since we use
-    /// libuv under the covers, this lets us rarely heap allocate since we're
-    /// usually just reusing buffers from this.
-    read_arena: std.heap.ArenaAllocator,
+    /// Mailbox for data to the writer thread.
+    writer_mailbox: *termio.Mailbox,
+    writer_wakeup: xev.Async,
 
     /// The stream parser. This parses the stream of escape codes and so on
     /// from the child process and calls callbacks in the stream handler.
@@ -320,28 +250,32 @@ const EventData = struct {
 
     /// A handle to wake up the renderer. This hints to the renderer that that
     /// a repaint should happen.
-    renderer_wakeup: libuv.Async,
+    renderer_wakeup: xev.Async,
 
     /// The mailbox for notifying the renderer of things.
     renderer_mailbox: *renderer.Thread.Mailbox,
 
     /// The data stream is the main IO for the pty.
-    data_stream: libuv.Tty,
+    data_stream: xev.Stream,
+
+    /// The event loop,
+    loop: *xev.Loop,
+
+    /// The write queue for the data stream.
+    write_queue: xev.Stream.WriteQueue = .{},
 
     /// This is the pool of available (unused) write requests. If you grab
     /// one from the pool, you must put it back when you're done!
-    write_req_pool: SegmentedPool(libuv.WriteReq.T, WRITE_REQ_PREALLOC) = .{},
+    write_req_pool: SegmentedPool(xev.Stream.WriteRequest, WRITE_REQ_PREALLOC) = .{},
 
     /// The pool of available buffers for writing to the pty.
     write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
 
     /// Last time the cursor was reset. This is used to prevent message
     /// flooding with cursor resets.
-    last_cursor_reset: u64 = 0,
+    last_cursor_reset: i64 = 0,
 
     pub fn deinit(self: *EventData, alloc: Allocator) void {
-        self.read_arena.deinit();
-
         // Clear our write pools. We know we aren't ever going to do
         // any more IO since we stop our data stream below so we can just
         // drop this.
@@ -349,146 +283,335 @@ const EventData = struct {
         self.write_buf_pool.deinit(alloc);
 
         // Stop our data stream
-        self.data_stream.readStop();
-        self.data_stream.close((struct {
-            fn callback(h: *libuv.Tty) void {
-                const handle_alloc = h.loop().getData(Allocator).?.*;
-                h.deinit(handle_alloc);
-            }
-        }).callback);
+        self.data_stream.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
     /// isn't guaranteed to happen immediately but it will happen as soon as
     /// practical.
     inline fn queueRender(self: *EventData) !void {
-        try self.renderer_wakeup.send();
+        try self.renderer_wakeup.notify();
+    }
+};
+
+fn ttyWrite(
+    ev_: ?*EventData,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    _: xev.Stream,
+    _: xev.WriteBuffer,
+    r: xev.Stream.WriteError!usize,
+) xev.CallbackAction {
+    const ev = ev_.?;
+    ev.write_req_pool.put();
+    ev.write_buf_pool.put();
+
+    const d = r catch |err| {
+        log.err("write error: {}", .{err});
+        return .disarm;
+    };
+    _ = d;
+    //log.info("WROTE: {d}", .{status});
+
+    return .disarm;
+}
+
+/// Subprocess manages the lifecycle of the shell subprocess.
+const Subprocess = struct {
+    cwd: ?[]const u8,
+    env: std.process.EnvMap,
+    path: []const u8,
+    argv0_override: ?[]const u8,
+    grid_size: renderer.GridSize,
+    screen_size: renderer.ScreenSize,
+    pty: ?Pty = null,
+    command: ?Command = null,
+
+    /// Initialize the subprocess. This will NOT start it, this only sets
+    /// up the internal state necessary to start it later.
+    pub fn init(alloc: Allocator, opts: termio.Options) !Subprocess {
+        // Determine the path to the binary we're executing
+        const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
+            return error.CommandNotFound;
+        errdefer alloc.free(path);
+
+        // On macOS, we launch the program as a login shell. This is a Mac-specific
+        // behavior (see other terminals). Terminals in general should NOT be
+        // spawning login shells because well... we're not "logging in." The solution
+        // is to put dotfiles in "rc" variants rather than "_login" variants. But,
+        // history!
+        const argv0_override: ?[]const u8 = if (comptime builtin.target.isDarwin()) argv0: {
+            // Get rid of the path
+            const argv0 = if (std.mem.lastIndexOf(u8, path, "/")) |idx|
+                path[idx + 1 ..]
+            else
+                path;
+
+            // Copy it with a hyphen so its a login shell
+            const argv0_buf = try alloc.alloc(u8, argv0.len + 1);
+            argv0_buf[0] = '-';
+            std.mem.copy(u8, argv0_buf[1..], argv0);
+            break :argv0 argv0_buf;
+        } else null;
+        errdefer if (argv0_override) |buf| alloc.free(buf);
+
+        // Set our env vars
+        var env = try std.process.getEnvMap(alloc);
+        errdefer env.deinit();
+        try env.put("TERM", "xterm-256color");
+        try env.put("COLORTERM", "truecolor");
+
+        return .{
+            .env = env,
+            .cwd = opts.config.@"working-directory",
+            .path = path,
+            .argv0_override = argv0_override,
+            .grid_size = opts.grid_size,
+            .screen_size = opts.screen_size,
+        };
     }
 
-    /// Queue a write to the pty.
-    fn queueWrite(self: *EventData, data: []const u8) !void {
-        // We go through and chunk the data if necessary to fit into
-        // our cached buffers that we can queue to the stream.
-        var i: usize = 0;
-        while (i < data.len) {
-            const req = try self.write_req_pool.get();
-            const buf = try self.write_buf_pool.get();
-            const end = @min(data.len, i + buf.len);
-            fastmem.copy(u8, buf, data[i..end]);
-            try self.data_stream.write(
-                .{ .req = req },
-                &[1][]u8{buf[0..(end - i)]},
-                ttyWrite,
-            );
+    /// Clean up the subprocess. This will stop the subprocess if it is started.
+    pub fn deinit(self: *Subprocess, alloc: Allocator) void {
+        self.stop();
+        self.env.deinit();
+        alloc.free(self.path);
+        if (self.argv0_override) |v| alloc.free(v);
+        self.* = undefined;
+    }
 
-            i = end;
+    /// Start the subprocess. If the subprocess is already started this
+    /// will crash.
+    pub fn start(self: *Subprocess, alloc: Allocator) !std.os.fd_t {
+        assert(self.pty == null and self.command == null);
+
+        // Create our pty
+        var pty = try Pty.open(.{
+            .ws_row = @intCast(u16, self.grid_size.rows),
+            .ws_col = @intCast(u16, self.grid_size.columns),
+            .ws_xpixel = @intCast(u16, self.screen_size.width),
+            .ws_ypixel = @intCast(u16, self.screen_size.height),
+        });
+        self.pty = pty;
+        errdefer {
+            pty.deinit();
+            self.pty = null;
+        }
+
+        const args = &[_][]const u8{self.argv0_override orelse self.path};
+
+        // Build our subcommand
+        var cmd: Command = .{
+            .path = self.path,
+            .args = args,
+            .env = &self.env,
+            .cwd = self.cwd,
+            .stdin = .{ .handle = pty.slave },
+            .stdout = .{ .handle = pty.slave },
+            .stderr = .{ .handle = pty.slave },
+            .pre_exec = (struct {
+                fn callback(cmd: *Command) void {
+                    const p = cmd.getData(Pty) orelse unreachable;
+                    p.childPreExec() catch |err|
+                        log.err("error initializing child: {}", .{err});
+                }
+            }).callback,
+            .data = &self.pty.?,
+        };
+        try cmd.start(alloc);
+        errdefer killCommand(cmd);
+        log.info("started subcommand path={s} pid={?}", .{ self.path, cmd.pid });
+
+        self.command = cmd;
+        return pty.master;
+    }
+
+    /// Stop the subprocess. This is safe to call anytime. This will wait
+    /// for the subprocess to end so it will block.
+    pub fn stop(self: *Subprocess) void {
+        // Kill our command
+        if (self.command) |*cmd| {
+            killCommand(cmd) catch |err|
+                log.err("error sending SIGHUP to command, may hang: {}", .{err});
+            _ = cmd.wait(false) catch |err|
+                log.err("error waiting for command to exit: {}", .{err});
+            self.command = null;
+        }
+
+        // Close our PTY. We do this after killing our command because on
+        // macOS, close will block until all blocking operations read/write
+        // are done with it and our reader thread is probably still alive.
+        if (self.pty) |*pty| {
+            pty.deinit();
+            self.pty = null;
+        }
+    }
+
+    /// Resize the pty subprocess. This is safe to call anytime.
+    pub fn resize(
+        self: *Subprocess,
+        grid_size: renderer.GridSize,
+        screen_size: renderer.ScreenSize,
+    ) !void {
+        self.grid_size = grid_size;
+        self.screen_size = screen_size;
+
+        if (self.pty) |pty| {
+            try pty.setSize(.{
+                .ws_row = @intCast(u16, grid_size.rows),
+                .ws_col = @intCast(u16, grid_size.columns),
+                .ws_xpixel = @intCast(u16, screen_size.width),
+                .ws_ypixel = @intCast(u16, screen_size.height),
+            });
+        }
+    }
+
+    /// Kill the underlying subprocess. This sends a SIGHUP to the child
+    /// process. This doesn't wait for the child process to be exited.
+    fn killCommand(command: *Command) !void {
+        if (command.pid) |pid| {
+            const pgid_: ?c.pid_t = pgid: {
+                const pgid = c.getpgid(pid);
+
+                // Don't know why it would be zero but its not a valid pid
+                if (pgid == 0) break :pgid null;
+
+                // If the pid doesn't exist then... okay.
+                if (pgid == c.ESRCH) break :pgid null;
+
+                // If we have an error...
+                if (pgid < 0) {
+                    log.warn("error getting pgid for kill", .{});
+                    break :pgid null;
+                }
+
+                break :pgid pgid;
+            };
+
+            if (pgid_) |pgid| {
+                if (c.killpg(pgid, c.SIGHUP) < 0) {
+                    log.warn("error killing process group pgid={}", .{pgid});
+                    return error.KillFailed;
+                }
+            }
         }
     }
 };
 
-fn ttyWrite(req: *libuv.WriteReq, status: i32) void {
-    const tty = req.handle(libuv.Tty).?;
-    const ev = tty.getData(EventData).?;
-    ev.write_req_pool.put();
-    ev.write_buf_pool.put();
+/// The read thread sits in a loop doing the following pseudo code:
+///
+///   while (true) { blocking_read(); exit_if_eof(); process(); }
+///
+/// Almost all terminal-modifying activity is from the pty read, so
+/// putting this on a dedicated thread keeps performance very predictable
+/// while also almost optimal. "Locking is fast, lock contention is slow."
+/// and since we rarely have contention, this is fast.
+///
+/// This is also empirically fast compared to putting the read into
+/// an async mechanism like io_uring/epoll because the reads are generally
+/// small.
+const ReadThread = struct {
+    /// The main entrypoint for the thread.
+    fn threadMain(fd: std.os.fd_t, ev: *EventData) void {
+        var buf: [1024]u8 = undefined;
+        while (true) {
+            const n = std.os.read(fd, &buf) catch |err| {
+                switch (err) {
+                    // This means our pty is closed. We're probably
+                    // gracefully shutting down.
+                    error.NotOpenForReading => log.info("io reader exiting", .{}),
 
-    libuv.convertError(status) catch |err|
-        log.err("write error: {}", .{err});
+                    else => {
+                        log.err("io reader error err={}", .{err});
+                        unreachable;
+                    },
+                }
+                return;
+            };
 
-    //log.info("WROTE: {d}", .{status});
-}
-
-fn ttyReadAlloc(t: *libuv.Tty, size: usize) ?[]u8 {
-    const zone = trace(@src());
-    defer zone.end();
-
-    const ev = t.getData(EventData) orelse return null;
-    const alloc = ev.read_arena.allocator();
-    return alloc.alloc(u8, size) catch null;
-}
-
-fn ttyRead(t: *libuv.Tty, n: isize, buf: []const u8) void {
-    const zone = trace(@src());
-    defer zone.end();
-
-    const ev = t.getData(EventData).?;
-    defer {
-        const alloc = ev.read_arena.allocator();
-        alloc.free(buf);
+            // log.info("DATA: {d}", .{n});
+            @call(.always_inline, process, .{ ev, buf[0..n] });
+        }
     }
 
-    // log.info("DATA: {d}", .{n});
-    // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
+    fn process(
+        ev: *EventData,
+        buf: []const u8,
+    ) void {
+        const zone = trace(@src());
+        defer zone.end();
 
-    // First check for errors in the case n is less than 0.
-    libuv.convertError(@intCast(i32, n)) catch |err| {
-        switch (err) {
-            // ignore EOF because it should end the process.
-            libuv.Error.EOF => {},
-            else => log.err("read error: {}", .{err}),
+        // log.info("DATA: {d}", .{n});
+        // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
+
+        // Whenever a character is typed, we ensure the cursor is in the
+        // non-blink state so it is rendered if visible. If we're under
+        // HEAVY read load, we don't want to send a ton of these so we
+        // use a timer under the covers
+        const now = ev.loop.now();
+        if (now - ev.last_cursor_reset > 500) {
+            ev.last_cursor_reset = now;
+            _ = ev.renderer_mailbox.push(.{
+                .reset_cursor_blink = {},
+            }, .{ .forever = {} });
         }
 
-        return;
-    };
+        // We are modifying terminal state from here on out
+        ev.renderer_state.mutex.lock();
+        defer ev.renderer_state.mutex.unlock();
 
-    // Whenever a character is typed, we ensure the cursor is in the
-    // non-blink state so it is rendered if visible. If we're under
-    // HEAVY read load, we don't want to send a ton of these so we
-    // use a timer under the covers
-    const now = t.loop().now();
-    if (now - ev.last_cursor_reset > 500) {
-        ev.last_cursor_reset = now;
-        _ = ev.renderer_mailbox.push(.{
-            .reset_cursor_blink = {},
-        }, .{ .forever = {} });
-    }
+        // Schedule a render
+        ev.queueRender() catch unreachable;
 
-    // We are modifying terminal state from here on out
-    ev.renderer_state.mutex.lock();
-    defer ev.renderer_state.mutex.unlock();
+        // Process the terminal data. This is an extremely hot part of the
+        // terminal emulator, so we do some abstraction leakage to avoid
+        // function calls and unnecessary logic.
+        //
+        // The ground state is the only state that we can see and print/execute
+        // ASCII, so we only execute this hot path if we're already in the ground
+        // state.
+        //
+        // Empirically, this alone improved throughput of large text output by ~20%.
+        var i: usize = 0;
+        const end = buf.len;
+        if (ev.terminal_stream.parser.state == .ground) {
+            for (buf[i..end]) |ch| {
+                switch (terminal.parse_table.table[ch][@enumToInt(terminal.Parser.State.ground)].action) {
+                    // Print, call directly.
+                    .print => ev.terminal_stream.handler.print(@intCast(u21, ch)) catch |err|
+                        log.err("error processing terminal data: {}", .{err}),
 
-    // Schedule a render
-    ev.queueRender() catch unreachable;
+                    // C0 execute, let our stream handle this one but otherwise
+                    // continue since we're guaranteed to be back in ground.
+                    .execute => ev.terminal_stream.execute(ch) catch |err|
+                        log.err("error processing terminal data: {}", .{err}),
 
-    // Process the terminal data. This is an extremely hot part of the
-    // terminal emulator, so we do some abstraction leakage to avoid
-    // function calls and unnecessary logic.
-    //
-    // The ground state is the only state that we can see and print/execute
-    // ASCII, so we only execute this hot path if we're already in the ground
-    // state.
-    //
-    // Empirically, this alone improved throughput of large text output by ~20%.
-    var i: usize = 0;
-    const end = @intCast(usize, n);
-    if (ev.terminal_stream.parser.state == .ground) {
-        for (buf[i..end]) |ch| {
-            switch (terminal.parse_table.table[ch][@enumToInt(terminal.Parser.State.ground)].action) {
-                // Print, call directly.
-                .print => ev.terminal_stream.handler.print(@intCast(u21, ch)) catch |err|
-                    log.err("error processing terminal data: {}", .{err}),
+                    // Otherwise, break out and go the slow path until we're
+                    // back in ground. There is a slight optimization here where
+                    // could try to find the next transition to ground but when
+                    // I implemented that it didn't materially change performance.
+                    else => break,
+                }
 
-                // C0 execute, let our stream handle this one but otherwise
-                // continue since we're guaranteed to be back in ground.
-                .execute => ev.terminal_stream.execute(ch) catch |err|
-                    log.err("error processing terminal data: {}", .{err}),
-
-                // Otherwise, break out and go the slow path until we're
-                // back in ground. There is a slight optimization here where
-                // could try to find the next transition to ground but when
-                // I implemented that it didn't materially change performance.
-                else => break,
+                i += 1;
             }
+        }
 
-            i += 1;
+        if (i < end) {
+            ev.terminal_stream.nextSlice(buf[i..end]) catch |err|
+                log.err("error processing terminal data: {}", .{err});
+        }
+
+        // If our stream handling caused messages to be sent to the writer
+        // thread, then we need to wake it up so that it processes them.
+        if (ev.terminal_stream.handler.writer_messaged) {
+            ev.terminal_stream.handler.writer_messaged = false;
+            ev.writer_wakeup.notify() catch |err| {
+                log.warn("failed to wake up writer thread err={}", .{err});
+            };
         }
     }
-
-    if (i < end) {
-        ev.terminal_stream.nextSlice(buf[i..end]) catch |err|
-            log.err("error processing terminal data: {}", .{err});
-    }
-}
+};
 
 /// This is used as the handler for the terminal.Stream type. This is
 /// stateful and is expected to live for the entire lifetime of the terminal.
@@ -501,12 +624,18 @@ const StreamHandler = struct {
     terminal: *terminal.Terminal,
     window_mailbox: Window.Mailbox,
 
+    /// This is set to true when a message was written to the writer
+    /// mailbox. This can be used by callers to determine if they need
+    /// to wake up the writer.
+    writer_messaged: bool = false,
+
     inline fn queueRender(self: *StreamHandler) !void {
         try self.ev.queueRender();
     }
 
-    inline fn queueWrite(self: *StreamHandler, data: []const u8) !void {
-        try self.ev.queueWrite(data);
+    inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
+        _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
+        self.writer_messaged = true;
     }
 
     pub fn print(self: *StreamHandler, ch: u21) !void {
@@ -714,8 +843,7 @@ const StreamHandler = struct {
 
         switch (req) {
             // VT220
-            .primary => self.queueWrite("\x1B[?62;c") catch |err|
-                log.warn("error queueing device attr response: {}", .{err}),
+            .primary => self.messageWriter(.{ .write_stable = "\x1B[?62;c" }),
             else => log.warn("unimplemented device attributes req: {}", .{req}),
         }
     }
@@ -725,8 +853,7 @@ const StreamHandler = struct {
         req: terminal.DeviceStatusReq,
     ) !void {
         switch (req) {
-            .operating_status => self.queueWrite("\x1B[0n") catch |err|
-                log.warn("error queueing device attr response: {}", .{err}),
+            .operating_status => self.messageWriter(.{ .write_stable = "\x1B[0n" }),
 
             .cursor_position => {
                 const pos: struct {
@@ -744,13 +871,14 @@ const StreamHandler = struct {
                 // Response always is at least 4 chars, so this leaves the
                 // remainder for the row/column as base-10 numbers. This
                 // will support a very large terminal.
-                var buf: [32]u8 = undefined;
-                const resp = try std.fmt.bufPrint(&buf, "\x1B[{};{}R", .{
+                var msg: termio.Message = .{ .write_small = .{} };
+                const resp = try std.fmt.bufPrint(&msg.write_small.data, "\x1B[{};{}R", .{
                     pos.y + 1,
                     pos.x + 1,
                 });
+                msg.write_small.len = @intCast(u8, resp.len);
 
-                try self.queueWrite(resp);
+                self.messageWriter(msg);
             },
 
             else => log.warn("unimplemented device status req: {}", .{req}),
@@ -785,7 +913,7 @@ const StreamHandler = struct {
     }
 
     pub fn enquiry(self: *StreamHandler) !void {
-        try self.queueWrite("");
+        self.messageWriter(.{ .write_stable = "" });
     }
 
     pub fn scrollDown(self: *StreamHandler, count: usize) !void {

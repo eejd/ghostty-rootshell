@@ -4,7 +4,7 @@ pub const Thread = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const libuv = @import("libuv");
+const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const apprt = @import("../apprt.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
@@ -14,28 +14,38 @@ const trace = tracy.trace;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
 
+const CURSOR_BLINK_INTERVAL = 600;
+
 /// The type used for sending messages to the IO thread. For now this is
 /// hardcoded with a capacity. We can make this a comptime parameter in
 /// the future if we want it configurable.
 pub const Mailbox = BlockingQueue(renderer.Message, 64);
 
+/// Allocator used for some state
+alloc: std.mem.Allocator,
+
 /// The main event loop for the application. The user data of this loop
 /// is always the allocator used to create the loop. This is a convenience
 /// so that users of the loop always have an allocator.
-loop: libuv.Loop,
+loop: xev.Loop,
 
 /// This can be used to wake up the renderer and force a render safely from
 /// any thread.
-wakeup: libuv.Async,
+wakeup: xev.Async,
+wakeup_c: xev.Completion = .{},
 
 /// This can be used to stop the renderer on the next loop iteration.
-stop: libuv.Async,
+stop: xev.Async,
+stop_c: xev.Completion = .{},
 
 /// The timer used for rendering
-render_h: libuv.Timer,
+render_h: xev.Timer,
+render_c: xev.Completion = .{},
 
 /// The timer used for cursor blinking
-cursor_h: libuv.Timer,
+cursor_h: xev.Timer,
+cursor_c: xev.Completion = .{},
+cursor_c_cancel: xev.Completion = .{},
 
 /// The window  we're rendering to.
 window: apprt.runtime.Window,
@@ -59,62 +69,32 @@ pub fn init(
     renderer_impl: *renderer.Renderer,
     state: *renderer.State,
 ) !Thread {
-    // We always store allocator pointer on the loop data so that
-    // handles can use our global allocator.
-    const allocPtr = try alloc.create(Allocator);
-    errdefer alloc.destroy(allocPtr);
-    allocPtr.* = alloc;
-
     // Create our event loop.
-    var loop = try libuv.Loop.init(alloc);
-    errdefer {
-        // Run the loop once to close any of our handles
-        _ = loop.run(.nowait) catch 0;
-        loop.deinit(alloc);
-    }
-    loop.setData(allocPtr);
+    var loop = try xev.Loop.init(.{});
+    errdefer loop.deinit();
 
     // This async handle is used to "wake up" the renderer and force a render.
-    var wakeup_h = try libuv.Async.init(alloc, loop, wakeupCallback);
-    errdefer wakeup_h.close((struct {
-        fn callback(h: *libuv.Async) void {
-            const loop_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(loop_alloc);
-        }
-    }).callback);
+    var wakeup_h = try xev.Async.init();
+    errdefer wakeup_h.deinit();
 
     // This async handle is used to stop the loop and force the thread to end.
-    var stop_h = try libuv.Async.init(alloc, loop, stopCallback);
-    errdefer stop_h.close((struct {
-        fn callback(h: *libuv.Async) void {
-            const loop_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(loop_alloc);
-        }
-    }).callback);
+    var stop_h = try xev.Async.init();
+    errdefer stop_h.deinit();
 
     // The primary timer for rendering.
-    var render_h = try libuv.Timer.init(alloc, loop);
-    errdefer render_h.close((struct {
-        fn callback(h: *libuv.Timer) void {
-            const loop_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(loop_alloc);
-        }
-    }).callback);
+    var render_h = try xev.Timer.init();
+    errdefer render_h.deinit();
 
     // Setup a timer for blinking the cursor
-    var cursor_timer = try libuv.Timer.init(alloc, loop);
-    errdefer cursor_timer.close((struct {
-        fn callback(t: *libuv.Timer) void {
-            const alloc_h = t.loop().getData(Allocator).?.*;
-            t.deinit(alloc_h);
-        }
-    }).callback);
+    var cursor_timer = try xev.Timer.init();
+    errdefer cursor_timer.deinit();
 
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
 
     return Thread{
+        .alloc = alloc,
         .loop = loop,
         .wakeup = wakeup_h,
         .stop = stop_h,
@@ -130,49 +110,14 @@ pub fn init(
 /// Clean up the thread. This is only safe to call once the thread
 /// completes executing; the caller must join prior to this.
 pub fn deinit(self: *Thread) void {
-    // Get a copy to our allocator
-    const alloc_ptr = self.loop.getData(Allocator).?;
-    const alloc = alloc_ptr.*;
-
-    // Schedule our handles to close
-    self.stop.close((struct {
-        fn callback(h: *libuv.Async) void {
-            const handle_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(handle_alloc);
-        }
-    }).callback);
-    self.wakeup.close((struct {
-        fn callback(h: *libuv.Async) void {
-            const handle_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(handle_alloc);
-        }
-    }).callback);
-    self.render_h.close((struct {
-        fn callback(h: *libuv.Timer) void {
-            const handle_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(handle_alloc);
-        }
-    }).callback);
-    self.cursor_h.close((struct {
-        fn callback(h: *libuv.Timer) void {
-            const handle_alloc = h.loop().getData(Allocator).?.*;
-            h.deinit(handle_alloc);
-        }
-    }).callback);
-
-    // Run the loop one more time, because destroying our other things
-    // like windows usually cancel all our event loop stuff and we need
-    // one more run through to finalize all the closes.
-    _ = self.loop.run(.default) catch |err|
-        log.err("error finalizing event loop: {}", .{err});
+    self.stop.deinit();
+    self.wakeup.deinit();
+    self.render_h.deinit();
+    self.cursor_h.deinit();
+    self.loop.deinit();
 
     // Nothing can possibly access the mailbox anymore, destroy it.
-    self.mailbox.destroy(alloc);
-
-    // Dealloc our allocator copy
-    alloc.destroy(alloc_ptr);
-
-    self.loop.deinit(alloc);
+    self.mailbox.destroy(self.alloc);
 }
 
 /// The main entrypoint for the thread.
@@ -193,44 +138,49 @@ fn threadMain_(self: *Thread) !void {
     try self.renderer.threadEnter(self.window);
     defer self.renderer.threadExit();
 
-    // Set up our async handler to support rendering
-    self.wakeup.setData(self);
-    defer self.wakeup.setData(null);
+    // Start the async handlers
+    self.wakeup.wait(&self.loop, &self.wakeup_c, Thread, self, wakeupCallback);
+    self.stop.wait(&self.loop, &self.stop_c, Thread, self, stopCallback);
 
-    // Set up our timer and start it for rendering
-    self.render_h.setData(self);
-    defer self.render_h.setData(null);
-    try self.wakeup.send();
+    // Send an initial wakeup message so that we render right away.
+    try self.wakeup.notify();
 
-    // Setup a timer for blinking the cursor
-    self.cursor_h.setData(self);
-    try self.cursor_h.start(cursorTimerCallback, 600, 600);
+    // Start blinking the cursor.
+    self.cursor_h.run(
+        &self.loop,
+        &self.cursor_c,
+        CURSOR_BLINK_INTERVAL,
+        Thread,
+        self,
+        cursorTimerCallback,
+    );
 
     // If we are using tracy, then we setup a prepare handle so that
     // we can mark the frame.
-    var frame_h: libuv.Prepare = if (!tracy.enabled) undefined else frame_h: {
-        const alloc_ptr = self.loop.getData(Allocator).?;
-        const alloc = alloc_ptr.*;
-        const h = try libuv.Prepare.init(alloc, self.loop);
-        h.setData(self);
-        try h.start(prepFrameCallback);
-
-        break :frame_h h;
-    };
-    defer if (tracy.enabled) {
-        frame_h.close((struct {
-            fn callback(h: *libuv.Prepare) void {
-                const alloc_h = h.loop().getData(Allocator).?.*;
-                h.deinit(alloc_h);
-            }
-        }).callback);
-        _ = self.loop.run(.nowait) catch {};
-    };
+    // TODO
+    // var frame_h: libuv.Prepare = if (!tracy.enabled) undefined else frame_h: {
+    //     const alloc_ptr = self.loop.getData(Allocator).?;
+    //     const alloc = alloc_ptr.*;
+    //     const h = try libuv.Prepare.init(alloc, self.loop);
+    //     h.setData(self);
+    //     try h.start(prepFrameCallback);
+    //
+    //     break :frame_h h;
+    // };
+    // defer if (tracy.enabled) {
+    //     frame_h.close((struct {
+    //         fn callback(h: *libuv.Prepare) void {
+    //             const alloc_h = h.loop().getData(Allocator).?.*;
+    //             h.deinit(alloc_h);
+    //         }
+    //     }).callback);
+    //     _ = self.loop.run(.nowait) catch {};
+    // };
 
     // Run
     log.debug("starting renderer thread", .{});
     defer log.debug("exiting renderer thread", .{});
-    _ = try self.loop.run(.default);
+    _ = try self.loop.run(.until_done);
 }
 
 /// Drain the mailbox.
@@ -247,16 +197,30 @@ fn drainMailbox(self: *Thread) !void {
 
                 if (!v) {
                     // If we're not focused, then we stop the cursor blink
-                    try self.cursor_h.stop();
+                    if (self.cursor_c.state() == .active and
+                        self.cursor_c_cancel.state() == .dead)
+                    {
+                        self.cursor_h.cancel(
+                            &self.loop,
+                            &self.cursor_c,
+                            &self.cursor_c_cancel,
+                            void,
+                            null,
+                            cursorCancelCallback,
+                        );
+                    }
                 } else {
                     // If we're focused, we immediately show the cursor again
                     // and then restart the timer.
-                    if (!try self.cursor_h.isActive()) {
+                    if (self.cursor_c.state() != .active) {
                         self.renderer.blinkCursor(true);
-                        try self.cursor_h.start(
+                        self.cursor_h.run(
+                            &self.loop,
+                            &self.cursor_c,
+                            CURSOR_BLINK_INTERVAL,
+                            Thread,
+                            self,
                             cursorTimerCallback,
-                            self.cursor_h.getRepeat(),
-                            self.cursor_h.getRepeat(),
                         );
                     }
                 }
@@ -264,8 +228,16 @@ fn drainMailbox(self: *Thread) !void {
 
             .reset_cursor_blink => {
                 self.renderer.blinkCursor(true);
-                if (try self.cursor_h.isActive()) {
-                    _ = try self.cursor_h.again();
+                if (self.cursor_c.state() == .active) {
+                    self.cursor_h.reset(
+                        &self.loop,
+                        &self.cursor_c,
+                        &self.cursor_c_cancel,
+                        CURSOR_BLINK_INTERVAL,
+                        Thread,
+                        self,
+                        cursorTimerCallback,
+                    );
                 }
             },
 
@@ -280,15 +252,21 @@ fn drainMailbox(self: *Thread) !void {
     }
 }
 
-fn wakeupCallback(h: *libuv.Async) void {
+fn wakeupCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Async.WaitError!void,
+) xev.CallbackAction {
+    _ = r catch |err| {
+        log.err("error in wakeup err={}", .{err});
+        return .rearm;
+    };
+
     const zone = trace(@src());
     defer zone.end();
 
-    const t = h.getData(Thread) orelse {
-        // This shouldn't happen so we log it.
-        log.warn("render callback fired without data set", .{});
-        return;
-    };
+    const t = self_.?;
 
     // When we wake up, we check the mailbox. Mailbox producers should
     // wake up our thread after publishing.
@@ -296,48 +274,104 @@ fn wakeupCallback(h: *libuv.Async) void {
         log.err("error draining mailbox err={}", .{err});
 
     // If the timer is already active then we don't have to do anything.
-    const active = t.render_h.isActive() catch true;
-    if (active) return;
+    if (t.render_c.state() == .active) return .rearm;
 
     // Timer is not active, let's start it
-    t.render_h.start(renderCallback, 10, 0) catch |err|
-        log.warn("render timer failed to start err={}", .{err});
+    t.render_h.run(
+        &t.loop,
+        &t.render_c,
+        10,
+        Thread,
+        t,
+        renderCallback,
+    );
+
+    return .rearm;
 }
 
-fn renderCallback(h: *libuv.Timer) void {
+fn renderCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
     const zone = trace(@src());
     defer zone.end();
 
-    const t = h.getData(Thread) orelse {
+    _ = r catch unreachable;
+    const t = self_ orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
-        return;
+        return .disarm;
     };
 
     t.renderer.render(t.window, t.state) catch |err|
         log.warn("error rendering err={}", .{err});
+    return .disarm;
 }
 
-fn cursorTimerCallback(h: *libuv.Timer) void {
+fn cursorTimerCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
     const zone = trace(@src());
     defer zone.end();
 
-    const t = h.getData(Thread) orelse {
+    _ = r catch |err| switch (err) {
+        // This is sent when our timer is canceled. That's fine.
+        error.Canceled => return .disarm,
+
+        else => {
+            log.warn("error in cursor timer callback err={}", .{err});
+            unreachable;
+        },
+    };
+
+    const t = self_ orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
-        return;
+        return .disarm;
     };
 
     t.renderer.blinkCursor(false);
-    t.wakeup.send() catch {};
+    t.wakeup.notify() catch {};
+
+    t.cursor_h.run(&t.loop, &t.cursor_c, CURSOR_BLINK_INTERVAL, Thread, t, cursorTimerCallback);
+    return .disarm;
 }
 
-fn prepFrameCallback(h: *libuv.Prepare) void {
-    _ = h;
+fn cursorCancelCallback(
+    _: ?*void,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.CancelError!void,
+) xev.CallbackAction {
+    _ = r catch |err| switch (err) {
+        error.NotFound => {},
+        else => {
+            log.warn("error in cursor cancel callback err={}", .{err});
+            unreachable;
+        },
+    };
 
-    tracy.frameMark();
+    return .disarm;
 }
 
-fn stopCallback(h: *libuv.Async) void {
-    h.loop().stop();
+// fn prepFrameCallback(h: *libuv.Prepare) void {
+//     _ = h;
+//
+//     tracy.frameMark();
+// }
+
+fn stopCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Async.WaitError!void,
+) xev.CallbackAction {
+    _ = r catch unreachable;
+    self_.?.loop.stop();
+    return .disarm;
 }

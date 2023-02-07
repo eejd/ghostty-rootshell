@@ -40,3 +40,6 @@
 [submodule "vendor/zig-objc"]
 	path = vendor/zig-objc
 	url = https://github.com/mitchellh/zig-objc.git
+[submodule "vendor/libxev"]
+	path = vendor/libxev
+	url = https://github.com/mitchellh/libxev.git

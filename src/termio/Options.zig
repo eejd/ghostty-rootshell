@@ -1,6 +1,6 @@
 //! The options that are used to configure a terminal IO implementation.
 
-const libuv = @import("libuv");
+const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
 const Window = @import("../Window.zig");
@@ -22,7 +22,7 @@ renderer_state: *renderer.State,
 
 /// A handle to wake up the renderer. This hints to the renderer that that
 /// a repaint should happen.
-renderer_wakeup: libuv.Async,
+renderer_wakeup: xev.Async,
 
 /// The mailbox for renderer messages.
 renderer_mailbox: *renderer.Thread.Mailbox,

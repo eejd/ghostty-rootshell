@@ -55,25 +55,24 @@ pub fn BlockingQueue(
         };
 
         /// Our data. The values are undefined until they are written.
-        data: [bounds]T,
+        data: [bounds]T = undefined,
 
         /// The next location to write (next empty loc) and next location
         /// to read (next non-empty loc). The number of written elements.
-        write: Size,
-        read: Size,
-        len: Size,
+        write: Size = 0,
+        read: Size = 0,
+        len: Size = 0,
 
         /// The big mutex that must be held to read/write.
-        mutex: std.Thread.Mutex,
+        mutex: std.Thread.Mutex = .{},
 
         /// A CV for being notified when the queue is no longer full. This is
         /// used for writing. Note we DON'T have a CV for waiting on the
         /// queue not being EMPTY because we use external notifiers for that.
-        cond_not_full: std.Thread.Condition,
-        not_full_waiters: usize,
+        cond_not_full: std.Thread.Condition = .{},
+        not_full_waiters: usize = 0,
 
-        /// Allocate the blocking queue. Allocation must always happen on
-        /// the heap due to shared concurrency state.
+        /// Allocate the blocking queue on the heap.
         pub fn create(alloc: Allocator) !*Self {
             const ptr = try alloc.create(Self);
             errdefer alloc.destroy(ptr);

@@ -439,15 +439,14 @@ pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
 }
 
 pub fn destroy(self: *Window) void {
+    // Stop rendering thread
     {
-        // Stop rendering thread
-        self.renderer_thread.stop.send() catch |err|
+        self.renderer_thread.stop.notify() catch |err|
             log.err("error notifying renderer thread to stop, may stall err={}", .{err});
         self.renderer_thr.join();
 
         // We need to become the active rendering thread again
         self.renderer.threadEnter(self.window) catch unreachable;
-        self.renderer_thread.deinit();
 
         // If we are devmode-owning, clean that up.
         if (DevMode.enabled and DevMode.instance.window == self) {
@@ -460,21 +459,21 @@ pub fn destroy(self: *Window) void {
             // Uninitialize imgui
             self.imgui_ctx.destroy();
         }
-
-        // Deinit our renderer
-        self.renderer.deinit();
     }
 
+    // Stop our IO thread
     {
-        // Stop our IO thread
-        self.io_thread.stop.send() catch |err|
+        self.io_thread.stop.notify() catch |err|
             log.err("error notifying io thread to stop, may stall err={}", .{err});
         self.io_thr.join();
-        self.io_thread.deinit();
-
-        // Deinitialize our terminal IO
-        self.io.deinit();
     }
+
+    // We need to deinit AFTER everything is stopped, since there are
+    // shared values between the two threads.
+    self.renderer_thread.deinit();
+    self.renderer.deinit();
+    self.io_thread.deinit();
+    self.io.deinit();
 
     self.window.deinit();
 
@@ -582,7 +581,7 @@ fn clipboardRead(self: *const Window, kind: u8) !void {
         self.alloc,
         buf,
     ), .{ .forever = {} });
-    self.io_thread.wakeup.send() catch {};
+    self.io_thread.wakeup.notify() catch {};
 }
 
 fn clipboardWrite(self: *const Window, data: []const u8) !void {
@@ -629,7 +628,7 @@ fn setCellSize(self: *Window, size: renderer.CellSize) !void {
             .padding = self.padding,
         },
     }, .{ .forever = {} });
-    self.io_thread.wakeup.send() catch {};
+    self.io_thread.wakeup.notify() catch {};
 }
 
 /// Change the font size.
@@ -652,7 +651,7 @@ pub fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
 /// isn't guaranteed to happen immediately but it will happen as soon as
 /// practical.
 fn queueRender(self: *const Window) !void {
-    try self.renderer_thread.wakeup.send();
+    try self.renderer_thread.wakeup.notify();
 }
 
 pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
@@ -696,7 +695,7 @@ pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
             .padding = self.padding,
         },
     }, .{ .forever = {} });
-    try self.io_thread.wakeup.send();
+    try self.io_thread.wakeup.notify();
 }
 
 pub fn charCallback(self: *Window, codepoint: u21) !void {
@@ -746,7 +745,7 @@ pub fn charCallback(self: *Window, codepoint: u21) !void {
     }, .{ .forever = {} });
 
     // After sending all our messages we have to notify our IO thread
-    try self.io_thread.wakeup.send();
+    try self.io_thread.wakeup.notify();
 }
 
 pub fn keyCallback(
@@ -793,7 +792,7 @@ pub fn keyCallback(
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = data,
                     }, .{ .forever = {} });
-                    try self.io_thread.wakeup.send();
+                    try self.io_thread.wakeup.notify();
                 },
 
                 .cursor_key => |ck| {
@@ -816,7 +815,7 @@ pub fn keyCallback(
                         }, .{ .forever = {} });
                     }
 
-                    try self.io_thread.wakeup.send();
+                    try self.io_thread.wakeup.notify();
                 },
 
                 .copy_to_clipboard => {
@@ -870,7 +869,7 @@ pub fn keyCallback(
                             }, .{ .forever = {} });
                         }
 
-                        try self.io_thread.wakeup.send();
+                        try self.io_thread.wakeup.notify();
                     }
                 },
 
@@ -1008,7 +1007,7 @@ pub fn keyCallback(
             }, .{ .forever = {} });
 
             // After sending all our messages we have to notify our IO thread
-            try self.io_thread.wakeup.send();
+            try self.io_thread.wakeup.notify();
         }
     }
 }
@@ -1264,7 +1263,7 @@ fn mouseReport(
     }
 
     // After sending all our messages we have to notify our IO thread
-    try self.io_thread.wakeup.send();
+    try self.io_thread.wakeup.notify();
 }
 
 pub fn mouseButtonCallback(

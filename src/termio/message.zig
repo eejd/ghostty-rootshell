@@ -60,8 +60,8 @@ pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type 
         pub const Small = struct {
             pub const Max = small_size;
             pub const Array = [Max]Elem;
-            data: Array,
-            len: u8,
+            data: Array = undefined,
+            len: u8 = 0,
         };
 
         pub const Alloc = struct {
