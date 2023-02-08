@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const fs = std.fs;
 const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
@@ -20,6 +21,22 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
+
+// Do a comptime Zig version requirement. The required Zig version is
+// somewhat arbitrary: it is meant to be a version that we feel works well,
+// but we liberally update it. In the future, we'll be more careful about
+// using released versions so that package managers can integrate better.
+comptime {
+    const required_zig = "0.11.0-dev.1465+d64dd75e3";
+    const current_zig = builtin.zig_version;
+    const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
+    if (current_zig.order(min_zig) == .lt) {
+        @compileError(std.fmt.comptimePrint(
+            "Your Zig version v{} does not meet the minimum build requirement of v{}",
+            .{ current_zig, min_zig },
+        ));
+    }
+}
 
 // Build options, see the build options help for more info.
 var tracy: bool = false;
