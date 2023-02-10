@@ -496,6 +496,8 @@ fn conformanceSteps(
         const c_exe = b.addExecutable(name, path);
         c_exe.setTarget(target);
         c_exe.setBuildMode(mode);
+        c_exe.setOutputDir("zig-out/bin/conformance");
+        c_exe.install();
 
         // Store the mapping
         try map.put(name, c_exe);
