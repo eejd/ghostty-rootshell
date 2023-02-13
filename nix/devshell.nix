@@ -73,13 +73,14 @@ in mkShell rec {
     parallel
     python
     tracy
-    valgrind
     vttest
-    wraptest
 
     # wasm
     wabt
     wasmtime
+  ] ++ lib.optionals stdenv.isLinux [
+    valgrind
+    wraptest
   ];
 
   buildInputs = [
