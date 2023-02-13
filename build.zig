@@ -131,6 +131,31 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
+    // Mac App based on Swift
+    {
+        // Build the swift binary (TODO: debug vs release modes)
+        const swift_build = b.addSystemCommand(&.{ "swift", "build" });
+        swift_build.cwd = "macos";
+
+        const macapp = b.step("macapp", "Build macOS app");
+        macapp.dependOn(&swift_build.step);
+        macapp.dependOn(&b.addInstallFileWithDir(
+            .{ .path = "macos/.build/arm64-apple-macosx/debug/Ghostty" },
+            .prefix,
+            "Ghostty.app/Contents/MacOS/ghostty",
+        ).step);
+        macapp.dependOn(&b.addInstallFileWithDir(
+            .{ .path = "dist/macos/Info.plist" },
+            .prefix,
+            "Ghostty.app/Contents/Info.plist",
+        ).step);
+        macapp.dependOn(&b.addInstallFileWithDir(
+            .{ .path = "dist/macos/Ghostty.icns" },
+            .prefix,
+            "Ghostty.app/Contents/Resources/Ghostty.icns",
+        ).step);
+    }
+
     // wasm
     {
         // Build our Wasm target.
