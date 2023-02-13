@@ -21,6 +21,7 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
+const SwiftBuildStep = @import("src/build/SwiftBuildStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -133,18 +134,17 @@ pub fn build(b: *std.build.Builder) !void {
 
     // Mac App based on Swift
     {
-        // Build the swift binary
-        //
-        // TODO:
-        //   - debug vs release modes)
-        //   - arch (arm64 vs x86_64)
-        const swift_build = b.addSystemCommand(&.{ "swift", "build" });
-        swift_build.cwd = "macos";
+        const swift_build = SwiftBuildStep.create(b, .{
+            .product = "Ghostty",
+            .target = target,
+            .optimize = mode,
+            .cwd = .{ .path = "macos" },
+        });
 
         const macapp = b.step("macapp", "Build macOS app");
         macapp.dependOn(&swift_build.step);
         macapp.dependOn(&b.addInstallFileWithDir(
-            .{ .path = "macos/.build/arm64-apple-macosx/debug/Ghostty" },
+            .{ .generated = &swift_build.bin_path },
             .prefix,
             "Ghostty.app/Contents/MacOS/ghostty",
         ).step);
