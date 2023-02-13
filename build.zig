@@ -133,7 +133,11 @@ pub fn build(b: *std.build.Builder) !void {
 
     // Mac App based on Swift
     {
-        // Build the swift binary (TODO: debug vs release modes)
+        // Build the swift binary
+        //
+        // TODO:
+        //   - debug vs release modes)
+        //   - arch (arm64 vs x86_64)
         const swift_build = b.addSystemCommand(&.{ "swift", "build" });
         swift_build.cwd = "macos";
 
