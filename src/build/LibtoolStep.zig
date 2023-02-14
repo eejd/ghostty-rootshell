@@ -1,5 +1,5 @@
-//! A zig builder step that runs "lipo" on two binaries to create
-//! a universal binary.
+//! A zig builder step that runs "libtool" against a list of libraries
+//! in order to create a single combined static library.
 const LibtoolStep = @This();
 
 const std = @import("std");
@@ -8,13 +8,14 @@ const FileSource = std.build.FileSource;
 const GeneratedFile = std.build.GeneratedFile;
 
 pub const Options = struct {
-    /// The name of the xcframework to create.
+    /// The name of this step.
     name: []const u8,
 
-    /// The filename (not the path) of the file to create.
+    /// The filename (not the path) of the file to create. This will
+    /// be placed in a unique hashed directory. Use out_path to access.
     out_name: []const u8,
 
-    /// Library file (dylib, a) to package.
+    /// Library files (.a) to combine.
     sources: []FileSource,
 };
 
