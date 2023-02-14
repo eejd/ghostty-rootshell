@@ -21,6 +21,7 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
+const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 
@@ -122,7 +123,7 @@ pub fn build(b: *std.build.Builder) !void {
         exe.install();
 
         // Add the shared dependencies
-        try addDeps(b, exe, static);
+        _ = try addDeps(b, exe, static);
     }
 
     // App (Mac)
@@ -141,7 +142,7 @@ pub fn build(b: *std.build.Builder) !void {
         static_lib.install();
         static_lib.linkLibC();
         static_lib.addOptions("build_options", exe_options);
-        try addDeps(b, static_lib, true);
+        _ = try addDeps(b, static_lib, true);
         b.default_step.dependOn(&static_lib.step);
     }
 
@@ -154,9 +155,19 @@ pub fn build(b: *std.build.Builder) !void {
             lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "aarch64-macos" }));
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
-            try addDeps(b, lib, true);
             b.default_step.dependOn(&lib.step);
-            break :lib lib;
+
+            // Create a single static lib with all our dependencies merged
+            var lib_list = try addDeps(b, lib, true);
+            try lib_list.append(.{ .generated = &lib.output_path_source });
+            const libtool = LibtoolStep.create(b, .{
+                .name = "ghostty",
+                .out_name = "libghostty-aarch64-fat.a",
+                .sources = lib_list.items,
+            });
+            b.default_step.dependOn(&libtool.step);
+
+            break :lib libtool;
         };
 
         const static_lib_x86_64 = lib: {
@@ -165,16 +176,26 @@ pub fn build(b: *std.build.Builder) !void {
             lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "x86_64-macos" }));
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
-            try addDeps(b, lib, true);
             b.default_step.dependOn(&lib.step);
-            break :lib lib;
+
+            // Create a single static lib with all our dependencies merged
+            var lib_list = try addDeps(b, lib, true);
+            try lib_list.append(.{ .generated = &lib.output_path_source });
+            const libtool = LibtoolStep.create(b, .{
+                .name = "ghostty",
+                .out_name = "libghostty-x86_64-fat.a",
+                .sources = lib_list.items,
+            });
+            b.default_step.dependOn(&libtool.step);
+
+            break :lib libtool;
         };
 
         const static_lib_universal = LipoStep.create(b, .{
             .name = "ghostty",
             .out_name = "libghostty.a",
-            .input_a = .{ .generated = &static_lib_aarch64.output_path_source },
-            .input_b = .{ .generated = &static_lib_x86_64.output_path_source },
+            .input_a = .{ .generated = &static_lib_aarch64.out_path },
+            .input_b = .{ .generated = &static_lib_x86_64.out_path },
         });
         static_lib_universal.step.dependOn(&static_lib_aarch64.step);
         static_lib_universal.step.dependOn(&static_lib_x86_64.step);
@@ -240,7 +261,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.stack_protector = false;
 
         // Wasm-specific deps
-        try addDeps(b, wasm, true);
+        _ = try addDeps(b, wasm, true);
 
         const step = b.step("wasm", "Build the wasm library");
         step.dependOn(&wasm.step);
@@ -255,7 +276,7 @@ pub fn build(b: *std.build.Builder) !void {
             .target = wasm_target,
         });
         main_test.addOptions("build_options", exe_options);
-        try addDeps(b, main_test, true);
+        _ = try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
     }
 
@@ -299,7 +320,7 @@ pub fn build(b: *std.build.Builder) !void {
                 main_test_exe.install();
             }
             main_test.setFilter(test_filter);
-            try addDeps(b, main_test, true);
+            _ = try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
 
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
@@ -327,7 +348,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .target = target,
             });
 
-            try addDeps(b, test_run, true);
+            _ = try addDeps(b, test_run, true);
             // if (pkg.dependencies) |children| {
             //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
             //     try test_.packages.appendSlice(children);
@@ -352,12 +373,18 @@ pub fn build(b: *std.build.Builder) !void {
     }
 }
 
+/// Used to keep track of a list of file sources.
+const FileSourceList = std.ArrayList(std.build.FileSource);
+
 /// Adds and links all of the primary dependencies for the exe.
 fn addDeps(
     b: *std.build.Builder,
     step: *std.build.LibExeObjStep,
     static: bool,
-) !void {
+) !FileSourceList {
+    var static_libs = FileSourceList.init(b.allocator);
+    errdefer static_libs.deinit();
+
     // Wasm we do manually since it is such a different build.
     if (step.target.getCpuArch() == .wasm32) {
         // We link this package but its a no-op since Tracy
@@ -369,7 +396,7 @@ fn addDeps(
         // utf8proc
         _ = try utf8proc.link(b, step);
 
-        return;
+        return static_libs;
     }
 
     // If we're building a lib we have some different deps
@@ -470,6 +497,7 @@ fn addDeps(
             },
         });
         system_sdk.include(b, harfbuzz_step, .{});
+        try static_libs.append(.{ .generated = &harfbuzz_step.output_path_source });
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
@@ -522,6 +550,8 @@ fn addDeps(
         const imgui_step = try imgui.link(b, step, imgui_opts);
         try glfw.link(b, imgui_step, glfw_opts);
     }
+
+    return static_libs;
 }
 
 fn benchSteps(
@@ -561,7 +591,7 @@ fn benchSteps(
         });
         c_exe.setMainPkgPath("./src");
         c_exe.install();
-        try addDeps(b, c_exe, true);
+        _ = try addDeps(b, c_exe, true);
     }
 }
 
