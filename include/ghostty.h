@@ -7,7 +7,9 @@ extern "C" {
 
 #include <stdint.h>
 
-uint64_t ghostty_hello(void);
+#define GHOSTTY_SUCCESS 0
+
+int ghostty_init(void);
 
 #ifdef __cplusplus
 }

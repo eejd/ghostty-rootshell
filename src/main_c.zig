@@ -4,8 +4,8 @@
 // support).
 const std = @import("std");
 const builtin = @import("builtin");
+const main = @import("main.zig");
 
-// We're just testing right now.
-export fn ghostty_hello() u64 {
-    return 42;
-}
+pub usingnamespace @import("App.zig").CAPI;
+
+pub const std_options = main.std_options;

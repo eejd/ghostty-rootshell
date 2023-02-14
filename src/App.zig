@@ -5,6 +5,7 @@ const App = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const apprt = @import("apprt.zig");
 const Window = @import("Window.zig");
@@ -273,8 +274,7 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     const alloc = wasm.alloc;
 
     // export fn app_new(config: *Config) ?*App {
-    //     return app_new_(config) catch |err| {
-    //         log.err("error initializing app err={}", .{err});
+    //     return app_new_(config) catch |err| { log.err("error initializing app err={}", .{err});
     //         return null;
     //     };
     // }
@@ -294,4 +294,16 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     //         alloc.destroy(v);
     //     }
     // }
+};
+
+pub const CAPI = struct {
+    const ProcessState = @import("main.zig").ProcessState;
+    var state: ?ProcessState = null;
+
+    export fn ghostty_init() c_int {
+        assert(state == null);
+        state = undefined;
+        ProcessState.init(&state.?);
+        return 0;
+    }
 };

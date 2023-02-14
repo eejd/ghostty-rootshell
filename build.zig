@@ -140,6 +140,8 @@ pub fn build(b: *std.build.Builder) !void {
         static_lib.setTarget(target);
         static_lib.install();
         static_lib.linkLibC();
+        static_lib.addOptions("build_options", exe_options);
+        try addDeps(b, static_lib, true);
         b.default_step.dependOn(&static_lib.step);
     }
 
@@ -150,8 +152,9 @@ pub fn build(b: *std.build.Builder) !void {
             const lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
             lib.setBuildMode(mode);
             lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "aarch64-macos" }));
-            lib.install();
             lib.linkLibC();
+            lib.addOptions("build_options", exe_options);
+            try addDeps(b, lib, true);
             b.default_step.dependOn(&lib.step);
             break :lib lib;
         };
@@ -160,8 +163,9 @@ pub fn build(b: *std.build.Builder) !void {
             const lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
             lib.setBuildMode(mode);
             lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "x86_64-macos" }));
-            lib.install();
             lib.linkLibC();
+            lib.addOptions("build_options", exe_options);
+            try addDeps(b, lib, true);
             b.default_step.dependOn(&lib.step);
             break :lib lib;
         };
@@ -368,12 +372,18 @@ fn addDeps(
         return;
     }
 
+    // If we're building a lib we have some different deps
+    const lib = step.kind == .lib;
+
+    // We always require the system SDK so that our system headers are available.
+    // This makes things like `os/log.h` available for cross-compiling.
+    system_sdk.include(b, step, .{});
+
     // We always need the Zig packages
     if (enable_fontconfig) step.addModule("fontconfig", fontconfig.module(b));
     step.addModule("freetype", freetype.module(b));
     step.addModule("harfbuzz", harfbuzz.module(b));
     step.addModule("imgui", imgui.module(b));
-    step.addModule("glfw", glfw.module(b));
     step.addModule("xev", libxev.module(b));
     step.addModule("pixman", pixman.module(b));
     step.addModule("stb_image_resize", stb_image_resize.module(b));
@@ -385,10 +395,6 @@ fn addDeps(
         step.addModule("macos", macos.module(b));
         _ = try macos.link(b, step, .{});
     }
-
-    // We always statically compile glad
-    step.addIncludePath("vendor/glad/include/");
-    step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
     // Tracy
     step.addModule("tracy", tracylib.module(b));
@@ -402,13 +408,6 @@ fn addDeps(
 
     // utf8proc
     _ = try utf8proc.link(b, step);
-
-    // Glfw
-    const glfw_opts: glfw.Options = .{
-        .metal = step.target.isDarwin(),
-        .opengl = false,
-    };
-    try glfw.link(b, step, glfw_opts);
 
     // Imgui, we have to do this later since we need some information
     const imgui_backends = if (step.target.isDarwin())
@@ -505,9 +504,24 @@ fn addDeps(
         imgui_opts.freetype.include = &freetype.include_paths;
     }
 
-    // Imgui
-    const imgui_step = try imgui.link(b, step, imgui_opts);
-    try glfw.link(b, imgui_step, glfw_opts);
+    if (!lib) {
+        step.addModule("glfw", glfw.module(b));
+
+        // We always statically compile glad
+        step.addIncludePath("vendor/glad/include/");
+        step.addCSourceFile("vendor/glad/src/gl.c", &.{});
+
+        // Glfw
+        const glfw_opts: glfw.Options = .{
+            .metal = step.target.isDarwin(),
+            .opengl = false,
+        };
+        try glfw.link(b, step, glfw_opts);
+
+        // Imgui
+        const imgui_step = try imgui.link(b, step, imgui_opts);
+        try glfw.link(b, imgui_step, glfw_opts);
+    }
 }
 
 fn benchSteps(
