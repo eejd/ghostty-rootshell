@@ -134,18 +134,6 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
-    // c lib
-    {
-        const static_lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
-        static_lib.setBuildMode(mode);
-        static_lib.setTarget(target);
-        static_lib.install();
-        static_lib.linkLibC();
-        static_lib.addOptions("build_options", exe_options);
-        _ = try addDeps(b, static_lib, true);
-        b.default_step.dependOn(&static_lib.step);
-    }
-
     // On Mac we can build the app.
     const macapp = b.step("macapp", "Build macOS app using XCode.");
     if (builtin.target.isDarwin()) {

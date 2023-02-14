@@ -583,6 +583,59 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     }
 };
 
+// Wasm API.
+pub const CAPI = struct {
+    const Ghostty = @import("main_c.zig").Ghostty;
+    const cli_args = @import("cli_args.zig");
+
+    /// Create a new configuration filled with the initial default values.
+    export fn ghostty_config_new(g: *Ghostty) ?*Config {
+        const result = g.alloc.create(Config) catch |err| {
+            log.err("error allocating config err={}", .{err});
+            return null;
+        };
+
+        result.* = Config.default(g.alloc) catch |err| {
+            log.err("error creating config err={}", .{err});
+            return null;
+        };
+
+        return result;
+    }
+
+    export fn ghostty_config_free(g: *Ghostty, ptr: ?*Config) void {
+        if (ptr) |v| {
+            v.deinit();
+            g.alloc.destroy(v);
+        }
+    }
+
+    /// Load the configuration from a string in the same format as
+    /// the file-based syntax for the desktop version of the terminal.
+    export fn ghostty_config_load_string(
+        g: *Ghostty,
+        self: *Config,
+        str: [*]const u8,
+        len: usize,
+    ) void {
+        config_load_string_(g, self, str[0..len]) catch |err| {
+            log.err("error loading config err={}", .{err});
+        };
+    }
+
+    fn config_load_string_(g: *Ghostty, self: *Config, str: []const u8) !void {
+        var fbs = std.io.fixedBufferStream(str);
+        var iter = cli_args.lineIterator(fbs.reader());
+        try cli_args.parse(Config, g.alloc, self, &iter);
+    }
+
+    export fn ghostty_config_finalize(self: *Config) void {
+        self.finalize() catch |err| {
+            log.err("error finalizing config err={}", .{err});
+        };
+    }
+};
+
 test {
     std.testing.refAllDecls(@This());
 }

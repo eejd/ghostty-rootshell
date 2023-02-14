@@ -297,13 +297,5 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
 };
 
 pub const CAPI = struct {
-    const ProcessState = @import("main.zig").ProcessState;
-    var state: ?ProcessState = null;
-
-    export fn ghostty_init() c_int {
-        assert(state == null);
-        state = undefined;
-        ProcessState.init(&state.?);
-        return 0;
-    }
+    const Ghostty = @import("main_c.zig").Ghostty;
 };
