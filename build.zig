@@ -21,7 +21,6 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
-const SwiftBuildStep = @import("src/build/SwiftBuildStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
