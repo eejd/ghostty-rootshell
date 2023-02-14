@@ -157,32 +157,6 @@ pub fn build(b: *std.build.Builder) !void {
         });
         xcframework.step.dependOn(&static_lib.step);
         macapp.dependOn(&xcframework.step);
-
-        // Build our swift app
-        const swift_build = SwiftBuildStep.create(b, .{
-            .product = "Ghostty",
-            .target = target,
-            .optimize = mode,
-            .cwd = .{ .path = "macos" },
-        });
-        macapp.dependOn(&swift_build.step);
-
-        // Build our app bundle
-        macapp.dependOn(&b.addInstallFileWithDir(
-            .{ .generated = &swift_build.bin_path },
-            .prefix,
-            "Ghostty.app/Contents/MacOS/ghostty",
-        ).step);
-        macapp.dependOn(&b.addInstallFileWithDir(
-            .{ .path = "dist/macos/Info.plist" },
-            .prefix,
-            "Ghostty.app/Contents/Info.plist",
-        ).step);
-        macapp.dependOn(&b.addInstallFileWithDir(
-            .{ .path = "dist/macos/Ghostty.icns" },
-            .prefix,
-            "Ghostty.app/Contents/Resources/Ghostty.icns",
-        ).step);
     }
 
     // wasm
