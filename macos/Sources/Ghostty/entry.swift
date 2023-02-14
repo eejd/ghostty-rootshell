@@ -1,10 +1,14 @@
 import SwiftUI
+import GhosttyKit
 
 @main
 struct MyApp: App {
+    @State private var num = ghostty_hello()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Text(String(num))
+              .font(.largeTitle)
         }
     }
 }

@@ -10,10 +10,18 @@ let package = Package(
     // SwiftUI
     .macOS(.v11),
   ],
+  products: [
+    .executable(
+      name: "Ghostty",
+      targets: ["Ghostty"]),
+  ],
   dependencies: [],
   targets: [
     .executableTarget(
       name: "Ghostty",
-      dependencies: []),
+      dependencies: ["GhosttyKit"]),
+	.binaryTarget(
+      name: "GhosttyKit",
+      path: "GhosttyKit.xcframework"),
   ]
 )

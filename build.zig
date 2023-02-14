@@ -22,6 +22,7 @@ const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const SwiftBuildStep = @import("src/build/SwiftBuildStep.zig");
+const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -132,17 +133,41 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
-    // Mac App based on Swift
-    {
+    // c lib
+    const static_lib = lib: {
+        const static_lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
+        static_lib.setBuildMode(mode);
+        static_lib.setTarget(target);
+        static_lib.install();
+        static_lib.linkLibC();
+        b.default_step.dependOn(&static_lib.step);
+        break :lib static_lib;
+    };
+
+    // On Mac we can build the app.
+    const macapp = b.step("macapp", "Build macOS app");
+    if (builtin.target.isDarwin()) {
+        // The xcframework wraps our ghostty library so that we can link
+        // it to the final app built with Swift.
+        const xcframework = XCFrameworkStep.create(b, .{
+            .name = "GhosttyKit",
+            .out_path = "macos/GhosttyKit.xcframework",
+            .library = .{ .generated = &static_lib.output_lib_path_source },
+            .headers = .{ .path = "include" },
+        });
+        xcframework.step.dependOn(&static_lib.step);
+        macapp.dependOn(&xcframework.step);
+
+        // Build our swift app
         const swift_build = SwiftBuildStep.create(b, .{
             .product = "Ghostty",
             .target = target,
             .optimize = mode,
             .cwd = .{ .path = "macos" },
         });
-
-        const macapp = b.step("macapp", "Build macOS app");
         macapp.dependOn(&swift_build.step);
+
+        // Build our app bundle
         macapp.dependOn(&b.addInstallFileWithDir(
             .{ .generated = &swift_build.bin_path },
             .prefix,
