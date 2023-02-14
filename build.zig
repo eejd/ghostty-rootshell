@@ -462,12 +462,15 @@ fn addDeps(
     // Other dependencies, we may dynamically link
     if (static) {
         const zlib_step = try zlib.link(b, step);
+        try static_libs.append(.{ .generated = &zlib_step.output_path_source });
+
         const libpng_step = try libpng.link(b, step, .{
             .zlib = .{
                 .step = zlib_step,
                 .include = &zlib.include_paths,
             },
         });
+        try static_libs.append(.{ .generated = &libpng_step.output_path_source });
 
         // Freetype
         const freetype_step = try freetype.link(b, step, .{
@@ -483,6 +486,7 @@ fn addDeps(
                 .include = &zlib.include_paths,
             },
         });
+        try static_libs.append(.{ .generated = &freetype_step.output_path_source });
 
         // Harfbuzz
         const harfbuzz_step = try harfbuzz.link(b, step, .{
