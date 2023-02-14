@@ -21,6 +21,7 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
+const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
@@ -133,28 +134,57 @@ pub fn build(b: *std.build.Builder) !void {
     }
 
     // c lib
-    const static_lib = lib: {
+    {
         const static_lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
         static_lib.setBuildMode(mode);
         static_lib.setTarget(target);
         static_lib.install();
         static_lib.linkLibC();
         b.default_step.dependOn(&static_lib.step);
-        break :lib static_lib;
-    };
+    }
 
     // On Mac we can build the app.
-    const macapp = b.step("macapp", "Build macOS app");
+    const macapp = b.step("macapp", "Build macOS app using XCode.");
     if (builtin.target.isDarwin()) {
+        const static_lib_aarch64 = lib: {
+            const lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
+            lib.setBuildMode(mode);
+            lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "aarch64-macos" }));
+            lib.install();
+            lib.linkLibC();
+            b.default_step.dependOn(&lib.step);
+            break :lib lib;
+        };
+
+        const static_lib_x86_64 = lib: {
+            const lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
+            lib.setBuildMode(mode);
+            lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "x86_64-macos" }));
+            lib.install();
+            lib.linkLibC();
+            b.default_step.dependOn(&lib.step);
+            break :lib lib;
+        };
+
+        const static_lib_universal = LipoStep.create(b, .{
+            .name = "ghostty",
+            .out_name = "libghostty.a",
+            .input_a = .{ .generated = &static_lib_aarch64.output_path_source },
+            .input_b = .{ .generated = &static_lib_x86_64.output_path_source },
+        });
+        static_lib_universal.step.dependOn(&static_lib_aarch64.step);
+        static_lib_universal.step.dependOn(&static_lib_x86_64.step);
+
         // The xcframework wraps our ghostty library so that we can link
         // it to the final app built with Swift.
         const xcframework = XCFrameworkStep.create(b, .{
             .name = "GhosttyKit",
             .out_path = "macos/GhosttyKit.xcframework",
-            .library = .{ .generated = &static_lib.output_lib_path_source },
+            .library = .{ .generated = &static_lib_universal.out_path },
             .headers = .{ .path = "include" },
         });
-        xcframework.step.dependOn(&static_lib.step);
+        xcframework.step.dependOn(&static_lib_universal.step);
+        b.default_step.dependOn(&xcframework.step);
         macapp.dependOn(&xcframework.step);
     }
 
