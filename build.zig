@@ -139,6 +139,7 @@ pub fn build(b: *std.build.Builder) !void {
     if (builtin.target.isDarwin()) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
+            lib.bundle_compiler_rt = true;
             lib.setBuildMode(mode);
             lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "aarch64-macos" }));
             lib.linkLibC();
@@ -160,6 +161,7 @@ pub fn build(b: *std.build.Builder) !void {
 
         const static_lib_x86_64 = lib: {
             const lib = b.addStaticLibrary("ghostty", "src/main_c.zig");
+            lib.bundle_compiler_rt = true;
             lib.setBuildMode(mode);
             lib.setTarget(try std.zig.CrossTarget.parse(.{ .arch_os_abi = "x86_64-macos" }));
             lib.linkLibC();
