@@ -15,6 +15,8 @@ struct GhosttyApp: App {
     var body: some Scene {
         WindowGroup {
             switch ghostty.readiness {
+            case .loading:
+                Text("Loading")
             case .error:
                 ErrorView()
             case .ready:
@@ -26,28 +28,27 @@ struct GhosttyApp: App {
 
 class GhosttyState: ObservableObject {
     enum Readiness {
-        case error, ready
+        case loading, error, ready
     }
     
     /// The readiness value of the state.
-    var readiness: Readiness { ghostty != nil ? .ready : .error }
-    
-    /// The ghostty global state.
-    var ghostty: ghostty_t? = nil
+    @Published var readiness: Readiness = .loading
     
     /// The ghostty global configuration.
     var config: ghostty_config_t? = nil
     
     init() {
         // Initialize ghostty global state. This happens once per process.
-        guard let g = ghostty_init() else {
+        guard ghostty_init() == GHOSTTY_SUCCESS else {
             GhosttyApp.logger.critical("ghostty_init failed")
+            readiness = .error
             return
         }
         
         // Initialize the global configuration.
-        guard let cfg = ghostty_config_new(g) else {
+        guard let cfg = ghostty_config_new() else {
             GhosttyApp.logger.critical("ghostty_config_new failed")
+            readiness = .error
             return
         }
         
@@ -58,11 +59,11 @@ class GhosttyState: ObservableObject {
         // Finalize will make our defaults available.
         ghostty_config_finalize(cfg)
         
-        ghostty = g;
-        config = cfg;
+        config = cfg
+        readiness = .ready
     }
     
     deinit {
-        ghostty_config_free(ghostty, config)
+        ghostty_config_free(config)
     }
 }

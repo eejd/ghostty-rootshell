@@ -14,13 +14,14 @@ extern "C" {
 
 #include <stdint.h>
 
-typedef void *ghostty_t;
+#define GHOSTTY_SUCCESS 0
+
 typedef void *ghostty_config_t;
 
-ghostty_t ghostty_init(void);
-ghostty_config_t ghostty_config_new(ghostty_t);
-void ghostty_config_free(ghostty_t, ghostty_config_t);
-void ghostty_config_load_string(ghostty_t, ghostty_config_t, const char *, uintptr_t);
+int ghostty_init(void);
+ghostty_config_t ghostty_config_new();
+void ghostty_config_free(ghostty_config_t);
+void ghostty_config_load_string(ghostty_config_t, const char *, uintptr_t);
 void ghostty_config_finalize(ghostty_config_t);
 
 #ifdef __cplusplus
