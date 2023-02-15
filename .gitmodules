@@ -4,9 +4,6 @@
 [submodule "vendor/freetype"]
 	path = vendor/freetype
 	url = https://github.com/freetype/freetype.git
-[submodule "vendor/libuv"]
-	path = vendor/libuv
-	url = https://github.com/libuv/libuv.git
 [submodule "vendor/tracy"]
 	path = vendor/tracy
 	url = https://github.com/wolfpld/tracy.git
