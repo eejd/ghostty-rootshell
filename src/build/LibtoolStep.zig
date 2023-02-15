@@ -20,7 +20,7 @@ pub const Options = struct {
 };
 
 step: Step,
-builder: *std.build.Builder,
+builder: *std.Build,
 
 /// Resulting binary
 out_path: GeneratedFile,
@@ -30,7 +30,7 @@ name: []const u8,
 out_name: []const u8,
 sources: []FileSource,
 
-pub fn create(builder: *std.build.Builder, opts: Options) *LibtoolStep {
+pub fn create(builder: *std.Build, opts: Options) *LibtoolStep {
     const self = builder.allocator.create(LibtoolStep) catch @panic("OOM");
     self.* = .{
         .step = Step.init(.custom, builder.fmt("lipo {s}", .{opts.name}), builder.allocator, make),
@@ -48,9 +48,10 @@ fn make(step: *Step) !void {
 
     // TODO: use the zig cache system when it is in the stdlib
     // https://github.com/ziglang/zig/pull/14571
-    const output_path = self.builder.pathJoin(&.{
-        self.builder.cache_root, self.out_name,
-    });
+    const output_path = try self.builder.cache_root.join(
+        self.builder.allocator,
+        &.{self.out_name},
+    );
 
     // We use a RunStep here to ease our configuration.
     {
