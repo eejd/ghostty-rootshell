@@ -21,7 +21,6 @@ const main = @import("main.zig");
 /// Global options so we can log. This is identical to main.
 pub const std_options = main.std_options;
 
-pub usingnamespace @import("App.zig").CAPI;
 pub usingnamespace @import("config.zig").CAPI;
 
 /// Initialize ghostty global state. It is possible to have more than

@@ -59,6 +59,7 @@ fn make(step: *Step) !void {
             "libtool {s}",
             .{self.name},
         ));
+        run.condition = .always;
         run.addArgs(&.{ "libtool", "-static", "-o", output_path });
         for (self.sources) |source| {
             run.addArg(source.getPath(self.builder));

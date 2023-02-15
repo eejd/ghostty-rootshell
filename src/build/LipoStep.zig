@@ -61,6 +61,7 @@ fn make(step: *Step) !void {
             "lipo {s}",
             .{self.name},
         ));
+        run.condition = .always;
         run.addArgs(&.{
             "lipo",
             "-create",

@@ -295,7 +295,3 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     //     }
     // }
 };
-
-pub const CAPI = struct {
-    const Ghostty = @import("main_c.zig").Ghostty;
-};

@@ -59,6 +59,7 @@ fn make(step: *Step) !void {
             "xcframework delete {s}",
             .{self.name},
         ));
+        run.condition = .always;
         run.addArgs(&.{ "rm", "-rf", output_path });
         try run.step.make();
     }
@@ -67,6 +68,7 @@ fn make(step: *Step) !void {
             "xcframework {s}",
             .{self.name},
         ));
+        run.condition = .always;
         run.addArgs(&.{
             "xcodebuild", "-create-xcframework",
             "-library",   self.library.getPath(self.builder),

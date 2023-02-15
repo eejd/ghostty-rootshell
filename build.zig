@@ -135,7 +135,6 @@ pub fn build(b: *std.build.Builder) !void {
     }
 
     // On Mac we can build the app.
-    const macapp = b.step("macapp", "Build macOS app using XCode.");
     if (builtin.target.isDarwin()) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
@@ -147,7 +146,6 @@ pub fn build(b: *std.build.Builder) !void {
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
-            b.default_step.dependOn(&lib.step);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -157,6 +155,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .out_name = "libghostty-aarch64-fat.a",
                 .sources = lib_list.items,
             });
+            libtool.step.dependOn(&lib.step);
             b.default_step.dependOn(&libtool.step);
 
             break :lib libtool;
@@ -172,7 +171,6 @@ pub fn build(b: *std.build.Builder) !void {
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
-            b.default_step.dependOn(&lib.step);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -182,6 +180,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .out_name = "libghostty-x86_64-fat.a",
                 .sources = lib_list.items,
             });
+            libtool.step.dependOn(&lib.step);
             b.default_step.dependOn(&libtool.step);
 
             break :lib libtool;
@@ -206,7 +205,6 @@ pub fn build(b: *std.build.Builder) !void {
         });
         xcframework.step.dependOn(&static_lib_universal.step);
         b.default_step.dependOn(&xcframework.step);
-        macapp.dependOn(&xcframework.step);
     }
 
     // wasm
