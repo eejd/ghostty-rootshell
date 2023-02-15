@@ -27,7 +27,7 @@ const WasmTarget = @import("src/os/wasm/target.zig").Target;
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.11.0-dev.1465+d64dd75e3";
+    const required_zig = "0.11.0-dev.1635+d09e39aef";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -224,13 +224,19 @@ pub fn build(b: *std.build.Builder) !void {
 
         const main_test = b.addTest(.{
             .name = "ghostty-test",
-            .kind = .test_exe,
             .root_source_file = .{ .path = "src/main.zig" },
             .target = target,
         });
         {
-            if (emit_test_exe) main_test.install();
-            const main_test_run = main_test.run();
+            if (emit_test_exe) {
+                const main_test_exe = b.addTest(.{
+                    .name = "ghostty-test",
+                    .kind = .test_exe,
+                    .root_source_file = .{ .path = "src/main.zig" },
+                    .target = target,
+                });
+                main_test_exe.install();
+            }
             main_test.setFilter(test_filter);
             try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
@@ -238,7 +244,7 @@ pub fn build(b: *std.build.Builder) !void {
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
             var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
             test_step.dependOn(&before.step);
-            test_step.dependOn(&main_test_run.step);
+            test_step.dependOn(&main_test.step);
             test_step.dependOn(&after.step);
         }
 
@@ -253,15 +259,14 @@ pub fn build(b: *std.build.Builder) !void {
             if (std.mem.eql(u8, name, "glfw")) continue;
 
             var buf: [256]u8 = undefined;
-            var test_ = b.addTest(.{
+            var test_run = b.addTest(.{
                 .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
-                .kind = .test_exe,
+                .kind = .@"test",
                 .root_source_file = module.source_file,
                 .target = target,
             });
-            const test_run = test_.run();
 
-            try addDeps(b, test_, true);
+            try addDeps(b, test_run, true);
             // if (pkg.dependencies) |children| {
             //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
             //     try test_.packages.appendSlice(children);
@@ -273,7 +278,15 @@ pub fn build(b: *std.build.Builder) !void {
             test_step.dependOn(&test_run.step);
             test_step.dependOn(&after.step);
 
-            if (emit_test_exe) test_.install();
+            if (emit_test_exe) {
+                const test_exe = b.addTest(.{
+                    .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
+                    .kind = .test_exe,
+                    .root_source_file = module.source_file,
+                    .target = target,
+                });
+                test_exe.install();
+            }
         }
     }
 }
@@ -290,7 +303,7 @@ fn addDeps(
         // never actualy WORKS with wasm.
         step.addModule("tracy", tracylib.module(b));
         step.addModule("utf8proc", utf8proc.module(b));
-        // TODO: step.addPackage(js.pkg);
+        step.addModule("zig-js", js.module(b));
 
         // utf8proc
         _ = try utf8proc.link(b, step);
