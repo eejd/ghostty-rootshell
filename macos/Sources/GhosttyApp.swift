@@ -16,9 +16,9 @@ struct GhosttyApp: App {
         WindowGroup {
             switch ghostty.readiness {
             case .error:
-                Text("Error")
+                ErrorView()
             case .ready:
-                Text("Hello!").font(.largeTitle)
+                ContentView()
             }
         }
     }
