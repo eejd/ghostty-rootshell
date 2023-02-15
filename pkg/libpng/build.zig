@@ -26,7 +26,7 @@ pub const Options = struct {
 };
 
 pub fn link(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
@@ -37,14 +37,16 @@ pub fn link(
 }
 
 pub fn buildLib(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
     const target = step.target;
-    const lib = b.addStaticLibrary("png", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "png",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Include
     lib.addIncludePath(include_path);

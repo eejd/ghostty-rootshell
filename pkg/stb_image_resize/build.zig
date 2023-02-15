@@ -6,10 +6,11 @@ pub const include_paths = [_][]const u8{
     root,
 };
 
-pub const pkg = std.build.Pkg{
-    .name = "stb_image_resize",
-    .source = .{ .path = thisDir() ++ "/main.zig" },
-};
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
+    });
+}
 
 fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
@@ -18,7 +19,7 @@ fn thisDir() []const u8 {
 pub const Options = struct {};
 
 pub fn link(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
@@ -29,15 +30,17 @@ pub fn link(
 }
 
 pub fn buildStbImageResize(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
     _ = opt;
 
-    const lib = b.addStaticLibrary("stb_image_resize", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "stb_image_resize",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Include
     inline for (include_paths) |path| lib.addIncludePath(path);

@@ -192,17 +192,17 @@ pub const std_options = struct {
     }
 };
 
-fn glfwErrorCallback(code: glfw.Error, desc: [:0]const u8) void {
+fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
     std.log.warn("glfw error={} message={s}", .{ code, desc });
 
     // Workaround for: https://github.com/ocornut/imgui/issues/5908
     // If we get an invalid value with "scancode" in the message we assume
     // it is from the glfw key callback that imgui sets and we clear the
     // error so that our future code doesn't crash.
-    if (code == glfw.Error.InvalidValue and
+    if (code == glfw.ErrorCode.InvalidValue and
         std.mem.indexOf(u8, desc, "scancode") != null)
     {
-        glfw.errors.getError() catch {};
+        _ = glfw.getError();
     }
 }
 

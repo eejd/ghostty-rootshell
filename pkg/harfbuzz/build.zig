@@ -8,11 +8,15 @@ const include_path = root ++ "src/";
 
 pub const include_paths = .{include_path};
 
-pub const pkg = std.build.Pkg{
-    .name = "harfbuzz",
-    .source = .{ .path = thisDir() ++ "/main.zig" },
-    .dependencies = &.{ freetypepkg.pkg, macospkg.pkg },
-};
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
+        .dependencies = &.{
+            .{ .name = "freetype", .module = freetypepkg.module(b) },
+            .{ .name = "macos", .module = macospkg.module(b) },
+        },
+    });
+}
 
 fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
@@ -34,7 +38,7 @@ pub const Options = struct {
 };
 
 pub fn link(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
@@ -45,13 +49,15 @@ pub fn link(
 }
 
 pub fn buildHarfbuzz(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
-    const lib = b.addStaticLibrary("harfbuzz", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "harfbuzz",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Include
     lib.addIncludePath(include_path);

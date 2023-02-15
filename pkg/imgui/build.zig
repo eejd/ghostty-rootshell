@@ -8,10 +8,11 @@ pub const include_paths = [_][]const u8{
     root ++ "imgui/backends",
 };
 
-pub const pkg = std.build.Pkg{
-    .name = "imgui",
-    .source = .{ .path = thisDir() ++ "/main.zig" },
-};
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
+    });
+}
 
 fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
@@ -30,7 +31,7 @@ pub const Options = struct {
 };
 
 pub fn link(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
@@ -41,14 +42,16 @@ pub fn link(
 }
 
 pub fn buildImgui(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
     const target = step.target;
-    const lib = b.addStaticLibrary("imgui", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "imgui",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Include
     inline for (include_paths) |path| lib.addIncludePath(path);

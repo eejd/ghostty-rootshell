@@ -26,9 +26,11 @@ pub fn buildLib(
     b: *std.build.Builder,
     step: *std.build.LibExeObjStep,
 ) !*std.build.LibExeObjStep {
-    const lib = b.addStaticLibrary("z", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "z",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Include
     lib.addIncludePath(include_path);

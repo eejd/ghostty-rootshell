@@ -423,10 +423,9 @@ pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
     // ensures that the context switches over to our thread. Important:
     // the prior thread MUST have detached the context prior to calling
     // this entrypoint.
-    try glfw.makeContextCurrent(win.window);
-    errdefer glfw.makeContextCurrent(null) catch |err|
-        log.warn("failed to cleanup OpenGL context err={}", .{err});
-    try glfw.swapInterval(1);
+    glfw.makeContextCurrent(win.window);
+    errdefer glfw.makeContextCurrent(null);
+    glfw.swapInterval(1);
 
     // Load OpenGL bindings. This API is context-aware so this sets
     // a threadlocal context for these pointers.
@@ -443,7 +442,7 @@ pub fn threadExit(self: *const OpenGL) void {
     _ = self;
 
     gl.glad.unload();
-    glfw.makeContextCurrent(null) catch {};
+    glfw.makeContextCurrent(null);
 }
 
 /// Callback when the focus changes for the terminal this is rendering.
@@ -641,7 +640,7 @@ pub fn render(
     }
 
     // Swap our window buffers
-    try win.window.swapBuffers();
+    win.window.swapBuffers();
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a

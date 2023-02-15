@@ -7,10 +7,11 @@ pub const include_path_self = thisDir();
 
 pub const include_paths = .{ include_path, include_path_self };
 
-pub const pkg = std.build.Pkg{
-    .name = "freetype",
-    .source = .{ .path = thisDir() ++ "/main.zig" },
-};
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
+    });
+}
 
 fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
@@ -34,7 +35,7 @@ pub const Options = struct {
 };
 
 pub fn link(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
@@ -46,14 +47,16 @@ pub fn link(
 }
 
 pub fn buildFreetype(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     opt: Options,
 ) !*std.build.LibExeObjStep {
     const target = step.target;
-    const lib = b.addStaticLibrary("freetype", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "freetype",
+        .target = target,
+        .optimize = step.optimize,
+    });
 
     // Include
     lib.addIncludePath(include_path);

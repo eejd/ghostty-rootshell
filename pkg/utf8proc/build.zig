@@ -6,16 +6,17 @@ const include_path = root;
 
 pub const include_paths = .{include_path};
 
-pub const pkg = std.build.Pkg{
-    .name = "utf8proc",
-    .source = .{ .path = thisDir() ++ "/main.zig" },
-};
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
+    });
+}
 
 fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
-pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
+pub fn link(b: *std.Build, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const lib = try buildLib(b, step);
     step.linkLibrary(lib);
     step.addIncludePath(include_path);
@@ -23,12 +24,14 @@ pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.L
 }
 
 pub fn buildLib(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
 ) !*std.build.LibExeObjStep {
-    const lib = b.addStaticLibrary("utf8proc", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "utf8proc",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Include
     lib.addIncludePath(include_path);

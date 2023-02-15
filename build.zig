@@ -44,7 +44,7 @@ var enable_coretext: bool = false;
 var enable_fontconfig: bool = false;
 
 pub fn build(b: *std.build.Builder) !void {
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
     const target = target: {
         var result = b.standardTargetOptions(.{});
 
@@ -60,7 +60,7 @@ pub fn build(b: *std.build.Builder) !void {
         bool,
         "tracy",
         "Enable Tracy integration (default true in Debug on Linux)",
-    ) orelse (mode == .Debug and target.isLinux());
+    ) orelse (optimize == .Debug and target.isLinux());
 
     enable_coretext = b.option(
         bool,
@@ -96,9 +96,14 @@ pub fn build(b: *std.build.Builder) !void {
     b.enable_wasmtime = true;
 
     // Add our benchmarks
-    try benchSteps(b, target, mode);
+    try benchSteps(b, target, optimize);
 
-    const exe = b.addExecutable("ghostty", "src/main.zig");
+    const exe = b.addExecutable(.{
+        .name = "ghostty",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
     const exe_options = b.addOptions();
     exe_options.addOption(bool, "tracy_enabled", tracy);
     exe_options.addOption(bool, "coretext", enable_coretext);
@@ -111,8 +116,6 @@ pub fn build(b: *std.build.Builder) !void {
             exe.addCSourceFile("src/renderer/metal_workaround.c", &.{});
         }
 
-        exe.setTarget(target);
-        exe.setBuildMode(mode);
         exe.addOptions("build_options", exe_options);
         exe.install();
 
@@ -157,13 +160,12 @@ pub fn build(b: *std.build.Builder) !void {
         const wasm_specific_target: WasmTarget = .browser;
         exe_options.addOption(WasmTarget, "wasm_target", wasm_specific_target);
 
-        const wasm = b.addSharedLibrary(
-            "ghostty-wasm",
-            "src/main_wasm.zig",
-            .{ .unversioned = {} },
-        );
-        wasm.setTarget(wasm_target);
-        wasm.setBuildMode(mode);
+        const wasm = b.addSharedLibrary(.{
+            .name = "ghostty-wasm",
+            .root_source_file = .{ .path = "src/main_wasm.zig" },
+            .target = wasm_target,
+            .optimize = optimize,
+        });
         wasm.setOutputDir("zig-out");
         wasm.addOptions("build_options", exe_options);
 
@@ -186,8 +188,11 @@ pub fn build(b: *std.build.Builder) !void {
         // isn't an exact match to our freestanding target above but
         // it lets us test some basic functionality.
         const test_step = b.step("test-wasm", "Run all tests for wasm");
-        const main_test = b.addTest("src/main_wasm.zig");
-        main_test.setTarget(wasm_target);
+        const main_test = b.addTest(.{
+            .name = "wasm-test",
+            .root_source_file = .{ .path = "src/main_wasm.zig" },
+            .target = wasm_target,
+        });
         main_test.addOptions("build_options", exe_options);
         try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
@@ -198,7 +203,7 @@ pub fn build(b: *std.build.Builder) !void {
         // Build our run step, which runs the main app by default, but will
         // run a conformance app if `-Dconformance` is set.
         const run_exe = if (conformance) |name| blk: {
-            var conformance_exes = try conformanceSteps(b, target, mode);
+            var conformance_exes = try conformanceSteps(b, target, optimize);
             defer conformance_exes.deinit();
             break :blk conformance_exes.get(name) orelse return error.InvalidConformance;
         } else exe;
@@ -217,12 +222,16 @@ pub fn build(b: *std.build.Builder) !void {
         const test_step = b.step("test", "Run all tests");
         var test_filter = b.option([]const u8, "test-filter", "Filter for test");
 
-        const main_test = b.addTestExe("ghostty-test", "src/main.zig");
+        const main_test = b.addTest(.{
+            .name = "ghostty-test",
+            .kind = .test_exe,
+            .root_source_file = .{ .path = "src/main.zig" },
+            .target = target,
+        });
         {
             if (emit_test_exe) main_test.install();
             const main_test_run = main_test.run();
             main_test.setFilter(test_filter);
-            main_test.setTarget(target);
             try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
 
@@ -236,26 +245,29 @@ pub fn build(b: *std.build.Builder) !void {
         // Named package dependencies don't have their tests run by reference,
         // so we iterate through them here. We're only interested in dependencies
         // we wrote (are in the "pkg/" directory).
-        for (main_test.packages.items) |pkg_| {
-            const pkg: std.build.Pkg = pkg_;
-            if (std.mem.eql(u8, pkg.name, "build_options")) continue;
-            if (std.mem.eql(u8, pkg.name, "glfw")) continue;
+        var it = main_test.modules.iterator();
+        while (it.next()) |entry| {
+            const name = entry.key_ptr.*;
+            const module = entry.value_ptr.*;
+            if (std.mem.eql(u8, name, "build_options")) continue;
+            if (std.mem.eql(u8, name, "glfw")) continue;
 
             var buf: [256]u8 = undefined;
-            var test_ = b.addTestExeSource(
-                try std.fmt.bufPrint(&buf, "{s}-test", .{pkg.name}),
-                pkg.source,
-            );
+            var test_ = b.addTest(.{
+                .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
+                .kind = .test_exe,
+                .root_source_file = module.source_file,
+                .target = target,
+            });
             const test_run = test_.run();
 
-            test_.setTarget(target);
             try addDeps(b, test_, true);
-            if (pkg.dependencies) |children| {
-                test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
-                try test_.packages.appendSlice(children);
-            }
+            // if (pkg.dependencies) |children| {
+            //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
+            //     try test_.packages.appendSlice(children);
+            // }
 
-            var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{pkg.name});
+            var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{name});
             var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
             test_step.dependOn(&before.step);
             test_step.dependOn(&test_run.step);
@@ -276,9 +288,9 @@ fn addDeps(
     if (step.target.getCpuArch() == .wasm32) {
         // We link this package but its a no-op since Tracy
         // never actualy WORKS with wasm.
-        step.addPackage(tracylib.pkg);
-        step.addPackage(utf8proc.pkg);
-        step.addPackage(js.pkg);
+        step.addModule("tracy", tracylib.module(b));
+        step.addModule("utf8proc", utf8proc.module(b));
+        // TODO: step.addPackage(js.pkg);
 
         // utf8proc
         _ = try utf8proc.link(b, step);
@@ -287,20 +299,20 @@ fn addDeps(
     }
 
     // We always need the Zig packages
-    if (enable_fontconfig) step.addPackage(fontconfig.pkg);
-    step.addPackage(freetype.pkg);
-    step.addPackage(harfbuzz.pkg);
-    step.addPackage(imgui.pkg);
-    step.addPackage(glfw.pkg);
-    step.addPackage(libxev.pkg);
-    step.addPackage(pixman.pkg);
-    step.addPackage(stb_image_resize.pkg);
-    step.addPackage(utf8proc.pkg);
+    if (enable_fontconfig) step.addModule("fontconfig", fontconfig.module(b));
+    step.addModule("freetype", freetype.module(b));
+    step.addModule("harfbuzz", harfbuzz.module(b));
+    step.addModule("imgui", imgui.module(b));
+    step.addModule("glfw", glfw.module(b));
+    step.addModule("xev", libxev.module(b));
+    step.addModule("pixman", pixman.module(b));
+    step.addModule("stb_image_resize", stb_image_resize.module(b));
+    step.addModule("utf8proc", utf8proc.module(b));
 
     // Mac Stuff
     if (step.target.isDarwin()) {
-        step.addPackage(objc.pkg);
-        step.addPackage(macos.pkg);
+        step.addModule("objc", objc.module(b));
+        step.addModule("macos", macos.module(b));
         _ = try macos.link(b, step, .{});
     }
 
@@ -309,7 +321,7 @@ fn addDeps(
     step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
     // Tracy
-    step.addPackage(tracylib.pkg);
+    step.addModule("tracy", tracylib.module(b));
     if (tracy) {
         var tracy_step = try tracylib.link(b, step);
         system_sdk.include(b, tracy_step, .{});
@@ -400,7 +412,7 @@ fn addDeps(
             const libxml2_lib = try libxml2.create(
                 b,
                 step.target,
-                step.build_mode,
+                step.optimize,
                 .{ .lzma = false, .zlib = false },
             );
             libxml2_lib.link(step);
@@ -431,7 +443,7 @@ fn addDeps(
 fn benchSteps(
     b: *std.build.Builder,
     target: std.zig.CrossTarget,
-    mode: std.builtin.Mode,
+    optimize: std.builtin.Mode,
 ) !void {
     // Open the directory ./src/bench
     const c_dir_path = (comptime root()) ++ "/src/bench";
@@ -457,9 +469,12 @@ fn benchSteps(
 
         // Executable builder.
         const bin_name = try std.fmt.allocPrint(b.allocator, "bench-{s}", .{name});
-        const c_exe = b.addExecutable(bin_name, path);
-        c_exe.setTarget(target);
-        c_exe.setBuildMode(mode);
+        const c_exe = b.addExecutable(.{
+            .name = bin_name,
+            .root_source_file = .{ .path = path },
+            .target = target,
+            .optimize = optimize,
+        });
         c_exe.setMainPkgPath("./src");
         c_exe.install();
         try addDeps(b, c_exe, true);
@@ -469,7 +484,7 @@ fn benchSteps(
 fn conformanceSteps(
     b: *std.build.Builder,
     target: std.zig.CrossTarget,
-    mode: std.builtin.Mode,
+    optimize: std.builtin.Mode,
 ) !std.StringHashMap(*LibExeObjStep) {
     var map = std.StringHashMap(*LibExeObjStep).init(b.allocator);
 
@@ -493,9 +508,12 @@ fn conformanceSteps(
         });
 
         // Executable builder.
-        const c_exe = b.addExecutable(name, path);
-        c_exe.setTarget(target);
-        c_exe.setBuildMode(mode);
+        const c_exe = b.addExecutable(.{
+            .name = name,
+            .root_source_file = .{ .path = path },
+            .target = target,
+            .optimize = optimize,
+        });
         c_exe.setOutputDir("zig-out/bin/conformance");
         c_exe.install();
 

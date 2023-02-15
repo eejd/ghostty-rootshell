@@ -27,7 +27,7 @@ const log = std.log.scoped(.glfw);
 
 pub const App = struct {
     pub fn init() !App {
-        try glfw.init(.{});
+        if (!glfw.init(.{})) return error.GlfwInitFailed;
         return .{};
     }
 
@@ -39,13 +39,13 @@ pub const App = struct {
     /// Wakeup the event loop. This should be able to be called from any thread.
     pub fn wakeup(self: App) !void {
         _ = self;
-        try glfw.postEmptyEvent();
+        glfw.postEmptyEvent();
     }
 
     /// Wait for events in the event loop to process.
     pub fn wait(self: App) !void {
         _ = self;
-        try glfw.waitEvents();
+        glfw.waitEvents();
     }
 };
 
@@ -58,14 +58,14 @@ pub const Window = struct {
 
     pub fn init(app: *const CoreApp, core_win: *CoreWindow) !Window {
         // Create our window
-        const win = try glfw.Window.create(
+        const win = glfw.Window.create(
             640,
             480,
             "ghostty",
             null,
             null,
             Renderer.glfwWindowHints(),
-        );
+        ) orelse return glfw.mustGetErrorCode();
         errdefer win.destroy();
 
         if (builtin.mode == .Debug) {
@@ -76,7 +76,7 @@ pub const Window = struct {
                 break :monitor glfw.Monitor.getPrimary().?;
             };
             const physical_size = monitor.getPhysicalSize();
-            const video_mode = try monitor.getVideoMode();
+            const video_mode = monitor.getVideoMode() orelse return glfw.mustGetErrorCode();
             const physical_x_dpi = @intToFloat(f32, video_mode.getWidth()) / (@intToFloat(f32, physical_size.width_mm) / 25.4);
             const physical_y_dpi = @intToFloat(f32, video_mode.getHeight()) / (@intToFloat(f32, physical_size.height_mm) / 25.4);
             log.debug("physical dpi x={} y={}", .{
@@ -99,13 +99,13 @@ pub const Window = struct {
         }
 
         // Create the cursor
-        const cursor = try glfw.Cursor.createStandard(.ibeam);
+        const cursor = glfw.Cursor.createStandard(.ibeam) orelse return glfw.mustGetErrorCode();
         errdefer cursor.destroy();
         if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
             // We only set our cursor if we're NOT on Mac, or if we are then the
             // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
             // since we use a tab group.
-            try win.setCursor(cursor);
+            win.setCursor(cursor);
         }
 
         // Set our callbacks
@@ -178,7 +178,7 @@ pub const Window = struct {
     /// to use this more. i.e. you can't set max width but no max height,
     /// or no mins.
     pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
-        try self.window.setSizeLimits(.{
+        self.window.setSizeLimits(.{
             .width = min.width,
             .height = min.height,
         }, if (max_) |max| .{
@@ -192,7 +192,7 @@ pub const Window = struct {
 
     /// Returns the content scale for the created window.
     pub fn getContentScale(self: *const Window) !apprt.ContentScale {
-        const scale = try self.window.getContentScale();
+        const scale = self.window.getContentScale();
         return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
     }
 
@@ -200,18 +200,14 @@ pub const Window = struct {
     /// not match screen coordinate size but we should be able to convert
     /// back and forth using getContentScale.
     pub fn getSize(self: *const Window) !apprt.WindowSize {
-        const size = self.window.getFramebufferSize() catch |err| err: {
-            log.err("error querying window size in pixels, will use screen size err={}", .{err});
-            break :err try self.window.getSize();
-        };
-
+        const size = self.window.getFramebufferSize();
         return apprt.WindowSize{ .width = size.width, .height = size.height };
     }
 
     /// Returns the cursor position in scaled pixels relative to the
     /// upper-left of the window.
     pub fn getCursorPos(self: *const Window) !apprt.CursorPos {
-        const unscaled_pos = try self.window.getCursorPos();
+        const unscaled_pos = self.window.getCursorPos();
         const pos = try self.cursorPosToPixels(unscaled_pos);
         return apprt.CursorPos{
             .x = @floatCast(f32, pos.xpos),
@@ -232,7 +228,7 @@ pub const Window = struct {
 
     /// Set the title of the window.
     pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
-        try self.window.setTitle(slice.ptr);
+        self.window.setTitle(slice.ptr);
     }
 
     /// Read the clipboard. The windowing system is responsible for allocating
@@ -240,13 +236,13 @@ pub const Window = struct {
     /// time getClipboardString is called.
     pub fn getClipboardString(self: *const Window) ![:0]const u8 {
         _ = self;
-        return try glfw.getClipboardString();
+        return glfw.getClipboardString() orelse return glfw.mustGetErrorCode();
     }
 
     /// Set the clipboard.
     pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
         _ = self;
-        try glfw.setClipboardString(val);
+        glfw.setClipboardString(val);
     }
 
     /// The cursor position from glfw directly is in screen coordinates but
@@ -255,8 +251,8 @@ pub const Window = struct {
         // The cursor position is in screen coordinates but we
         // want it in pixels. we need to get both the size of the
         // window in both to get the ratio to make the conversion.
-        const size = try self.window.getSize();
-        const fb_size = try self.window.getFramebufferSize();
+        const size = self.window.getSize();
+        const fb_size = self.window.getFramebufferSize();
 
         // If our framebuffer and screen are the same, then there is no scaling
         // happening and we can short-circuit by returning the pos as-is.

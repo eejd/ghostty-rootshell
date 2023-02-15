@@ -3,16 +3,17 @@ const std = @import("std");
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/tracy/";
 
-pub const pkg = std.build.Pkg{
-    .name = "tracy",
-    .source = .{ .path = thisDir() ++ "/tracy.zig" },
-};
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = (comptime thisDir()) ++ "/tracy.zig" },
+    });
+}
 
 fn thisDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
-pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
+pub fn link(b: *std.Build, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const tracy = try buildTracy(b, step);
     step.linkLibrary(tracy);
     step.addIncludePath(root);
@@ -20,13 +21,15 @@ pub fn link(b: *std.build.Builder, step: *std.build.LibExeObjStep) !*std.build.L
 }
 
 pub fn buildTracy(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
 ) !*std.build.LibExeObjStep {
     const target = step.target;
-    const lib = b.addStaticLibrary("tracy", null);
-    lib.setTarget(step.target);
-    lib.setBuildMode(step.build_mode);
+    const lib = b.addStaticLibrary(.{
+        .name = "tracy",
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
