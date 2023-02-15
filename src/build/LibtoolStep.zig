@@ -46,26 +46,20 @@ pub fn create(builder: *std.Build, opts: Options) *LibtoolStep {
 fn make(step: *Step) !void {
     const self = @fieldParentPtr(LibtoolStep, "step", step);
 
-    // TODO: use the zig cache system when it is in the stdlib
-    // https://github.com/ziglang/zig/pull/14571
-    const output_path = try self.builder.cache_root.join(
-        self.builder.allocator,
-        &.{self.out_name},
-    );
-
     // We use a RunStep here to ease our configuration.
-    {
-        const run = std.build.RunStep.create(self.builder, self.builder.fmt(
-            "libtool {s}",
-            .{self.name},
-        ));
-        run.condition = .always;
-        run.addArgs(&.{ "libtool", "-static", "-o", output_path });
-        for (self.sources) |source| {
-            run.addArg(source.getPath(self.builder));
-        }
-        try run.step.make();
-    }
-
-    self.out_path.path = output_path;
+    const run = std.build.RunStep.create(self.builder, self.builder.fmt(
+        "libtool {s}",
+        .{self.name},
+    ));
+    run.addArgs(&.{
+        "libtool",
+        "-static",
+        "-o",
+    });
+    try run.argv.append(.{ .output = .{
+        .generated_file = &self.out_path,
+        .basename = self.out_name,
+    } });
+    for (self.sources) |source| run.addFileSourceArg(source);
+    try run.step.make();
 }

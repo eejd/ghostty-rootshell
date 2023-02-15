@@ -69,12 +69,13 @@ fn make(step: *Step) !void {
             .{self.name},
         ));
         run.condition = .always;
-        run.addArgs(&.{
-            "xcodebuild", "-create-xcframework",
-            "-library",   self.library.getPath(self.builder),
-            "-headers",   self.headers.getPath(self.builder),
-            "-output",    output_path,
-        });
+        run.addArgs(&.{ "xcodebuild", "-create-xcframework" });
+        run.addArg("-library");
+        run.addFileSourceArg(self.library);
+        run.addArg("-headers");
+        run.addFileSourceArg(self.headers);
+        run.addArg("-output");
+        run.addArg(output_path);
         try run.step.make();
     }
 }
