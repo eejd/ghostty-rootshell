@@ -30,6 +30,7 @@ pub const Artifact = enum {
         return switch (builtin.output_mode) {
             .Exe => .exe,
             .Obj => .lib,
+            else => unreachable,
         };
     }
 };

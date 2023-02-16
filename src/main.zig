@@ -91,7 +91,7 @@ pub fn main() !void {
     // We want to log all our errors
     glfw.setErrorCallback(glfwErrorCallback);
 
-    // Run our app
+    // Run our app with a single initial window to start.
     var app = try App.create(alloc, &config);
     defer app.destroy();
     try app.run();

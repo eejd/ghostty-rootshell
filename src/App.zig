@@ -7,6 +7,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const build_config = @import("build_config.zig");
 const apprt = @import("apprt.zig");
 const Window = @import("Window.zig");
 const tracy = @import("tracy");
@@ -47,9 +48,11 @@ quit: bool,
 /// Mac settings
 darwin: if (Darwin.enabled) Darwin else void,
 
-/// Mac-specific settings
+/// Mac-specific settings. This is only enabled when the target is
+/// Mac and the artifact is a standalone exe. We don't target libs because
+/// the embedded API doesn't do windowing.
 pub const Darwin = struct {
-    pub const enabled = builtin.target.isDarwin();
+    pub const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
 
     tabbing_id: *macos.foundation.String,
 
@@ -87,8 +90,9 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     };
     errdefer app.windows.deinit(alloc);
 
-    // On Mac, we enable window tabbing
-    if (comptime builtin.target.isDarwin()) {
+    // On Mac, we enable window tabbing. We only do this if we're building
+    // a standalone exe. In embedded mode the host app handles this for us.
+    if (Darwin.enabled) {
         const NSWindow = objc.Class.getClass("NSWindow").?;
         NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
 
@@ -107,8 +111,12 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     }
     errdefer if (comptime builtin.target.isDarwin()) app.darwin.deinit();
 
-    // Create the first window
-    _ = try app.newWindow(.{});
+    // Create the first window if we're an executable. If we're a lib we
+    // do NOT create the first window because we expect the embedded API
+    // to do it via surfaces.
+    if (build_config.artifact == .exe) {
+        _ = try app.newWindow(.{});
+    }
 
     return app;
 }
@@ -117,7 +125,7 @@ pub fn destroy(self: *App) void {
     // Clean up all our windows
     for (self.windows.items) |window| window.destroy();
     self.windows.deinit(self.alloc);
-    if (comptime builtin.target.isDarwin()) self.darwin.deinit();
+    if (Darwin.enabled) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
     self.alloc.destroy(self);
 
