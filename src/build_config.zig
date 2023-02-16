@@ -10,6 +10,10 @@ const assert = std.debug.assert;
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
 
+/// Whether our devmode UI is enabled or not. This requires imgui to be
+/// compiled.
+pub const devmode_enabled = artifact == .exe;
+
 pub const Artifact = enum {
     /// Standalone executable
     exe,
@@ -29,8 +33,11 @@ pub const Artifact = enum {
 
         return switch (builtin.output_mode) {
             .Exe => .exe,
-            .Obj => .lib,
-            else => unreachable,
+            .Lib => .lib,
+            else => {
+                @compileLog(builtin.output_mode);
+                @compileError("unsupported artifact output mode");
+            },
         };
     }
 };

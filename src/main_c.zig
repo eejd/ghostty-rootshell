@@ -11,10 +11,17 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const main = @import("main.zig");
 
+// Some comptime assertions that our C API depends on.
+comptime {
+    const apprt = @import("apprt.zig");
+    assert(apprt.runtime == apprt.embedded);
+}
+
 /// Global options so we can log. This is identical to main.
 pub const std_options = main.std_options;
 
 pub usingnamespace @import("config.zig").CAPI;
+pub usingnamespace @import("App.zig").CAPI;
 
 /// Initialize ghostty global state. It is possible to have more than
 /// one global state but it has zero practical benefit.

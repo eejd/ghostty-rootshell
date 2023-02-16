@@ -65,9 +65,13 @@ pub const Darwin = struct {
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
-pub fn create(alloc: Allocator, config: *const Config) !*App {
+pub fn create(
+    alloc: Allocator,
+    rt_opts: apprt.runtime.App.Options,
+    config: *const Config,
+) !*App {
     // Initialize app runtime
-    var app_backend = try apprt.runtime.App.init();
+    var app_backend = try apprt.runtime.App.init(rt_opts);
     errdefer app_backend.terminate();
 
     // The mailbox for messaging this thread
@@ -302,4 +306,36 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     //         alloc.destroy(v);
     //     }
     // }
+};
+
+// C API
+pub const CAPI = struct {
+    const global = &@import("main.zig").state;
+
+    /// Create a new app.
+    export fn ghostty_app_new(
+        opts: *const apprt.runtime.App.Options,
+        config: *const Config,
+    ) ?*App {
+        return app_new_(opts, config) catch |err| {
+            log.err("error initializing app err={}", .{err});
+            return null;
+        };
+    }
+
+    fn app_new_(
+        opts: *const apprt.runtime.App.Options,
+        config: *const Config,
+    ) !*App {
+        const app = try App.create(global.alloc, opts.*, config);
+        errdefer app.destroy();
+        return app;
+    }
+
+    export fn ghostty_app_free(ptr: ?*App) void {
+        if (ptr) |v| {
+            v.destroy();
+            v.alloc.destroy(v);
+        }
+    }
 };

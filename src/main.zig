@@ -92,7 +92,7 @@ pub fn main() !void {
     glfw.setErrorCallback(glfwErrorCallback);
 
     // Run our app with a single initial window to start.
-    var app = try App.create(alloc, &config);
+    var app = try App.create(alloc, .{}, &config);
     defer app.destroy();
     try app.run();
 }

@@ -4,6 +4,7 @@ const DevMode = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("build_config.zig");
 const imgui = @import("imgui");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
@@ -15,7 +16,8 @@ const Config = @import("config.zig").Config;
 
 /// If this is false, the rest of the terminal will be compiled without
 /// dev mode support at all.
-pub const enabled = !builtin.target.isWasm();
+/// TODO: remove this and use build_config everywhere
+pub const enabled = build_config.devmode_enabled;
 
 /// The global DevMode instance that can be used app-wide. Assume all functions
 /// are NOT thread-safe unless otherwise noted.

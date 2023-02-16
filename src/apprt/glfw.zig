@@ -26,7 +26,9 @@ const glfwNative = glfw.Native(.{
 const log = std.log.scoped(.glfw);
 
 pub const App = struct {
-    pub fn init() !App {
+    pub const Options = struct {};
+
+    pub fn init(_: Options) !App {
         if (!glfw.init(.{})) return error.GlfwInitFailed;
         return .{};
     }
