@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A507573E299FF33C009D7DC7 /* TerminalSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A507573D299FF33C009D7DC7 /* TerminalSurfaceView.swift */; };
 		A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535B9D9299C569B0017E2E4 /* ErrorView.swift */; };
 		A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B30534299BEAAA0047F10C /* GhosttyApp.swift */; };
 		A5B30537299BEAAA0047F10C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B30536299BEAAA0047F10C /* ContentView.swift */; };
@@ -15,6 +16,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A507573D299FF33C009D7DC7 /* TerminalSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSurfaceView.swift; sourceTree = "<group>"; };
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30534299BEAAA0047F10C /* GhosttyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyApp.swift; sourceTree = "<group>"; };
@@ -43,6 +45,7 @@
 				A5B30534299BEAAA0047F10C /* GhosttyApp.swift */,
 				A5B30536299BEAAA0047F10C /* ContentView.swift */,
 				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
+				A507573D299FF33C009D7DC7 /* TerminalSurfaceView.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -150,6 +153,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A507573E299FF33C009D7DC7 /* TerminalSurfaceView.swift in Sources */,
 				A5B30537299BEAAA0047F10C /* ContentView.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */,

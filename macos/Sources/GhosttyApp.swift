@@ -20,7 +20,7 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                ContentView()
+                TerminalSurfaceView()
             }
         }
     }
