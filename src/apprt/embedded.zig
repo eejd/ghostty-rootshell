@@ -8,6 +8,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const objc = @import("objc");
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreWindow = @import("../Window.zig");
@@ -45,15 +46,25 @@ pub const App = struct {
 };
 
 pub const Window = struct {
+    nsview: objc.Object,
+    scale_factor: f64,
+
     pub const Options = extern struct {
-        id: usize = 0,
+        /// The pointer to the backing NSView for the surface.
+        nsview: *anyopaque = undefined,
+
+        /// The scale factor of the screen.
+        scale_factor: f64 = 1,
     };
 
     pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
         _ = app;
         _ = core_win;
-        _ = opts;
-        return .{};
+
+        return .{
+            .nsview = objc.Object.fromId(opts.nsview),
+            .scale_factor = opts.scale_factor,
+        };
     }
 
     pub fn deinit(self: *Window) void {
@@ -67,7 +78,10 @@ pub const Window = struct {
 
     pub fn getSize(self: *const Window) !apprt.WindowSize {
         _ = self;
-        return apprt.WindowSize{ .width = 1, .height = 1 };
+
+        // Initially our window will have a zero size. Until we can determine
+        // the size of the window, we just send down this value.
+        return apprt.WindowSize{ .width = 800, .height = 600 };
     }
 
     pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {

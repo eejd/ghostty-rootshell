@@ -387,8 +387,9 @@ pub const CAPI = struct {
         app: *App,
         opts: *const apprt.runtime.Window.Options,
     ) !*Window {
-        _ = opts;
-        const w = try app.newWindow(.{});
+        const w = try app.newWindow(.{
+            .runtime = opts.*,
+        });
         return w;
     }
 

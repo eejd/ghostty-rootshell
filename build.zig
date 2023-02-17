@@ -147,6 +147,9 @@ pub fn build(b: *std.build.Builder) !void {
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
 
+            // See the comment in this file
+            lib.addCSourceFile("src/renderer/metal_workaround.c", &.{});
+
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
             try lib_list.append(.{ .generated = &lib.output_path_source });
@@ -171,6 +174,9 @@ pub fn build(b: *std.build.Builder) !void {
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
+
+            // See the comment in this file
+            lib.addCSourceFile("src/renderer/metal_workaround.c", &.{});
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -425,10 +431,12 @@ fn addDeps(
     }
 
     // stb_image_resize
-    _ = try stb_image_resize.link(b, step, .{});
+    const stb_image_resize_step = try stb_image_resize.link(b, step, .{});
+    try static_libs.append(.{ .generated = &stb_image_resize_step.output_path_source });
 
     // utf8proc
-    _ = try utf8proc.link(b, step);
+    const utf8proc_step = try utf8proc.link(b, step);
+    try static_libs.append(.{ .generated = &utf8proc_step.output_path_source });
 
     // Imgui, we have to do this later since we need some information
     const imgui_backends = if (step.target.isDarwin())
@@ -499,7 +507,7 @@ fn addDeps(
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
-        _ = pixman_step;
+        try static_libs.append(.{ .generated = &pixman_step.output_path_source });
 
         // Only Linux gets fontconfig
         if (enable_fontconfig) {

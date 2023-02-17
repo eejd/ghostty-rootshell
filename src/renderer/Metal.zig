@@ -305,22 +305,42 @@ pub fn deinit(self: *Metal) void {
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
 pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
-    // Set our window backing layer to be our swapchain
-    const nswindow = switch (apprt.runtime) {
-        apprt.glfw => objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?),
-        apprt.embedded => @panic("TODO"),
+    const Info = struct {
+        view: objc.Object,
+        scaleFactor: f64,
+    };
+
+    // Get the view and scale factor for our surface.
+    const info: Info = switch (apprt.runtime) {
+        apprt.glfw => info: {
+            // Everything in glfw is window-oriented so we grab the backing
+            // window, then derive everything from that.
+            const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?);
+            const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
+            const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
+            break :info .{
+                .view = contentView,
+                .scaleFactor = scaleFactor,
+            };
+        },
+
+        apprt.embedded => .{
+            .view = win.nsview,
+            .scaleFactor = win.scale_factor,
+        },
+
         else => @compileError("unsupported apprt for metal"),
     };
-    const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
-    contentView.setProperty("layer", self.swapchain.value);
-    contentView.setProperty("wantsLayer", true);
+
+    // Make our view layer-backed with our Metal layer
+    info.view.setProperty("layer", self.swapchain.value);
+    info.view.setProperty("wantsLayer", true);
 
     // Ensure that our metal layer has a content scale set to match the
     // scale factor of the window. This avoids magnification issues leading
     // to blurry rendering.
-    const layer = contentView.getProperty(objc.Object, "layer");
-    const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
-    layer.setProperty("contentsScale", scaleFactor);
+    const layer = info.view.getProperty(objc.Object, "layer");
+    layer.setProperty("contentsScale", info.scaleFactor);
 }
 
 /// This is called if this renderer runs DevMode.

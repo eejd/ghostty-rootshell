@@ -1,4 +1,6 @@
+import OSLog
 import SwiftUI
+import GhosttyKit
 
 /// A surface is terminology in Ghostty for a terminal surface, or a place where a terminal is actually drawn
 /// and interacted with. The word "surface" is used because a surface may represent a window, a tab,
@@ -8,7 +10,11 @@ import SwiftUI
 /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
 /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
 struct TerminalSurfaceView: NSViewRepresentable {
-    @StateObject private var state = TerminalSurfaceState()
+    @StateObject private var state: TerminalSurfaceState
+    
+    init(app: ghostty_app_t) {
+        self._state = StateObject(wrappedValue: TerminalSurfaceState(app))
+    }
     
     func makeNSView(context: Context) -> TerminalSurfaceView_Real {
         // We need the view as part of the state to be created previously because
@@ -24,10 +30,33 @@ struct TerminalSurfaceView: NSViewRepresentable {
 
 /// The state for the terminal surface view.
 class TerminalSurfaceState: ObservableObject {
-    var view: TerminalSurfaceView_Real;
+    static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier!,
+        category: String(describing: TerminalSurfaceState.self)
+    )
     
-    init() {
+    var view: TerminalSurfaceView_Real
+    private var surface: ghostty_surface_t? = nil
+    private var error: Error? = nil
+    
+    init(_ app: ghostty_app_t) {
         view = TerminalSurfaceView_Real()
+        
+        var surface_cfg = ghostty_surface_config_s(
+            nsview: Unmanaged.passUnretained(view).toOpaque(),
+            scale_factor: 2.0)
+        guard let surface = ghostty_surface_new(app, &surface_cfg) else {
+            self.error = AppError.surfaceCreateError
+            return
+        }
+        
+        self.surface = surface;
+    }
+    
+    deinit {
+        if let surface = self.surface {
+            ghostty_surface_free(surface)
+        }
     }
 }
 
@@ -52,8 +81,10 @@ class TerminalSurfaceView_Real: NSView {
     }
 }
 
-struct TerminalSurfaceView_Previews: PreviewProvider {
-    static var previews: some View {
-        TerminalSurfaceView()
-    }
-}
+/*
+ struct TerminalSurfaceView_Previews: PreviewProvider {
+     static var previews: some View {
+         TerminalSurfaceView()
+     }
+ }
+ */
