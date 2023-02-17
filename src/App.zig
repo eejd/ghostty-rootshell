@@ -147,25 +147,31 @@ pub fn wakeup(self: App) void {
 /// application quits or every window is closed.
 pub fn run(self: *App) !void {
     while (!self.quit and self.windows.items.len > 0) {
-        // Block for any events.
-        try self.runtime.wait();
+        try self.tick();
+    }
+}
 
-        // If any windows are closing, destroy them
-        var i: usize = 0;
-        while (i < self.windows.items.len) {
-            const window = self.windows.items[i];
-            if (window.shouldClose()) {
-                window.destroy();
-                _ = self.windows.swapRemove(i);
-                continue;
-            }
+/// Tick ticks the app loop. This will drain our mailbox and process those
+/// events.
+pub fn tick(self: *App) !void {
+    // Block for any events.
+    try self.runtime.wait();
 
-            i += 1;
+    // If any windows are closing, destroy them
+    var i: usize = 0;
+    while (i < self.windows.items.len) {
+        const window = self.windows.items[i];
+        if (window.shouldClose()) {
+            window.destroy();
+            _ = self.windows.swapRemove(i);
+            continue;
         }
 
-        // Drain our mailbox only if we're not quitting.
-        if (!self.quit) try self.drainMailbox();
+        i += 1;
     }
+
+    // Drain our mailbox only if we're not quitting.
+    if (!self.quit) try self.drainMailbox();
 }
 
 /// Drain the mailbox.
@@ -198,6 +204,11 @@ fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
 fn newTab(self: *App, msg: Message.NewWindow) !void {
     if (comptime !builtin.target.isDarwin()) {
         log.warn("tabbing is not supported on this platform", .{});
+        return;
+    }
+
+    if (comptime build_config.artifact != .exe) {
+        log.warn("tabbing is not supported in embedded mode", .{});
         return;
     }
 
@@ -330,6 +341,14 @@ pub const CAPI = struct {
         const app = try App.create(global.alloc, opts.*, config);
         errdefer app.destroy();
         return app;
+    }
+
+    /// Tick the event loop. This should be called whenever the "wakeup"
+    /// callback is invoked for the runtime.
+    export fn ghostty_app_tick(v: *App) void {
+        v.tick() catch |err| {
+            log.err("error app tick err={}", .{err});
+        };
     }
 
     export fn ghostty_app_free(ptr: ?*App) void {

@@ -308,6 +308,7 @@ pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
     // Set our window backing layer to be our swapchain
     const nswindow = switch (apprt.runtime) {
         apprt.glfw => objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?),
+        apprt.embedded => @panic("TODO"),
         else => @compileError("unsupported apprt for metal"),
     };
     const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
@@ -613,16 +614,18 @@ pub fn render(
             state.mutex.lock();
             defer state.mutex.unlock();
 
-            if (state.devmode) |dm| {
-                if (dm.visible) {
-                    imgui.ImplMetal.newFrame(desc.value);
-                    imgui.ImplGlfw.newFrame();
-                    try dm.update();
-                    imgui.ImplMetal.renderDrawData(
-                        try dm.render(),
-                        buffer.value,
-                        encoder.value,
-                    );
+            if (DevMode.enabled) {
+                if (state.devmode) |dm| {
+                    if (dm.visible) {
+                        imgui.ImplMetal.newFrame(desc.value);
+                        imgui.ImplGlfw.newFrame();
+                        try dm.update();
+                        imgui.ImplMetal.renderDrawData(
+                            try dm.render(),
+                            buffer.value,
+                            encoder.value,
+                        );
+                    }
                 }
             }
         }
@@ -690,7 +693,8 @@ pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
     // and we split them equal across all boundaries.
     const padding = self.padding.explicit.add(if (self.padding.balance)
         renderer.Padding.balanced(dim, grid_size, self.cell_size)
-    else .{});
+    else
+        .{});
     const padded_dim = dim.subPadding(padding);
 
     // Update our shaper
