@@ -31,6 +31,7 @@ typedef struct {
 // Opaque types
 typedef void *ghostty_app_t;
 typedef void *ghostty_config_t;
+typedef void *ghostty_surface_t;
 
 //-------------------------------------------------------------------
 // Published API

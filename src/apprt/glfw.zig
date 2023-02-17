@@ -58,7 +58,11 @@ pub const Window = struct {
     /// The glfw mouse cursor handle.
     cursor: glfw.Cursor,
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow) !Window {
+    pub const Options = struct {};
+
+    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
+        _ = opts;
+
         // Create our window
         const win = glfw.Window.create(
             640,

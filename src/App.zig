@@ -189,7 +189,11 @@ fn drainMailbox(self: *App) !void {
 
 /// Create a new window
 fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
-    var window = try Window.create(self.alloc, self, self.config);
+    if (comptime build_config.artifact != .exe) {
+        @panic("newWindow is not supported for embedded ghostty");
+    }
+
+    var window = try Window.create(self.alloc, self, self.config, .{});
     errdefer window.destroy();
     try self.windows.append(self.alloc, window);
     errdefer _ = self.windows.pop();

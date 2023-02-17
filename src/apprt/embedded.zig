@@ -45,14 +45,19 @@ pub const App = struct {
 };
 
 pub const Window = struct {
-    pub fn deinit(self: *Window) void {
-        _ = self;
-    }
+    pub const Options = extern struct {
+        id: usize,
+    };
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow) !Window {
+    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
         _ = app;
         _ = core_win;
+        _ = opts;
         return .{};
+    }
+
+    pub fn deinit(self: *Window) void {
+        _ = self;
     }
 
     pub fn getContentScale(self: *const Window) !apprt.ContentScale {
