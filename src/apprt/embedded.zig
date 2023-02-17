@@ -46,7 +46,7 @@ pub const App = struct {
 
 pub const Window = struct {
     pub const Options = extern struct {
-        id: usize,
+        id: usize = 0,
     };
 
     pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {

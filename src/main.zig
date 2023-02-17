@@ -94,6 +94,7 @@ pub fn main() !void {
     // Run our app with a single initial window to start.
     var app = try App.create(alloc, .{}, &config);
     defer app.destroy();
+    _ = try app.newWindow(.{});
     try app.run();
 }
 

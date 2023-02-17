@@ -115,13 +115,6 @@ pub fn create(
     }
     errdefer if (comptime builtin.target.isDarwin()) app.darwin.deinit();
 
-    // Create the first window if we're an executable. If we're a lib we
-    // do NOT create the first window because we expect the embedded API
-    // to do it via surfaces.
-    if (build_config.artifact == .exe) {
-        _ = try app.newWindow(.{});
-    }
-
     return app;
 }
 
@@ -174,6 +167,37 @@ pub fn tick(self: *App) !void {
     if (!self.quit) try self.drainMailbox();
 }
 
+/// Create a new window. This can be called only on the main thread. This
+/// can be called prior to ever running the app loop.
+pub fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
+    var window = try Window.create(self.alloc, self, self.config, msg.runtime);
+    errdefer window.destroy();
+
+    try self.windows.append(self.alloc, window);
+    errdefer _ = self.windows.pop();
+
+    // Set initial font size if given
+    if (msg.font_size) |size| window.setFontSize(size);
+
+    return window;
+}
+
+/// Close a window and free all resources associated with it. This can
+/// only be called from the main thread.
+pub fn closeWindow(self: *App, window: *Window) void {
+    var i: usize = 0;
+    while (i < self.windows.items.len) {
+        const current = self.windows.items[i];
+        if (window == current) {
+            window.destroy();
+            _ = self.windows.swapRemove(i);
+            return;
+        }
+
+        i += 1;
+    }
+}
+
 /// Drain the mailbox.
 fn drainMailbox(self: *App) !void {
     while (self.mailbox.pop()) |message| {
@@ -185,23 +209,6 @@ fn drainMailbox(self: *App) !void {
             .window_message => |msg| try self.windowMessage(msg.window, msg.message),
         }
     }
-}
-
-/// Create a new window
-fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
-    if (comptime build_config.artifact != .exe) {
-        @panic("newWindow is not supported for embedded ghostty");
-    }
-
-    var window = try Window.create(self.alloc, self, self.config, .{});
-    errdefer window.destroy();
-    try self.windows.append(self.alloc, window);
-    errdefer _ = self.windows.pop();
-
-    // Set initial font size if given
-    if (msg.font_size) |size| window.setFontSize(size);
-
-    return window;
 }
 
 /// Create a new tab in the parent window
@@ -286,6 +293,9 @@ pub const Message = union(enum) {
     },
 
     const NewWindow = struct {
+        /// Runtime-specific window options.
+        runtime: apprt.runtime.Window.Options = .{},
+
         /// The parent window, only used for new tabs.
         parent: ?*Window = null,
 
@@ -360,5 +370,29 @@ pub const CAPI = struct {
             v.destroy();
             v.alloc.destroy(v);
         }
+    }
+
+    /// Create a new surface as part of an app.
+    export fn ghostty_surface_new(
+        app: *App,
+        opts: *const apprt.runtime.Window.Options,
+    ) ?*Window {
+        return surface_new_(app, opts) catch |err| {
+            log.err("error initializing surface err={}", .{err});
+            return null;
+        };
+    }
+
+    fn surface_new_(
+        app: *App,
+        opts: *const apprt.runtime.Window.Options,
+    ) !*Window {
+        _ = opts;
+        const w = try app.newWindow(.{});
+        return w;
+    }
+
+    export fn ghostty_surface_free(ptr: ?*Window) void {
+        if (ptr) |v| v.app.closeWindow(v);
     }
 };
