@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 
 /// A bitmask for all key modifiers. This is taken directly from the
 /// GLFW representation, but we use this generically.
+///
+/// IMPORTANT: Any changes here update include/ghostty.h
 pub const Mods = packed struct(u8) {
     shift: bool = false,
     ctrl: bool = false,
@@ -25,6 +27,8 @@ pub const Mods = packed struct(u8) {
 
 /// The action associated with an input event. This is backed by a c_int
 /// so that we can use the enum as-is for our embedding API.
+///
+/// IMPORTANT: Any changes here update include/ghostty.h
 pub const Action = enum(c_int) {
     release,
     press,
@@ -38,6 +42,8 @@ pub const Action = enum(c_int) {
 /// unicode character is sent directly to the pty.
 ///
 /// This is backed by a c_int so we can use this as-is for our embedding API.
+///
+/// IMPORTANT: Any changes here update include/ghostty.h
 pub const Key = enum(c_int) {
     invalid,
 

@@ -419,8 +419,12 @@ pub const CAPI = struct {
         win: *Window,
         action: input.Action,
         key: input.Key,
-        mods: input.Mods,
+        mods: c_int,
     ) void {
-        win.window.keyCallback(action, key, mods);
+        win.window.keyCallback(
+            action,
+            key,
+            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
+        );
     }
 };

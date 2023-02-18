@@ -99,7 +99,7 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
         
         if let surface = self.surface {
             if (event.keyCode == 36) {
-                ghostty_surface_key(surface, press, enter, 0)
+                ghostty_surface_key(surface, GHOSTTY_ACTION_PRESS, GHOSTTY_KEY_ENTER, GHOSTTY_MODS_NONE)
             }
         }
         
