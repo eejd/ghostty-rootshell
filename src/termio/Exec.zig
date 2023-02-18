@@ -3,6 +3,7 @@ pub const Exec = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const termio = @import("../termio.zig");
@@ -361,6 +362,21 @@ const Subprocess = struct {
         try env.put("TERM", "xterm-256color");
         try env.put("COLORTERM", "truecolor");
 
+        // When embedding in macOS and running via XCode, XCode injects
+        // a bunch of things that break our shell process. We remove those.
+        if (comptime builtin.target.isDarwin() and build_config.artifact == .lib) {
+            if (env.get("__XCODE_BUILT_PRODUCTS_DIR_PATHS") != null) {
+                env.remove("__XCODE_BUILT_PRODUCTS_DIR_PATHS");
+                env.remove("__XPC_DYLD_LIBRARY_PATH");
+                env.remove("DYLD_FRAMEWORK_PATH");
+                env.remove("DYLD_INSERT_LIBRARIES");
+                env.remove("DYLD_LIBRARY_PATH");
+                env.remove("LD_LIBRARY_PATH");
+                env.remove("SECURITYSESSIONID");
+                env.remove("XPC_SERVICE_NAME");
+            }
+        }
+
         return .{
             .env = env,
             .cwd = opts.config.@"working-directory",
@@ -529,7 +545,7 @@ const ReadThread = struct {
                 return;
             };
 
-            log.info("DATA: {d}", .{n});
+            // log.info("DATA: {d}", .{n});
             @call(.always_inline, process, .{ ev, buf[0..n] });
         }
     }
