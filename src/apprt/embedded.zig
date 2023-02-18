@@ -151,8 +151,17 @@ pub const Window = struct {
         key: input.Key,
         mods: input.Mods,
     ) void {
+        // log.warn("key action={} key={} mods={}", .{ action, key, mods });
         self.core_win.keyCallback(action, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
+            return;
+        };
+    }
+
+    pub fn charCallback(self: *const Window, cp_: u32) void {
+        const cp = std.math.cast(u21, cp_) orelse return;
+        self.core_win.charCallback(cp) catch |err| {
+            log.err("error in char callback err={}", .{err});
             return;
         };
     }

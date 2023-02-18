@@ -39,6 +39,7 @@ typedef struct {
 
 typedef enum {
     GHOSTTY_MODS_NONE  = 0,
+    GHOSTTY_MODS_SHIFT = 1 << 0,
     GHOSTTY_MODS_CTRL  = 1 << 1,
     GHOSTTY_MODS_ALT   = 1 << 2,
     GHOSTTY_MODS_SUPER = 1 << 3,
@@ -212,6 +213,7 @@ void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 void ghostty_surface_key(ghostty_surface_t, ghostty_input_action_e, ghostty_input_key_e, ghostty_input_mods_e);
+void ghostty_surface_char(ghostty_surface_t, uint32_t);
 
 #ifdef __cplusplus
 }

@@ -427,4 +427,9 @@ pub const CAPI = struct {
             @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
         );
     }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_char(win: *Window, codepoint: u32) void {
+        win.window.charCallback(codepoint);
+    }
 };
