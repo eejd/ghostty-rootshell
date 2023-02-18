@@ -529,7 +529,7 @@ const ReadThread = struct {
                 return;
             };
 
-            // log.info("DATA: {d}", .{n});
+            log.info("DATA: {d}", .{n});
             @call(.always_inline, process, .{ ev, buf[0..n] });
         }
     }

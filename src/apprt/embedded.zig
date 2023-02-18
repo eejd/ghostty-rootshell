@@ -10,6 +10,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const objc = @import("objc");
 const apprt = @import("../apprt.zig");
+const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreWindow = @import("../Window.zig");
 
@@ -140,6 +141,18 @@ pub const Window = struct {
         // Call the primary callback.
         self.core_win.sizeCallback(self.size) catch |err| {
             log.err("error in size callback err={}", .{err});
+            return;
+        };
+    }
+
+    pub fn keyCallback(
+        self: *const Window,
+        action: input.Action,
+        key: input.Key,
+        mods: input.Mods,
+    ) void {
+        self.core_win.keyCallback(action, key, mods) catch |err| {
+            log.err("error in key callback err={}", .{err});
             return;
         };
     }

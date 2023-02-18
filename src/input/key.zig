@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 /// A bitmask for all key modifiers. This is taken directly from the
 /// GLFW representation, but we use this generically.
-pub const Mods = packed struct {
+pub const Mods = packed struct(u8) {
     shift: bool = false,
     ctrl: bool = false,
     alt: bool = false,
@@ -11,10 +11,21 @@ pub const Mods = packed struct {
     caps_lock: bool = false,
     num_lock: bool = false,
     _padding: u2 = 0,
+
+    // For our own understanding
+    test {
+        const testing = std.testing;
+        try testing.expectEqual(@bitCast(u8, Mods{}), @as(u8, 0b0));
+        try testing.expectEqual(
+            @bitCast(u8, Mods{ .shift = true }),
+            @as(u8, 0b0000_0001),
+        );
+    }
 };
 
-/// The action associated with an input event.
-pub const Action = enum {
+/// The action associated with an input event. This is backed by a c_int
+/// so that we can use the enum as-is for our embedding API.
+pub const Action = enum(c_int) {
     release,
     press,
     repeat,
@@ -25,7 +36,9 @@ pub const Action = enum {
 /// this only needs to accomodate what maps to a key. If a key is not bound
 /// to anything and the key can be mapped to a printable character, then that
 /// unicode character is sent directly to the pty.
-pub const Key = enum {
+///
+/// This is backed by a c_int so we can use this as-is for our embedding API.
+pub const Key = enum(c_int) {
     invalid,
 
     // a-z

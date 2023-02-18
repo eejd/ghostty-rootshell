@@ -11,6 +11,7 @@ const build_config = @import("build_config.zig");
 const apprt = @import("apprt.zig");
 const Window = @import("Window.zig");
 const tracy = @import("tracy");
+const input = @import("input.zig");
 const Config = @import("config.zig").Config;
 const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
@@ -411,5 +412,15 @@ pub const CAPI = struct {
     /// Update the content scale of the surface.
     export fn ghostty_surface_set_content_scale(win: *Window, x: f64, y: f64) void {
         win.window.updateContentScale(x, y);
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_key(
+        win: *Window,
+        action: input.Action,
+        key: input.Key,
+        mods: input.Mods,
+    ) void {
+        win.window.keyCallback(action, key, mods);
     }
 };

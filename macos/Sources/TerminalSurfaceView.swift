@@ -96,6 +96,13 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
     
     override func keyDown(with event: NSEvent) {
         print("Key down: \(event)")
+        
+        if let surface = self.surface {
+            if (event.keyCode == 36) {
+                ghostty_surface_key(surface, press, enter, 0)
+            }
+        }
+        
         self.interpretKeyEvents([event])
     }
     
