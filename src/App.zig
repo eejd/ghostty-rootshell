@@ -396,4 +396,10 @@ pub const CAPI = struct {
     export fn ghostty_surface_free(ptr: ?*Window) void {
         if (ptr) |v| v.app.closeWindow(v);
     }
+
+    /// Update the size of a surface. This will trigger resize notifications
+    /// to the pty and the renderer.
+    export fn ghostty_surface_set_size(win: *Window, w: u32, h: u32) void {
+        win.window.updateSize(w, h);
+    }
 };

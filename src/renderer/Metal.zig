@@ -568,9 +568,14 @@ pub fn render(
                     .{@as(c_ulong, 0)},
                 );
 
+                // Texture is a property of CAMetalDrawable but if you run
+                // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
+                // which ironically doesn't implement CAMetalDrawable as a
+                // property so we just send a message.
+                const texture = surface.msgSend(objc.c.id, objc.sel("texture"), .{});
                 attachment.setProperty("loadAction", @enumToInt(MTLLoadAction.clear));
                 attachment.setProperty("storeAction", @enumToInt(MTLStoreAction.store));
-                attachment.setProperty("texture", surface.getProperty(objc.c.id, "texture").?);
+                attachment.setProperty("texture", texture);
                 attachment.setProperty("clearColor", MTLClearColor{
                     .red = @intToFloat(f32, critical.bg.r) / 255,
                     .green = @intToFloat(f32, critical.bg.g) / 255,
@@ -673,18 +678,20 @@ fn drawCells(
         .{ buf.value, @as(c_ulong, 0), @as(c_ulong, 0) },
     );
 
-    encoder.msgSend(
-        void,
-        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
-        .{
-            @enumToInt(MTLPrimitiveType.triangle),
-            @as(c_ulong, 6),
-            @enumToInt(MTLIndexType.uint16),
-            self.buf_instance.value,
-            @as(c_ulong, 0),
-            @as(c_ulong, cells.items.len),
-        },
-    );
+    if (cells.items.len > 0) {
+        encoder.msgSend(
+            void,
+            objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+            .{
+                @enumToInt(MTLPrimitiveType.triangle),
+                @as(c_ulong, 6),
+                @enumToInt(MTLIndexType.uint16),
+                self.buf_instance.value,
+                @as(c_ulong, 0),
+                @as(c_ulong, cells.items.len),
+            },
+        );
+    }
 }
 
 /// Resize the screen.

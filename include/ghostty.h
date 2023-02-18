@@ -53,6 +53,7 @@ int ghostty_app_tick(ghostty_app_t);
 
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
+void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 
 #ifdef __cplusplus
 }

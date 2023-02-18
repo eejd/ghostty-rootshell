@@ -13,6 +13,8 @@ const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreWindow = @import("../Window.zig");
 
+const log = std.log.scoped(.embedded_window);
+
 pub const App = struct {
     /// Because we only expect the embedding API to be used in embedded
     /// environments, the options are extern so that we can expose it
@@ -48,6 +50,7 @@ pub const App = struct {
 pub const Window = struct {
     nsview: objc.Object,
     scale_factor: f64,
+    core_win: *CoreWindow,
 
     pub const Options = extern struct {
         /// The pointer to the backing NSView for the surface.
@@ -59,9 +62,9 @@ pub const Window = struct {
 
     pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
         _ = app;
-        _ = core_win;
 
         return .{
+            .core_win = core_win,
             .nsview = objc.Object.fromId(opts.nsview),
             .scale_factor = opts.scale_factor,
         };
@@ -112,5 +115,18 @@ pub const Window = struct {
     pub fn shouldClose(self: *const Window) bool {
         _ = self;
         return false;
+    }
+
+    pub fn updateSize(self: *const Window, width: u32, height: u32) void {
+        const size: apprt.WindowSize = .{
+            .width = width,
+            .height = height,
+        };
+
+        // Call the primary callback.
+        self.core_win.sizeCallback(size) catch |err| {
+            log.err("error in size callback err={}", .{err});
+            return;
+        };
     }
 };

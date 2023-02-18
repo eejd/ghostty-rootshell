@@ -10,17 +10,17 @@ import GhosttyKit
 /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
 /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
 struct TerminalSurfaceView: NSViewRepresentable {
-    @StateObject private var state: TerminalSurfaceState
+    @StateObject private var state: TerminalSurfaceView_Real
     
     init(app: ghostty_app_t) {
-        self._state = StateObject(wrappedValue: TerminalSurfaceState(app))
+        self._state = StateObject(wrappedValue: TerminalSurfaceView_Real(app))
     }
     
     func makeNSView(context: Context) -> TerminalSurfaceView_Real {
         // We need the view as part of the state to be created previously because
         // the view is sent to the Ghostty API so that it can manipulate it
         // directly since we draw on a render thread.
-        return state.view;
+        return state;
     }
     
     func updateNSView(_ view: TerminalSurfaceView_Real, context: Context) {
@@ -28,22 +28,23 @@ struct TerminalSurfaceView: NSViewRepresentable {
     }
 }
 
-/// The state for the terminal surface view.
-class TerminalSurfaceState: ObservableObject {
-    static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier!,
-        category: String(describing: TerminalSurfaceState.self)
-    )
+// The actual NSView implementation for the terminal surface.
+class TerminalSurfaceView_Real: NSView, ObservableObject {
+    // We need to support being a first responder so that we can get input events
+    override var acceptsFirstResponder: Bool { return true }
     
-    var view: TerminalSurfaceView_Real
     private var surface: ghostty_surface_t? = nil
     private var error: Error? = nil
     
     init(_ app: ghostty_app_t) {
-        view = TerminalSurfaceView_Real()
+        // Initialize with some default frame size. The important thing is that this
+        // is non-zero so that our layer bounds are non-zero so that our renderer
+        // can do SOMETHING.
+        super.init(frame: NSMakeRect(0, 0, 800, 600))
         
+        // Setup our surface. This will also initialize all the terminal IO.
         var surface_cfg = ghostty_surface_config_s(
-            nsview: Unmanaged.passUnretained(view).toOpaque(),
+            nsview: Unmanaged.passUnretained(self).toOpaque(),
             scale_factor: 2.0)
         guard let surface = ghostty_surface_new(app, &surface_cfg) else {
             self.error = AppError.surfaceCreateError
@@ -53,17 +54,16 @@ class TerminalSurfaceState: ObservableObject {
         self.surface = surface;
     }
     
-    deinit {
-        if let surface = self.surface {
-            ghostty_surface_free(surface)
-        }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported for this view")
     }
-}
-
-// The actual NSView implementation for the terminal surface.
-class TerminalSurfaceView_Real: NSView {
-    // We need to support being a first responder so that we can get input events
-    override var acceptsFirstResponder: Bool { return true }
+    
+    override func resize(withOldSuperviewSize oldSize: NSSize) {
+        print("LAYER: \(self.layer?.bounds)")
+        super.resize(withOldSuperviewSize: oldSize)
+        print("RESIZE: \(oldSize) NEW: \(self.bounds)")
+        print("LAYER: \(self.layer?.bounds)")
+    }
     
     override func draw(_ dirtyRect: NSRect) {
         print("DRAW: \(dirtyRect)")
