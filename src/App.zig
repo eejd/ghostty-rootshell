@@ -397,9 +397,19 @@ pub const CAPI = struct {
         if (ptr) |v| v.app.closeWindow(v);
     }
 
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_refresh(win: *Window) void {
+        win.window.refresh();
+    }
+
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(win: *Window, w: u32, h: u32) void {
         win.window.updateSize(w, h);
+    }
+
+    /// Update the content scale of the surface.
+    export fn ghostty_surface_set_content_scale(win: *Window, x: f64, y: f64) void {
+        win.window.updateContentScale(x, y);
     }
 };

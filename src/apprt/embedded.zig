@@ -49,8 +49,8 @@ pub const App = struct {
 
 pub const Window = struct {
     nsview: objc.Object,
-    scale_factor: f64,
     core_win: *CoreWindow,
+    content_scale: apprt.ContentScale,
     size: apprt.WindowSize,
 
     pub const Options = extern struct {
@@ -67,7 +67,10 @@ pub const Window = struct {
         return .{
             .core_win = core_win,
             .nsview = objc.Object.fromId(opts.nsview),
-            .scale_factor = opts.scale_factor,
+            .content_scale = .{
+                .x = @floatCast(f32, opts.scale_factor),
+                .y = @floatCast(f32, opts.scale_factor),
+            },
             .size = .{ .width = 800, .height = 600 },
         };
     }
@@ -77,8 +80,7 @@ pub const Window = struct {
     }
 
     pub fn getContentScale(self: *const Window) !apprt.ContentScale {
-        _ = self;
-        return apprt.ContentScale{ .x = 1, .y = 1 };
+        return self.content_scale;
     }
 
     pub fn getSize(self: *const Window) !apprt.WindowSize {
@@ -113,6 +115,20 @@ pub const Window = struct {
     pub fn shouldClose(self: *const Window) bool {
         _ = self;
         return false;
+    }
+
+    pub fn refresh(self: *Window) void {
+        self.core_win.refreshCallback() catch |err| {
+            log.err("error in refresh callback err={}", .{err});
+            return;
+        };
+    }
+
+    pub fn updateContentScale(self: *Window, x: f64, y: f64) void {
+        self.content_scale = .{
+            .x = @floatCast(f32, x),
+            .y = @floatCast(f32, y),
+        };
     }
 
     pub fn updateSize(self: *Window, width: u32, height: u32) void {

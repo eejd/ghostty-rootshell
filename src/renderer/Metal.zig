@@ -326,7 +326,7 @@ pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
 
         apprt.embedded => .{
             .view = win.nsview,
-            .scaleFactor = win.scale_factor,
+            .scaleFactor = @floatCast(f64, win.content_scale.x),
         },
 
         else => @compileError("unsupported apprt for metal"),

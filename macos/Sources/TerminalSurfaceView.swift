@@ -33,6 +33,10 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
     // We need to support being a first responder so that we can get input events
     override var acceptsFirstResponder: Bool { return true }
     
+    // I don't thikn we need this but this lets us know we should redraw our layer
+    // so we'll use that to tell ghostty to refresh.
+    override var wantsUpdateLayer: Bool { return true }
+    
     private var surface: ghostty_surface_t? = nil
     private var error: Error? = nil
     
@@ -45,7 +49,7 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
         // Setup our surface. This will also initialize all the terminal IO.
         var surface_cfg = ghostty_surface_config_s(
             nsview: Unmanaged.passUnretained(self).toOpaque(),
-            scale_factor: 1.0)
+            scale_factor: NSScreen.main!.backingScaleFactor)
         guard let surface = ghostty_surface_new(app, &surface_cfg) else {
             self.error = AppError.surfaceCreateError
             return
@@ -62,8 +66,28 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
         super.resize(withOldSuperviewSize: oldSize)
         
         if let surface = self.surface {
-            ghostty_surface_set_size(surface, UInt32(self.bounds.size.width), UInt32(self.bounds.size.height))
+            // Ghostty wants to know the actual framebuffer size...
+            let fbFrame = self.convertToBacking(self.frame);
+            ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
         }
+    }
+    
+    override func viewDidChangeBackingProperties() {
+        guard let surface = self.surface else { return }
+
+        // Detect our X/Y scale factor so we can update our surface
+        let fbFrame = self.convertToBacking(self.frame)
+        let xScale = fbFrame.size.width / self.frame.size.width
+        let yScale = fbFrame.size.height / self.frame.size.height
+        ghostty_surface_set_content_scale(surface, xScale, yScale)
+        
+        // When our scale factor changes, so does our fb size so we send that too
+        ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
+    }
+    
+    override func updateLayer() {
+        guard let surface = self.surface else { return }
+        ghostty_surface_refresh(surface);
     }
     
     override func mouseDown(with event: NSEvent) {
@@ -72,6 +96,14 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
     
     override func keyDown(with event: NSEvent) {
         print("Key down: \(event)")
+        self.interpretKeyEvents([event])
+    }
+    
+    override func doCommand(by selector: Selector) {
+        // This currently just prevents NSBeep from interpretKeyEvents but in the future
+        // we may want to make some of this work.
+        
+        // print("SEL: \(selector)")
     }
 }
 
