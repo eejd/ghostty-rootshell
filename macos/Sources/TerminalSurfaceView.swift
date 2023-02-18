@@ -182,6 +182,11 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
         fatalError("init(coder:) is not supported for this view")
     }
     
+    deinit {
+        guard let surface = self.surface else { return }
+        ghostty_surface_free(surface)
+    }
+    
     override func resize(withOldSuperviewSize oldSize: NSSize) {
         super.resize(withOldSuperviewSize: oldSize)
         
