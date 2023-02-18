@@ -51,6 +51,7 @@ pub const Window = struct {
     nsview: objc.Object,
     scale_factor: f64,
     core_win: *CoreWindow,
+    size: apprt.WindowSize,
 
     pub const Options = extern struct {
         /// The pointer to the backing NSView for the surface.
@@ -67,6 +68,7 @@ pub const Window = struct {
             .core_win = core_win,
             .nsview = objc.Object.fromId(opts.nsview),
             .scale_factor = opts.scale_factor,
+            .size = .{ .width = 800, .height = 600 },
         };
     }
 
@@ -80,11 +82,7 @@ pub const Window = struct {
     }
 
     pub fn getSize(self: *const Window) !apprt.WindowSize {
-        _ = self;
-
-        // Initially our window will have a zero size. Until we can determine
-        // the size of the window, we just send down this value.
-        return apprt.WindowSize{ .width = 800, .height = 600 };
+        return self.size;
     }
 
     pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
@@ -117,14 +115,14 @@ pub const Window = struct {
         return false;
     }
 
-    pub fn updateSize(self: *const Window, width: u32, height: u32) void {
-        const size: apprt.WindowSize = .{
+    pub fn updateSize(self: *Window, width: u32, height: u32) void {
+        self.size = .{
             .width = width,
             .height = height,
         };
 
         // Call the primary callback.
-        self.core_win.sizeCallback(size) catch |err| {
+        self.core_win.sizeCallback(self.size) catch |err| {
             log.err("error in size callback err={}", .{err});
             return;
         };

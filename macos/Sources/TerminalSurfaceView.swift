@@ -45,7 +45,7 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
         // Setup our surface. This will also initialize all the terminal IO.
         var surface_cfg = ghostty_surface_config_s(
             nsview: Unmanaged.passUnretained(self).toOpaque(),
-            scale_factor: 2.0)
+            scale_factor: 1.0)
         guard let surface = ghostty_surface_new(app, &surface_cfg) else {
             self.error = AppError.surfaceCreateError
             return
@@ -59,17 +59,11 @@ class TerminalSurfaceView_Real: NSView, ObservableObject {
     }
     
     override func resize(withOldSuperviewSize oldSize: NSSize) {
-        print("LAYER: \(self.layer?.bounds)")
         super.resize(withOldSuperviewSize: oldSize)
-        print("RESIZE: \(oldSize) NEW: \(self.bounds)")
-        print("LAYER: \(self.layer?.bounds)")
-    }
-    
-    override func draw(_ dirtyRect: NSRect) {
-        print("DRAW: \(dirtyRect)")
-        NSColor.green.setFill()
-        dirtyRect.fill()
-        super.draw(dirtyRect)
+        
+        if let surface = self.surface {
+            ghostty_surface_set_size(surface, UInt32(self.bounds.size.width), UInt32(self.bounds.size.height))
+        }
     }
     
     override func mouseDown(with event: NSEvent) {
