@@ -40,7 +40,7 @@ class GhosttyState: ObservableObject {
     /// The ghostty app instance. We only have one of these for the entire app, although I guess
     /// in theory you can have multiple... I don't know why you would...
     var app: ghostty_app_t? = nil
-    
+
     init() {
         // Initialize ghostty global state. This happens once per process.
         guard ghostty_init() == GHOSTTY_SUCCESS else {
@@ -67,9 +67,9 @@ class GhosttyState: ObservableObject {
         // Create our "runtime" config. The "runtime" is the configuration that ghostty
         // uses to interface with the application runtime environment.
         var runtime_cfg = ghostty_runtime_config_s(
-            userdata: nil,
-            wakeup_cb: { userdata in GhosttyState.wakeup() })
-        
+            userdata: Unmanaged.passUnretained(self).toOpaque(),
+            wakeup_cb: { userdata in GhosttyState.wakeup(userdata) })
+
         // Create the ghostty app.
         guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
             GhosttyApp.logger.critical("ghostty_app_new failed")
@@ -77,12 +77,23 @@ class GhosttyState: ObservableObject {
             return
         }
         self.app = app
-        
+
         self.readiness = .ready
     }
     
-    static func wakeup() {
-        // TODO
+    func appTick() {
+        guard let app = self.app else { return }
+        ghostty_app_tick(app)
+    }
+    
+    static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
+        let state = Unmanaged<GhosttyState>.fromOpaque(userdata!).takeUnretainedValue()
+        
+        // Wakeup can be called from any thread so we schedule the app tick
+        // from the main thread. There is probably some improvements we can make
+        // to coalesce multiple ticks but I don't think it matters from a performance
+        // standpoint since we don't do this much.
+        DispatchQueue.main.async { state.appTick() }
     }
     
     deinit {

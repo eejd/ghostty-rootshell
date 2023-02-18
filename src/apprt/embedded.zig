@@ -31,8 +31,10 @@ pub const App = struct {
         wakeup: *const fn (?*anyopaque) callconv(.C) void,
     };
 
-    pub fn init(_: Options) !App {
-        return .{};
+    opts: Options,
+
+    pub fn init(opts: Options) !App {
+        return .{ .opts = opts };
     }
 
     pub fn terminate(self: App) void {
@@ -40,7 +42,7 @@ pub const App = struct {
     }
 
     pub fn wakeup(self: App) !void {
-        _ = self;
+        self.opts.wakeup(self.opts.userdata);
     }
 
     pub fn wait(self: App) !void {
