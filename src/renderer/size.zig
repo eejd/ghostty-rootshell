@@ -106,10 +106,10 @@ pub const Padding = struct {
         const padding_bot = space_bot - padding_top;
 
         return .{
-            .top = padding_top,
-            .bottom = padding_bot,
-            .right = padding_right,
-            .left = padding_left,
+            .top = @max(0, padding_top),
+            .bottom = @max(0, padding_bot),
+            .right = @max(0, padding_right),
+            .left = @max(0, padding_left),
         };
     }
 
@@ -123,6 +123,17 @@ pub const Padding = struct {
         };
     }
 };
+
+test "Padding balanced on zero" {
+    // On some systems, our screen can be zero-sized for a bit, and we
+    // don't want to end up with negative padding.
+    const testing = std.testing;
+    const grid: GridSize = .{ .columns = 100, .rows = 37 };
+    const cell: CellSize = .{ .width = 10, .height = 20 };
+    const screen: ScreenSize = .{ .width = 0, .height = 0 };
+    const padding = Padding.balanced(screen, grid, cell);
+    try testing.expectEqual(padding, .{});
+}
 
 test "GridSize update exact" {
     const testing = std.testing;

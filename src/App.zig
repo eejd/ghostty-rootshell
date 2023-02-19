@@ -5,10 +5,13 @@ const App = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const build_config = @import("build_config.zig");
 const apprt = @import("apprt.zig");
 const Window = @import("Window.zig");
 const tracy = @import("tracy");
+const input = @import("input.zig");
 const Config = @import("config.zig").Config;
 const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
@@ -46,9 +49,11 @@ quit: bool,
 /// Mac settings
 darwin: if (Darwin.enabled) Darwin else void,
 
-/// Mac-specific settings
+/// Mac-specific settings. This is only enabled when the target is
+/// Mac and the artifact is a standalone exe. We don't target libs because
+/// the embedded API doesn't do windowing.
 pub const Darwin = struct {
-    pub const enabled = builtin.target.isDarwin();
+    pub const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
 
     tabbing_id: *macos.foundation.String,
 
@@ -61,9 +66,13 @@ pub const Darwin = struct {
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
-pub fn create(alloc: Allocator, config: *const Config) !*App {
+pub fn create(
+    alloc: Allocator,
+    rt_opts: apprt.runtime.App.Options,
+    config: *const Config,
+) !*App {
     // Initialize app runtime
-    var app_backend = try apprt.runtime.App.init();
+    var app_backend = try apprt.runtime.App.init(rt_opts);
     errdefer app_backend.terminate();
 
     // The mailbox for messaging this thread
@@ -86,8 +95,9 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     };
     errdefer app.windows.deinit(alloc);
 
-    // On Mac, we enable window tabbing
-    if (comptime builtin.target.isDarwin()) {
+    // On Mac, we enable window tabbing. We only do this if we're building
+    // a standalone exe. In embedded mode the host app handles this for us.
+    if (Darwin.enabled) {
         const NSWindow = objc.Class.getClass("NSWindow").?;
         NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
 
@@ -106,9 +116,6 @@ pub fn create(alloc: Allocator, config: *const Config) !*App {
     }
     errdefer if (comptime builtin.target.isDarwin()) app.darwin.deinit();
 
-    // Create the first window
-    _ = try app.newWindow(.{});
-
     return app;
 }
 
@@ -116,7 +123,7 @@ pub fn destroy(self: *App) void {
     // Clean up all our windows
     for (self.windows.items) |window| window.destroy();
     self.windows.deinit(self.alloc);
-    if (comptime builtin.target.isDarwin()) self.darwin.deinit();
+    if (Darwin.enabled) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
     self.alloc.destroy(self);
 
@@ -134,24 +141,61 @@ pub fn wakeup(self: App) void {
 /// application quits or every window is closed.
 pub fn run(self: *App) !void {
     while (!self.quit and self.windows.items.len > 0) {
-        // Block for any events.
-        try self.runtime.wait();
+        try self.tick();
+    }
+}
 
-        // If any windows are closing, destroy them
-        var i: usize = 0;
-        while (i < self.windows.items.len) {
-            const window = self.windows.items[i];
-            if (window.shouldClose()) {
-                window.destroy();
-                _ = self.windows.swapRemove(i);
-                continue;
-            }
+/// Tick ticks the app loop. This will drain our mailbox and process those
+/// events.
+pub fn tick(self: *App) !void {
+    // Block for any events.
+    try self.runtime.wait();
 
-            i += 1;
+    // If any windows are closing, destroy them
+    var i: usize = 0;
+    while (i < self.windows.items.len) {
+        const window = self.windows.items[i];
+        if (window.shouldClose()) {
+            window.destroy();
+            _ = self.windows.swapRemove(i);
+            continue;
         }
 
-        // Drain our mailbox only if we're not quitting.
-        if (!self.quit) try self.drainMailbox();
+        i += 1;
+    }
+
+    // Drain our mailbox only if we're not quitting.
+    if (!self.quit) try self.drainMailbox();
+}
+
+/// Create a new window. This can be called only on the main thread. This
+/// can be called prior to ever running the app loop.
+pub fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
+    var window = try Window.create(self.alloc, self, self.config, msg.runtime);
+    errdefer window.destroy();
+
+    try self.windows.append(self.alloc, window);
+    errdefer _ = self.windows.pop();
+
+    // Set initial font size if given
+    if (msg.font_size) |size| window.setFontSize(size);
+
+    return window;
+}
+
+/// Close a window and free all resources associated with it. This can
+/// only be called from the main thread.
+pub fn closeWindow(self: *App, window: *Window) void {
+    var i: usize = 0;
+    while (i < self.windows.items.len) {
+        const current = self.windows.items[i];
+        if (window == current) {
+            window.destroy();
+            _ = self.windows.swapRemove(i);
+            return;
+        }
+
+        i += 1;
     }
 }
 
@@ -168,23 +212,17 @@ fn drainMailbox(self: *App) !void {
     }
 }
 
-/// Create a new window
-fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
-    var window = try Window.create(self.alloc, self, self.config);
-    errdefer window.destroy();
-    try self.windows.append(self.alloc, window);
-    errdefer _ = self.windows.pop();
-
-    // Set initial font size if given
-    if (msg.font_size) |size| window.setFontSize(size);
-
-    return window;
-}
-
 /// Create a new tab in the parent window
 fn newTab(self: *App, msg: Message.NewWindow) !void {
     if (comptime !builtin.target.isDarwin()) {
         log.warn("tabbing is not supported on this platform", .{});
+        return;
+    }
+
+    // In embedded mode, it is up to the embedder to implement tabbing
+    // on their own.
+    if (comptime build_config.artifact != .exe) {
+        log.warn("tabbing is not supported in embedded mode", .{});
         return;
     }
 
@@ -258,6 +296,9 @@ pub const Message = union(enum) {
     },
 
     const NewWindow = struct {
+        /// Runtime-specific window options.
+        runtime: apprt.runtime.Window.Options = .{},
+
         /// The parent window, only used for new tabs.
         parent: ?*Window = null,
 
@@ -273,8 +314,7 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     const alloc = wasm.alloc;
 
     // export fn app_new(config: *Config) ?*App {
-    //     return app_new_(config) catch |err| {
-    //         log.err("error initializing app err={}", .{err});
+    //     return app_new_(config) catch |err| { log.err("error initializing app err={}", .{err});
     //         return null;
     //     };
     // }
@@ -294,4 +334,132 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     //         alloc.destroy(v);
     //     }
     // }
+};
+
+// C API
+pub const CAPI = struct {
+    const global = &@import("main.zig").state;
+
+    /// Create a new app.
+    export fn ghostty_app_new(
+        opts: *const apprt.runtime.App.Options,
+        config: *const Config,
+    ) ?*App {
+        return app_new_(opts, config) catch |err| {
+            log.err("error initializing app err={}", .{err});
+            return null;
+        };
+    }
+
+    fn app_new_(
+        opts: *const apprt.runtime.App.Options,
+        config: *const Config,
+    ) !*App {
+        const app = try App.create(global.alloc, opts.*, config);
+        errdefer app.destroy();
+        return app;
+    }
+
+    /// Tick the event loop. This should be called whenever the "wakeup"
+    /// callback is invoked for the runtime.
+    export fn ghostty_app_tick(v: *App) void {
+        v.tick() catch |err| {
+            log.err("error app tick err={}", .{err});
+        };
+    }
+
+    export fn ghostty_app_free(ptr: ?*App) void {
+        if (ptr) |v| {
+            v.destroy();
+            v.alloc.destroy(v);
+        }
+    }
+
+    /// Create a new surface as part of an app.
+    export fn ghostty_surface_new(
+        app: *App,
+        opts: *const apprt.runtime.Window.Options,
+    ) ?*Window {
+        return surface_new_(app, opts) catch |err| {
+            log.err("error initializing surface err={}", .{err});
+            return null;
+        };
+    }
+
+    fn surface_new_(
+        app: *App,
+        opts: *const apprt.runtime.Window.Options,
+    ) !*Window {
+        const w = try app.newWindow(.{
+            .runtime = opts.*,
+        });
+        return w;
+    }
+
+    export fn ghostty_surface_free(ptr: ?*Window) void {
+        if (ptr) |v| v.app.closeWindow(v);
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_refresh(win: *Window) void {
+        win.window.refresh();
+    }
+
+    /// Update the size of a surface. This will trigger resize notifications
+    /// to the pty and the renderer.
+    export fn ghostty_surface_set_size(win: *Window, w: u32, h: u32) void {
+        win.window.updateSize(w, h);
+    }
+
+    /// Update the content scale of the surface.
+    export fn ghostty_surface_set_content_scale(win: *Window, x: f64, y: f64) void {
+        win.window.updateContentScale(x, y);
+    }
+
+    /// Update the focused state of a surface.
+    export fn ghostty_surface_set_focus(win: *Window, focused: bool) void {
+        win.window.focusCallback(focused);
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_key(
+        win: *Window,
+        action: input.Action,
+        key: input.Key,
+        mods: c_int,
+    ) void {
+        win.window.keyCallback(
+            action,
+            key,
+            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
+        );
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_char(win: *Window, codepoint: u32) void {
+        win.window.charCallback(codepoint);
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_mouse_button(
+        win: *Window,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: c_int,
+    ) void {
+        win.window.mouseButtonCallback(
+            action,
+            button,
+            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
+        );
+    }
+
+    /// Update the mouse position within the view.
+    export fn ghostty_surface_mouse_pos(win: *Window, x: f64, y: f64) void {
+        win.window.cursorPosCallback(x, y);
+    }
+
+    export fn ghostty_surface_mouse_scroll(win: *Window, x: f64, y: f64) void {
+        win.window.scrollCallback(x, y);
+    }
 };

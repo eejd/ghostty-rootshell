@@ -305,21 +305,42 @@ pub fn deinit(self: *Metal) void {
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
 pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
-    // Set our window backing layer to be our swapchain
-    const nswindow = switch (apprt.runtime) {
-        apprt.glfw => objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?),
+    const Info = struct {
+        view: objc.Object,
+        scaleFactor: f64,
+    };
+
+    // Get the view and scale factor for our surface.
+    const info: Info = switch (apprt.runtime) {
+        apprt.glfw => info: {
+            // Everything in glfw is window-oriented so we grab the backing
+            // window, then derive everything from that.
+            const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?);
+            const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
+            const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
+            break :info .{
+                .view = contentView,
+                .scaleFactor = scaleFactor,
+            };
+        },
+
+        apprt.embedded => .{
+            .view = win.nsview,
+            .scaleFactor = @floatCast(f64, win.content_scale.x),
+        },
+
         else => @compileError("unsupported apprt for metal"),
     };
-    const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
-    contentView.setProperty("layer", self.swapchain.value);
-    contentView.setProperty("wantsLayer", true);
+
+    // Make our view layer-backed with our Metal layer
+    info.view.setProperty("layer", self.swapchain.value);
+    info.view.setProperty("wantsLayer", true);
 
     // Ensure that our metal layer has a content scale set to match the
     // scale factor of the window. This avoids magnification issues leading
     // to blurry rendering.
-    const layer = contentView.getProperty(objc.Object, "layer");
-    const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
-    layer.setProperty("contentsScale", scaleFactor);
+    const layer = info.view.getProperty(objc.Object, "layer");
+    layer.setProperty("contentsScale", info.scaleFactor);
 }
 
 /// This is called if this renderer runs DevMode.
@@ -547,9 +568,14 @@ pub fn render(
                     .{@as(c_ulong, 0)},
                 );
 
+                // Texture is a property of CAMetalDrawable but if you run
+                // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
+                // which ironically doesn't implement CAMetalDrawable as a
+                // property so we just send a message.
+                const texture = surface.msgSend(objc.c.id, objc.sel("texture"), .{});
                 attachment.setProperty("loadAction", @enumToInt(MTLLoadAction.clear));
                 attachment.setProperty("storeAction", @enumToInt(MTLStoreAction.store));
-                attachment.setProperty("texture", surface.getProperty(objc.c.id, "texture").?);
+                attachment.setProperty("texture", texture);
                 attachment.setProperty("clearColor", MTLClearColor{
                     .red = @intToFloat(f32, critical.bg.r) / 255,
                     .green = @intToFloat(f32, critical.bg.g) / 255,
@@ -613,16 +639,18 @@ pub fn render(
             state.mutex.lock();
             defer state.mutex.unlock();
 
-            if (state.devmode) |dm| {
-                if (dm.visible) {
-                    imgui.ImplMetal.newFrame(desc.value);
-                    imgui.ImplGlfw.newFrame();
-                    try dm.update();
-                    imgui.ImplMetal.renderDrawData(
-                        try dm.render(),
-                        buffer.value,
-                        encoder.value,
-                    );
+            if (DevMode.enabled) {
+                if (state.devmode) |dm| {
+                    if (dm.visible) {
+                        imgui.ImplMetal.newFrame(desc.value);
+                        imgui.ImplGlfw.newFrame();
+                        try dm.update();
+                        imgui.ImplMetal.renderDrawData(
+                            try dm.render(),
+                            buffer.value,
+                            encoder.value,
+                        );
+                    }
                 }
             }
         }
@@ -650,18 +678,20 @@ fn drawCells(
         .{ buf.value, @as(c_ulong, 0), @as(c_ulong, 0) },
     );
 
-    encoder.msgSend(
-        void,
-        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
-        .{
-            @enumToInt(MTLPrimitiveType.triangle),
-            @as(c_ulong, 6),
-            @enumToInt(MTLIndexType.uint16),
-            self.buf_instance.value,
-            @as(c_ulong, 0),
-            @as(c_ulong, cells.items.len),
-        },
-    );
+    if (cells.items.len > 0) {
+        encoder.msgSend(
+            void,
+            objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+            .{
+                @enumToInt(MTLPrimitiveType.triangle),
+                @as(c_ulong, 6),
+                @enumToInt(MTLIndexType.uint16),
+                self.buf_instance.value,
+                @as(c_ulong, 0),
+                @as(c_ulong, cells.items.len),
+            },
+        );
+    }
 }
 
 /// Resize the screen.
@@ -690,7 +720,8 @@ pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
     // and we split them equal across all boundaries.
     const padding = self.padding.explicit.add(if (self.padding.balance)
         renderer.Padding.balanced(dim, grid_size, self.cell_size)
-    else .{});
+    else
+        .{});
     const padded_dim = dim.subPadding(padding);
 
     // Update our shaper

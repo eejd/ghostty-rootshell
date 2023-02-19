@@ -21,6 +21,9 @@ const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
+const LibtoolStep = @import("src/build/LibtoolStep.zig");
+const LipoStep = @import("src/build/LipoStep.zig");
+const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -120,7 +123,7 @@ pub fn build(b: *std.build.Builder) !void {
         exe.install();
 
         // Add the shared dependencies
-        try addDeps(b, exe, static);
+        _ = try addDeps(b, exe, static);
     }
 
     // App (Mac)
@@ -129,6 +132,85 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile(bin_path, "Ghostty.app/Contents/MacOS/ghostty");
         b.installFile("dist/macos/Info.plist", "Ghostty.app/Contents/Info.plist");
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
+    }
+
+    // On Mac we can build the app.
+    if (builtin.target.isDarwin()) {
+        const static_lib_aarch64 = lib: {
+            const lib = b.addStaticLibrary(.{
+                .name = "ghostty",
+                .root_source_file = .{ .path = "src/main_c.zig" },
+                .target = try std.zig.CrossTarget.parse(.{ .arch_os_abi = "aarch64-macos" }),
+                .optimize = optimize,
+            });
+            lib.bundle_compiler_rt = true;
+            lib.linkLibC();
+            lib.addOptions("build_options", exe_options);
+
+            // See the comment in this file
+            lib.addCSourceFile("src/renderer/metal_workaround.c", &.{});
+
+            // Create a single static lib with all our dependencies merged
+            var lib_list = try addDeps(b, lib, true);
+            try lib_list.append(.{ .generated = &lib.output_path_source });
+            const libtool = LibtoolStep.create(b, .{
+                .name = "ghostty",
+                .out_name = "libghostty-aarch64-fat.a",
+                .sources = lib_list.items,
+            });
+            libtool.step.dependOn(&lib.step);
+            b.default_step.dependOn(&libtool.step);
+
+            break :lib libtool;
+        };
+
+        const static_lib_x86_64 = lib: {
+            const lib = b.addStaticLibrary(.{
+                .name = "ghostty",
+                .root_source_file = .{ .path = "src/main_c.zig" },
+                .target = try std.zig.CrossTarget.parse(.{ .arch_os_abi = "x86_64-macos" }),
+                .optimize = optimize,
+            });
+            lib.bundle_compiler_rt = true;
+            lib.linkLibC();
+            lib.addOptions("build_options", exe_options);
+
+            // See the comment in this file
+            lib.addCSourceFile("src/renderer/metal_workaround.c", &.{});
+
+            // Create a single static lib with all our dependencies merged
+            var lib_list = try addDeps(b, lib, true);
+            try lib_list.append(.{ .generated = &lib.output_path_source });
+            const libtool = LibtoolStep.create(b, .{
+                .name = "ghostty",
+                .out_name = "libghostty-x86_64-fat.a",
+                .sources = lib_list.items,
+            });
+            libtool.step.dependOn(&lib.step);
+            b.default_step.dependOn(&libtool.step);
+
+            break :lib libtool;
+        };
+
+        const static_lib_universal = LipoStep.create(b, .{
+            .name = "ghostty",
+            .out_name = "libghostty.a",
+            .input_a = .{ .generated = &static_lib_aarch64.out_path },
+            .input_b = .{ .generated = &static_lib_x86_64.out_path },
+        });
+        static_lib_universal.step.dependOn(&static_lib_aarch64.step);
+        static_lib_universal.step.dependOn(&static_lib_x86_64.step);
+
+        // The xcframework wraps our ghostty library so that we can link
+        // it to the final app built with Swift.
+        const xcframework = XCFrameworkStep.create(b, .{
+            .name = "GhosttyKit",
+            .out_path = "macos/GhosttyKit.xcframework",
+            .library = .{ .generated = &static_lib_universal.out_path },
+            .headers = .{ .path = "include" },
+        });
+        xcframework.step.dependOn(&static_lib_universal.step);
+        b.default_step.dependOn(&xcframework.step);
     }
 
     // wasm
@@ -179,7 +261,7 @@ pub fn build(b: *std.build.Builder) !void {
         wasm.stack_protector = false;
 
         // Wasm-specific deps
-        try addDeps(b, wasm, true);
+        _ = try addDeps(b, wasm, true);
 
         const step = b.step("wasm", "Build the wasm library");
         step.dependOn(&wasm.step);
@@ -194,7 +276,7 @@ pub fn build(b: *std.build.Builder) !void {
             .target = wasm_target,
         });
         main_test.addOptions("build_options", exe_options);
-        try addDeps(b, main_test, true);
+        _ = try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
     }
 
@@ -238,7 +320,7 @@ pub fn build(b: *std.build.Builder) !void {
                 main_test_exe.install();
             }
             main_test.setFilter(test_filter);
-            try addDeps(b, main_test, true);
+            _ = try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
 
             var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
@@ -266,7 +348,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .target = target,
             });
 
-            try addDeps(b, test_run, true);
+            _ = try addDeps(b, test_run, true);
             // if (pkg.dependencies) |children| {
             //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
             //     try test_.packages.appendSlice(children);
@@ -291,12 +373,18 @@ pub fn build(b: *std.build.Builder) !void {
     }
 }
 
+/// Used to keep track of a list of file sources.
+const FileSourceList = std.ArrayList(std.build.FileSource);
+
 /// Adds and links all of the primary dependencies for the exe.
 fn addDeps(
     b: *std.build.Builder,
     step: *std.build.LibExeObjStep,
     static: bool,
-) !void {
+) !FileSourceList {
+    var static_libs = FileSourceList.init(b.allocator);
+    errdefer static_libs.deinit();
+
     // Wasm we do manually since it is such a different build.
     if (step.target.getCpuArch() == .wasm32) {
         // We link this package but its a no-op since Tracy
@@ -308,15 +396,21 @@ fn addDeps(
         // utf8proc
         _ = try utf8proc.link(b, step);
 
-        return;
+        return static_libs;
     }
+
+    // If we're building a lib we have some different deps
+    const lib = step.kind == .lib;
+
+    // We always require the system SDK so that our system headers are available.
+    // This makes things like `os/log.h` available for cross-compiling.
+    system_sdk.include(b, step, .{});
 
     // We always need the Zig packages
     if (enable_fontconfig) step.addModule("fontconfig", fontconfig.module(b));
     step.addModule("freetype", freetype.module(b));
     step.addModule("harfbuzz", harfbuzz.module(b));
     step.addModule("imgui", imgui.module(b));
-    step.addModule("glfw", glfw.module(b));
     step.addModule("xev", libxev.module(b));
     step.addModule("pixman", pixman.module(b));
     step.addModule("stb_image_resize", stb_image_resize.module(b));
@@ -329,10 +423,6 @@ fn addDeps(
         _ = try macos.link(b, step, .{});
     }
 
-    // We always statically compile glad
-    step.addIncludePath("vendor/glad/include/");
-    step.addCSourceFile("vendor/glad/src/gl.c", &.{});
-
     // Tracy
     step.addModule("tracy", tracylib.module(b));
     if (tracy) {
@@ -341,17 +431,12 @@ fn addDeps(
     }
 
     // stb_image_resize
-    _ = try stb_image_resize.link(b, step, .{});
+    const stb_image_resize_step = try stb_image_resize.link(b, step, .{});
+    try static_libs.append(.{ .generated = &stb_image_resize_step.output_path_source });
 
     // utf8proc
-    _ = try utf8proc.link(b, step);
-
-    // Glfw
-    const glfw_opts: glfw.Options = .{
-        .metal = step.target.isDarwin(),
-        .opengl = false,
-    };
-    try glfw.link(b, step, glfw_opts);
+    const utf8proc_step = try utf8proc.link(b, step);
+    try static_libs.append(.{ .generated = &utf8proc_step.output_path_source });
 
     // Imgui, we have to do this later since we need some information
     const imgui_backends = if (step.target.isDarwin())
@@ -379,12 +464,15 @@ fn addDeps(
     // Other dependencies, we may dynamically link
     if (static) {
         const zlib_step = try zlib.link(b, step);
+        try static_libs.append(.{ .generated = &zlib_step.output_path_source });
+
         const libpng_step = try libpng.link(b, step, .{
             .zlib = .{
                 .step = zlib_step,
                 .include = &zlib.include_paths,
             },
         });
+        try static_libs.append(.{ .generated = &libpng_step.output_path_source });
 
         // Freetype
         const freetype_step = try freetype.link(b, step, .{
@@ -400,6 +488,7 @@ fn addDeps(
                 .include = &zlib.include_paths,
             },
         });
+        try static_libs.append(.{ .generated = &freetype_step.output_path_source });
 
         // Harfbuzz
         const harfbuzz_step = try harfbuzz.link(b, step, .{
@@ -414,10 +503,11 @@ fn addDeps(
             },
         });
         system_sdk.include(b, harfbuzz_step, .{});
+        try static_libs.append(.{ .generated = &harfbuzz_step.output_path_source });
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
-        _ = pixman_step;
+        try static_libs.append(.{ .generated = &pixman_step.output_path_source });
 
         // Only Linux gets fontconfig
         if (enable_fontconfig) {
@@ -448,9 +538,26 @@ fn addDeps(
         imgui_opts.freetype.include = &freetype.include_paths;
     }
 
-    // Imgui
-    const imgui_step = try imgui.link(b, step, imgui_opts);
-    try glfw.link(b, imgui_step, glfw_opts);
+    if (!lib) {
+        step.addModule("glfw", glfw.module(b));
+
+        // We always statically compile glad
+        step.addIncludePath("vendor/glad/include/");
+        step.addCSourceFile("vendor/glad/src/gl.c", &.{});
+
+        // Glfw
+        const glfw_opts: glfw.Options = .{
+            .metal = step.target.isDarwin(),
+            .opengl = false,
+        };
+        try glfw.link(b, step, glfw_opts);
+
+        // Imgui
+        const imgui_step = try imgui.link(b, step, imgui_opts);
+        try glfw.link(b, imgui_step, glfw_opts);
+    }
+
+    return static_libs;
 }
 
 fn benchSteps(
@@ -490,7 +597,7 @@ fn benchSteps(
         });
         c_exe.setMainPkgPath("./src");
         c_exe.install();
-        try addDeps(b, c_exe, true);
+        _ = try addDeps(b, c_exe, true);
     }
 }
 

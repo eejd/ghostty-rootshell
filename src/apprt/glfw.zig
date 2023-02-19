@@ -26,7 +26,9 @@ const glfwNative = glfw.Native(.{
 const log = std.log.scoped(.glfw);
 
 pub const App = struct {
-    pub fn init() !App {
+    pub const Options = struct {};
+
+    pub fn init(_: Options) !App {
         if (!glfw.init(.{})) return error.GlfwInitFailed;
         return .{};
     }
@@ -56,7 +58,11 @@ pub const Window = struct {
     /// The glfw mouse cursor handle.
     cursor: glfw.Cursor,
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow) !Window {
+    pub const Options = struct {};
+
+    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
+        _ = opts;
+
         // Create our window
         const win = glfw.Window.create(
             640,

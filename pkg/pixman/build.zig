@@ -138,7 +138,7 @@ const srcs = &.{
     root ++ "pixman/pixman-region16.c",
     root ++ "pixman/pixman-region32.c",
     root ++ "pixman/pixman-solid-fill.c",
-    root ++ "pixman/pixman-timer.c",
+    //root ++ "pixman/pixman-timer.c",
     root ++ "pixman/pixman-trap.c",
     root ++ "pixman/pixman-utils.c",
 };

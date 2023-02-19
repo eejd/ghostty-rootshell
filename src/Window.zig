@@ -128,12 +128,17 @@ const Mouse = struct {
 /// Create a new window. This allocates and returns a pointer because we
 /// need a stable pointer for user data callbacks. Therefore, a stack-only
 /// initialization is not currently possible.
-pub fn create(alloc: Allocator, app: *App, config: *const Config) !*Window {
+pub fn create(
+    alloc: Allocator,
+    app: *App,
+    config: *const Config,
+    rt_opts: apprt.runtime.Window.Options,
+) !*Window {
     var self = try alloc.create(Window);
     errdefer alloc.destroy(self);
 
     // Create the windowing system
-    var window = try apprt.runtime.Window.init(app, self);
+    var window = try apprt.runtime.Window.init(app, self, rt_opts);
     errdefer window.deinit();
 
     // Initialize our renderer with our initialized windowing system.
@@ -1287,7 +1292,7 @@ pub fn mouseButtonCallback(
     }
 
     // Always record our latest mouse state
-    self.mouse.click_state[@enumToInt(button)] = action;
+    self.mouse.click_state[@intCast(usize, @enumToInt(button))] = action;
     self.mouse.mods = @bitCast(input.Mods, mods);
 
     self.renderer_state.mutex.lock();
