@@ -10,11 +10,20 @@ import GhosttyKit
 /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
 /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
 struct TerminalSurfaceView: NSViewRepresentable {
+    /// This should be set to true wen the surface has focus. This is up to the parent because
+    /// focus is also defined by window focus. It is important this is set correctly since if it is
+    /// false then the surface will idle at almost 0% CPU.
     var hasFocus: Bool
+    
+    /// This is set to the title of the surface as defined by the pty. Callers should use this to
+    /// set the appropriate title of the window/tab/split/etc. if they care.
+    @Binding var title: String
+    
     @StateObject private var state: TerminalSurfaceView_Real
     
-    init(app: ghostty_app_t, hasFocus: Bool) {
+    init(_ app: ghostty_app_t, hasFocus: Bool, title: Binding<String>) {
         self._state = StateObject(wrappedValue: TerminalSurfaceView_Real(app))
+        self._title = title
         self.hasFocus = hasFocus
     }
     
@@ -22,30 +31,62 @@ struct TerminalSurfaceView: NSViewRepresentable {
         // We need the view as part of the state to be created previously because
         // the view is sent to the Ghostty API so that it can manipulate it
         // directly since we draw on a render thread.
+        state.delegate = context.coordinator
         return state;
     }
     
     func updateNSView(_ view: TerminalSurfaceView_Real, context: Context) {
+        state.delegate = context.coordinator
         state.focusDidChange(hasFocus)
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        return Coordinator(self)
+    }
+    
+    class Coordinator : TerminalSurfaceDelegate {
+        let view: TerminalSurfaceView
+        
+        init(_ view: TerminalSurfaceView) {
+            self.view = view
+        }
+        
+        func titleDidChange(to: String) {
+            view.title = to
+        }
     }
 }
 
-// The actual NSView implementation for the terminal surface.
+/// We use the delegate pattern to receive notifications about important state changes in the surface.
+protocol TerminalSurfaceDelegate: AnyObject {
+    func titleDidChange(to: String)
+}
+
+/// The actual NSView implementation for the terminal surface.
 class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
+    weak var delegate: TerminalSurfaceDelegate?
+    
+    // The current title of the surface as defined by the pty. This can be
+    // changed with escape codes.
+    var title: String = "" {
+        didSet {
+            if let delegate = self.delegate {
+                delegate.titleDidChange(to: title)
+            }
+        }
+    }
+
+    private var surface: ghostty_surface_t? = nil
+    private var error: Error? = nil
+    private var markedText: NSMutableAttributedString;
+    
     // We need to support being a first responder so that we can get input events
     override var acceptsFirstResponder: Bool { return true }
     
     // I don't thikn we need this but this lets us know we should redraw our layer
     // so we'll use that to tell ghostty to refresh.
     override var wantsUpdateLayer: Bool { return true }
-    
-    // TODO: Figure out how to hook this up...
-    @Published var title: String = "";
-    
-    private var surface: ghostty_surface_t? = nil
-    private var error: Error? = nil
-    private var markedText: NSMutableAttributedString;
-    
+
     // Mapping of event keyCode to ghostty input key values. This is cribbed from
     // glfw mostly since we started as a glfw-based app way back in the day!
     static let keycodes: [UInt16 : ghostty_input_key_e] = [
@@ -334,11 +375,3 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
         return ghostty_input_mods_e(mods)
     }
 }
-
-/*
- struct TerminalSurfaceView_Previews: PreviewProvider {
-     static var previews: some View {
-         TerminalSurfaceView()
-     }
- }
- */
