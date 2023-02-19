@@ -240,7 +240,7 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     
     func focusDidChange(_ focused: Bool) {
         guard let surface = self.surface else { return }
-        ghostty_surface_set_focus(surface, focused ? 1 : 0)
+        ghostty_surface_set_focus(surface, focused)
     }
     
     override func resize(withOldSuperviewSize oldSize: NSSize) {
