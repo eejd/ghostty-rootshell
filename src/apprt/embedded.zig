@@ -23,15 +23,27 @@ pub const App = struct {
     ///
     /// C type: ghostty_runtime_config_s
     pub const Options = extern struct {
+        /// These are just aliases to make the function signatures below
+        /// more obvious what values will be sent.
+        const AppUD = ?*anyopaque;
+        const SurfaceUD = ?*anyopaque;
+
         /// Userdata that is passed to all the callbacks.
-        userdata: ?*anyopaque = null,
+        userdata: AppUD = null,
 
         /// Callback called to wakeup the event loop. This should trigger
         /// a full tick of the app loop.
-        wakeup: *const fn (?*anyopaque) callconv(.C) void,
+        wakeup: *const fn (AppUD) callconv(.C) void,
 
         /// Called to set the title of the window.
-        set_title: *const fn (?*anyopaque, [*]const u8) callconv(.C) void,
+        set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
+
+        /// Read the clipboard value. The return value must be preserved
+        /// by the host until the next call.
+        read_clipboard: *const fn (SurfaceUD) callconv(.C) [*:0]const u8,
+
+        /// Write the clipboard value.
+        write_clipboard: *const fn (SurfaceUD, [*:0]const u8) callconv(.C) void,
     };
 
     opts: Options,
@@ -114,13 +126,12 @@ pub const Window = struct {
     }
 
     pub fn getClipboardString(self: *const Window) ![:0]const u8 {
-        _ = self;
-        return "";
+        const ptr = self.core_win.app.runtime.opts.read_clipboard(self.opts.userdata);
+        return std.mem.sliceTo(ptr, 0);
     }
 
     pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
-        _ = self;
-        _ = val;
+        self.core_win.app.runtime.opts.write_clipboard(self.opts.userdata, val.ptr);
     }
 
     pub fn setShouldClose(self: *Window) void {

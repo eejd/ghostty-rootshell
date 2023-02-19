@@ -28,11 +28,15 @@ extern "C" {
 // for all of these types is available in the Zig source.
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
+typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
+typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
 
 typedef struct {
     void *userdata;
     ghostty_runtime_wakeup_cb wakeup_cb;
     ghostty_runtime_set_title_cb set_title_cb;
+    ghostty_runtime_read_clipboard_cb read_clipboard_cb;
+    ghostty_runtime_write_clipboard_cb write_clipboard_cb;
 } ghostty_runtime_config_s;
 
 typedef struct {
@@ -221,9 +225,11 @@ void ghostty_config_finalize(ghostty_config_t);
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);
 int ghostty_app_tick(ghostty_app_t);
+void *ghostty_app_userdata(ghostty_app_t);
 
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
+ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);

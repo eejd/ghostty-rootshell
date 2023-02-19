@@ -76,8 +76,8 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
         }
     }
 
-    private var surface: ghostty_surface_t? = nil
-    private var error: Error? = nil
+    var surface: ghostty_surface_t? = nil
+    var error: Error? = nil
     private var markedText: NSMutableAttributedString;
     
     // We need to support being a first responder so that we can get input events

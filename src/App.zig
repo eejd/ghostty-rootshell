@@ -368,6 +368,11 @@ pub const CAPI = struct {
         };
     }
 
+    /// Return the userdata associated with the app.
+    export fn ghostty_app_userdata(v: *App) ?*anyopaque {
+        return v.runtime.opts.userdata;
+    }
+
     export fn ghostty_app_free(ptr: ?*App) void {
         if (ptr) |v| {
             v.destroy();
@@ -398,6 +403,11 @@ pub const CAPI = struct {
 
     export fn ghostty_surface_free(ptr: ?*Window) void {
         if (ptr) |v| v.app.closeWindow(v);
+    }
+
+    /// Returns the app associated with a surface.
+    export fn ghostty_surface_app(win: *Window) *App {
+        return win.app;
     }
 
     /// Tell the surface that it needs to schedule a render

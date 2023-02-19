@@ -55,6 +55,9 @@ class GhosttyState: ObservableObject {
     /// The ghostty app instance. We only have one of these for the entire app, although I guess
     /// in theory you can have multiple... I don't know why you would...
     var app: ghostty_app_t? = nil
+    
+    /// Cached clipboard string for `read_clipboard` callback.
+    private var cached_clipboard_string: String? = nil
 
     init() {
         // Initialize ghostty global state. This happens once per process.
@@ -84,7 +87,9 @@ class GhosttyState: ObservableObject {
         var runtime_cfg = ghostty_runtime_config_s(
             userdata: Unmanaged.passUnretained(self).toOpaque(),
             wakeup_cb: { userdata in GhosttyState.wakeup(userdata) },
-            set_title_cb: { userdata, title in GhosttyState.setTitle(userdata, title: title) })
+            set_title_cb: { userdata, title in GhosttyState.setTitle(userdata, title: title) },
+            read_clipboard_cb: { userdata in GhosttyState.readClipboard(userdata) },
+            write_clipboard_cb: { userdata, str in GhosttyState.writeClipboard(userdata, string: str) })
 
         // Create the ghostty app.
         guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
@@ -97,9 +102,33 @@ class GhosttyState: ObservableObject {
         self.readiness = .ready
     }
     
+    deinit {
+        ghostty_app_free(app)
+        ghostty_config_free(config)
+    }
+    
     func appTick() {
         guard let app = self.app else { return }
         ghostty_app_tick(app)
+    }
+    
+    // MARK: Ghostty Callbacks
+    
+    static func readClipboard(_ userdata: UnsafeMutableRawPointer?) -> UnsafePointer<CChar>? {
+        guard let appState = self.appState(fromSurface: userdata) else { return nil }
+        guard let str = NSPasteboard.general.string(forType: .string) else { return nil }
+        
+        // Ghostty requires we cache the string because the pointer we return has to remain
+        // stable until the next call to readClipboard.
+        appState.cached_clipboard_string = str
+        return (str as NSString).utf8String
+    }
+    
+    static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?) {
+        guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
+        let pb = NSPasteboard.general
+        pb.declareTypes([.string], owner: nil)
+        pb.setString(valueStr, forType: .string)
     }
     
     static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
@@ -120,8 +149,12 @@ class GhosttyState: ObservableObject {
         }
     }
     
-    deinit {
-        ghostty_app_free(app)
-        ghostty_config_free(config)
+    /// Returns the GhosttyState from the given userdata value.
+    static func appState(fromSurface userdata: UnsafeMutableRawPointer?) -> GhosttyState? {
+        let surfaceView = Unmanaged<TerminalSurfaceView_Real>.fromOpaque(userdata!).takeUnretainedValue()
+        guard let surface = surfaceView.surface else { return nil }
+        guard let app = ghostty_surface_app(surface) else { return nil }
+        guard let app_ud = ghostty_app_userdata(app) else { return nil }
+        return Unmanaged<GhosttyState>.fromOpaque(app_ud).takeUnretainedValue()
     }
 }
