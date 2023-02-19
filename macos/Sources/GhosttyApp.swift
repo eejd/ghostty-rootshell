@@ -22,6 +22,7 @@ struct GhosttyApp: App {
             case .ready:
                 TerminalView(app: ghostty.app!)
                     .modifier(WindowObservationModifier())
+                    .navigationTitle(ghostty.title)
             }
         }
     }
@@ -34,6 +35,9 @@ class GhosttyState: ObservableObject {
     
     /// The readiness value of the state.
     @Published var readiness: Readiness = .loading
+    
+    /// The title of the window as requested by the underlying terminal.
+    @Published var title: String = "Ghostty";
     
     /// The ghostty global configuration.
     var config: ghostty_config_t? = nil
@@ -69,7 +73,8 @@ class GhosttyState: ObservableObject {
         // uses to interface with the application runtime environment.
         var runtime_cfg = ghostty_runtime_config_s(
             userdata: Unmanaged.passUnretained(self).toOpaque(),
-            wakeup_cb: { userdata in GhosttyState.wakeup(userdata) })
+            wakeup_cb: { userdata in GhosttyState.wakeup(userdata) },
+            set_title_cb: { userdata, title in GhosttyState.setTitle(userdata, title: title) })
 
         // Create the ghostty app.
         guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
@@ -95,6 +100,14 @@ class GhosttyState: ObservableObject {
         // to coalesce multiple ticks but I don't think it matters from a performance
         // standpoint since we don't do this much.
         DispatchQueue.main.async { state.appTick() }
+    }
+    
+    static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {
+        let state = Unmanaged<GhosttyState>.fromOpaque(userdata!).takeUnretainedValue()
+        guard let titleStr = String(cString: title!, encoding: .utf8) else { return }
+        DispatchQueue.main.async {
+            state.title = titleStr
+        }
     }
     
     deinit {

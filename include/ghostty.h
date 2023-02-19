@@ -26,10 +26,12 @@ extern "C" {
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
+typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 
 typedef struct {
     void *userdata;
     ghostty_runtime_wakeup_cb wakeup_cb;
+    ghostty_runtime_set_title_cb set_title_cb;
 } ghostty_runtime_config_s;
 
 typedef struct {

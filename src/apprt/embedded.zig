@@ -29,6 +29,9 @@ pub const App = struct {
         /// Callback called to wakeup the event loop. This should trigger
         /// a full tick of the app loop.
         wakeup: *const fn (?*anyopaque) callconv(.C) void,
+
+        /// Called to set the title of the window.
+        set_title: *const fn (?*anyopaque, [*]const u8) callconv(.C) void,
     };
 
     opts: Options,
@@ -97,8 +100,10 @@ pub const Window = struct {
     }
 
     pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
-        _ = self;
-        _ = slice;
+        self.core_win.app.runtime.opts.set_title(
+            self.core_win.app.runtime.opts.userdata,
+            slice.ptr,
+        );
     }
 
     pub fn getClipboardString(self: *const Window) ![:0]const u8 {
