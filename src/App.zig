@@ -462,4 +462,10 @@ pub const CAPI = struct {
     export fn ghostty_surface_mouse_scroll(win: *Window, x: f64, y: f64) void {
         win.window.scrollCallback(x, y);
     }
+
+    export fn ghostty_surface_ime_point(win: *Window, x: *f64, y: *f64) void {
+        const pos = win.imePoint();
+        x.* = pos.x;
+        y.* = pos.y;
+    }
 };

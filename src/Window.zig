@@ -553,6 +553,48 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
     }
 }
 
+/// Returns the x/y coordinate of where the IME (Input Method Editor)
+/// keyboard should be rendered.
+pub fn imePoint(self: *const Window) apprt.IMEPos {
+    self.renderer_state.mutex.lock();
+    const cursor = self.renderer_state.terminal.screen.cursor;
+    self.renderer_state.mutex.unlock();
+
+    // TODO: need to handle when scrolling and the cursor is not
+    // in the visible portion of the screen.
+
+    // Our sizes are all scaled so we need to send the unscaled values back.
+    const content_scale = self.window.getContentScale() catch .{ .x = 1, .y = 1 };
+
+    const x: f64 = x: {
+        // Simple x * cell width gives the top-left corner
+        var x: f64 = @floatCast(f64, @intToFloat(f32, cursor.x) * self.cell_size.width);
+
+        // We want the midpoint
+        x += self.cell_size.width / 2;
+
+        // And scale it
+        x /= content_scale.x;
+
+        break :x x;
+    };
+
+    const y: f64 = y: {
+        // Simple x * cell width gives the top-left corner
+        var y: f64 = @floatCast(f64, @intToFloat(f32, cursor.y) * self.cell_size.height);
+
+        // We want the bottom
+        y += self.cell_size.height;
+
+        // And scale it
+        y /= content_scale.y;
+
+        break :y y;
+    };
+
+    return .{ .x = x, .y = y };
+}
+
 fn clipboardRead(self: *const Window, kind: u8) !void {
     if (!self.config.@"clipboard-read") {
         log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});

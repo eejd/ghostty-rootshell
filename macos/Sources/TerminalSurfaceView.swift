@@ -404,7 +404,22 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     }
     
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
+        guard let surface = self.surface else {
+            return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
+        }
+        
+        // Ghostty will tell us where it thinks an IME keyboard should render.
+        var x: Double = 0;
+        var y: Double = 0;
+        ghostty_surface_ime_point(surface, &x, &y)
+        
+        // Ghostty coordinates are in top-left (0, 0) so we have to convert to
+        // bottom-left since that is what UIKit expects
+        let rect = NSMakeRect(x, frame.size.height - y, 0, 0)
+        
+        // Convert from view to screen coordinates
+        guard let window = self.window else { return rect }
+        return window.convertToScreen(rect)
     }
     
     func insertText(_ string: Any, replacementRange: NSRange) {

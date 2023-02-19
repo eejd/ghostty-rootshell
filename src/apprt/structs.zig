@@ -17,3 +17,9 @@ pub const CursorPos = struct {
     x: f32,
     y: f32,
 };
+
+/// Input Method Editor (IME) position.
+pub const IMEPos = struct {
+    x: f64,
+    y: f64,
+};

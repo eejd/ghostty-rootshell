@@ -233,6 +233,7 @@ void ghostty_surface_char(ghostty_surface_t, uint32_t);
 void ghostty_surface_mouse_button(ghostty_surface_t, ghostty_input_mouse_state_e, ghostty_input_mouse_button_e, ghostty_input_mods_e);
 void ghostty_surface_mouse_pos(ghostty_surface_t, double, double);
 void ghostty_surface_mouse_scroll(ghostty_surface_t, double, double);
+void ghostty_surface_ime_point(ghostty_surface_t, double *, double *);
 
 #ifdef __cplusplus
 }
