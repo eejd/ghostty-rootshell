@@ -173,6 +173,7 @@ pub const GlobalState = struct {
 
     gpa: ?GPA,
     alloc: std.mem.Allocator,
+    tracy: if (tracy.enabled) ?tracy.Allocator(null) else void,
 
     pub fn init(self: *GlobalState) void {
         // Output some debug information right away
@@ -194,6 +195,7 @@ pub const GlobalState = struct {
         self.* = .{
             .gpa = null,
             .alloc = undefined,
+            .tracy = undefined,
         };
         errdefer self.deinit();
 
@@ -224,8 +226,8 @@ pub const GlobalState = struct {
 
             // If we're tracing, wrap the allocator
             if (!tracy.enabled) break :alloc base;
-            var tracy_alloc = tracy.allocator(base, null);
-            break :alloc tracy_alloc.allocator();
+            self.tracy = tracy.allocator(base, null);
+            break :alloc self.tracy.?.allocator();
         };
     }
 
@@ -236,6 +238,10 @@ pub const GlobalState = struct {
             // We want to ensure that we deinit the GPA because this is
             // the point at which it will output if there were safety violations.
             _ = value.deinit();
+        }
+
+        if (tracy.enabled) {
+            self.tracy = null;
         }
     }
 };
