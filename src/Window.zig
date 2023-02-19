@@ -741,11 +741,11 @@ pub fn charCallback(self: *Window, codepoint: u21) !void {
 
     // Ask our IO thread to write the data
     var data: termio.Message.WriteReq.Small.Array = undefined;
-    data[0] = @intCast(u8, codepoint);
+    const len = try std.unicode.utf8Encode(codepoint, &data);
     _ = self.io_thread.mailbox.push(.{
         .write_small = .{
             .data = data,
-            .len = 1,
+            .len = len,
         },
     }, .{ .forever = {} });
 
