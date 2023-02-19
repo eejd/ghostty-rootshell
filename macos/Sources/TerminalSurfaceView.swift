@@ -329,6 +329,19 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
         self.mouseMoved(with: event)
     }
     
+    override func scrollWheel(with event: NSEvent) {
+        guard let surface = self.surface else { return }
+        
+        var x = event.scrollingDeltaX
+        var y = event.scrollingDeltaY
+        if event.hasPreciseScrollingDeltas {
+            x *= 0.1
+            y *= 0.1
+        }
+        
+        ghostty_surface_mouse_scroll(surface, x, y)
+    }
+
     override func keyDown(with event: NSEvent) {
         guard let surface = self.surface else { return }
         let key = Self.keycodes[event.keyCode] ?? GHOSTTY_KEY_INVALID

@@ -175,6 +175,13 @@ pub const Window = struct {
         };
     }
 
+    pub fn scrollCallback(self: *const Window, xoff: f64, yoff: f64) void {
+        self.core_win.scrollCallback(xoff, yoff) catch |err| {
+            log.err("error in scroll callback err={}", .{err});
+            return;
+        };
+    }
+
     pub fn cursorPosCallback(self: *Window, x: f64, y: f64) void {
         // Convert our unscaled x/y to scaled.
         self.cursor_pos = self.core_win.window.cursorPosToPixels(.{
