@@ -268,12 +268,17 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
                 // It is possible this is incorrect when we have splits. This will make
                 // mouse events only happen while the terminal is focused. Is that what
                 // we want?
-                .activeWhenFirstResponder,
+                    .activeWhenFirstResponder,
             ],
             owner: self,
             userInfo: nil))
     }
     
+    override func resetCursorRects() {
+        discardCursorRects()
+        addCursorRect(frame, cursor: .iBeam)
+    }
+
     override func viewDidChangeBackingProperties() {
         guard let surface = self.surface else { return }
 
@@ -317,6 +322,8 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     }
     
     override func mouseMoved(with event: NSEvent) {
+        NSCursor.iBeam.set()
+        
         guard let surface = self.surface else { return }
 
         // Convert window position to view position. Note (0, 0) is bottom left.
