@@ -167,4 +167,11 @@ pub const Window = struct {
             return;
         };
     }
+
+    pub fn focusCallback(self: *const Window, focused: bool) void {
+        self.core_win.focusCallback(focused) catch |err| {
+            log.err("error in focus callback err={}", .{err});
+            return;
+        };
+    }
 };

@@ -414,6 +414,11 @@ pub const CAPI = struct {
         win.window.updateContentScale(x, y);
     }
 
+    /// Update the focused state of a surface.
+    export fn ghostty_surface_set_focus(win: *Window, focused: bool) void {
+        win.window.focusCallback(focused);
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_key(
         win: *Window,

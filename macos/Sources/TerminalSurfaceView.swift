@@ -10,10 +10,12 @@ import GhosttyKit
 /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
 /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
 struct TerminalSurfaceView: NSViewRepresentable {
+    var hasFocus: Bool
     @StateObject private var state: TerminalSurfaceView_Real
     
-    init(app: ghostty_app_t) {
+    init(app: ghostty_app_t, hasFocus: Bool) {
         self._state = StateObject(wrappedValue: TerminalSurfaceView_Real(app))
+        self.hasFocus = hasFocus
     }
     
     func makeNSView(context: Context) -> TerminalSurfaceView_Real {
@@ -24,7 +26,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
     }
     
     func updateNSView(_ view: TerminalSurfaceView_Real, context: Context) {
-        // Nothing we need to do here.
+        state.focusDidChange(hasFocus)
     }
 }
 
@@ -185,6 +187,11 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     deinit {
         guard let surface = self.surface else { return }
         ghostty_surface_free(surface)
+    }
+    
+    func focusDidChange(_ focused: Bool) {
+        guard let surface = self.surface else { return }
+        ghostty_surface_set_focus(surface, focused ? 1 : 0)
     }
     
     override func resize(withOldSuperviewSize oldSize: NSSize) {

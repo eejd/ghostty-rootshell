@@ -20,7 +20,8 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                TerminalSurfaceView(app: ghostty.app!)
+                TerminalView(app: ghostty.app!)
+                    .modifier(WindowObservationModifier())
             }
         }
     }
