@@ -1,7 +1,11 @@
 /// The state of a mouse button.
-pub const MouseButtonState = enum(u1) {
-    release = 0,
-    press = 1,
+///
+/// This is backed by a c_int so we can use this as-is for our embedding API.
+///
+/// IMPORTANT: Any changes here update include/ghostty.h
+pub const MouseButtonState = enum(c_int) {
+    release,
+    press,
 };
 
 /// Possible mouse buttons. We only track up to 11 because thats the maximum
@@ -10,7 +14,11 @@ pub const MouseButtonState = enum(u1) {
 ///
 /// Its a bit silly to name numbers like this but given its a restricted
 /// set, it feels better than passing around raw numeric literals.
-pub const MouseButton = enum(u4) {
+///
+/// This is backed by a c_int so we can use this as-is for our embedding API.
+///
+/// IMPORTANT: Any changes here update include/ghostty.h
+pub const MouseButton = enum(c_int) {
     const Self = @This();
 
     /// The maximum value in this enum. This can be used to create a densely

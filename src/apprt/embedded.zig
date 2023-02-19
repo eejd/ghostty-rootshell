@@ -58,6 +58,7 @@ pub const Window = struct {
     core_win: *CoreWindow,
     content_scale: apprt.ContentScale,
     size: apprt.WindowSize,
+    cursor_pos: apprt.CursorPos,
     opts: Options,
 
     pub const Options = extern struct {
@@ -82,6 +83,7 @@ pub const Window = struct {
                 .y = @floatCast(f32, opts.scale_factor),
             },
             .size = .{ .width = 800, .height = 600 },
+            .cursor_pos = .{ .x = 0, .y = 0 },
             .opts = opts,
         };
     }
@@ -130,6 +132,10 @@ pub const Window = struct {
         return false;
     }
 
+    pub fn getCursorPos(self: *const Window) !apprt.CursorPos {
+        return self.cursor_pos;
+    }
+
     pub fn refresh(self: *Window) void {
         self.core_win.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
@@ -153,6 +159,37 @@ pub const Window = struct {
         // Call the primary callback.
         self.core_win.sizeCallback(self.size) catch |err| {
             log.err("error in size callback err={}", .{err});
+            return;
+        };
+    }
+
+    pub fn mouseButtonCallback(
+        self: *const Window,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: input.Mods,
+    ) void {
+        self.core_win.mouseButtonCallback(action, button, mods) catch |err| {
+            log.err("error in mouse button callback err={}", .{err});
+            return;
+        };
+    }
+
+    pub fn cursorPosCallback(self: *Window, x: f64, y: f64) void {
+        // Convert our unscaled x/y to scaled.
+        self.cursor_pos = self.core_win.window.cursorPosToPixels(.{
+            .x = @floatCast(f32, x),
+            .y = @floatCast(f32, y),
+        }) catch |err| {
+            log.err(
+                "error converting cursor pos to scaled pixels in cursor pos callback err={}",
+                .{err},
+            );
+            return;
+        };
+
+        self.core_win.cursorPosCallback(self.cursor_pos) catch |err| {
+            log.err("error in cursor pos callback err={}", .{err});
             return;
         };
     }
@@ -183,5 +220,12 @@ pub const Window = struct {
             log.err("error in focus callback err={}", .{err});
             return;
         };
+    }
+
+    /// The cursor position from the host directly is in screen coordinates but
+    /// all our interface works in pixels.
+    fn cursorPosToPixels(self: *const Window, pos: apprt.CursorPos) !apprt.CursorPos {
+        const scale = try self.getContentScale();
+        return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
     }
 };

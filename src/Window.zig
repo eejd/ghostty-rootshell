@@ -1292,7 +1292,7 @@ pub fn mouseButtonCallback(
     }
 
     // Always record our latest mouse state
-    self.mouse.click_state[@enumToInt(button)] = action;
+    self.mouse.click_state[@intCast(usize, @enumToInt(button))] = action;
     self.mouse.mods = @bitCast(input.Mods, mods);
 
     self.renderer_state.mutex.lock();

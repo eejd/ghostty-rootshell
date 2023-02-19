@@ -41,6 +41,17 @@ typedef struct {
 } ghostty_surface_config_s;
 
 typedef enum {
+    GHOSTTY_MOUSE_RELEASE,
+    GHOSTTY_MOUSE_PRESS,
+} ghostty_input_mouse_state_e;
+
+typedef enum {
+    GHOSTTY_MOUSE_LEFT = 1,
+    GHOSTTY_MOUSE_RIGHT,
+    GHOSTTY_MOUSE_MIDDLE,
+} ghostty_input_mouse_button_e;
+
+typedef enum {
     GHOSTTY_MODS_NONE  = 0,
     GHOSTTY_MODS_SHIFT = 1 << 0,
     GHOSTTY_MODS_CTRL  = 1 << 1,
@@ -218,6 +229,8 @@ void ghostty_surface_set_focus(ghostty_surface_t, bool);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 void ghostty_surface_key(ghostty_surface_t, ghostty_input_action_e, ghostty_input_key_e, ghostty_input_mods_e);
 void ghostty_surface_char(ghostty_surface_t, uint32_t);
+void ghostty_surface_mouse_button(ghostty_surface_t, ghostty_input_mouse_state_e, ghostty_input_mouse_button_e, ghostty_input_mods_e);
+void ghostty_surface_mouse_pos(ghostty_surface_t, double, double);
 
 #ifdef __cplusplus
 }

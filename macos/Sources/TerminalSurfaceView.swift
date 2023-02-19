@@ -221,8 +221,10 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
             self.error = AppError.surfaceCreateError
             return
         }
-        
         self.surface = surface;
+        
+        // Setup our tracking area so we get mouse moved events
+        updateTrackingAreas()
     }
     
     required init?(coder: NSCoder) {
@@ -230,6 +232,8 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     }
     
     deinit {
+        trackingAreas.forEach { removeTrackingArea($0) }
+        
         guard let surface = self.surface else { return }
         ghostty_surface_free(surface)
     }
@@ -247,6 +251,27 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
             let fbFrame = self.convertToBacking(self.frame);
             ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
         }
+    }
+    
+    override func updateTrackingAreas() {
+        // To update our tracking area we just recreate it all.
+        trackingAreas.forEach { removeTrackingArea($0) }
+        
+        // This tracking area is across the entire frame to notify us of mouse movements.
+        addTrackingArea(NSTrackingArea(
+            rect: frame,
+            options: [
+                .mouseEnteredAndExited,
+                .mouseMoved,
+                .inVisibleRect,
+                
+                // It is possible this is incorrect when we have splits. This will make
+                // mouse events only happen while the terminal is focused. Is that what
+                // we want?
+                .activeWhenFirstResponder,
+            ],
+            owner: self,
+            userInfo: nil))
     }
     
     override func viewDidChangeBackingProperties() {
@@ -268,7 +293,40 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     }
     
     override func mouseDown(with event: NSEvent) {
-        print("Mouse down: \(event)")
+        guard let surface = self.surface else { return }
+        let mods = Self.translateFlags(event.modifierFlags)
+        ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        guard let surface = self.surface else { return }
+        let mods = Self.translateFlags(event.modifierFlags)
+        ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
+    }
+    
+    override func rightMouseDown(with event: NSEvent) {
+        guard let surface = self.surface else { return }
+        let mods = Self.translateFlags(event.modifierFlags)
+        ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods)
+    }
+    
+    override func rightMouseUp(with event: NSEvent) {
+        guard let surface = self.surface else { return }
+        let mods = Self.translateFlags(event.modifierFlags)
+        ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
+    }
+    
+    override func mouseMoved(with event: NSEvent) {
+        guard let surface = self.surface else { return }
+
+        // Convert window position to view position. Note (0, 0) is bottom left.
+        let pos = self.convert(event.locationInWindow, from: nil)
+        ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
+        
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        self.mouseMoved(with: event)
     }
     
     override func keyDown(with event: NSEvent) {

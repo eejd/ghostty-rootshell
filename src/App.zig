@@ -439,4 +439,23 @@ pub const CAPI = struct {
     export fn ghostty_surface_char(win: *Window, codepoint: u32) void {
         win.window.charCallback(codepoint);
     }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_mouse_button(
+        win: *Window,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: c_int,
+    ) void {
+        win.window.mouseButtonCallback(
+            action,
+            button,
+            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
+        );
+    }
+
+    /// Update the mouse position within the view.
+    export fn ghostty_surface_mouse_pos(win: *Window, x: f64, y: f64) void {
+        win.window.cursorPosCallback(x, y);
+    }
 };
