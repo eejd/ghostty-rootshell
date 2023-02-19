@@ -219,6 +219,8 @@ fn newTab(self: *App, msg: Message.NewWindow) !void {
         return;
     }
 
+    // In embedded mode, it is up to the embedder to implement tabbing
+    // on their own.
     if (comptime build_config.artifact != .exe) {
         log.warn("tabbing is not supported in embedded mode", .{});
         return;

@@ -23,6 +23,20 @@ struct GhosttyApp: App {
                 TerminalView(app: ghostty.app!)
                     .modifier(WindowObservationModifier())
             }
+        }.commands {
+            CommandGroup(after: .newItem) {
+                Button("New Tab", action: newTab).keyboardShortcut("t", modifiers: [.command])
+            }
+        }
+    }
+    
+    // Create a new tab in the currently active window
+    func newTab() {
+        guard let currentWindow = NSApp.keyWindow else { return }
+        guard let windowController = currentWindow.windowController else { return }
+        windowController.newWindowForTab(nil)
+        if let newWindow = NSApp.keyWindow, currentWindow != newWindow {
+            currentWindow.addTabbedWindow(newWindow, ordered: .above)
         }
     }
 }
