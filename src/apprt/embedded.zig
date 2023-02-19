@@ -58,8 +58,12 @@ pub const Window = struct {
     core_win: *CoreWindow,
     content_scale: apprt.ContentScale,
     size: apprt.WindowSize,
+    opts: Options,
 
     pub const Options = extern struct {
+        /// Userdata passed to some of the callbacks.
+        userdata: ?*anyopaque = null,
+
         /// The pointer to the backing NSView for the surface.
         nsview: *anyopaque = undefined,
 
@@ -78,6 +82,7 @@ pub const Window = struct {
                 .y = @floatCast(f32, opts.scale_factor),
             },
             .size = .{ .width = 800, .height = 600 },
+            .opts = opts,
         };
     }
 
@@ -101,7 +106,7 @@ pub const Window = struct {
 
     pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
         self.core_win.app.runtime.opts.set_title(
-            self.core_win.app.runtime.opts.userdata,
+            self.opts.userdata,
             slice.ptr,
         );
     }

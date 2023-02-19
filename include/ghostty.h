@@ -35,6 +35,7 @@ typedef struct {
 } ghostty_runtime_config_s;
 
 typedef struct {
+    void *userdata;
     void *nsview;
     double scale_factor;
 } ghostty_surface_config_s;

@@ -39,6 +39,9 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     // so we'll use that to tell ghostty to refresh.
     override var wantsUpdateLayer: Bool { return true }
     
+    // TODO: Figure out how to hook this up...
+    @Published var title: String = "";
+    
     private var surface: ghostty_surface_t? = nil
     private var error: Error? = nil
     private var markedText: NSMutableAttributedString;
@@ -170,6 +173,7 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
         
         // Setup our surface. This will also initialize all the terminal IO.
         var surface_cfg = ghostty_surface_config_s(
+            userdata: Unmanaged.passUnretained(self).toOpaque(),
             nsview: Unmanaged.passUnretained(self).toOpaque(),
             scale_factor: NSScreen.main!.backingScaleFactor)
         guard let surface = ghostty_surface_new(app, &surface_cfg) else {
