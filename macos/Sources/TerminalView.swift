@@ -13,10 +13,8 @@ struct TerminalView: View {
     private var hasFocus: Bool { surfaceFocus && isKeyWindow }
     
     var body: some View {
-        VStack {
-            TerminalSurfaceView(app, hasFocus: hasFocus, title: $title)
-                .focused($surfaceFocus)
-                .navigationTitle(title)
-        }
+        TerminalSurfaceView(app, hasFocus: hasFocus, title: $title)
+            .focused($surfaceFocus)
+            .navigationTitle(title)
     }
 }
