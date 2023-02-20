@@ -11,6 +11,7 @@ struct GhosttyApp: App {
     
     /// The ghostty global state. Only one per process.
     @StateObject private var ghostty = GhosttyState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate;
     
     var body: some Scene {
         WindowGroup {
@@ -42,6 +43,15 @@ struct GhosttyApp: App {
         if let newWindow = NSApp.keyWindow, currentWindow != newWindow {
             currentWindow.addTabbedWindow(newWindow, ordered: .above)
         }
+    }
+}
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: [
+            // Disable this so that repeated key events make it through to our terminal views.
+            "ApplePressAndHoldEnabled": false,
+        ])
     }
 }
 
