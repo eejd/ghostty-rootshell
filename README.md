@@ -139,7 +139,7 @@ normal operation of the terminal (by as much as 100x). If you are building
 a terminal for day to day usage, build a release version:
 
 ```shell-session
-$ zig build -Drelease-fast
+$ zig build -Doptimize=ReleaseFast
 ...
 ```
 
@@ -149,8 +149,15 @@ than 5 MB on all platforms. The debug version is around 70MB.
 
 ### Mac `.app`
 
-When targeting macOS, a macOS application bundle will be created at
-`zig-out/Ghostty.app`. This can be copied as-is and used like a normal app.
+To build the official, fully featured macOS application, you must
+build on a macOS machine with XCode installed:
+
+```shell-session
+$ zig build -Doptimize=ReleaseFast
+$ cd macos && xcodebuild
+```
+
+This will output the app to `macos/build/Release/Ghostty.app`.
 This app will be not be signed or notarized. Note that
 [official continuous builds are available](https://github.com/mitchellh/ghostty/releases/tag/tip)
 that are both signed and notarized.
