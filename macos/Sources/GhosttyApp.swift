@@ -28,6 +28,10 @@ struct GhosttyApp: App {
                 Button("New Tab", action: newTab).keyboardShortcut("t", modifiers: [.command])
             }
         }
+        
+        Settings {
+            SettingsView()
+        }
     }
     
     // Create a new tab in the currently active window
