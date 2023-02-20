@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("build_config.zig");
 const options = @import("build_options");
 const glfw = @import("glfw");
 const macos = @import("macos");
@@ -88,12 +89,19 @@ pub fn main() !void {
     try config.finalize();
     std.log.debug("config={}", .{config});
 
-    // We want to log all our errors
-    glfw.setErrorCallback(glfwErrorCallback);
+    switch (build_config.app_runtime) {
+        .none => {},
+        .glfw => {
+            // We want to log all our errors
+            glfw.setErrorCallback(glfwErrorCallback);
+        },
+        .gtk => {},
+    }
 
     // Run our app with a single initial window to start.
     var app = try App.create(alloc, .{}, &config);
     defer app.destroy();
+    if (build_config.app_runtime == .gtk) return;
     _ = try app.newWindow(.{});
     try app.run();
 }

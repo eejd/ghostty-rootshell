@@ -420,6 +420,7 @@ pub fn deinitDevMode(self: *const OpenGL) void {
 /// Callback called by renderer.Thread when it begins.
 pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
     _ = self;
+    if (apprt.runtime == apprt.gtk) @panic("TODO");
 
     // We need to make the OpenGL context current. OpenGL requires
     // that a single thread own the a single OpenGL context (if any). This
@@ -1066,7 +1067,8 @@ pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Apply our padding
     const padding = self.padding.explicit.add(if (self.padding.balance)
         renderer.Padding.balanced(dim, grid_size, self.cell_size)
-    else .{});
+    else
+        .{});
     const padded_dim = dim.subPadding(padding);
 
     log.debug("screen size padded={} screen={} grid={} cell={} padding={}", .{
