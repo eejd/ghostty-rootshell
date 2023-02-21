@@ -125,10 +125,11 @@ pub fn destroy(self: *App) void {
     self.windows.deinit(self.alloc);
     if (Darwin.enabled) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
-    self.alloc.destroy(self);
 
     // Close our windowing runtime
     self.runtime.terminate();
+
+    self.alloc.destroy(self);
 }
 
 /// Wake up the app event loop. This should be called after any messages
@@ -164,7 +165,7 @@ pub fn tick(self: *App) !void {
         i += 1;
     }
 
-    // Drain our mailbox only if we're not quitting.
+    // // Drain our mailbox only if we're not quitting.
     if (!self.quit) try self.drainMailbox();
 }
 

@@ -444,6 +444,7 @@ pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
 /// Callback called by renderer.Thread when it exits.
 pub fn threadExit(self: *const OpenGL) void {
     _ = self;
+    if (apprt.runtime == apprt.gtk) @panic("TODO");
 
     gl.glad.unload();
     glfw.makeContextCurrent(null);
@@ -569,12 +570,14 @@ pub fn render(
 
         // Build our devmode draw data
         const devmode_data = devmode_data: {
-            if (state.devmode) |dm| {
-                if (dm.visible) {
-                    imgui.ImplOpenGL3.newFrame();
-                    imgui.ImplGlfw.newFrame();
-                    try dm.update();
-                    break :devmode_data try dm.render();
+            if (DevMode.enabled) {
+                if (state.devmode) |dm| {
+                    if (dm.visible) {
+                        imgui.ImplOpenGL3.newFrame();
+                        imgui.ImplGlfw.newFrame();
+                        try dm.update();
+                        break :devmode_data try dm.render();
+                    }
                 }
             }
 
@@ -639,11 +642,14 @@ pub fn render(
     try self.draw();
 
     // If we have devmode, then render that
-    if (critical.devmode_data) |data| {
-        imgui.ImplOpenGL3.renderDrawData(data);
+    if (DevMode.enabled) {
+        if (critical.devmode_data) |data| {
+            imgui.ImplOpenGL3.renderDrawData(data);
+        }
     }
 
     // Swap our window buffers
+    if (apprt.runtime == apprt.gtk) @panic("TODO");
     win.window.swapBuffers();
 }
 
