@@ -420,34 +420,53 @@ pub fn deinitDevMode(self: *const OpenGL) void {
 /// Callback called by renderer.Thread when it begins.
 pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
     _ = self;
-    if (apprt.runtime == apprt.gtk) @panic("TODO");
 
-    // We need to make the OpenGL context current. OpenGL requires
-    // that a single thread own the a single OpenGL context (if any). This
-    // ensures that the context switches over to our thread. Important:
-    // the prior thread MUST have detached the context prior to calling
-    // this entrypoint.
-    glfw.makeContextCurrent(win.window);
-    errdefer glfw.makeContextCurrent(null);
-    glfw.swapInterval(1);
+    switch (apprt.runtime) {
+        else => @compileError("unsupported app runtime for OpenGL"),
 
-    // Load OpenGL bindings. This API is context-aware so this sets
-    // a threadlocal context for these pointers.
-    const version = try gl.glad.load(&glfw.getProcAddress);
-    errdefer gl.glad.unload();
-    log.info("loaded OpenGL {}.{}", .{
-        gl.glad.versionMajor(@intCast(c_uint, version)),
-        gl.glad.versionMinor(@intCast(c_uint, version)),
-    });
+        apprt.gtk => {
+            // GTK doesn't support threaded OpenGL operations as far as I can
+            // tell, so we use the renderer thread to setup all the state
+            // but then do the actual draws and texture syncs and all that
+            // on the main thread. As such, we don't do anything here.
+        },
+
+        apprt.glfw => {
+            // We need to make the OpenGL context current. OpenGL requires
+            // that a single thread own the a single OpenGL context (if any). This
+            // ensures that the context switches over to our thread. Important:
+            // the prior thread MUST have detached the context prior to calling
+            // this entrypoint.
+            glfw.makeContextCurrent(win.window);
+            errdefer glfw.makeContextCurrent(null);
+            glfw.swapInterval(1);
+
+            // Load OpenGL bindings. This API is context-aware so this sets
+            // a threadlocal context for these pointers.
+            const version = try gl.glad.load(&glfw.getProcAddress);
+            errdefer gl.glad.unload();
+            log.info("loaded OpenGL {}.{}", .{
+                gl.glad.versionMajor(@intCast(c_uint, version)),
+                gl.glad.versionMinor(@intCast(c_uint, version)),
+            });
+        },
+    }
 }
 
 /// Callback called by renderer.Thread when it exits.
 pub fn threadExit(self: *const OpenGL) void {
     _ = self;
-    if (apprt.runtime == apprt.gtk) @panic("TODO");
 
-    gl.glad.unload();
-    glfw.makeContextCurrent(null);
+    switch (apprt.runtime) {
+        else => @compileError("unsupported app runtime for OpenGL"),
+
+        apprt.gtk => {},
+
+        apprt.glfw => {
+            gl.glad.unload();
+            glfw.makeContextCurrent(null);
+        },
+    }
 }
 
 /// Callback when the focus changes for the terminal this is rendering.

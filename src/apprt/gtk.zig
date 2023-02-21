@@ -30,6 +30,16 @@ pub const App = struct {
         )) orelse return error.GtkInitFailed;
         errdefer c.g_object_unref(app);
 
+        // Setup our callbacks
+        _ = c.g_signal_connect_data(
+            app,
+            "activate",
+            c.G_CALLBACK(&activate),
+            null,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+
         // We don't use g_application_run, we want to manually control the
         // loop so we have to do the same things the run function does:
         // https://github.com/GNOME/glib/blob/a8e8b742e7926e33eb635a8edceac74cf239d6ed/gio/gapplication.c#L2533
@@ -51,6 +61,9 @@ pub const App = struct {
             return error.GtkApplicationRegisterFailed;
         }
 
+        // This just calls the "activate" signal but its part of the normal
+        // startup routine so we just call it:
+        // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         c.g_application_activate(gapp);
 
         return .{ .app = app, .ctx = ctx };
@@ -70,6 +83,12 @@ pub const App = struct {
 
     pub fn wait(self: App) !void {
         _ = c.g_main_context_iteration(self.ctx, 1);
+    }
+
+    fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
+        _ = app;
+        _ = ud;
+        log.debug("application activated", .{});
     }
 };
 

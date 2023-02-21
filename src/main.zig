@@ -101,9 +101,8 @@ pub fn main() !void {
     // Run our app with a single initial window to start.
     var app = try App.create(alloc, .{}, &config);
     defer app.destroy();
-    try app.run();
-    if (build_config.app_runtime == .gtk) return;
     _ = try app.newWindow(.{});
+    try app.run();
 }
 
 // Required by tracy/tracy.zig to enable/disable tracy support.
