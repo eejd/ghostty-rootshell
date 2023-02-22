@@ -5,10 +5,12 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const trace = @import("tracy").trace;
 const glfw = @import("glfw");
+const macos = @import("macos");
 const objc = @import("objc");
 const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
@@ -26,11 +28,28 @@ const glfwNative = glfw.Native(.{
 const log = std.log.scoped(.glfw);
 
 pub const App = struct {
+    app: *CoreApp,
+
+    /// Mac-specific state.
+    darwin: if (Darwin.enabled) Darwin else void,
+
     pub const Options = struct {};
 
-    pub fn init(_: Options) !App {
+    pub fn init(core_app: *CoreApp, _: Options) !App {
         if (!glfw.init(.{})) return error.GlfwInitFailed;
-        return .{};
+        glfw.setErrorCallback(glfwErrorCallback);
+
+        // Mac-specific state. For example, on Mac we enable window tabbing.
+        var darwin = if (Darwin.enabled) try Darwin.init() else {};
+        errdefer if (Darwin.enabled) darwin.deinit();
+
+        // Set our callback for being woken up
+        core_app.wakeup_cb = wakeup;
+
+        return .{
+            .app = core_app,
+            .darwin = darwin,
+        };
     }
 
     pub fn terminate(self: App) void {
@@ -38,17 +57,67 @@ pub const App = struct {
         glfw.terminate();
     }
 
+    /// Run the event loop. This doesn't return until the app exits.
+    pub fn run(self: *App) !void {
+        while (true) {
+            // Wait for any events from the app event loop. wakeup will post
+            // an empty event so that this will return.
+            glfw.waitEvents();
+
+            // Tick the terminal app
+            const should_quit = try self.app.tick(self);
+            if (should_quit) return;
+        }
+    }
+
     /// Wakeup the event loop. This should be able to be called from any thread.
-    pub fn wakeup(self: App) !void {
-        _ = self;
+    pub fn wakeup() void {
         glfw.postEmptyEvent();
     }
 
-    /// Wait for events in the event loop to process.
-    pub fn wait(self: App) !void {
-        _ = self;
-        glfw.waitEvents();
+    fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
+        std.log.warn("glfw error={} message={s}", .{ code, desc });
+
+        // Workaround for: https://github.com/ocornut/imgui/issues/5908
+        // If we get an invalid value with "scancode" in the message we assume
+        // it is from the glfw key callback that imgui sets and we clear the
+        // error so that our future code doesn't crash.
+        if (code == glfw.ErrorCode.InvalidValue and
+            std.mem.indexOf(u8, desc, "scancode") != null)
+        {
+            _ = glfw.getError();
+        }
     }
+
+    /// Mac-specific settings. This is only enabled when the target is
+    /// Mac and the artifact is a standalone exe. We don't target libs because
+    /// the embedded API doesn't do windowing.
+    const Darwin = struct {
+        const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
+
+        tabbing_id: *macos.foundation.String,
+
+        pub fn init() !Darwin {
+            const NSWindow = objc.Class.getClass("NSWindow").?;
+            NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
+
+            // Our tabbing ID allows all of our windows to group together
+            const tabbing_id = try macos.foundation.String.createWithBytes(
+                "com.mitchellh.ghostty.window",
+                .utf8,
+                false,
+            );
+            errdefer tabbing_id.release();
+
+            // Setup our Mac settings
+            return .{ .tabbing_id = tabbing_id };
+        }
+
+        pub fn deinit(self: *Darwin) void {
+            self.tabbing_id.release();
+            self.* = undefined;
+        }
+    };
 };
 
 pub const Window = struct {

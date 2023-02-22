@@ -30,9 +30,6 @@ pub const Mailbox = BlockingQueue(Message, 64);
 /// General purpose allocator
 alloc: Allocator,
 
-/// The runtime for this app.
-runtime: apprt.runtime.App,
-
 /// The list of windows that are currently open
 windows: WindowList,
 
@@ -46,35 +43,16 @@ mailbox: *Mailbox,
 /// Set to true once we're quitting. This never goes false again.
 quit: bool,
 
-/// Mac settings
-darwin: if (Darwin.enabled) Darwin else void,
-
-/// Mac-specific settings. This is only enabled when the target is
-/// Mac and the artifact is a standalone exe. We don't target libs because
-/// the embedded API doesn't do windowing.
-pub const Darwin = struct {
-    pub const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
-
-    tabbing_id: *macos.foundation.String,
-
-    pub fn deinit(self: *Darwin) void {
-        self.tabbing_id.release();
-        self.* = undefined;
-    }
-};
+/// App will call this when tick should be called.
+wakeup_cb: ?*const fn () void = null,
 
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
 pub fn create(
     alloc: Allocator,
-    rt_opts: apprt.runtime.App.Options,
     config: *const Config,
 ) !*App {
-    // Initialize app runtime
-    var app_backend = try apprt.runtime.App.init(rt_opts);
-    errdefer app_backend.terminate();
-
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
@@ -86,35 +64,12 @@ pub fn create(
     errdefer alloc.destroy(app);
     app.* = .{
         .alloc = alloc,
-        .runtime = app_backend,
         .windows = .{},
         .config = config,
         .mailbox = mailbox,
         .quit = false,
-        .darwin = if (Darwin.enabled) undefined else {},
     };
     errdefer app.windows.deinit(alloc);
-
-    // On Mac, we enable window tabbing. We only do this if we're building
-    // a standalone exe. In embedded mode the host app handles this for us.
-    if (Darwin.enabled) {
-        const NSWindow = objc.Class.getClass("NSWindow").?;
-        NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
-
-        // Our tabbing ID allows all of our windows to group together
-        const tabbing_id = try macos.foundation.String.createWithBytes(
-            "dev.ghostty.window",
-            .utf8,
-            false,
-        );
-        errdefer tabbing_id.release();
-
-        // Setup our Mac settings
-        app.darwin = .{
-            .tabbing_id = tabbing_id,
-        };
-    }
-    errdefer if (comptime builtin.target.isDarwin()) app.darwin.deinit();
 
     return app;
 }
@@ -123,35 +78,22 @@ pub fn destroy(self: *App) void {
     // Clean up all our windows
     for (self.windows.items) |window| window.destroy();
     self.windows.deinit(self.alloc);
-    if (Darwin.enabled) self.darwin.deinit();
     self.mailbox.destroy(self.alloc);
-
-    // Close our windowing runtime
-    self.runtime.terminate();
 
     self.alloc.destroy(self);
 }
 
-/// Wake up the app event loop. This should be called after any messages
-/// are sent to the mailbox.
+/// Request the app runtime to process app events via tick.
 pub fn wakeup(self: App) void {
-    self.runtime.wakeup() catch return;
-}
-
-/// Run the main event loop for the application. This blocks until the
-/// application quits or every window is closed.
-pub fn run(self: *App) !void {
-    while (!self.quit and self.windows.items.len > 0) {
-        try self.tick();
-    }
+    if (self.wakeup_cb) |cb| cb();
 }
 
 /// Tick ticks the app loop. This will drain our mailbox and process those
-/// events.
-pub fn tick(self: *App) !void {
-    // Block for any events.
-    try self.runtime.wait();
-
+/// events. This should be called by the application runtime on every loop
+/// tick.
+///
+/// This returns whether the app should quit or not.
+pub fn tick(self: *App, rt_app: *apprt.runtime.App) !bool {
     // If any windows are closing, destroy them
     var i: usize = 0;
     while (i < self.windows.items.len) {
@@ -165,8 +107,11 @@ pub fn tick(self: *App) !void {
         i += 1;
     }
 
-    // // Drain our mailbox only if we're not quitting.
-    if (!self.quit) try self.drainMailbox();
+    // Drain our mailbox only if we're not quitting.
+    if (!self.quit) try self.drainMailbox(rt_app);
+
+    // We quit if our quit flag is on or if we have closed all windows.
+    return self.quit or self.windows.items.len == 0;
 }
 
 /// Create a new window. This can be called only on the main thread. This
@@ -201,7 +146,9 @@ pub fn closeWindow(self: *App, window: *Window) void {
 }
 
 /// Drain the mailbox.
-fn drainMailbox(self: *App) !void {
+fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
+    _ = rt_app;
+
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {

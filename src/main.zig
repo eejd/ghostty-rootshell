@@ -11,6 +11,7 @@ const fontconfig = @import("fontconfig");
 const harfbuzz = @import("harfbuzz");
 const renderer = @import("renderer.zig");
 const xdg = @import("xdg.zig");
+const apprt = @import("apprt.zig");
 
 const App = @import("App.zig");
 const cli_args = @import("cli_args.zig");
@@ -89,18 +90,30 @@ pub fn main() !void {
     try config.finalize();
     std.log.debug("config={}", .{config});
 
-    switch (build_config.app_runtime) {
-        .none => {},
-        .glfw => {
-            // We want to log all our errors
-            glfw.setErrorCallback(glfwErrorCallback);
-        },
-        .gtk => {},
+    if (true) {
+        // Create our app state
+        var app = try App.create(alloc, &config);
+        defer app.destroy();
+
+        // Create our runtime app
+        var app_runtime = try apprt.App.init(app, .{});
+        defer app_runtime.terminate();
+
+        // Create an initial window
+
+        // Run the GUI event loop
+        try app_runtime.run();
+        return;
     }
 
     // Run our app with a single initial window to start.
     var app = try App.create(alloc, .{}, &config);
     defer app.destroy();
+    if (build_config.app_runtime == .gtk) {
+        try app.runtime.newWindow();
+        while (true) try app.runtime.wait();
+        return;
+    }
     _ = try app.newWindow(.{});
     try app.run();
 }
@@ -157,20 +170,6 @@ pub const std_options = struct {
         nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
     }
 };
-
-fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
-    std.log.warn("glfw error={} message={s}", .{ code, desc });
-
-    // Workaround for: https://github.com/ocornut/imgui/issues/5908
-    // If we get an invalid value with "scancode" in the message we assume
-    // it is from the glfw key callback that imgui sets and we clear the
-    // error so that our future code doesn't crash.
-    if (code == glfw.ErrorCode.InvalidValue and
-        std.mem.indexOf(u8, desc, "scancode") != null)
-    {
-        _ = glfw.getError();
-    }
-}
 
 /// This represents the global process state. There should only
 /// be one of these at any given moment. This is extracted into a dedicated

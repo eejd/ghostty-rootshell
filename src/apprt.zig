@@ -19,6 +19,22 @@ pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
 pub const Window = @import("apprt/Window.zig");
 
+/// The implementation to use for the app runtime. This is comptime chosen
+/// so that every build has exactly one application runtime implementation.
+/// Note: it is very rare to use Runtime directly; most usage will use
+/// Window or something.
+pub const runtime = switch (build_config.artifact) {
+    .exe => switch (build_config.app_runtime) {
+        .none => @compileError("exe with no runtime not allowed"),
+        .glfw => glfw,
+        .gtk => gtk,
+    },
+    .lib => embedded,
+    .wasm_module => browser,
+};
+
+pub const App = runtime.App;
+
 /// Runtime is the runtime to use for Ghostty. All runtimes do not provide
 /// equivalent feature sets. For example, GTK offers tabbing and more features
 /// that glfw does not provide. However, glfw may require many less
@@ -39,20 +55,6 @@ pub const Runtime = enum {
         _ = target;
         return .glfw;
     }
-};
-
-/// The implementation to use for the app runtime. This is comptime chosen
-/// so that every build has exactly one application runtime implementation.
-/// Note: it is very rare to use Runtime directly; most usage will use
-/// Window or something.
-pub const runtime = switch (build_config.artifact) {
-    .exe => switch (build_config.app_runtime) {
-        .none => @compileError("exe with no runtime not allowed"),
-        .glfw => glfw,
-        .gtk => gtk,
-    },
-    .lib => embedded,
-    .wasm_module => browser,
 };
 
 test {

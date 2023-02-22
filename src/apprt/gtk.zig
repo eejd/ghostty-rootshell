@@ -14,6 +14,13 @@ pub const c = @cImport({
 
 const log = std.log.scoped(.gtk);
 
+/// App is the entrypoint for the application. This is called after all
+/// of the runtime-agnostic initialization is complete and we're ready
+/// to start.
+///
+/// There is only ever one App instance per process. This is because most
+/// application frameworks also have this restriction so it simplifies
+/// the assumptions.
 pub const App = struct {
     pub const Options = struct {
         /// GTK app ID
@@ -23,14 +30,15 @@ pub const App = struct {
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
 
-    pub fn init(opts: Options) !App {
+    pub fn init(core_app: *CoreApp, opts: Options) !App {
+        _ = core_app;
+
+        // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
             opts.id.ptr,
             c.G_APPLICATION_DEFAULT_FLAGS,
         )) orelse return error.GtkInitFailed;
         errdefer c.g_object_unref(app);
-
-        // Setup our callbacks
         _ = c.g_signal_connect_data(
             app,
             "activate",
@@ -69,6 +77,8 @@ pub const App = struct {
         return .{ .app = app, .ctx = ctx };
     }
 
+    // Terminate the application. The application will not be restarted after
+    // this so all global state can be cleaned up.
     pub fn terminate(self: App) void {
         c.g_settings_sync();
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
@@ -85,10 +95,55 @@ pub const App = struct {
         _ = c.g_main_context_iteration(self.ctx, 1);
     }
 
+    pub fn newWindow(self: App) !void {
+        const window = c.gtk_application_window_new(self.app);
+        c.gtk_window_set_title(@ptrCast(*c.GtkWindow, window), "Ghostty");
+        c.gtk_window_set_default_size(@ptrCast(*c.GtkWindow, window), 200, 200);
+
+        const surface = c.gtk_gl_area_new();
+        c.gtk_window_set_child(@ptrCast(*c.GtkWindow, window), surface);
+        _ = c.g_signal_connect_data(
+            surface,
+            "realize",
+            c.G_CALLBACK(&onSurfaceRealize),
+            null,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        _ = c.g_signal_connect_data(
+            surface,
+            "render",
+            c.G_CALLBACK(&onSurfaceRender),
+            null,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+
+        c.gtk_widget_show(window);
+    }
+
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
         _ = app;
         _ = ud;
+
+        // We purposely don't do anything on activation right now. We have
+        // this callback because if we don't then GTK emits a warning to
+        // stderr that we don't want. We emit a debug log just so that we know
+        // we reached this point.
         log.debug("application activated", .{});
+    }
+
+    fn onSurfaceRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
+        _ = area;
+        _ = ud;
+        log.debug("gl surface realized", .{});
+    }
+
+    fn onSurfaceRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) void {
+        _ = area;
+        _ = ctx;
+        _ = ud;
+        log.debug("gl render", .{});
     }
 };
 
