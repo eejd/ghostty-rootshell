@@ -78,8 +78,8 @@ pub const App = struct {
     /// Create a new window for the app.
     pub fn newWindow(self: *App) !*Surface {
         // Grab a surface allocation because we're going to need it.
-        const surface = try self.app.surface_pool.create();
-        errdefer self.app.surface_pool.destroy(surface);
+        var surface = try self.app.alloc.create(Surface);
+        errdefer self.app.alloc.destroy(surface);
 
         // Create the surface -- because windows are surfaces for glfw.
         try surface.init(self);
@@ -125,7 +125,7 @@ pub const App = struct {
     /// Close the given surface.
     pub fn closeSurface(self: *App, surface: *Surface) void {
         surface.deinit();
-        self.app.surface_pool.destroy(surface);
+        self.app.alloc.destroy(surface);
     }
 
     fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {

@@ -23,7 +23,6 @@ const DevMode = @import("DevMode.zig");
 const log = std.log.scoped(.app);
 
 const SurfaceList = std.ArrayListUnmanaged(*apprt.Surface);
-const SurfacePool = std.heap.MemoryPool(apprt.Surface);
 
 /// The type used for sending messages to the app thread.
 pub const Mailbox = BlockingQueue(Message, 64);
@@ -33,12 +32,6 @@ alloc: Allocator,
 
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
-
-/// The memory pool to request surfaces. We use a memory pool because surfaces
-/// typically require stable pointers due to runtime GUI callbacks. Centralizing
-/// all the allocations in this pool makes it so that all our pools remain
-/// close in memory.
-surface_pool: SurfacePool,
 
 // The configuration for the app.
 config: *const Config,
@@ -72,13 +65,11 @@ pub fn create(
     app.* = .{
         .alloc = alloc,
         .surfaces = .{},
-        .surface_pool = try SurfacePool.initPreheated(alloc, 2),
         .config = config,
         .mailbox = mailbox,
         .quit = false,
     };
     errdefer app.surfaces.deinit(alloc);
-    errdefer app.surface_pool.deinit();
 
     return app;
 }
@@ -87,7 +78,6 @@ pub fn destroy(self: *App) void {
     // Clean up all our surfaces
     for (self.surfaces.items) |surface| surface.deinit();
     self.surfaces.deinit(self.alloc);
-    self.surface_pool.deinit();
     self.mailbox.destroy(self.alloc);
 
     self.alloc.destroy(self);
