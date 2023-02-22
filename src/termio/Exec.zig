@@ -8,7 +8,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
-const Window = @import("../Window.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
@@ -16,6 +15,7 @@ const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
 const trace = tracy.trace;
+const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
 
 const log = std.log.scoped(.io_exec);
@@ -52,7 +52,7 @@ renderer_wakeup: xev.Async,
 renderer_mailbox: *renderer.Thread.Mailbox,
 
 /// The mailbox for communicating with the window.
-window_mailbox: Window.Mailbox,
+window_mailbox: apprt.surface.Mailbox,
 
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
@@ -638,7 +638,7 @@ const StreamHandler = struct {
     alloc: Allocator,
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
-    window_mailbox: Window.Mailbox,
+    window_mailbox: apprt.surface.Mailbox,
 
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
@@ -1003,7 +1003,7 @@ const StreamHandler = struct {
 
         // Write clipboard contents
         _ = self.window_mailbox.push(.{
-            .clipboard_write = try Window.Message.WriteReq.init(
+            .clipboard_write = try apprt.surface.Message.WriteReq.init(
                 self.alloc,
                 data,
             ),

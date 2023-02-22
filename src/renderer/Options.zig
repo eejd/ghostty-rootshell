@@ -1,8 +1,8 @@
 //! The options that are used to configure a renderer.
 
+const apprt = @import("../apprt.zig");
 const font = @import("../font/main.zig");
 const renderer = @import("../renderer.zig");
-const Window = @import("../Window.zig");
 const Config = @import("../config.zig").Config;
 
 /// The app configuration.
@@ -16,7 +16,7 @@ padding: Padding,
 
 /// The mailbox for sending the window messages. This is only valid
 /// once the thread has started and should not be used outside of the thread.
-window_mailbox: Window.Mailbox,
+window_mailbox: apprt.surface.Mailbox,
 
 pub const Padding = struct {
     // Explicit padding options, in pixels. The windowing thread is

@@ -9,7 +9,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const build_config = @import("build_config.zig");
 const apprt = @import("apprt.zig");
-const Window = @import("Window.zig");
+const Surface = @import("Surface.zig");
 const tracy = @import("tracy");
 const input = @import("input.zig");
 const Config = @import("config.zig").Config;
@@ -22,7 +22,8 @@ const DevMode = @import("DevMode.zig");
 
 const log = std.log.scoped(.app);
 
-const WindowList = std.ArrayListUnmanaged(*Window);
+const SurfaceList = std.ArrayListUnmanaged(*apprt.Surface);
+const SurfacePool = std.heap.MemoryPool(apprt.Surface);
 
 /// The type used for sending messages to the app thread.
 pub const Mailbox = BlockingQueue(Message, 64);
@@ -30,8 +31,14 @@ pub const Mailbox = BlockingQueue(Message, 64);
 /// General purpose allocator
 alloc: Allocator,
 
-/// The list of windows that are currently open
-windows: WindowList,
+/// The list of surfaces that are currently active.
+surfaces: SurfaceList,
+
+/// The memory pool to request surfaces. We use a memory pool because surfaces
+/// typically require stable pointers due to runtime GUI callbacks. Centralizing
+/// all the allocations in this pool makes it so that all our pools remain
+/// close in memory.
+surface_pool: SurfacePool,
 
 // The configuration for the app.
 config: *const Config,
@@ -64,20 +71,23 @@ pub fn create(
     errdefer alloc.destroy(app);
     app.* = .{
         .alloc = alloc,
-        .windows = .{},
+        .surfaces = .{},
+        .surface_pool = try SurfacePool.initPreheated(alloc, 2),
         .config = config,
         .mailbox = mailbox,
         .quit = false,
     };
-    errdefer app.windows.deinit(alloc);
+    errdefer app.surfaces.deinit(alloc);
+    errdefer app.surface_pool.deinit();
 
     return app;
 }
 
 pub fn destroy(self: *App) void {
-    // Clean up all our windows
-    for (self.windows.items) |window| window.destroy();
-    self.windows.deinit(self.alloc);
+    // Clean up all our surfaces
+    for (self.surfaces.items) |surface| surface.deinit();
+    self.surfaces.deinit(self.alloc);
+    self.surface_pool.deinit();
     self.mailbox.destroy(self.alloc);
 
     self.alloc.destroy(self);
@@ -94,13 +104,14 @@ pub fn wakeup(self: App) void {
 ///
 /// This returns whether the app should quit or not.
 pub fn tick(self: *App, rt_app: *apprt.runtime.App) !bool {
-    // If any windows are closing, destroy them
+    // If any surfaces are closing, destroy them
     var i: usize = 0;
-    while (i < self.windows.items.len) {
-        const window = self.windows.items[i];
-        if (window.shouldClose()) {
-            window.destroy();
-            _ = self.windows.swapRemove(i);
+    while (i < self.surfaces.items.len) {
+        const surface = self.surfaces.items[i];
+        if (surface.shouldClose()) {
+            surface.deinit();
+            _ = self.surfaces.swapRemove(i);
+            self.surface_pool.destroy(surface);
             continue;
         }
 
@@ -110,52 +121,56 @@ pub fn tick(self: *App, rt_app: *apprt.runtime.App) !bool {
     // Drain our mailbox only if we're not quitting.
     if (!self.quit) try self.drainMailbox(rt_app);
 
-    // We quit if our quit flag is on or if we have closed all windows.
-    return self.quit or self.windows.items.len == 0;
+    // We quit if our quit flag is on or if we have closed all surfaces.
+    return self.quit or self.surfaces.items.len == 0;
 }
 
-/// Create a new window. This can be called only on the main thread. This
-/// can be called prior to ever running the app loop.
-pub fn newWindow(self: *App, msg: Message.NewWindow) !*Window {
-    var window = try Window.create(self.alloc, self, self.config, msg.runtime);
-    errdefer window.destroy();
+/// Add an initialized surface. This is really only for the runtime
+/// implementations to call and should NOT be called by general app users.
+/// The surface must be from the pool.
+pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
+    try self.surfaces.append(self.alloc, rt_surface);
+}
 
-    try self.windows.append(self.alloc, window);
-    errdefer _ = self.windows.pop();
-
-    // Set initial font size if given
-    if (msg.font_size) |size| window.setFontSize(size);
-
-    return window;
+/// Delete the surface from the known surface list. This will NOT call the
+/// destructor or free the memory.
+pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
+    var i: usize = 0;
+    while (i < self.surfaces.items.len) {
+        if (self.surfaces.items[i] == rt_surface) {
+            _ = self.surfaces.swapRemove(i);
+        }
+    }
 }
 
 /// Close a window and free all resources associated with it. This can
 /// only be called from the main thread.
-pub fn closeWindow(self: *App, window: *Window) void {
-    var i: usize = 0;
-    while (i < self.windows.items.len) {
-        const current = self.windows.items[i];
-        if (window == current) {
-            window.destroy();
-            _ = self.windows.swapRemove(i);
-            return;
-        }
-
-        i += 1;
-    }
-}
+// pub fn closeWindow(self: *App, window: *Window) void {
+//     var i: usize = 0;
+//     while (i < self.surfaces.items.len) {
+//         const current = self.surfaces.items[i];
+//         if (window == current) {
+//             window.destroy();
+//             _ = self.surfaces.swapRemove(i);
+//             return;
+//         }
+//
+//         i += 1;
+//     }
+// }
 
 /// Drain the mailbox.
 fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
-    _ = rt_app;
-
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
-            .new_window => |msg| _ = try self.newWindow(msg),
+            .new_window => |msg| {
+                _ = msg; // TODO
+                try rt_app.newWindow();
+            },
             .new_tab => |msg| try self.newTab(msg),
             .quit => try self.setQuit(),
-            .window_message => |msg| try self.windowMessage(msg.window, msg.message),
+            .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
         }
     }
 }
@@ -180,7 +195,7 @@ fn newTab(self: *App, msg: Message.NewWindow) !void {
     };
 
     // If the parent was closed prior to us handling the message, we do nothing.
-    if (!self.hasWindow(parent)) {
+    if (!self.hasSurface(parent)) {
         log.warn("new_tab parent is gone, not launching a new tab", .{});
         return;
     }
@@ -197,28 +212,28 @@ fn setQuit(self: *App) !void {
     if (self.quit) return;
     self.quit = true;
 
-    // Mark that all our windows should close
-    for (self.windows.items) |window| {
-        window.window.setShouldClose();
+    // Mark that all our surfaces should close
+    for (self.surfaces.items) |surface| {
+        surface.setShouldClose();
     }
 }
 
 /// Handle a window message
-fn windowMessage(self: *App, win: *Window, msg: Window.Message) !void {
+fn surfaceMessage(self: *App, surface: *Surface, msg: apprt.surface.Message) !void {
     // We want to ensure our window is still active. Window messages
     // are quite rare and we normally don't have many windows so we do
     // a simple linear search here.
-    if (self.hasWindow(win)) {
-        try win.handleMessage(msg);
+    if (self.hasSurface(surface)) {
+        try surface.handleMessage(msg);
     }
 
     // Window was not found, it probably quit before we handled the message.
     // Not a problem.
 }
 
-fn hasWindow(self: *App, win: *Window) bool {
-    for (self.windows.items) |window| {
-        if (window == win) return true;
+fn hasSurface(self: *App, surface: *Surface) bool {
+    for (self.surfaces.items) |v| {
+        if (&v.core_surface == surface) return true;
     }
 
     return false;
@@ -237,18 +252,18 @@ pub const Message = union(enum) {
     /// Quit
     quit: void,
 
-    /// A message for a specific window
-    window_message: struct {
-        window: *Window,
-        message: Window.Message,
+    /// A message for a specific surface.
+    surface_message: struct {
+        surface: *Surface,
+        message: apprt.surface.Message,
     },
 
     const NewWindow = struct {
         /// Runtime-specific window options.
-        runtime: apprt.runtime.Window.Options = .{},
+        runtime: apprt.runtime.Surface.Options = .{},
 
-        /// The parent window, only used for new tabs.
-        parent: ?*Window = null,
+        /// The parent surface, only used for new tabs.
+        parent: ?*Surface = null,
 
         /// The font size to create the window with or null to default to
         /// the configuration amount.
@@ -332,7 +347,7 @@ pub const CAPI = struct {
     export fn ghostty_surface_new(
         app: *App,
         opts: *const apprt.runtime.Window.Options,
-    ) ?*Window {
+    ) ?*Surface {
         return surface_new_(app, opts) catch |err| {
             log.err("error initializing surface err={}", .{err});
             return null;
@@ -342,46 +357,46 @@ pub const CAPI = struct {
     fn surface_new_(
         app: *App,
         opts: *const apprt.runtime.Window.Options,
-    ) !*Window {
+    ) !*Surface {
         const w = try app.newWindow(.{
             .runtime = opts.*,
         });
         return w;
     }
 
-    export fn ghostty_surface_free(ptr: ?*Window) void {
+    export fn ghostty_surface_free(ptr: ?*Surface) void {
         if (ptr) |v| v.app.closeWindow(v);
     }
 
     /// Returns the app associated with a surface.
-    export fn ghostty_surface_app(win: *Window) *App {
+    export fn ghostty_surface_app(win: *Surface) *App {
         return win.app;
     }
 
     /// Tell the surface that it needs to schedule a render
-    export fn ghostty_surface_refresh(win: *Window) void {
+    export fn ghostty_surface_refresh(win: *Surface) void {
         win.window.refresh();
     }
 
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
-    export fn ghostty_surface_set_size(win: *Window, w: u32, h: u32) void {
+    export fn ghostty_surface_set_size(win: *Surface, w: u32, h: u32) void {
         win.window.updateSize(w, h);
     }
 
     /// Update the content scale of the surface.
-    export fn ghostty_surface_set_content_scale(win: *Window, x: f64, y: f64) void {
+    export fn ghostty_surface_set_content_scale(win: *Surface, x: f64, y: f64) void {
         win.window.updateContentScale(x, y);
     }
 
     /// Update the focused state of a surface.
-    export fn ghostty_surface_set_focus(win: *Window, focused: bool) void {
+    export fn ghostty_surface_set_focus(win: *Surface, focused: bool) void {
         win.window.focusCallback(focused);
     }
 
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_key(
-        win: *Window,
+        win: *Surface,
         action: input.Action,
         key: input.Key,
         mods: c_int,
@@ -394,13 +409,13 @@ pub const CAPI = struct {
     }
 
     /// Tell the surface that it needs to schedule a render
-    export fn ghostty_surface_char(win: *Window, codepoint: u32) void {
+    export fn ghostty_surface_char(win: *Surface, codepoint: u32) void {
         win.window.charCallback(codepoint);
     }
 
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_mouse_button(
-        win: *Window,
+        win: *Surface,
         action: input.MouseButtonState,
         button: input.MouseButton,
         mods: c_int,
@@ -413,15 +428,15 @@ pub const CAPI = struct {
     }
 
     /// Update the mouse position within the view.
-    export fn ghostty_surface_mouse_pos(win: *Window, x: f64, y: f64) void {
+    export fn ghostty_surface_mouse_pos(win: *Surface, x: f64, y: f64) void {
         win.window.cursorPosCallback(x, y);
     }
 
-    export fn ghostty_surface_mouse_scroll(win: *Window, x: f64, y: f64) void {
+    export fn ghostty_surface_mouse_scroll(win: *Surface, x: f64, y: f64) void {
         win.window.scrollCallback(x, y);
     }
 
-    export fn ghostty_surface_ime_point(win: *Window, x: *f64, y: *f64) void {
+    export fn ghostty_surface_ime_point(win: *Surface, x: *f64, y: *f64) void {
         const pos = win.imePoint();
         x.* = pos.x;
         y.* = pos.y;

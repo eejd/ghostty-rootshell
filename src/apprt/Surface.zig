@@ -1,5 +1,5 @@
 const App = @import("../App.zig");
-const Window = @import("../Window.zig");
+const Surface = @import("../Surface.zig");
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
 
@@ -27,17 +27,17 @@ pub const Message = union(enum) {
 
 /// A window mailbox.
 pub const Mailbox = struct {
-    window: *Window,
+    window: *Surface,
     app: *App.Mailbox,
 
     /// Send a message to the window.
     pub fn push(self: Mailbox, msg: Message, timeout: App.Mailbox.Timeout) App.Mailbox.Size {
-        // Window message sending is actually implemented on the app
+        // Surface message sending is actually implemented on the app
         // thread, so we have to rewrap the message with our window
         // pointer and send it to the app thread.
         const result = self.app.push(.{
-            .window_message = .{
-                .window = self.window,
+            .surface_message = .{
+                .surface = self.window,
                 .message = msg,
             },
         }, timeout);

@@ -10,7 +10,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 const font = @import("font/main.zig");
-const Window = @import("Window.zig");
+const Surface = @import("Surface.zig");
 const renderer = @import("renderer.zig");
 const Config = @import("config.zig").Config;
 
@@ -30,7 +30,7 @@ visible: bool = false,
 config: ?*const Config = null,
 
 /// The window we're tracking.
-window: ?*Window = null,
+window: ?*Surface = null,
 
 /// Update the state associated with the dev mode. This should generally
 /// only be called paired with a render since it otherwise wastes CPU

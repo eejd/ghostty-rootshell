@@ -1,9 +1,9 @@
 //! The options that are used to configure a terminal IO implementation.
 
 const xev = @import("xev");
+const apprt = @import("../apprt.zig");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
-const Window = @import("../Window.zig");
 
 /// The size of the terminal grid.
 grid_size: renderer.GridSize,
@@ -28,4 +28,4 @@ renderer_wakeup: xev.Async,
 renderer_mailbox: *renderer.Thread.Mailbox,
 
 /// The mailbox for sending the window messages.
-window_mailbox: Window.Mailbox,
+window_mailbox: apprt.surface.Mailbox,

@@ -17,7 +17,7 @@ pub const glfw = @import("apprt/glfw.zig");
 pub const gtk = @import("apprt/gtk.zig");
 pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
-pub const Window = @import("apprt/Window.zig");
+pub const surface = @import("apprt/Surface.zig");
 
 /// The implementation to use for the app runtime. This is comptime chosen
 /// so that every build has exactly one application runtime implementation.
@@ -34,6 +34,7 @@ pub const runtime = switch (build_config.artifact) {
 };
 
 pub const App = runtime.App;
+pub const Surface = runtime.Surface;
 
 /// Runtime is the runtime to use for Ghostty. All runtimes do not provide
 /// equivalent feature sets. For example, GTK offers tabbing and more features

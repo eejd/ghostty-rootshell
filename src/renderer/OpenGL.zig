@@ -18,7 +18,7 @@ const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const lru = @import("../lru.zig");
 const DevMode = @import("../DevMode.zig");
-const Window = @import("../Window.zig");
+const Surface = @import("../Surface.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -89,7 +89,7 @@ focused: bool,
 padding: renderer.Options.Padding,
 
 /// The mailbox for communicating with the window.
-window_mailbox: Window.Mailbox,
+window_mailbox: apprt.surface.Mailbox,
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
@@ -362,12 +362,11 @@ pub fn glfwWindowHints() glfw.Window.Hints {
     };
 }
 
-/// This is called early right after window creation to setup our
-/// window surface as necessary.
-pub fn windowInit(win: apprt.runtime.Window) !void {
+/// This is called early right after surface creation.
+pub fn surfaceInit(surface: *apprt.Surface) !void {
     // Treat this like a thread entry
     const self: OpenGL = undefined;
-    try self.threadEnter(win);
+    try self.threadEnter(surface);
 
     // Blending for text. We use GL_ONE here because we should be using
     // premultiplied alpha for all our colors in our fragment shaders.
@@ -388,19 +387,19 @@ pub fn windowInit(win: apprt.runtime.Window) !void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeWindowInit(self: *const OpenGL, win: apprt.runtime.Window) !void {
+pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
-    _ = win;
+    _ = surface;
 }
 
 /// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const OpenGL, win: apprt.runtime.Window) !void {
+pub fn initDevMode(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
 
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, win.window.handle),
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, surface.window.handle),
             true,
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
@@ -418,7 +417,7 @@ pub fn deinitDevMode(self: *const OpenGL) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
+pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
 
     switch (apprt.runtime) {
@@ -437,7 +436,7 @@ pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
             // ensures that the context switches over to our thread. Important:
             // the prior thread MUST have detached the context prior to calling
             // this entrypoint.
-            glfw.makeContextCurrent(win.window);
+            glfw.makeContextCurrent(surface.window);
             errdefer glfw.makeContextCurrent(null);
             glfw.swapInterval(1);
 
@@ -548,7 +547,7 @@ fn resetFontMetrics(
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *OpenGL,
-    win: apprt.runtime.Window,
+    surface: *apprt.Surface,
     state: *renderer.State,
 ) !void {
     // Data we extract out of the critical area.
@@ -669,7 +668,7 @@ pub fn render(
 
     // Swap our window buffers
     if (apprt.runtime == apprt.gtk) @panic("TODO");
-    win.window.swapBuffers();
+    surface.window.swapBuffers();
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a
