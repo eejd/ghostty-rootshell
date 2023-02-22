@@ -89,7 +89,7 @@ focused: bool,
 padding: renderer.Options.Padding,
 
 /// The mailbox for communicating with the window.
-window_mailbox: apprt.surface.Mailbox,
+surface_mailbox: apprt.surface.Mailbox,
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
@@ -311,7 +311,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
             null,
         .focused = true,
         .padding = options.padding,
-        .window_mailbox = options.window_mailbox,
+        .surface_mailbox = options.surface_mailbox,
     };
 }
 
@@ -504,7 +504,7 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     self.cell_size = new_cell_size;
 
     // Notify the window that the cell size changed.
-    _ = self.window_mailbox.push(.{
+    _ = self.surface_mailbox.push(.{
         .cell_size = new_cell_size,
     }, .{ .forever = {} });
 }

@@ -17,7 +17,7 @@ pub const glfw = @import("apprt/glfw.zig");
 pub const gtk = @import("apprt/gtk.zig");
 pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
-pub const surface = @import("apprt/Surface.zig");
+pub const surface = @import("apprt/surface.zig");
 
 /// The implementation to use for the app runtime. This is comptime chosen
 /// so that every build has exactly one application runtime implementation.

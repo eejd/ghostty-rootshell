@@ -83,6 +83,7 @@ pub const App = struct {
 
         // Create the surface -- because windows are surfaces for glfw.
         try surface.init(self);
+        errdefer surface.deinit();
     }
 
     fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
@@ -232,12 +233,15 @@ pub const Surface = struct {
 
         // Initialize our surface now that we have the stable pointer.
         try self.core_surface.init(app.app, app.app.config, self);
-        errdefer self.core_surface.destroy();
+        errdefer self.core_surface.deinit();
     }
 
     pub fn deinit(self: *Surface) void {
-        var tabgroup_opt: if (builtin.target.isDarwin()) ?objc.Object else void = undefined;
-        if (comptime builtin.target.isDarwin()) {
+        // First clean up our core surface so that all the rendering and IO stop.
+        self.core_surface.deinit();
+
+        var tabgroup_opt: if (App.Darwin.enabled) ?objc.Object else void = undefined;
+        if (App.Darwin.enabled) {
             const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
             const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
 
@@ -286,7 +290,7 @@ pub const Surface = struct {
     /// Note: this interface is not good, we should redo it if we plan
     /// to use this more. i.e. you can't set max width but no max height,
     /// or no mins.
-    pub fn setSizeLimits(self: *Surface, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
+    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         self.window.setSizeLimits(.{
             .width = min.width,
             .height = min.height,
@@ -308,9 +312,9 @@ pub const Surface = struct {
     /// Returns the size of the window in pixels. The pixel size may
     /// not match screen coordinate size but we should be able to convert
     /// back and forth using getContentScale.
-    pub fn getSize(self: *const Surface) !apprt.WindowSize {
+    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
         const size = self.window.getFramebufferSize();
-        return apprt.WindowSize{ .width = size.width, .height = size.height };
+        return apprt.SurfaceSize{ .width = size.width, .height = size.height };
     }
 
     /// Returns the cursor position in scaled pixels relative to the

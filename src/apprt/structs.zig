@@ -6,8 +6,8 @@ pub const ContentScale = struct {
     y: f32,
 };
 
-/// The size of the window in pixels.
-pub const WindowSize = struct {
+/// The size of the surface in pixels.
+pub const SurfaceSize = struct {
     width: u32,
     height: u32,
 };

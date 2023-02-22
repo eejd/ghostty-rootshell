@@ -34,7 +34,7 @@ const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
 
-const log = std.log.scoped(.window);
+const log = std.log.scoped(.surface);
 
 // The renderer implementation to use.
 const Renderer = renderer.Renderer;
@@ -56,7 +56,7 @@ font_size: font.face.DesiredSize,
 /// Imgui context
 imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 
-/// The renderer for this window.
+/// The renderer for this surface.
 renderer: Renderer,
 
 /// The render state
@@ -94,7 +94,7 @@ config: *const Config,
 /// like such as "control-v" will write a "v" even if they're intercepted.
 ignore_char: bool = false,
 
-/// Mouse state for the window.
+/// Mouse state for the surface.
 const Mouse = struct {
     /// The last tracked mouse button state by button.
     click_state: [input.MouseButton.max]input.MouseButtonState = .{.release} ** input.MouseButton.max,
@@ -109,7 +109,7 @@ const Mouse = struct {
 
     /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
     /// these will point to different "cells", but the xpos/ypos will stay
-    /// stable during scrolling relative to the window.
+    /// stable during scrolling relative to the surface.
     left_click_xpos: f64 = 0,
     left_click_ypos: f64 = 0,
 
@@ -283,7 +283,7 @@ pub fn init(
         .left = padding_x,
     };
 
-    // Create our terminal grid with the initial window size
+    // Create our terminal grid with the initial size
     var renderer_impl = try Renderer.init(alloc, .{
         .config = config,
         .font_group = font_group,
@@ -291,15 +291,15 @@ pub fn init(
             .explicit = padding,
             .balance = config.@"window-padding-balance",
         },
-        .window_mailbox = .{ .window = self, .app = app.mailbox },
+        .surface_mailbox = .{ .surface = self, .app = app.mailbox },
     });
     errdefer renderer_impl.deinit();
 
     // Calculate our grid size based on known dimensions.
-    const window_size = try rt_surface.getSize();
+    const surface_size = try rt_surface.getSize();
     const screen_size: renderer.ScreenSize = .{
-        .width = window_size.width,
-        .height = window_size.height,
+        .width = surface_size.width,
+        .height = surface_size.height,
     };
     const grid_size = renderer.GridSize.init(
         screen_size.subPadding(padding),
@@ -328,7 +328,7 @@ pub fn init(
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
-        .window_mailbox = .{ .window = self, .app = app.mailbox },
+        .surface_mailbox = .{ .surface = self, .app = app.mailbox },
     });
     errdefer io.deinit();
 
@@ -336,10 +336,10 @@ pub fn init(
     var io_thread = try termio.Thread.init(alloc, &self.io);
     errdefer io_thread.deinit();
 
-    // True if this window is hosting devmode. We only host devmode on
-    // the first window since imgui is not threadsafe. We need to do some
+    // True if this surface is hosting devmode. We only host devmode on
+    // the first surface since imgui is not threadsafe. We need to do some
     // work to make DevMode work with multiple threads.
-    const host_devmode = DevMode.enabled and DevMode.instance.window == null;
+    const host_devmode = DevMode.enabled and DevMode.instance.surface == null;
 
     self.* = .{
         .alloc = alloc,
@@ -383,15 +383,15 @@ pub fn init(
     }, null);
 
     // Call our size callback which handles all our retina setup
-    // Note: this shouldn't be necessary and when we clean up the window
+    // Note: this shouldn't be necessary and when we clean up the surface
     // init stuff we should get rid of this. But this is required because
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
-    try self.sizeCallback(window_size);
+    try self.sizeCallback(surface_size);
 
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
-    if (DevMode.enabled and DevMode.instance.window == null) {
+    if (DevMode.enabled and DevMode.instance.surface == null) {
         const dev_io = try imgui.IO.get();
         dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
 
@@ -406,14 +406,14 @@ pub fn init(
         const style = try imgui.Style.get();
         style.colorsDark();
 
-        // Add our window to the instance if it isn't set.
-        DevMode.instance.window = self;
+        // Add our surface to the instance if it isn't set.
+        DevMode.instance.surface = self;
 
         // Let our renderer setup
         try renderer_impl.initDevMode(rt_surface);
     }
 
-    // Give the renderer one more opportunity to finalize any window
+    // Give the renderer one more opportunity to finalize any surface
     // setup on the main thread prior to spinning up the rendering thread.
     try renderer_impl.finalizeSurfaceInit(rt_surface);
 
@@ -434,7 +434,7 @@ pub fn init(
     self.io_thr.setName("io") catch {};
 }
 
-pub fn destroy(self: *Surface) void {
+pub fn deinit(self: *Surface) void {
     // Stop rendering thread
     {
         self.renderer_thread.stop.notify() catch |err|
@@ -445,12 +445,12 @@ pub fn destroy(self: *Surface) void {
         self.renderer.threadEnter(self.rt_surface) catch unreachable;
 
         // If we are devmode-owning, clean that up.
-        if (DevMode.enabled and DevMode.instance.window == self) {
+        if (DevMode.enabled and DevMode.instance.surface == self) {
             // Let our renderer clean up
             self.renderer.deinitDevMode();
 
-            // Clear the window
-            DevMode.instance.window = null;
+            // Clear the surface
+            DevMode.instance.surface = null;
 
             // Uninitialize imgui
             self.imgui_ctx.destroy();
@@ -471,19 +471,15 @@ pub fn destroy(self: *Surface) void {
     self.io_thread.deinit();
     self.io.deinit();
 
-    self.rt_surface.deinit();
-
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
     self.alloc.destroy(self.font_group);
 
     self.alloc.destroy(self.renderer_state.mutex);
-
-    self.alloc.destroy(self);
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
-/// window.
+/// surface.
 pub fn handleMessage(self: *Surface, msg: Message) !void {
     switch (msg) {
         .set_title => |*v| {
@@ -657,7 +653,7 @@ fn queueRender(self: *const Surface) !void {
     try self.renderer_thread.wakeup.notify();
 }
 
-pub fn sizeCallback(self: *Surface, size: apprt.WindowSize) !void {
+pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1034,8 +1030,8 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode window is visible then we always schedule a render on
-    // cursor move because the cursor might touch our windows.
+    // If our dev mode surface is visible then we always schedule a render on
+    // cursor move because the cursor might touch our surfaces.
     if (DevMode.enabled and DevMode.instance.visible) {
         try self.queueRender();
 
@@ -1081,8 +1077,8 @@ fn mouseReport(
     mods: input.Mods,
     pos: apprt.CursorPos,
 ) !void {
-    // TODO: posToViewport currently clamps to the window boundary,
-    // do we want to not report mouse events at all outside the window?
+    // TODO: posToViewport currently clamps to the surface boundary,
+    // do we want to not report mouse events at all outside the surface?
 
     // Depending on the event, we may do nothing at all.
     switch (self.io.terminal.modes.mouse_event) {
@@ -1278,8 +1274,8 @@ pub fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode window is visible then we always schedule a render on
-    // cursor move because the cursor might touch our windows.
+    // If our dev mode surface is visible then we always schedule a render on
+    // cursor move because the cursor might touch our surfaces.
     if (DevMode.enabled and DevMode.instance.visible) {
         try self.queueRender();
 
@@ -1395,8 +1391,8 @@ pub fn cursorPosCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode window is visible then we always schedule a render on
-    // cursor move because the cursor might touch our windows.
+    // If our dev mode surface is visible then we always schedule a render on
+    // cursor move because the cursor might touch our surfaces.
     if (DevMode.enabled and DevMode.instance.visible) {
         try self.queueRender();
 
@@ -1608,8 +1604,8 @@ fn dragLeftClickSingle(
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
     // xpos and ypos can be negative if while dragging, the user moves the
-    // mouse off the window. Likewise, they can be larger than our window
-    // width if the user drags out of the window positively.
+    // mouse off the surface. Likewise, they can be larger than our surface
+    // width if the user drags out of the surface positively.
     return .{
         .x = if (xpos < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
