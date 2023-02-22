@@ -5,7 +5,6 @@ struct TerminalView: View {
     let app: ghostty_app_t
     @FocusState private var surfaceFocus: Bool
     @Environment(\.isKeyWindow) private var isKeyWindow: Bool
-    @Environment(\.openWindow) private var openWindow
     @State private var title: String = "Ghostty"
     
     // This is true if the terminal is considered "focused". The terminal is focused if
