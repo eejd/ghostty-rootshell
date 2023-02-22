@@ -164,9 +164,9 @@ fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
         switch (message) {
             .new_window => |msg| {
                 _ = msg; // TODO
-                try rt_app.newWindow();
+                _ = try rt_app.newWindow();
             },
-            .new_tab => |msg| try self.newTab(msg),
+            .new_tab => |msg| try self.newTab(rt_app, msg),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
         }
@@ -174,19 +174,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
 }
 
 /// Create a new tab in the parent window
-fn newTab(self: *App, msg: Message.NewWindow) !void {
-    if (comptime !builtin.target.isDarwin()) {
-        log.warn("tabbing is not supported on this platform", .{});
-        return;
-    }
-
-    // In embedded mode, it is up to the embedder to implement tabbing
-    // on their own.
-    if (comptime build_config.artifact != .exe) {
-        log.warn("tabbing is not supported in embedded mode", .{});
-        return;
-    }
-
+fn newTab(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewWindow) !void {
     const parent = msg.parent orelse {
         log.warn("parent must be set in new_tab message", .{});
         return;
@@ -198,11 +186,7 @@ fn newTab(self: *App, msg: Message.NewWindow) !void {
         return;
     }
 
-    // Create the new window
-    const window = try self.newWindow(msg);
-
-    // Add the window to our parent tab group
-    parent.addWindow(window);
+    try rt_app.newTab(parent);
 }
 
 /// Start quitting

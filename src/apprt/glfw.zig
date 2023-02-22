@@ -76,7 +76,7 @@ pub const App = struct {
     }
 
     /// Create a new window for the app.
-    pub fn newWindow(self: *App) !void {
+    pub fn newWindow(self: *App) !*Surface {
         // Grab a surface allocation because we're going to need it.
         const surface = try self.app.surface_pool.create();
         errdefer self.app.surface_pool.destroy(surface);
@@ -84,6 +84,42 @@ pub const App = struct {
         // Create the surface -- because windows are surfaces for glfw.
         try surface.init(self);
         errdefer surface.deinit();
+
+        return surface;
+    }
+
+    /// Create a new tab in the parent surface.
+    pub fn newTab(self: *App, parent: *CoreSurface) !void {
+        if (!Darwin.enabled) {
+            log.warn("tabbing is not supported on this platform", .{});
+            return;
+        }
+
+        // Create the new window
+        const window = try self.newWindow();
+
+        // Add the new window the parent window
+        const parent_win = glfwNative.getCocoaWindow(parent.rt_surface.window).?;
+        const other_win = glfwNative.getCocoaWindow(window.window).?;
+        const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
+        const nswindow = objc.Object.fromId(parent_win);
+        nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
+            objc.Object.fromId(other_win),
+            NSWindowOrderingMode.above,
+        });
+
+        // Adding a new tab can cause the tab bar to appear which changes
+        // our viewport size. We need to call the size callback in order to
+        // update values. For example, we need this to set the proper mouse selection
+        // point in the grid.
+        const size = parent.rt_surface.getSize() catch |err| {
+            log.err("error querying window size for size callback on new tab err={}", .{err});
+            return;
+        };
+        parent.sizeCallback(size) catch |err| {
+            log.err("error in size callback from new tab err={}", .{err});
+            return;
+        };
     }
 
     /// Close the given surface.

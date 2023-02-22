@@ -12,7 +12,7 @@ const objc = @import("objc");
 const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
-const CoreWindow = @import("../Window.zig");
+const CoreSurface = @import("../Surface.zig");
 
 const log = std.log.scoped(.embedded_window);
 
@@ -65,11 +65,11 @@ pub const App = struct {
     }
 };
 
-pub const Window = struct {
+pub const Surface = struct {
     nsview: objc.Object,
-    core_win: *CoreWindow,
+    core_win: *CoreSurface,
     content_scale: apprt.ContentScale,
-    size: apprt.WindowSize,
+    size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
     opts: Options,
 
@@ -84,7 +84,7 @@ pub const Window = struct {
         scale_factor: f64 = 1,
     };
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
+    pub fn init(app: *const CoreApp, core_win: *CoreSurface, opts: Options) !Surface {
         _ = app;
 
         return .{
@@ -100,68 +100,68 @@ pub const Window = struct {
         };
     }
 
-    pub fn deinit(self: *Window) void {
+    pub fn deinit(self: *Surface) void {
         _ = self;
     }
 
-    pub fn getContentScale(self: *const Window) !apprt.ContentScale {
+    pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         return self.content_scale;
     }
 
-    pub fn getSize(self: *const Window) !apprt.WindowSize {
+    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
         return self.size;
     }
 
-    pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
+    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         _ = self;
         _ = min;
         _ = max_;
     }
 
-    pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
+    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         self.core_win.app.runtime.opts.set_title(
             self.opts.userdata,
             slice.ptr,
         );
     }
 
-    pub fn getClipboardString(self: *const Window) ![:0]const u8 {
+    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
         const ptr = self.core_win.app.runtime.opts.read_clipboard(self.opts.userdata);
         return std.mem.sliceTo(ptr, 0);
     }
 
-    pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
+    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
         self.core_win.app.runtime.opts.write_clipboard(self.opts.userdata, val.ptr);
     }
 
-    pub fn setShouldClose(self: *Window) void {
+    pub fn setShouldClose(self: *Surface) void {
         _ = self;
     }
 
-    pub fn shouldClose(self: *const Window) bool {
+    pub fn shouldClose(self: *const Surface) bool {
         _ = self;
         return false;
     }
 
-    pub fn getCursorPos(self: *const Window) !apprt.CursorPos {
+    pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
         return self.cursor_pos;
     }
 
-    pub fn refresh(self: *Window) void {
+    pub fn refresh(self: *Surface) void {
         self.core_win.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
             return;
         };
     }
 
-    pub fn updateContentScale(self: *Window, x: f64, y: f64) void {
+    pub fn updateContentScale(self: *Surface, x: f64, y: f64) void {
         self.content_scale = .{
             .x = @floatCast(f32, x),
             .y = @floatCast(f32, y),
         };
     }
 
-    pub fn updateSize(self: *Window, width: u32, height: u32) void {
+    pub fn updateSize(self: *Surface, width: u32, height: u32) void {
         self.size = .{
             .width = width,
             .height = height,
@@ -175,7 +175,7 @@ pub const Window = struct {
     }
 
     pub fn mouseButtonCallback(
-        self: *const Window,
+        self: *const Surface,
         action: input.MouseButtonState,
         button: input.MouseButton,
         mods: input.Mods,
@@ -186,14 +186,14 @@ pub const Window = struct {
         };
     }
 
-    pub fn scrollCallback(self: *const Window, xoff: f64, yoff: f64) void {
+    pub fn scrollCallback(self: *const Surface, xoff: f64, yoff: f64) void {
         self.core_win.scrollCallback(xoff, yoff) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
     }
 
-    pub fn cursorPosCallback(self: *Window, x: f64, y: f64) void {
+    pub fn cursorPosCallback(self: *Surface, x: f64, y: f64) void {
         // Convert our unscaled x/y to scaled.
         self.cursor_pos = self.core_win.window.cursorPosToPixels(.{
             .x = @floatCast(f32, x),
@@ -213,7 +213,7 @@ pub const Window = struct {
     }
 
     pub fn keyCallback(
-        self: *const Window,
+        self: *const Surface,
         action: input.Action,
         key: input.Key,
         mods: input.Mods,
@@ -225,7 +225,7 @@ pub const Window = struct {
         };
     }
 
-    pub fn charCallback(self: *const Window, cp_: u32) void {
+    pub fn charCallback(self: *const Surface, cp_: u32) void {
         const cp = std.math.cast(u21, cp_) orelse return;
         self.core_win.charCallback(cp) catch |err| {
             log.err("error in char callback err={}", .{err});
@@ -233,7 +233,7 @@ pub const Window = struct {
         };
     }
 
-    pub fn focusCallback(self: *const Window, focused: bool) void {
+    pub fn focusCallback(self: *const Surface, focused: bool) void {
         self.core_win.focusCallback(focused) catch |err| {
             log.err("error in focus callback err={}", .{err});
             return;
@@ -242,7 +242,7 @@ pub const Window = struct {
 
     /// The cursor position from the host directly is in screen coordinates but
     /// all our interface works in pixels.
-    fn cursorPosToPixels(self: *const Window, pos: apprt.CursorPos) !apprt.CursorPos {
+    fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
     }

@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
-const CoreWindow = @import("../Window.zig");
+const CoreSurface = @import("../Surface.zig");
 
 pub const c = @cImport({
     @cInclude("gtk/gtk.h");
@@ -147,10 +147,10 @@ pub const App = struct {
     }
 };
 
-pub const Window = struct {
+pub const Surface = struct {
     pub const Options = struct {};
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
+    pub fn init(app: *const CoreApp, core_win: *CoreSurface, opts: Options) !Surface {
         _ = app;
         _ = core_win;
         _ = opts;
@@ -158,46 +158,46 @@ pub const Window = struct {
         return .{};
     }
 
-    pub fn deinit(self: *Window) void {
+    pub fn deinit(self: *Surface) void {
         _ = self;
     }
 
-    pub fn setShouldClose(self: *Window) void {
+    pub fn setShouldClose(self: *Surface) void {
         _ = self;
     }
 
-    pub fn shouldClose(self: *const Window) bool {
+    pub fn shouldClose(self: *const Surface) bool {
         _ = self;
         return false;
     }
 
-    pub fn getContentScale(self: *const Window) !apprt.ContentScale {
+    pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         _ = self;
         return .{ .x = 1, .y = 1 };
     }
 
-    pub fn getSize(self: *const Window) !apprt.WindowSize {
+    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
         _ = self;
         return .{ .width = 800, .height = 600 };
     }
 
-    pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
+    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         _ = self;
         _ = min;
         _ = max_;
     }
 
-    pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
+    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         _ = self;
         _ = slice;
     }
 
-    pub fn getClipboardString(self: *const Window) ![:0]const u8 {
+    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
         _ = self;
         return "";
     }
 
-    pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
+    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
         _ = self;
         _ = val;
     }
