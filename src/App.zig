@@ -109,9 +109,7 @@ pub fn tick(self: *App, rt_app: *apprt.runtime.App) !bool {
     while (i < self.surfaces.items.len) {
         const surface = self.surfaces.items[i];
         if (surface.shouldClose()) {
-            surface.deinit();
-            _ = self.surfaces.swapRemove(i);
-            self.surface_pool.destroy(surface);
+            rt_app.closeSurface(surface);
             continue;
         }
 

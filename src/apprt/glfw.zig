@@ -86,6 +86,12 @@ pub const App = struct {
         errdefer surface.deinit();
     }
 
+    /// Close the given surface.
+    pub fn closeSurface(self: *App, surface: *Surface) void {
+        surface.deinit();
+        self.app.surface_pool.destroy(surface);
+    }
+
     fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
         std.log.warn("glfw error={} message={s}", .{ code, desc });
 
@@ -237,7 +243,10 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
-        // First clean up our core surface so that all the rendering and IO stop.
+        // Remove ourselves from the list of known surfaces in the app.
+        self.core_surface.app.deleteSurface(self);
+
+        // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
 
         var tabgroup_opt: if (App.Darwin.enabled) ?objc.Object else void = undefined;
