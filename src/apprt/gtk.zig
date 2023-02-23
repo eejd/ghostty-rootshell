@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const glfw = @import("glfw");
 const apprt = @import("../apprt.zig");
+const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
 
@@ -240,6 +241,7 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
 
         _ = c.g_signal_connect_data(ec_key, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_key, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, c.G_CONNECT_DEFAULT);
@@ -397,12 +399,35 @@ pub const Surface = struct {
         state: c.GdkModifierType,
         ud: ?*anyopaque,
     ) callconv(.C) c.gboolean {
-        _ = ud;
-        log.warn("KEY PRESS val={} code={} state={}", .{
-            keyval,
-            keycode,
-            state,
-        });
+        _ = keycode;
+
+        const key = translateKey(keyval);
+        const mods = translateMods(state);
+        const self = userdataSelf(ud.?);
+        self.core_surface.keyCallback(.press, key, mods) catch |err| {
+            log.err("error in key callback err={}", .{err});
+            return 0;
+        };
+
+        return 0;
+    }
+
+    fn gtkKeyReleased(
+        _: *c.GtkEventControllerKey,
+        keyval: c.guint,
+        keycode: c.guint,
+        state: c.GdkModifierType,
+        ud: ?*anyopaque,
+    ) callconv(.C) c.gboolean {
+        _ = keycode;
+
+        const key = translateKey(keyval);
+        const mods = translateMods(state);
+        const self = userdataSelf(ud.?);
+        self.core_surface.keyCallback(.release, key, mods) catch |err| {
+            log.err("error in key callback err={}", .{err});
+            return 0;
+        };
 
         return 0;
     }
@@ -448,3 +473,145 @@ pub const Surface = struct {
         return @ptrCast(*Surface, @alignCast(@alignOf(Surface), ud));
     }
 };
+
+fn translateMods(state: c.GdkModifierType) input.Mods {
+    var mods: input.Mods = .{};
+    if (state & c.GDK_SHIFT_MASK != 0) mods.shift = true;
+    if (state & c.GDK_CONTROL_MASK != 0) mods.ctrl = true;
+    if (state & c.GDK_ALT_MASK != 0) mods.alt = true;
+    if (state & c.GDK_SUPER_MASK != 0) mods.super = true;
+
+    // Lock is dependent on the X settings but we just assume caps lock.
+    if (state & c.GDK_LOCK_MASK != 0) mods.caps_lock = true;
+    return mods;
+}
+
+fn translateKey(keyval: c.guint) input.Key {
+    return switch (keyval) {
+        c.GDK_KEY_a => .a,
+        c.GDK_KEY_b => .b,
+        c.GDK_KEY_c => .c,
+        c.GDK_KEY_d => .d,
+        c.GDK_KEY_e => .e,
+        c.GDK_KEY_f => .f,
+        c.GDK_KEY_g => .g,
+        c.GDK_KEY_h => .h,
+        c.GDK_KEY_i => .i,
+        c.GDK_KEY_j => .j,
+        c.GDK_KEY_k => .k,
+        c.GDK_KEY_l => .l,
+        c.GDK_KEY_m => .m,
+        c.GDK_KEY_n => .n,
+        c.GDK_KEY_o => .o,
+        c.GDK_KEY_p => .p,
+        c.GDK_KEY_q => .q,
+        c.GDK_KEY_r => .r,
+        c.GDK_KEY_s => .s,
+        c.GDK_KEY_t => .t,
+        c.GDK_KEY_u => .u,
+        c.GDK_KEY_v => .v,
+        c.GDK_KEY_w => .w,
+        c.GDK_KEY_x => .x,
+        c.GDK_KEY_y => .y,
+        c.GDK_KEY_z => .z,
+
+        c.GDK_KEY_0 => .zero,
+        c.GDK_KEY_1 => .one,
+        c.GDK_KEY_2 => .two,
+        c.GDK_KEY_3 => .three,
+        c.GDK_KEY_4 => .four,
+        c.GDK_KEY_5 => .five,
+        c.GDK_KEY_6 => .six,
+        c.GDK_KEY_7 => .seven,
+        c.GDK_KEY_8 => .eight,
+        c.GDK_KEY_9 => .nine,
+
+        c.GDK_KEY_semicolon => .semicolon,
+        c.GDK_KEY_space => .space,
+        c.GDK_KEY_apostrophe => .apostrophe,
+        c.GDK_KEY_comma => .comma,
+        c.GDK_KEY_grave => .grave_accent, // `
+        c.GDK_KEY_period => .period,
+        c.GDK_KEY_slash => .slash,
+        c.GDK_KEY_minus => .minus,
+        c.GDK_KEY_equal => .equal,
+        c.GDK_KEY_bracketleft => .left_bracket, // [
+        c.GDK_KEY_bracketright => .right_bracket, // ]
+        c.GDK_KEY_backslash => .backslash, // /
+
+        c.GDK_KEY_Up => .up,
+        c.GDK_KEY_Down => .down,
+        c.GDK_KEY_Right => .right,
+        c.GDK_KEY_Left => .left,
+        c.GDK_KEY_Home => .home,
+        c.GDK_KEY_End => .end,
+        c.GDK_KEY_Insert => .insert,
+        c.GDK_KEY_Delete => .delete,
+        c.GDK_KEY_Caps_Lock => .caps_lock,
+        c.GDK_KEY_Scroll_Lock => .scroll_lock,
+        c.GDK_KEY_Num_Lock => .num_lock,
+        c.GDK_KEY_Page_Up => .page_up,
+        c.GDK_KEY_Page_Down => .page_down,
+        c.GDK_KEY_Escape => .escape,
+        c.GDK_KEY_Return => .enter,
+        c.GDK_KEY_Tab => .tab,
+        c.GDK_KEY_BackSpace => .backspace,
+        c.GDK_KEY_Print => .print_screen,
+        c.GDK_KEY_Pause => .pause,
+
+        c.GDK_KEY_F1 => .f1,
+        c.GDK_KEY_F2 => .f2,
+        c.GDK_KEY_F3 => .f3,
+        c.GDK_KEY_F4 => .f4,
+        c.GDK_KEY_F5 => .f5,
+        c.GDK_KEY_F6 => .f6,
+        c.GDK_KEY_F7 => .f7,
+        c.GDK_KEY_F8 => .f8,
+        c.GDK_KEY_F9 => .f9,
+        c.GDK_KEY_F10 => .f10,
+        c.GDK_KEY_F11 => .f11,
+        c.GDK_KEY_F12 => .f12,
+        c.GDK_KEY_F13 => .f13,
+        c.GDK_KEY_F14 => .f14,
+        c.GDK_KEY_F15 => .f15,
+        c.GDK_KEY_F16 => .f16,
+        c.GDK_KEY_F17 => .f17,
+        c.GDK_KEY_F18 => .f18,
+        c.GDK_KEY_F19 => .f19,
+        c.GDK_KEY_F20 => .f20,
+        c.GDK_KEY_F21 => .f21,
+        c.GDK_KEY_F22 => .f22,
+        c.GDK_KEY_F23 => .f23,
+        c.GDK_KEY_F24 => .f24,
+        c.GDK_KEY_F25 => .f25,
+
+        c.GDK_KEY_KP_0 => .kp_0,
+        c.GDK_KEY_KP_1 => .kp_1,
+        c.GDK_KEY_KP_2 => .kp_2,
+        c.GDK_KEY_KP_3 => .kp_3,
+        c.GDK_KEY_KP_4 => .kp_4,
+        c.GDK_KEY_KP_5 => .kp_5,
+        c.GDK_KEY_KP_6 => .kp_6,
+        c.GDK_KEY_KP_7 => .kp_7,
+        c.GDK_KEY_KP_8 => .kp_8,
+        c.GDK_KEY_KP_9 => .kp_9,
+        c.GDK_KEY_KP_Decimal => .kp_decimal,
+        c.GDK_KEY_KP_Divide => .kp_divide,
+        c.GDK_KEY_KP_Multiply => .kp_multiply,
+        c.GDK_KEY_KP_Subtract => .kp_subtract,
+        c.GDK_KEY_KP_Add => .kp_add,
+        c.GDK_KEY_KP_Enter => .kp_enter,
+        c.GDK_KEY_KP_Equal => .kp_equal,
+
+        c.GDK_KEY_Shift_L => .left_shift,
+        c.GDK_KEY_Control_L => .left_control,
+        c.GDK_KEY_Alt_L => .left_alt,
+        c.GDK_KEY_Super_L => .left_super,
+        c.GDK_KEY_Shift_R => .right_shift,
+        c.GDK_KEY_Control_R => .right_control,
+        c.GDK_KEY_Alt_R => .right_alt,
+        c.GDK_KEY_Super_R => .right_super,
+
+        else => .invalid,
+    };
+}
