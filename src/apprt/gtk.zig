@@ -107,37 +107,37 @@ pub const App = struct {
 
     /// Close the given surface.
     pub fn closeSurface(self: *App, surface: *Surface) void {
-        surface.deinit();
-        self.core_app.alloc.destroy(surface);
+        _ = self;
+        _ = surface;
+
+        // This shouldn't be called because we should be working within
+        // the GTK lifecycle and we can't just deallocate surfaces here.
+        @panic("This should not be called with GTK.");
     }
 
-    pub fn newWindow(self: App) !*Surface {
+    pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
+        _ = parent_;
+
+        // Grab a surface allocation we'll need it later.
+        var surface = try self.core_app.alloc.create(Surface);
+        errdefer self.core_app.alloc.destroy(surface);
+
         const window = c.gtk_application_window_new(self.app);
-        c.gtk_window_set_title(@ptrCast(*c.GtkWindow, window), "Ghostty");
-        c.gtk_window_set_default_size(@ptrCast(*c.GtkWindow, window), 200, 200);
-
-        const surface = c.gtk_gl_area_new();
-        c.gtk_window_set_child(@ptrCast(*c.GtkWindow, window), surface);
-        _ = c.g_signal_connect_data(
-            surface,
-            "realize",
-            c.G_CALLBACK(&onSurfaceRealize),
-            null,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
-        _ = c.g_signal_connect_data(
-            surface,
-            "render",
-            c.G_CALLBACK(&onSurfaceRender),
-            null,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
-
+        const gtk_window = @ptrCast(*c.GtkWindow, window);
+        c.gtk_window_set_title(gtk_window, "Ghostty");
+        c.gtk_window_set_default_size(gtk_window, 200, 200);
         c.gtk_widget_show(window);
 
-        return undefined;
+        // Initialize the GtkGLArea and attach it to our surface.
+        // The surface starts in the "unrealized" state because we have to
+        // wait for the "realize" callback from GTK to know that the OpenGL
+        // context is ready. See Surface docs for more info.
+        const gl_area = c.gtk_gl_area_new();
+        try surface.init(self, .{
+            .gl_area = @ptrCast(*c.GtkGLArea, gl_area),
+        });
+        errdefer surface.deinit();
+        c.gtk_window_set_child(gtk_window, gl_area);
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
@@ -150,23 +150,17 @@ pub const App = struct {
         // we reached this point.
         log.debug("application activated", .{});
     }
-
-    fn onSurfaceRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
-        _ = area;
-        _ = ud;
-        log.debug("gl surface realized", .{});
-    }
-
-    fn onSurfaceRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) void {
-        _ = area;
-        _ = ctx;
-        _ = ud;
-        log.debug("gl render", .{});
-    }
 };
 
 pub const Surface = struct {
-    pub const Options = struct {};
+    pub const Options = struct {
+        gl_area: *c.GtkGLArea,
+    };
+
+    /// Whether the surface has been realized or not yet. When a surface is
+    /// "realized" it means that the OpenGL context is ready and the core
+    /// surface has been initialized.
+    realized: bool = false,
 
     /// The app we're part of
     app: *App,
@@ -174,7 +168,7 @@ pub const Surface = struct {
     /// The core surface backing this surface
     core_surface: CoreSurface,
 
-    pub fn init(self: *Surface, app: *App) !void {
+    pub fn init(self: *Surface, app: *App, opts: Options) !void {
         // Build our result
         self.* = .{
             .app = app,
@@ -182,18 +176,80 @@ pub const Surface = struct {
         };
         errdefer self.* = undefined;
 
-        // Add ourselves to the list of surfaces on the app.
-        try app.app.addSurface(self);
-        errdefer app.app.deleteSurface(self);
-
-        // Initialize our surface now that we have the stable pointer.
-        try self.core_surface.init(
-            app.app.alloc,
-            app.app.config,
-            .{ .rt_app = app, .mailbox = &app.app.mailbox },
-            self,
+        // Create the GL area that will contain our surface
+        _ = c.g_signal_connect_data(
+            opts.gl_area,
+            "realize",
+            c.G_CALLBACK(&gtkRealize),
+            null,
+            null,
+            c.G_CONNECT_DEFAULT,
         );
-        errdefer self.core_surface.deinit();
+        _ = c.g_signal_connect_data(
+            opts.gl_area,
+            "render",
+            c.G_CALLBACK(&gtkRender),
+            null,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        _ = c.g_signal_connect_data(
+            opts.gl_area,
+            "destroy",
+            c.G_CALLBACK(&gtkDestroy),
+            self,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+
+        // // Add ourselves to the list of surfaces on the app.
+        // try app.app.addSurface(self);
+        // errdefer app.app.deleteSurface(self);
+        //
+        // // Initialize our surface now that we have the stable pointer.
+        // try self.core_surface.init(
+        //     app.app.alloc,
+        //     app.app.config,
+        //     .{ .rt_app = app, .mailbox = &app.app.mailbox },
+        //     self,
+        // );
+        // errdefer self.core_surface.deinit();
+    }
+
+    fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
+        _ = area;
+        _ = ud;
+
+        log.debug("gl surface realized", .{});
+        const opengl = @import("../renderer/opengl/main.zig");
+        log.warn("foo: {}", .{opengl.glad.load(null) catch 0});
+    }
+
+    fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) c.gboolean {
+        _ = area;
+        _ = ctx;
+        _ = ud;
+        log.debug("gl render", .{});
+
+        const opengl = @import("../renderer/opengl/main.zig");
+        opengl.clearColor(0, 0.5, 1, 1);
+        opengl.clear(opengl.c.GL_COLOR_BUFFER_BIT);
+
+        return 1;
+    }
+
+    /// "destroy" signal for surface
+    fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+        _ = v;
+
+        const self = userdataSelf(ud orelse return);
+        const alloc = self.app.core_app.alloc;
+        self.deinit();
+        alloc.destroy(self);
+    }
+
+    fn userdataSelf(ud: *anyopaque) *Surface {
+        return @ptrCast(*Surface, @alignCast(@alignOf(Surface), ud));
     }
 
     pub fn deinit(self: *Surface) void {

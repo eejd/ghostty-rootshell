@@ -231,9 +231,6 @@ pub const Message = union(enum) {
     },
 
     const NewWindow = struct {
-        /// Runtime-specific window options.
-        runtime: apprt.runtime.Surface.Options = .{},
-
         /// The parent surface
         parent: ?*Surface = null,
     };
