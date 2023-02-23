@@ -292,6 +292,7 @@ pub const Surface = struct {
     /// "destroy" signal for surface
     fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
         _ = v;
+        log.debug("gl destroy", .{});
 
         const self = userdataSelf(ud.?);
         const alloc = self.app.core_app.alloc;
@@ -304,7 +305,14 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
-        _ = self;
+        // We don't allocate anything if we aren't realized.
+        if (!self.realized) return;
+
+        // Remove ourselves from the list of known surfaces in the app.
+        self.app.core_app.deleteSurface(self);
+
+        // Clean up our core surface so that all the rendering and IO stop.
+        self.core_surface.deinit();
     }
 
     pub fn setShouldClose(self: *Surface) void {
