@@ -109,7 +109,7 @@ pub const App = struct {
 
             // Tick the terminal app
             const should_quit = try self.core_app.tick(self);
-            if (false and should_quit) return;
+            if (should_quit) return;
         }
     }
 
@@ -313,6 +313,7 @@ pub const Surface = struct {
 
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
+        self.core_surface = undefined;
     }
 
     pub fn setShouldClose(self: *Surface) void {
