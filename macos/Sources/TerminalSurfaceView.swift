@@ -10,10 +10,25 @@ import GhosttyKit
 /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
 /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
 struct TerminalSurfaceView: NSViewRepresentable {
+    static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier!,
+        category: String(describing: TerminalSurfaceView.self)
+    )
+    
     /// This should be set to true wen the surface has focus. This is up to the parent because
     /// focus is also defined by window focus. It is important this is set correctly since if it is
     /// false then the surface will idle at almost 0% CPU.
-    var hasFocus: Bool
+    let hasFocus: Bool
+    
+    /// The size of the frame containing this view. We use this to update the the underlying
+    /// surface. This does not actually SET the size of our frame, this only sets the size
+    /// of our Metal surface for drawing.
+    ///
+    /// Note: we do NOT use the NSView.resize function because SwiftUI on macOS 12
+    /// does not call this callback (macOS 13+ does).
+    ///
+    /// The best approach is to wrap this view in a GeometryReader and pass in the geo.size.
+    let size: CGSize
     
     /// This is set to the title of the surface as defined by the pty. Callers should use this to
     /// set the appropriate title of the window/tab/split/etc. if they care.
@@ -21,10 +36,11 @@ struct TerminalSurfaceView: NSViewRepresentable {
     
     @StateObject private var state: TerminalSurfaceView_Real
     
-    init(_ app: ghostty_app_t, hasFocus: Bool, title: Binding<String>) {
+    init(_ app: ghostty_app_t, hasFocus: Bool, size: CGSize, title: Binding<String>) {
         self._state = StateObject(wrappedValue: TerminalSurfaceView_Real(app))
         self._title = title
         self.hasFocus = hasFocus
+        self.size = size
     }
     
     func makeNSView(context: Context) -> TerminalSurfaceView_Real {
@@ -38,6 +54,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
     func updateNSView(_ view: TerminalSurfaceView_Real, context: Context) {
         state.delegate = context.coordinator
         state.focusDidChange(hasFocus)
+        state.sizeDidChange(size)
     }
     
     func makeCoordinator() -> Coordinator {
@@ -243,14 +260,12 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
         ghostty_surface_set_focus(surface, focused)
     }
     
-    override func resize(withOldSuperviewSize oldSize: NSSize) {
-        super.resize(withOldSuperviewSize: oldSize)
+    func sizeDidChange(_ size: CGSize) {
+        guard let surface = self.surface else { return }
         
-        if let surface = self.surface {
-            // Ghostty wants to know the actual framebuffer size...
-            let fbFrame = self.convertToBacking(self.frame);
-            ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
-        }
+        // Ghostty wants to know the actual framebuffer size...
+        let fbFrame = self.convertToBacking(self.frame);
+        ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
     }
     
     override func updateTrackingAreas() {

@@ -12,8 +12,13 @@ struct TerminalView: View {
     private var hasFocus: Bool { surfaceFocus && isKeyWindow }
     
     var body: some View {
-        TerminalSurfaceView(app, hasFocus: hasFocus, title: $title)
-            .focused($surfaceFocus)
-            .navigationTitle(title)
+        // We use a GeometryReader to get the frame bounds so that our metal surface
+        // is up to date. See TerminalSurfaceView for why we don't use the NSView
+        // resize callback.
+        GeometryReader { geo in
+            TerminalSurfaceView(app, hasFocus: hasFocus, size: geo.size, title: $title)
+                .focused($surfaceFocus)
+                .navigationTitle(title)
+        }
     }
 }
