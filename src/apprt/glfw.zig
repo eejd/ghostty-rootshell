@@ -86,7 +86,7 @@ pub const App = struct {
         }
 
         // Create the new window
-        const window = try self.newWindow(parent);
+        const window = try self.newSurface(parent);
 
         // Add the new window the parent window
         const parent_win = glfwNative.getCocoaWindow(parent.rt_surface.window).?;
