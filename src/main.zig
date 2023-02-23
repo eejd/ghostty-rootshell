@@ -90,33 +90,19 @@ pub fn main() !void {
     try config.finalize();
     std.log.debug("config={}", .{config});
 
-    if (true) {
-        // Create our app state
-        var app = try App.create(alloc, &config);
-        defer app.destroy();
-
-        // Create our runtime app
-        var app_runtime = try apprt.App.init(app, .{});
-        defer app_runtime.terminate();
-
-        // Create an initial window
-        _ = try app_runtime.newWindow();
-
-        // Run the GUI event loop
-        try app_runtime.run();
-        return;
-    }
-
-    // Run our app with a single initial window to start.
-    var app = try App.create(alloc, .{}, &config);
+    // Create our app state
+    var app = try App.create(alloc, &config);
     defer app.destroy();
-    if (build_config.app_runtime == .gtk) {
-        try app.runtime.newWindow();
-        while (true) try app.runtime.wait();
-        return;
-    }
-    _ = try app.newWindow(.{});
-    try app.run();
+
+    // Create our runtime app
+    var app_runtime = try apprt.App.init(app, .{});
+    defer app_runtime.terminate();
+
+    // Create an initial window
+    _ = try app_runtime.newWindow();
+
+    // Run the GUI event loop
+    try app_runtime.run();
 }
 
 // Required by tracy/tracy.zig to enable/disable tracy support.
