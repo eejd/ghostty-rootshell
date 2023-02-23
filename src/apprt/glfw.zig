@@ -89,10 +89,10 @@ pub const App = struct {
     }
 
     /// Create a new tab in the parent surface.
-    pub fn newTab(self: *App, parent: *CoreSurface) !void {
+    pub fn newTab(self: *App, parent: *CoreSurface) !*Surface {
         if (!Darwin.enabled) {
             log.warn("tabbing is not supported on this platform", .{});
-            return;
+            return error.TabbingNotSupported;
         }
 
         // Create the new window
@@ -120,6 +120,8 @@ pub const App = struct {
             log.err("error in size callback from new tab err={}", .{err});
             return;
         };
+
+        return window;
     }
 
     /// Close the given surface.

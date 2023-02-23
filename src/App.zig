@@ -152,10 +152,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
-            .new_window => |msg| {
-                _ = msg; // TODO
-                _ = try rt_app.newWindow();
-            },
+            .new_window => |msg| try self.newWindow(rt_app, msg),
             .new_tab => |msg| try self.newTab(rt_app, msg),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
@@ -163,8 +160,20 @@ fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
     }
 }
 
+/// Create a new window
+fn newWindow(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewWindow) !void {
+    const window = try rt_app.newWindow();
+    if (self.config.@"window-inherit-font-size") {
+        if (msg.parent) |parent| {
+            if (self.hasSurface(parent)) {
+                window.core_surface.setFontSize(parent.font_size);
+            }
+        }
+    }
+}
+
 /// Create a new tab in the parent window
-fn newTab(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewWindow) !void {
+fn newTab(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewTab) !void {
     const parent = msg.parent orelse {
         log.warn("parent must be set in new_tab message", .{});
         return;
@@ -176,7 +185,8 @@ fn newTab(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewWindow) !void 
         return;
     }
 
-    try rt_app.newTab(parent);
+    const window = try rt_app.newTab(parent);
+    if (self.config.@"window-inherit-font-size") window.core_surface.setFontSize(parent.font_size);
 }
 
 /// Start quitting
@@ -219,7 +229,7 @@ pub const Message = union(enum) {
     /// Create a new tab within the tab group of the focused window.
     /// This does nothing if we're on a platform or using a window
     /// environment that doesn't support tabs.
-    new_tab: NewWindow,
+    new_tab: NewTab,
 
     /// Quit
     quit: void,
@@ -234,12 +244,13 @@ pub const Message = union(enum) {
         /// Runtime-specific window options.
         runtime: apprt.runtime.Surface.Options = .{},
 
-        /// The parent surface, only used for new tabs.
+        /// The parent surface
         parent: ?*Surface = null,
+    };
 
-        /// The font size to create the window with or null to default to
-        /// the configuration amount.
-        font_size: ?font.face.DesiredSize = null,
+    const NewTab = struct {
+        /// The parent surface
+        parent: ?*Surface = null,
     };
 };
 

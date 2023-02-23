@@ -904,10 +904,7 @@ pub fn keyCallback(
                 .new_window => {
                     _ = self.app.mailbox.push(.{
                         .new_window = .{
-                            .font_size = if (self.config.@"window-inherit-font-size")
-                                self.font_size
-                            else
-                                null,
+                            .parent = self,
                         },
                     }, .{ .instant = {} });
                     self.app.wakeup();
@@ -917,11 +914,6 @@ pub fn keyCallback(
                     _ = self.app.mailbox.push(.{
                         .new_tab = .{
                             .parent = self,
-
-                            .font_size = if (self.config.@"window-inherit-font-size")
-                                self.font_size
-                            else
-                                null,
                         },
                     }, .{ .instant = {} });
                     self.app.wakeup();
