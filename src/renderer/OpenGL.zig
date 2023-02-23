@@ -34,7 +34,7 @@ const CellsLRU = lru.AutoHashMap(struct {
 /// The runtime can request a single-threaded draw by setting this boolean
 /// to true. In this case, the renderer.draw() call is expected to be called
 /// from the runtime.
-const single_threaded_draw = if (@hasDecl(apprt.Surface, "opengl_single_threaded_draw"))
+pub const single_threaded_draw = if (@hasDecl(apprt.Surface, "opengl_single_threaded_draw"))
     apprt.Surface.opengl_single_threaded_draw
 else
     false;

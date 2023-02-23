@@ -316,6 +316,7 @@ pub fn init(
         rt_surface,
         &self.renderer,
         &self.renderer_state,
+        app_mailbox,
     );
     errdefer render_thread.deinit();
 

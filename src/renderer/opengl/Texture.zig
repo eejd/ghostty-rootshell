@@ -9,6 +9,7 @@ id: c.GLuint,
 
 pub inline fn active(target: c.GLenum) !void {
     glad.context.ActiveTexture.?(target);
+    try errors.getError();
 }
 
 /// Enun for possible texture binding targets.
@@ -153,6 +154,7 @@ pub inline fn create() !Texture {
 /// glBindTexture
 pub inline fn bind(v: Texture, target: Target) !Binding {
     glad.context.BindTexture.?(@enumToInt(target), v.id);
+    try errors.getError();
     return Binding{ .target = target };
 }
 

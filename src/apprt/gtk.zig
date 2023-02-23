@@ -115,6 +115,11 @@ pub const App = struct {
         @panic("This should not be called with GTK.");
     }
 
+    pub fn redrawSurface(self: *App, surface: *Surface) void {
+        _ = self;
+        surface.invalidate();
+    }
+
     pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
         _ = parent_;
 
@@ -169,42 +174,30 @@ pub const Surface = struct {
     /// The app we're part of
     app: *App,
 
+    /// Our GTK area
+    gl_area: *c.GtkGLArea,
+
     /// The core surface backing this surface
     core_surface: CoreSurface,
+
+    /// Cached metrics about the surface from GTK callbacks.
+    size: apprt.SurfaceSize,
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         // Build our result
         self.* = .{
             .app = app,
+            .gl_area = opts.gl_area,
             .core_surface = undefined,
+            .size = .{ .width = 800, .height = 600 },
         };
         errdefer self.* = undefined;
 
         // Create the GL area that will contain our surface
-        _ = c.g_signal_connect_data(
-            opts.gl_area,
-            "realize",
-            c.G_CALLBACK(&gtkRealize),
-            self,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
-        _ = c.g_signal_connect_data(
-            opts.gl_area,
-            "render",
-            c.G_CALLBACK(&gtkRender),
-            null,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
-        _ = c.g_signal_connect_data(
-            opts.gl_area,
-            "destroy",
-            c.G_CALLBACK(&gtkDestroy),
-            self,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
+        _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
@@ -220,16 +213,33 @@ pub const Surface = struct {
             self,
         );
         errdefer self.core_surface.deinit();
+
+        // Note we're realized
+        self.realized = true;
+    }
+
+    fn render(self: *Surface) !void {
+        try self.core_surface.renderer.draw();
+    }
+
+    /// Invalidate the surface so that it forces a redraw on the next tick.
+    fn invalidate(self: *Surface) void {
+        c.gtk_gl_area_queue_render(self.gl_area);
     }
 
     fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
-        _ = area;
-
         log.debug("gl surface realized", .{});
+
+        // We need to make the context current so we can call GL functions.
+        c.gtk_gl_area_make_current(area);
+        if (c.gtk_gl_area_get_error(area)) |err| {
+            log.err("surface failed to realize: {s}", .{err.*.message});
+            return;
+        }
 
         // realize means that our OpenGL context is ready, so we can now
         // initialize the core surface which will setup the renderer.
-        const self = userdataSelf(ud orelse return);
+        const self = userdataSelf(ud.?);
         self.realize() catch |err| {
             // TODO: we need to destroy the GL area here.
             log.err("surface failed to realize: {}", .{err});
@@ -237,24 +247,45 @@ pub const Surface = struct {
         };
     }
 
+    /// render singal
     fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) c.gboolean {
         _ = area;
         _ = ctx;
-        _ = ud;
-        log.debug("gl render", .{});
 
-        const opengl = @import("../renderer/opengl/main.zig");
-        opengl.clearColor(0, 0.5, 1, 1);
-        opengl.clear(opengl.c.GL_COLOR_BUFFER_BIT);
+        const self = userdataSelf(ud.?);
+        self.render() catch |err| {
+            log.err("surface failed to render: {}", .{err});
+            return 0;
+        };
 
         return 1;
+    }
+
+    /// render singal
+    fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque) callconv(.C) void {
+        _ = area;
+        log.debug("gl resize {} {}", .{ width, height });
+
+        const self = userdataSelf(ud.?);
+        self.size = .{
+            .width = @intCast(u32, width),
+            .height = @intCast(u32, height),
+        };
+
+        // Call the primary callback.
+        if (self.realized) {
+            self.core_surface.sizeCallback(self.size) catch |err| {
+                log.err("error in size callback err={}", .{err});
+                return;
+            };
+        }
     }
 
     /// "destroy" signal for surface
     fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
         _ = v;
 
-        const self = userdataSelf(ud orelse return);
+        const self = userdataSelf(ud.?);
         const alloc = self.app.core_app.alloc;
         self.deinit();
         alloc.destroy(self);
@@ -283,8 +314,7 @@ pub const Surface = struct {
     }
 
     pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
-        _ = self;
-        return .{ .width = 800, .height = 600 };
+        return self.size;
     }
 
     pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {

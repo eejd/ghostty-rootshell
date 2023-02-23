@@ -128,6 +128,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .close => |surface| try self.closeSurface(rt_app, surface),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
+            .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
         }
     }
 }
@@ -135,6 +136,11 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
 fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
     if (!self.hasSurface(surface)) return;
     rt_app.closeSurface(surface.rt_surface);
+}
+
+fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {
+    if (!self.hasSurface(&surface.core_surface)) return;
+    rt_app.redrawSurface(surface);
 }
 
 /// Create a new window
@@ -229,6 +235,12 @@ pub const Message = union(enum) {
         surface: *Surface,
         message: apprt.surface.Message,
     },
+
+    /// Redraw a surface. This only has an effect for runtimes that
+    /// use single-threaded draws. To redraw a surface for all runtimes,
+    /// wake up the renderer thread. The renderer thread will send this
+    /// message if it needs to.
+    redraw_surface: *apprt.Surface,
 
     const NewWindow = struct {
         /// The parent surface

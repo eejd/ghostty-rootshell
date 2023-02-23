@@ -137,6 +137,13 @@ pub const App = struct {
         self.app.alloc.destroy(surface);
     }
 
+    pub fn redrawSurface(self: *App, surface: *Surface) void {
+        _ = self;
+        _ = surface;
+
+        @panic("This should never be called for GLFW.");
+    }
+
     fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
         std.log.warn("glfw error={} message={s}", .{ code, desc });
 

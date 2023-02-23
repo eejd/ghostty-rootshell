@@ -10,6 +10,7 @@ const apprt = @import("../apprt.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const tracy = @import("tracy");
 const trace = tracy.trace;
+const App = @import("../App.zig");
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
@@ -60,6 +61,9 @@ state: *renderer.State,
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: *Mailbox,
 
+/// Mailbox to send messages to the app thread
+app_mailbox: App.Mailbox,
+
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
 /// is up to the caller to start the thread with the threadMain entrypoint.
@@ -68,6 +72,7 @@ pub fn init(
     surface: *apprt.Surface,
     renderer_impl: *renderer.Renderer,
     state: *renderer.State,
+    app_mailbox: App.Mailbox,
 ) !Thread {
     // Create our event loop.
     var loop = try xev.Loop.init(.{});
@@ -104,6 +109,7 @@ pub fn init(
         .renderer = renderer_impl,
         .state = state,
         .mailbox = mailbox,
+        .app_mailbox = app_mailbox,
     };
 }
 
@@ -307,6 +313,15 @@ fn renderCallback(
 
     t.renderer.render(t.surface, t.state) catch |err|
         log.warn("error rendering err={}", .{err});
+
+    // If we're doing single-threaded GPU calls then we also wake up the
+    // app thread to redraw at this point.
+    if (renderer.Renderer == renderer.OpenGL and
+        renderer.OpenGL.single_threaded_draw)
+    {
+        _ = t.app_mailbox.push(.{ .redraw_surface = t.surface }, .{ .instant = {} });
+    }
+
     return .disarm;
 }
 
