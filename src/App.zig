@@ -24,9 +24,6 @@ const log = std.log.scoped(.app);
 
 const SurfaceList = std.ArrayListUnmanaged(*apprt.Surface);
 
-/// The type used for sending messages to the app thread.
-pub const Mailbox = BlockingQueue(Message, 64);
-
 /// General purpose allocator
 alloc: Allocator,
 
@@ -38,13 +35,10 @@ config: *const Config,
 
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
-mailbox: *Mailbox,
+mailbox: Mailbox.Queue,
 
 /// Set to true once we're quitting. This never goes false again.
 quit: bool,
-
-/// App will call this when tick should be called.
-wakeup_cb: ?*const fn () void = null,
 
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
@@ -53,10 +47,6 @@ pub fn create(
     alloc: Allocator,
     config: *const Config,
 ) !*App {
-    // The mailbox for messaging this thread
-    var mailbox = try Mailbox.create(alloc);
-    errdefer mailbox.destroy(alloc);
-
     // If we have DevMode on, store the config so we can show it
     if (DevMode.enabled) DevMode.instance.config = config;
 
@@ -66,7 +56,7 @@ pub fn create(
         .alloc = alloc,
         .surfaces = .{},
         .config = config,
-        .mailbox = mailbox,
+        .mailbox = .{},
         .quit = false,
     };
     errdefer app.surfaces.deinit(alloc);
@@ -78,14 +68,8 @@ pub fn destroy(self: *App) void {
     // Clean up all our surfaces
     for (self.surfaces.items) |surface| surface.deinit();
     self.surfaces.deinit(self.alloc);
-    self.mailbox.destroy(self.alloc);
 
     self.alloc.destroy(self);
-}
-
-/// Request the app runtime to process app events via tick.
-pub fn wakeup(self: App) void {
-    if (self.wakeup_cb) |cb| cb();
 }
 
 /// Tick ticks the app loop. This will drain our mailbox and process those
@@ -127,25 +111,12 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
     while (i < self.surfaces.items.len) {
         if (self.surfaces.items[i] == rt_surface) {
             _ = self.surfaces.swapRemove(i);
+            continue;
         }
+
+        i += 1;
     }
 }
-
-/// Close a window and free all resources associated with it. This can
-/// only be called from the main thread.
-// pub fn closeWindow(self: *App, window: *Window) void {
-//     var i: usize = 0;
-//     while (i < self.surfaces.items.len) {
-//         const current = self.surfaces.items[i];
-//         if (window == current) {
-//             window.destroy();
-//             _ = self.surfaces.swapRemove(i);
-//             return;
-//         }
-//
-//         i += 1;
-//     }
-// }
 
 /// Drain the mailbox.
 fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
@@ -154,10 +125,16 @@ fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
         switch (message) {
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .new_tab => |msg| try self.newTab(rt_app, msg),
+            .close => |surface| try self.closeSurface(rt_app, surface),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
         }
     }
+}
+
+fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
+    if (!self.hasSurface(surface)) return;
+    rt_app.closeSurface(surface.rt_surface);
 }
 
 /// Create a new window
@@ -231,6 +208,10 @@ pub const Message = union(enum) {
     /// environment that doesn't support tabs.
     new_tab: NewTab,
 
+    /// Close a surface. This notifies the runtime that a surface
+    /// should close.
+    close: *Surface,
+
     /// Quit
     quit: void,
 
@@ -252,6 +233,25 @@ pub const Message = union(enum) {
         /// The parent surface
         parent: ?*Surface = null,
     };
+};
+
+/// Mailbox is the way that other threads send the app thread messages.
+pub const Mailbox = struct {
+    /// The type used for sending messages to the app thread.
+    pub const Queue = BlockingQueue(Message, 64);
+
+    rt_app: *apprt.App,
+    mailbox: *Queue,
+
+    /// Send a message to the surface.
+    pub fn push(self: Mailbox, msg: Message, timeout: Queue.Timeout) Queue.Size {
+        const result = self.mailbox.push(msg, timeout);
+
+        // Wake up our app loop
+        self.rt_app.wakeup();
+
+        return result;
+    }
 };
 
 // Wasm API.
@@ -329,7 +329,7 @@ pub const CAPI = struct {
     /// Create a new surface as part of an app.
     export fn ghostty_surface_new(
         app: *App,
-        opts: *const apprt.runtime.Window.Options,
+        opts: *const apprt.Surface.Options,
     ) ?*Surface {
         return surface_new_(app, opts) catch |err| {
             log.err("error initializing surface err={}", .{err});
@@ -339,7 +339,7 @@ pub const CAPI = struct {
 
     fn surface_new_(
         app: *App,
-        opts: *const apprt.runtime.Window.Options,
+        opts: *const apprt.Surface.Options,
     ) !*Surface {
         const w = try app.newWindow(.{
             .runtime = opts.*,

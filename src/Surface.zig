@@ -42,8 +42,8 @@ const Renderer = renderer.Renderer;
 /// Allocator
 alloc: Allocator,
 
-/// The app that this window is a part of.
-app: *App,
+/// The mailbox for sending messages to the main app thread.
+app_mailbox: App.Mailbox,
 
 /// The windowing system surface
 rt_surface: *apprt.runtime.Surface,
@@ -128,12 +128,11 @@ const Mouse = struct {
 /// stable due to interfacing with various callbacks.
 pub fn init(
     self: *Surface,
-    app: *App,
+    alloc: Allocator,
     config: *const Config,
+    app_mailbox: App.Mailbox,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
-    const alloc = app.alloc;
-
     // Initialize our renderer with our initialized surface.
     try Renderer.surfaceInit(rt_surface);
 
@@ -291,7 +290,7 @@ pub fn init(
             .explicit = padding,
             .balance = config.@"window-padding-balance",
         },
-        .surface_mailbox = .{ .surface = self, .app = app.mailbox },
+        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
     });
     errdefer renderer_impl.deinit();
 
@@ -328,7 +327,7 @@ pub fn init(
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
-        .surface_mailbox = .{ .surface = self, .app = app.mailbox },
+        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
     });
     errdefer io.deinit();
 
@@ -343,7 +342,7 @@ pub fn init(
 
     self.* = .{
         .alloc = alloc,
-        .app = app,
+        .app_mailbox = app_mailbox,
         .rt_surface = rt_surface,
         .font_lib = font_lib,
         .font_group = font_group,
@@ -902,30 +901,29 @@ pub fn keyCallback(
                 } else log.warn("dev mode was not compiled into this binary", .{}),
 
                 .new_window => {
-                    _ = self.app.mailbox.push(.{
+                    _ = self.app_mailbox.push(.{
                         .new_window = .{
                             .parent = self,
                         },
                     }, .{ .instant = {} });
-                    self.app.wakeup();
                 },
 
                 .new_tab => {
-                    _ = self.app.mailbox.push(.{
+                    _ = self.app_mailbox.push(.{
                         .new_tab = .{
                             .parent = self,
                         },
                     }, .{ .instant = {} });
-                    self.app.wakeup();
                 },
 
-                .close_window => self.rt_surface.setShouldClose(),
+                .close_window => {
+                    _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
+                },
 
                 .quit => {
-                    _ = self.app.mailbox.push(.{
+                    _ = self.app_mailbox.push(.{
                         .quit = {},
                     }, .{ .instant = {} });
-                    self.app.wakeup();
                 },
             }
 

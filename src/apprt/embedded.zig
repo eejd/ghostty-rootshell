@@ -46,10 +46,11 @@ pub const App = struct {
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8) callconv(.C) void,
     };
 
+    core_app: *CoreApp,
     opts: Options,
 
-    pub fn init(opts: Options) !App {
-        return .{ .opts = opts };
+    pub fn init(core_app: *CoreApp, opts: Options) !App {
+        return .{ .core_app = core_app, .opts = opts };
     }
 
     pub fn terminate(self: App) void {
@@ -67,7 +68,7 @@ pub const App = struct {
 
 pub const Surface = struct {
     nsview: objc.Object,
-    core_win: *CoreSurface,
+    core_surface: *CoreSurface,
     content_scale: apprt.ContentScale,
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
@@ -84,11 +85,9 @@ pub const Surface = struct {
         scale_factor: f64 = 1,
     };
 
-    pub fn init(app: *const CoreApp, core_win: *CoreSurface, opts: Options) !Surface {
-        _ = app;
-
-        return .{
-            .core_win = core_win,
+    pub fn init(self: *Surface, app: *App, opts: Options) !void {
+        self.* = .{
+            .core_surface = undefined,
             .nsview = objc.Object.fromId(opts.nsview),
             .content_scale = .{
                 .x = @floatCast(f32, opts.scale_factor),
@@ -98,10 +97,23 @@ pub const Surface = struct {
             .cursor_pos = .{ .x = 0, .y = 0 },
             .opts = opts,
         };
+
+        // Add ourselves to the list of surfaces on the app.
+        try app.app.addSurface(self);
+        errdefer app.app.deleteSurface(self);
+
+        // Initialize our surface right away. We're given a view that is
+        // ready to use.
+        try self.core_surface.init(app.app, app.app.config, self);
+        errdefer self.core_surface.deinit();
     }
 
     pub fn deinit(self: *Surface) void {
-        _ = self;
+        // Remove ourselves from the list of known surfaces in the app.
+        self.core_surface.app.deleteSurface(self);
+
+        // Clean up our core surface so that all the rendering and IO stop.
+        self.core_surface.deinit();
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
@@ -119,19 +131,19 @@ pub const Surface = struct {
     }
 
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        self.core_win.app.runtime.opts.set_title(
+        self.core_surface.app.runtime.opts.set_title(
             self.opts.userdata,
             slice.ptr,
         );
     }
 
     pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
-        const ptr = self.core_win.app.runtime.opts.read_clipboard(self.opts.userdata);
+        const ptr = self.core_surface.app.runtime.opts.read_clipboard(self.opts.userdata);
         return std.mem.sliceTo(ptr, 0);
     }
 
     pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
-        self.core_win.app.runtime.opts.write_clipboard(self.opts.userdata, val.ptr);
+        self.core_surface.app.runtime.opts.write_clipboard(self.opts.userdata, val.ptr);
     }
 
     pub fn setShouldClose(self: *Surface) void {
@@ -148,7 +160,7 @@ pub const Surface = struct {
     }
 
     pub fn refresh(self: *Surface) void {
-        self.core_win.refreshCallback() catch |err| {
+        self.core_surface.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
             return;
         };
@@ -168,7 +180,7 @@ pub const Surface = struct {
         };
 
         // Call the primary callback.
-        self.core_win.sizeCallback(self.size) catch |err| {
+        self.core_surface.sizeCallback(self.size) catch |err| {
             log.err("error in size callback err={}", .{err});
             return;
         };
@@ -180,14 +192,14 @@ pub const Surface = struct {
         button: input.MouseButton,
         mods: input.Mods,
     ) void {
-        self.core_win.mouseButtonCallback(action, button, mods) catch |err| {
+        self.core_surface.mouseButtonCallback(action, button, mods) catch |err| {
             log.err("error in mouse button callback err={}", .{err});
             return;
         };
     }
 
     pub fn scrollCallback(self: *const Surface, xoff: f64, yoff: f64) void {
-        self.core_win.scrollCallback(xoff, yoff) catch |err| {
+        self.core_surface.scrollCallback(xoff, yoff) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
@@ -195,7 +207,7 @@ pub const Surface = struct {
 
     pub fn cursorPosCallback(self: *Surface, x: f64, y: f64) void {
         // Convert our unscaled x/y to scaled.
-        self.cursor_pos = self.core_win.window.cursorPosToPixels(.{
+        self.cursor_pos = self.core_surface.window.cursorPosToPixels(.{
             .x = @floatCast(f32, x),
             .y = @floatCast(f32, y),
         }) catch |err| {
@@ -206,7 +218,7 @@ pub const Surface = struct {
             return;
         };
 
-        self.core_win.cursorPosCallback(self.cursor_pos) catch |err| {
+        self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
             log.err("error in cursor pos callback err={}", .{err});
             return;
         };
@@ -219,7 +231,7 @@ pub const Surface = struct {
         mods: input.Mods,
     ) void {
         // log.warn("key action={} key={} mods={}", .{ action, key, mods });
-        self.core_win.keyCallback(action, key, mods) catch |err| {
+        self.core_surface.keyCallback(action, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
@@ -227,14 +239,14 @@ pub const Surface = struct {
 
     pub fn charCallback(self: *const Surface, cp_: u32) void {
         const cp = std.math.cast(u21, cp_) orelse return;
-        self.core_win.charCallback(cp) catch |err| {
+        self.core_surface.charCallback(cp) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
         };
     }
 
     pub fn focusCallback(self: *const Surface, focused: bool) void {
-        self.core_win.focusCallback(focused) catch |err| {
+        self.core_surface.focusCallback(focused) catch |err| {
             log.err("error in focus callback err={}", .{err});
             return;
         };

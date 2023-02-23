@@ -43,9 +43,6 @@ pub const App = struct {
         var darwin = if (Darwin.enabled) try Darwin.init() else {};
         errdefer if (Darwin.enabled) darwin.deinit();
 
-        // Set our callback for being woken up
-        core_app.wakeup_cb = wakeup;
-
         return .{
             .app = core_app,
             .darwin = darwin,
@@ -71,7 +68,8 @@ pub const App = struct {
     }
 
     /// Wakeup the event loop. This should be able to be called from any thread.
-    pub fn wakeup() void {
+    pub fn wakeup(self: *const App) void {
+        _ = self;
         glfw.postEmptyEvent();
     }
 
@@ -114,11 +112,11 @@ pub const App = struct {
         // point in the grid.
         const size = parent.rt_surface.getSize() catch |err| {
             log.err("error querying window size for size callback on new tab err={}", .{err});
-            return;
+            return window;
         };
         parent.sizeCallback(size) catch |err| {
             log.err("error in size callback from new tab err={}", .{err});
-            return;
+            return window;
         };
 
         return window;
@@ -193,6 +191,9 @@ pub const Surface = struct {
     /// The glfw mouse cursor handle.
     cursor: glfw.Cursor,
 
+    /// The app we're part of
+    app: *App,
+
     /// A core surface
     core_surface: CoreSurface,
 
@@ -265,6 +266,7 @@ pub const Surface = struct {
 
         // Build our result
         self.* = .{
+            .app = app,
             .window = win,
             .cursor = cursor,
             .core_surface = undefined,
@@ -276,13 +278,18 @@ pub const Surface = struct {
         errdefer app.app.deleteSurface(self);
 
         // Initialize our surface now that we have the stable pointer.
-        try self.core_surface.init(app.app, app.app.config, self);
+        try self.core_surface.init(
+            app.app.alloc,
+            app.app.config,
+            .{ .rt_app = app, .mailbox = &app.app.mailbox },
+            self,
+        );
         errdefer self.core_surface.deinit();
     }
 
     pub fn deinit(self: *Surface) void {
         // Remove ourselves from the list of known surfaces in the app.
-        self.core_surface.app.deleteSurface(self);
+        self.app.app.deleteSurface(self);
 
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
