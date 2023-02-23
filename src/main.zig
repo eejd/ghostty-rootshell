@@ -99,7 +99,7 @@ pub fn main() !void {
     defer app_runtime.terminate();
 
     // Create an initial window
-    _ = try app_runtime.newWindow();
+    try app_runtime.newWindow(null);
 
     // Run the GUI event loop
     try app_runtime.run();

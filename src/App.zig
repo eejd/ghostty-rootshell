@@ -144,14 +144,14 @@ fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
         return;
     }
 
-    const window = try rt_app.newWindow();
-    if (self.config.@"window-inherit-font-size") {
-        if (msg.parent) |parent| {
-            if (self.hasSurface(parent)) {
-                window.core_surface.setFontSize(parent.font_size);
-            }
-        }
-    }
+    const parent = if (msg.parent) |parent| parent: {
+        break :parent if (self.hasSurface(parent))
+            parent
+        else
+            null;
+    } else null;
+
+    try rt_app.newWindow(parent);
 }
 
 /// Create a new tab in the parent window
@@ -172,8 +172,7 @@ fn newTab(self: *App, rt_app: *apprt.App, msg: Message.NewTab) !void {
         return;
     }
 
-    const window = try rt_app.newTab(parent);
-    if (self.config.@"window-inherit-font-size") window.core_surface.setFontSize(parent.font_size);
+    try rt_app.newTab(parent);
 }
 
 /// Start quitting

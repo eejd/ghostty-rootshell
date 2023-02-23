@@ -74,27 +74,19 @@ pub const App = struct {
     }
 
     /// Create a new window for the app.
-    pub fn newWindow(self: *App) !*Surface {
-        // Grab a surface allocation because we're going to need it.
-        var surface = try self.app.alloc.create(Surface);
-        errdefer self.app.alloc.destroy(surface);
-
-        // Create the surface -- because windows are surfaces for glfw.
-        try surface.init(self);
-        errdefer surface.deinit();
-
-        return surface;
+    pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
+        _ = try self.newSurface(parent_);
     }
 
     /// Create a new tab in the parent surface.
-    pub fn newTab(self: *App, parent: *CoreSurface) !*Surface {
+    pub fn newTab(self: *App, parent: *CoreSurface) !void {
         if (!Darwin.enabled) {
             log.warn("tabbing is not supported on this platform", .{});
-            return error.TabbingNotSupported;
+            return;
         }
 
         // Create the new window
-        const window = try self.newWindow();
+        const window = try self.newWindow(parent);
 
         // Add the new window the parent window
         const parent_win = glfwNative.getCocoaWindow(parent.rt_surface.window).?;
@@ -112,14 +104,31 @@ pub const App = struct {
         // point in the grid.
         const size = parent.rt_surface.getSize() catch |err| {
             log.err("error querying window size for size callback on new tab err={}", .{err});
-            return window;
+            return;
         };
         parent.sizeCallback(size) catch |err| {
             log.err("error in size callback from new tab err={}", .{err});
-            return window;
+            return;
         };
+    }
 
-        return window;
+    fn newSurface(self: *App, parent_: ?*CoreSurface) !*Surface {
+        // Grab a surface allocation because we're going to need it.
+        var surface = try self.app.alloc.create(Surface);
+        errdefer self.app.alloc.destroy(surface);
+
+        // Create the surface -- because windows are surfaces for glfw.
+        try surface.init(self);
+        errdefer surface.deinit();
+
+        // If we have a parent, inherit some properties
+        if (self.app.config.@"window-inherit-font-size") {
+            if (parent_) |parent| {
+                surface.core_surface.setFontSize(parent.font_size);
+            }
+        }
+
+        return surface;
     }
 
     /// Close the given surface.
