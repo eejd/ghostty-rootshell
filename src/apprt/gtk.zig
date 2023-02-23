@@ -153,6 +153,10 @@ pub const App = struct {
 };
 
 pub const Surface = struct {
+    /// This is detected by the OpenGL renderer to move to a single-threaded
+    /// draw operation. This basically puts locks around our draw path.
+    pub const opengl_single_threaded_draw = true;
+
     pub const Options = struct {
         gl_area: *c.GtkGLArea,
     };

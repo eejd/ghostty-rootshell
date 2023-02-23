@@ -22,14 +22,24 @@ const Surface = @import("../Surface.zig");
 
 const log = std.log.scoped(.grid);
 
-// The LRU is keyed by (screen, row_id) since we need to cache rows
-// separately for alt screens. By storing that in the key, we very likely
-// have the cache already for when the primary screen is reactivated.
+/// The LRU is keyed by (screen, row_id) since we need to cache rows
+/// separately for alt screens. By storing that in the key, we very likely
+/// have the cache already for when the primary screen is reactivated.
 const CellsLRU = lru.AutoHashMap(struct {
     selection: ?terminal.Selection,
     screen: terminal.Terminal.ScreenType,
     row_id: terminal.Screen.RowHeader.Id,
 }, std.ArrayListUnmanaged(GPUCell));
+
+/// The runtime can request a single-threaded draw by setting this boolean
+/// to true. In this case, the renderer.draw() call is expected to be called
+/// from the runtime.
+const single_threaded_draw = if (@hasDecl(apprt.Surface, "opengl_single_threaded_draw"))
+    apprt.Surface.opengl_single_threaded_draw
+else
+    false;
+const DrawMutex = if (single_threaded_draw) std.Thread.Mutex else void;
+const drawMutexZero = if (DrawMutex == void) void{} else .{};
 
 alloc: std.mem.Allocator,
 
@@ -95,6 +105,13 @@ surface_mailbox: apprt.surface.Mailbox,
 /// Some runtimes (GTK) do not support multi-threading so to keep our logic
 /// simple we apply all OpenGL context changes in the render() call.
 deferred_screen_size: ?SetScreenSize = null,
+
+/// If we're drawing with single threaded operations
+draw_mutex: DrawMutex = drawMutexZero,
+
+/// Current background to draw. This may not match self.background if the
+/// terminal is in reversed mode.
+draw_background: terminal.color.RGB,
 
 /// Defererred OpenGL operation to update the screen size.
 const SetScreenSize = struct {
@@ -350,6 +367,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .cursor_color = if (options.config.@"cursor-color") |col| col.toTerminalRGB() else null,
         .background = options.config.background.toTerminalRGB(),
         .foreground = options.config.foreground.toTerminalRGB(),
+        .draw_background = options.config.background.toTerminalRGB(),
         .selection_background = if (options.config.@"selection-background") |bg|
             bg.toTerminalRGB()
         else
@@ -554,6 +572,7 @@ pub fn blinkCursor(self: *OpenGL, reset: bool) void {
 /// Must be called on the render thread.
 pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     log.info("set font size={}", .{size});
+    if (apprt.runtime == apprt.gtk) @panic("TODO: make thread safe");
 
     // Set our new size, this will also reset our font atlas.
     try self.font_group.setSize(size);
@@ -617,7 +636,6 @@ pub fn render(
     surface: *apprt.Surface,
     state: *renderer.State,
 ) !void {
-    log.warn("RENDER", .{});
     // Data we extract out of the critical area.
     const Critical = struct {
         gl_bg: terminal.color.RGB,
@@ -703,28 +721,28 @@ pub fn render(
     };
     defer critical.screen.deinit();
 
-    // Build our GPU cells
-    try self.rebuildCells(
-        critical.active_screen,
-        critical.selection,
-        &critical.screen,
-        critical.draw_cursor,
-    );
+    // Grab our draw mutex if we have it and update our data
+    {
+        if (single_threaded_draw) self.draw_mutex.lock();
+        defer if (single_threaded_draw) self.draw_mutex.unlock();
 
-    // Try to flush our atlas, this will only do something if there
-    // are changes to the atlas.
-    try self.flushAtlas();
+        // Set our draw data
+        self.draw_background = critical.gl_bg;
 
-    // Clear the surface
-    gl.clearColor(
-        @intToFloat(f32, critical.gl_bg.r) / 255,
-        @intToFloat(f32, critical.gl_bg.g) / 255,
-        @intToFloat(f32, critical.gl_bg.b) / 255,
-        1.0,
-    );
-    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
+        // Build our GPU cells
+        try self.rebuildCells(
+            critical.active_screen,
+            critical.selection,
+            &critical.screen,
+            critical.draw_cursor,
+        );
+    }
 
-    // We're out of the critical path now. Let's first render our terminal.
+    // We're out of the critical path now. Let's render. We only render if
+    // we're not single threaded. If we're single threaded we expect the
+    // runtime to call draw.
+    if (single_threaded_draw) return;
+
     try self.draw();
 
     // If we have devmode, then render that
@@ -735,8 +753,10 @@ pub fn render(
     }
 
     // Swap our window buffers
-    if (apprt.runtime == apprt.gtk) @panic("TODO");
-    surface.window.swapBuffers();
+    switch (apprt.runtime) {
+        else => @compileError("unsupported runtime"),
+        apprt.glfw => surface.window.swapBuffers(),
+    }
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a
@@ -1259,8 +1279,25 @@ pub fn draw(self: *OpenGL) !void {
     const t = trace(@src());
     defer t.end();
 
+    // If we're in single-threaded more we grab a lock since we use shared data.
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
     // If we have no cells to render, then we render nothing.
     if (self.cells.items.len == 0) return;
+
+    // Try to flush our atlas, this will only do something if there
+    // are changes to the atlas.
+    try self.flushAtlas();
+
+    // Clear the surface
+    gl.clearColor(
+        @intToFloat(f32, self.draw_background.r) / 255,
+        @intToFloat(f32, self.draw_background.g) / 255,
+        @intToFloat(f32, self.draw_background.b) / 255,
+        1.0,
+    );
+    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // Setup our VAO
     try self.vao.bind();
