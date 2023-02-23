@@ -27,12 +27,11 @@ pub const App = struct {
         id: [:0]const u8 = "com.mitchellh.ghostty",
     };
 
+    core_app: *CoreApp,
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
 
     pub fn init(core_app: *CoreApp, opts: Options) !App {
-        _ = core_app;
-
         // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
             opts.id.ptr,
@@ -74,7 +73,11 @@ pub const App = struct {
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         c.g_application_activate(gapp);
 
-        return .{ .app = app, .ctx = ctx };
+        return .{
+            .core_app = core_app,
+            .app = app,
+            .ctx = ctx,
+        };
     }
 
     // Terminate the application. The application will not be restarted after
@@ -91,11 +94,24 @@ pub const App = struct {
         c.g_main_context_wakeup(null);
     }
 
-    pub fn wait(self: App) !void {
-        _ = c.g_main_context_iteration(self.ctx, 1);
+    /// Run the event loop. This doesn't return until the app exits.
+    pub fn run(self: *App) !void {
+        while (true) {
+            _ = c.g_main_context_iteration(self.ctx, 1);
+
+            // Tick the terminal app
+            const should_quit = try self.core_app.tick(self);
+            if (false and should_quit) return;
+        }
     }
 
-    pub fn newWindow(self: App) !void {
+    /// Close the given surface.
+    pub fn closeSurface(self: *App, surface: *Surface) void {
+        surface.deinit();
+        self.core_app.alloc.destroy(surface);
+    }
+
+    pub fn newWindow(self: App) !*Surface {
         const window = c.gtk_application_window_new(self.app);
         c.gtk_window_set_title(@ptrCast(*c.GtkWindow, window), "Ghostty");
         c.gtk_window_set_default_size(@ptrCast(*c.GtkWindow, window), 200, 200);
@@ -120,6 +136,8 @@ pub const App = struct {
         );
 
         c.gtk_widget_show(window);
+
+        return undefined;
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
@@ -150,12 +168,32 @@ pub const App = struct {
 pub const Surface = struct {
     pub const Options = struct {};
 
-    pub fn init(app: *const CoreApp, core_win: *CoreSurface, opts: Options) !Surface {
-        _ = app;
-        _ = core_win;
-        _ = opts;
+    /// The app we're part of
+    app: *App,
 
-        return .{};
+    /// The core surface backing this surface
+    core_surface: CoreSurface,
+
+    pub fn init(self: *Surface, app: *App) !void {
+        // Build our result
+        self.* = .{
+            .app = app,
+            .core_surface = undefined,
+        };
+        errdefer self.* = undefined;
+
+        // Add ourselves to the list of surfaces on the app.
+        try app.app.addSurface(self);
+        errdefer app.app.deleteSurface(self);
+
+        // Initialize our surface now that we have the stable pointer.
+        try self.core_surface.init(
+            app.app.alloc,
+            app.app.config,
+            .{ .rt_app = app, .mailbox = &app.app.mailbox },
+            self,
+        );
+        errdefer self.core_surface.deinit();
     }
 
     pub fn deinit(self: *Surface) void {
