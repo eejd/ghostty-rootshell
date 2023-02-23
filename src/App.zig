@@ -77,7 +77,7 @@ pub fn destroy(self: *App) void {
 /// tick.
 ///
 /// This returns whether the app should quit or not.
-pub fn tick(self: *App, rt_app: *apprt.runtime.App) !bool {
+pub fn tick(self: *App, rt_app: *apprt.App) !bool {
     // If any surfaces are closing, destroy them
     var i: usize = 0;
     while (i < self.surfaces.items.len) {
@@ -119,7 +119,7 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
 }
 
 /// Drain the mailbox.
-fn drainMailbox(self: *App, rt_app: *apprt.runtime.App) !void {
+fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
@@ -138,7 +138,12 @@ fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
 }
 
 /// Create a new window
-fn newWindow(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewWindow) !void {
+fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
+    if (!@hasDecl(apprt.App, "newWindow")) {
+        log.warn("newWindow is not supported by this runtime", .{});
+        return;
+    }
+
     const window = try rt_app.newWindow();
     if (self.config.@"window-inherit-font-size") {
         if (msg.parent) |parent| {
@@ -150,7 +155,12 @@ fn newWindow(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewWindow) !vo
 }
 
 /// Create a new tab in the parent window
-fn newTab(self: *App, rt_app: *apprt.runtime.App, msg: Message.NewTab) !void {
+fn newTab(self: *App, rt_app: *apprt.App, msg: Message.NewTab) !void {
+    if (!@hasDecl(apprt.App, "newTab")) {
+        log.warn("newTab is not supported by this runtime", .{});
+        return;
+    }
+
     const parent = msg.parent orelse {
         log.warn("parent must be set in new_tab message", .{});
         return;
@@ -280,148 +290,4 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     //         alloc.destroy(v);
     //     }
     // }
-};
-
-// C API
-pub const CAPI = struct {
-    const global = &@import("main.zig").state;
-
-    /// Create a new app.
-    export fn ghostty_app_new(
-        opts: *const apprt.runtime.App.Options,
-        config: *const Config,
-    ) ?*App {
-        return app_new_(opts, config) catch |err| {
-            log.err("error initializing app err={}", .{err});
-            return null;
-        };
-    }
-
-    fn app_new_(
-        opts: *const apprt.runtime.App.Options,
-        config: *const Config,
-    ) !*App {
-        const app = try App.create(global.alloc, opts.*, config);
-        errdefer app.destroy();
-        return app;
-    }
-
-    /// Tick the event loop. This should be called whenever the "wakeup"
-    /// callback is invoked for the runtime.
-    export fn ghostty_app_tick(v: *App) void {
-        v.tick() catch |err| {
-            log.err("error app tick err={}", .{err});
-        };
-    }
-
-    /// Return the userdata associated with the app.
-    export fn ghostty_app_userdata(v: *App) ?*anyopaque {
-        return v.runtime.opts.userdata;
-    }
-
-    export fn ghostty_app_free(ptr: ?*App) void {
-        if (ptr) |v| {
-            v.destroy();
-            v.alloc.destroy(v);
-        }
-    }
-
-    /// Create a new surface as part of an app.
-    export fn ghostty_surface_new(
-        app: *App,
-        opts: *const apprt.Surface.Options,
-    ) ?*Surface {
-        return surface_new_(app, opts) catch |err| {
-            log.err("error initializing surface err={}", .{err});
-            return null;
-        };
-    }
-
-    fn surface_new_(
-        app: *App,
-        opts: *const apprt.Surface.Options,
-    ) !*Surface {
-        const w = try app.newWindow(.{
-            .runtime = opts.*,
-        });
-        return w;
-    }
-
-    export fn ghostty_surface_free(ptr: ?*Surface) void {
-        if (ptr) |v| v.app.closeWindow(v);
-    }
-
-    /// Returns the app associated with a surface.
-    export fn ghostty_surface_app(win: *Surface) *App {
-        return win.app;
-    }
-
-    /// Tell the surface that it needs to schedule a render
-    export fn ghostty_surface_refresh(win: *Surface) void {
-        win.window.refresh();
-    }
-
-    /// Update the size of a surface. This will trigger resize notifications
-    /// to the pty and the renderer.
-    export fn ghostty_surface_set_size(win: *Surface, w: u32, h: u32) void {
-        win.window.updateSize(w, h);
-    }
-
-    /// Update the content scale of the surface.
-    export fn ghostty_surface_set_content_scale(win: *Surface, x: f64, y: f64) void {
-        win.window.updateContentScale(x, y);
-    }
-
-    /// Update the focused state of a surface.
-    export fn ghostty_surface_set_focus(win: *Surface, focused: bool) void {
-        win.window.focusCallback(focused);
-    }
-
-    /// Tell the surface that it needs to schedule a render
-    export fn ghostty_surface_key(
-        win: *Surface,
-        action: input.Action,
-        key: input.Key,
-        mods: c_int,
-    ) void {
-        win.window.keyCallback(
-            action,
-            key,
-            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
-        );
-    }
-
-    /// Tell the surface that it needs to schedule a render
-    export fn ghostty_surface_char(win: *Surface, codepoint: u32) void {
-        win.window.charCallback(codepoint);
-    }
-
-    /// Tell the surface that it needs to schedule a render
-    export fn ghostty_surface_mouse_button(
-        win: *Surface,
-        action: input.MouseButtonState,
-        button: input.MouseButton,
-        mods: c_int,
-    ) void {
-        win.window.mouseButtonCallback(
-            action,
-            button,
-            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
-        );
-    }
-
-    /// Update the mouse position within the view.
-    export fn ghostty_surface_mouse_pos(win: *Surface, x: f64, y: f64) void {
-        win.window.cursorPosCallback(x, y);
-    }
-
-    export fn ghostty_surface_mouse_scroll(win: *Surface, x: f64, y: f64) void {
-        win.window.scrollCallback(x, y);
-    }
-
-    export fn ghostty_surface_ime_point(win: *Surface, x: *f64, y: *f64) void {
-        const pos = win.imePoint();
-        x.* = pos.x;
-        y.* = pos.y;
-    }
 };
