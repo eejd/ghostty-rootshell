@@ -151,6 +151,11 @@ pub const App = struct {
         });
         errdefer surface.deinit();
         c.gtk_window_set_child(gtk_window, gl_area);
+
+        // We need to grab focus after it is added to the window. When
+        // creating a window we want to always focus on the widget.
+        const widget = @ptrCast(*c.GtkWidget, gl_area);
+        _ = c.gtk_widget_grab_focus(widget);
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
@@ -192,6 +197,23 @@ pub const Surface = struct {
     size: apprt.SurfaceSize,
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
+        const widget = @ptrCast(*c.GtkWidget, opts.gl_area);
+
+        // Add our event controllers
+        const ec_key = c.gtk_event_controller_key_new();
+        errdefer c.g_object_unref(ec_key);
+        c.gtk_widget_add_controller(widget, ec_key);
+        errdefer c.gtk_widget_remove_controller(widget, ec_key);
+
+        const ec_focus = c.gtk_event_controller_focus_new();
+        errdefer c.g_object_unref(ec_focus);
+        c.gtk_widget_add_controller(widget, ec_focus);
+        errdefer c.gtk_widget_remove_controller(widget, ec_focus);
+
+        // The GL area has to be focusable so that it can receive events
+        c.gtk_widget_set_focusable(widget, 1);
+        c.gtk_widget_set_focus_on_click(widget, 1);
+
         // Build our result
         self.* = .{
             .app = app,
@@ -201,11 +223,15 @@ pub const Surface = struct {
         };
         errdefer self.* = undefined;
 
-        // Create the GL area that will contain our surface
+        // GL events
         _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
+
+        _ = c.g_signal_connect_data(ec_key, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, c.G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
@@ -226,6 +252,18 @@ pub const Surface = struct {
         self.realized = true;
     }
 
+    pub fn deinit(self: *Surface) void {
+        // We don't allocate anything if we aren't realized.
+        if (!self.realized) return;
+
+        // Remove ourselves from the list of known surfaces in the app.
+        self.app.core_app.deleteSurface(self);
+
+        // Clean up our core surface so that all the rendering and IO stop.
+        self.core_surface.deinit();
+        self.core_surface = undefined;
+    }
+
     fn render(self: *Surface) !void {
         try self.core_surface.renderer.draw();
     }
@@ -233,6 +271,47 @@ pub const Surface = struct {
     /// Invalidate the surface so that it forces a redraw on the next tick.
     fn invalidate(self: *Surface) void {
         c.gtk_gl_area_queue_render(self.gl_area);
+    }
+
+    pub fn setShouldClose(self: *Surface) void {
+        _ = self;
+    }
+
+    pub fn shouldClose(self: *const Surface) bool {
+        _ = self;
+        return false;
+    }
+
+    pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
+        _ = self;
+        const monitor = glfw.Monitor.getPrimary() orelse return error.NoMonitor;
+        const scale = monitor.getContentScale();
+        return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
+    }
+
+    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
+        return self.size;
+    }
+
+    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
+        _ = self;
+        _ = min;
+        _ = max_;
+    }
+
+    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+        _ = self;
+        _ = slice;
+    }
+
+    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
+        _ = self;
+        return "";
+    }
+
+    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
+        _ = self;
+        _ = val;
     }
 
     fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
@@ -300,60 +379,40 @@ pub const Surface = struct {
         alloc.destroy(self);
     }
 
+    fn gtkKeyPressed(
+        _: *c.GtkEventControllerKey,
+        keyval: c.guint,
+        keycode: c.guint,
+        state: c.GdkModifierType,
+        ud: ?*anyopaque,
+    ) callconv(.C) c.gboolean {
+        _ = ud;
+        log.warn("KEY PRESS val={} code={} state={}", .{
+            keyval,
+            keycode,
+            state,
+        });
+
+        return 0;
+    }
+
+    fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.core_surface.focusCallback(true) catch |err| {
+            log.err("error in focus callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.core_surface.focusCallback(false) catch |err| {
+            log.err("error in focus callback err={}", .{err});
+            return;
+        };
+    }
+
     fn userdataSelf(ud: *anyopaque) *Surface {
         return @ptrCast(*Surface, @alignCast(@alignOf(Surface), ud));
-    }
-
-    pub fn deinit(self: *Surface) void {
-        // We don't allocate anything if we aren't realized.
-        if (!self.realized) return;
-
-        // Remove ourselves from the list of known surfaces in the app.
-        self.app.core_app.deleteSurface(self);
-
-        // Clean up our core surface so that all the rendering and IO stop.
-        self.core_surface.deinit();
-        self.core_surface = undefined;
-    }
-
-    pub fn setShouldClose(self: *Surface) void {
-        _ = self;
-    }
-
-    pub fn shouldClose(self: *const Surface) bool {
-        _ = self;
-        return false;
-    }
-
-    pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
-        _ = self;
-        const monitor = glfw.Monitor.getPrimary() orelse return error.NoMonitor;
-        const scale = monitor.getContentScale();
-        return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
-    }
-
-    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
-        return self.size;
-    }
-
-    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
-        _ = self;
-        _ = min;
-        _ = max_;
-    }
-
-    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        _ = self;
-        _ = slice;
-    }
-
-    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
-        _ = self;
-        return "";
-    }
-
-    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
-        _ = self;
-        _ = val;
     }
 };
