@@ -199,16 +199,26 @@ pub const Surface = struct {
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         const widget = @ptrCast(*c.GtkWidget, opts.gl_area);
 
-        // Add our event controllers
+        // Key event controller will tell us about raw keypress events.
         const ec_key = c.gtk_event_controller_key_new();
         errdefer c.g_object_unref(ec_key);
         c.gtk_widget_add_controller(widget, ec_key);
         errdefer c.gtk_widget_remove_controller(widget, ec_key);
 
+        // Focus controller will tell us about focus enter/exit events
         const ec_focus = c.gtk_event_controller_focus_new();
         errdefer c.g_object_unref(ec_focus);
         c.gtk_widget_add_controller(widget, ec_focus);
         errdefer c.gtk_widget_remove_controller(widget, ec_focus);
+
+        // Tell the key controller that we're interested in getting a full
+        // input method so raw characters/strings are given too.
+        const im_context = c.gtk_im_multicontext_new();
+        errdefer c.g_object_unref(im_context);
+        c.gtk_event_controller_key_set_im_context(
+            @ptrCast(*c.GtkEventControllerKey, ec_key),
+            im_context,
+        );
 
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
@@ -232,6 +242,7 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(ec_key, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, c.G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
@@ -394,6 +405,27 @@ pub const Surface = struct {
         });
 
         return 0;
+    }
+
+    fn gtkInputCommit(
+        _: *c.GtkIMContext,
+        bytes: [*:0]u8,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const str = std.mem.sliceTo(bytes, 0);
+        const view = std.unicode.Utf8View.init(str) catch |err| {
+            log.warn("cannot build utf8 view over input: {}", .{err});
+            return;
+        };
+
+        const self = userdataSelf(ud.?);
+        var it = view.iterator();
+        while (it.nextCodepoint()) |cp| {
+            self.core_surface.charCallback(cp) catch |err| {
+                log.err("error in char callback err={}", .{err});
+                return;
+            };
+        }
     }
 
     fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
