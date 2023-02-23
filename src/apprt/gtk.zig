@@ -89,7 +89,7 @@ pub const App = struct {
         c.g_object_unref(self.app);
     }
 
-    pub fn wakeup(self: App) !void {
+    pub fn wakeup(self: App) void {
         _ = self;
         c.g_main_context_wakeup(null);
     }
@@ -181,7 +181,7 @@ pub const Surface = struct {
             opts.gl_area,
             "realize",
             c.G_CALLBACK(&gtkRealize),
-            null,
+            self,
             null,
             c.G_CONNECT_DEFAULT,
         );
@@ -201,28 +201,36 @@ pub const Surface = struct {
             null,
             c.G_CONNECT_DEFAULT,
         );
+    }
 
-        // // Add ourselves to the list of surfaces on the app.
-        // try app.app.addSurface(self);
-        // errdefer app.app.deleteSurface(self);
-        //
-        // // Initialize our surface now that we have the stable pointer.
-        // try self.core_surface.init(
-        //     app.app.alloc,
-        //     app.app.config,
-        //     .{ .rt_app = app, .mailbox = &app.app.mailbox },
-        //     self,
-        // );
-        // errdefer self.core_surface.deinit();
+    fn realize(self: *Surface) !void {
+        // Add ourselves to the list of surfaces on the app.
+        try self.app.core_app.addSurface(self);
+        errdefer self.app.core_app.deleteSurface(self);
+
+        // Initialize our surface now that we have the stable pointer.
+        try self.core_surface.init(
+            self.app.core_app.alloc,
+            self.app.core_app.config,
+            .{ .rt_app = self.app, .mailbox = &self.app.core_app.mailbox },
+            self,
+        );
+        errdefer self.core_surface.deinit();
     }
 
     fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
         _ = area;
-        _ = ud;
 
         log.debug("gl surface realized", .{});
-        const opengl = @import("../renderer/opengl/main.zig");
-        log.warn("foo: {}", .{opengl.glad.load(null) catch 0});
+
+        // realize means that our OpenGL context is ready, so we can now
+        // initialize the core surface which will setup the renderer.
+        const self = userdataSelf(ud orelse return);
+        self.realize() catch |err| {
+            // TODO: we need to destroy the GL area here.
+            log.err("surface failed to realize: {}", .{err});
+            return;
+        };
     }
 
     fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) c.gboolean {

@@ -91,6 +91,55 @@ padding: renderer.Options.Padding,
 /// The mailbox for communicating with the window.
 surface_mailbox: apprt.surface.Mailbox,
 
+/// Deferred operations. This is used to apply changes to the OpenGL context.
+/// Some runtimes (GTK) do not support multi-threading so to keep our logic
+/// simple we apply all OpenGL context changes in the render() call.
+deferred_screen_size: ?SetScreenSize = null,
+
+/// Defererred OpenGL operation to update the screen size.
+const SetScreenSize = struct {
+    size: renderer.ScreenSize,
+
+    fn apply(self: SetScreenSize, r: *const OpenGL) !void {
+        // Apply our padding
+        const padding = r.padding.explicit.add(if (r.padding.balance)
+            renderer.Padding.balanced(self.size, r.gridSize(self.size), r.cell_size)
+        else
+            .{});
+        const padded_size = self.size.subPadding(padding);
+
+        log.debug("GL api: screen size padded={} screen={} grid={} cell={} padding={}", .{
+            padded_size,
+            self.size,
+            r.gridSize(self.size),
+            r.cell_size,
+            r.padding.explicit,
+        });
+
+        // Update our viewport for this context to be the entire window.
+        // OpenGL works in pixels, so we have to use the pixel size.
+        try gl.viewport(
+            0,
+            0,
+            @intCast(i32, self.size.width),
+            @intCast(i32, self.size.height),
+        );
+
+        // Update the projection uniform within our shader
+        try r.program.setUniform(
+            "projection",
+
+            // 2D orthographic projection with the full w/h
+            math.ortho2d(
+                -1 * padding.left,
+                @intToFloat(f32, padded_size.width) + padding.right,
+                @intToFloat(f32, padded_size.height) + padding.bottom,
+                -1 * padding.top,
+            ),
+        );
+    }
+};
+
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
 /// Zig compiler.
@@ -366,7 +415,22 @@ pub fn glfwWindowHints() glfw.Window.Hints {
 pub fn surfaceInit(surface: *apprt.Surface) !void {
     // Treat this like a thread entry
     const self: OpenGL = undefined;
-    try self.threadEnter(surface);
+
+    switch (apprt.runtime) {
+        else => @compileError("unsupported app runtime for OpenGL"),
+
+        apprt.gtk => {
+            // GTK uses global OpenGL context so we load from null.
+            const version = try gl.glad.load(null);
+            errdefer gl.glad.unload();
+            log.info("loaded OpenGL {}.{}", .{
+                gl.glad.versionMajor(@intCast(c_uint, version)),
+                gl.glad.versionMinor(@intCast(c_uint, version)),
+            });
+        },
+
+        apprt.glfw => try self.threadEnter(surface),
+    }
 
     // Blending for text. We use GL_ONE here because we should be using
     // premultiplied alpha for all our colors in our fragment shaders.
@@ -459,7 +523,10 @@ pub fn threadExit(self: *const OpenGL) void {
     switch (apprt.runtime) {
         else => @compileError("unsupported app runtime for OpenGL"),
 
-        apprt.gtk => {},
+        apprt.gtk => {
+            // We don't need to do any unloading for GTK because we may
+            // be sharing the global bindings with other windows.
+        },
 
         apprt.glfw => {
             gl.glad.unload();
@@ -550,6 +617,7 @@ pub fn render(
     surface: *apprt.Surface,
     state: *renderer.State,
 ) !void {
+    log.warn("RENDER", .{});
     // Data we extract out of the critical area.
     const Critical = struct {
         gl_bg: terminal.color.RGB,
@@ -1075,7 +1143,7 @@ pub fn updateCell(
 
 /// Returns the grid size for a given screen size. This is safe to call
 /// on any thread.
-fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
+fn gridSize(self: *const OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
     return renderer.GridSize.init(
         screen_size.subPadding(self.padding.explicit),
         self.cell_size,
@@ -1088,15 +1156,7 @@ pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);
 
-    // Apply our padding
-    const padding = self.padding.explicit.add(if (self.padding.balance)
-        renderer.Padding.balanced(dim, grid_size, self.cell_size)
-    else
-        .{});
-    const padded_dim = dim.subPadding(padding);
-
-    log.debug("screen size padded={} screen={} grid={} cell={} padding={}", .{
-        padded_dim,
+    log.debug("screen size screen={} grid={} cell={} padding={}", .{
         dim,
         grid_size,
         self.cell_size,
@@ -1118,31 +1178,8 @@ pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
 
-    // Update our viewport for this context to be the entire window.
-    // OpenGL works in pixels, so we have to use the pixel size.
-    try gl.viewport(
-        0,
-        0,
-        @intCast(i32, dim.width),
-        @intCast(i32, dim.height),
-    );
-
-    // Update the projection uniform within our shader
-    {
-        const bind = try self.program.use();
-        defer bind.unbind();
-        try self.program.setUniform(
-            "projection",
-
-            // 2D orthographic projection with the full w/h
-            math.ortho2d(
-                -1 * padding.left,
-                @intToFloat(f32, padded_dim.width) + padding.right,
-                @intToFloat(f32, padded_dim.height) + padding.bottom,
-                -1 * padding.top,
-            ),
-        );
-    }
+    // Defer our OpenGL updates
+    self.deferred_screen_size = .{ .size = dim };
 }
 
 /// Updates the font texture atlas if it is dirty.
@@ -1249,6 +1286,12 @@ pub fn draw(self: *OpenGL) !void {
     // Pick our shader to use
     const pbind = try self.program.use();
     defer pbind.unbind();
+
+    // If we have deferred operations, run them.
+    if (self.deferred_screen_size) |v| {
+        try v.apply(self);
+        self.deferred_screen_size = null;
+    }
 
     try self.drawCells(binding, self.cells_bg);
     try self.drawCells(binding, self.cells);
