@@ -55,33 +55,49 @@ The high-level ambitious plan for the project, in order:
 | # | Step | Status |
 |:---:|------|:------:|
 | 1 | [Standards-compliant terminal emulation](docs/sequences.md)     | ⚠️ |
-| 2 | Competitive rendering performance (not the fastest, but fast enough) | ✅ |
+| 2 | Competitive performance | ✅ |
 | 3 | Basic customizability -- fonts, bg colors, etc. | ✅ |
 | 4 | Richer windowing features -- multi-window, tabbing, panes | ⚠️  |
 | 5 | Native Platform Experiences (i.e. Mac Preference Panel) | ❌ |
 | 6 | Windows Terminals (including PowerShell, Cmd, WSL) | ❌ |
 | N | Fancy features (to be expanded upon later) | ❌ |
 
-### Standards-Compliant Terminal Emulation
+Additional details for each step in the big roadmap below:
+
+#### Standards-Compliant Terminal Emulation
 
 I am able to use this terminal as a daily driver. I think that's good enough
 for a yellow status. There are a LOT of missing features for full standards
 compliance but the set that are regularly in use are working pretty well.
 
-### Competitive Rendering Performance
+#### Competitive Performance
 
-I want to benchmark this better, but we can maintain roughly 100fps under
-heavy load and 120fps generally. We have a multi-renderer architecture that
-uses OpenGL on Linux and Metal on macOS. As far as I'm aware, we're the only
-terminal emulator other than iTerm that uses Metal directly. And we're the
-only terminal emulator that has a Metal renderer that supports ligatures.
+We need better benchmarks to continuously verify this, but I believe at
+this stage Ghostty is already best-in-class (or at worst second in certain
+cases) for a majority of performance measuring scenarios.
 
-### Richer Windowing Features
+For rendering, we have a multi-renderer architecture that uses OpenGL on 
+Linux and Metal on macOS. As far as I'm aware, we're the only terminal 
+emulator other than iTerm that uses Metal directly. And we're the only 
+terminal emulator that has a Metal renderer that supports ligatures (iTerm
+uses a CPU renderer if ligatures are enabled). We can maintain roughly
+100fps under heavy load and 120fps generally -- though the terminal is
+usually rendering much lower due to little screen changes.
+
+For IO, we have a dedicated IO thread that maintains very little jitter
+under heavy IO load (i.e. `cat <big file>.txt`). On bechmarks for IO,
+we're usually top of the class by a large margin over popular terminal
+emulators. For example, reading a dump of plain text is 4x faster compared
+to iTerm and Kitty, and 2x faster than Terminal.app. Alacritty is very
+fast but we're still ~15% faster and our app experience is much more
+feature rich.
+
+#### Richer Windowing Features
 
 We support multi-window and tabbing on Mac. We will support panes/splits
 in the future and we'll continue to improve multi-window features.
 
-### Native Platform Experiences
+#### Native Platform Experiences
 
 Ghostty is a cross-platform terminal emulator but is meant to feel native
 on each platform it runs on. On macOS, this means having a preferences window
