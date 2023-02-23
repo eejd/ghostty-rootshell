@@ -569,6 +569,14 @@ fn addDeps(
             },
 
             .gtk => {
+                // We need glfw for GTK because we use GLFW to get DPI.
+                step.addModule("glfw", glfw.module(b));
+                const glfw_opts: glfw.Options = .{
+                    .metal = step.target.isDarwin(),
+                    .opengl = false,
+                };
+                try glfw.link(b, step, glfw_opts);
+
                 step.linkSystemLibrary("gtk4");
             },
         }

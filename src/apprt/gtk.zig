@@ -4,6 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const glfw = @import("glfw");
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
@@ -32,6 +33,12 @@ pub const App = struct {
     ctx: *c.GMainContext,
 
     pub fn init(core_app: *CoreApp, opts: Options) !App {
+        // This is super weird, but we still use GLFW with GTK only so that
+        // we can tap into their folklore logic to get screen DPI. If we can
+        // figure out a reliable way to determine this ourselves, we can get
+        // rid of this dep.
+        if (!glfw.init(.{})) return error.GlfwInitFailed;
+
         // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
             opts.id.ptr,
@@ -87,6 +94,7 @@ pub const App = struct {
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
         c.g_object_unref(self.app);
+        glfw.terminate();
     }
 
     pub fn wakeup(self: App) void {
@@ -310,7 +318,9 @@ pub const Surface = struct {
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         _ = self;
-        return .{ .x = 1, .y = 1 };
+        const monitor = glfw.Monitor.getPrimary() orelse return error.NoMonitor;
+        const scale = monitor.getContentScale();
+        return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
     }
 
     pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
