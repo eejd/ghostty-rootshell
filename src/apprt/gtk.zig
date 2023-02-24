@@ -378,7 +378,13 @@ pub const Surface = struct {
     }
 
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        _ = self;
+        const root = c.gtk_widget_get_root(@ptrCast(
+            *c.GtkWidget,
+            self.gl_area,
+        ));
+
+        // TODO: we need a way to check if the type is a window
+        _ = root;
         _ = slice;
     }
 
