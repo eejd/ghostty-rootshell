@@ -83,6 +83,12 @@ pub const App = struct {
         surface.deinit();
         self.core_app.alloc.destroy(surface);
     }
+
+    pub fn redrawSurface(self: *App, surface: *Surface) void {
+        _ = self;
+        _ = surface;
+        // No-op, we use a threaded interface so we're constantly drawing.
+    }
 };
 
 pub const Surface = struct {
