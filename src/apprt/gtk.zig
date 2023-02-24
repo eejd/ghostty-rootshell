@@ -30,8 +30,12 @@ pub const App = struct {
     };
 
     core_app: *CoreApp,
+
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
+
+    cursor_default: *c.GdkCursor,
+    cursor_ibeam: *c.GdkCursor,
 
     pub fn init(core_app: *CoreApp, opts: Options) !App {
         // This is super weird, but we still use GLFW with GTK only so that
@@ -81,10 +85,18 @@ pub const App = struct {
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         c.g_application_activate(gapp);
 
+        // Get our cursors
+        const cursor_default = c.gdk_cursor_new_from_name("default", null).?;
+        errdefer c.g_object_unref(cursor_default);
+        const cursor_ibeam = c.gdk_cursor_new_from_name("text", cursor_default).?;
+        errdefer c.g_object_unref(cursor_ibeam);
+
         return .{
             .core_app = core_app,
             .app = app,
             .ctx = ctx,
+            .cursor_default = cursor_default,
+            .cursor_ibeam = cursor_ibeam,
         };
     }
 
@@ -95,6 +107,10 @@ pub const App = struct {
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
         c.g_object_unref(self.app);
+
+        c.g_object_unref(self.cursor_ibeam);
+        c.g_object_unref(self.cursor_default);
+
         glfw.terminate();
     }
 
@@ -250,6 +266,9 @@ pub const Surface = struct {
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
         c.gtk_widget_set_focus_on_click(widget, 1);
+
+        // When we're over the widget, set the cursor to the ibeam
+        c.gtk_widget_set_cursor(widget, app.cursor_ibeam);
 
         // Build our result
         self.* = .{
