@@ -105,6 +105,7 @@ surface_mailbox: apprt.surface.Mailbox,
 /// Some runtimes (GTK) do not support multi-threading so to keep our logic
 /// simple we apply all OpenGL context changes in the render() call.
 deferred_screen_size: ?SetScreenSize = null,
+deferred_font_size: ?SetFontSize = null,
 
 /// If we're drawing with single threaded operations
 draw_mutex: DrawMutex = drawMutexZero,
@@ -154,6 +155,19 @@ const SetScreenSize = struct {
                 -1 * padding.top,
             ),
         );
+    }
+};
+
+const SetFontSize = struct {
+    metrics: font.face.Metrics,
+
+    fn apply(self: SetFontSize, r: *const OpenGL) !void {
+        try r.program.setUniform(
+            "cell_size",
+            @Vector(2, f32){ self.metrics.cell_width, self.metrics.cell_height },
+        );
+        try r.program.setUniform("strikethrough_position", self.metrics.strikethrough_position);
+        try r.program.setUniform("strikethrough_thickness", self.metrics.strikethrough_thickness);
     }
 };
 
@@ -239,14 +253,11 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     );
 
     // Setup our font metrics uniform
-    const metrics = try resetFontMetrics(alloc, program, options.font_group);
+    const metrics = try resetFontMetrics(alloc, options.font_group);
 
     // Set our cell dimensions
     const pbind = try program.use();
     defer pbind.unbind();
-    try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("strikethrough_position", metrics.strikethrough_position);
-    try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 
     // Set all of our texture indexes
     try program.setUniform("text", 0);
@@ -379,6 +390,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .focused = true,
         .padding = options.padding,
         .surface_mailbox = options.surface_mailbox,
+        .deferred_font_size = .{ .metrics = metrics },
     };
 }
 
@@ -571,8 +583,10 @@ pub fn blinkCursor(self: *OpenGL, reset: bool) void {
 ///
 /// Must be called on the render thread.
 pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
     log.info("set font size={}", .{size});
-    if (apprt.runtime == apprt.gtk) @panic("TODO: make thread safe");
 
     // Set our new size, this will also reset our font atlas.
     try self.font_group.setSize(size);
@@ -581,7 +595,10 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     self.resetCellsLRU();
 
     // Reset our GPU uniforms
-    const metrics = try resetFontMetrics(self.alloc, self.program, self.font_group);
+    const metrics = try resetFontMetrics(self.alloc, self.font_group);
+
+    // Defer our GPU updates
+    self.deferred_font_size = .{ .metrics = metrics };
 
     // Recalculate our cell size. If it is the same as before, then we do
     // nothing since the grid size couldn't have possibly changed.
@@ -599,7 +616,6 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
 /// down to the GPU.
 fn resetFontMetrics(
     alloc: Allocator,
-    program: gl.Program,
     font_group: *font.GroupCache,
 ) !font.face.Metrics {
     // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
@@ -619,13 +635,6 @@ fn resetFontMetrics(
         .thickness = 2,
         .underline_position = @floatToInt(u32, metrics.underline_position),
     };
-
-    // Set our uniforms that rely on metrics
-    const pbind = try program.use();
-    defer pbind.unbind();
-    try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("strikethrough_position", metrics.strikethrough_position);
-    try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 
     return metrics;
 }
@@ -1173,6 +1182,9 @@ fn gridSize(self: *const OpenGL, screen_size: renderer.ScreenSize) renderer.Grid
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
 pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);
 
@@ -1328,6 +1340,10 @@ pub fn draw(self: *OpenGL) !void {
     if (self.deferred_screen_size) |v| {
         try v.apply(self);
         self.deferred_screen_size = null;
+    }
+    if (self.deferred_font_size) |v| {
+        try v.apply(self);
+        self.deferred_font_size = null;
     }
 
     try self.drawCells(binding, self.cells_bg);
