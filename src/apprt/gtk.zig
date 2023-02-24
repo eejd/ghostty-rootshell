@@ -221,6 +221,18 @@ pub const Surface = struct {
             im_context,
         );
 
+        // Clicks
+        const gesture_click = c.gtk_gesture_click_new();
+        errdefer c.g_object_unref(gesture_click);
+        c.gtk_gesture_single_set_button(@ptrCast(
+            *c.GtkGestureSingle,
+            gesture_click,
+        ), 0);
+        c.gtk_widget_add_controller(widget, @ptrCast(
+            *c.GtkEventController,
+            gesture_click,
+        ));
+
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
         c.gtk_widget_set_focus_on_click(widget, 1);
@@ -245,6 +257,8 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(gesture_click, "released", c.G_CALLBACK(&gtkMouseUp), self, null, c.G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
@@ -327,6 +341,17 @@ pub const Surface = struct {
         _ = val;
     }
 
+    pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
+        _ = self;
+        return .{};
+        // const unscaled_pos = self.window.getCursorPos();
+        // const pos = try self.cursorPosToPixels(unscaled_pos);
+        // return apprt.CursorPos{
+        //     .x = @floatCast(f32, pos.xpos),
+        //     .y = @floatCast(f32, pos.ypos),
+        // };
+    }
+
     fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
         log.debug("gl surface realized", .{});
 
@@ -390,6 +415,44 @@ pub const Surface = struct {
         const alloc = self.app.core_app.alloc;
         self.deinit();
         alloc.destroy(self);
+    }
+
+    fn gtkMouseDown(
+        gesture: *c.GtkGestureClick,
+        _: c.gint,
+        _: c.gdouble,
+        _: c.gdouble,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(
+            *c.GtkGestureSingle,
+            gesture,
+        )));
+
+        const self = userdataSelf(ud.?);
+        self.core_surface.mouseButtonCallback(.press, button, .{}) catch |err| {
+            log.err("error in key callback err={}", .{err});
+            return 0;
+        };
+    }
+
+    fn gtkMouseUp(
+        gesture: *c.GtkGestureClick,
+        _: c.gint,
+        _: c.gdouble,
+        _: c.gdouble,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(
+            *c.GtkGestureSingle,
+            gesture,
+        )));
+
+        const self = userdataSelf(ud.?);
+        self.core_surface.mouseButtonCallback(.release, button, .{}) catch |err| {
+            log.err("error in key callback err={}", .{err});
+            return 0;
+        };
     }
 
     fn gtkKeyPressed(
@@ -473,6 +536,23 @@ pub const Surface = struct {
         return @ptrCast(*Surface, @alignCast(@alignOf(Surface), ud));
     }
 };
+
+fn translateMouseButton(button: c.guint) input.MouseButton {
+    return switch (button) {
+        1 => .left,
+        2 => .middle,
+        3 => .right,
+        4 => .four,
+        5 => .five,
+        6 => .six,
+        7 => .seven,
+        8 => .eight,
+        9 => .nine,
+        10 => .ten,
+        11 => .eleven,
+        else => .unknown,
+    };
+}
 
 fn translateMods(state: c.GdkModifierType) input.Mods {
     var mods: input.Mods = .{};
