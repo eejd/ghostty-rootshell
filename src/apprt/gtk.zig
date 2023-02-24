@@ -147,47 +147,20 @@ pub const App = struct {
 
     pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
         _ = parent_;
+        const alloc = self.core_app.alloc;
 
-        // Grab a surface allocation we'll need it later.
-        var surface = try self.core_app.alloc.create(Surface);
-        errdefer self.core_app.alloc.destroy(surface);
+        // Allocate a fixed pointer for our window. We try to minimize
+        // allocations but windows and other GUI requirements are so minimal
+        // compared to the steady-state terminal operation so we use heap
+        // allocation for this.
+        var window = try alloc.create(Window);
+        errdefer alloc.destroy(window);
+        try window.init(self);
+    }
 
-        // Create the window
-        const window = c.gtk_application_window_new(self.app);
-        const gtk_window = @ptrCast(*c.GtkWindow, window);
-        errdefer c.gtk_window_destroy(gtk_window);
-        c.gtk_window_set_title(gtk_window, "Ghostty");
-        c.gtk_window_set_default_size(gtk_window, 200, 200);
-        c.gtk_widget_show(window);
-
-        // Create a notebook to hold our tabs.
-        const notebook_widget = c.gtk_notebook_new();
-        const notebook = @ptrCast(*c.GtkNotebook, notebook_widget);
-        c.gtk_notebook_set_tab_pos(notebook, c.GTK_POS_TOP);
-
-        // Initialize the GtkGLArea and attach it to our surface.
-        // The surface starts in the "unrealized" state because we have to
-        // wait for the "realize" callback from GTK to know that the OpenGL
-        // context is ready. See Surface docs for more info.
-        const gl_area = c.gtk_gl_area_new();
-        const label = c.gtk_label_new("Ghostty");
-        try surface.init(self, .{
-            .gl_area = @ptrCast(*c.GtkGLArea, gl_area),
-            .title_label = @ptrCast(*c.GtkLabel, label),
-        });
-        errdefer surface.deinit();
-        if (c.gtk_notebook_append_page(notebook, gl_area, label) < 0) {
-            log.warn("failed to add surface to notebook", .{});
-            return error.GtkAppendPageFailed;
-        }
-
-        // The notebook is our main child
-        c.gtk_window_set_child(gtk_window, notebook_widget);
-
-        // We need to grab focus after it is added to the window. When
-        // creating a window we want to always focus on the widget.
-        const widget = @ptrCast(*c.GtkWidget, gl_area);
-        _ = c.gtk_widget_grab_focus(widget);
+    fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+        _ = ud;
+        log.warn("CLICK", .{});
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
@@ -199,6 +172,109 @@ pub const App = struct {
         // stderr that we don't want. We emit a debug log just so that we know
         // we reached this point.
         log.debug("application activated", .{});
+    }
+};
+
+/// The state for a single, real GTK window.
+const Window = struct {
+    app: *App,
+
+    /// The notebook (tab grouping) for this window.
+    notebook: *c.GtkNotebook,
+
+    pub fn init(self: *Window, app: *App) !void {
+        // Set up our own state
+        self.* = .{
+            .app = app,
+            .notebook = undefined,
+        };
+
+        // Create the window
+        const window = c.gtk_application_window_new(app.app);
+        const gtk_window = @ptrCast(*c.GtkWindow, window);
+        errdefer c.gtk_window_destroy(gtk_window);
+        c.gtk_window_set_title(gtk_window, "Ghostty");
+        c.gtk_window_set_default_size(gtk_window, 200, 200);
+        c.gtk_widget_show(window);
+        _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+
+        // Create a notebook to hold our tabs.
+        const notebook_widget = c.gtk_notebook_new();
+        const notebook = @ptrCast(*c.GtkNotebook, notebook_widget);
+        self.notebook = notebook;
+        c.gtk_notebook_set_tab_pos(notebook, c.GTK_POS_TOP);
+
+        // Create our add button for new tabs
+        const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
+        c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
+        _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
+
+        // The notebook is our main child
+        c.gtk_window_set_child(gtk_window, notebook_widget);
+
+        // Add our tab
+        try self.newTab();
+    }
+
+    pub fn deinit(self: *Window) void {
+        // Notify our app we're gone.
+        // TODO
+        _ = self;
+    }
+
+    /// Add a new tab to this window.
+    pub fn newTab(self: *Window) !void {
+        // Grab a surface allocation we'll need it later.
+        var surface = try self.app.core_app.alloc.create(Surface);
+        errdefer self.app.core_app.alloc.destroy(surface);
+
+        // Initialize the GtkGLArea and attach it to our surface.
+        // The surface starts in the "unrealized" state because we have to
+        // wait for the "realize" callback from GTK to know that the OpenGL
+        // context is ready. See Surface docs for more info.
+        const gl_area = c.gtk_gl_area_new();
+        const label = c.gtk_label_new("Ghostty");
+        try surface.init(self.app, .{
+            .gl_area = @ptrCast(*c.GtkGLArea, gl_area),
+            .title_label = @ptrCast(*c.GtkLabel, label),
+        });
+        errdefer surface.deinit();
+        const page = c.gtk_notebook_append_page(self.notebook, gl_area, label);
+        if (page < 0) {
+            log.warn("failed to add surface to notebook", .{});
+            return error.GtkAppendPageFailed;
+        }
+
+        // Switch to the new tab
+        c.gtk_notebook_set_current_page(self.notebook, page);
+
+        // We need to grab focus after it is added to the window. When
+        // creating a window we want to always focus on the widget.
+        const widget = @ptrCast(*c.GtkWidget, gl_area);
+        _ = c.gtk_widget_grab_focus(widget);
+    }
+
+    fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.newTab() catch |err| {
+            log.warn("error adding new tab: {}", .{err});
+            return;
+        };
+    }
+
+    /// "destroy" signal for the window
+    fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+        _ = v;
+        log.debug("window destroy", .{});
+
+        const self = userdataSelf(ud.?);
+        const alloc = self.app.core_app.alloc;
+        self.deinit();
+        alloc.destroy(self);
+    }
+
+    fn userdataSelf(ud: *anyopaque) *Window {
+        return @ptrCast(*Window, @alignCast(@alignOf(Window), ud));
     }
 };
 
