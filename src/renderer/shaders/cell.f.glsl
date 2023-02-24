@@ -42,7 +42,7 @@ void main() {
 
     case MODE_FG:
         a = texture(text, glyph_tex_coords).r;
-        out_FragColor = vec4(color.rgb, color.a*a);
+        out_FragColor = vec4(color.rgb*a, color.a*a);
         break;
 
     case MODE_FG_COLOR:

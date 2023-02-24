@@ -369,9 +369,12 @@ pub fn windowInit(win: apprt.runtime.Window) !void {
     const self: OpenGL = undefined;
     try self.threadEnter(win);
 
-    // Blending for text
+    // Blending for text. We use GL_ONE here because we should be using
+    // premultiplied alpha for all our colors in our fragment shaders.
+    // This avoids having a blurry border where transparency is expected on
+    // pixels.
     try gl.enable(gl.c.GL_BLEND);
-    try gl.blendFunc(gl.c.GL_SRC_ALPHA, gl.c.GL_ONE_MINUS_SRC_ALPHA);
+    try gl.blendFunc(gl.c.GL_ONE, gl.c.GL_ONE_MINUS_SRC_ALPHA);
 
     // These are very noisy so this is commented, but easy to uncomment
     // whenever we need to check the OpenGL extension list
