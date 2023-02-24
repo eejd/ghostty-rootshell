@@ -88,7 +88,7 @@ pub fn main() !void {
         }
     }
     try config.finalize();
-    std.log.debug("config={}", .{config});
+    //std.log.debug("config={}", .{config});
 
     // Create our app state
     var app = try App.create(alloc, &config);
