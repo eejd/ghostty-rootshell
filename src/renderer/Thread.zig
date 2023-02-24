@@ -10,6 +10,7 @@ const apprt = @import("../apprt.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const tracy = @import("tracy");
 const trace = tracy.trace;
+const App = @import("../App.zig");
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
@@ -47,8 +48,8 @@ cursor_h: xev.Timer,
 cursor_c: xev.Completion = .{},
 cursor_c_cancel: xev.Completion = .{},
 
-/// The window  we're rendering to.
-window: apprt.runtime.Window,
+/// The surface we're rendering to.
+surface: *apprt.Surface,
 
 /// The underlying renderer implementation.
 renderer: *renderer.Renderer,
@@ -60,14 +61,18 @@ state: *renderer.State,
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: *Mailbox,
 
+/// Mailbox to send messages to the app thread
+app_mailbox: App.Mailbox,
+
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
 /// is up to the caller to start the thread with the threadMain entrypoint.
 pub fn init(
     alloc: Allocator,
-    win: apprt.runtime.Window,
+    surface: *apprt.Surface,
     renderer_impl: *renderer.Renderer,
     state: *renderer.State,
+    app_mailbox: App.Mailbox,
 ) !Thread {
     // Create our event loop.
     var loop = try xev.Loop.init(.{});
@@ -100,10 +105,11 @@ pub fn init(
         .stop = stop_h,
         .render_h = render_h,
         .cursor_h = cursor_timer,
-        .window = win,
+        .surface = surface,
         .renderer = renderer_impl,
         .state = state,
         .mailbox = mailbox,
+        .app_mailbox = app_mailbox,
     };
 }
 
@@ -135,7 +141,7 @@ fn threadMain_(self: *Thread) !void {
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
     // some thread-local state since that is how it works.
-    try self.renderer.threadEnter(self.window);
+    try self.renderer.threadEnter(self.surface);
     defer self.renderer.threadExit();
 
     // Start the async handlers
@@ -305,8 +311,17 @@ fn renderCallback(
         return .disarm;
     };
 
-    t.renderer.render(t.window, t.state) catch |err|
+    t.renderer.render(t.surface, t.state) catch |err|
         log.warn("error rendering err={}", .{err});
+
+    // If we're doing single-threaded GPU calls then we also wake up the
+    // app thread to redraw at this point.
+    if (renderer.Renderer == renderer.OpenGL and
+        renderer.OpenGL.single_threaded_draw)
+    {
+        _ = t.app_mailbox.push(.{ .redraw_surface = t.surface }, .{ .instant = {} });
+    }
+
     return .disarm;
 }
 

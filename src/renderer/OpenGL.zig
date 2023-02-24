@@ -18,18 +18,28 @@ const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const lru = @import("../lru.zig");
 const DevMode = @import("../DevMode.zig");
-const Window = @import("../Window.zig");
+const Surface = @import("../Surface.zig");
 
 const log = std.log.scoped(.grid);
 
-// The LRU is keyed by (screen, row_id) since we need to cache rows
-// separately for alt screens. By storing that in the key, we very likely
-// have the cache already for when the primary screen is reactivated.
+/// The LRU is keyed by (screen, row_id) since we need to cache rows
+/// separately for alt screens. By storing that in the key, we very likely
+/// have the cache already for when the primary screen is reactivated.
 const CellsLRU = lru.AutoHashMap(struct {
     selection: ?terminal.Selection,
     screen: terminal.Terminal.ScreenType,
     row_id: terminal.Screen.RowHeader.Id,
 }, std.ArrayListUnmanaged(GPUCell));
+
+/// The runtime can request a single-threaded draw by setting this boolean
+/// to true. In this case, the renderer.draw() call is expected to be called
+/// from the runtime.
+pub const single_threaded_draw = if (@hasDecl(apprt.Surface, "opengl_single_threaded_draw"))
+    apprt.Surface.opengl_single_threaded_draw
+else
+    false;
+const DrawMutex = if (single_threaded_draw) std.Thread.Mutex else void;
+const drawMutexZero = if (DrawMutex == void) void{} else .{};
 
 alloc: std.mem.Allocator,
 
@@ -89,7 +99,77 @@ focused: bool,
 padding: renderer.Options.Padding,
 
 /// The mailbox for communicating with the window.
-window_mailbox: Window.Mailbox,
+surface_mailbox: apprt.surface.Mailbox,
+
+/// Deferred operations. This is used to apply changes to the OpenGL context.
+/// Some runtimes (GTK) do not support multi-threading so to keep our logic
+/// simple we apply all OpenGL context changes in the render() call.
+deferred_screen_size: ?SetScreenSize = null,
+deferred_font_size: ?SetFontSize = null,
+
+/// If we're drawing with single threaded operations
+draw_mutex: DrawMutex = drawMutexZero,
+
+/// Current background to draw. This may not match self.background if the
+/// terminal is in reversed mode.
+draw_background: terminal.color.RGB,
+
+/// Defererred OpenGL operation to update the screen size.
+const SetScreenSize = struct {
+    size: renderer.ScreenSize,
+
+    fn apply(self: SetScreenSize, r: *const OpenGL) !void {
+        // Apply our padding
+        const padding = r.padding.explicit.add(if (r.padding.balance)
+            renderer.Padding.balanced(self.size, r.gridSize(self.size), r.cell_size)
+        else
+            .{});
+        const padded_size = self.size.subPadding(padding);
+
+        log.debug("GL api: screen size padded={} screen={} grid={} cell={} padding={}", .{
+            padded_size,
+            self.size,
+            r.gridSize(self.size),
+            r.cell_size,
+            r.padding.explicit,
+        });
+
+        // Update our viewport for this context to be the entire window.
+        // OpenGL works in pixels, so we have to use the pixel size.
+        try gl.viewport(
+            0,
+            0,
+            @intCast(i32, self.size.width),
+            @intCast(i32, self.size.height),
+        );
+
+        // Update the projection uniform within our shader
+        try r.program.setUniform(
+            "projection",
+
+            // 2D orthographic projection with the full w/h
+            math.ortho2d(
+                -1 * padding.left,
+                @intToFloat(f32, padded_size.width) + padding.right,
+                @intToFloat(f32, padded_size.height) + padding.bottom,
+                -1 * padding.top,
+            ),
+        );
+    }
+};
+
+const SetFontSize = struct {
+    metrics: font.face.Metrics,
+
+    fn apply(self: SetFontSize, r: *const OpenGL) !void {
+        try r.program.setUniform(
+            "cell_size",
+            @Vector(2, f32){ self.metrics.cell_width, self.metrics.cell_height },
+        );
+        try r.program.setUniform("strikethrough_position", self.metrics.strikethrough_position);
+        try r.program.setUniform("strikethrough_thickness", self.metrics.strikethrough_thickness);
+    }
+};
 
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
@@ -173,14 +253,11 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     );
 
     // Setup our font metrics uniform
-    const metrics = try resetFontMetrics(alloc, program, options.font_group);
+    const metrics = try resetFontMetrics(alloc, options.font_group);
 
     // Set our cell dimensions
     const pbind = try program.use();
     defer pbind.unbind();
-    try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("strikethrough_position", metrics.strikethrough_position);
-    try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
 
     // Set all of our texture indexes
     try program.setUniform("text", 0);
@@ -301,6 +378,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .cursor_color = if (options.config.@"cursor-color") |col| col.toTerminalRGB() else null,
         .background = options.config.background.toTerminalRGB(),
         .foreground = options.config.foreground.toTerminalRGB(),
+        .draw_background = options.config.background.toTerminalRGB(),
         .selection_background = if (options.config.@"selection-background") |bg|
             bg.toTerminalRGB()
         else
@@ -311,7 +389,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
             null,
         .focused = true,
         .padding = options.padding,
-        .window_mailbox = options.window_mailbox,
+        .surface_mailbox = options.surface_mailbox,
+        .deferred_font_size = .{ .metrics = metrics },
     };
 }
 
@@ -362,12 +441,26 @@ pub fn glfwWindowHints() glfw.Window.Hints {
     };
 }
 
-/// This is called early right after window creation to setup our
-/// window surface as necessary.
-pub fn windowInit(win: apprt.runtime.Window) !void {
+/// This is called early right after surface creation.
+pub fn surfaceInit(surface: *apprt.Surface) !void {
     // Treat this like a thread entry
     const self: OpenGL = undefined;
-    try self.threadEnter(win);
+
+    switch (apprt.runtime) {
+        else => @compileError("unsupported app runtime for OpenGL"),
+
+        apprt.gtk => {
+            // GTK uses global OpenGL context so we load from null.
+            const version = try gl.glad.load(null);
+            errdefer gl.glad.unload();
+            log.info("loaded OpenGL {}.{}", .{
+                gl.glad.versionMajor(@intCast(c_uint, version)),
+                gl.glad.versionMinor(@intCast(c_uint, version)),
+            });
+        },
+
+        apprt.glfw => try self.threadEnter(surface),
+    }
 
     // Blending for text. We use GL_ONE here because we should be using
     // premultiplied alpha for all our colors in our fragment shaders.
@@ -388,19 +481,19 @@ pub fn windowInit(win: apprt.runtime.Window) !void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeWindowInit(self: *const OpenGL, win: apprt.runtime.Window) !void {
+pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
-    _ = win;
+    _ = surface;
 }
 
 /// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const OpenGL, win: apprt.runtime.Window) !void {
+pub fn initDevMode(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
 
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, win.window.handle),
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, surface.window.handle),
             true,
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
@@ -418,34 +511,58 @@ pub fn deinitDevMode(self: *const OpenGL) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(self: *const OpenGL, win: apprt.runtime.Window) !void {
+pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
 
-    // We need to make the OpenGL context current. OpenGL requires
-    // that a single thread own the a single OpenGL context (if any). This
-    // ensures that the context switches over to our thread. Important:
-    // the prior thread MUST have detached the context prior to calling
-    // this entrypoint.
-    glfw.makeContextCurrent(win.window);
-    errdefer glfw.makeContextCurrent(null);
-    glfw.swapInterval(1);
+    switch (apprt.runtime) {
+        else => @compileError("unsupported app runtime for OpenGL"),
 
-    // Load OpenGL bindings. This API is context-aware so this sets
-    // a threadlocal context for these pointers.
-    const version = try gl.glad.load(&glfw.getProcAddress);
-    errdefer gl.glad.unload();
-    log.info("loaded OpenGL {}.{}", .{
-        gl.glad.versionMajor(@intCast(c_uint, version)),
-        gl.glad.versionMinor(@intCast(c_uint, version)),
-    });
+        apprt.gtk => {
+            // GTK doesn't support threaded OpenGL operations as far as I can
+            // tell, so we use the renderer thread to setup all the state
+            // but then do the actual draws and texture syncs and all that
+            // on the main thread. As such, we don't do anything here.
+        },
+
+        apprt.glfw => {
+            // We need to make the OpenGL context current. OpenGL requires
+            // that a single thread own the a single OpenGL context (if any). This
+            // ensures that the context switches over to our thread. Important:
+            // the prior thread MUST have detached the context prior to calling
+            // this entrypoint.
+            glfw.makeContextCurrent(surface.window);
+            errdefer glfw.makeContextCurrent(null);
+            glfw.swapInterval(1);
+
+            // Load OpenGL bindings. This API is context-aware so this sets
+            // a threadlocal context for these pointers.
+            const version = try gl.glad.load(&glfw.getProcAddress);
+            errdefer gl.glad.unload();
+            log.info("loaded OpenGL {}.{}", .{
+                gl.glad.versionMajor(@intCast(c_uint, version)),
+                gl.glad.versionMinor(@intCast(c_uint, version)),
+            });
+        },
+    }
 }
 
 /// Callback called by renderer.Thread when it exits.
 pub fn threadExit(self: *const OpenGL) void {
     _ = self;
 
-    gl.glad.unload();
-    glfw.makeContextCurrent(null);
+    switch (apprt.runtime) {
+        else => @compileError("unsupported app runtime for OpenGL"),
+
+        apprt.gtk => {
+            // We don't need to do any unloading for GTK because we may
+            // be sharing the global bindings with other windows.
+        },
+
+        apprt.glfw => {
+            gl.glad.unload();
+            glfw.makeContextCurrent(null);
+        },
+    }
 }
 
 /// Callback when the focus changes for the terminal this is rendering.
@@ -466,6 +583,9 @@ pub fn blinkCursor(self: *OpenGL, reset: bool) void {
 ///
 /// Must be called on the render thread.
 pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
     log.info("set font size={}", .{size});
 
     // Set our new size, this will also reset our font atlas.
@@ -475,7 +595,10 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     self.resetCellsLRU();
 
     // Reset our GPU uniforms
-    const metrics = try resetFontMetrics(self.alloc, self.program, self.font_group);
+    const metrics = try resetFontMetrics(self.alloc, self.font_group);
+
+    // Defer our GPU updates
+    self.deferred_font_size = .{ .metrics = metrics };
 
     // Recalculate our cell size. If it is the same as before, then we do
     // nothing since the grid size couldn't have possibly changed.
@@ -484,7 +607,7 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     self.cell_size = new_cell_size;
 
     // Notify the window that the cell size changed.
-    _ = self.window_mailbox.push(.{
+    _ = self.surface_mailbox.push(.{
         .cell_size = new_cell_size,
     }, .{ .forever = {} });
 }
@@ -493,7 +616,6 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
 /// down to the GPU.
 fn resetFontMetrics(
     alloc: Allocator,
-    program: gl.Program,
     font_group: *font.GroupCache,
 ) !font.face.Metrics {
     // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
@@ -514,20 +636,13 @@ fn resetFontMetrics(
         .underline_position = @floatToInt(u32, metrics.underline_position),
     };
 
-    // Set our uniforms that rely on metrics
-    const pbind = try program.use();
-    defer pbind.unbind();
-    try program.setUniform("cell_size", @Vector(2, f32){ metrics.cell_width, metrics.cell_height });
-    try program.setUniform("strikethrough_position", metrics.strikethrough_position);
-    try program.setUniform("strikethrough_thickness", metrics.strikethrough_thickness);
-
     return metrics;
 }
 
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *OpenGL,
-    win: apprt.runtime.Window,
+    surface: *apprt.Surface,
     state: *renderer.State,
 ) !void {
     // Data we extract out of the critical area.
@@ -568,12 +683,14 @@ pub fn render(
 
         // Build our devmode draw data
         const devmode_data = devmode_data: {
-            if (state.devmode) |dm| {
-                if (dm.visible) {
-                    imgui.ImplOpenGL3.newFrame();
-                    imgui.ImplGlfw.newFrame();
-                    try dm.update();
-                    break :devmode_data try dm.render();
+            if (DevMode.enabled) {
+                if (state.devmode) |dm| {
+                    if (dm.visible) {
+                        imgui.ImplOpenGL3.newFrame();
+                        imgui.ImplGlfw.newFrame();
+                        try dm.update();
+                        break :devmode_data try dm.render();
+                    }
                 }
             }
 
@@ -613,37 +730,42 @@ pub fn render(
     };
     defer critical.screen.deinit();
 
-    // Build our GPU cells
-    try self.rebuildCells(
-        critical.active_screen,
-        critical.selection,
-        &critical.screen,
-        critical.draw_cursor,
-    );
+    // Grab our draw mutex if we have it and update our data
+    {
+        if (single_threaded_draw) self.draw_mutex.lock();
+        defer if (single_threaded_draw) self.draw_mutex.unlock();
 
-    // Try to flush our atlas, this will only do something if there
-    // are changes to the atlas.
-    try self.flushAtlas();
+        // Set our draw data
+        self.draw_background = critical.gl_bg;
 
-    // Clear the surface
-    gl.clearColor(
-        @intToFloat(f32, critical.gl_bg.r) / 255,
-        @intToFloat(f32, critical.gl_bg.g) / 255,
-        @intToFloat(f32, critical.gl_bg.b) / 255,
-        1.0,
-    );
-    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
+        // Build our GPU cells
+        try self.rebuildCells(
+            critical.active_screen,
+            critical.selection,
+            &critical.screen,
+            critical.draw_cursor,
+        );
+    }
 
-    // We're out of the critical path now. Let's first render our terminal.
+    // We're out of the critical path now. Let's render. We only render if
+    // we're not single threaded. If we're single threaded we expect the
+    // runtime to call draw.
+    if (single_threaded_draw) return;
+
     try self.draw();
 
     // If we have devmode, then render that
-    if (critical.devmode_data) |data| {
-        imgui.ImplOpenGL3.renderDrawData(data);
+    if (DevMode.enabled) {
+        if (critical.devmode_data) |data| {
+            imgui.ImplOpenGL3.renderDrawData(data);
+        }
     }
 
     // Swap our window buffers
-    win.window.swapBuffers();
+    switch (apprt.runtime) {
+        else => @compileError("unsupported runtime"),
+        apprt.glfw => surface.window.swapBuffers(),
+    }
 }
 
 /// rebuildCells rebuilds all the GPU cells from our CPU state. This is a
@@ -1050,7 +1172,7 @@ pub fn updateCell(
 
 /// Returns the grid size for a given screen size. This is safe to call
 /// on any thread.
-fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
+fn gridSize(self: *const OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
     return renderer.GridSize.init(
         screen_size.subPadding(self.padding.explicit),
         self.cell_size,
@@ -1060,17 +1182,13 @@ fn gridSize(self: *OpenGL, screen_size: renderer.ScreenSize) renderer.GridSize {
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
 pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);
 
-    // Apply our padding
-    const padding = self.padding.explicit.add(if (self.padding.balance)
-        renderer.Padding.balanced(dim, grid_size, self.cell_size)
-    else .{});
-    const padded_dim = dim.subPadding(padding);
-
-    log.debug("screen size padded={} screen={} grid={} cell={} padding={}", .{
-        padded_dim,
+    log.debug("screen size screen={} grid={} cell={} padding={}", .{
         dim,
         grid_size,
         self.cell_size,
@@ -1092,31 +1210,8 @@ pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     self.alloc.free(self.font_shaper.cell_buf);
     self.font_shaper.cell_buf = shape_buf;
 
-    // Update our viewport for this context to be the entire window.
-    // OpenGL works in pixels, so we have to use the pixel size.
-    try gl.viewport(
-        0,
-        0,
-        @intCast(i32, dim.width),
-        @intCast(i32, dim.height),
-    );
-
-    // Update the projection uniform within our shader
-    {
-        const bind = try self.program.use();
-        defer bind.unbind();
-        try self.program.setUniform(
-            "projection",
-
-            // 2D orthographic projection with the full w/h
-            math.ortho2d(
-                -1 * padding.left,
-                @intToFloat(f32, padded_dim.width) + padding.right,
-                @intToFloat(f32, padded_dim.height) + padding.bottom,
-                -1 * padding.top,
-            ),
-        );
-    }
+    // Defer our OpenGL updates
+    self.deferred_screen_size = .{ .size = dim };
 }
 
 /// Updates the font texture atlas if it is dirty.
@@ -1196,8 +1291,25 @@ pub fn draw(self: *OpenGL) !void {
     const t = trace(@src());
     defer t.end();
 
+    // If we're in single-threaded more we grab a lock since we use shared data.
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
     // If we have no cells to render, then we render nothing.
     if (self.cells.items.len == 0) return;
+
+    // Try to flush our atlas, this will only do something if there
+    // are changes to the atlas.
+    try self.flushAtlas();
+
+    // Clear the surface
+    gl.clearColor(
+        @intToFloat(f32, self.draw_background.r) / 255,
+        @intToFloat(f32, self.draw_background.g) / 255,
+        @intToFloat(f32, self.draw_background.b) / 255,
+        1.0,
+    );
+    gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // Setup our VAO
     try self.vao.bind();
@@ -1223,6 +1335,16 @@ pub fn draw(self: *OpenGL) !void {
     // Pick our shader to use
     const pbind = try self.program.use();
     defer pbind.unbind();
+
+    // If we have deferred operations, run them.
+    if (self.deferred_screen_size) |v| {
+        try v.apply(self);
+        self.deferred_screen_size = null;
+    }
+    if (self.deferred_font_size) |v| {
+        try v.apply(self);
+        self.deferred_font_size = null;
+    }
 
     try self.drawCells(binding, self.cells_bg);
     try self.drawCells(binding, self.cells);

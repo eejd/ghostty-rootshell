@@ -12,7 +12,7 @@ const objc = @import("objc");
 const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
-const CoreWindow = @import("../Window.zig");
+const CoreSurface = @import("../Surface.zig");
 
 const log = std.log.scoped(.embedded_window);
 
@@ -46,30 +46,57 @@ pub const App = struct {
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8) callconv(.C) void,
     };
 
+    core_app: *CoreApp,
     opts: Options,
 
-    pub fn init(opts: Options) !App {
-        return .{ .opts = opts };
+    pub fn init(core_app: *CoreApp, opts: Options) !App {
+        return .{ .core_app = core_app, .opts = opts };
     }
 
     pub fn terminate(self: App) void {
         _ = self;
     }
 
-    pub fn wakeup(self: App) !void {
+    pub fn wakeup(self: App) void {
         self.opts.wakeup(self.opts.userdata);
     }
 
     pub fn wait(self: App) !void {
         _ = self;
     }
+
+    /// Create a new surface for the app.
+    fn newSurface(self: *App, opts: Surface.Options) !*Surface {
+        // Grab a surface allocation because we're going to need it.
+        var surface = try self.core_app.alloc.create(Surface);
+        errdefer self.core_app.alloc.destroy(surface);
+
+        // Create the surface -- because windows are surfaces for glfw.
+        try surface.init(self, opts);
+        errdefer surface.deinit();
+
+        return surface;
+    }
+
+    /// Close the given surface.
+    pub fn closeSurface(self: *App, surface: *Surface) void {
+        surface.deinit();
+        self.core_app.alloc.destroy(surface);
+    }
+
+    pub fn redrawSurface(self: *App, surface: *Surface) void {
+        _ = self;
+        _ = surface;
+        // No-op, we use a threaded interface so we're constantly drawing.
+    }
 };
 
-pub const Window = struct {
+pub const Surface = struct {
+    app: *App,
     nsview: objc.Object,
-    core_win: *CoreWindow,
+    core_surface: CoreSurface,
     content_scale: apprt.ContentScale,
-    size: apprt.WindowSize,
+    size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
     opts: Options,
 
@@ -84,11 +111,10 @@ pub const Window = struct {
         scale_factor: f64 = 1,
     };
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
-        _ = app;
-
-        return .{
-            .core_win = core_win,
+    pub fn init(self: *Surface, app: *App, opts: Options) !void {
+        self.* = .{
+            .app = app,
+            .core_surface = undefined,
             .nsview = objc.Object.fromId(opts.nsview),
             .content_scale = .{
                 .x = @floatCast(f32, opts.scale_factor),
@@ -98,104 +124,122 @@ pub const Window = struct {
             .cursor_pos = .{ .x = 0, .y = 0 },
             .opts = opts,
         };
+
+        // Add ourselves to the list of surfaces on the app.
+        try app.core_app.addSurface(self);
+        errdefer app.core_app.deleteSurface(self);
+
+        // Initialize our surface right away. We're given a view that is
+        // ready to use.
+        try self.core_surface.init(
+            app.core_app.alloc,
+            app.core_app.config,
+            .{ .rt_app = app, .mailbox = &app.core_app.mailbox },
+            self,
+        );
+        errdefer self.core_surface.deinit();
     }
 
-    pub fn deinit(self: *Window) void {
-        _ = self;
+    pub fn deinit(self: *Surface) void {
+        // Remove ourselves from the list of known surfaces in the app.
+        self.app.core_app.deleteSurface(self);
+
+        // Clean up our core surface so that all the rendering and IO stop.
+        self.core_surface.deinit();
     }
 
-    pub fn getContentScale(self: *const Window) !apprt.ContentScale {
+    pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         return self.content_scale;
     }
 
-    pub fn getSize(self: *const Window) !apprt.WindowSize {
+    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
         return self.size;
     }
 
-    pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
+    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         _ = self;
         _ = min;
         _ = max_;
     }
 
-    pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
-        self.core_win.app.runtime.opts.set_title(
+    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+        self.app.opts.set_title(
             self.opts.userdata,
             slice.ptr,
         );
     }
 
-    pub fn getClipboardString(self: *const Window) ![:0]const u8 {
-        const ptr = self.core_win.app.runtime.opts.read_clipboard(self.opts.userdata);
+    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
+        const ptr = self.app.opts.read_clipboard(self.opts.userdata);
         return std.mem.sliceTo(ptr, 0);
     }
 
-    pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
-        self.core_win.app.runtime.opts.write_clipboard(self.opts.userdata, val.ptr);
+    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
+        self.app.opts.write_clipboard(self.opts.userdata, val.ptr);
     }
 
-    pub fn setShouldClose(self: *Window) void {
+    pub fn setShouldClose(self: *Surface) void {
         _ = self;
     }
 
-    pub fn shouldClose(self: *const Window) bool {
+    pub fn shouldClose(self: *const Surface) bool {
         _ = self;
         return false;
     }
 
-    pub fn getCursorPos(self: *const Window) !apprt.CursorPos {
+    pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
         return self.cursor_pos;
     }
 
-    pub fn refresh(self: *Window) void {
-        self.core_win.refreshCallback() catch |err| {
+    pub fn refresh(self: *Surface) void {
+        self.core_surface.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
             return;
         };
     }
 
-    pub fn updateContentScale(self: *Window, x: f64, y: f64) void {
+    pub fn updateContentScale(self: *Surface, x: f64, y: f64) void {
         self.content_scale = .{
             .x = @floatCast(f32, x),
             .y = @floatCast(f32, y),
         };
     }
 
-    pub fn updateSize(self: *Window, width: u32, height: u32) void {
+    pub fn updateSize(self: *Surface, width: u32, height: u32) void {
         self.size = .{
             .width = width,
             .height = height,
         };
 
         // Call the primary callback.
-        self.core_win.sizeCallback(self.size) catch |err| {
+        self.core_surface.sizeCallback(self.size) catch |err| {
             log.err("error in size callback err={}", .{err});
             return;
         };
     }
 
     pub fn mouseButtonCallback(
-        self: *const Window,
+        self: *Surface,
         action: input.MouseButtonState,
         button: input.MouseButton,
         mods: input.Mods,
     ) void {
-        self.core_win.mouseButtonCallback(action, button, mods) catch |err| {
+        self.core_surface.mouseButtonCallback(action, button, mods) catch |err| {
             log.err("error in mouse button callback err={}", .{err});
             return;
         };
     }
 
-    pub fn scrollCallback(self: *const Window, xoff: f64, yoff: f64) void {
-        self.core_win.scrollCallback(xoff, yoff) catch |err| {
+    pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) void {
+        self.core_surface.scrollCallback(xoff, yoff) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
     }
 
-    pub fn cursorPosCallback(self: *Window, x: f64, y: f64) void {
+    pub fn cursorPosCallback(self: *Surface, x: f64, y: f64) void {
         // Convert our unscaled x/y to scaled.
-        self.cursor_pos = self.core_win.window.cursorPosToPixels(.{
+        self.cursor_pos = self.cursorPosToPixels(.{
             .x = @floatCast(f32, x),
             .y = @floatCast(f32, y),
         }) catch |err| {
@@ -206,35 +250,35 @@ pub const Window = struct {
             return;
         };
 
-        self.core_win.cursorPosCallback(self.cursor_pos) catch |err| {
+        self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
             log.err("error in cursor pos callback err={}", .{err});
             return;
         };
     }
 
     pub fn keyCallback(
-        self: *const Window,
+        self: *Surface,
         action: input.Action,
         key: input.Key,
         mods: input.Mods,
     ) void {
         // log.warn("key action={} key={} mods={}", .{ action, key, mods });
-        self.core_win.keyCallback(action, key, mods) catch |err| {
+        self.core_surface.keyCallback(action, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
     }
 
-    pub fn charCallback(self: *const Window, cp_: u32) void {
+    pub fn charCallback(self: *Surface, cp_: u32) void {
         const cp = std.math.cast(u21, cp_) orelse return;
-        self.core_win.charCallback(cp) catch |err| {
+        self.core_surface.charCallback(cp) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
         };
     }
 
-    pub fn focusCallback(self: *const Window, focused: bool) void {
-        self.core_win.focusCallback(focused) catch |err| {
+    pub fn focusCallback(self: *Surface, focused: bool) void {
+        self.core_surface.focusCallback(focused) catch |err| {
             log.err("error in focus callback err={}", .{err});
             return;
         };
@@ -242,8 +286,157 @@ pub const Window = struct {
 
     /// The cursor position from the host directly is in screen coordinates but
     /// all our interface works in pixels.
-    fn cursorPosToPixels(self: *const Window, pos: apprt.CursorPos) !apprt.CursorPos {
+    fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
+    }
+};
+
+// C API
+pub const CAPI = struct {
+    const global = &@import("../main.zig").state;
+    const Config = @import("../config.zig").Config;
+
+    /// Create a new app.
+    export fn ghostty_app_new(
+        opts: *const apprt.runtime.App.Options,
+        config: *const Config,
+    ) ?*App {
+        return app_new_(opts, config) catch |err| {
+            log.err("error initializing app err={}", .{err});
+            return null;
+        };
+    }
+
+    fn app_new_(
+        opts: *const apprt.runtime.App.Options,
+        config: *const Config,
+    ) !*App {
+        var core_app = try CoreApp.create(global.alloc, config);
+        errdefer core_app.destroy();
+
+        // Create our runtime app
+        var app = try global.alloc.create(App);
+        errdefer global.alloc.destroy(app);
+        app.* = try App.init(core_app, opts.*);
+        errdefer app.terminate();
+
+        return app;
+    }
+
+    /// Tick the event loop. This should be called whenever the "wakeup"
+    /// callback is invoked for the runtime.
+    export fn ghostty_app_tick(v: *App) void {
+        _ = v.core_app.tick(v) catch |err| {
+            log.err("error app tick err={}", .{err});
+        };
+    }
+
+    /// Return the userdata associated with the app.
+    export fn ghostty_app_userdata(v: *App) ?*anyopaque {
+        return v.opts.userdata;
+    }
+
+    export fn ghostty_app_free(v: *App) void {
+        const core_app = v.core_app;
+        v.terminate();
+        global.alloc.destroy(v);
+        core_app.destroy();
+    }
+
+    /// Create a new surface as part of an app.
+    export fn ghostty_surface_new(
+        app: *App,
+        opts: *const apprt.Surface.Options,
+    ) ?*Surface {
+        return surface_new_(app, opts) catch |err| {
+            log.err("error initializing surface err={}", .{err});
+            return null;
+        };
+    }
+
+    fn surface_new_(
+        app: *App,
+        opts: *const apprt.Surface.Options,
+    ) !*Surface {
+        return try app.newSurface(opts.*);
+    }
+
+    export fn ghostty_surface_free(ptr: *Surface) void {
+        ptr.app.closeSurface(ptr);
+    }
+
+    /// Returns the app associated with a surface.
+    export fn ghostty_surface_app(surface: *Surface) *App {
+        return surface.app;
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_refresh(surface: *Surface) void {
+        surface.refresh();
+    }
+
+    /// Update the size of a surface. This will trigger resize notifications
+    /// to the pty and the renderer.
+    export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {
+        surface.updateSize(w, h);
+    }
+
+    /// Update the content scale of the surface.
+    export fn ghostty_surface_set_content_scale(surface: *Surface, x: f64, y: f64) void {
+        surface.updateContentScale(x, y);
+    }
+
+    /// Update the focused state of a surface.
+    export fn ghostty_surface_set_focus(surface: *Surface, focused: bool) void {
+        surface.focusCallback(focused);
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_key(
+        surface: *Surface,
+        action: input.Action,
+        key: input.Key,
+        mods: c_int,
+    ) void {
+        surface.keyCallback(
+            action,
+            key,
+            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
+        );
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_char(surface: *Surface, codepoint: u32) void {
+        surface.charCallback(codepoint);
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    export fn ghostty_surface_mouse_button(
+        surface: *Surface,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: c_int,
+    ) void {
+        surface.mouseButtonCallback(
+            action,
+            button,
+            @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
+        );
+    }
+
+    /// Update the mouse position within the view.
+    export fn ghostty_surface_mouse_pos(surface: *Surface, x: f64, y: f64) void {
+        surface.cursorPosCallback(x, y);
+    }
+
+    export fn ghostty_surface_mouse_scroll(surface: *Surface, x: f64, y: f64) void {
+        surface.scrollCallback(x, y);
+    }
+
+    export fn ghostty_surface_ime_point(surface: *Surface, x: *f64, y: *f64) void {
+        const pos = surface.core_surface.imePoint();
+        x.* = pos.x;
+        y.* = pos.y;
     }
 };

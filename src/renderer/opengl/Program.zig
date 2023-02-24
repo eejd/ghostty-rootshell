@@ -69,6 +69,7 @@ pub inline fn link(p: Program) !void {
 
 pub inline fn use(p: Program) !Binding {
     glad.context.UseProgram.?(p.id);
+    try errors.getError();
     return Binding{};
 }
 

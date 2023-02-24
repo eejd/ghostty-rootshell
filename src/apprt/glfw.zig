@@ -5,10 +5,12 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const trace = @import("tracy").trace;
 const glfw = @import("glfw");
+const macos = @import("macos");
 const objc = @import("objc");
 const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
@@ -16,7 +18,7 @@ const renderer = @import("../renderer.zig");
 const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
-const CoreWindow = @import("../Window.zig");
+const CoreSurface = @import("../Surface.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -26,11 +28,25 @@ const glfwNative = glfw.Native(.{
 const log = std.log.scoped(.glfw);
 
 pub const App = struct {
+    app: *CoreApp,
+
+    /// Mac-specific state.
+    darwin: if (Darwin.enabled) Darwin else void,
+
     pub const Options = struct {};
 
-    pub fn init(_: Options) !App {
+    pub fn init(core_app: *CoreApp, _: Options) !App {
         if (!glfw.init(.{})) return error.GlfwInitFailed;
-        return .{};
+        glfw.setErrorCallback(glfwErrorCallback);
+
+        // Mac-specific state. For example, on Mac we enable window tabbing.
+        var darwin = if (Darwin.enabled) try Darwin.init() else {};
+        errdefer if (Darwin.enabled) darwin.deinit();
+
+        return .{
+            .app = core_app,
+            .darwin = darwin,
+        };
     }
 
     pub fn terminate(self: App) void {
@@ -38,31 +54,170 @@ pub const App = struct {
         glfw.terminate();
     }
 
+    /// Run the event loop. This doesn't return until the app exits.
+    pub fn run(self: *App) !void {
+        while (true) {
+            // Wait for any events from the app event loop. wakeup will post
+            // an empty event so that this will return.
+            glfw.waitEvents();
+
+            // Tick the terminal app
+            const should_quit = try self.app.tick(self);
+            if (should_quit) return;
+        }
+    }
+
     /// Wakeup the event loop. This should be able to be called from any thread.
-    pub fn wakeup(self: App) !void {
+    pub fn wakeup(self: *const App) void {
         _ = self;
         glfw.postEmptyEvent();
     }
 
-    /// Wait for events in the event loop to process.
-    pub fn wait(self: App) !void {
-        _ = self;
-        glfw.waitEvents();
+    /// Create a new window for the app.
+    pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
+        _ = try self.newSurface(parent_);
     }
+
+    /// Create a new tab in the parent surface.
+    pub fn newTab(self: *App, parent: *CoreSurface) !void {
+        if (!Darwin.enabled) {
+            log.warn("tabbing is not supported on this platform", .{});
+            return;
+        }
+
+        // Create the new window
+        const window = try self.newSurface(parent);
+
+        // Add the new window the parent window
+        const parent_win = glfwNative.getCocoaWindow(parent.rt_surface.window).?;
+        const other_win = glfwNative.getCocoaWindow(window.window).?;
+        const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
+        const nswindow = objc.Object.fromId(parent_win);
+        nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
+            objc.Object.fromId(other_win),
+            NSWindowOrderingMode.above,
+        });
+
+        // Adding a new tab can cause the tab bar to appear which changes
+        // our viewport size. We need to call the size callback in order to
+        // update values. For example, we need this to set the proper mouse selection
+        // point in the grid.
+        const size = parent.rt_surface.getSize() catch |err| {
+            log.err("error querying window size for size callback on new tab err={}", .{err});
+            return;
+        };
+        parent.sizeCallback(size) catch |err| {
+            log.err("error in size callback from new tab err={}", .{err});
+            return;
+        };
+    }
+
+    fn newSurface(self: *App, parent_: ?*CoreSurface) !*Surface {
+        // Grab a surface allocation because we're going to need it.
+        var surface = try self.app.alloc.create(Surface);
+        errdefer self.app.alloc.destroy(surface);
+
+        // Create the surface -- because windows are surfaces for glfw.
+        try surface.init(self);
+        errdefer surface.deinit();
+
+        // If we have a parent, inherit some properties
+        if (self.app.config.@"window-inherit-font-size") {
+            if (parent_) |parent| {
+                surface.core_surface.setFontSize(parent.font_size);
+            }
+        }
+
+        return surface;
+    }
+
+    /// Close the given surface.
+    pub fn closeSurface(self: *App, surface: *Surface) void {
+        surface.deinit();
+        self.app.alloc.destroy(surface);
+    }
+
+    pub fn redrawSurface(self: *App, surface: *Surface) void {
+        _ = self;
+        _ = surface;
+
+        @panic("This should never be called for GLFW.");
+    }
+
+    fn glfwErrorCallback(code: glfw.ErrorCode, desc: [:0]const u8) void {
+        std.log.warn("glfw error={} message={s}", .{ code, desc });
+
+        // Workaround for: https://github.com/ocornut/imgui/issues/5908
+        // If we get an invalid value with "scancode" in the message we assume
+        // it is from the glfw key callback that imgui sets and we clear the
+        // error so that our future code doesn't crash.
+        if (code == glfw.ErrorCode.InvalidValue and
+            std.mem.indexOf(u8, desc, "scancode") != null)
+        {
+            _ = glfw.getError();
+        }
+    }
+
+    /// Mac-specific settings. This is only enabled when the target is
+    /// Mac and the artifact is a standalone exe. We don't target libs because
+    /// the embedded API doesn't do windowing.
+    const Darwin = struct {
+        const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
+
+        tabbing_id: *macos.foundation.String,
+
+        pub fn init() !Darwin {
+            const NSWindow = objc.Class.getClass("NSWindow").?;
+            NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
+
+            // Our tabbing ID allows all of our windows to group together
+            const tabbing_id = try macos.foundation.String.createWithBytes(
+                "com.mitchellh.ghostty.window",
+                .utf8,
+                false,
+            );
+            errdefer tabbing_id.release();
+
+            // Setup our Mac settings
+            return .{ .tabbing_id = tabbing_id };
+        }
+
+        pub fn deinit(self: *Darwin) void {
+            self.tabbing_id.release();
+            self.* = undefined;
+        }
+    };
 };
 
-pub const Window = struct {
+/// Surface represents the drawable surface for glfw. In glfw, a surface
+/// is always a window because that is the only abstraction that glfw exposes.
+///
+/// This means that there is no way for the glfw runtime to support tabs,
+/// splits, etc. without considerable effort. In fact, on Darwin, we do
+/// support tabs because the minimal tabbing interface is a window abstraction,
+/// but this is a bit of a hack. The native Swift runtime should be used instead
+/// which uses real native tabbing.
+///
+/// Other runtimes a surface usually represents the equivalent of a "view"
+/// or "widget" level granularity.
+pub const Surface = struct {
     /// The glfw window handle
     window: glfw.Window,
 
     /// The glfw mouse cursor handle.
     cursor: glfw.Cursor,
 
+    /// The app we're part of
+    app: *App,
+
+    /// A core surface
+    core_surface: CoreSurface,
+
     pub const Options = struct {};
 
-    pub fn init(app: *const CoreApp, core_win: *CoreWindow, opts: Options) !Window {
-        _ = opts;
-
+    /// Initialize the surface into the given self pointer. This gives a
+    /// stable pointer to the destination that can be used for callbacks.
+    pub fn init(self: *Surface, app: *App) !void {
         // Create our window
         const win = glfw.Window.create(
             640,
@@ -74,9 +229,9 @@ pub const Window = struct {
         ) orelse return glfw.mustGetErrorCode();
         errdefer win.destroy();
 
+        // Get our physical DPI - debug only because we don't have a use for
+        // this but the logging of it may be useful
         if (builtin.mode == .Debug) {
-            // Get our physical DPI - debug only because we don't have a use for
-            // this but the logging of it may be useful
             const monitor = win.getMonitor() orelse monitor: {
                 log.warn("window had null monitor, getting primary monitor", .{});
                 break :monitor glfw.Monitor.getPrimary().?;
@@ -91,8 +246,8 @@ pub const Window = struct {
             });
         }
 
-        // On Mac, enable tabbing
-        if (comptime builtin.target.isDarwin()) {
+        // On Mac, enable window tabbing
+        if (App.Darwin.enabled) {
             const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
             const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(win).?);
 
@@ -115,7 +270,7 @@ pub const Window = struct {
         }
 
         // Set our callbacks
-        win.setUserPointer(core_win);
+        win.setUserPointer(&self.core_surface);
         win.setSizeCallback(sizeCallback);
         win.setCharCallback(charCallback);
         win.setKeyCallback(keyCallback);
@@ -126,15 +281,37 @@ pub const Window = struct {
         win.setMouseButtonCallback(mouseButtonCallback);
 
         // Build our result
-        return Window{
+        self.* = .{
+            .app = app,
             .window = win,
             .cursor = cursor,
+            .core_surface = undefined,
         };
+        errdefer self.* = undefined;
+
+        // Add ourselves to the list of surfaces on the app.
+        try app.app.addSurface(self);
+        errdefer app.app.deleteSurface(self);
+
+        // Initialize our surface now that we have the stable pointer.
+        try self.core_surface.init(
+            app.app.alloc,
+            app.app.config,
+            .{ .rt_app = app, .mailbox = &app.app.mailbox },
+            self,
+        );
+        errdefer self.core_surface.deinit();
     }
 
-    pub fn deinit(self: *Window) void {
-        var tabgroup_opt: if (builtin.target.isDarwin()) ?objc.Object else void = undefined;
-        if (comptime builtin.target.isDarwin()) {
+    pub fn deinit(self: *Surface) void {
+        // Remove ourselves from the list of known surfaces in the app.
+        self.app.app.deleteSurface(self);
+
+        // Clean up our core surface so that all the rendering and IO stop.
+        self.core_surface.deinit();
+
+        var tabgroup_opt: if (App.Darwin.enabled) ?objc.Object else void = undefined;
+        if (App.Darwin.enabled) {
             const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
             const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
 
@@ -171,7 +348,7 @@ pub const Window = struct {
 
         // If we have a tabgroup set, we want to manually focus the next window.
         // We should NOT have to do this usually, see the comments above.
-        if (comptime builtin.target.isDarwin()) {
+        if (App.Darwin.enabled) {
             if (tabgroup_opt) |tabgroup| {
                 const selected = tabgroup.getProperty(objc.Object, "selectedWindow");
                 selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
@@ -183,7 +360,7 @@ pub const Window = struct {
     /// Note: this interface is not good, we should redo it if we plan
     /// to use this more. i.e. you can't set max width but no max height,
     /// or no mins.
-    pub fn setSizeLimits(self: *Window, min: apprt.WindowSize, max_: ?apprt.WindowSize) !void {
+    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         self.window.setSizeLimits(.{
             .width = min.width,
             .height = min.height,
@@ -197,7 +374,7 @@ pub const Window = struct {
     }
 
     /// Returns the content scale for the created window.
-    pub fn getContentScale(self: *const Window) !apprt.ContentScale {
+    pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         const scale = self.window.getContentScale();
         return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
     }
@@ -205,14 +382,14 @@ pub const Window = struct {
     /// Returns the size of the window in pixels. The pixel size may
     /// not match screen coordinate size but we should be able to convert
     /// back and forth using getContentScale.
-    pub fn getSize(self: *const Window) !apprt.WindowSize {
+    pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
         const size = self.window.getFramebufferSize();
-        return apprt.WindowSize{ .width = size.width, .height = size.height };
+        return apprt.SurfaceSize{ .width = size.width, .height = size.height };
     }
 
     /// Returns the cursor position in scaled pixels relative to the
     /// upper-left of the window.
-    pub fn getCursorPos(self: *const Window) !apprt.CursorPos {
+    pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
         const unscaled_pos = self.window.getCursorPos();
         const pos = try self.cursorPosToPixels(unscaled_pos);
         return apprt.CursorPos{
@@ -223,37 +400,37 @@ pub const Window = struct {
 
     /// Set the flag that notes this window should be closed for the next
     /// iteration of the event loop.
-    pub fn setShouldClose(self: *Window) void {
+    pub fn setShouldClose(self: *Surface) void {
         self.window.setShouldClose(true);
     }
 
     /// Returns true if the window is flagged to close.
-    pub fn shouldClose(self: *const Window) bool {
+    pub fn shouldClose(self: *const Surface) bool {
         return self.window.shouldClose();
     }
 
     /// Set the title of the window.
-    pub fn setTitle(self: *Window, slice: [:0]const u8) !void {
+    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         self.window.setTitle(slice.ptr);
     }
 
     /// Read the clipboard. The windowing system is responsible for allocating
     /// a buffer as necessary. This should be a stable pointer until the next
     /// time getClipboardString is called.
-    pub fn getClipboardString(self: *const Window) ![:0]const u8 {
+    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
         _ = self;
         return glfw.getClipboardString() orelse return glfw.mustGetErrorCode();
     }
 
     /// Set the clipboard.
-    pub fn setClipboardString(self: *const Window, val: [:0]const u8) !void {
+    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
         _ = self;
         glfw.setClipboardString(val);
     }
 
     /// The cursor position from glfw directly is in screen coordinates but
     /// all our interface works in pixels.
-    fn cursorPosToPixels(self: *const Window, pos: glfw.Window.CursorPos) !glfw.Window.CursorPos {
+    fn cursorPosToPixels(self: *const Surface, pos: glfw.Window.CursorPos) !glfw.Window.CursorPos {
         // The cursor position is in screen coordinates but we
         // want it in pixels. we need to get both the size of the
         // window in both to get the ratio to make the conversion.
@@ -280,8 +457,8 @@ pub const Window = struct {
         // Get the size. We are given a width/height but this is in screen
         // coordinates and we want raw pixels. The core window uses the content
         // scale to scale appropriately.
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
-        const size = core_win.window.getSize() catch |err| {
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
+        const size = core_win.rt_surface.getSize() catch |err| {
             log.err("error querying window size for size callback err={}", .{err});
             return;
         };
@@ -297,7 +474,7 @@ pub const Window = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.charCallback(codepoint) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
@@ -449,7 +626,7 @@ pub const Window = struct {
             => .invalid,
         };
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.keyCallback(action, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
@@ -460,7 +637,7 @@ pub const Window = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.focusCallback(focused) catch |err| {
             log.err("error in focus callback err={}", .{err});
             return;
@@ -471,7 +648,7 @@ pub const Window = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
             return;
@@ -482,7 +659,7 @@ pub const Window = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.scrollCallback(xoff, yoff) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
@@ -497,10 +674,10 @@ pub const Window = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // Convert our unscaled x/y to scaled.
-        const pos = core_win.window.cursorPosToPixels(.{
+        const pos = core_win.rt_surface.cursorPosToPixels(.{
             .xpos = unscaled_xpos,
             .ypos = unscaled_ypos,
         }) catch |err| {
@@ -529,7 +706,7 @@ pub const Window = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
-        const core_win = window.getUserPointer(CoreWindow) orelse return;
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // Convert glfw button to input button
         const mods = @bitCast(input.Mods, glfw_mods);

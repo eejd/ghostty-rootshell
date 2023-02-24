@@ -8,7 +8,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
-const Window = @import("../Window.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
@@ -16,6 +15,7 @@ const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
 const trace = tracy.trace;
+const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
 
 const log = std.log.scoped(.io_exec);
@@ -51,8 +51,8 @@ renderer_wakeup: xev.Async,
 /// The mailbox for notifying the renderer of things.
 renderer_mailbox: *renderer.Thread.Mailbox,
 
-/// The mailbox for communicating with the window.
-window_mailbox: Window.Mailbox,
+/// The mailbox for communicating with the surface.
+surface_mailbox: apprt.surface.Mailbox,
 
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
@@ -83,7 +83,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
-        .window_mailbox = opts.window_mailbox,
+        .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
         .data = null,
     };
@@ -131,7 +131,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
                 .grid_size = &self.grid_size,
-                .window_mailbox = self.window_mailbox,
+                .surface_mailbox = self.surface_mailbox,
             },
         },
     };
@@ -638,7 +638,7 @@ const StreamHandler = struct {
     alloc: Allocator,
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
-    window_mailbox: Window.Mailbox,
+    surface_mailbox: apprt.surface.Mailbox,
 
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
@@ -983,7 +983,7 @@ const StreamHandler = struct {
         std.mem.copy(u8, &buf, title);
         buf[title.len] = 0;
 
-        _ = self.window_mailbox.push(.{
+        _ = self.surface_mailbox.push(.{
             .set_title = buf,
         }, .{ .forever = {} });
     }
@@ -995,15 +995,15 @@ const StreamHandler = struct {
 
         // Get clipboard contents
         if (data.len == 1 and data[0] == '?') {
-            _ = self.window_mailbox.push(.{
+            _ = self.surface_mailbox.push(.{
                 .clipboard_read = kind,
             }, .{ .forever = {} });
             return;
         }
 
         // Write clipboard contents
-        _ = self.window_mailbox.push(.{
-            .clipboard_write = try Window.Message.WriteReq.init(
+        _ = self.surface_mailbox.push(.{
+            .clipboard_write = try apprt.surface.Message.WriteReq.init(
                 self.alloc,
                 data,
             ),

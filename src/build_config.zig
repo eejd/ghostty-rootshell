@@ -4,15 +4,19 @@
 //! to shim logic and values into them later.
 const std = @import("std");
 const builtin = @import("builtin");
+const options = @import("build_options");
 const assert = std.debug.assert;
 
 /// The artifact we're producing. This can be used to determine if we're
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
 
+/// The runtime to back exe artifacts with.
+pub const app_runtime = options.app_runtime;
+
 /// Whether our devmode UI is enabled or not. This requires imgui to be
 /// compiled.
-pub const devmode_enabled = artifact == .exe;
+pub const devmode_enabled = artifact == .exe and app_runtime == .glfw;
 
 pub const Artifact = enum {
     /// Standalone executable

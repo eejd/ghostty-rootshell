@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const fs = std.fs;
 const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
+const apprt = @import("src/apprt.zig");
 const glfw = @import("vendor/mach/libs/glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
@@ -45,6 +46,7 @@ comptime {
 var tracy: bool = false;
 var enable_coretext: bool = false;
 var enable_fontconfig: bool = false;
+var app_runtime: apprt.Runtime = .none;
 
 pub fn build(b: *std.build.Builder) !void {
     const optimize = b.standardOptimizeOption(.{});
@@ -76,6 +78,12 @@ pub fn build(b: *std.build.Builder) !void {
         "fontconfig",
         "Enable fontconfig for font discovery (default true on Linux)",
     ) orelse target.isLinux();
+
+    app_runtime = b.option(
+        apprt.Runtime,
+        "app-runtime",
+        "The app runtime to use. Not all values supported on all platforms.",
+    ) orelse apprt.Runtime.default(target);
 
     const static = b.option(
         bool,
@@ -111,6 +119,7 @@ pub fn build(b: *std.build.Builder) !void {
     exe_options.addOption(bool, "tracy_enabled", tracy);
     exe_options.addOption(bool, "coretext", enable_coretext);
     exe_options.addOption(bool, "fontconfig", enable_fontconfig);
+    exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
 
     // Exe
     {
@@ -120,7 +129,7 @@ pub fn build(b: *std.build.Builder) !void {
         }
 
         exe.addOptions("build_options", exe_options);
-        exe.install();
+        if (app_runtime != .none) exe.install();
 
         // Add the shared dependencies
         _ = try addDeps(b, exe, static);
@@ -134,7 +143,7 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
-    // On Mac we can build the app.
+    // On Mac we can build the embedding library.
     if (builtin.target.isDarwin()) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
@@ -539,22 +548,38 @@ fn addDeps(
     }
 
     if (!lib) {
-        step.addModule("glfw", glfw.module(b));
-
         // We always statically compile glad
         step.addIncludePath("vendor/glad/include/");
         step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
-        // Glfw
-        const glfw_opts: glfw.Options = .{
-            .metal = step.target.isDarwin(),
-            .opengl = false,
-        };
-        try glfw.link(b, step, glfw_opts);
+        switch (app_runtime) {
+            .none => {},
 
-        // Imgui
-        const imgui_step = try imgui.link(b, step, imgui_opts);
-        try glfw.link(b, imgui_step, glfw_opts);
+            .glfw => {
+                step.addModule("glfw", glfw.module(b));
+                const glfw_opts: glfw.Options = .{
+                    .metal = step.target.isDarwin(),
+                    .opengl = false,
+                };
+                try glfw.link(b, step, glfw_opts);
+
+                // Must also link to imgui
+                const imgui_step = try imgui.link(b, step, imgui_opts);
+                try glfw.link(b, imgui_step, glfw_opts);
+            },
+
+            .gtk => {
+                // We need glfw for GTK because we use GLFW to get DPI.
+                step.addModule("glfw", glfw.module(b));
+                const glfw_opts: glfw.Options = .{
+                    .metal = step.target.isDarwin(),
+                    .opengl = false,
+                };
+                try glfw.link(b, step, glfw_opts);
+
+                step.linkSystemLibrary("gtk4");
+            },
+        }
     }
 
     return static_libs;

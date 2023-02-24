@@ -10,7 +10,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 const font = @import("font/main.zig");
-const Window = @import("Window.zig");
+const Surface = @import("Surface.zig");
 const renderer = @import("renderer.zig");
 const Config = @import("config.zig").Config;
 
@@ -29,8 +29,8 @@ visible: bool = false,
 /// Our app config
 config: ?*const Config = null,
 
-/// The window we're tracking.
-window: ?*Window = null,
+/// The surface we're tracking.
+surface: ?*Surface = null,
 
 /// Update the state associated with the dev mode. This should generally
 /// only be called paired with a render since it otherwise wastes CPU
@@ -86,20 +86,20 @@ pub fn update(self: *const DevMode) !void {
             }
         }
 
-        if (self.window) |window| {
+        if (self.surface) |surface| {
             if (imgui.collapsingHeader("Font Manager", null, .{})) {
-                imgui.text("Glyphs: %d", window.font_group.glyphs.count());
+                imgui.text("Glyphs: %d", surface.font_group.glyphs.count());
                 imgui.sameLine(0, -1);
                 helpMarker("The number of glyphs loaded and rendered into a " ++
                     "font atlas currently.");
 
-                const Renderer = @TypeOf(window.renderer);
+                const Renderer = @TypeOf(surface.renderer);
                 if (imgui.treeNode("Atlas: Greyscale", .{ .default_open = true })) {
                     defer imgui.treePop();
-                    const atlas = &window.font_group.atlas_greyscale;
+                    const atlas = &surface.font_group.atlas_greyscale;
                     const tex = switch (Renderer) {
-                        renderer.OpenGL => @intCast(usize, window.renderer.texture.id),
-                        renderer.Metal => @ptrToInt(window.renderer.texture_greyscale.value),
+                        renderer.OpenGL => @intCast(usize, surface.renderer.texture.id),
+                        renderer.Metal => @ptrToInt(surface.renderer.texture_greyscale.value),
                         else => @compileError("renderer unsupported, add it!"),
                     };
                     try self.atlasInfo(atlas, tex);
@@ -107,10 +107,10 @@ pub fn update(self: *const DevMode) !void {
 
                 if (imgui.treeNode("Atlas: Color (Emoji)", .{ .default_open = true })) {
                     defer imgui.treePop();
-                    const atlas = &window.font_group.atlas_color;
+                    const atlas = &surface.font_group.atlas_color;
                     const tex = switch (Renderer) {
-                        renderer.OpenGL => @intCast(usize, window.renderer.texture_color.id),
-                        renderer.Metal => @ptrToInt(window.renderer.texture_color.value),
+                        renderer.OpenGL => @intCast(usize, surface.renderer.texture_color.id),
+                        renderer.Metal => @ptrToInt(surface.renderer.texture_color.value),
                         else => @compileError("renderer unsupported, add it!"),
                     };
                     try self.atlasInfo(atlas, tex);

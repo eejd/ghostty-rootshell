@@ -16,7 +16,7 @@ const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const DevMode = @import("../DevMode.zig");
-const Window = @import("../Window.zig");
+const Surface = @import("../Surface.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Terminal = terminal.Terminal;
@@ -32,7 +32,7 @@ const log = std.log.scoped(.metal);
 alloc: std.mem.Allocator,
 
 /// The mailbox for communicating with the window.
-window_mailbox: Window.Mailbox,
+surface_mailbox: apprt.surface.Mailbox,
 
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
@@ -135,8 +135,8 @@ pub fn glfwWindowHints() glfw.Window.Hints {
 
 /// This is called early right after window creation to setup our
 /// window surface as necessary.
-pub fn windowInit(win: apprt.runtime.Window) !void {
-    _ = win;
+pub fn surfaceInit(surface: *apprt.Surface) !void {
+    _ = surface;
 
     // We don't do anything else here because we want to set everything
     // else up during actual initialization.
@@ -240,7 +240,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
     return Metal{
         .alloc = alloc,
-        .window_mailbox = options.window_mailbox,
+        .surface_mailbox = options.surface_mailbox,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .padding = options.padding,
         .focused = true,
@@ -304,7 +304,7 @@ pub fn deinit(self: *Metal) void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
+pub fn finalizeSurfaceInit(self: *const Metal, surface: *apprt.Surface) !void {
     const Info = struct {
         view: objc.Object,
         scaleFactor: f64,
@@ -315,7 +315,7 @@ pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
         apprt.glfw => info: {
             // Everything in glfw is window-oriented so we grab the backing
             // window, then derive everything from that.
-            const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(win.window).?);
+            const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(surface.window).?);
             const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
             const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
             break :info .{
@@ -325,8 +325,8 @@ pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
         },
 
         apprt.embedded => .{
-            .view = win.nsview,
-            .scaleFactor = @floatCast(f64, win.content_scale.x),
+            .view = surface.nsview,
+            .scaleFactor = @floatCast(f64, surface.content_scale.x),
         },
 
         else => @compileError("unsupported apprt for metal"),
@@ -344,11 +344,11 @@ pub fn finalizeWindowInit(self: *const Metal, win: apprt.runtime.Window) !void {
 }
 
 /// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const Metal, win: apprt.runtime.Window) !void {
+pub fn initDevMode(self: *const Metal, surface: *apprt.Surface) !void {
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOther(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, win.window.handle),
+            @ptrCast(*imgui.ImplGlfw.GLFWWindow, surface.window.handle),
             true,
         ));
         assert(imgui.ImplMetal.init(self.device.value));
@@ -366,9 +366,9 @@ pub fn deinitDevMode(self: *const Metal) void {
 }
 
 /// Callback called by renderer.Thread when it begins.
-pub fn threadEnter(self: *const Metal, win: apprt.runtime.Window) !void {
+pub fn threadEnter(self: *const Metal, surface: *apprt.Surface) !void {
     _ = self;
-    _ = win;
+    _ = surface;
 
     // Metal requires no per-thread state.
 }
@@ -442,7 +442,7 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     };
 
     // Notify the window that the cell size changed.
-    _ = self.window_mailbox.push(.{
+    _ = self.surface_mailbox.push(.{
         .cell_size = new_cell_size,
     }, .{ .forever = {} });
 }
@@ -450,10 +450,10 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
 /// The primary render callback that is completely thread-safe.
 pub fn render(
     self: *Metal,
-    win: apprt.runtime.Window,
+    surface: *apprt.Surface,
     state: *renderer.State,
 ) !void {
-    _ = win;
+    _ = surface;
 
     // Data we extract out of the critical area.
     const Critical = struct {
@@ -533,8 +533,8 @@ pub fn render(
         critical.draw_cursor,
     );
 
-    // Get our surface (CAMetalDrawable)
-    const surface = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
+    // Get our drawable (CAMetalDrawable)
+    const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
     // If our font atlas changed, sync the texture data
     if (self.font_group.atlas_greyscale.modified) {
@@ -572,7 +572,7 @@ pub fn render(
                 // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
                 // which ironically doesn't implement CAMetalDrawable as a
                 // property so we just send a message.
-                const texture = surface.msgSend(objc.c.id, objc.sel("texture"), .{});
+                const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
                 attachment.setProperty("loadAction", @enumToInt(MTLLoadAction.clear));
                 attachment.setProperty("storeAction", @enumToInt(MTLStoreAction.store));
                 attachment.setProperty("texture", texture);
@@ -656,7 +656,7 @@ pub fn render(
         }
     }
 
-    buffer.msgSend(void, objc.sel("presentDrawable:"), .{surface.value});
+    buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
 }
 

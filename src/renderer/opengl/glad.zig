@@ -23,6 +23,10 @@ pub fn load(getProcAddress: anytype) !c_int {
             getProcAddress,
         )),
 
+        // null proc address means that we are just loading the globally
+        // pointed gl functions
+        @TypeOf(null) => c.gladLoaderLoadGLContext(&context),
+
         // try as-is. If this introduces a compiler error, then add a new case.
         else => c.gladLoadGLContext(&context, getProcAddress),
     };

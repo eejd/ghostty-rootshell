@@ -32,6 +32,7 @@ pub const MouseButton = enum(c_int) {
         break :max cur;
     };
 
+    unknown = 0,
     left = 1,
     right = 2,
     middle = 3,

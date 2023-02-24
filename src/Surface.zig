@@ -1,15 +1,19 @@
-//! Window represents a single OS window.
+//! Surface represents a single terminal "surface". A terminal surface is
+//! a minimal "widget" where the terminal is drawn and responds to events
+//! such as keyboard and mouse. Each surface also creates and owns its pty
+//! session.
 //!
-//! NOTE(multi-window): This may be premature, but this abstraction is here
-//! to pave the way One Day(tm) for multi-window support. At the time of
-//! writing, we support exactly one window.
-const Window = @This();
+//! The word "surface" is used because it is left to the higher level
+//! application runtime to determine if the surface is a window, a tab,
+//! a split, a preview pane in a larger window, etc. This struct doesn't care:
+//! it just draws and responds to events. The events come from the application
+//! runtime so the runtime can determine when and how those are delivered
+//! (i.e. with focus, without focus, and so on).
+const Surface = @This();
 
-// TODO: eventually, I want to extract Window.zig into the "window" package
-// so we can also have alternate implementations (i.e. not glfw).
 const apprt = @import("apprt.zig");
-pub const Mailbox = apprt.Window.Mailbox;
-pub const Message = apprt.Window.Message;
+pub const Mailbox = apprt.surface.Mailbox;
+pub const Message = apprt.surface.Message;
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -18,7 +22,6 @@ const Allocator = std.mem.Allocator;
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
-const glfw = @import("glfw");
 const imgui = @import("imgui");
 const Pty = @import("Pty.zig");
 const font = @import("font/main.zig");
@@ -31,12 +34,7 @@ const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
 
-// Get native API access on certain platforms so we can do more customization.
-const glfwNative = glfw.Native(.{
-    .cocoa = builtin.target.isDarwin(),
-});
-
-const log = std.log.scoped(.window);
+const log = std.log.scoped(.surface);
 
 // The renderer implementation to use.
 const Renderer = renderer.Renderer;
@@ -44,11 +42,11 @@ const Renderer = renderer.Renderer;
 /// Allocator
 alloc: Allocator,
 
-/// The app that this window is a part of.
-app: *App,
+/// The mailbox for sending messages to the main app thread.
+app_mailbox: App.Mailbox,
 
-/// The windowing system state
-window: apprt.runtime.Window,
+/// The windowing system surface
+rt_surface: *apprt.runtime.Surface,
 
 /// The font structures
 font_lib: font.Library,
@@ -58,7 +56,7 @@ font_size: font.face.DesiredSize,
 /// Imgui context
 imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 
-/// The renderer for this window.
+/// The renderer for this surface.
 renderer: Renderer,
 
 /// The render state
@@ -96,7 +94,7 @@ config: *const Config,
 /// like such as "control-v" will write a "v" even if they're intercepted.
 ignore_char: bool = false,
 
-/// Mouse state for the window.
+/// Mouse state for the surface.
 const Mouse = struct {
     /// The last tracked mouse button state by button.
     click_state: [input.MouseButton.max]input.MouseButtonState = .{.release} ** input.MouseButton.max,
@@ -111,7 +109,7 @@ const Mouse = struct {
 
     /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
     /// these will point to different "cells", but the xpos/ypos will stay
-    /// stable during scrolling relative to the window.
+    /// stable during scrolling relative to the surface.
     left_click_xpos: f64 = 0,
     left_click_ypos: f64 = 0,
 
@@ -125,28 +123,22 @@ const Mouse = struct {
     event_point: terminal.point.Viewport = .{},
 };
 
-/// Create a new window. This allocates and returns a pointer because we
-/// need a stable pointer for user data callbacks. Therefore, a stack-only
-/// initialization is not currently possible.
-pub fn create(
+/// Create a new surface. This must be called from the main thread. The
+/// pointer to the memory for the surface must be provided and must be
+/// stable due to interfacing with various callbacks.
+pub fn init(
+    self: *Surface,
     alloc: Allocator,
-    app: *App,
     config: *const Config,
-    rt_opts: apprt.runtime.Window.Options,
-) !*Window {
-    var self = try alloc.create(Window);
-    errdefer alloc.destroy(self);
-
-    // Create the windowing system
-    var window = try apprt.runtime.Window.init(app, self, rt_opts);
-    errdefer window.deinit();
-
-    // Initialize our renderer with our initialized windowing system.
-    try Renderer.windowInit(window);
+    app_mailbox: App.Mailbox,
+    rt_surface: *apprt.runtime.Surface,
+) !void {
+    // Initialize our renderer with our initialized surface.
+    try Renderer.surfaceInit(rt_surface);
 
     // Determine our DPI configurations so we can properly configure
     // font points to pixels and handle other high-DPI scaling factors.
-    const content_scale = try window.getContentScale();
+    const content_scale = try rt_surface.getContentScale();
     const x_dpi = content_scale.x * font.face.default_dpi;
     const y_dpi = content_scale.y * font.face.default_dpi;
     log.debug("xscale={} yscale={} xdpi={} ydpi={}", .{
@@ -156,17 +148,17 @@ pub fn create(
         y_dpi,
     });
 
-    // The font size we desire along with the DPI determiend for the window
+    // The font size we desire along with the DPI determined for the surface
     const font_size: font.face.DesiredSize = .{
         .points = config.@"font-size",
         .xdpi = @floatToInt(u16, x_dpi),
         .ydpi = @floatToInt(u16, y_dpi),
     };
 
-    // Find all the fonts for this window
+    // Find all the fonts for this surface
     //
-    // Future: we can share the font group amongst all windows to save
-    // some new window init time and some memory. This will require making
+    // Future: we can share the font group amongst all surfaces to save
+    // some new surface init time and some memory. This will require making
     // thread-safe changes to font structs.
     var font_lib = try font.Library.init();
     errdefer font_lib.deinit();
@@ -290,7 +282,7 @@ pub fn create(
         .left = padding_x,
     };
 
-    // Create our terminal grid with the initial window size
+    // Create our terminal grid with the initial size
     var renderer_impl = try Renderer.init(alloc, .{
         .config = config,
         .font_group = font_group,
@@ -298,15 +290,15 @@ pub fn create(
             .explicit = padding,
             .balance = config.@"window-padding-balance",
         },
-        .window_mailbox = .{ .window = self, .app = app.mailbox },
+        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
     });
     errdefer renderer_impl.deinit();
 
     // Calculate our grid size based on known dimensions.
-    const window_size = try window.getSize();
+    const surface_size = try rt_surface.getSize();
     const screen_size: renderer.ScreenSize = .{
-        .width = window_size.width,
-        .height = window_size.height,
+        .width = surface_size.width,
+        .height = surface_size.height,
     };
     const grid_size = renderer.GridSize.init(
         screen_size.subPadding(padding),
@@ -321,9 +313,10 @@ pub fn create(
     // Create the renderer thread
     var render_thread = try renderer.Thread.init(
         alloc,
-        window,
+        rt_surface,
         &self.renderer,
         &self.renderer_state,
+        app_mailbox,
     );
     errdefer render_thread.deinit();
 
@@ -335,7 +328,7 @@ pub fn create(
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
-        .window_mailbox = .{ .window = self, .app = app.mailbox },
+        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
     });
     errdefer io.deinit();
 
@@ -343,15 +336,15 @@ pub fn create(
     var io_thread = try termio.Thread.init(alloc, &self.io);
     errdefer io_thread.deinit();
 
-    // True if this window is hosting devmode. We only host devmode on
-    // the first window since imgui is not threadsafe. We need to do some
+    // True if this surface is hosting devmode. We only host devmode on
+    // the first surface since imgui is not threadsafe. We need to do some
     // work to make DevMode work with multiple threads.
-    const host_devmode = DevMode.enabled and DevMode.instance.window == null;
+    const host_devmode = DevMode.enabled and DevMode.instance.surface == null;
 
     self.* = .{
         .alloc = alloc,
-        .app = app,
-        .window = window,
+        .app_mailbox = app_mailbox,
+        .rt_surface = rt_surface,
         .font_lib = font_lib,
         .font_group = font_group,
         .font_size = font_size,
@@ -384,21 +377,21 @@ pub fn create(
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
-    try window.setSizeLimits(.{
+    try rt_surface.setSizeLimits(.{
         .width = @floatToInt(u32, cell_size.width * 10),
         .height = @floatToInt(u32, cell_size.height * 4),
     }, null);
 
     // Call our size callback which handles all our retina setup
-    // Note: this shouldn't be necessary and when we clean up the window
+    // Note: this shouldn't be necessary and when we clean up the surface
     // init stuff we should get rid of this. But this is required because
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
-    try self.sizeCallback(window_size);
+    try self.sizeCallback(surface_size);
 
     // Load imgui. This must be done LAST because it has to be done after
     // all our GLFW setup is complete.
-    if (DevMode.enabled and DevMode.instance.window == null) {
+    if (DevMode.enabled and DevMode.instance.surface == null) {
         const dev_io = try imgui.IO.get();
         dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
 
@@ -413,16 +406,16 @@ pub fn create(
         const style = try imgui.Style.get();
         style.colorsDark();
 
-        // Add our window to the instance if it isn't set.
-        DevMode.instance.window = self;
+        // Add our surface to the instance if it isn't set.
+        DevMode.instance.surface = self;
 
         // Let our renderer setup
-        try renderer_impl.initDevMode(window);
+        try renderer_impl.initDevMode(rt_surface);
     }
 
-    // Give the renderer one more opportunity to finalize any window
+    // Give the renderer one more opportunity to finalize any surface
     // setup on the main thread prior to spinning up the rendering thread.
-    try renderer_impl.finalizeWindowInit(window);
+    try renderer_impl.finalizeSurfaceInit(rt_surface);
 
     // Start our renderer thread
     self.renderer_thr = try std.Thread.spawn(
@@ -439,11 +432,9 @@ pub fn create(
         .{&self.io_thread},
     );
     self.io_thr.setName("io") catch {};
-
-    return self;
 }
 
-pub fn destroy(self: *Window) void {
+pub fn deinit(self: *Surface) void {
     // Stop rendering thread
     {
         self.renderer_thread.stop.notify() catch |err|
@@ -451,15 +442,15 @@ pub fn destroy(self: *Window) void {
         self.renderer_thr.join();
 
         // We need to become the active rendering thread again
-        self.renderer.threadEnter(self.window) catch unreachable;
+        self.renderer.threadEnter(self.rt_surface) catch unreachable;
 
         // If we are devmode-owning, clean that up.
-        if (DevMode.enabled and DevMode.instance.window == self) {
+        if (DevMode.enabled and DevMode.instance.surface == self) {
             // Let our renderer clean up
             self.renderer.deinitDevMode();
 
-            // Clear the window
-            DevMode.instance.window = null;
+            // Clear the surface
+            DevMode.instance.surface = null;
 
             // Uninitialize imgui
             self.imgui_ctx.destroy();
@@ -480,62 +471,23 @@ pub fn destroy(self: *Window) void {
     self.io_thread.deinit();
     self.io.deinit();
 
-    self.window.deinit();
-
     self.font_group.deinit(self.alloc);
     self.font_lib.deinit();
     self.alloc.destroy(self.font_group);
 
     self.alloc.destroy(self.renderer_state.mutex);
-
-    self.alloc.destroy(self);
-}
-
-pub fn shouldClose(self: Window) bool {
-    return self.window.shouldClose();
-}
-
-/// Add a window to the tab group of this window.
-pub fn addWindow(self: *Window, other: *Window) void {
-    assert(builtin.target.isDarwin());
-
-    // This has a hard dependency on GLFW currently. If we want to support
-    // this in other windowing systems we should abstract this. This is NOT
-    // the right interface.
-    const self_win = glfwNative.getCocoaWindow(self.window.window).?;
-    const other_win = glfwNative.getCocoaWindow(other.window.window).?;
-
-    const NSWindowOrderingMode = enum(isize) { below = -1, out = 0, above = 1 };
-    const nswindow = objc.Object.fromId(self_win);
-    nswindow.msgSend(void, objc.sel("addTabbedWindow:ordered:"), .{
-        objc.Object.fromId(other_win),
-        NSWindowOrderingMode.above,
-    });
-
-    // Adding a new tab can cause the tab bar to appear which changes
-    // our viewport size. We need to call the size callback in order to
-    // update values. For example, we need this to set the proper mouse selection
-    // point in the grid.
-    const size = self.window.getSize() catch |err| {
-        log.err("error querying window size for size callback on new tab err={}", .{err});
-        return;
-    };
-    self.sizeCallback(size) catch |err| {
-        log.err("error in size callback from new tab err={}", .{err});
-        return;
-    };
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
-/// window.
-pub fn handleMessage(self: *Window, msg: Message) !void {
+/// surface.
+pub fn handleMessage(self: *Surface, msg: Message) !void {
     switch (msg) {
         .set_title => |*v| {
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@ptrCast([*:0]const u8, v), 0);
             log.debug("changing title \"{s}\"", .{slice});
-            try self.window.setTitle(slice);
+            try self.rt_surface.setTitle(slice);
         },
 
         .cell_size => |size| try self.setCellSize(size),
@@ -555,7 +507,7 @@ pub fn handleMessage(self: *Window, msg: Message) !void {
 
 /// Returns the x/y coordinate of where the IME (Input Method Editor)
 /// keyboard should be rendered.
-pub fn imePoint(self: *const Window) apprt.IMEPos {
+pub fn imePoint(self: *const Surface) apprt.IMEPos {
     self.renderer_state.mutex.lock();
     const cursor = self.renderer_state.terminal.screen.cursor;
     self.renderer_state.mutex.unlock();
@@ -564,7 +516,7 @@ pub fn imePoint(self: *const Window) apprt.IMEPos {
     // in the visible portion of the screen.
 
     // Our sizes are all scaled so we need to send the unscaled values back.
-    const content_scale = self.window.getContentScale() catch .{ .x = 1, .y = 1 };
+    const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
 
     const x: f64 = x: {
         // Simple x * cell width gives the top-left corner
@@ -595,13 +547,13 @@ pub fn imePoint(self: *const Window) apprt.IMEPos {
     return .{ .x = x, .y = y };
 }
 
-fn clipboardRead(self: *const Window, kind: u8) !void {
+fn clipboardRead(self: *const Surface, kind: u8) !void {
     if (!self.config.@"clipboard-read") {
         log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
         return;
     }
 
-    const data = self.window.getClipboardString() catch |err| {
+    const data = self.rt_surface.getClipboardString() catch |err| {
         log.warn("error reading clipboard: {}", .{err});
         return;
     };
@@ -631,7 +583,7 @@ fn clipboardRead(self: *const Window, kind: u8) !void {
     self.io_thread.wakeup.notify() catch {};
 }
 
-fn clipboardWrite(self: *const Window, data: []const u8) !void {
+fn clipboardWrite(self: *const Surface, data: []const u8) !void {
     if (!self.config.@"clipboard-write") {
         log.info("application attempted to write clipboard, but 'clipboard-write' setting is off", .{});
         return;
@@ -649,7 +601,7 @@ fn clipboardWrite(self: *const Window, data: []const u8) !void {
     try dec.decode(buf, data);
     assert(buf[buf.len] == 0);
 
-    self.window.setClipboardString(buf) catch |err| {
+    self.rt_surface.setClipboardString(buf) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -657,7 +609,7 @@ fn clipboardWrite(self: *const Window, data: []const u8) !void {
 
 /// Change the cell size for the terminal grid. This can happen as
 /// a result of changing the font size at runtime.
-fn setCellSize(self: *Window, size: renderer.CellSize) !void {
+fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
     // Update our new cell size for future calcs
     self.cell_size = size;
 
@@ -681,7 +633,7 @@ fn setCellSize(self: *Window, size: renderer.CellSize) !void {
 /// Change the font size.
 ///
 /// This can only be called from the main thread.
-pub fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
+pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
     // Update our font size so future changes work
     self.font_size = size;
 
@@ -697,11 +649,11 @@ pub fn setFontSize(self: *Window, size: font.face.DesiredSize) void {
 /// This queues a render operation with the renderer thread. The render
 /// isn't guaranteed to happen immediately but it will happen as soon as
 /// practical.
-fn queueRender(self: *const Window) !void {
+fn queueRender(self: *const Surface) !void {
     try self.renderer_thread.wakeup.notify();
 }
 
-pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
+pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -745,7 +697,7 @@ pub fn sizeCallback(self: *Window, size: apprt.WindowSize) !void {
     try self.io_thread.wakeup.notify();
 }
 
-pub fn charCallback(self: *Window, codepoint: u21) !void {
+pub fn charCallback(self: *Surface, codepoint: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -796,7 +748,7 @@ pub fn charCallback(self: *Window, codepoint: u21) !void {
 }
 
 pub fn keyCallback(
-    self: *Window,
+    self: *Surface,
     action: input.Action,
     key: input.Key,
     mods: input.Mods,
@@ -879,7 +831,7 @@ pub fn keyCallback(
                         };
                         defer self.alloc.free(buf);
 
-                        self.window.setClipboardString(buf) catch |err| {
+                        self.rt_surface.setClipboardString(buf) catch |err| {
                             log.err("error setting clipboard string err={}", .{err});
                             return;
                         };
@@ -887,7 +839,7 @@ pub fn keyCallback(
                 },
 
                 .paste_from_clipboard => {
-                    const data = self.window.getClipboardString() catch |err| {
+                    const data = self.rt_surface.getClipboardString() catch |err| {
                         log.warn("error reading clipboard: {}", .{err});
                         return;
                     };
@@ -950,38 +902,29 @@ pub fn keyCallback(
                 } else log.warn("dev mode was not compiled into this binary", .{}),
 
                 .new_window => {
-                    _ = self.app.mailbox.push(.{
+                    _ = self.app_mailbox.push(.{
                         .new_window = .{
-                            .font_size = if (self.config.@"window-inherit-font-size")
-                                self.font_size
-                            else
-                                null,
+                            .parent = self,
                         },
                     }, .{ .instant = {} });
-                    self.app.wakeup();
                 },
 
                 .new_tab => {
-                    _ = self.app.mailbox.push(.{
+                    _ = self.app_mailbox.push(.{
                         .new_tab = .{
                             .parent = self,
-
-                            .font_size = if (self.config.@"window-inherit-font-size")
-                                self.font_size
-                            else
-                                null,
                         },
                     }, .{ .instant = {} });
-                    self.app.wakeup();
                 },
 
-                .close_window => self.window.setShouldClose(),
+                .close_window => {
+                    _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
+                },
 
                 .quit => {
-                    _ = self.app.mailbox.push(.{
+                    _ = self.app_mailbox.push(.{
                         .quit = {},
                     }, .{ .instant = {} });
-                    self.app.wakeup();
                 },
             }
 
@@ -1059,7 +1002,7 @@ pub fn keyCallback(
     }
 }
 
-pub fn focusCallback(self: *Window, focused: bool) !void {
+pub fn focusCallback(self: *Surface, focused: bool) !void {
     // Notify our render thread of the new state
     _ = self.renderer_thread.mailbox.push(.{
         .focus = focused,
@@ -1069,17 +1012,17 @@ pub fn focusCallback(self: *Window, focused: bool) !void {
     try self.queueRender();
 }
 
-pub fn refreshCallback(self: *Window) !void {
+pub fn refreshCallback(self: *Surface) !void {
     // The point of this callback is to schedule a render, so do that.
     try self.queueRender();
 }
 
-pub fn scrollCallback(self: *Window, xoff: f64, yoff: f64) !void {
+pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode window is visible then we always schedule a render on
-    // cursor move because the cursor might touch our windows.
+    // If our dev mode surface is visible then we always schedule a render on
+    // cursor move because the cursor might touch our surfaces.
     if (DevMode.enabled and DevMode.instance.visible) {
         try self.queueRender();
 
@@ -1107,7 +1050,7 @@ pub fn scrollCallback(self: *Window, xoff: f64, yoff: f64) !void {
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.
         if (yoff != 0) {
-            const pos = try self.window.getCursorPos();
+            const pos = try self.rt_surface.getCursorPos();
             try self.mouseReport(if (yoff < 0) .five else .four, .press, self.mouse.mods, pos);
         }
     }
@@ -1119,14 +1062,14 @@ pub fn scrollCallback(self: *Window, xoff: f64, yoff: f64) !void {
 const MouseReportAction = enum { press, release, motion };
 
 fn mouseReport(
-    self: *Window,
+    self: *Surface,
     button: ?input.MouseButton,
     action: MouseReportAction,
     mods: input.Mods,
     pos: apprt.CursorPos,
 ) !void {
-    // TODO: posToViewport currently clamps to the window boundary,
-    // do we want to not report mouse events at all outside the window?
+    // TODO: posToViewport currently clamps to the surface boundary,
+    // do we want to not report mouse events at all outside the surface?
 
     // Depending on the event, we may do nothing at all.
     switch (self.io.terminal.modes.mouse_event) {
@@ -1314,7 +1257,7 @@ fn mouseReport(
 }
 
 pub fn mouseButtonCallback(
-    self: *Window,
+    self: *Surface,
     action: input.MouseButtonState,
     button: input.MouseButton,
     mods: input.Mods,
@@ -1322,8 +1265,8 @@ pub fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode window is visible then we always schedule a render on
-    // cursor move because the cursor might touch our windows.
+    // If our dev mode surface is visible then we always schedule a render on
+    // cursor move because the cursor might touch our surfaces.
     if (DevMode.enabled and DevMode.instance.visible) {
         try self.queueRender();
 
@@ -1342,7 +1285,7 @@ pub fn mouseButtonCallback(
 
     // Report mouse events if enabled
     if (self.io.terminal.modes.mouse_event != .none) {
-        const pos = try self.window.getCursorPos();
+        const pos = try self.rt_surface.getCursorPos();
 
         const report_action: MouseReportAction = switch (action) {
             .press => .press,
@@ -1360,7 +1303,7 @@ pub fn mouseButtonCallback(
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
-        const pos = try self.window.getCursorPos();
+        const pos = try self.rt_surface.getCursorPos();
 
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
@@ -1433,14 +1376,14 @@ pub fn mouseButtonCallback(
 }
 
 pub fn cursorPosCallback(
-    self: *Window,
+    self: *Surface,
     pos: apprt.CursorPos,
 ) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode window is visible then we always schedule a render on
-    // cursor move because the cursor might touch our windows.
+    // If our dev mode surface is visible then we always schedule a render on
+    // cursor move because the cursor might touch our surfaces.
     if (DevMode.enabled and DevMode.instance.visible) {
         try self.queueRender();
 
@@ -1495,7 +1438,7 @@ pub fn cursorPosCallback(
 
 /// Double-click dragging moves the selection one "word" at a time.
 fn dragLeftClickDouble(
-    self: *Window,
+    self: *Surface,
     screen_point: terminal.point.ScreenPoint,
 ) void {
     // Get the word under our current point. If there isn't a word, do nothing.
@@ -1520,7 +1463,7 @@ fn dragLeftClickDouble(
 
 /// Triple-click dragging moves the selection one "line" at a time.
 fn dragLeftClickTriple(
-    self: *Window,
+    self: *Surface,
     screen_point: terminal.point.ScreenPoint,
 ) void {
     // Get the word under our current point. If there isn't a word, do nothing.
@@ -1544,7 +1487,7 @@ fn dragLeftClickTriple(
 }
 
 fn dragLeftClickSingle(
-    self: *Window,
+    self: *Surface,
     screen_point: terminal.point.ScreenPoint,
     xpos: f64,
 ) void {
@@ -1650,10 +1593,10 @@ fn dragLeftClickSingle(
     self.io.terminal.selection.?.end = screen_point;
 }
 
-fn posToViewport(self: Window, xpos: f64, ypos: f64) terminal.point.Viewport {
+fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
     // xpos and ypos can be negative if while dragging, the user moves the
-    // mouse off the window. Likewise, they can be larger than our window
-    // width if the user drags out of the window positively.
+    // mouse off the surface. Likewise, they can be larger than our surface
+    // width if the user drags out of the surface positively.
     return .{
         .x = if (xpos < 0) 0 else x: {
             // Our cell is the mouse divided by cell width

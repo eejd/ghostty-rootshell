@@ -2,6 +2,7 @@ const VertexArray = @This();
 
 const c = @import("c.zig");
 const glad = @import("glad.zig");
+const errors = @import("errors.zig");
 
 id: c.GLuint,
 
@@ -20,6 +21,7 @@ pub inline fn unbind() !void {
 /// glBindVertexArray
 pub inline fn bind(v: VertexArray) !void {
     glad.context.BindVertexArray.?(v.id);
+    try errors.getError();
 }
 
 pub inline fn destroy(v: VertexArray) void {

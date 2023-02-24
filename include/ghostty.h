@@ -51,7 +51,8 @@ typedef enum {
 } ghostty_input_mouse_state_e;
 
 typedef enum {
-    GHOSTTY_MOUSE_LEFT = 1,
+    GHOSTTY_MOUSE_UNKNOWN,
+    GHOSTTY_MOUSE_LEFT,
     GHOSTTY_MOUSE_RIGHT,
     GHOSTTY_MOUSE_MIDDLE,
 } ghostty_input_mouse_button_e;

@@ -22,6 +22,8 @@
 , expat
 , fontconfig
 , freetype
+, glib
+, gtk4
 , harfbuzz
 , libpng
 , libGL
@@ -53,6 +55,9 @@ let
     libXcursor
     libXi
     libXrandr
+
+    gtk4
+    glib
   ];
 in mkShell rec {
   name = "ghostty";
@@ -102,6 +107,10 @@ in mkShell rec {
     libXi
     libXinerama
     libXrandr
+
+    # Only needed for GTK builds
+    gtk4
+    glib
   ];
 
   # This should be set onto the rpath of the ghostty binary if you want
