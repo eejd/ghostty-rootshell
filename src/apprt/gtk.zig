@@ -158,9 +158,10 @@ pub const App = struct {
         try window.init(self);
     }
 
-    fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-        _ = ud;
-        log.warn("CLICK", .{});
+    pub fn newTab(self: *App, parent_: ?*CoreSurface) !void {
+        // TODO
+        _ = self;
+        _ = parent_;
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
@@ -177,7 +178,12 @@ pub const App = struct {
 
 /// The state for a single, real GTK window.
 const Window = struct {
+    const TAB_CLOSE_PAGE = "tab_close_page";
+
     app: *App,
+
+    /// Our window
+    window: *c.GtkWindow,
 
     /// The notebook (tab grouping) for this window.
     notebook: *c.GtkNotebook,
@@ -186,6 +192,7 @@ const Window = struct {
         // Set up our own state
         self.* = .{
             .app = app,
+            .window = undefined,
             .notebook = undefined,
         };
 
@@ -193,6 +200,7 @@ const Window = struct {
         const window = c.gtk_application_window_new(app.app);
         const gtk_window = @ptrCast(*c.GtkWindow, window);
         errdefer c.gtk_window_destroy(gtk_window);
+        self.window = gtk_window;
         c.gtk_window_set_title(gtk_window, "Ghostty");
         c.gtk_window_set_default_size(gtk_window, 200, 200);
         c.gtk_widget_show(window);
@@ -228,25 +236,41 @@ const Window = struct {
         var surface = try self.app.core_app.alloc.create(Surface);
         errdefer self.app.core_app.alloc.destroy(surface);
 
+        // Build our tab label
+        const label_box_widget = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
+        const label_box = @ptrCast(*c.GtkBox, label_box_widget);
+        const label_text = c.gtk_label_new("Ghostty");
+        c.gtk_box_append(label_box, label_text);
+
+        const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
+        const label_close = @ptrCast(*c.GtkButton, label_close_widget);
+        c.gtk_button_set_has_frame(label_close, 0);
+        c.gtk_box_append(label_box, label_close_widget);
+        _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
+
         // Initialize the GtkGLArea and attach it to our surface.
         // The surface starts in the "unrealized" state because we have to
         // wait for the "realize" callback from GTK to know that the OpenGL
         // context is ready. See Surface docs for more info.
         const gl_area = c.gtk_gl_area_new();
-        const label = c.gtk_label_new("Ghostty");
         try surface.init(self.app, .{
             .gl_area = @ptrCast(*c.GtkGLArea, gl_area),
-            .title_label = @ptrCast(*c.GtkLabel, label),
+            .title_label = @ptrCast(*c.GtkLabel, label_text),
         });
         errdefer surface.deinit();
-        const page = c.gtk_notebook_append_page(self.notebook, gl_area, label);
-        if (page < 0) {
+        const page_idx = c.gtk_notebook_append_page(self.notebook, gl_area, label_box_widget);
+        if (page_idx < 0) {
             log.warn("failed to add surface to notebook", .{});
             return error.GtkAppendPageFailed;
         }
 
+        // Set the userdata of the close button so it points to this page.
+        const page = c.gtk_notebook_get_page(self.notebook, gl_area) orelse
+            return error.GtkNotebookPageNotFound;
+        c.g_object_set_data(@ptrCast(*c.GObject, label_close), TAB_CLOSE_PAGE, page);
+
         // Switch to the new tab
-        c.gtk_notebook_set_current_page(self.notebook, page);
+        c.gtk_notebook_set_current_page(self.notebook, page_idx);
 
         // We need to grab focus after it is added to the window. When
         // creating a window we want to always focus on the widget.
@@ -260,6 +284,34 @@ const Window = struct {
             log.warn("error adding new tab: {}", .{err});
             return;
         };
+    }
+
+    fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+        // Get the notebook page
+        const page = @ptrCast(*c.GtkNotebookPage, @alignCast(
+            @alignOf(c.GtkNotebookPage),
+            c.g_object_get_data(@ptrCast(*c.GObject, btn), TAB_CLOSE_PAGE),
+        ));
+
+        // Get the page index
+        var value: c.GValue = std.mem.zeroes(c.GValue);
+        defer c.g_value_unset(&value);
+        _ = c.g_value_init(&value, c.G_TYPE_INT);
+        c.g_object_get_property(
+            @ptrCast(*c.GObject, @alignCast(@alignOf(c.GObject), page)),
+            "position",
+            &value,
+        );
+
+        const page_idx = c.g_value_get_int(&value);
+        const self = userdataSelf(ud.?);
+        c.gtk_notebook_remove_page(self.notebook, page_idx);
+
+        // If we have no more tabs left we close the window
+        const remaining = c.gtk_notebook_get_n_pages(self.notebook);
+        if (remaining == 0) {
+            c.gtk_window_destroy(self.window);
+        }
     }
 
     /// "destroy" signal for the window
