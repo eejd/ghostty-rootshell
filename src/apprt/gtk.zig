@@ -196,6 +196,7 @@ pub const Surface = struct {
 
     /// Cached metrics about the surface from GTK callbacks.
     size: apprt.SurfaceSize,
+    cursor_pos: apprt.CursorPos,
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         const widget = @ptrCast(*c.GtkWidget, opts.gl_area);
@@ -233,6 +234,19 @@ pub const Surface = struct {
             gesture_click,
         ));
 
+        // Mouse movement
+        const ec_motion = c.gtk_event_controller_motion_new();
+        errdefer c.g_object_unref(ec_motion);
+        c.gtk_widget_add_controller(widget, ec_motion);
+
+        // Scroll events
+        const ec_scroll = c.gtk_event_controller_scroll_new(
+            c.GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES |
+                c.GTK_EVENT_CONTROLLER_SCROLL_DISCRETE,
+        );
+        errdefer c.g_object_unref(ec_scroll);
+        c.gtk_widget_add_controller(widget, ec_scroll);
+
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
         c.gtk_widget_set_focus_on_click(widget, 1);
@@ -243,6 +257,7 @@ pub const Surface = struct {
             .gl_area = opts.gl_area,
             .core_surface = undefined,
             .size = .{ .width = 800, .height = 600 },
+            .cursor_pos = .{ .x = 0, .y = 0 },
         };
         errdefer self.* = undefined;
 
@@ -259,6 +274,8 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(gesture_click, "released", c.G_CALLBACK(&gtkMouseUp), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_motion, "motion", c.G_CALLBACK(&gtkMouseMotion), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_scroll, "scroll", c.G_CALLBACK(&gtkMouseScroll), self, null, c.G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
@@ -342,14 +359,7 @@ pub const Surface = struct {
     }
 
     pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
-        _ = self;
-        return .{};
-        // const unscaled_pos = self.window.getCursorPos();
-        // const pos = try self.cursorPosToPixels(unscaled_pos);
-        // return apprt.CursorPos{
-        //     .x = @floatCast(f32, pos.xpos),
-        //     .y = @floatCast(f32, pos.ypos),
-        // };
+        return self.cursor_pos;
     }
 
     fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
@@ -432,7 +442,7 @@ pub const Surface = struct {
         const self = userdataSelf(ud.?);
         self.core_surface.mouseButtonCallback(.press, button, .{}) catch |err| {
             log.err("error in key callback err={}", .{err});
-            return 0;
+            return;
         };
     }
 
@@ -451,7 +461,38 @@ pub const Surface = struct {
         const self = userdataSelf(ud.?);
         self.core_surface.mouseButtonCallback(.release, button, .{}) catch |err| {
             log.err("error in key callback err={}", .{err});
-            return 0;
+            return;
+        };
+    }
+
+    fn gtkMouseMotion(
+        _: *c.GtkEventControllerMotion,
+        x: c.gdouble,
+        y: c.gdouble,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.cursor_pos = .{
+            .x = @max(0, @floatCast(f32, x)),
+            .y = @floatCast(f32, y),
+        };
+
+        self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
+            log.err("error in cursor pos callback err={}", .{err});
+            return;
+        };
+    }
+
+    fn gtkMouseScroll(
+        _: *c.GtkEventControllerScroll,
+        x: c.gdouble,
+        y: c.gdouble,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.core_surface.scrollCallback(x, y * -1) catch |err| {
+            log.err("error in scroll callback err={}", .{err});
+            return;
         };
     }
 
