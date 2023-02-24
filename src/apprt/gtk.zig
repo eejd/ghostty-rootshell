@@ -238,6 +238,13 @@ pub const Surface = struct {
             im_context,
         );
 
+        // Create a second key controller so we can receive the raw
+        // key-press events BEFORE the input method gets them.
+        const ec_key_press = c.gtk_event_controller_key_new();
+        errdefer c.g_object_unref(ec_key_press);
+        c.gtk_widget_add_controller(widget, ec_key_press);
+        errdefer c.gtk_widget_remove_controller(widget, ec_key_press);
+
         // Clicks
         const gesture_click = c.gtk_gesture_click_new();
         errdefer c.g_object_unref(gesture_click);
@@ -286,8 +293,8 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
 
-        _ = c.g_signal_connect_data(ec_key, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(ec_key, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_key_press, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, c.G_CONNECT_DEFAULT);
@@ -527,6 +534,7 @@ pub const Surface = struct {
         const key = translateKey(keyval);
         const mods = translateMods(state);
         const self = userdataSelf(ud.?);
+        log.debug("key-press key={} mods={}", .{ key, mods });
         self.core_surface.keyCallback(.press, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return 0;
