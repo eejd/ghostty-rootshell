@@ -126,7 +126,7 @@ pub const App = struct {
 
             // Tick the terminal app
             const should_quit = try self.core_app.tick(self);
-            if (should_quit) return;
+            if (false and should_quit) return;
         }
     }
 
@@ -152,22 +152,37 @@ pub const App = struct {
         var surface = try self.core_app.alloc.create(Surface);
         errdefer self.core_app.alloc.destroy(surface);
 
+        // Create the window
         const window = c.gtk_application_window_new(self.app);
         const gtk_window = @ptrCast(*c.GtkWindow, window);
+        errdefer c.gtk_window_destroy(gtk_window);
         c.gtk_window_set_title(gtk_window, "Ghostty");
         c.gtk_window_set_default_size(gtk_window, 200, 200);
         c.gtk_widget_show(window);
+
+        // Create a notebook to hold our tabs.
+        const notebook_widget = c.gtk_notebook_new();
+        const notebook = @ptrCast(*c.GtkNotebook, notebook_widget);
+        c.gtk_notebook_set_tab_pos(notebook, c.GTK_POS_TOP);
 
         // Initialize the GtkGLArea and attach it to our surface.
         // The surface starts in the "unrealized" state because we have to
         // wait for the "realize" callback from GTK to know that the OpenGL
         // context is ready. See Surface docs for more info.
         const gl_area = c.gtk_gl_area_new();
+        const label = c.gtk_label_new("Ghostty");
         try surface.init(self, .{
             .gl_area = @ptrCast(*c.GtkGLArea, gl_area),
+            .title_label = @ptrCast(*c.GtkLabel, label),
         });
         errdefer surface.deinit();
-        c.gtk_window_set_child(gtk_window, gl_area);
+        if (c.gtk_notebook_append_page(notebook, gl_area, label) < 0) {
+            log.warn("failed to add surface to notebook", .{});
+            return error.GtkAppendPageFailed;
+        }
+
+        // The notebook is our main child
+        c.gtk_window_set_child(gtk_window, notebook_widget);
 
         // We need to grab focus after it is added to the window. When
         // creating a window we want to always focus on the widget.
@@ -194,6 +209,16 @@ pub const Surface = struct {
 
     pub const Options = struct {
         gl_area: *c.GtkGLArea,
+
+        /// The label to use as the title of this surface. This will be
+        /// modified with setTitle.
+        title_label: ?*c.GtkLabel = null,
+    };
+
+    /// Where the title of this surface will go.
+    const Title = union(enum) {
+        none: void,
+        label: *c.GtkLabel,
     };
 
     /// Whether the surface has been realized or not yet. When a surface is
@@ -206,6 +231,9 @@ pub const Surface = struct {
 
     /// Our GTK area
     gl_area: *c.GtkGLArea,
+
+    /// Our title label (if there is one).
+    title: Title,
 
     /// The core surface backing this surface
     core_surface: CoreSurface,
@@ -286,6 +314,9 @@ pub const Surface = struct {
         self.* = .{
             .app = app,
             .gl_area = opts.gl_area,
+            .title = if (opts.title_label) |label| .{
+                .label = label,
+            } else .{ .none = {} },
             .core_surface = undefined,
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
@@ -378,14 +409,18 @@ pub const Surface = struct {
     }
 
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        const root = c.gtk_widget_get_root(@ptrCast(
-            *c.GtkWidget,
-            self.gl_area,
-        ));
+        switch (self.title) {
+            .none => {},
 
-        // TODO: we need a way to check if the type is a window
-        _ = root;
-        _ = slice;
+            .label => |label| {
+                c.gtk_label_set_text(label, slice.ptr);
+            },
+        }
+
+        // const root = c.gtk_widget_get_root(@ptrCast(
+        //     *c.GtkWidget,
+        //     self.gl_area,
+        // ));
     }
 
     pub fn getClipboardString(self: *Surface) ![:0]const u8 {
@@ -496,12 +531,18 @@ pub const Surface = struct {
         _: c.gdouble,
         ud: ?*anyopaque,
     ) callconv(.C) void {
+        const self = userdataSelf(ud.?);
         const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(
             *c.GtkGestureSingle,
             gesture,
         )));
 
-        const self = userdataSelf(ud.?);
+        // If we don't have focus, grab it.
+        const gl_widget = @ptrCast(*c.GtkWidget, self.gl_area);
+        if (c.gtk_widget_has_focus(gl_widget) == 0) {
+            _ = c.gtk_widget_grab_focus(gl_widget);
+        }
+
         self.core_surface.mouseButtonCallback(.press, button, .{}) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
