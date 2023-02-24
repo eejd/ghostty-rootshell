@@ -213,6 +213,7 @@ pub const Surface = struct {
     /// Cached metrics about the surface from GTK callbacks.
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
+    clipboard: c.GValue,
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         const widget = @ptrCast(*c.GtkWidget, opts.gl_area);
@@ -288,6 +289,7 @@ pub const Surface = struct {
             .core_surface = undefined,
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
+            .clipboard = std.mem.zeroes(c.GValue),
         };
         errdefer self.* = undefined;
 
@@ -327,6 +329,8 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
+        c.g_value_unset(&self.clipboard);
+
         // We don't allocate anything if we aren't realized.
         if (!self.realized) return;
 
@@ -378,14 +382,36 @@ pub const Surface = struct {
         _ = slice;
     }
 
-    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
-        _ = self;
-        return "";
+    pub fn getClipboardString(self: *Surface) ![:0]const u8 {
+        const clipboard = c.gtk_widget_get_clipboard(@ptrCast(
+            *c.GtkWidget,
+            self.gl_area,
+        ));
+
+        const content = c.gdk_clipboard_get_content(clipboard) orelse {
+            // On my machine, this NEVER works, so we fallback to glfw's
+            // implementation...
+            log.debug("no GTK clipboard contents, falling back to glfw", .{});
+            return glfw.getClipboardString() orelse return glfw.mustGetErrorCode();
+        };
+
+        c.g_value_unset(&self.clipboard);
+        _ = c.g_value_init(&self.clipboard, c.G_TYPE_STRING);
+        if (c.gdk_content_provider_get_value(content, &self.clipboard, null) == 0) {
+            return "";
+        }
+
+        const ptr = c.g_value_get_string(&self.clipboard);
+        return std.mem.sliceTo(ptr, 0);
     }
 
     pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
-        _ = self;
-        _ = val;
+        const clipboard = c.gtk_widget_get_clipboard(@ptrCast(
+            *c.GtkWidget,
+            self.gl_area,
+        ));
+
+        c.gdk_clipboard_set_text(clipboard, val.ptr);
     }
 
     pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
