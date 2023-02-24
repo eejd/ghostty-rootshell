@@ -188,8 +188,10 @@ fragment float4 uber_fragment(
     float2 size = float2(textureGreyscale.get_width(), textureGreyscale.get_height());
     float2 coord = in.tex_coord / size;
 
+    // We premult the alpha to our whole color since our blend function
+    // uses One/OneMinusSourceAlpha to avoid blurry edges.
     float a = textureGreyscale.sample(textureSampler, coord).r;
-    return float4(in.color.rgb, in.color.a * a);
+    return in.color * a;
   }
 
   case MODE_FG_COLOR: {

@@ -1299,8 +1299,8 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
         attachment.setProperty("blendingEnabled", true);
         attachment.setProperty("rgbBlendOperation", @enumToInt(MTLBlendOperation.add));
         attachment.setProperty("alphaBlendOperation", @enumToInt(MTLBlendOperation.add));
-        attachment.setProperty("sourceRGBBlendFactor", @enumToInt(MTLBlendFactor.source_alpha));
-        attachment.setProperty("sourceAlphaBlendFactor", @enumToInt(MTLBlendFactor.source_alpha));
+        attachment.setProperty("sourceRGBBlendFactor", @enumToInt(MTLBlendFactor.one));
+        attachment.setProperty("sourceAlphaBlendFactor", @enumToInt(MTLBlendFactor.one));
         attachment.setProperty("destinationRGBBlendFactor", @enumToInt(MTLBlendFactor.one_minus_source_alpha));
         attachment.setProperty("destinationAlphaBlendFactor", @enumToInt(MTLBlendFactor.one_minus_source_alpha));
     }
