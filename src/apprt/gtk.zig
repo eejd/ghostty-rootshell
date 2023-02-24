@@ -216,6 +216,10 @@ pub const Surface = struct {
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         const widget = @ptrCast(*c.GtkWidget, opts.gl_area);
+        c.gtk_gl_area_set_required_version(opts.gl_area, 3, 3);
+        c.gtk_gl_area_set_has_stencil_buffer(opts.gl_area, 0);
+        c.gtk_gl_area_set_has_depth_buffer(opts.gl_area, 0);
+        c.gtk_gl_area_set_use_es(opts.gl_area, 0);
 
         // Key event controller will tell us about raw keypress events.
         const ec_key = c.gtk_event_controller_key_new();
