@@ -278,6 +278,16 @@ pub const Config = struct {
             .{ .key = .t, .mods = .{ .super = true } },
             .{ .new_tab = {} },
         );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .left_bracket, .mods = .{ .super = true, .shift = true } },
+            .{ .previous_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .right_bracket, .mods = .{ .super = true, .shift = true } },
+            .{ .next_tab = {} },
+        );
         if (comptime builtin.target.isDarwin()) {
             try result.keybind.set.put(
                 alloc,

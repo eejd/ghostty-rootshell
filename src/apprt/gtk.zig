@@ -291,18 +291,8 @@ const Window = struct {
     /// Close the tab for the given notebook page. This will automatically
     /// handle closing the window if there are no more tabs.
     fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
-        // Get the page index from the page
-        var value: c.GValue = std.mem.zeroes(c.GValue);
-        defer c.g_value_unset(&value);
-        _ = c.g_value_init(&value, c.G_TYPE_INT);
-        c.g_object_get_property(
-            @ptrCast(*c.GObject, @alignCast(@alignOf(c.GObject), page)),
-            "position",
-            &value,
-        );
-
         // Remove the page
-        const page_idx = c.g_value_get_int(&value);
+        const page_idx = getNotebookPageIndex(page);
         c.gtk_notebook_remove_page(self.notebook, page_idx);
 
         const remaining = c.gtk_notebook_get_n_pages(self.notebook);
@@ -321,6 +311,34 @@ const Window = struct {
     fn closeSurface(self: *Window, surface: *Surface) void {
         assert(surface.window == self);
         self.closeTab(getNotebookPage(@ptrCast(*c.GObject, surface.gl_area)) orelse return);
+    }
+
+    /// Go to the previous tab for a surface.
+    fn gotoPreviousTab(self: *Window, surface: *Surface) void {
+        const page = getNotebookPage(@ptrCast(*c.GObject, surface.gl_area)) orelse return;
+        const page_idx = getNotebookPageIndex(page);
+        if (page_idx > 0) {
+            c.gtk_notebook_set_current_page(self.notebook, page_idx - 1);
+            self.focusCurrentTab();
+        }
+    }
+
+    /// Go to the next tab for a surface.
+    fn gotoNextTab(self: *Window, surface: *Surface) void {
+        const page = getNotebookPage(@ptrCast(*c.GObject, surface.gl_area)) orelse return;
+        const page_idx = getNotebookPageIndex(page);
+        const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
+        if (page_idx < max) {
+            c.gtk_notebook_set_current_page(self.notebook, page_idx + 1);
+            self.focusCurrentTab();
+        }
+    }
+
+    /// Grabs focus on the currently selected tab.
+    fn focusCurrentTab(self: *Window) void {
+        const page_idx = c.gtk_notebook_get_current_page(self.notebook);
+        const widget = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
+        _ = c.gtk_widget_grab_focus(widget);
     }
 
     fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
@@ -354,6 +372,19 @@ const Window = struct {
             @alignOf(c.GtkNotebookPage),
             c.g_object_get_data(obj, TAB_CLOSE_PAGE) orelse return null,
         ));
+    }
+
+    fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
+        var value: c.GValue = std.mem.zeroes(c.GValue);
+        defer c.g_value_unset(&value);
+        _ = c.g_value_init(&value, c.G_TYPE_INT);
+        c.g_object_get_property(
+            @ptrCast(*c.GObject, @alignCast(@alignOf(c.GObject), page)),
+            "position",
+            &value,
+        );
+
+        return c.g_value_get_int(&value);
     }
 
     fn userdataSelf(ud: *anyopaque) *Window {
@@ -551,6 +582,14 @@ pub const Surface = struct {
     /// Close this surface.
     fn close(self: *Surface) void {
         self.window.closeSurface(self);
+    }
+
+    pub fn gotoPreviousTab(self: *Surface) void {
+        self.window.gotoPreviousTab(self);
+    }
+
+    pub fn gotoNextTab(self: *Surface) void {
+        self.window.gotoNextTab(self);
     }
 
     pub fn setShouldClose(self: *Surface) void {

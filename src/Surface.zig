@@ -917,6 +917,9 @@ pub fn keyCallback(
                     }, .{ .instant = {} });
                 },
 
+                .previous_tab => self.rt_surface.gotoPreviousTab(),
+                .next_tab => self.rt_surface.gotoNextTab(),
+
                 .close_window => {
                     _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
                 },

@@ -155,6 +155,12 @@ pub const Action = union(enum) {
     /// Open a new tab
     new_tab: void,
 
+    /// Go to the previous tab
+    previous_tab: void,
+
+    /// Go to the next tab
+    next_tab: void,
+
     /// Close the current window or tab
     close_window: void,
 
