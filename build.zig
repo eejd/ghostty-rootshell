@@ -141,6 +141,27 @@ pub fn build(b: *std.build.Builder) !void {
         _ = try addDeps(b, exe, static);
     }
 
+    // App (Linux)
+    if (target.isLinux()) {
+        // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
+
+        // Desktop file so that we have an icon and other metadata
+        b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+
+        // Various icons that our application can use, including the icon
+        // that will be used for the desktop.
+        b.installFile("images/icons/icon_16x16.png", "share/icons/hicolor/16x16/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_32x32.png", "share/icons/hicolor/32x32/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_128x128.png", "share/icons/hicolor/128x128/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_256x256.png", "share/icons/hicolor/256x256/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_512x512.png", "share/icons/hicolor/512x512/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_16x16@2x@2x.png", "share/icons/hicolor/16x16@2/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_32x32@2x@2x.png", "share/icons/hicolor/32x32@2/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_128x128@2x@2x.png", "share/icons/hicolor/128x128@2/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_256x256@2x@2x.png", "share/icons/hicolor/256x256@2/com.mitchellh.ghostty.png");
+        b.installFile("images/icons/icon_512x512@2x@2x.png", "share/icons/hicolor/512x512@2/com.mitchellh.ghostty.png");
+    }
+
     // App (Mac)
     if (target.isDarwin()) {
         const bin_path = try std.fmt.allocPrint(b.allocator, "{s}/bin/ghostty", .{b.install_path});
