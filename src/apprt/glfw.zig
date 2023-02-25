@@ -79,7 +79,7 @@ pub const App = struct {
     }
 
     /// Create a new tab in the parent surface.
-    pub fn newTab(self: *App, parent: *CoreSurface) !void {
+    fn newTab(self: *App, parent: *CoreSurface) !void {
         if (!Darwin.enabled) {
             log.warn("tabbing is not supported on this platform", .{});
             return;
@@ -354,6 +354,11 @@ pub const Surface = struct {
                 selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
             }
         }
+    }
+
+    /// Create a new tab in the window containing this surface.
+    pub fn newTab(self: *Surface) !void {
+        try self.app.newTab(&self.core_surface);
     }
 
     /// Set the size limits of the window.

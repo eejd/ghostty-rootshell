@@ -157,11 +157,6 @@ pub const App = struct {
         try window.init(self);
     }
 
-    pub fn newTab(self: *App, parent: *CoreSurface) !void {
-        _ = self;
-        try parent.rt_surface.window.newTab();
-    }
-
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
         _ = app;
         _ = ud;
@@ -582,6 +577,10 @@ pub const Surface = struct {
     /// Close this surface.
     fn close(self: *Surface) void {
         self.window.closeSurface(self);
+    }
+
+    pub fn newTab(self: *Surface) !void {
+        try self.window.newTab();
     }
 
     pub fn gotoPreviousTab(self: *Surface) void {

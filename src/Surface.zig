@@ -910,11 +910,9 @@ pub fn keyCallback(
                 },
 
                 .new_tab => {
-                    _ = self.app_mailbox.push(.{
-                        .new_tab = .{
-                            .parent = self,
-                        },
-                    }, .{ .instant = {} });
+                    if (@hasDecl(apprt.Surface, "newTab")) {
+                        try self.rt_surface.newTab();
+                    } else log.warn("runtime doesn't implement newTab", .{});
                 },
 
                 .previous_tab => {

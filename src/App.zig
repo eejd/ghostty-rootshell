@@ -124,7 +124,6 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .new_window => |msg| try self.newWindow(rt_app, msg),
-            .new_tab => |msg| try self.newTab(rt_app, msg),
             .close => |surface| try self.closeSurface(rt_app, surface),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
@@ -158,27 +157,6 @@ fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
     } else null;
 
     try rt_app.newWindow(parent);
-}
-
-/// Create a new tab in the parent window
-fn newTab(self: *App, rt_app: *apprt.App, msg: Message.NewTab) !void {
-    if (!@hasDecl(apprt.App, "newTab")) {
-        log.warn("newTab is not supported by this runtime", .{});
-        return;
-    }
-
-    const parent = msg.parent orelse {
-        log.warn("parent must be set in new_tab message", .{});
-        return;
-    };
-
-    // If the parent was closed prior to us handling the message, we do nothing.
-    if (!self.hasSurface(parent)) {
-        log.warn("new_tab parent is gone, not launching a new tab", .{});
-        return;
-    }
-
-    try rt_app.newTab(parent);
 }
 
 /// Start quitting
@@ -218,11 +196,6 @@ pub const Message = union(enum) {
     /// Create a new terminal window.
     new_window: NewWindow,
 
-    /// Create a new tab within the tab group of the focused window.
-    /// This does nothing if we're on a platform or using a window
-    /// environment that doesn't support tabs.
-    new_tab: NewTab,
-
     /// Close a surface. This notifies the runtime that a surface
     /// should close.
     close: *Surface,
@@ -243,11 +216,6 @@ pub const Message = union(enum) {
     redraw_surface: *apprt.Surface,
 
     const NewWindow = struct {
-        /// The parent surface
-        parent: ?*Surface = null,
-    };
-
-    const NewTab = struct {
         /// The parent surface
         parent: ?*Surface = null,
     };
