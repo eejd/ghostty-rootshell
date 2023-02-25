@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Ghostty
+Type=Application
+Comment=A terminal emulator
+Exec=/usr/bin/ghostty
+Icon=com.mitchellh.ghostty
+Keywords=terminal;tty;pty;
+StartupNotify=true
+Terminal=false
