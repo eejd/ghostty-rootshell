@@ -158,10 +158,9 @@ pub const App = struct {
         try window.init(self);
     }
 
-    pub fn newTab(self: *App, parent_: ?*CoreSurface) !void {
-        // TODO
+    pub fn newTab(self: *App, parent: *CoreSurface) !void {
         _ = self;
-        _ = parent_;
+        try parent.rt_surface.window.newTab();
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
@@ -254,6 +253,7 @@ const Window = struct {
         // context is ready. See Surface docs for more info.
         const gl_area = c.gtk_gl_area_new();
         try surface.init(self.app, .{
+            .window = self,
             .gl_area = @ptrCast(*c.GtkGLArea, gl_area),
             .title_label = @ptrCast(*c.GtkLabel, label_text),
         });
@@ -336,6 +336,9 @@ pub const Surface = struct {
     pub const opengl_single_threaded_draw = true;
 
     pub const Options = struct {
+        /// The window that this surface is attached to.
+        window: *Window,
+
         gl_area: *c.GtkGLArea,
 
         /// The label to use as the title of this surface. This will be
@@ -356,6 +359,9 @@ pub const Surface = struct {
 
     /// The app we're part of
     app: *App,
+
+    /// The window we're part of
+    window: *Window,
 
     /// Our GTK area
     gl_area: *c.GtkGLArea,
@@ -441,6 +447,7 @@ pub const Surface = struct {
         // Build our result
         self.* = .{
             .app = app,
+            .window = opts.window,
             .gl_area = opts.gl_area,
             .title = if (opts.title_label) |label| .{
                 .label = label,
