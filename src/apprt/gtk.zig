@@ -126,7 +126,7 @@ pub const App = struct {
 
             // Tick the terminal app
             const should_quit = try self.core_app.tick(self);
-            if (false and should_quit) return;
+            if (should_quit) return;
         }
     }
 
