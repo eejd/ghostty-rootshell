@@ -881,7 +881,17 @@ pub const Surface = struct {
             return 0;
         };
 
-        return 0;
+        // We generally just say we didn't handle it. We control our
+        // GTK environment so for any keys that matter we'll grab them.
+        // One of the reasons we say we didn't handle it is so that the
+        // IME can still work.
+        return switch (keyval) {
+            // If the key is tab, we say we handled it because we don't want
+            // tab to move focus from our surface.
+            c.GDK_KEY_Tab => 1,
+
+            else => 0,
+        };
     }
 
     fn gtkKeyReleased(
