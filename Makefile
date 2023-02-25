@@ -16,7 +16,7 @@ dev/install:
 # maintain it at the moment).
 deb:
 	rm -rf zig-out/
-	zig build -Doptimize=ReleaseFast
+	zig build -Doptimize=ReleaseFast -Dapp-runtime=gtk
 	fpm -C zig-out/ -s dir -t deb -n ghostty --prefix /usr ./
 .PHONY: deb
 

@@ -6,13 +6,17 @@ const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("build_options");
 const assert = std.debug.assert;
+const apprt = @import("apprt.zig");
 
 /// The artifact we're producing. This can be used to determine if we're
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
 
 /// The runtime to back exe artifacts with.
-pub const app_runtime = options.app_runtime;
+pub const app_runtime = std.meta.stringToEnum(
+    apprt.Runtime,
+    std.meta.tagName(options.app_runtime),
+).?;
 
 /// Whether our devmode UI is enabled or not. This requires imgui to be
 /// compiled.
