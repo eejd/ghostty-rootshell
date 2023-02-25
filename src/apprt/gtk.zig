@@ -312,10 +312,18 @@ const Window = struct {
     fn gotoPreviousTab(self: *Window, surface: *Surface) void {
         const page = getNotebookPage(@ptrCast(*c.GObject, surface.gl_area)) orelse return;
         const page_idx = getNotebookPageIndex(page);
-        if (page_idx > 0) {
-            c.gtk_notebook_set_current_page(self.notebook, page_idx - 1);
-            self.focusCurrentTab();
-        }
+
+        // The next index is the previous or we wrap around.
+        const next_idx = if (page_idx > 0) page_idx - 1 else next_idx: {
+            const max = c.gtk_notebook_get_n_pages(self.notebook);
+            break :next_idx max -| 1;
+        };
+
+        // Do nothing if we have one tab
+        if (next_idx == page_idx) return;
+
+        c.gtk_notebook_set_current_page(self.notebook, next_idx);
+        self.focusCurrentTab();
     }
 
     /// Go to the next tab for a surface.
@@ -323,10 +331,11 @@ const Window = struct {
         const page = getNotebookPage(@ptrCast(*c.GObject, surface.gl_area)) orelse return;
         const page_idx = getNotebookPageIndex(page);
         const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
-        if (page_idx < max) {
-            c.gtk_notebook_set_current_page(self.notebook, page_idx + 1);
-            self.focusCurrentTab();
-        }
+        const next_idx = if (page_idx < max) page_idx + 1 else 0;
+        if (next_idx == page_idx) return;
+
+        c.gtk_notebook_set_current_page(self.notebook, next_idx);
+        self.focusCurrentTab();
     }
 
     /// Go to the specific tab index.
