@@ -1,5 +1,7 @@
 { mkShell, lib, stdenv
 
+, dpkg
+, fpm
 , gdb
 , glxinfo
 , nodejs
@@ -64,6 +66,8 @@ in mkShell rec {
 
   nativeBuildInputs = [
     # For builds
+    dpkg
+    fpm
     llvmPackages_latest.llvm
     pkg-config
     scdoc
