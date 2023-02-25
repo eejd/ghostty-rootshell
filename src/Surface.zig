@@ -917,8 +917,17 @@ pub fn keyCallback(
                     }, .{ .instant = {} });
                 },
 
-                .previous_tab => self.rt_surface.gotoPreviousTab(),
-                .next_tab => self.rt_surface.gotoNextTab(),
+                .previous_tab => {
+                    if (@hasDecl(apprt.Surface, "gotoPreviousTab")) {
+                        self.rt_surface.gotoPreviousTab();
+                    } else log.warn("runtime doesn't implement gotoPreviousTab", .{});
+                },
+
+                .next_tab => {
+                    if (@hasDecl(apprt.Surface, "gotoNextTab")) {
+                        self.rt_surface.gotoNextTab();
+                    } else log.warn("runtime doesn't implement gotoNextTab", .{});
+                },
 
                 .close_window => {
                     _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
