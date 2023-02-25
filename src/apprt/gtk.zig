@@ -210,6 +210,8 @@ const Window = struct {
         const notebook = @ptrCast(*c.GtkNotebook, notebook_widget);
         self.notebook = notebook;
         c.gtk_notebook_set_tab_pos(notebook, c.GTK_POS_TOP);
+        c.gtk_notebook_set_scrollable(notebook, 1);
+        c.gtk_notebook_set_show_tabs(notebook, 0);
 
         // Create our add button for new tabs
         const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
@@ -264,6 +266,14 @@ const Window = struct {
             return error.GtkAppendPageFailed;
         }
 
+        // Tab settings
+        c.gtk_notebook_set_tab_reorderable(self.notebook, gl_area, 1);
+
+        // If we have multiple tabs, show the tab bar.
+        if (c.gtk_notebook_get_n_pages(self.notebook) > 1) {
+            c.gtk_notebook_set_show_tabs(self.notebook, 1);
+        }
+
         // Set the userdata of the close button so it points to this page.
         const page = c.gtk_notebook_get_page(self.notebook, gl_area) orelse
             return error.GtkNotebookPageNotFound;
@@ -307,10 +317,15 @@ const Window = struct {
         const self = userdataSelf(ud.?);
         c.gtk_notebook_remove_page(self.notebook, page_idx);
 
-        // If we have no more tabs left we close the window
         const remaining = c.gtk_notebook_get_n_pages(self.notebook);
-        if (remaining == 0) {
-            c.gtk_window_destroy(self.window);
+        switch (remaining) {
+            // If we have no more tabs we close the window
+            0 => c.gtk_window_destroy(self.window),
+
+            // If we have one more tab we hide the tab bar
+            1 => c.gtk_notebook_set_show_tabs(self.notebook, 0),
+
+            else => {},
         }
     }
 
