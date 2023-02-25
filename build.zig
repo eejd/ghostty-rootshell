@@ -99,15 +99,21 @@ pub fn build(b: *std.build.Builder) !void {
 
     const emit_test_exe = b.option(
         bool,
-        "test-exe",
+        "emit-test-exe",
         "Build and install test executables with 'build'",
+    ) orelse false;
+
+    const emit_bench = b.option(
+        bool,
+        "emit-bench",
+        "Build and install the benchmark executables.",
     ) orelse false;
 
     // We can use wasmtime to test wasm
     b.enable_wasmtime = true;
 
     // Add our benchmarks
-    try benchSteps(b, target, optimize);
+    try benchSteps(b, target, optimize, emit_bench);
 
     const exe = b.addExecutable(.{
         .name = "ghostty",
@@ -589,6 +595,7 @@ fn benchSteps(
     b: *std.build.Builder,
     target: std.zig.CrossTarget,
     optimize: std.builtin.Mode,
+    install: bool,
 ) !void {
     // Open the directory ./src/bench
     const c_dir_path = (comptime root()) ++ "/src/bench";
@@ -621,7 +628,7 @@ fn benchSteps(
             .optimize = optimize,
         });
         c_exe.setMainPkgPath("./src");
-        c_exe.install();
+        if (install) c_exe.install();
         _ = try addDeps(b, c_exe, true);
     }
 }
