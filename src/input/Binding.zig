@@ -161,6 +161,9 @@ pub const Action = union(enum) {
     /// Go to the next tab
     next_tab: void,
 
+    /// Go to the tab with the specific number, 1-indexed.
+    goto_tab: usize,
+
     /// Close the current window or tab
     close_window: void,
 

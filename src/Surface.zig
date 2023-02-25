@@ -927,6 +927,12 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement gotoNextTab", .{});
                 },
 
+                .goto_tab => |n| {
+                    if (@hasDecl(apprt.Surface, "gotoTab")) {
+                        self.rt_surface.gotoTab(n);
+                    } else log.warn("runtime doesn't implement gotoTab", .{});
+                },
+
                 .close_window => {
                     _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
                 },

@@ -288,6 +288,19 @@ pub const Config = struct {
             .{ .key = .right_bracket, .mods = .{ .super = true, .shift = true } },
             .{ .next_tab = {} },
         );
+        {
+            // Cmd+N for goto tab N
+            const start = @enumToInt(inputpkg.Key.one);
+            const end = @enumToInt(inputpkg.Key.nine);
+            var i: usize = start;
+            while (i <= end) : (i += 1) {
+                try result.keybind.set.put(
+                    alloc,
+                    .{ .key = @intToEnum(inputpkg.Key, i), .mods = .{ .super = true } },
+                    .{ .goto_tab = (i - start) + 1 },
+                );
+            }
+        }
         if (comptime builtin.target.isDarwin()) {
             try result.keybind.set.put(
                 alloc,

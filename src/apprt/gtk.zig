@@ -329,6 +329,17 @@ const Window = struct {
         }
     }
 
+    /// Go to the specific tab index.
+    fn gotoTab(self: *Window, n: usize) void {
+        if (n == 0) return;
+        const max = c.gtk_notebook_get_n_pages(self.notebook);
+        const page_idx = std.math.cast(c_int, n - 1) orelse return;
+        if (page_idx < max) {
+            c.gtk_notebook_set_current_page(self.notebook, page_idx);
+            self.focusCurrentTab();
+        }
+    }
+
     /// Grabs focus on the currently selected tab.
     fn focusCurrentTab(self: *Window) void {
         const page_idx = c.gtk_notebook_get_current_page(self.notebook);
@@ -589,6 +600,10 @@ pub const Surface = struct {
 
     pub fn gotoNextTab(self: *Surface) void {
         self.window.gotoNextTab(self);
+    }
+
+    pub fn gotoTab(self: *Surface, n: usize) void {
+        self.window.gotoTab(n);
     }
 
     pub fn setShouldClose(self: *Surface) void {
