@@ -149,6 +149,9 @@ pub const App = struct {
         // allocations but windows and other GUI requirements are so minimal
         // compared to the steady-state terminal operation so we use heap
         // allocation for this.
+        //
+        // The allocation is owned by the GtkWindow created. It will be
+        // freed when the window is closed.
         var window = try alloc.create(Window);
         errdefer alloc.destroy(window);
         try window.init(self);
@@ -769,17 +772,48 @@ pub const Surface = struct {
 
     fn gtkKeyPressed(
         _: *c.GtkEventControllerKey,
-        keyval: c.guint,
+        keyval_event: c.guint,
         keycode: c.guint,
         state: c.GdkModifierType,
         ud: ?*anyopaque,
     ) callconv(.C) c.gboolean {
-        _ = keycode;
+        const self = userdataSelf(ud.?);
+        const display = c.gtk_widget_get_display(@ptrCast(*c.GtkWidget, self.gl_area)).?;
+
+        // We want to use only the key that corresponds to the hardware key.
+        // I suspect this logic is actually wrong for customized keyboards,
+        // maybe international keyboards, but I don't have an easy way to
+        // test that that I know of... sorry!
+        var keys: [*c]c.GdkKeymapKey = undefined;
+        var keyvals: [*c]c.guint = undefined;
+        var keys_len: c_int = undefined;
+        const found = c.gdk_display_map_keycode(display, keycode, &keys, &keyvals, &keys_len);
+        defer if (found > 0) {
+            c.g_free(keys);
+            c.g_free(keyvals);
+        };
+
+        // We look for the keyval corresponding to this key pressed with
+        // zero modifiers. We're assuming this always exist but unsure if
+        // that assumption is true.
+        const keyval = keyval: {
+            if (found > 0) {
+                for (keys[0..@intCast(usize, keys_len)]) |key, i| {
+                    if (key.group == 0 and key.level == 0)
+                        break :keyval keyvals[i];
+                }
+            }
+
+            log.warn("key-press with unknown key keyval={} keycode={}", .{
+                keyval_event,
+                keycode,
+            });
+            return 0;
+        };
 
         const key = translateKey(keyval);
         const mods = translateMods(state);
-        const self = userdataSelf(ud.?);
-        log.debug("key-press key={} mods={}", .{ key, mods });
+        log.debug("key-press code={} key={} mods={}", .{ keycode, key, mods });
         self.core_surface.keyCallback(.press, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return 0;
