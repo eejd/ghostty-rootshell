@@ -133,11 +133,7 @@ pub const App = struct {
     /// Close the given surface.
     pub fn closeSurface(self: *App, surface: *Surface) void {
         _ = self;
-        _ = surface;
-
-        // This shouldn't be called because we should be working within
-        // the GTK lifecycle and we can't just deallocate surfaces here.
-        @panic("This should not be called with GTK.");
+        surface.close();
     }
 
     pub fn redrawSurface(self: *App, surface: *Surface) void {
@@ -278,6 +274,7 @@ const Window = struct {
         const page = c.gtk_notebook_get_page(self.notebook, gl_area) orelse
             return error.GtkNotebookPageNotFound;
         c.g_object_set_data(@ptrCast(*c.GObject, label_close), TAB_CLOSE_PAGE, page);
+        c.g_object_set_data(@ptrCast(*c.GObject, gl_area), TAB_CLOSE_PAGE, page);
 
         // Switch to the new tab
         c.gtk_notebook_set_current_page(self.notebook, page_idx);
@@ -288,22 +285,10 @@ const Window = struct {
         _ = c.gtk_widget_grab_focus(widget);
     }
 
-    fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-        const self = userdataSelf(ud.?);
-        self.newTab() catch |err| {
-            log.warn("error adding new tab: {}", .{err});
-            return;
-        };
-    }
-
-    fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-        // Get the notebook page
-        const page = @ptrCast(*c.GtkNotebookPage, @alignCast(
-            @alignOf(c.GtkNotebookPage),
-            c.g_object_get_data(@ptrCast(*c.GObject, btn), TAB_CLOSE_PAGE),
-        ));
-
-        // Get the page index
+    /// Close the tab for the given notebook page. This will automatically
+    /// handle closing the window if there are no more tabs.
+    fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
+        // Get the page index from the page
         var value: c.GValue = std.mem.zeroes(c.GValue);
         defer c.g_value_unset(&value);
         _ = c.g_value_init(&value, c.G_TYPE_INT);
@@ -313,8 +298,8 @@ const Window = struct {
             &value,
         );
 
+        // Remove the page
         const page_idx = c.g_value_get_int(&value);
-        const self = userdataSelf(ud.?);
         c.gtk_notebook_remove_page(self.notebook, page_idx);
 
         const remaining = c.gtk_notebook_get_n_pages(self.notebook);
@@ -329,6 +314,25 @@ const Window = struct {
         }
     }
 
+    /// Close the surface. This surface must be definitely part of this window.
+    fn closeSurface(self: *Window, surface: *Surface) void {
+        assert(surface.window == self);
+        self.closeTab(getNotebookPage(@ptrCast(*c.GObject, surface.gl_area)) orelse return);
+    }
+
+    fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.newTab() catch |err| {
+            log.warn("error adding new tab: {}", .{err});
+            return;
+        };
+    }
+
+    fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        self.closeTab(getNotebookPage(@ptrCast(*c.GObject, btn)) orelse return);
+    }
+
     /// "destroy" signal for the window
     fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
         _ = v;
@@ -338,6 +342,15 @@ const Window = struct {
         const alloc = self.app.core_app.alloc;
         self.deinit();
         alloc.destroy(self);
+    }
+
+    /// Get the GtkNotebookPage for the given object. You must be sure the
+    /// object has the notebook page property set.
+    fn getNotebookPage(obj: *c.GObject) ?*c.GtkNotebookPage {
+        return @ptrCast(*c.GtkNotebookPage, @alignCast(
+            @alignOf(c.GtkNotebookPage),
+            c.g_object_get_data(obj, TAB_CLOSE_PAGE) orelse return null,
+        ));
     }
 
     fn userdataSelf(ud: *anyopaque) *Window {
@@ -530,6 +543,11 @@ pub const Surface = struct {
     /// Invalidate the surface so that it forces a redraw on the next tick.
     fn invalidate(self: *Surface) void {
         c.gtk_gl_area_queue_render(self.gl_area);
+    }
+
+    /// Close this surface.
+    fn close(self: *Surface) void {
+        self.window.closeSurface(self);
     }
 
     pub fn setShouldClose(self: *Surface) void {
