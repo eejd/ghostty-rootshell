@@ -1,5 +1,6 @@
 { mkShell, lib, stdenv
 
+, flatpak-builder
 , fpm
 , gdb
 , glxinfo
@@ -65,6 +66,7 @@ in mkShell rec {
 
   nativeBuildInputs = [
     # For builds
+    flatpak-builder
     fpm
     llvmPackages_latest.llvm
     pkg-config
