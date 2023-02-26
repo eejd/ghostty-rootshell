@@ -104,15 +104,12 @@ pub fn childPreExec(self: Pty) !void {
     if (setsid() < 0) return error.ProcessGroupFailed;
 
     // Set controlling terminal
-    // TODO: maybe
-    if (!@import("os/main.zig").isFlatpak()) {
-        switch (std.os.system.getErrno(c.ioctl(self.slave, TIOCSCTTY, @as(c_ulong, 0)))) {
-            .SUCCESS => {},
-            else => |err| {
-                log.err("error setting controlling terminal errno={}", .{err});
-                return error.SetControllingTerminalFailed;
-            },
-        }
+    switch (std.os.system.getErrno(c.ioctl(self.slave, TIOCSCTTY, @as(c_ulong, 0)))) {
+        .SUCCESS => {},
+        else => |err| {
+            log.err("error setting controlling terminal errno={}", .{err});
+            return error.SetControllingTerminalFailed;
+        },
     }
 
     // Can close master/slave pair now

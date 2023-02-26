@@ -365,10 +365,7 @@ const Subprocess = struct {
         } else null;
 
         // Set our env vars
-        var env = if (internal_os.isFlatpak())
-            EnvMap.init(alloc)
-        else
-            try std.process.getEnvMap(alloc);
+        var env = try std.process.getEnvMap(alloc);
         errdefer env.deinit();
         try env.put("TERM", "xterm-256color");
         try env.put("COLORTERM", "truecolor");
@@ -397,17 +394,16 @@ const Subprocess = struct {
             var args = try std.ArrayList([]const u8).initCapacity(alloc, 8);
             defer args.deinit();
 
-            try args.append("/usr/bin/flatpak-spawn");
-            try args.append("--host");
-            try args.append("--watch-bus");
-            var env_it = env.iterator();
-            while (env_it.next()) |pair| {
-                try args.append(try std.fmt.allocPrint(
-                    alloc,
-                    "--env={s}={s}",
-                    .{ pair.key_ptr.*, pair.value_ptr.* },
-                ));
-            }
+            // We use host-spawn so the PTY is setup properly.
+            // future: rewrite host-spawn into pure Zig using dbus and
+            // we can run this directly.
+            try args.append("/app/bin/host-spawn");
+            try args.append("-pty");
+            try args.append("-env");
+            try args.append("TERM,COLORTERM");
+            try args.append("/bin/sh");
+            try args.append("-l");
+            try args.append("-c");
             try args.append(path);
 
             break :args try args.toOwnedSlice();
@@ -417,7 +413,7 @@ const Subprocess = struct {
             .arena = arena,
             .env = env,
             .cwd = opts.config.@"working-directory",
-            .path = if (internal_os.isFlatpak()) "/usr/bin/flatpak-spawn" else path,
+            .path = if (internal_os.isFlatpak()) args[0] else path,
             .args = args,
             .grid_size = opts.grid_size,
             .screen_size = opts.screen_size,
