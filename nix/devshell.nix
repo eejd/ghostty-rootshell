@@ -1,5 +1,6 @@
 { mkShell, lib, stdenv
 
+, debugedit
 , flatpak-builder
 , fpm
 , gdb
@@ -66,6 +67,7 @@ in mkShell rec {
 
   nativeBuildInputs = [
     # For builds
+    debugedit
     flatpak-builder
     fpm
     llvmPackages_latest.llvm
