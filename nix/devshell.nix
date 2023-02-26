@@ -67,8 +67,6 @@ in mkShell rec {
 
   nativeBuildInputs = [
     # For builds
-    debugedit
-    flatpak-builder
     fpm
     llvmPackages_latest.llvm
     pkg-config
@@ -90,6 +88,10 @@ in mkShell rec {
     wabt
     wasmtime
   ] ++ lib.optionals stdenv.isLinux [
+    # Flatpak builds
+    debugedit
+    flatpak-builder
+
     valgrind
     wraptest
   ];
