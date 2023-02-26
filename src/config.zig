@@ -344,14 +344,18 @@ pub const Config = struct {
             if (self.command == null or wd_home) command: {
                 const alloc = self._arena.?.allocator();
 
-                // First look up the command using the SHELL env var.
-                if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
-                    log.debug("default shell source=env value={s}", .{value});
-                    self.command = value;
+                // We don't do this in flatpak because SHELL in Flatpak is
+                // always set to /bin/sh
+                if (!internal_os.isFlatpak()) {
+                    // First look up the command using the SHELL env var.
+                    if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
+                        log.debug("default shell source=env value={s}", .{value});
+                        self.command = value;
 
-                    // If we don't need the working directory, then we can exit now.
-                    if (!wd_home) break :command;
-                } else |_| {}
+                        // If we don't need the working directory, then we can exit now.
+                        if (!wd_home) break :command;
+                    } else |_| {}
+                }
 
                 // We need the passwd entry for the remainder
                 const pw = try passwd.get(alloc);

@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const internal_os = @import("os/main.zig");
 
 const log = std.log.scoped(.passwd);
 
@@ -44,6 +45,39 @@ pub fn get(alloc: Allocator) !Entry {
     }
 
     var result: Entry = .{};
+
+    // If we're in flatpak then our entry is always empty so we grab it
+    // by shelling out to the host. note that we do HAVE an entry in the
+    // sandbox but only the username is correct.
+    //
+    // Note: we wrap our getent call in a /bin/sh login shell because
+    // some operating systems (NixOS tested) don't set the PATH for various
+    // utilities properly until we get a login shell.
+    if (internal_os.isFlatpak()) {
+        log.info("flatpak detected, will use host-spawn to get our entry", .{});
+        const exec = try std.ChildProcess.exec(.{
+            .allocator = alloc,
+            .argv = &[_][]const u8{
+                "/app/bin/host-spawn",
+                "-pty",
+                "/bin/sh",
+                "-l",
+                "-c",
+                try std.fmt.allocPrint(
+                    alloc,
+                    "getent passwd {s}",
+                    .{std.mem.sliceTo(pw.pw_name, 0)},
+                ),
+            },
+        });
+        if (exec.term == .Exited) {
+            // Shell and home are the last two entries
+            var it = std.mem.splitBackwards(u8, exec.stdout, ":");
+            result.shell = it.next() orelse null;
+            result.home = it.next() orelse null;
+            return result;
+        }
+    }
 
     if (pw.pw_shell) |ptr| {
         const source = std.mem.sliceTo(ptr, 0);
