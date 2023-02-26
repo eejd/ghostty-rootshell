@@ -1,7 +1,7 @@
 app-id: com.mitchellh.ghostty
-runtime: org.freedesktop.Platform
-runtime-version: '22.08'
-sdk: org.freedesktop.Sdk
+runtime: org.gnome.Platform
+runtime-version: '43'
+sdk: org.gnome.Sdk
 platform-extensions:
   - org.freedesktop.Platform.GL.default
 default-branch: tip
@@ -64,7 +64,7 @@ modules:
   - name: ghostty
     buildsystem: simple
     build-commands:
-      - MACH_SDK_PATH="$(pwd)/vendor/mach-sdk" zig build -Dcpu=baseline --prefix /app
+      - MACH_SDK_PATH="$(pwd)/vendor/mach-sdk" zig build -Doptimize=ReleaseFast -Dcpu=baseline -Dapp-runtime=gtk --prefix /app
     sources:
       - type: dir
         path: .

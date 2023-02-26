@@ -604,6 +604,9 @@ fn addDeps(
                 try glfw.link(b, step, glfw_opts);
 
                 step.linkSystemLibrary("gtk4");
+
+                // This is for Flatpak
+                step.addLibraryPath("/usr/lib/aarch64-linux-gnu");
             },
         }
     }
