@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const EnvMap = std.process.EnvMap;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 const Pty = @import("../Pty.zig");
@@ -17,6 +18,7 @@ const tracy = @import("tracy");
 const trace = tracy.trace;
 const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
+const internal_os = @import("../os/main.zig");
 
 const log = std.log.scoped(.io_exec);
 
@@ -90,7 +92,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
 }
 
 pub fn deinit(self: *Exec) void {
-    self.subprocess.deinit(self.alloc);
+    self.subprocess.deinit();
 
     // Clean up our other members
     self.terminal.deinit(self.alloc);
@@ -139,6 +141,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
 
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
+    errdefer self.data = null;
 
     // Start our reader thread
     const read_thread = try std.Thread.spawn(
@@ -319,10 +322,11 @@ fn ttyWrite(
 
 /// Subprocess manages the lifecycle of the shell subprocess.
 const Subprocess = struct {
+    arena: std.heap.ArenaAllocator,
     cwd: ?[]const u8,
-    env: std.process.EnvMap,
+    env: EnvMap,
     path: []const u8,
-    argv0_override: ?[]const u8,
+    args: [][]const u8,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
     pty: ?Pty = null,
@@ -330,11 +334,16 @@ const Subprocess = struct {
 
     /// Initialize the subprocess. This will NOT start it, this only sets
     /// up the internal state necessary to start it later.
-    pub fn init(alloc: Allocator, opts: termio.Options) !Subprocess {
+    pub fn init(gpa: Allocator, opts: termio.Options) !Subprocess {
+        // We have a lot of maybe-allocations that all share the same lifetime
+        // so use an arena so we don't end up in an accounting nightmare.
+        var arena = std.heap.ArenaAllocator.init(gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
         // Determine the path to the binary we're executing
         const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
             return error.CommandNotFound;
-        errdefer alloc.free(path);
 
         // On macOS, we launch the program as a login shell. This is a Mac-specific
         // behavior (see other terminals). Terminals in general should NOT be
@@ -354,10 +363,12 @@ const Subprocess = struct {
             std.mem.copy(u8, argv0_buf[1..], argv0);
             break :argv0 argv0_buf;
         } else null;
-        errdefer if (argv0_override) |buf| alloc.free(buf);
 
         // Set our env vars
-        var env = try std.process.getEnvMap(alloc);
+        var env = if (internal_os.isFlatpak())
+            EnvMap.init(alloc)
+        else
+            try std.process.getEnvMap(alloc);
         errdefer env.deinit();
         try env.put("TERM", "xterm-256color");
         try env.put("COLORTERM", "truecolor");
@@ -377,22 +388,47 @@ const Subprocess = struct {
             }
         }
 
+        // If we're NOT in a flatpak (usually!), then we just exec the
+        // process directly. If we are in a flatpak, we use flatpak-spawn
+        // to escape the sandbox.
+        const args = if (!internal_os.isFlatpak()) &[_][]const u8{
+            argv0_override orelse path,
+        } else args: {
+            var args = try std.ArrayList([]const u8).initCapacity(alloc, 8);
+            defer args.deinit();
+
+            try args.append("/usr/bin/flatpak-spawn");
+            try args.append("--host");
+            try args.append("--watch-bus");
+            var env_it = env.iterator();
+            while (env_it.next()) |pair| {
+                try args.append(try std.fmt.allocPrint(
+                    alloc,
+                    "--env={s}={s}",
+                    .{ pair.key_ptr.*, pair.value_ptr.* },
+                ));
+            }
+            try args.append(path);
+
+            break :args try args.toOwnedSlice();
+        };
+
         return .{
+            .arena = arena,
             .env = env,
             .cwd = opts.config.@"working-directory",
-            .path = path,
-            .argv0_override = argv0_override,
+            .path = if (internal_os.isFlatpak()) "/usr/bin/flatpak-spawn" else path,
+            .args = args,
             .grid_size = opts.grid_size,
             .screen_size = opts.screen_size,
         };
     }
 
     /// Clean up the subprocess. This will stop the subprocess if it is started.
-    pub fn deinit(self: *Subprocess, alloc: Allocator) void {
+    pub fn deinit(self: *Subprocess) void {
         self.stop();
         self.env.deinit();
-        alloc.free(self.path);
-        if (self.argv0_override) |v| alloc.free(v);
+        self.arena.deinit();
         self.* = undefined;
     }
 
@@ -414,12 +450,15 @@ const Subprocess = struct {
             self.pty = null;
         }
 
-        const args = &[_][]const u8{self.argv0_override orelse self.path};
+        log.debug("starting command path={s} args={s}", .{
+            self.path,
+            self.args,
+        });
 
         // Build our subcommand
         var cmd: Command = .{
             .path = self.path,
-            .args = args,
+            .args = self.args,
             .env = &self.env,
             .cwd = self.cwd,
             .stdin = .{ .handle = pty.slave },
