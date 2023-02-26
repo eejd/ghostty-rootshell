@@ -55,6 +55,21 @@ pub fn get(alloc: Allocator) !Entry {
     // utilities properly until we get a login shell.
     if (internal_os.isFlatpak()) {
         log.info("flatpak detected, will use host-spawn to get our entry", .{});
+        var cmd: internal_os.FlatpakHostCommand = .{
+            .argv = &[_][]const u8{
+                "/bin/sh",
+                "-l",
+                "-c",
+                try std.fmt.allocPrint(
+                    alloc,
+                    "getent passwd {s}",
+                    .{std.mem.sliceTo(pw.pw_name, 0)},
+                ),
+            },
+        };
+        try cmd.spawn(alloc);
+        if (true) @panic("END");
+
         const exec = try std.ChildProcess.exec(.{
             .allocator = alloc,
             .argv = &[_][]const u8{
