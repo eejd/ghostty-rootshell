@@ -72,7 +72,7 @@ pub fn get(alloc: Allocator) !Entry {
         });
         if (exec.term == .Exited) {
             // Shell and home are the last two entries
-            var it = std.mem.splitBackwards(u8, exec.stdout, ":");
+            var it = std.mem.splitBackwards(u8, std.mem.trimRight(u8, exec.stdout, " \r\n"), ":");
             result.shell = it.next() orelse null;
             result.home = it.next() orelse null;
             return result;
