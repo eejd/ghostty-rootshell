@@ -159,7 +159,6 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("images/icons/icon_32x32@2x@2x.png", "share/icons/hicolor/32x32@2/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_128x128@2x@2x.png", "share/icons/hicolor/128x128@2/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_256x256@2x@2x.png", "share/icons/hicolor/256x256@2/com.mitchellh.ghostty.png");
-        b.installFile("images/icons/icon_512x512@2x@2x.png", "share/icons/hicolor/512x512@2/com.mitchellh.ghostty.png");
     }
 
     // App (Mac)
