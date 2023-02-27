@@ -154,7 +154,11 @@ pub fn build(b: *std.build.Builder) !void {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
-        b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+        if (flatpak) {
+            b.installFile("dist/linux/app-flatpak.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+        } else {
+            b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+        }
 
         // Various icons that our application can use, including the icon
         // that will be used for the desktop.
