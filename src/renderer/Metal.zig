@@ -695,23 +695,7 @@ fn drawCells(
 }
 
 /// Resize the screen.
-pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
-    // We use the bounds of our view which should be updated by now.
-    const unscaled = self.swapchain.getProperty(macos.graphics.Rect, "bounds");
-    const bounds: macos.graphics.Size = scaled: {
-        const scaleFactor = self.swapchain.getProperty(macos.graphics.c.CGFloat, "contentsScale");
-        break :scaled .{
-            .width = unscaled.size.width * scaleFactor,
-            .height = unscaled.size.height * scaleFactor,
-        };
-    };
-
-    // Easier to work with our own types
-    const dim: renderer.ScreenSize = .{
-        .width = @floatToInt(u32, bounds.width),
-        .height = @floatToInt(u32, bounds.height),
-    };
-
+pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);
 
@@ -732,7 +716,10 @@ pub fn setScreenSize(self: *Metal, _: renderer.ScreenSize) !void {
     self.font_shaper.cell_buf = shape_buf;
 
     // Set the size of the drawable surface to the bounds
-    self.swapchain.setProperty("drawableSize", bounds);
+    self.swapchain.setProperty("drawableSize", macos.graphics.Size{
+        .width = @intToFloat(f64, dim.width),
+        .height = @intToFloat(f64, dim.height),
+    });
 
     // Setup our uniforms
     const old = self.uniforms;
