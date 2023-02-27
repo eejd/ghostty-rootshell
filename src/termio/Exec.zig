@@ -434,7 +434,6 @@ const Subprocess = struct {
     /// Clean up the subprocess. This will stop the subprocess if it is started.
     pub fn deinit(self: *Subprocess) void {
         self.stop();
-        self.env.deinit();
         self.arena.deinit();
         self.* = undefined;
     }
