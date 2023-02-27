@@ -590,7 +590,11 @@ fn addDeps(
         // get access to glib for dbus.
         if (flatpak) {
             step.linkSystemLibrary("gtk4");
-            step.addLibraryPath("/usr/lib/aarch64-linux-gnu");
+            switch (step.target.getCpuArch()) {
+                .aarch64 => step.addLibraryPath("/usr/lib/aarch64-linux-gnu"),
+                .x86_64 => step.addLibraryPath("/usr/lib/x86_64-linux-gnu"),
+                else => @panic("unsupported flatpak target"),
+            }
         }
 
         switch (app_runtime) {

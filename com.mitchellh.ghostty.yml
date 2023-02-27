@@ -2,8 +2,6 @@ app-id: com.mitchellh.ghostty
 runtime: org.gnome.Platform
 runtime-version: '43'
 sdk: org.gnome.Sdk
-platform-extensions:
-  - org.freedesktop.Platform.GL.default
 default-branch: tip
 command: ghostty
 build-options:

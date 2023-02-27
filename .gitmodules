@@ -40,3 +40,6 @@
 [submodule "vendor/libxev"]
 	path = vendor/libxev
 	url = https://github.com/mitchellh/libxev.git
+[submodule "vendor/mach-sdk/sdk-linux-x86_64"]
+	path = vendor/mach-sdk/sdk-linux-x86_64
+	url = https://github.com/hexops/sdk-linux-x86_64.git
