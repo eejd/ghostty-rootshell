@@ -24,6 +24,7 @@ const Command = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const TempDir = @import("TempDir.zig");
+const internal_os = @import("os/main.zig");
 const mem = std.mem;
 const os = std.os;
 const debug = std.debug;

@@ -95,6 +95,7 @@ pub fn threadMain(self: *Thread) void {
 }
 
 fn threadMain_(self: *Thread) !void {
+    defer log.debug("IO thread exited", .{});
     tracy.setThreadName("pty io");
 
     // Run our thread start/end callbacks. This allows the implementation
@@ -109,7 +110,7 @@ fn threadMain_(self: *Thread) !void {
 
     // Run
     log.debug("starting IO thread", .{});
-    defer log.debug("exiting IO thread", .{});
+    defer log.debug("starting IO thread shutdown", .{});
     try self.loop.run(.until_done);
 }
 

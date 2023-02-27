@@ -1,5 +1,7 @@
 { mkShell, lib, stdenv
 
+, debugedit
+, flatpak-builder
 , fpm
 , gdb
 , glxinfo
@@ -86,6 +88,10 @@ in mkShell rec {
     wabt
     wasmtime
   ] ++ lib.optionals stdenv.isLinux [
+    # Flatpak builds
+    debugedit
+    flatpak-builder
+
     valgrind
     wraptest
   ];

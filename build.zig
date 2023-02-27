@@ -46,6 +46,7 @@ comptime {
 var tracy: bool = false;
 var enable_coretext: bool = false;
 var enable_fontconfig: bool = false;
+var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
 
 pub fn build(b: *std.build.Builder) !void {
@@ -66,6 +67,12 @@ pub fn build(b: *std.build.Builder) !void {
         "tracy",
         "Enable Tracy integration (default true in Debug on Linux)",
     ) orelse (optimize == .Debug and target.isLinux());
+
+    flatpak = b.option(
+        bool,
+        "flatpak",
+        "Build for Flatpak (integrates with Flatpak APIs). Only has an effect targeting Linux.",
+    ) orelse false;
 
     enable_coretext = b.option(
         bool,
@@ -123,6 +130,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     const exe_options = b.addOptions();
     exe_options.addOption(bool, "tracy_enabled", tracy);
+    exe_options.addOption(bool, "flatpak", flatpak);
     exe_options.addOption(bool, "coretext", enable_coretext);
     exe_options.addOption(bool, "fontconfig", enable_fontconfig);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
@@ -146,7 +154,11 @@ pub fn build(b: *std.build.Builder) !void {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
-        b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+        if (flatpak) {
+            b.installFile("dist/linux/app-flatpak.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+        } else {
+            b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
+        }
 
         // Various icons that our application can use, including the icon
         // that will be used for the desktop.
@@ -159,7 +171,6 @@ pub fn build(b: *std.build.Builder) !void {
         b.installFile("images/icons/icon_32x32@2x@2x.png", "share/icons/hicolor/32x32@2/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_128x128@2x@2x.png", "share/icons/hicolor/128x128@2/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_256x256@2x@2x.png", "share/icons/hicolor/256x256@2/com.mitchellh.ghostty.png");
-        b.installFile("images/icons/icon_512x512@2x@2x.png", "share/icons/hicolor/512x512@2/com.mitchellh.ghostty.png");
     }
 
     // App (Mac)
@@ -578,6 +589,17 @@ fn addDeps(
         // We always statically compile glad
         step.addIncludePath("vendor/glad/include/");
         step.addCSourceFile("vendor/glad/src/gl.c", &.{});
+
+        // When we're targeting flatpak we ALWAYS link GTK so we
+        // get access to glib for dbus.
+        if (flatpak) {
+            step.linkSystemLibrary("gtk4");
+            switch (step.target.getCpuArch()) {
+                .aarch64 => step.addLibraryPath("/usr/lib/aarch64-linux-gnu"),
+                .x86_64 => step.addLibraryPath("/usr/lib/x86_64-linux-gnu"),
+                else => @panic("unsupported flatpak target"),
+            }
+        }
 
         switch (app_runtime) {
             .none => {},

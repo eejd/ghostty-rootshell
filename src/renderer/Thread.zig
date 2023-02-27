@@ -136,6 +136,7 @@ pub fn threadMain(self: *Thread) void {
 }
 
 fn threadMain_(self: *Thread) !void {
+    defer log.debug("renderer thread exited", .{});
     tracy.setThreadName("renderer");
 
     // Run our thread start/end callbacks. This is important because some
@@ -185,7 +186,7 @@ fn threadMain_(self: *Thread) !void {
 
     // Run
     log.debug("starting renderer thread", .{});
-    defer log.debug("exiting renderer thread", .{});
+    defer log.debug("starting renderer thread shutdown", .{});
     _ = try self.loop.run(.until_done);
 }
 

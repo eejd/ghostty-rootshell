@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const EnvMap = std.process.EnvMap;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 const Pty = @import("../Pty.zig");
@@ -17,6 +18,7 @@ const tracy = @import("tracy");
 const trace = tracy.trace;
 const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
+const internal_os = @import("../os/main.zig");
 
 const log = std.log.scoped(.io_exec);
 
@@ -90,7 +92,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
 }
 
 pub fn deinit(self: *Exec) void {
-    self.subprocess.deinit(self.alloc);
+    self.subprocess.deinit();
 
     // Clean up our other members
     self.terminal.deinit(self.alloc);
@@ -139,6 +141,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
 
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
+    errdefer self.data = null;
 
     // Start our reader thread
     const read_thread = try std.Thread.spawn(
@@ -319,22 +322,33 @@ fn ttyWrite(
 
 /// Subprocess manages the lifecycle of the shell subprocess.
 const Subprocess = struct {
+    /// If we build with flatpak support then we have to keep track of
+    /// a potential execution on the host.
+    const FlatpakHostCommand = if (build_config.flatpak) internal_os.FlatpakHostCommand else void;
+
+    arena: std.heap.ArenaAllocator,
     cwd: ?[]const u8,
-    env: std.process.EnvMap,
+    env: EnvMap,
     path: []const u8,
-    argv0_override: ?[]const u8,
+    args: [][]const u8,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
     pty: ?Pty = null,
     command: ?Command = null,
+    flatpak_command: ?FlatpakHostCommand = null,
 
     /// Initialize the subprocess. This will NOT start it, this only sets
     /// up the internal state necessary to start it later.
-    pub fn init(alloc: Allocator, opts: termio.Options) !Subprocess {
+    pub fn init(gpa: Allocator, opts: termio.Options) !Subprocess {
+        // We have a lot of maybe-allocations that all share the same lifetime
+        // so use an arena so we don't end up in an accounting nightmare.
+        var arena = std.heap.ArenaAllocator.init(gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
         // Determine the path to the binary we're executing
         const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
             return error.CommandNotFound;
-        errdefer alloc.free(path);
 
         // On macOS, we launch the program as a login shell. This is a Mac-specific
         // behavior (see other terminals). Terminals in general should NOT be
@@ -354,10 +368,19 @@ const Subprocess = struct {
             std.mem.copy(u8, argv0_buf[1..], argv0);
             break :argv0 argv0_buf;
         } else null;
-        errdefer if (argv0_override) |buf| alloc.free(buf);
 
-        // Set our env vars
-        var env = try std.process.getEnvMap(alloc);
+        // Set our env vars. For Flatpak builds running in Flatpak we don't
+        // inherit our environment because the login shell on the host side
+        // will get it.
+        var env = env: {
+            if (comptime build_config.flatpak) {
+                if (internal_os.isFlatpak()) {
+                    break :env std.process.EnvMap.init(alloc);
+                }
+            }
+
+            break :env try std.process.getEnvMap(alloc);
+        };
         errdefer env.deinit();
         try env.put("TERM", "xterm-256color");
         try env.put("COLORTERM", "truecolor");
@@ -377,22 +400,41 @@ const Subprocess = struct {
             }
         }
 
+        // If we're NOT in a flatpak (usually!), then we just exec the
+        // process directly. If we are in a flatpak, we use flatpak-spawn
+        // to escape the sandbox.
+        const args = if (!internal_os.isFlatpak()) &[_][]const u8{
+            argv0_override orelse path,
+        } else args: {
+            var args = try std.ArrayList([]const u8).initCapacity(alloc, 8);
+            defer args.deinit();
+
+            // We run our shell wrapped in a /bin/sh login shell because
+            // some systems do not properly initialize the env vars unless
+            // we start this way (NixOS!)
+            try args.append("/bin/sh");
+            try args.append("-l");
+            try args.append("-c");
+            try args.append(path);
+
+            break :args try args.toOwnedSlice();
+        };
+
         return .{
+            .arena = arena,
             .env = env,
             .cwd = opts.config.@"working-directory",
-            .path = path,
-            .argv0_override = argv0_override,
+            .path = if (internal_os.isFlatpak()) args[0] else path,
+            .args = args,
             .grid_size = opts.grid_size,
             .screen_size = opts.screen_size,
         };
     }
 
     /// Clean up the subprocess. This will stop the subprocess if it is started.
-    pub fn deinit(self: *Subprocess, alloc: Allocator) void {
+    pub fn deinit(self: *Subprocess) void {
         self.stop();
-        self.env.deinit();
-        alloc.free(self.path);
-        if (self.argv0_override) |v| alloc.free(v);
+        self.arena.deinit();
         self.* = undefined;
     }
 
@@ -414,12 +456,51 @@ const Subprocess = struct {
             self.pty = null;
         }
 
-        const args = &[_][]const u8{self.argv0_override orelse self.path};
+        log.debug("starting command path={s} args={s}", .{
+            self.path,
+            self.args,
+        });
+
+        // In flatpak, we use the HostCommand to execute our shell.
+        if (internal_os.isFlatpak()) flatpak: {
+            if (comptime !build_config.flatpak) {
+                log.warn("flatpak detected, but flatpak support not built-in", .{});
+                break :flatpak;
+            }
+
+            // For flatpak our path and argv[0] must match because that is
+            // used for execution by the dbus API.
+            assert(std.mem.eql(u8, self.path, self.args[0]));
+
+            // Flatpak command must have a stable pointer.
+            self.flatpak_command = .{
+                .argv = self.args,
+                .env = &self.env,
+                .stdin = pty.slave,
+                .stdout = pty.slave,
+                .stderr = pty.slave,
+            };
+            var cmd = &self.flatpak_command.?;
+            const pid = try cmd.spawn(alloc);
+            errdefer killCommandFlatpak(cmd);
+
+            log.info("started subcommand on host via flatpak API path={s} pid={?}", .{
+                self.path,
+                pid,
+            });
+
+            // Once started, we can close the pty child side. We do this after
+            // wait right now but that is fine too. This lets us read the
+            // parent and detect EOF.
+            _ = std.os.close(pty.slave);
+
+            return pty.master;
+        }
 
         // Build our subcommand
         var cmd: Command = .{
             .path = self.path,
-            .args = args,
+            .args = self.args,
             .env = &self.env,
             .cwd = self.cwd,
             .stdin = .{ .handle = pty.slave },
@@ -452,6 +533,17 @@ const Subprocess = struct {
             _ = cmd.wait(false) catch |err|
                 log.err("error waiting for command to exit: {}", .{err});
             self.command = null;
+        }
+
+        // Kill our Flatpak command
+        if (FlatpakHostCommand != void) {
+            if (self.flatpak_command) |*cmd| {
+                killCommandFlatpak(cmd) catch |err|
+                    log.err("error sending SIGHUP to command, may hang: {}", .{err});
+                _ = cmd.wait() catch |err|
+                    log.err("error waiting for command to exit: {}", .{err});
+                self.flatpak_command = null;
+            }
         }
 
         // Close our PTY. We do this after killing our command because on
@@ -512,6 +604,12 @@ const Subprocess = struct {
             }
         }
     }
+
+    /// Kill the underlying process started via Flatpak host command.
+    /// This sends a signal via the Flatpak API.
+    fn killCommandFlatpak(command: *FlatpakHostCommand) !void {
+        try command.signal(c.SIGHUP, true);
+    }
 };
 
 /// The read thread sits in a loop doing the following pseudo code:
@@ -535,7 +633,9 @@ const ReadThread = struct {
                 switch (err) {
                     // This means our pty is closed. We're probably
                     // gracefully shutting down.
-                    error.NotOpenForReading => log.info("io reader exiting", .{}),
+                    error.NotOpenForReading,
+                    error.InputOutput,
+                    => log.info("io reader exiting", .{}),
 
                     else => {
                         log.err("io reader error err={}", .{err});
