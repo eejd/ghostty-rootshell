@@ -8,8 +8,10 @@ build-options:
   append-path: /app/tmp/zig
   strip: false
   no-debuginfo: true
-cleanup:
-  - /app/tmp/zig
+# Note: we have to use cleanup-commands because flatpak-builder doesn't
+# run "cleanup" on its own: https://github.com/flatpak/flatpak-builder/issues/14
+cleanup-commands:
+  - "rm -rf /app/tmp"
 finish-args:
   # 3D rendering
   - --device=dri
