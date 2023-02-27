@@ -8,6 +8,8 @@ default-branch: tip
 command: ghostty
 build-options:
   append-path: /app/tmp/zig
+  strip: false
+  no-debuginfo: true
 cleanup:
   - /app/tmp/zig
 finish-args:
