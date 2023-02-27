@@ -55,6 +55,10 @@ pub fn get(alloc: Allocator) !Entry {
     // utilities properly until we get a login shell.
     if (internal_os.isFlatpak()) {
         log.info("flatpak detected, will use host-spawn to get our entry", .{});
+
+        const Pty = @import("Pty.zig");
+        var pty = try Pty.open(.{});
+        defer pty.deinit();
         var cmd: internal_os.FlatpakHostCommand = .{
             .argv = &[_][]const u8{
                 "/bin/sh",
@@ -66,8 +70,12 @@ pub fn get(alloc: Allocator) !Entry {
                     .{std.mem.sliceTo(pw.pw_name, 0)},
                 ),
             },
+            .stdin = pty.slave,
+            .stdout = pty.slave,
+            .stderr = pty.slave,
         };
-        try cmd.spawn(alloc);
+        _ = try cmd.spawn(alloc);
+        _ = try cmd.wait();
         if (true) @panic("END");
 
         const exec = try std.ChildProcess.exec(.{

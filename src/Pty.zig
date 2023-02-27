@@ -28,12 +28,13 @@ const TIOCSWINSZ = if (builtin.os.tag == .macos) 2148037735 else c.TIOCSWINSZ;
 const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
 
 /// Redeclare this winsize struct so we can just use a Zig struct. This
-/// layout should be correct on all tested platforms.
+/// layout should be correct on all tested platforms. The defaults on this
+/// are some reasonable screen size but you should probably not use them.
 const winsize = extern struct {
-    ws_row: u16,
-    ws_col: u16,
-    ws_xpixel: u16,
-    ws_ypixel: u16,
+    ws_row: u16 = 100,
+    ws_col: u16 = 80,
+    ws_xpixel: u16 = 800,
+    ws_ypixel: u16 = 600,
 };
 
 pub extern "c" fn setsid() std.c.pid_t;
