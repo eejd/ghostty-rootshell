@@ -19,6 +19,10 @@ pub fn isFlatpak() bool {
 /// This makes it easy for the command to behave synchronously similar to
 /// std.process.ChildProcess.
 ///
+/// There are lots of chances for low-hanging improvements here (automatic
+/// pipes, /dev/null, etc.) but this was purpose built for my needs so
+/// it doesn't have all of those.
+///
 /// Requires GIO, GLib to be available and linked.
 pub const FlatpakHostCommand = struct {
     const Allocator = std.mem.Allocator;
@@ -78,16 +82,13 @@ pub const FlatpakHostCommand = struct {
         },
     };
 
-    /// Execute the command and wait for it to finish. This will automatically
-    /// read all the data from the provided stdout/stderr fds and return them
-    /// in the result.
-    ///
-    /// This runs the exec in a dedicated thread with a dedicated GLib
-    /// event loop so that it can run synchronously.
-    pub fn exec(self: *FlatpakHostCommand, alloc: Allocator) !void {
-        const thread = try std.Thread.spawn(.{}, threadMain, .{ self, alloc });
-        thread.join();
-    }
+    /// Errors that are possible from us.
+    pub const Error = error{
+        FlatpakMustBeStarted,
+        FlatpakSpawnFail,
+        FlatpakSetupFail,
+        FlatpakRPCFail,
+    };
 
     /// Spawn the command. This will start the host command. On return,
     /// the pid will be available. This must only be called with the
@@ -105,7 +106,7 @@ pub const FlatpakHostCommand = struct {
 
         return switch (self.state) {
             .init => unreachable,
-            .err => error.FlatpakSpawnFail,
+            .err => Error.FlatpakSpawnFail,
             .started => |v| v.pid,
             .exited => |v| v.pid,
         };
@@ -119,8 +120,8 @@ pub const FlatpakHostCommand = struct {
 
         while (true) {
             switch (self.state) {
-                .init => return error.FlatpakCommandNotStarted,
-                .err => return error.FlatpakSpawnFail,
+                .init => return Error.FlatpakMustBeStarted,
+                .err => return Error.FlatpakSpawnFail,
                 .started => {},
                 .exited => |v| {
                     self.state = .{ .init = {} };
@@ -187,15 +188,15 @@ pub const FlatpakHostCommand = struct {
         defer c.g_object_unref(fd_list);
         if (c.g_unix_fd_list_append(fd_list, self.stdin, &err) < 0) {
             log.warn("error adding fd: {s}", .{err.*.message});
-            return error.FlatpakFdFailed;
+            return Error.FlatpakSetupFail;
         }
         if (c.g_unix_fd_list_append(fd_list, self.stdout, &err) < 0) {
             log.warn("error adding fd: {s}", .{err.*.message});
-            return error.FlatpakFdFailed;
+            return Error.FlatpakSetupFail;
         }
         if (c.g_unix_fd_list_append(fd_list, self.stderr, &err) < 0) {
             log.warn("error adding fd: {s}", .{err.*.message});
-            return error.FlatpakFdFailed;
+            return Error.FlatpakSetupFail;
         }
 
         // Build our arguments for the file descriptors.
@@ -279,7 +280,7 @@ pub const FlatpakHostCommand = struct {
             &err,
         ) orelse {
             log.warn("Flatpak.HostCommand failed: {s}", .{err.*.message});
-            return error.FlatpakHostCommandFailed;
+            return Error.FlatpakRPCFail;
         };
         defer c.g_variant_unref(reply);
 
@@ -335,6 +336,7 @@ pub const FlatpakHostCommand = struct {
                 .status = std.math.cast(u8, exit_status) orelse 255,
             },
         });
+        log.debug("HostCommand exited pid={} status={}", .{ pid, exit_status });
 
         // We're done now, so we can unsubscribe
         c.g_dbus_connection_signal_unsubscribe(bus.?, state.subscription);

@@ -49,13 +49,12 @@ pub fn get(alloc: Allocator) !Entry {
     // If we're in flatpak then our entry is always empty so we grab it
     // by shelling out to the host. note that we do HAVE an entry in the
     // sandbox but only the username is correct.
-    //
-    // Note: we wrap our getent call in a /bin/sh login shell because
-    // some operating systems (NixOS tested) don't set the PATH for various
-    // utilities properly until we get a login shell.
     if (internal_os.isFlatpak()) {
         log.info("flatpak detected, will use host-spawn to get our entry", .{});
 
+        // Note: we wrap our getent call in a /bin/sh login shell because
+        // some operating systems (NixOS tested) don't set the PATH for various
+        // utilities properly until we get a login shell.
         const Pty = @import("Pty.zig");
         var pty = try Pty.open(.{});
         defer pty.deinit();
@@ -76,30 +75,42 @@ pub fn get(alloc: Allocator) !Entry {
         };
         _ = try cmd.spawn(alloc);
         _ = try cmd.wait();
-        if (true) @panic("END");
 
-        const exec = try std.ChildProcess.exec(.{
-            .allocator = alloc,
-            .argv = &[_][]const u8{
-                "/app/bin/host-spawn",
-                "-pty",
-                "/bin/sh",
-                "-l",
-                "-c",
-                try std.fmt.allocPrint(
-                    alloc,
-                    "getent passwd {s}",
-                    .{std.mem.sliceTo(pw.pw_name, 0)},
-                ),
-            },
-        });
-        if (exec.term == .Exited) {
-            // Shell and home are the last two entries
-            var it = std.mem.splitBackwards(u8, std.mem.trimRight(u8, exec.stdout, " \r\n"), ":");
-            result.shell = it.next() orelse null;
-            result.home = it.next() orelse null;
-            return result;
-        }
+        // Once started, we can close the child side. We do this after
+        // wait right now but that is fine too. This lets us read the
+        // parent and detect EOF.
+        _ = std.os.close(pty.slave);
+
+        // Read all of our output
+        const output = output: {
+            var output: std.ArrayListUnmanaged(u8) = .{};
+            while (true) {
+                const n = std.os.read(pty.master, &buf) catch |err| {
+                    switch (err) {
+                        // EIO is triggered at the end since we closed our
+                        // child side. This is just EOF for this. I'm not sure
+                        // if I'm doing this wrong.
+                        error.InputOutput => break,
+                        else => return err,
+                    }
+                };
+
+                try output.appendSlice(alloc, buf[0..n]);
+
+                // Max total size is buf.len. We can do better here by trimming
+                // the front and continuing reading but we choose to just exit.
+                if (output.items.len > buf.len) break;
+            }
+
+            break :output try output.toOwnedSlice(alloc);
+        };
+        log.warn("DONE output={s}", .{output});
+
+        // Shell and home are the last two entries
+        var it = std.mem.splitBackwards(u8, std.mem.trimRight(u8, output, " \r\n"), ":");
+        result.shell = it.next() orelse null;
+        result.home = it.next() orelse null;
+        return result;
     }
 
     if (pw.pw_shell) |ptr| {
