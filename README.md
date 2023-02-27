@@ -44,8 +44,9 @@ April 2022.
 
 | Platform / Package  | Links | Notes |
 | ----------| ----- | ----- |
-| macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | |
-| Linux | [Build from Source](#developing-ghostty)  | No binary packages today |
+| macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | MacOS 12+ Universal Binary |
+| Linux (Flatpak) | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | |
+| Linux (Other) | [Build from Source](#developing-ghostty)  | |
 | Windows | n/a | Not supported yet |
 
 ## Roadmap and Status
