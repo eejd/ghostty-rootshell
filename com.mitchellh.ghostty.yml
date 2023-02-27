@@ -41,30 +41,10 @@ modules:
         only-arches:
           - aarch64
 
-  # We use this to get a proper PTY on our host spawn. We should eventually
-  # replace this with using dbus directly.
-  - name: host-spawn
-    buildsystem: simple
-    build-commands:
-      - mkdir -p /app/bin
-      - mv ./host-spawn-* /app/bin/host-spawn
-      - chmod +x /app/bin/host-spawn
-    sources:
-      - type: file
-        url: https://github.com/1player/host-spawn/releases/download/1.4.1/host-spawn-x86_64
-        sha256: d81bb6125ec73a9a2e26266c48787367fbcb665d67c2e7fb42217f0981106cf7
-        only-arches:
-          - x86_64
-      - type: file
-        url: https://github.com/1player/host-spawn/releases/download/1.4.1/host-spawn-aarch64
-        sha256: 29bff846d72e37093b3fdf7859bae16addd64acc98087f8c059548df3c2273c4
-        only-arches:
-          - aarch64
-
   - name: ghostty
     buildsystem: simple
     build-commands:
-      - MACH_SDK_PATH="$(pwd)/vendor/mach-sdk" zig build -Dcpu=baseline -Dapp-runtime=gtk --prefix /app
+      - MACH_SDK_PATH="$(pwd)/vendor/mach-sdk" zig build -Dcpu=baseline -Dflatpak=true -Dapp-runtime=gtk --prefix /app
     sources:
       - type: dir
         path: .

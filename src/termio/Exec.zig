@@ -322,6 +322,10 @@ fn ttyWrite(
 
 /// Subprocess manages the lifecycle of the shell subprocess.
 const Subprocess = struct {
+    /// If we build with flatpak support then we have to keep track of
+    /// a potential execution on the host.
+    const FlatpakHostCommand = if (build_config.flatpak) internal_os.FlatpakHostCommand else void;
+
     arena: std.heap.ArenaAllocator,
     cwd: ?[]const u8,
     env: EnvMap,
@@ -331,6 +335,7 @@ const Subprocess = struct {
     screen_size: renderer.ScreenSize,
     pty: ?Pty = null,
     command: ?Command = null,
+    flatpak_command: ?FlatpakHostCommand = null,
 
     /// Initialize the subprocess. This will NOT start it, this only sets
     /// up the internal state necessary to start it later.
@@ -364,8 +369,18 @@ const Subprocess = struct {
             break :argv0 argv0_buf;
         } else null;
 
-        // Set our env vars
-        var env = try std.process.getEnvMap(alloc);
+        // Set our env vars. For Flatpak builds running in Flatpak we don't
+        // inherit our environment because the login shell on the host side
+        // will get it.
+        var env = env: {
+            if (comptime build_config.flatpak) {
+                if (internal_os.isFlatpak()) {
+                    break :env std.process.EnvMap.init(alloc);
+                }
+            }
+
+            break :env try std.process.getEnvMap(alloc);
+        };
         errdefer env.deinit();
         try env.put("TERM", "xterm-256color");
         try env.put("COLORTERM", "truecolor");
@@ -394,13 +409,9 @@ const Subprocess = struct {
             var args = try std.ArrayList([]const u8).initCapacity(alloc, 8);
             defer args.deinit();
 
-            // We use host-spawn so the PTY is setup properly.
-            // future: rewrite host-spawn into pure Zig using dbus and
-            // we can run this directly.
-            try args.append("/app/bin/host-spawn");
-            try args.append("-pty");
-            try args.append("-env");
-            try args.append("TERM,COLORTERM");
+            // We run our shell wrapped in a /bin/sh login shell because
+            // some systems do not properly initialize the env vars unless
+            // we start this way (NixOS!)
             try args.append("/bin/sh");
             try args.append("-l");
             try args.append("-c");
@@ -451,6 +462,37 @@ const Subprocess = struct {
             self.args,
         });
 
+        // In flatpak, we use the HostCommand to execute our shell.
+        if (internal_os.isFlatpak()) flatpak: {
+            if (comptime !build_config.flatpak) {
+                log.warn("flatpak detected, but flatpak support not built-in", .{});
+                break :flatpak;
+            }
+
+            // For flatpak our path and argv[0] must match because that is
+            // used for execution by the dbus API.
+            assert(std.mem.eql(u8, self.path, self.args[0]));
+
+            // Flatpak command must have a stable pointer.
+            self.flatpak_command = .{
+                .argv = self.args,
+                .env = &self.env,
+                .stdin = pty.slave,
+                .stdout = pty.slave,
+                .stderr = pty.slave,
+            };
+            var cmd = &self.flatpak_command.?;
+            const pid = try cmd.spawn(alloc);
+            errdefer killCommandFlatpak(cmd);
+
+            log.info("started subcommand on host via flatpak API path={s} pid={?}", .{
+                self.path,
+                pid,
+            });
+
+            return pty.master;
+        }
+
         // Build our subcommand
         var cmd: Command = .{
             .path = self.path,
@@ -487,6 +529,17 @@ const Subprocess = struct {
             _ = cmd.wait(false) catch |err|
                 log.err("error waiting for command to exit: {}", .{err});
             self.command = null;
+        }
+
+        // Kill our Flatpak command
+        if (FlatpakHostCommand != void) {
+            if (self.flatpak_command) |*cmd| {
+                killCommandFlatpak(cmd) catch |err|
+                    log.err("error sending SIGHUP to command, may hang: {}", .{err});
+                _ = cmd.wait() catch |err|
+                    log.err("error waiting for command to exit: {}", .{err});
+                self.flatpak_command = null;
+            }
         }
 
         // Close our PTY. We do this after killing our command because on
@@ -546,6 +599,11 @@ const Subprocess = struct {
                 }
             }
         }
+    }
+
+    fn killCommandFlatpak(command: *FlatpakHostCommand) !void {
+        // TODO
+        _ = command;
     }
 };
 

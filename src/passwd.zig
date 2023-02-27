@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("build_config.zig");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const internal_os = @import("os/main.zig");
@@ -49,8 +50,13 @@ pub fn get(alloc: Allocator) !Entry {
     // If we're in flatpak then our entry is always empty so we grab it
     // by shelling out to the host. note that we do HAVE an entry in the
     // sandbox but only the username is correct.
-    if (internal_os.isFlatpak()) {
-        log.info("flatpak detected, will use host-spawn to get our entry", .{});
+    if (internal_os.isFlatpak()) flatpak: {
+        if (comptime !build_config.flatpak) {
+            log.warn("flatpak detected, but this build doesn't contain flatpak support", .{});
+            break :flatpak;
+        }
+
+        log.info("flatpak detected, will use host command to get our entry", .{});
 
         // Note: we wrap our getent call in a /bin/sh login shell because
         // some operating systems (NixOS tested) don't set the PATH for various
@@ -104,7 +110,6 @@ pub fn get(alloc: Allocator) !Entry {
 
             break :output try output.toOwnedSlice(alloc);
         };
-        log.warn("DONE output={s}", .{output});
 
         // Shell and home are the last two entries
         var it = std.mem.splitBackwards(u8, std.mem.trimRight(u8, output, " \r\n"), ":");

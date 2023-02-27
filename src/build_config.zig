@@ -22,6 +22,9 @@ pub const app_runtime = std.meta.stringToEnum(
 /// compiled.
 pub const devmode_enabled = artifact == .exe and app_runtime == .glfw;
 
+/// We want to integrate with Flatpak APIs.
+pub const flatpak = options.flatpak;
+
 pub const Artifact = enum {
     /// Standalone executable
     exe,

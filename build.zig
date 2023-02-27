@@ -46,6 +46,7 @@ comptime {
 var tracy: bool = false;
 var enable_coretext: bool = false;
 var enable_fontconfig: bool = false;
+var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
 
 pub fn build(b: *std.build.Builder) !void {
@@ -66,6 +67,12 @@ pub fn build(b: *std.build.Builder) !void {
         "tracy",
         "Enable Tracy integration (default true in Debug on Linux)",
     ) orelse (optimize == .Debug and target.isLinux());
+
+    flatpak = b.option(
+        bool,
+        "flatpak",
+        "Build for Flatpak (integrates with Flatpak APIs). Only has an effect targeting Linux.",
+    ) orelse false;
 
     enable_coretext = b.option(
         bool,
@@ -123,6 +130,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     const exe_options = b.addOptions();
     exe_options.addOption(bool, "tracy_enabled", tracy);
+    exe_options.addOption(bool, "flatpak", flatpak);
     exe_options.addOption(bool, "coretext", enable_coretext);
     exe_options.addOption(bool, "fontconfig", enable_fontconfig);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
@@ -578,6 +586,13 @@ fn addDeps(
         step.addIncludePath("vendor/glad/include/");
         step.addCSourceFile("vendor/glad/src/gl.c", &.{});
 
+        // When we're targeting flatpak we ALWAYS link GTK so we
+        // get access to glib for dbus.
+        if (flatpak) {
+            step.linkSystemLibrary("gtk4");
+            step.addLibraryPath("/usr/lib/aarch64-linux-gnu");
+        }
+
         switch (app_runtime) {
             .none => {},
 
@@ -604,9 +619,6 @@ fn addDeps(
                 try glfw.link(b, step, glfw_opts);
 
                 step.linkSystemLibrary("gtk4");
-
-                // This is for Flatpak
-                step.addLibraryPath("/usr/lib/aarch64-linux-gnu");
             },
         }
     }
