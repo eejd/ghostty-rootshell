@@ -263,9 +263,12 @@ class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
     func sizeDidChange(_ size: CGSize) {
         guard let surface = self.surface else { return }
         
-        // Ghostty wants to know the actual framebuffer size...
-        let fbFrame = self.convertToBacking(self.frame);
-        ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
+        // Ghostty wants to know the actual framebuffer size... It is very important
+        // here that we use "size" and NOT the view frame. If we're in the middle of
+        // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
+        // The size represents our final size we're going for.
+        let scaledSize = self.convertToBacking(size)
+        ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
     }
     
     override func updateTrackingAreas() {
