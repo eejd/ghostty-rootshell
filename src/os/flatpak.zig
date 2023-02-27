@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 
 const log = std.log.scoped(.flatpak);
@@ -25,7 +26,6 @@ pub fn isFlatpak() bool {
 ///
 /// Requires GIO, GLib to be available and linked.
 pub const FlatpakHostCommand = struct {
-    const Allocator = std.mem.Allocator;
     const fd_t = std.os.fd_t;
     const EnvMap = std.process.EnvMap;
     const c = @cImport({
@@ -132,6 +132,51 @@ pub const FlatpakHostCommand = struct {
 
             self.state_cv.wait(&self.state_mutex);
         }
+    }
+
+    /// Send a signal to the started command. This does nothing if the
+    /// command is not in the started state.
+    pub fn signal(self: *FlatpakHostCommand, sig: u8, pg: bool) !void {
+        const pid = pid: {
+            self.state_mutex.lock();
+            defer self.state_mutex.unlock();
+            switch (self.state) {
+                .started => |v| break :pid v.pid,
+                else => return,
+            }
+        };
+
+        // Get our bus connection.
+        var g_err: [*c]c.GError = null;
+        const bus = c.g_bus_get_sync(c.G_BUS_TYPE_SESSION, null, &g_err) orelse {
+            log.warn("signal error getting bus: {s}", .{g_err.*.message});
+            return Error.FlatpakSetupFail;
+        };
+        defer c.g_object_unref(bus);
+
+        const reply = c.g_dbus_connection_call_sync(
+            bus,
+            "org.freedesktop.Flatpak",
+            "/org/freedesktop/Flatpak/Development",
+            "org.freedesktop.Flatpak.Development",
+            "HostCommandSignal",
+            c.g_variant_new(
+                "(uub)",
+                pid,
+                sig,
+                @intCast(c_int, @boolToInt(pg)),
+            ),
+            c.G_VARIANT_TYPE("()"),
+            c.G_DBUS_CALL_FLAGS_NONE,
+            c.G_MAXINT,
+            null,
+            &g_err,
+        );
+        if (g_err != null) {
+            log.warn("signal send error: {s}", .{g_err.*.message});
+            return;
+        }
+        defer c.g_variant_unref(reply);
     }
 
     fn threadMain(self: *FlatpakHostCommand, alloc: Allocator) void {

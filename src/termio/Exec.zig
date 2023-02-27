@@ -490,6 +490,11 @@ const Subprocess = struct {
                 pid,
             });
 
+            // Once started, we can close the pty child side. We do this after
+            // wait right now but that is fine too. This lets us read the
+            // parent and detect EOF.
+            _ = std.os.close(pty.slave);
+
             return pty.master;
         }
 
@@ -601,9 +606,10 @@ const Subprocess = struct {
         }
     }
 
+    /// Kill the underlying process started via Flatpak host command.
+    /// This sends a signal via the Flatpak API.
     fn killCommandFlatpak(command: *FlatpakHostCommand) !void {
-        // TODO
-        _ = command;
+        try command.signal(c.SIGHUP, true);
     }
 };
 
@@ -628,7 +634,9 @@ const ReadThread = struct {
                 switch (err) {
                     // This means our pty is closed. We're probably
                     // gracefully shutting down.
-                    error.NotOpenForReading => log.info("io reader exiting", .{}),
+                    error.NotOpenForReading,
+                    error.InputOutput,
+                    => log.info("io reader exiting", .{}),
 
                     else => {
                         log.err("io reader error err={}", .{err});
