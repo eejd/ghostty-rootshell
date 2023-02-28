@@ -8,11 +8,11 @@ const Range = @import("main.zig").Range;
 
 pub const Type = enum(c_int) {
     unknown = c.FcTypeUnknown,
-    @"void" = c.FcTypeVoid,
+    void = c.FcTypeVoid,
     integer = c.FcTypeInteger,
     double = c.FcTypeDouble,
     string = c.FcTypeString,
-    @"bool" = c.FcTypeBool,
+    bool = c.FcTypeBool,
     matrix = c.FcTypeMatrix,
     char_set = c.FcTypeCharSet,
     ft_face = c.FcTypeFTFace,
@@ -22,11 +22,11 @@ pub const Type = enum(c_int) {
 
 pub const Value = union(Type) {
     unknown: void,
-    @"void": void,
+    void: void,
     integer: i32,
     double: f64,
     string: [:0]const u8,
-    @"bool": bool,
+    bool: bool,
     matrix: *const Matrix,
     char_set: *const CharSet,
     ft_face: *anyopaque,
@@ -34,13 +34,13 @@ pub const Value = union(Type) {
     range: *const Range,
 
     pub fn init(cvalue: *c.struct__FcValue) Value {
-        return switch (@intToEnum(Type, cvalue.@"type")) {
+        return switch (@intToEnum(Type, cvalue.type)) {
             .unknown => .{ .unknown = {} },
-            .@"void" => .{ .@"void" = {} },
+            .void => .{ .void = {} },
             .string => .{ .string = std.mem.sliceTo(cvalue.u.s, 0) },
             .integer => .{ .integer = @intCast(i32, cvalue.u.i) },
             .double => .{ .double = cvalue.u.d },
-            .@"bool" => .{ .@"bool" = cvalue.u.b == c.FcTrue },
+            .bool => .{ .bool = cvalue.u.b == c.FcTrue },
             .matrix => .{ .matrix = @ptrCast(*const Matrix, cvalue.u.m) },
             .char_set => .{ .char_set = @ptrCast(*const CharSet, cvalue.u.c) },
             .ft_face => .{ .ft_face = @ptrCast(*anyopaque, cvalue.u.f) },
@@ -51,14 +51,14 @@ pub const Value = union(Type) {
 
     pub fn cval(self: Value) c.struct__FcValue {
         return .{
-            .@"type" = @enumToInt(std.meta.activeTag(self)),
+            .type = @enumToInt(std.meta.activeTag(self)),
             .u = switch (self) {
                 .unknown => undefined,
-                .@"void" => undefined,
+                .void => undefined,
                 .integer => |v| .{ .i = @intCast(c_int, v) },
                 .double => |v| .{ .d = v },
                 .string => |v| .{ .s = v.ptr },
-                .@"bool" => |v| .{ .b = if (v) c.FcTrue else c.FcFalse },
+                .bool => |v| .{ .b = if (v) c.FcTrue else c.FcFalse },
                 .matrix => |v| .{ .m = @ptrCast(*const c.struct__FcMatrix, v) },
                 .char_set => |v| .{ .c = @ptrCast(*const c.struct__FcCharSet, v) },
                 .ft_face => |v| .{ .f = v },
