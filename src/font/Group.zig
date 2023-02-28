@@ -219,7 +219,7 @@ pub fn indexForCodepoint(
 }
 
 fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) ?FontIndex {
-    for (self.faces.get(style).items) |deferred, i| {
+    for (self.faces.get(style).items, 0..) |deferred, i| {
         if (deferred.hasCodepoint(cp, p)) {
             return FontIndex{
                 .style = style,

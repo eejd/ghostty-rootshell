@@ -32,7 +32,7 @@ const prealloc_count = prealloc_columns / unit_bits;
 /// We precompute all the possible masks since we never use a huge bit size.
 const masks = blk: {
     var res: [unit_bits]Unit = undefined;
-    for (res) |_, i| {
+    for (res, 0..) |_, i| {
         res[i] = @shlExact(@as(Unit, 1), @intCast(u3, i));
     }
 

@@ -89,7 +89,7 @@ pub const Shaper = struct {
         if (info.len > self.cell_buf.len) return error.OutOfMemory;
         //log.warn("info={} pos={} run={}", .{ info.len, pos.len, run });
 
-        for (info) |v, i| {
+        for (info, 0..) |v, i| {
             self.cell_buf[i] = .{
                 .x = @intCast(u16, v.cluster),
                 .glyph_index = v.codepoint,

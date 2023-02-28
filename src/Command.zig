@@ -112,7 +112,7 @@ pub fn start(self: *Command, alloc: Allocator) !void {
     // Null-terminate all our arguments
     const pathZ = try arena.dupeZ(u8, self.path);
     const argsZ = try arena.allocSentinel(?[*:0]u8, self.args.len, null);
-    for (self.args) |arg, i| argsZ[i] = (try arena.dupeZ(u8, arg)).ptr;
+    for (self.args, 0..) |arg, i| argsZ[i] = (try arena.dupeZ(u8, arg)).ptr;
 
     // Determine our env vars
     const envp = if (self.env) |env_map|

@@ -1417,7 +1417,7 @@ pub fn cursorPosCallback(
     if (self.io.terminal.modes.mouse_event != .none) {
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
-        const button: ?input.MouseButton = button: for (self.mouse.click_state) |state, i| {
+        const button: ?input.MouseButton = button: for (self.mouse.click_state, 0..) |state, i| {
             if (state == .press)
                 break :button @intToEnum(input.MouseButton, i);
         } else null;

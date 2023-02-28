@@ -404,7 +404,7 @@ pub const Wasm = struct {
                 var buf: []u8 = try alloc.alloc(u8, self.data.len * 4);
                 errdefer alloc.free(buf);
                 std.mem.set(u8, buf, 0);
-                for (self.data) |value, i| {
+                for (self.data, 0..) |value, i| {
                     buf[(i * 4) + 3] = value;
                 }
                 break :buf buf;

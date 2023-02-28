@@ -316,7 +316,7 @@ pub const Row = struct {
         }
 
         // We have graphemes, so we have to clear those first.
-        for (self.storage[start + 1 .. len + 1]) |*storage_cell, x| {
+        for (self.storage[start + 1 .. len + 1], 0..) |*storage_cell, x| {
             if (storage_cell.cell.attrs.grapheme) self.clearGraphemes(x);
             storage_cell.* = .{ .cell = cell };
         }
@@ -413,7 +413,7 @@ pub const Row = struct {
         }
 
         // Source has graphemes, this is slow.
-        for (src.storage[1..end]) |storage, x| {
+        for (src.storage[1..end], 0..) |storage, x| {
             self.storage[x + 1] = .{ .cell = storage.cell };
 
             // Copy grapheme data if it exists
@@ -1056,7 +1056,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
     };
 
     // Zero
-    for (zero_offset) |offset, i| {
+    for (zero_offset, 0..) |offset, i| {
         if (offset >= slices[i].len) continue;
 
         const dst = slices[i][offset..];
@@ -1488,7 +1488,7 @@ pub fn selectionString(
         var count: usize = 0;
         const arr = [_][]StorageCell{ slices.top, slices.bot };
         for (arr) |slice| {
-            for (slice) |cell, i| {
+            for (slice, 0..) |cell, i| {
                 // detect row headers
                 if (@mod(i, self.cols + 1) == 0) {
                     // We use each row header as an opportunity to "count"
@@ -1967,7 +1967,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             };
 
             // Copy all the cells into our row.
-            for (trimmed_row) |cell, i| {
+            for (trimmed_row, 0..) |cell, i| {
                 // Soft wrap if we have to
                 if (x == self.cols) {
                     var row = self.getRow(.{ .active = y });

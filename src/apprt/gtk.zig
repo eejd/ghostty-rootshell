@@ -860,7 +860,7 @@ pub const Surface = struct {
         // that assumption is true.
         const keyval = keyval: {
             if (found > 0) {
-                for (keys[0..@intCast(usize, keys_len)]) |key, i| {
+                for (keys[0..@intCast(usize, keys_len)], 0..) |key, i| {
                     if (key.group == 0 and key.level == 0)
                         break :keyval keyvals[i];
                 }
