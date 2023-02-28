@@ -77,9 +77,9 @@ We need better benchmarks to continuously verify this, but I believe at
 this stage Ghostty is already best-in-class (or at worst second in certain
 cases) for a majority of performance measuring scenarios.
 
-For rendering, we have a multi-renderer architecture that uses OpenGL on 
-Linux and Metal on macOS. As far as I'm aware, we're the only terminal 
-emulator other than iTerm that uses Metal directly. And we're the only 
+For rendering, we have a multi-renderer architecture that uses OpenGL on
+Linux and Metal on macOS. As far as I'm aware, we're the only terminal
+emulator other than iTerm that uses Metal directly. And we're the only
 terminal emulator that has a Metal renderer that supports ligatures (iTerm
 uses a CPU renderer if ligatures are enabled). We can maintain roughly
 100fps under heavy load and 120fps generally -- though the terminal is
@@ -117,7 +117,9 @@ For [Nix](https://nixos.org/) users, a `shell.nix` is available which includes
 all the necessary dependencies pinned to exact versions.
 
 **Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig. You can find binary releases of nightly builds
+releases of Zig. I plan on stabilizing on a release version when I get
+closer to generally releasing this to ease downstream packagers. During
+development, I'm sticking to nightly Zig. You can find binary releases of nightly builds
 on the [Zig downloads page](https://ziglang.org/download/).
 
 Install dependencies by running `make`:
