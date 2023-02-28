@@ -454,9 +454,16 @@ fn addDeps(
     system_sdk.include(b, step, .{});
 
     // We always need the Zig packages
+    // TODO: This can't be the right way to use the new Zig modules system,
+    // so take a closer look at this again later.
     if (enable_fontconfig) step.addModule("fontconfig", fontconfig.module(b));
-    step.addModule("freetype", freetype.module(b));
-    step.addModule("harfbuzz", harfbuzz.module(b));
+    const mod_freetype = freetype.module(b);
+    const mod_macos = macos.module(b);
+    step.addModule("freetype", mod_freetype);
+    step.addModule("harfbuzz", harfbuzz.module(b, .{
+        .freetype = mod_freetype,
+        .macos = mod_macos,
+    }));
     step.addModule("imgui", imgui.module(b));
     step.addModule("xev", libxev.module(b));
     step.addModule("pixman", pixman.module(b));
@@ -466,7 +473,7 @@ fn addDeps(
     // Mac Stuff
     if (step.target.isDarwin()) {
         step.addModule("objc", objc.module(b));
-        step.addModule("macos", macos.module(b));
+        step.addModule("macos", mod_macos);
         _ = try macos.link(b, step, .{});
     }
 

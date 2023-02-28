@@ -1,6 +1,4 @@
 const std = @import("std");
-const freetypepkg = @import("../freetype/build.zig");
-const macospkg = @import("../macos/build.zig");
 
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/harfbuzz/";
@@ -8,12 +6,15 @@ const include_path = root ++ "src/";
 
 pub const include_paths = .{include_path};
 
-pub fn module(b: *std.Build) *std.build.Module {
+pub fn module(b: *std.Build, deps: struct {
+    freetype: *std.build.Module,
+    macos: *std.build.Module,
+}) *std.build.Module {
     return b.createModule(.{
         .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
         .dependencies = &.{
-            .{ .name = "freetype", .module = freetypepkg.module(b) },
-            .{ .name = "macos", .module = macospkg.module(b) },
+            .{ .name = "freetype", .module = deps.freetype },
+            .{ .name = "macos", .module = deps.macos },
         },
     });
 }
