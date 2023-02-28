@@ -403,9 +403,10 @@ const Subprocess = struct {
         // If we're NOT in a flatpak (usually!), then we just exec the
         // process directly. If we are in a flatpak, we use flatpak-spawn
         // to escape the sandbox.
-        const args = if (!internal_os.isFlatpak()) &[_][]const u8{
-            argv0_override orelse path,
-        } else args: {
+        const args = if (!internal_os.isFlatpak()) try alloc.dupe(
+            []const u8,
+            &[_][]const u8{argv0_override orelse path},
+        ) else args: {
             var args = try std.ArrayList([]const u8).initCapacity(alloc, 8);
             defer args.deinit();
 
