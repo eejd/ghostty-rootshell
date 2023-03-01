@@ -1731,6 +1731,13 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     while (row_it.next()) |old_row| {
         // If we're past the end, scroll
         if (y >= self.rows) {
+            // If we're shrinking rows then its possible we'll trim scrollback
+            // and we have to account for how much we actually trimmed and
+            // reflect that in the cursor.
+            if (self.storage.len() >= self.maxCapacity()) {
+                old.cursor.y -|= 1;
+            }
+
             y -= 1;
             try self.scroll(.{ .delta = 1 });
         }
@@ -4161,6 +4168,45 @@ test "Screen: resize less rows with populated scrollback" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         const expected = "5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less rows with full scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    const str = "00000\n1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    const cursor = s.cursor;
+    try testing.expectEqual(Cursor{ .x = 4, .y = 2 }, cursor);
+
+    // Resize
+    try s.resize(2, 5);
+
+    // Cursor should stay in the same relative place (bottom of the
+    // screen, same character).
+    try testing.expectEqual(Cursor{ .x = 4, .y = 1 }, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "4ABCD\n5EFGH";
         try testing.expectEqualStrings(expected, contents);
     }
 }
