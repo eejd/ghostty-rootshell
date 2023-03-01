@@ -804,7 +804,25 @@ pub fn clone(self: *Screen, alloc: Allocator, top: RowIndex, bottom: RowIndex) !
     assert(bot_y >= top_y);
     const height = (bot_y - top_y) + 1;
 
-    // Init a new screen that exactly fits the height
+    // We also figure out the "max y" we can have based on the number
+    // of rows written. This is used to prevent from reading out of the
+    // circular buffer where we might ahve no initialized data yet.
+    const max_y = max_y: {
+        const rows_written = self.rowsWritten();
+        const index = RowIndex{ .active = @min(rows_written -| 1, self.rows - 1) };
+        break :max_y index.toScreen(self).screen;
+    };
+
+    // The "real" Y value we use is whichever is smaller: the bottom
+    // requested or the max. This prevents from reading zero data.
+    // The "real" height is the amount of height of data we can actually
+    // copy.
+    const real_y = @min(bot_y, max_y);
+    const real_height = (real_y - top_y) + 1;
+
+    // Init a new screen that exactly fits the height. The height is the
+    // non-real value because we still want the requested height by the
+    // caller.
     var result = try init(alloc, height, self.cols, 0);
     errdefer result.deinit();
 
@@ -812,7 +830,7 @@ pub fn clone(self: *Screen, alloc: Allocator, top: RowIndex, bottom: RowIndex) !
     result.cursor = self.cursor;
 
     // Get the pointer to our source buffer
-    const len = height * (self.cols + 1);
+    const len = real_height * (self.cols + 1);
     const src = self.storage.getPtrSlice(top_y * (self.cols + 1), len);
 
     // Get a direct pointer into our storage buffer. This should always be
@@ -2724,6 +2742,51 @@ test "Screen: clone one line viewport" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABC", contents);
     }
+}
+
+test "Screen: clone empty active" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+
+    {
+        var s2 = try s.clone(alloc, .{ .active = 0 }, .{ .active = 0 });
+        defer s2.deinit();
+
+        // Test our contents rotated
+        var contents = try s2.testString(alloc, .active);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+}
+
+test "Screen: clone one line active with extra space" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABC");
+
+    // Should have 1 line written
+    try testing.expectEqual(@as(usize, 1), s.rowsWritten());
+
+    {
+        var s2 = try s.clone(alloc, .{ .active = 0 }, .{ .active = s.rows - 1 });
+        defer s2.deinit();
+
+        // Test our contents rotated
+        var contents = try s2.testString(alloc, .active);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABC", contents);
+    }
+
+    // Should still have no history. A bug was that we were generating history
+    // in this case which is not good! This was causing resizes to have all
+    // sorts of problems.
+    try testing.expectEqual(@as(usize, 1), s.rowsWritten());
 }
 
 test "Screen: selectLine" {
