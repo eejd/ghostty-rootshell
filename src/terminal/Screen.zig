@@ -402,6 +402,9 @@ pub const Row = struct {
         // If we have graphemes, clear first to unset them.
         if (self.storage[0].header.flags.grapheme) self.clear(.{});
 
+        // Copy the flags
+        self.storage[0].header.flags = src.storage[0].header.flags;
+
         // Always mark the row as dirty for this.
         self.storage[0].header.flags.dirty = true;
 
@@ -3732,6 +3735,45 @@ test "Screen: resize (no reflow) grapheme copy" {
     {
         var iter = s.rowIterator(.viewport);
         while (iter.next()) |row| try testing.expect(row.isDirty());
+    }
+}
+
+test "Screen: resize (no reflow) more rows with soft wrapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 2, 3);
+    defer s.deinit();
+    const str = "1A2B\n3C4E\n5F6G";
+    try s.testWriteString(str);
+
+    // Every second row should be wrapped
+    {
+        var y: usize = 0;
+        while (y < 6) : (y += 1) {
+            const row = s.getRow(.{ .screen = y });
+            const wrapped = (y % 2 == 0);
+            try testing.expectEqual(wrapped, row.header().flags.wrap);
+        }
+    }
+
+    // Resize
+    try s.resizeWithoutReflow(10, 2);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1A\n2B\n3C\n4E\n5F\n6G";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Every second row should be wrapped
+    {
+        var y: usize = 0;
+        while (y < 6) : (y += 1) {
+            const row = s.getRow(.{ .screen = y });
+            const wrapped = (y % 2 == 0);
+            try testing.expectEqual(wrapped, row.header().flags.wrap);
+        }
     }
 }
 
