@@ -819,6 +819,7 @@ pub fn clone(self: *Screen, alloc: Allocator, top: RowIndex, bottom: RowIndex) !
     // copy.
     const real_y = @min(bot_y, max_y);
     const real_height = (real_y - top_y) + 1;
+    //log.warn("bot={} max={} top={} real={}", .{ bot_y, max_y, top_y, real_y });
 
     // Init a new screen that exactly fits the height. The height is the
     // non-real value because we still want the requested height by the
@@ -1899,7 +1900,9 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                             // If we were able to copy the entire row then
                             // we shortened the screen by one. We need to reflect
                             // this in our viewport.
-                            if (wrapped_i == 0 and old.viewport > 0) old.viewport -= 1;
+                            if (wrapped_i == 0 and old.viewport > 0) {
+                                old.viewport -= 1;
+                            }
 
                             y += 1;
                             break :wrapping;
@@ -1926,9 +1929,13 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     new_row = self.getRow(.{ .active = y });
                 }
             }
-
-            self.viewport = old.viewport;
         }
+
+        // During the resize, we just keep the viewport at the bottom. But
+        // we want to restore the viewport to what the user had when they
+        // started the resize. old.viewport is maintained for removed lines
+        // in the for loop above.
+        self.viewport = old.viewport;
 
         // If we have a new cursor, we need to convert that to a viewport
         // point and set it up.
@@ -4051,6 +4058,43 @@ test "Screen: resize more cols with populated scrollback" {
         const expected = "2EFGH\n3IJKL\n4ABCD5EFGH";
         try testing.expectEqualStrings(expected, contents);
     }
+}
+
+test "Screen: resize more cols with reflow" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 2, 5);
+    defer s.deinit();
+    const str = "1ABC\n2DEF\n3ABC\n4DEF";
+    try s.testWriteString(str);
+
+    // Let's put our cursor on row 2, where the soft wrap is
+    s.cursor.x = 0;
+    s.cursor.y = 2;
+    try testing.expectEqual(@as(u32, 'E'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    // Verify we soft wrapped
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "BC\n4D\nEF";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Resize and verify we undid the soft wrap because we have space now
+    try s.resize(3, 7);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "1ABC\n2DEF\n3ABC\n4DEF";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Our cursor should've moved
+    try testing.expectEqual(@as(usize, 2), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
 }
 
 test "Screen: resize less rows no scrollback" {
