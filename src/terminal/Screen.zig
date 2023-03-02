@@ -289,6 +289,17 @@ pub const Row = struct {
         return self.storage.len - 1;
     }
 
+    /// Returns true if the row only has empty characters. This ignores
+    /// styling (i.e. styling does not count as non-empty).
+    pub fn isEmpty(self: Row) bool {
+        const len = self.storage.len;
+        for (self.storage[1..len]) |cell| {
+            if (cell.cell.char != 0) return false;
+        }
+
+        return true;
+    }
+
     /// Clear the row, making all cells empty.
     pub fn clear(self: Row, pen: Cell) void {
         var empty_pen = pen;
@@ -1698,6 +1709,36 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // If we're resizing to the same size, do nothing.
     if (self.cols == cols and self.rows == rows) return;
 
+    // The number of no-character lines after our cursor. This is used
+    // to trim those lines on a resize first without generating history.
+    // This is only done if we don't have history yet.
+    //
+    // This matches macOS Terminal.app behavior. I chose to match that
+    // behavior because it seemed fine in an ocean of differing behavior
+    // between terminal apps. I'm completely open to changing it as long
+    // as resize behavior isn't regressed in a user-hostile way.
+    const trailing_blank_lines = blank: {
+        // If there is history, blank line counting is disabled and
+        // we generate scrollback. Why? Terminal.app does it, seems... fine.
+        if (self.history > 0) break :blank 0;
+
+        // Start one line below our cursor and continue to the last line
+        // of the screen or however many rows we have written.
+        const start = self.cursor.y + 1;
+        const end = @min(self.rowsWritten(), self.rows);
+        if (start >= end) break :blank 0;
+
+        var blank: usize = 0;
+        for (0..(end - start)) |i| {
+            const y = end - i - 1;
+            const row = self.getRow(.{ .active = y });
+            if (!row.isEmpty()) break;
+            blank += 1;
+        }
+
+        break :blank blank;
+    };
+
     // Make a copy so we can access the old indexes.
     var old = self.*;
     errdefer self.* = old;
@@ -1706,10 +1747,14 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     self.rows = rows;
     self.cols = cols;
 
+    // The end of the screen is the rows we wrote minus any blank lines
+    // we're trimming.
+    const end_of_screen_y = old.rowsWritten() - trailing_blank_lines;
+
     // Calculate our buffer size. This is going to be either the old data
     // with scrollback or the max capacity of our new size. We prefer the old
     // length so we can save all the data (ignoring col truncation).
-    const old_len = @max(old.rowsWritten(), rows) * (cols + 1);
+    const old_len = @max(end_of_screen_y, rows) * (cols + 1);
     const new_max_capacity = self.maxCapacity();
     const buf_size = @min(old_len, new_max_capacity);
 
@@ -1731,8 +1776,9 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
 
     // Rewrite all our rows
     var y: usize = 0;
-    var row_it = old.rowIterator(.screen);
-    while (row_it.next()) |old_row| {
+    for (0..end_of_screen_y) |it_y| {
+        const old_row = old.getRow(.{ .screen = it_y });
+
         // If we're past the end, scroll
         if (y >= self.rows) {
             // If we're shrinking rows then its possible we'll trim scrollback
@@ -2247,6 +2293,46 @@ pub fn testString(self: *Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8
     // Never render the final newline
     const str = std.mem.trimRight(u8, buf[0..i], "\n");
     return try alloc.realloc(buf, str.len);
+}
+
+test "Row: isEmpty with no data" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    const row = s.getRow(.{ .active = 0 });
+    try testing.expect(row.isEmpty());
+}
+
+test "Row: isEmpty with a character at the end" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    const row = s.getRow(.{ .active = 0 });
+    const cell = row.getCellPtr(4);
+    cell.*.char = 'A';
+    try testing.expect(!row.isEmpty());
+}
+
+test "Row: isEmpty with only styled cells" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    const row = s.getRow(.{ .active = 0 });
+    for (0..s.cols) |x| {
+        const cell = row.getCellPtr(x);
+        cell.*.bg = .{ .r = 0xAA, .g = 0xBB, .b = 0xCC };
+        cell.*.attrs.has_bg = true;
+    }
+    try testing.expect(row.isEmpty());
 }
 
 test "Row: clear with graphemes" {
@@ -3607,6 +3693,78 @@ test "Screen: resize (no reflow) less rows" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: resize (no reflow) less rows trims blank lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD";
+    try s.testWriteString(str);
+
+    // Write only a background color into the remaining rows
+    for (1..s.rows) |y| {
+        const row = s.getRow(.{ .active = y });
+        for (0..s.cols) |x| {
+            const cell = row.getCellPtr(x);
+            cell.*.bg = .{ .r = 0xFF, .g = 0, .b = 0 };
+            cell.*.attrs.has_bg = true;
+        }
+    }
+
+    // Make sure our cursor is at the end of the first line
+    s.cursor.x = 4;
+    s.cursor.y = 0;
+    const cursor = s.cursor;
+
+    try s.resizeWithoutReflow(2, 5);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD", contents);
+    }
+}
+
+test "Screen: resize (no reflow) more rows trims blank lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD";
+    try s.testWriteString(str);
+
+    // Write only a background color into the remaining rows
+    for (1..s.rows) |y| {
+        const row = s.getRow(.{ .active = y });
+        for (0..s.cols) |x| {
+            const cell = row.getCellPtr(x);
+            cell.*.bg = .{ .r = 0xFF, .g = 0, .b = 0 };
+            cell.*.attrs.has_bg = true;
+        }
+    }
+
+    // Make sure our cursor is at the end of the first line
+    s.cursor.x = 4;
+    s.cursor.y = 0;
+    const cursor = s.cursor;
+
+    try s.resizeWithoutReflow(7, 5);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD", contents);
     }
 }
 

@@ -59,6 +59,13 @@ pub const App = struct {
         while (true) {
             // Wait for any events from the app event loop. wakeup will post
             // an empty event so that this will return.
+            //
+            // Warning: a known issue on macOS is that this will block while
+            // a resize event is actively happening, which will prevent the
+            // app tick from happening. I don't know know a way around this
+            // but its not a big deal since we don't use glfw for the official
+            // mac app, but noting it in case anyone builds for macos using
+            // glfw.
             glfw.waitEvents();
 
             // Tick the terminal app
