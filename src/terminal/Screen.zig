@@ -1922,10 +1922,14 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             var x: usize = old.cols;
             wrapping: while (iter.next()) |wrapped_row| {
                 // Trim the row from the right so that we ignore all trailing
-                // empty chars and don't wrap them.
+                // empty chars and don't wrap them. We only do this if the
+                // row is NOT wrapped again because the whitespace would be
+                // meaningful.
                 const wrapped_cells = trim: {
                     var i: usize = old.cols;
-                    while (i > 0) : (i -= 1) if (!wrapped_row.getCell(i - 1).empty()) break;
+                    if (!wrapped_row.header().flags.wrap) {
+                        while (i > 0) : (i -= 1) if (!wrapped_row.getCell(i - 1).empty()) break;
+                    }
                     break :trim wrapped_row.storage[1 .. i + 1];
                 };
 
