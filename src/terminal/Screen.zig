@@ -2058,7 +2058,26 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             // empty chars and don't wrap them.
             const trimmed_row = trim: {
                 var i: usize = old.cols;
-                while (i > 0) : (i -= 1) if (!old_row.getCell(i - 1).empty()) break;
+
+                // We only trim if this isn't a wrapped line. If its a wrapped
+                // line we need to keep all the empty cells because they are
+                // meaningful whitespace before our wrap.
+                if (!old_row.header().flags.wrap) {
+                    while (i > 0) : (i -= 1) {
+                        const cell = old_row.getCell(i - 1);
+
+                        if (!cell.empty()) {
+                            // If we are beyond our new width and this is just
+                            // an empty-character stylized cell, then we trim it.
+                            if (i > self.cols) {
+                                if (cell.char == 0 or cell.char == ' ') continue;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
                 break :trim old_row.storage[1 .. i + 1];
             };
 
@@ -4548,6 +4567,59 @@ test "Screen: resize less cols no reflow" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize less cols trailing background colors" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 10, 0);
+    defer s.deinit();
+    const str = "1AB";
+    try s.testWriteString(str);
+    const cursor = s.cursor;
+
+    // Color our cells red
+    const pen: Cell = .{ .bg = .{ .r = 0xFF }, .attrs = .{ .has_bg = true } };
+    for (s.cursor.x..s.cols) |x| {
+        const row = s.getRow(.{ .active = s.cursor.y });
+        const cell = row.getCellPtr(x);
+        cell.* = pen;
+    }
+    for ((s.cursor.y + 1)..s.rows) |y| {
+        const row = s.getRow(.{ .active = y });
+        row.fill(pen);
+    }
+
+    try s.resize(3, 5);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Verify all our trailing cells have the color
+    for (s.cursor.x..s.cols) |x| {
+        const row = s.getRow(.{ .active = s.cursor.y });
+        const cell = row.getCellPtr(x);
+        try testing.expectEqual(pen, cell.*);
+    }
+    for ((s.cursor.y + 1)..s.rows) |y| {
+        const row = s.getRow(.{ .active = y });
+        for (0..s.cols) |x| {
+            const cell = row.getCellPtr(x);
+            try testing.expectEqual(pen, cell.*);
+        }
     }
 }
 
