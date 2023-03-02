@@ -2116,7 +2116,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     // If our cursor is on this char, then set the new cursor.
                     if (cursor_pos.y == iter.value - 1 and cursor_pos.x == old_x) {
                         assert(new_cursor == null);
-                        new_cursor = .{ .x = x, .y = y };
+                        new_cursor = .{ .x = x, .y = self.history + y };
                     }
 
                     // Write the cell
@@ -4868,6 +4868,49 @@ test "Screen: resize less cols with reflow and scrollback" {
 
     // Cursor should be on the last line
     try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
+}
+
+test "Screen: resize less cols with reflow previously wrapped and scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 2);
+    defer s.deinit();
+    const str = "1ABCD2EFGH3IJKL4ABCD5EFGH";
+    try s.testWriteString(str);
+
+    // Check
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Put our cursor on the end
+    s.cursor.x = s.cols - 1;
+    s.cursor.y = s.rows - 1;
+    try testing.expectEqual(@as(u32, 'H'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    try s.resize(3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "CD5\nEFG\nH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "JKL\n4AB\nCD5\nEFG\nH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Cursor should be on the last line
+    try testing.expectEqual(@as(u32, 'H'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+    try testing.expectEqual(@as(usize, 0), s.cursor.x);
     try testing.expectEqual(@as(usize, 2), s.cursor.y);
 }
 
