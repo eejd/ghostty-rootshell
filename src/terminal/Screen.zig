@@ -1718,6 +1718,10 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
     // between terminal apps. I'm completely open to changing it as long
     // as resize behavior isn't regressed in a user-hostile way.
     const trailing_blank_lines = blank: {
+        // If we aren't changing row length, then don't bother calculating
+        // because we aren't going to trim.
+        if (self.rows == rows) break :blank 0;
+
         // If there is history, blank line counting is disabled and
         // we generate scrollback. Why? Terminal.app does it, seems... fine.
         if (self.history > 0) break :blank 0;
