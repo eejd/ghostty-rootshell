@@ -1838,9 +1838,6 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         return;
     }
 
-    // We grow rows first so we can make space for more reflow
-    if (rows > self.rows) try self.resizeWithoutReflow(rows, cols);
-
     // If our columns increased, we alloc space for the new column width
     // and go through each row and reflow if necessary.
     if (cols > self.cols) {
@@ -2013,6 +2010,10 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             self.cursor.y = viewport_pos.y;
         }
     }
+
+    // We grow rows after cols so that we can do our unwrapping/reflow
+    // before we do a no-reflow grow.
+    if (rows > self.rows) try self.resizeWithoutReflow(rows, cols);
 
     // If our rows got smaller, we trim the scrollback. We do this after
     // handling cols growing so that we can save as many lines as we can.
@@ -4053,6 +4054,39 @@ test "Screen: resize more rows with populated scrollback" {
 
     {
         var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize more rows and cols with wrapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 2, 0);
+    defer s.deinit();
+    const str = "1A2B\n3C4D";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "1A\n2B\n3C\n4D";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    try s.resize(10, 5);
+
+    // Cursor should move due to wrapping
+    try testing.expectEqual(@as(usize, 3), s.cursor.x);
+    try testing.expectEqual(@as(usize, 1), s.cursor.y);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
