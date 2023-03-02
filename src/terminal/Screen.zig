@@ -1876,22 +1876,21 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         while (iter.next()) |old_row| {
             // If we're past the end, scroll
             if (y >= self.rows) {
-                y -= 1;
                 try self.scroll(.{ .delta = 1 });
+                y -= 1;
             }
-
-            // Get this row
-            var new_row = self.getRow(.{ .active = y });
-            try new_row.copyRow(old_row);
 
             // We need to check if our cursor was on this line. If so,
             // we set the new cursor.
             if (cursor_pos.y == iter.value - 1) {
                 assert(new_cursor == null); // should only happen once
-                new_cursor = .{ .y = self.rowsWritten() - 1, .x = cursor_pos.x };
+                new_cursor = .{ .y = self.history + y, .x = cursor_pos.x };
             }
 
-            // If no reflow, just keep going.
+            // At this point, we're always at x == 0 so we can just copy
+            // the row (we know old.cols < self.cols).
+            var new_row = self.getRow(.{ .active = y });
+            try new_row.copyRow(old_row);
             if (!old_row.header().flags.wrap) {
                 // If we have no reflow, we attempt to extend any stylized
                 // cells at the end of the line if there is one.
@@ -1955,7 +1954,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         cursor_pos.x < copy_len and
                         new_cursor == null)
                     {
-                        new_cursor = .{ .y = self.rowsWritten() - 1, .x = x + cursor_pos.x };
+                        new_cursor = .{ .y = self.history + y, .x = x + cursor_pos.x };
                     }
 
                     // We copied the full amount left in this wrapped row.

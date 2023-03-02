@@ -912,19 +912,26 @@ pub fn eraseDisplay(
 
         .below => {
             // All lines to the right (including the cursor)
-            var x: usize = self.screen.cursor.x;
-            while (x < self.cols) : (x += 1) {
-                const cell = self.screen.getCellPtr(.active, self.screen.cursor.y, x);
-                cell.* = self.screen.cursor.pen;
-                cell.char = 0;
+            {
+                const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+                row.setWrapped(false);
+                row.setDirty(true);
+                for (self.screen.cursor.x..self.cols) |x| {
+                    if (row.header().flags.grapheme) row.clearGraphemes(x);
+                    const cell = row.getCellPtr(x);
+                    cell.* = self.screen.cursor.pen;
+                    cell.char = 0;
+                }
             }
 
             // All lines below
-            var y: usize = self.screen.cursor.y + 1;
-            while (y < self.rows) : (y += 1) {
-                x = 0;
-                while (x < self.cols) : (x += 1) {
-                    const cell = self.screen.getCellPtr(.active, y, x);
+            for ((self.screen.cursor.y + 1)..self.rows) |y| {
+                const row = self.screen.getRow(.{ .active = y });
+                row.setWrapped(false);
+                row.setDirty(true);
+                for (0..self.cols) |x| {
+                    if (row.header().flags.grapheme) row.clearGraphemes(x);
+                    const cell = row.getCellPtr(x);
                     cell.* = self.screen.cursor.pen;
                     cell.char = 0;
                 }
