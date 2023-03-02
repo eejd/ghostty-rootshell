@@ -1985,12 +1985,12 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
     // We grow rows after cols so that we can do our unwrapping/reflow
     // before we do a no-reflow grow.
-    if (rows > self.rows) try self.resizeWithoutReflow(rows, cols);
+    if (rows > self.rows) try self.resizeWithoutReflow(rows, self.cols);
 
     // If our rows got smaller, we trim the scrollback. We do this after
     // handling cols growing so that we can save as many lines as we can.
     // We do it before cols shrinking so we can save compute on that operation.
-    if (rows < self.rows) try self.resizeWithoutReflow(rows, cols);
+    if (rows < self.rows) try self.resizeWithoutReflow(rows, self.cols);
 
     // If our cols got smaller, we have to reflow text. This is the worst
     // possible case because we can't do any easy tricks to get reflow,
@@ -4903,6 +4903,44 @@ test "Screen: resize less cols with reflow previously wrapped and scrollback" {
     try testing.expectEqual(@as(u32, 'H'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
     try testing.expectEqual(@as(usize, 0), s.cursor.x);
     try testing.expectEqual(@as(usize, 2), s.cursor.y);
+}
+
+test "Screen: resize more rows, less cols with reflow with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH3IJKL\n4MNOP";
+    try s.testWriteString(str);
+
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "1ABCD\n2EFGH\n3IJKL\n4MNOP";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "2EFGH\n3IJKL\n4MNOP";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    try s.resize(10, 2);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "BC\nD\n2E\nFG\nH3\nIJ\nKL\n4M\nNO\nP";
+        try testing.expectEqualStrings(expected, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "1A\nBC\nD\n2E\nFG\nH3\nIJ\nKL\n4M\nNO\nP";
+        try testing.expectEqualStrings(expected, contents);
+    }
 }
 
 // This seems like it should work fine but for some reason in practice
