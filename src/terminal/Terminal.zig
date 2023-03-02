@@ -904,7 +904,11 @@ pub fn eraseDisplay(
     switch (mode) {
         .complete => {
             var it = self.screen.rowIterator(.active);
-            while (it.next()) |row| row.clear(self.screen.cursor.pen);
+            while (it.next()) |row| {
+                row.setWrapped(false);
+                row.setDirty(true);
+                row.clear(self.screen.cursor.pen);
+            }
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
