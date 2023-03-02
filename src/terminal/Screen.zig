@@ -1726,21 +1726,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
         // we generate scrollback. Why? Terminal.app does it, seems... fine.
         if (self.history > 0) break :blank 0;
 
-        // Start one line below our cursor and continue to the last line
-        // of the screen or however many rows we have written.
-        const start = self.cursor.y + 1;
-        const end = @min(self.rowsWritten(), self.rows);
-        if (start >= end) break :blank 0;
-
-        var blank: usize = 0;
-        for (0..(end - start)) |i| {
-            const y = end - i - 1;
-            const row = self.getRow(.{ .active = y });
-            if (!row.isEmpty()) break;
-            blank += 1;
-        }
-
-        break :blank blank;
+        break :blank self.trailingBlankLines();
     };
 
     // Make a copy so we can access the old indexes.
@@ -2053,10 +2039,15 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         self.viewport = 0;
         self.history = 0;
 
-        // Iterate over the screen since we need to check for reflow.
-        var iter = old.rowIterator(.screen);
+        // Iterate over the screen since we need to check for reflow. We
+        // clear all the trailing blank lines so that shells like zsh and
+        // fish that often clear the display below don't force us to have
+        // scrollback.
+        var old_y: usize = 0;
+        const end_y = RowIndexTag.screen.maxLen(&old) - old.trailingBlankLines();
         var y: usize = 0;
-        while (iter.next()) |old_row| {
+        while (old_y < end_y) : (old_y += 1) {
+            const old_row = old.getRow(.{ .screen = old_y });
             const old_row_wrapped = old_row.header().flags.wrap;
             const trimmed_row = self.trimRowForResizeLessCols(&old, old_row);
 
@@ -2071,7 +2062,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             // copy and move on.
             if (!old_row_wrapped and trimmed_row.len <= self.cols) {
                 // If our cursor is on this line, then set the new cursor.
-                if (cursor_pos.y == iter.value - 1) {
+                if (cursor_pos.y == old_y) {
                     assert(new_cursor == null);
                     new_cursor = .{ .x = cursor_pos.x, .y = self.history + y };
                 }
@@ -2113,7 +2104,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     }
 
                     // If our cursor is on this char, then set the new cursor.
-                    if (cursor_pos.y == iter.value - 1 and cursor_pos.x == old_x) {
+                    if (cursor_pos.y == old_y and cursor_pos.x == old_x) {
                         assert(new_cursor == null);
                         new_cursor = .{ .x = x, .y = self.history + y };
                     }
@@ -2132,8 +2123,8 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
                 // If the old row is wrapped we continue with the loop with
                 // the next row.
-                cur_old_row = iter.next() orelse
-                    @panic("if the current row is wrapped, must have a follow-up row");
+                old_y += 1;
+                cur_old_row = old.getRow(.{ .screen = old_y });
                 cur_old_row_wrapped = cur_old_row.header().flags.wrap;
                 cur_trimmed_row = self.trimRowForResizeLessCols(&old, cur_old_row);
             }
@@ -2153,6 +2144,27 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             self.cursor.y = @min(self.cursor.y, self.rows - 1);
         }
     }
+}
+
+/// Counts the number of trailing lines from the cursor that are blank.
+/// This is specifically used for resizing and isn't meant to be a general
+/// purpose tool.
+fn trailingBlankLines(self: *Screen) usize {
+    // Start one line below our cursor and continue to the last line
+    // of the screen or however many rows we have written.
+    const start = self.cursor.y + 1;
+    const end = @min(self.rowsWritten(), self.rows);
+    if (start >= end) return 0;
+
+    var blank: usize = 0;
+    for (0..(end - start)) |i| {
+        const y = end - i - 1;
+        const row = self.getRow(.{ .active = y });
+        if (!row.isEmpty()) break;
+        blank += 1;
+    }
+
+    return blank;
 }
 
 /// When resizing to less columns, this trims the row from the right
@@ -4678,13 +4690,6 @@ test "Screen: resize less cols trailing background colors" {
         const row = s.getRow(.{ .active = s.cursor.y });
         const cell = row.getCellPtr(x);
         try testing.expectEqual(pen, cell.*);
-    }
-    for ((s.cursor.y + 1)..s.rows) |y| {
-        const row = s.getRow(.{ .active = y });
-        for (0..s.cols) |x| {
-            const cell = row.getCellPtr(x);
-            try testing.expectEqual(pen, cell.*);
-        }
     }
 }
 
