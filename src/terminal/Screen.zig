@@ -1947,13 +1947,6 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     if (copy_len == wrapped_cells_rem) {
                         // If this row isn't also wrapped, we're done!
                         if (!wrapped_row.header().flags.wrap) {
-                            // If we were able to copy the entire row then
-                            // we shortened the screen by one. We need to reflect
-                            // this in our viewport.
-                            if (wrapped_i == 0 and old.viewport > 0) {
-                                old.viewport -= 1;
-                            }
-
                             y += 1;
                             break :wrapping;
                         }
@@ -1980,12 +1973,6 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                 }
             }
         }
-
-        // During the resize, we just keep the viewport at the bottom. But
-        // we want to restore the viewport to what the user had when they
-        // started the resize. old.viewport is maintained for removed lines
-        // in the for loop above.
-        self.viewport = old.viewport;
 
         // If we have a new cursor, we need to convert that to a viewport
         // point and set it up.
