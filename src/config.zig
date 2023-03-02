@@ -119,8 +119,8 @@ pub const Config = struct {
     /// the grid will be completely squished by the padding. It is up to you
     /// as the user to pick a reasonable value. If you pick an unreasonable
     /// value, a warning will appear in the logs.
-    @"window-padding-x": u32 = 0,
-    @"window-padding-y": u32 = 0,
+    @"window-padding-x": u32 = 2,
+    @"window-padding-y": u32 = 2,
 
     /// The viewport dimensions are usually not perfectly divisible by
     /// the cell size. In this case, some extra padding on the end of a
@@ -134,7 +134,7 @@ pub const Config = struct {
     /// still apply. The other padding is applied first and may affect how
     /// many grid cells actually exist, and this is applied last in order
     /// to balance the padding given a certain viewport size and grid cell size.
-    @"window-padding-balance": bool = true,
+    @"window-padding-balance": bool = false,
 
     /// If true, new windows and tabs will inherit the font size of the previously
     /// focused window. If no window was previously focused, the default
