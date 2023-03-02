@@ -2056,88 +2056,87 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
         // Iterate over the screen since we need to check for reflow.
         var iter = old.rowIterator(.screen);
-        var x: usize = 0;
         var y: usize = 0;
         while (iter.next()) |old_row| {
-            // Trim the row from the right so that we ignore all trailing
-            // empty chars and don't wrap them.
-            const trimmed_row = trim: {
-                var i: usize = old.cols;
+            const old_row_wrapped = old_row.header().flags.wrap;
+            const trimmed_row = self.trimRowForResizeLessCols(&old, old_row);
 
-                // We only trim if this isn't a wrapped line. If its a wrapped
-                // line we need to keep all the empty cells because they are
-                // meaningful whitespace before our wrap.
-                if (!old_row.header().flags.wrap) {
-                    while (i > 0) : (i -= 1) {
-                        const cell = old_row.getCell(i - 1);
+            // If our y is more than our rows, we need to scroll
+            if (y >= self.rows) {
+                try self.scroll(.{ .delta = 1 });
+                y -= 1;
+            }
 
-                        if (!cell.empty()) {
-                            // If we are beyond our new width and this is just
-                            // an empty-character stylized cell, then we trim it.
-                            if (i > self.cols) {
-                                if (cell.char == 0 or cell.char == ' ') continue;
-                            }
-
-                            break;
-                        }
-                    }
-                }
-
-                break :trim old_row.storage[1 .. i + 1];
-            };
-
-            // Copy all the cells into our row.
-            for (trimmed_row, 0..) |cell, i| {
-                // Soft wrap if we have to
-                if (x == self.cols) {
-                    var row = self.getRow(.{ .active = y });
-                    row.setWrapped(true);
-                    x = 0;
-                    y += 1;
-                }
-
-                // If our y is more than our rows, we need to scroll
-                if (y >= self.rows) {
-                    try self.scroll(.{ .delta = 1 });
-                    y = self.rows - 1;
-                    x = 0;
-                }
-
-                // If our cursor is on this point, we need to move it.
-                if (cursor_pos.y == iter.value - 1 and
-                    cursor_pos.x == i)
-                {
+            // Fast path: our old row is not wrapped AND our old row fits
+            // into our new smaller size. In this case, we just do a fast
+            // copy and move on.
+            if (!old_row_wrapped and trimmed_row.len <= self.cols) {
+                // If our cursor is on this line, then set the new cursor.
+                if (cursor_pos.y == iter.value - 1) {
                     assert(new_cursor == null);
-                    new_cursor = .{ .x = x, .y = self.viewport + y };
+                    new_cursor = .{ .x = cursor_pos.x, .y = self.history + y };
                 }
 
-                // Copy the old cell, unset the old wrap state
-                // log.warn("y={} x={} rows={}", .{ y, x, self.rows });
-                var new_cell = self.getCellPtr(.active, y, x);
-                new_cell.* = cell.cell;
+                const row = self.getRow(.{ .active = y });
+                fastmem.copy(
+                    StorageCell,
+                    row.storage[1..],
+                    trimmed_row,
+                );
 
-                // Next
-                x += 1;
-            }
-
-            // If our cursor is on this line but not in a content area,
-            // then we just set it to be at the end.
-            if (cursor_pos.y == iter.value - 1 and
-                cursor_pos.x >= trimmed_row.len)
-            {
-                assert(new_cursor == null);
-                new_cursor = .{
-                    .x = @min(cursor_pos.x, self.cols - 1),
-                    .y = self.viewport + y,
-                };
-            }
-
-            // If we aren't wrapping, then move to the next row
-            if (trimmed_row.len == 0 or
-                !old_row.header().flags.wrap)
-            {
                 y += 1;
-                x = 0;
+                continue;
+            }
+
+            // Slow path: the row is wrapped or doesn't fit so we have to
+            // wrap ourselves. In this case, we basically just "print and wrap"
+            var row = self.getRow(.{ .active = y });
+            var x: usize = 0;
+            var cur_old_row = old_row;
+            var cur_old_row_wrapped = old_row_wrapped;
+            var cur_trimmed_row = trimmed_row;
+            while (true) {
+                for (cur_trimmed_row, 0..) |cell, old_x| {
+                    // Soft wrap if we have to.
+                    if (x == self.cols) {
+                        row.setWrapped(true);
+                        x = 0;
+                        y += 1;
+
+                        // Wrapping can cause us to overflow our visible area.
+                        // If so, scroll.
+                        if (y >= self.rows) {
+                            try self.scroll(.{ .delta = 1 });
+                            y -= 1;
+                        }
+
+                        row = self.getRow(.{ .active = y });
+                    }
+
+                    // If our cursor is on this char, then set the new cursor.
+                    if (cursor_pos.y == iter.value - 1 and cursor_pos.x == old_x) {
+                        assert(new_cursor == null);
+                        new_cursor = .{ .x = x, .y = y };
+                    }
+
+                    // Write the cell
+                    var new_cell = row.getCellPtr(x);
+                    new_cell.* = cell.cell;
+                    x += 1;
+                }
+
+                // If we're done wrapping, we move on.
+                if (!cur_old_row_wrapped) {
+                    y += 1;
+                    break;
+                }
+
+                // If the old row is wrapped we continue with the loop with
+                // the next row.
+                cur_old_row = iter.next() orelse
+                    @panic("if the current row is wrapped, must have a follow-up row");
+                cur_old_row_wrapped = cur_old_row.header().flags.wrap;
+                cur_trimmed_row = self.trimRowForResizeLessCols(&old, cur_old_row);
             }
         }
 
@@ -2155,6 +2154,35 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             self.cursor.y = @min(self.cursor.y, self.rows - 1);
         }
     }
+}
+
+/// When resizing to less columns, this trims the row from the right
+/// so we don't unnecessarily wrap. This will freely throw away trailing
+/// colored but empty (character) cells. This matches Terminal.app behavior,
+/// which isn't strictly correct but seems nice.
+fn trimRowForResizeLessCols(self: *Screen, old: *Screen, row: Row) []StorageCell {
+    assert(old.cols > self.cols);
+
+    // We only trim if this isn't a wrapped line. If its a wrapped
+    // line we need to keep all the empty cells because they are
+    // meaningful whitespace before our wrap.
+    if (row.header().flags.wrap) return row.storage[1 .. old.cols + 1];
+
+    var i: usize = old.cols;
+    while (i > 0) : (i -= 1) {
+        const cell = row.getCell(i - 1);
+        if (!cell.empty()) {
+            // If we are beyond our new width and this is just
+            // an empty-character stylized cell, then we trim it.
+            if (i > self.cols) {
+                if (cell.char == 0 or cell.char == ' ') continue;
+            }
+
+            break;
+        }
+    }
+
+    return row.storage[1 .. i + 1];
 }
 
 /// Writes a basic string into the screen for testing. Newlines (\n) separate
@@ -4780,6 +4808,67 @@ test "Screen: resize less cols with reflow with trimmed rows and scrollback" {
         const expected = "4AB\nCD\n5EF\nGH";
         try testing.expectEqualStrings(expected, contents);
     }
+}
+
+test "Screen: resize less cols with reflow previously wrapped" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "3IJKL4ABCD5EFGH";
+    try s.testWriteString(str);
+
+    // Check
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    try s.resize(3, 3);
+
+    // {
+    //     var contents = try s.testString(alloc, .viewport);
+    //     defer alloc.free(contents);
+    //     const expected = "CD\n5EF\nGH";
+    //     try testing.expectEqualStrings(expected, contents);
+    // }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        const expected = "ABC\nD5E\nFGH";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: resize less cols with reflow and scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1A\n2B\n3C\n4D\n5E";
+    try s.testWriteString(str);
+
+    // Put our cursor on the end
+    s.cursor.x = 1;
+    s.cursor.y = s.rows - 1;
+    try testing.expectEqual(@as(u32, 'E'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
+
+    try s.resize(3, 3);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "3C\n4D\n5E";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Cursor should be on the last line
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
 }
 
 // This seems like it should work fine but for some reason in practice
