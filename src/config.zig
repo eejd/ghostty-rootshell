@@ -192,6 +192,12 @@ pub const Config = struct {
             .{ .paste_from_clipboard = {} },
         );
 
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .k, .mods = .{ .super = true } },
+            .{ .clear_screen = {} },
+        );
+
         try result.keybind.set.put(alloc, .{ .key = .up }, .{ .cursor_key = .{
             .normal = "\x1b[A",
             .application = "\x1bOA",

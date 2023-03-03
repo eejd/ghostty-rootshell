@@ -194,6 +194,19 @@ pub fn resize(
     }
 }
 
+/// Clear the screen.
+pub fn clearScreen(self: *Exec, history: bool) !void {
+    // Queue form-feed ASCII code to clear the visible page.
+    try self.queueWrite(&[_]u8{0x0C});
+
+    // Clear our scrollback
+    if (history) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        self.terminal.screen.clearHistory();
+    }
+}
+
 pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
     const ev = self.data.?;
 

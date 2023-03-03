@@ -896,6 +896,13 @@ pub fn keyCallback(
                     self.setFontSize(size);
                 },
 
+                .clear_screen => {
+                    _ = self.io_thread.mailbox.push(.{
+                        .clear_screen = .{ .history = true },
+                    }, .{ .forever = {} });
+                    try self.io_thread.wakeup.notify();
+                },
+
                 .toggle_dev_mode => if (DevMode.enabled) {
                     DevMode.instance.visible = !DevMode.instance.visible;
                     try self.queueRender();

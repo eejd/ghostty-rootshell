@@ -130,6 +130,7 @@ fn drainMailbox(self: *Thread) !void {
         log.debug("mailbox message={}", .{message});
         switch (message) {
             .resize => |v| try self.impl.resize(v.grid_size, v.screen_size, v.padding),
+            .clear_screen => |v| try self.impl.clearScreen(v.history),
             .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
             .write_stable => |v| try self.impl.queueWrite(v),
             .write_alloc => |v| {

@@ -146,6 +146,9 @@ pub const Action = union(enum) {
     /// Reset the font size to the original configured size
     reset_font_size: void,
 
+    /// Clear the screen. This also clears all scrollback.
+    clear_screen: void,
+
     /// Dev mode
     toggle_dev_mode: void,
 

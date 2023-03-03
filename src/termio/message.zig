@@ -29,6 +29,12 @@ pub const Message = union(enum) {
         padding: renderer.Padding,
     },
 
+    /// Clear the screen.
+    clear_screen: struct {
+        /// Include clearing the history
+        history: bool,
+    },
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 
