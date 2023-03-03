@@ -44,7 +44,7 @@ pub fn main() !void {
     }
 
     // Parse the config files that were added from our file and CLI args.
-    try config.loadRecursive(alloc);
+    try config.loadRecursiveFiles(alloc);
     try config.finalize();
     //std.log.debug("config={}", .{config});
 

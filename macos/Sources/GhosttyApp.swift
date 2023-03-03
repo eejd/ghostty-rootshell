@@ -89,6 +89,10 @@ class GhosttyState: ObservableObject {
         }
         self.config = cfg;
         
+        // Load our configuration files from the home directory.
+        ghostty_config_load_default_files(cfg);
+        ghostty_config_load_recursive_files(cfg);
+        
         // TODO: we'd probably do some config loading here... for now we'd
         // have to do this synchronously. When we support config updating we can do
         // this async and update later.

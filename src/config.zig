@@ -342,7 +342,7 @@ pub const Config = struct {
     }
 
     /// Load and parse the config files that were added in the "config-file" key.
-    pub fn loadRecursive(self: *Config, alloc: Allocator) !void {
+    pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
         // TODO(mitchellh): we should parse the files form the homedir first
         // TODO(mitchellh): support nesting (config-file in a config file)
         // TODO(mitchellh): detect cycles when nesting
@@ -706,6 +706,24 @@ pub const CAPI = struct {
         var fbs = std.io.fixedBufferStream(str);
         var iter = cli_args.lineIterator(fbs.reader());
         try cli_args.parse(Config, global.alloc, self, &iter);
+    }
+
+    /// Load the configuration from the default file locations. This
+    /// is usually done first. The default file locations are locations
+    /// such as the home directory.
+    export fn ghostty_config_load_default_files(self: *Config) void {
+        self.loadDefaultFiles(global.alloc) catch |err| {
+            log.err("error loading config err={}", .{err});
+        };
+    }
+
+    /// Load the configuration from the user-specified configuration
+    /// file locations in the previously loaded configuration. This will
+    /// recursively continue to load up to a built-in limit.
+    export fn ghostty_config_load_recursive_files(self: *Config) void {
+        self.loadRecursiveFiles(global.alloc) catch |err| {
+            log.err("error loading config err={}", .{err});
+        };
     }
 
     export fn ghostty_config_finalize(self: *Config) void {
