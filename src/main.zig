@@ -41,6 +41,7 @@ pub fn main() !void {
 
         if (cwd.openFile(home_config_path, .{})) |file| {
             defer file.close();
+            std.log.info("reading configuration file path={s}", .{home_config_path});
 
             var buf_reader = std.io.bufferedReader(file.reader());
             var iter = cli_args.lineIterator(buf_reader.reader());
