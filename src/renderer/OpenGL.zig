@@ -46,6 +46,10 @@ alloc: std.mem.Allocator,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
+/// Current screen size dimensions for this grid. This is set on the first
+/// resize event, and is not immediately available.
+screen_size: ?renderer.ScreenSize,
+
 /// The current set of cells to render. Each set of cells goes into
 /// a separate shader call.
 cells_bg: std.ArrayListUnmanaged(GPUCell),
@@ -365,6 +369,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .cells = .{},
         .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
+        .screen_size = null,
         .program = program,
         .vao = vao,
         .ebo = ebo,
@@ -605,6 +610,15 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     const new_cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height };
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
+
+    // Resize our font shaping buffer to fit the new width.
+    if (self.screen_size) |dim| {
+        const grid_size = self.gridSize(dim);
+        var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
+        errdefer self.alloc.free(shape_buf);
+        self.alloc.free(self.font_shaper.cell_buf);
+        self.font_shaper.cell_buf = shape_buf;
+    }
 
     // Notify the window that the cell size changed.
     _ = self.surface_mailbox.push(.{
@@ -1184,6 +1198,9 @@ fn gridSize(self: *const OpenGL, screen_size: renderer.ScreenSize) renderer.Grid
 pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
+
+    // Store our screen size
+    self.screen_size = dim;
 
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);

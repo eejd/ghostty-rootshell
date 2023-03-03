@@ -37,6 +37,10 @@ surface_mailbox: apprt.surface.Mailbox,
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
 
+/// Current screen size dimensions for this grid. This is set on the first
+/// resize event, and is not immediately available.
+screen_size: ?renderer.ScreenSize,
+
 /// Explicit padding.
 padding: renderer.Options.Padding,
 
@@ -242,6 +246,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .alloc = alloc,
         .surface_mailbox = options.surface_mailbox,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
+        .screen_size = null,
         .padding = options.padding,
         .focused = true,
         .cursor_visible = true,
@@ -382,7 +387,8 @@ pub fn threadExit(self: *const Metal) void {
 
 /// Returns the grid size for a given screen size. This is safe to call
 /// on any thread.
-fn gridSize(self: *Metal, screen_size: renderer.ScreenSize) renderer.GridSize {
+fn gridSize(self: *Metal) ?renderer.GridSize {
+    const screen_size = self.screen_size orelse return null;
     return renderer.GridSize.init(
         screen_size.subPadding(self.padding.explicit),
         self.cell_size,
@@ -432,6 +438,14 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     // nothing since the grid size couldn't have possibly changed.
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
+
+    // Resize our font shaping buffer to fit the new width.
+    if (self.gridSize()) |grid_size| {
+        var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
+        errdefer self.alloc.free(shape_buf);
+        self.alloc.free(self.font_shaper.cell_buf);
+        self.font_shaper.cell_buf = shape_buf;
+    }
 
     // Set the sprite font up
     self.font_group.group.sprite = font.sprite.Face{
@@ -696,8 +710,12 @@ fn drawCells(
 
 /// Resize the screen.
 pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
-    // Recalculate the rows/columns.
-    const grid_size = self.gridSize(dim);
+    // Store our screen size
+    self.screen_size = dim;
+
+    // Recalculate the rows/columns. This can't fail since we just set
+    // the screen size above.
+    const grid_size = self.gridSize().?;
 
     // Determine if we need to pad the window. For "auto" padding, we take
     // the leftover amounts on the right/bottom that don't fit a full grid cell
