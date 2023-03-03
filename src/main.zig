@@ -34,30 +34,7 @@ pub fn main() !void {
     defer config.deinit();
 
     // If we have a configuration file in our home directory, parse that first.
-    const cwd = std.fs.cwd();
-    {
-        const home_config_path = try xdg.config(alloc, .{ .subdir = "ghostty/config" });
-        defer alloc.free(home_config_path);
-
-        if (cwd.openFile(home_config_path, .{})) |file| {
-            defer file.close();
-            std.log.info("reading configuration file path={s}", .{home_config_path});
-
-            var buf_reader = std.io.bufferedReader(file.reader());
-            var iter = cli_args.lineIterator(buf_reader.reader());
-            try cli_args.parse(Config, alloc, &config, &iter);
-        } else |err| switch (err) {
-            error.FileNotFound => std.log.info(
-                "homedir config not found, not loading path={s}",
-                .{home_config_path},
-            ),
-
-            else => std.log.warn(
-                "error reading homedir config file, not loading err={} path={s}",
-                .{ err, home_config_path },
-            ),
-        }
-    }
+    try config.loadDefaultFiles(alloc);
 
     // Parse the config from the CLI args
     {
@@ -67,27 +44,7 @@ pub fn main() !void {
     }
 
     // Parse the config files that were added from our file and CLI args.
-    // TODO(mitchellh): we should parse the files form the homedir first
-    // TODO(mitchellh): support nesting (config-file in a config file)
-    // TODO(mitchellh): detect cycles when nesting
-    if (config.@"config-file".list.items.len > 0) {
-        const len = config.@"config-file".list.items.len;
-        for (config.@"config-file".list.items) |path| {
-            var file = try cwd.openFile(path, .{});
-            defer file.close();
-
-            var buf_reader = std.io.bufferedReader(file.reader());
-            var iter = cli_args.lineIterator(buf_reader.reader());
-
-            try cli_args.parse(Config, alloc, &config, &iter);
-
-            // We don't currently support adding more config files to load
-            // from within a loaded config file. This can be supported
-            // later.
-            if (config.@"config-file".list.items.len > len)
-                return error.ConfigFileInConfigFile;
-        }
-    }
+    try config.loadRecursive(alloc);
     try config.finalize();
     //std.log.debug("config={}", .{config});
 

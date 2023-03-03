@@ -6,6 +6,8 @@ const inputpkg = @import("input.zig");
 const passwd = @import("passwd.zig");
 const terminal = @import("terminal/main.zig");
 const internal_os = @import("os/main.zig");
+const xdg = @import("xdg.zig");
+const cli_args = @import("cli_args.zig");
 
 const log = std.log.scoped(.config);
 
@@ -312,6 +314,59 @@ pub const Config = struct {
         return result;
     }
 
+    /// Load the configuration from the default file locations. Currently,
+    /// this loads from $XDG_CONFIG_HOME/ghostty/config.
+    pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
+        const home_config_path = try xdg.config(alloc, .{ .subdir = "ghostty/config" });
+        defer alloc.free(home_config_path);
+
+        const cwd = std.fs.cwd();
+        if (cwd.openFile(home_config_path, .{})) |file| {
+            defer file.close();
+            std.log.info("reading configuration file path={s}", .{home_config_path});
+
+            var buf_reader = std.io.bufferedReader(file.reader());
+            var iter = cli_args.lineIterator(buf_reader.reader());
+            try cli_args.parse(Config, alloc, self, &iter);
+        } else |err| switch (err) {
+            error.FileNotFound => std.log.info(
+                "homedir config not found, not loading path={s}",
+                .{home_config_path},
+            ),
+
+            else => std.log.warn(
+                "error reading homedir config file, not loading err={} path={s}",
+                .{ err, home_config_path },
+            ),
+        }
+    }
+
+    /// Load and parse the config files that were added in the "config-file" key.
+    pub fn loadRecursive(self: *Config, alloc: Allocator) !void {
+        // TODO(mitchellh): we should parse the files form the homedir first
+        // TODO(mitchellh): support nesting (config-file in a config file)
+        // TODO(mitchellh): detect cycles when nesting
+
+        if (self.@"config-file".list.items.len == 0) return;
+
+        const cwd = std.fs.cwd();
+        const len = self.@"config-file".list.items.len;
+        for (self.@"config-file".list.items) |path| {
+            var file = try cwd.openFile(path, .{});
+            defer file.close();
+
+            var buf_reader = std.io.bufferedReader(file.reader());
+            var iter = cli_args.lineIterator(buf_reader.reader());
+            try cli_args.parse(Config, alloc, self, &iter);
+
+            // We don't currently support adding more config files to load
+            // from within a loaded config file. This can be supported
+            // later.
+            if (self.@"config-file".list.items.len > len)
+                return error.ConfigFileInConfigFile;
+        }
+    }
+
     pub fn finalize(self: *Config) !void {
         // If we have a font-family set and don't set the others, default
         // the others to the font family. This way, if someone does
@@ -561,7 +616,6 @@ pub const Keybinds = struct {
 pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
     const wasm = @import("os/wasm.zig");
     const alloc = wasm.alloc;
-    const cli_args = @import("cli_args.zig");
 
     /// Create a new configuration filled with the initial default values.
     export fn config_new() ?*Config {
@@ -613,7 +667,6 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else struct {
 // C API.
 pub const CAPI = struct {
     const global = &@import("main.zig").state;
-    const cli_args = @import("cli_args.zig");
 
     /// Create a new configuration filled with the initial default values.
     export fn ghostty_config_new() ?*Config {
