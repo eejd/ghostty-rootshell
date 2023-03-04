@@ -161,11 +161,23 @@ pub const Face = struct {
         );
         defer ctx.release();
 
+        // Perform an initial fill so that we're sure it starts as we want.
+        ctx.setGrayFillColor(0, 0);
+        ctx.fillRect(.{
+            .origin = .{ .x = 0, .y = 0 },
+            .size = .{
+                .width = @intToFloat(f64, width),
+                .height = @intToFloat(f64, height),
+            },
+        });
+
         ctx.setAllowsAntialiasing(true);
         ctx.setShouldAntialias(true);
         ctx.setShouldSmoothFonts(true);
         ctx.setGrayFillColor(1, 1);
-        ctx.setGrayStrokeColor(1, 1);
+        // With this set the text gets chunky. With it unset the text doesn't
+        // look right at small font sizes. Something isn't right.
+        // ctx.setGrayStrokeColor(1, 1);
         ctx.setTextDrawingMode(.fill_stroke);
         ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
         ctx.setTextPosition(0, 0);
