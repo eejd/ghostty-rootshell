@@ -20,6 +20,10 @@ pub const Sprite = enum(u32) {
     underline_dashed,
     underline_curly,
 
+    cursor_rect,
+    cursor_hollow_rect,
+    cursor_bar,
+
     // Note: we don't currently put the box drawing glyphs in here because
     // there are a LOT and I'm lazy. What I want to do is spend more time
     // studying the patterns to see if we can programmatically build our

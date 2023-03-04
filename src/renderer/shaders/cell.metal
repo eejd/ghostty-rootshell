@@ -5,9 +5,6 @@ enum Mode : uint8_t {
     MODE_BG = 1u,
     MODE_FG = 2u,
     MODE_FG_COLOR = 7u,
-    MODE_CURSOR_RECT = 3u,
-    MODE_CURSOR_RECT_HOLLOW = 4u,
-    MODE_CURSOR_BAR = 5u,
     MODE_STRIKETHROUGH = 8u,
 };
 
@@ -124,33 +121,6 @@ vertex VertexOut uber_vertex(
     break;
   }
 
-  case MODE_CURSOR_RECT:
-    // Same as background since we're taking up the whole cell.
-    cell_pos = cell_pos + cell_size_scaled * position;
-
-    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
-    break;
-
-  case MODE_CURSOR_RECT_HOLLOW:
-    // Top-left position of this cell is needed for the hollow rect.
-    out.tex_coord = cell_pos;
-
-    // Same as background since we're taking up the whole cell.
-    cell_pos = cell_pos + cell_size_scaled * position;
-    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
-    break;
-
-  case MODE_CURSOR_BAR: {
-    // Make the bar a smaller version of our cell
-    float2 bar_size = float2(uniforms.cell_size.x * 0.2, uniforms.cell_size.y);
-
-    // Same as background since we're taking up the whole cell.
-    cell_pos = cell_pos + bar_size * position;
-
-    out.position = uniforms.projection_matrix * float4(cell_pos, 0.0f, 1.0);
-    break;
-  }
-
   case MODE_STRIKETHROUGH: {
     // Strikethrough Y value is just our thickness
     float2 strikethrough_size = float2(cell_size_scaled.x, uniforms.strikethrough_thickness);
@@ -200,47 +170,6 @@ fragment float4 uber_fragment(
     float2 coord = in.tex_coord / size;
     return textureColor.sample(textureSampler, coord);
   }
-
-  case MODE_CURSOR_RECT:
-    return in.color;
-
-  case MODE_CURSOR_RECT_HOLLOW: {
-    // Okay so yeah this is probably horrendously slow and a shader
-    // should never do this, but we only ever render a cursor for ONE
-    // rectangle so we take the slowdown for that one.
-
-    // We subtracted one from cell size because our coordinates start at 0.
-    // So a width of 50 means max pixel of 49.
-    float2 cell_size_coords = in.cell_size - 1;
-
-    // Apply padding
-    float2 padding = float2(1.0f, 1.0f);
-    cell_size_coords = cell_size_coords - (padding * 2);
-    float2 screen_cell_pos_padded = in.tex_coord + padding;
-
-    // Convert our frag coord to offset of this cell. We have to subtract
-    // 0.5 because the frag coord is in center pixels.
-    float2 cell_frag_coord = in.position.xy - screen_cell_pos_padded - 0.5;
-
-    // If the frag coords are in the bounds, then we color it.
-    const float eps = 0.1;
-    if (cell_frag_coord.x >= 0 && cell_frag_coord.y >= 0 &&
-        cell_frag_coord.x <= cell_size_coords.x &&
-        cell_frag_coord.y <= cell_size_coords.y) {
-      if (abs(cell_frag_coord.x) < eps ||
-            abs(cell_frag_coord.x - cell_size_coords.x) < eps ||
-            abs(cell_frag_coord.y) < eps ||
-            abs(cell_frag_coord.y - cell_size_coords.y) < eps) {
-        return in.color;
-      }
-    }
-
-    // Default to no color.
-    return float4(0.0f);
-  }
-
-  case MODE_CURSOR_BAR:
-    return in.color;
 
   case MODE_STRIKETHROUGH:
     return in.color;

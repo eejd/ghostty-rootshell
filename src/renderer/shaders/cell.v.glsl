@@ -7,9 +7,6 @@
 const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
 const uint MODE_FG_COLOR = 7u;
-const uint MODE_CURSOR_RECT = 3u;
-const uint MODE_CURSOR_RECT_HOLLOW = 4u;
-const uint MODE_CURSOR_BAR = 5u;
 const uint MODE_STRIKETHROUGH = 8u;
 
 // The grid coordinates (x, y) where x < columns and y < rows
@@ -165,36 +162,6 @@ void main() {
 
         // Set our foreground color output
         color = fg_color_in / 255.;
-        break;
-
-    case MODE_CURSOR_RECT:
-        // Same as background since we're taking up the whole cell.
-        cell_pos = cell_pos + cell_size_scaled * position;
-
-        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
-        color = bg_color_in / 255.0;
-        break;
-
-    case MODE_CURSOR_RECT_HOLLOW:
-        // Top-left position of this cell is needed for the hollow rect.
-        screen_cell_pos = cell_pos;
-
-        // Same as background since we're taking up the whole cell.
-        cell_pos = cell_pos + cell_size_scaled * position;
-
-        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
-        color = bg_color_in / 255.0;
-        break;
-
-    case MODE_CURSOR_BAR:
-        // Make the bar a smaller version of our cell
-        vec2 bar_size = vec2(cell_size.x * 0.2, cell_size.y);
-
-        // Same as background since we're taking up the whole cell.
-        cell_pos = cell_pos + bar_size * position;
-
-        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
-        color = bg_color_in / 255.0;
         break;
 
     case MODE_STRIKETHROUGH:

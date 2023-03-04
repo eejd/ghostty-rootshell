@@ -16,6 +16,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const font = @import("../main.zig");
+const Sprite = @import("../sprite.zig").Sprite;
 
 const log = std.log.scoped(.box_font);
 
@@ -30,6 +31,7 @@ thickness: u32,
 
 /// The thickness of a line.
 const Thickness = enum {
+    super_light,
     light,
     heavy,
 
@@ -38,6 +40,7 @@ const Thickness = enum {
     /// to be in pixels.
     fn height(self: Thickness, base: u32) u32 {
         return switch (self) {
+            .super_light => @max(base / 2, 1),
             .light => base,
             .heavy => base * 2,
         };
@@ -302,6 +305,12 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x1fb89 => self.draw_right_five_eighths_block(canvas),
         0x1fb8a => self.draw_right_three_quarters_block(canvas),
         0x1fb8b => self.draw_right_seven_eighths_block(canvas),
+
+        // Not official box characters but special characters we hide
+        // in the high bits of a unicode codepoint.
+        @enumToInt(Sprite.cursor_rect) => self.draw_cursor_rect(canvas),
+        @enumToInt(Sprite.cursor_hollow_rect) => self.draw_cursor_hollow_rect(canvas),
+        @enumToInt(Sprite.cursor_bar) => self.draw_cursor_bar(canvas),
 
         else => return error.InvalidCodepoint,
     }
@@ -2530,6 +2539,27 @@ fn draw_dash_vertical(
         self.vline(canvas, y[2], y[2] + h[2], (self.width - thick_px) / 2, thick_px);
     if (count >= 4)
         self.vline(canvas, y[3], y[3] + h[3], (self.width - thick_px) / 2, thick_px);
+}
+
+fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
+    const thick_px = Thickness.super_light.height(self.thickness);
+
+    self.rect(canvas, 0, 0, self.width - thick_px, self.height - thick_px);
+}
+
+fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
+    const thick_px = Thickness.super_light.height(self.thickness);
+
+    self.vline(canvas, 0, self.height, 0, thick_px);
+    self.vline(canvas, 0, self.height, self.width - thick_px, thick_px);
+    self.hline(canvas, 0, self.width, 0, thick_px);
+    self.hline(canvas, 0, self.width, self.height - thick_px, thick_px);
+}
+
+fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
+    const thick_px = Thickness.light.height(self.thickness);
+
+    self.vline(canvas, 0, self.height - thick_px, 0, thick_px);
 }
 
 fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {

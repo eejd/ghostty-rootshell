@@ -218,21 +218,10 @@ const GPUCellMode = enum(u8) {
     bg = 1,
     fg = 2,
     fg_color = 7,
-    cursor_rect = 3,
-    cursor_rect_hollow = 4,
-    cursor_bar = 5,
     strikethrough = 8,
 
     // Non-exhaustive because masks change it
     _,
-
-    pub fn fromCursor(cursor: renderer.CursorStyle) GPUCellMode {
-        return switch (cursor) {
-            .box => .cursor_rect,
-            .box_hollow => .cursor_rect_hollow,
-            .bar => .cursor_bar,
-        };
-    }
 
     /// Apply a mask to the mode.
     pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
@@ -961,19 +950,41 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
         .b = 0xFF,
     };
 
+    const sprite: font.Sprite = switch (self.cursor_style) {
+        .box => .cursor_rect,
+        .box_hollow => .cursor_hollow_rect,
+        .bar => .cursor_bar,
+    };
+
+    const glyph = self.font_group.renderGlyph(
+        self.alloc,
+        font.sprite_index,
+        @enumToInt(sprite),
+        null,
+    ) catch |err| {
+        log.warn("error rendering cursor glyph err={}", .{err});
+        return;
+    };
+
     self.cells.appendAssumeCapacity(.{
-        .mode = GPUCellMode.fromCursor(self.cursor_style),
+        .mode = .fg,
         .grid_col = @intCast(u16, screen.cursor.x),
         .grid_row = @intCast(u16, screen.cursor.y),
         .grid_width = if (cell.attrs.wide) 2 else 1,
-        .fg_r = 0,
-        .fg_g = 0,
-        .fg_b = 0,
-        .fg_a = 0,
-        .bg_r = color.r,
-        .bg_g = color.g,
-        .bg_b = color.b,
-        .bg_a = 255,
+        .fg_r = color.r,
+        .fg_g = color.g,
+        .fg_b = color.b,
+        .fg_a = 255,
+        .bg_r = 0,
+        .bg_g = 0,
+        .bg_b = 0,
+        .bg_a = 0,
+        .glyph_x = glyph.atlas_x,
+        .glyph_y = glyph.atlas_y,
+        .glyph_width = glyph.width,
+        .glyph_height = glyph.height,
+        .glyph_offset_x = glyph.offset_x,
+        .glyph_offset_y = glyph.offset_y,
     });
 }
 

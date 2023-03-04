@@ -27,9 +27,6 @@ uniform vec2 cell_size;
 const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
 const uint MODE_FG_COLOR = 7u;
-const uint MODE_CURSOR_RECT = 3u;
-const uint MODE_CURSOR_RECT_HOLLOW = 4u;
-const uint MODE_CURSOR_BAR = 5u;
 const uint MODE_STRIKETHROUGH = 8u;
 
 void main() {
@@ -47,50 +44,6 @@ void main() {
 
     case MODE_FG_COLOR:
         out_FragColor = texture(text_color, glyph_tex_coords);
-        break;
-
-    case MODE_CURSOR_RECT:
-        out_FragColor = color;
-        break;
-
-    case MODE_CURSOR_RECT_HOLLOW:
-        // Okay so yeah this is probably horrendously slow and a shader
-        // should never do this, but we only ever render a cursor for ONE
-        // rectangle so we take the slowdown for that one.
-
-        // Default to no color.
-        out_FragColor = vec4(0., 0., 0., 0.);
-
-        // We subtracted one from cell size because our coordinates start at 0.
-        // So a width of 50 means max pixel of 49.
-        vec2 cell_size_coords = cell_size - 1;
-
-        // Apply padding
-        vec2 padding = vec2(1.,1.);
-        cell_size_coords = cell_size_coords - (padding * 2);
-        vec2 screen_cell_pos_padded = screen_cell_pos + padding;
-
-        // Convert our frag coord to offset of this cell. We have to subtract
-        // 0.5 because the frag coord is in center pixels.
-        vec2 cell_frag_coord = gl_FragCoord.xy - screen_cell_pos_padded - 0.5;
-
-        // If the frag coords are in the bounds, then we color it.
-        const float eps = 0.1;
-        if (cell_frag_coord.x >= 0 && cell_frag_coord.y >= 0 &&
-                cell_frag_coord.x <= cell_size_coords.x &&
-                cell_frag_coord.y <= cell_size_coords.y) {
-            if (abs(cell_frag_coord.x) < eps ||
-                    abs(cell_frag_coord.x - cell_size_coords.x) < eps ||
-                    abs(cell_frag_coord.y) < eps ||
-                    abs(cell_frag_coord.y - cell_size_coords.y) < eps) {
-                out_FragColor = color;
-            }
-        }
-
-        break;
-
-    case MODE_CURSOR_BAR:
-        out_FragColor = color;
         break;
 
     case MODE_STRIKETHROUGH:
