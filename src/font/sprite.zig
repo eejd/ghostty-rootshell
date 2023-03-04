@@ -15,16 +15,21 @@ pub const Sprite = enum(u32) {
     pub const end: u32 = std.math.maxInt(u32);
 
     underline = start,
-    underline_double = start + 1,
-    underline_dotted = start + 2,
-    underline_dashed = start + 3,
-    underline_curly = start + 4,
+    underline_double,
+    underline_dotted,
+    underline_dashed,
+    underline_curly,
 
     // Note: we don't currently put the box drawing glyphs in here because
     // there are a LOT and I'm lazy. What I want to do is spend more time
     // studying the patterns to see if we can programmatically build our
     // enum perhaps and comptime generate the drawing code at the same time.
     // I'm not sure if that's advisable yet though.
+
+    test {
+        const testing = std.testing;
+        try testing.expectEqual(start, @enumToInt(Sprite.underline));
+    }
 };
 
 test {
