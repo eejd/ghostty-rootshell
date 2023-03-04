@@ -1321,6 +1321,10 @@ pub fn mouseButtonCallback(
             self.mouse.mods,
             pos,
         );
+
+        // If we're doing mouse reporting, we do not support any other
+        // selection or highlighting.
+        return;
     }
 
     // For left button clicks we always record some information for
