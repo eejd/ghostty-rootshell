@@ -1165,9 +1165,9 @@ fn mouseReport(
                 return;
             }
 
-            // + 1 below is because our x/y is 0-indexed and proto wants 1
+            // + 1 below is because our x/y is 0-indexed and the protocol wants 1
             var data: termio.Message.WriteReq.Small.Array = undefined;
-            assert(data.len >= 5);
+            assert(data.len >= 6);
             data[0] = '\x1b';
             data[1] = '[';
             data[2] = 'M';
@@ -1179,7 +1179,7 @@ fn mouseReport(
             _ = self.io_thread.mailbox.push(.{
                 .write_small = .{
                     .data = data,
-                    .len = 5,
+                    .len = 6,
                 },
             }, .{ .forever = {} });
         },
