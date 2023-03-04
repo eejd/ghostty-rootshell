@@ -129,8 +129,9 @@ pub const GlobalState = struct {
     pub fn init(self: *GlobalState) void {
         // Output some debug information right away
         std.log.info("runtime={}", .{build_config.app_runtime});
+        std.log.info("font_backend={}", .{build_config.font_backend});
         std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
-        if (options.fontconfig) {
+        if (comptime build_config.font_backend.hasFontconfig()) {
             std.log.info("dependency fontconfig={d}", .{fontconfig.version()});
         }
         std.log.info("renderer={}", .{renderer.Renderer});

@@ -21,6 +21,7 @@ const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach/libs/glfw/system_sdk.zig");
+const font = @import("src/font/main.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
@@ -44,10 +45,9 @@ comptime {
 
 // Build options, see the build options help for more info.
 var tracy: bool = false;
-var enable_coretext: bool = false;
-var enable_fontconfig: bool = false;
 var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
+var font_backend: font.Backend = .freetype;
 
 pub fn build(b: *std.build.Builder) !void {
     const optimize = b.standardOptimizeOption(.{});
@@ -62,6 +62,8 @@ pub fn build(b: *std.build.Builder) !void {
         break :target result;
     };
 
+    const wasm_target: WasmTarget = .browser;
+
     tracy = b.option(
         bool,
         "tracy",
@@ -74,17 +76,11 @@ pub fn build(b: *std.build.Builder) !void {
         "Build for Flatpak (integrates with Flatpak APIs). Only has an effect targeting Linux.",
     ) orelse false;
 
-    enable_coretext = b.option(
-        bool,
-        "coretext",
-        "Enable coretext for font discovery (default true on macOS)",
-    ) orelse target.isDarwin();
-
-    enable_fontconfig = b.option(
-        bool,
-        "fontconfig",
-        "Enable fontconfig for font discovery (default true on Linux)",
-    ) orelse target.isLinux();
+    font_backend = b.option(
+        font.Backend,
+        "font-backend",
+        "The font backend to use for discovery and rasterization.",
+    ) orelse font.Backend.default(target, wasm_target);
 
     app_runtime = b.option(
         apprt.Runtime,
@@ -131,9 +127,8 @@ pub fn build(b: *std.build.Builder) !void {
     const exe_options = b.addOptions();
     exe_options.addOption(bool, "tracy_enabled", tracy);
     exe_options.addOption(bool, "flatpak", flatpak);
-    exe_options.addOption(bool, "coretext", enable_coretext);
-    exe_options.addOption(bool, "fontconfig", enable_fontconfig);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
+    exe_options.addOption(font.Backend, "font_backend", font_backend);
 
     // Exe
     {
@@ -263,7 +258,7 @@ pub fn build(b: *std.build.Builder) !void {
     // wasm
     {
         // Build our Wasm target.
-        const wasm_target: std.zig.CrossTarget = .{
+        const wasm_crosstarget: std.zig.CrossTarget = .{
             .cpu_arch = .wasm32,
             .os_tag = .freestanding,
             .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
@@ -286,13 +281,12 @@ pub fn build(b: *std.build.Builder) !void {
 
         // We want to support alternate wasm targets in the future (i.e.
         // server side) so we have this now although its hardcoded.
-        const wasm_specific_target: WasmTarget = .browser;
-        exe_options.addOption(WasmTarget, "wasm_target", wasm_specific_target);
+        exe_options.addOption(WasmTarget, "wasm_target", wasm_target);
 
         const wasm = b.addSharedLibrary(.{
             .name = "ghostty-wasm",
             .root_source_file = .{ .path = "src/main_wasm.zig" },
-            .target = wasm_target,
+            .target = wasm_crosstarget,
             .optimize = optimize,
         });
         wasm.setOutputDir("zig-out");
@@ -320,7 +314,7 @@ pub fn build(b: *std.build.Builder) !void {
         const main_test = b.addTest(.{
             .name = "wasm-test",
             .root_source_file = .{ .path = "src/main_wasm.zig" },
-            .target = wasm_target,
+            .target = wasm_crosstarget,
         });
         main_test.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, true);
@@ -456,7 +450,7 @@ fn addDeps(
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
     // so take a closer look at this again later.
-    if (enable_fontconfig) step.addModule("fontconfig", fontconfig.module(b));
+    if (font_backend.hasFontconfig()) step.addModule("fontconfig", fontconfig.module(b));
     const mod_freetype = freetype.module(b);
     const mod_macos = macos.module(b);
     step.addModule("freetype", mod_freetype);
@@ -512,7 +506,7 @@ fn addDeps(
         step.linkSystemLibrary("pixman-1");
         step.linkSystemLibrary("zlib");
 
-        if (enable_fontconfig) step.linkSystemLibrary("fontconfig");
+        if (font_backend.hasFontconfig()) step.linkSystemLibrary("fontconfig");
     }
 
     // Other dependencies, we may dynamically link
@@ -553,7 +547,7 @@ fn addDeps(
             },
 
             .coretext = .{
-                .enabled = enable_coretext,
+                .enabled = font_backend.hasCoretext(),
             },
         });
         system_sdk.include(b, harfbuzz_step, .{});
@@ -564,7 +558,7 @@ fn addDeps(
         try static_libs.append(.{ .generated = &pixman_step.output_path_source });
 
         // Only Linux gets fontconfig
-        if (enable_fontconfig) {
+        if (font_backend.hasFontconfig()) {
             // Libxml2
             const libxml2_lib = try libxml2.create(
                 b,

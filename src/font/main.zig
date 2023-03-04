@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const build_options = @import("build_options");
+const build_config = @import("../build_config.zig");
 
 pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
@@ -32,10 +32,12 @@ pub usingnamespace if (builtin.target.isWasm()) struct {
 pub const options: struct {
     backend: Backend,
 } = .{
-    .backend = Backend.default(),
+    .backend = build_config.font_backend,
 };
 
 pub const Backend = enum {
+    const WasmTarget = @import("../os/wasm/target.zig").Target;
+
     /// FreeType for font rendering with no font discovery enabled.
     freetype,
 
@@ -54,32 +56,62 @@ pub const Backend = enum {
     web_canvas,
 
     /// Returns the default backend for a build environment. This is
-    /// meant to be called at comptime.
-    pub fn default() Backend {
-        const wasm_target = @import("../os/wasm/target.zig");
-        if (wasm_target.target) |target| return switch (target) {
-            .browser => .web_canvas,
-        };
+    /// meant to be called at comptime by the build.zig script. To get the
+    /// backend look at build_options.
+    pub fn default(
+        target: std.zig.CrossTarget,
+        wasm_target: WasmTarget,
+    ) Backend {
+        if (target.getCpuArch() == .wasm32) {
+            return switch (wasm_target) {
+                .browser => .web_canvas,
+            };
+        }
 
-        return if (build_options.coretext)
-            .coretext_freetype
-        else if (build_options.fontconfig)
-            .fontconfig_freetype
-        else
-            .freetype;
+        return if (target.isDarwin()) darwin: {
+            // On macOS right now, the coretext renderer is still pretty buggy
+            // so we default to coretext for font discovery and freetype for
+            // rasterization.
+            break :darwin .coretext_freetype;
+        } else .fontconfig_freetype;
     }
 
-    /// Helper that just returns true if we should be using freetype. This
-    /// is used for tests.
-    pub fn freetype(self: Backend) bool {
+    // All the functions below can be called at comptime or runtime to
+    // determine if we have a certain dependency.
+
+    pub fn hasFreetype(self: Backend) bool {
         return switch (self) {
-            .freetype, .fontconfig_freetype => true,
+            .freetype,
+            .fontconfig_freetype,
+            .coretext_freetype,
+            => true,
             .coretext, .web_canvas => false,
         };
     }
 
-    test "default can run at comptime" {
-        _ = comptime default();
+    pub fn hasCoretext(self: Backend) bool {
+        return switch (self) {
+            .coretext,
+            .coretext_freetype,
+            => true,
+
+            .freetype,
+            .fontconfig_freetype,
+            .web_canvas,
+            => false,
+        };
+    }
+
+    pub fn hasFontconfig(self: Backend) bool {
+        return switch (self) {
+            .fontconfig_freetype => true,
+
+            .freetype,
+            .coretext,
+            .coretext_freetype,
+            .web_canvas,
+            => false,
+        };
     }
 };
 

@@ -7,6 +7,7 @@ const builtin = @import("builtin");
 const options = @import("build_options");
 const assert = std.debug.assert;
 const apprt = @import("apprt.zig");
+const font = @import("font/main.zig");
 
 /// The artifact we're producing. This can be used to determine if we're
 /// building a standalone exe, an embedded lib, etc.
@@ -17,6 +18,12 @@ pub const app_runtime: apprt.Runtime = switch (artifact) {
     .lib => .none,
     else => std.meta.stringToEnum(apprt.Runtime, std.meta.tagName(options.app_runtime)).?,
 };
+
+/// The font backend desired for the build.
+pub const font_backend: font.Backend = std.meta.stringToEnum(
+    font.Backend,
+    std.meta.tagName(options.font_backend),
+).?;
 
 /// Whether our devmode UI is enabled or not. This requires imgui to be
 /// compiled.
