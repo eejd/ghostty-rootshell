@@ -32,7 +32,10 @@ pub usingnamespace if (builtin.target.isWasm()) struct {
 pub const options: struct {
     backend: Backend,
 } = .{
-    .backend = build_config.font_backend,
+    // TODO: we need to modify the build config for wasm builds. the issue
+    // is we're sharing the build config options between all exes in build.zig.
+    // We need to construt it per target.
+    .backend = if (builtin.target.isWasm()) .web_canvas else build_config.font_backend,
 };
 
 pub const Backend = enum {
