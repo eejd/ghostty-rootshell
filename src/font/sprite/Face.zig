@@ -95,6 +95,11 @@ const Kind = enum {
                 .underline_dashed,
                 .underline_curly,
                 => .underline,
+
+                .cursor_rect,
+                .cursor_hollow_rect,
+                .cursor_bar,
+                => .box,
             },
 
             // Box fonts

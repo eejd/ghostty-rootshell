@@ -114,18 +114,7 @@ const GPUCellMode = enum(u8) {
     bg = 1,
     fg = 2,
     fg_color = 7,
-    cursor_rect = 3,
-    cursor_rect_hollow = 4,
-    cursor_bar = 5,
     strikethrough = 8,
-
-    pub fn fromCursor(cursor: renderer.CursorStyle) GPUCellMode {
-        return switch (cursor) {
-            .box => .cursor_rect,
-            .box_hollow => .cursor_rect_hollow,
-            .bar => .cursor_bar,
-        };
-    }
 };
 
 /// Returns the hints that we want for this
@@ -1005,14 +994,33 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         .b = 0xFF,
     };
 
+    const sprite: font.Sprite = switch (self.cursor_style) {
+        .box => .cursor_rect,
+        .box_hollow => .cursor_hollow_rect,
+        .bar => .cursor_bar,
+    };
+
+    const glyph = self.font_group.renderGlyph(
+        self.alloc,
+        font.sprite_index,
+        @enumToInt(sprite),
+        null,
+    ) catch |err| {
+        log.warn("error rendering cursor glyph err={}", .{err});
+        return;
+    };
+
     self.cells.appendAssumeCapacity(.{
-        .mode = GPUCellMode.fromCursor(self.cursor_style),
+        .mode = .fg,
         .grid_pos = .{
             @intToFloat(f32, screen.cursor.x),
             @intToFloat(f32, screen.cursor.y),
         },
         .cell_width = if (cell.attrs.wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, 0xFF },
+        .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
+        .glyph_size = .{ glyph.width, glyph.height },
+        .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
     });
 }
 

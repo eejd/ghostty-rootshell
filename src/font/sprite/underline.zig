@@ -71,6 +71,7 @@ const Draw = struct {
             .underline_dotted => self.drawDotted(canvas),
             .underline_dashed => self.drawDashed(canvas),
             .underline_curly => self.drawCurly(canvas),
+            else => unreachable,
         }
     }
 
