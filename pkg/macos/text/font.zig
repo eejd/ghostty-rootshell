@@ -130,6 +130,14 @@ pub const Font = opaque {
     pub fn getUnderlineThickness(self: *Font) f64 {
         return c.CTFontGetUnderlineThickness(@ptrCast(self));
     }
+
+    pub fn getUnitsPerEm(self: *Font) u32 {
+        return c.CTFontGetUnitsPerEm(@ptrCast(c.CTFontRef, self));
+    }
+
+    pub fn getSize(self: *Font) f64 {
+        return c.CTFontGetSize(@ptrCast(c.CTFontRef, self));
+    }
 };
 
 pub const FontOrientation = enum(c_uint) {

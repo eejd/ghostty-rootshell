@@ -317,6 +317,10 @@ pub const Face = struct {
         const strikethrough_position = cell_baseline * 0.6;
         const strikethrough_thickness = underline_thickness;
 
+        // Note: is this useful?
+        // const units_per_em = ct_font.getUnitsPerEm();
+        // const units_per_point = @intToFloat(f64, units_per_em) / ct_font.getSize();
+
         // std.log.warn("width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
         //     cell_width,
         //     cell_height,
