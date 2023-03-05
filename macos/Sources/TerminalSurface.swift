@@ -33,62 +33,26 @@ struct TerminalSurface: NSViewRepresentable {
     /// The best approach is to wrap this view in a GeometryReader and pass in the geo.size.
     let size: CGSize
     
-    /// This is set to the title of the surface as defined by the pty. Callers should use this to
-    /// set the appropriate title of the window/tab/split/etc. if they care.
-    @Binding var title: String
-    
     func makeNSView(context: Context) -> TerminalSurfaceView {
         // We need the view as part of the state to be created previously because
         // the view is sent to the Ghostty API so that it can manipulate it
         // directly since we draw on a render thread.
-        view.delegate = context.coordinator
         return view;
     }
     
     func updateNSView(_ view: TerminalSurfaceView, context: Context) {
-        view.delegate = context.coordinator
         view.focusDidChange(hasFocus)
         view.sizeDidChange(size)
     }
-    
-    func makeCoordinator() -> Coordinator {
-        return Coordinator(self)
-    }
-    
-    class Coordinator : TerminalSurfaceDelegate {
-        let view: TerminalSurface
-        
-        init(_ view: TerminalSurface) {
-            self.view = view
-        }
-        
-        func titleDidChange(to: String) {
-            view.title = to
-        }
-    }
-}
-
-/// We use the delegate pattern to receive notifications about important state changes in the surface.
-protocol TerminalSurfaceDelegate: AnyObject {
-    func titleDidChange(to: String)
 }
 
 /// The actual NSView implementation for the terminal surface.
 class TerminalSurfaceView: NSView, NSTextInputClient, ObservableObject {
-    // This can be set to receive event callbacks.
-    weak var delegate: TerminalSurfaceDelegate?
-    
     // The current title of the surface as defined by the pty. This can be
     // changed with escape codes. This is public because the callbacks go
     // to the app level and it is set from there.
-    @Published var title: String = "" {
-        didSet {
-            if let delegate = self.delegate {
-                delegate.titleDidChange(to: title)
-            }
-        }
-    }
-
+    @Published var title: String = ""
+    
     private(set) var surface: ghostty_surface_t?
     var error: Error? = nil
     

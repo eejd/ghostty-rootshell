@@ -3,11 +3,10 @@ import GhosttyKit
 
 struct TerminalView: View {
     // The surface to create a view for
-    let surfaceView: TerminalSurfaceView
+    @ObservedObject var surfaceView: TerminalSurfaceView
     
     @FocusState private var surfaceFocus: Bool
     @Environment(\.isKeyWindow) private var isKeyWindow: Bool
-    @State private var title: String = "Ghostty"
     
     // This is true if the terminal is considered "focused". The terminal is focused if
     // it is both individually focused and the containing window is key.
@@ -23,9 +22,9 @@ struct TerminalView: View {
         // is up to date. See TerminalSurfaceView for why we don't use the NSView
         // resize callback.
         GeometryReader { geo in
-            TerminalSurface(view: surfaceView, hasFocus: hasFocus, size: geo.size, title: $title)
+            TerminalSurface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                 .focused($surfaceFocus)
-                .navigationTitle(title)
+                .navigationTitle(surfaceView.title)
         }
     }
 }
