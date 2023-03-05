@@ -21,7 +21,7 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                TerminalSplittableView(app: ghostty.app!)
+                TerminalSplittableView(ghostty.app!)
                     .modifier(WindowObservationModifier())
             }
         }.commands {

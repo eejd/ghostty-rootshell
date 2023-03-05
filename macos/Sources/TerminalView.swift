@@ -2,7 +2,8 @@ import SwiftUI
 import GhosttyKit
 
 struct TerminalView: View {
-    // The surface to create a view for
+    // The surface to create a view for. This must be created upstream. As long as this
+    // remains the same, the surface that is being rendered remains the same.
     @ObservedObject var surfaceView: TerminalSurfaceView
     
     @FocusState private var surfaceFocus: Bool
@@ -15,6 +16,10 @@ struct TerminalView: View {
     // Initialize a TerminalView with a new surface view state.
     init(_ app: ghostty_app_t) {
         self.surfaceView = TerminalSurfaceView(app)
+    }
+    
+    init(surface: TerminalSurfaceView) {
+        self.surfaceView = surface
     }
     
     var body: some View {
@@ -46,43 +51,87 @@ struct TerminalSplittableView: View {
     
     @FocusState private var focusedSide: Side?
     
-    let app: ghostty_app_t
+    let app: ghostty_app_t;
+    
+    @State private var topLeft: TerminalSurfaceView
+    
+    /// The bottom or right surface. This is private because in a splittable view it is only possible that we set
+    /// this, because it is triggered from a split event.
+    @State private var bottomRight: TerminalSurfaceView? = nil
     
     /// Direction of the current split. If this is "nil" then the terminal is not currently split at all.
-    @State var splitDirection: Direction = .none
+    @State private var splitDirection: Direction = .none
+    
+    init(_ app: ghostty_app_t) {
+        self.app = app
+        _topLeft = State(wrappedValue: TerminalSurfaceView(app))
+    }
+    
+    init(_ app: ghostty_app_t, topLeft: TerminalSurfaceView) {
+        self.app = app
+        _topLeft = State(wrappedValue: topLeft)
+    }
+    
+    func split(to: Direction) {
+        assert(to != .none)
+        assert(splitDirection == .none)
+        splitDirection = to
+        bottomRight = TerminalSurfaceView(app)
+    }
+    
+    func closeTopLeft() {
+        assert(splitDirection != .none)
+        assert(bottomRight != nil)
+        topLeft = bottomRight!
+        splitDirection = .none
+    }
+    
+    func closeBottomRight() {
+        assert(splitDirection != .none)
+        assert(bottomRight != nil)
+        bottomRight = nil
+        splitDirection = .none
+    }
 
     var body: some View {
         switch (splitDirection) {
         case .none:
             VStack {
                 HStack {
-                    Button("Split Horizontal") { splitDirection = .horizontal }
-                    Button("Split Vertical") { splitDirection = .vertical }
+                    Button("Split Horizontal") { split(to: .horizontal) }
+                    Button("Split Vertical") { split(to: .vertical) }
                 }
                 
-                TerminalView(app)
+                TerminalView(surface: topLeft)
                     .focused($focusedSide, equals: .TopLeft)
             }
         case .horizontal:
             VStack {
                 HStack {
-                    Button("Close Left") { splitDirection = .none }
-                    Button("Close Right") { splitDirection = .none }
+                    Button("Close Left") { closeTopLeft() }
+                    Button("Close Right") { closeBottomRight() }
                 }
                 
                 HSplitView {
-                    TerminalSplittableView(app: app)
+                    TerminalSplittableView(app, topLeft: topLeft)
                         .focused($focusedSide, equals: .TopLeft)
-                    TerminalSplittableView(app: app)
+                    TerminalSplittableView(app, topLeft: bottomRight!)
                         .focused($focusedSide, equals: .BottomRight)
                 }
             }
         case .vertical:
-            VSplitView {
-                TerminalSplittableView(app: app)
-                    .focused($focusedSide, equals: .TopLeft)
-                TerminalSplittableView(app: app)
-                    .focused($focusedSide, equals: .BottomRight)
+            VStack {
+                HStack {
+                    Button("Close Top") { closeTopLeft() }
+                    Button("Close Bottom") { closeBottomRight() }
+                }
+                
+                VSplitView {
+                    TerminalSplittableView(app, topLeft: topLeft)
+                        .focused($focusedSide, equals: .TopLeft)
+                    TerminalSplittableView(app, topLeft: bottomRight!)
+                        .focused($focusedSide, equals: .BottomRight)
+                }
             }
         }
     }
