@@ -127,7 +127,26 @@ pub fn build(b: *std.build.Builder) !void {
         try std.SemanticVersion.parse(v)
     else version: {
         const vsn = try Version.detect(b);
-        if (vsn.tag != null) @panic("tagged releases are not yet supported");
+        if (vsn.tag) |tag| {
+            // Tip releases behave just like any other pre-release so we skip.
+            if (!std.mem.eql(u8, tag, "tip")) {
+                const expected = b.fmt("v{d}.{d}.{d}", .{
+                    app_version.major,
+                    app_version.minor,
+                    app_version.patch,
+                });
+
+                if (!std.mem.eql(u8, tag, expected)) {
+                    @panic("tagged releases must be in vX.Y.Z format matching build.zig");
+                }
+
+                break :version .{
+                    .major = app_version.major,
+                    .minor = app_version.minor,
+                    .patch = app_version.patch,
+                };
+            }
+        }
 
         break :version .{
             .major = app_version.major,
