@@ -26,6 +26,7 @@ const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
+const Version = @import("src/build/Version.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -43,7 +44,10 @@ comptime {
     }
 }
 
-// Build options, see the build options help for more info.
+/// The version of the next release.
+const app_version = std.builtin.Version{ .major = 0, .minor = 1, .patch = 0 };
+
+/// Build options, see the build options help for more info.
 var tracy: bool = false;
 var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
@@ -112,6 +116,28 @@ pub fn build(b: *std.build.Builder) !void {
         "Build and install the benchmark executables.",
     ) orelse false;
 
+    var version_string = b.option(
+        []const u8,
+        "version-string",
+        "A specific version string to use for the build. " ++
+            "If not specified, git will be used. This must be a semantic version.",
+    );
+
+    var version: std.SemanticVersion = if (version_string) |v|
+        try std.SemanticVersion.parse(v)
+    else version: {
+        const vsn = try Version.detect(b);
+        if (vsn.tag != null) @panic("tagged releases are not yet supported");
+
+        break :version .{
+            .major = app_version.major,
+            .minor = app_version.minor,
+            .patch = app_version.patch,
+            .pre = vsn.branch,
+            .build = vsn.short_hash,
+        };
+    };
+
     // We can use wasmtime to test wasm
     b.enable_wasmtime = true;
 
@@ -125,6 +151,8 @@ pub fn build(b: *std.build.Builder) !void {
         .optimize = optimize,
     });
     const exe_options = b.addOptions();
+    exe_options.addOption(std.SemanticVersion, "app_version", version);
+    exe_options.addOption([]const u8, "app_version_string", b.fmt("{}", .{version}));
     exe_options.addOption(bool, "tracy_enabled", tracy);
     exe_options.addOption(bool, "flatpak", flatpak);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);

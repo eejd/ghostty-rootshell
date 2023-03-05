@@ -9,6 +9,10 @@ const assert = std.debug.assert;
 const apprt = @import("apprt.zig");
 const font = @import("font/main.zig");
 
+/// The semantic version of this build.
+pub const version = options.app_version;
+pub const version_string = options.app_version_string;
+
 /// The artifact we're producing. This can be used to determine if we're
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
