@@ -2,7 +2,9 @@ import SwiftUI
 import GhosttyKit
 
 struct TerminalView: View {
-    let app: ghostty_app_t
+    // The surface to create a view for
+    let surfaceView: TerminalSurfaceView
+    
     @FocusState private var surfaceFocus: Bool
     @Environment(\.isKeyWindow) private var isKeyWindow: Bool
     @State private var title: String = "Ghostty"
@@ -11,12 +13,17 @@ struct TerminalView: View {
     // it is both individually focused and the containing window is key.
     private var hasFocus: Bool { surfaceFocus && isKeyWindow }
     
+    // Initialize a TerminalView with a new surface view state.
+    init(_ app: ghostty_app_t) {
+        self.surfaceView = TerminalSurfaceView(app)
+    }
+    
     var body: some View {
         // We use a GeometryReader to get the frame bounds so that our metal surface
         // is up to date. See TerminalSurfaceView for why we don't use the NSView
         // resize callback.
         GeometryReader { geo in
-            TerminalSurface(app, hasFocus: hasFocus, size: geo.size, title: $title)
+            TerminalSurface(view: surfaceView, hasFocus: hasFocus, size: geo.size, title: $title)
                 .focused($surfaceFocus)
                 .navigationTitle(title)
         }
@@ -54,7 +61,7 @@ struct TerminalSplittableView: View {
                     Button("Split Vertical") { splitDirection = .vertical }
                 }
                 
-                TerminalView(app: app)
+                TerminalView(app)
                     .focused($focusedSide, equals: .TopLeft)
             }
         case .horizontal:
