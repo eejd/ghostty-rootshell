@@ -1365,7 +1365,6 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
 /// Deinitialize a metal resource (buffer, texture, etc.) and free the
 /// memory associated with it.
 fn deinitMTLResource(obj: objc.Object) void {
-    obj.msgSend(void, objc.sel("setPurgeableState:"), .{@enumToInt(MTLPurgeableState.empty)});
     obj.msgSend(void, objc.sel("release"), .{});
 }
 
