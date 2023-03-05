@@ -9,7 +9,7 @@ import GhosttyKit
 /// We just wrap an AppKit NSView here at the moment so that we can behave as low level as possible
 /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
 /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
-struct TerminalSurfaceView: NSViewRepresentable {
+struct TerminalSurface: NSViewRepresentable {
     static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier!,
         category: String(describing: TerminalSurfaceView.self)
@@ -34,16 +34,16 @@ struct TerminalSurfaceView: NSViewRepresentable {
     /// set the appropriate title of the window/tab/split/etc. if they care.
     @Binding var title: String
     
-    @StateObject private var state: TerminalSurfaceView_Real
+    @StateObject private var state: TerminalSurfaceView
     
     init(_ app: ghostty_app_t, hasFocus: Bool, size: CGSize, title: Binding<String>) {
-        self._state = StateObject(wrappedValue: TerminalSurfaceView_Real(app))
+        self._state = StateObject(wrappedValue: TerminalSurfaceView(app))
         self._title = title
         self.hasFocus = hasFocus
         self.size = size
     }
     
-    func makeNSView(context: Context) -> TerminalSurfaceView_Real {
+    func makeNSView(context: Context) -> TerminalSurfaceView {
         // We need the view as part of the state to be created previously because
         // the view is sent to the Ghostty API so that it can manipulate it
         // directly since we draw on a render thread.
@@ -51,7 +51,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
         return state;
     }
     
-    func updateNSView(_ view: TerminalSurfaceView_Real, context: Context) {
+    func updateNSView(_ view: TerminalSurfaceView, context: Context) {
         state.delegate = context.coordinator
         state.focusDidChange(hasFocus)
         state.sizeDidChange(size)
@@ -62,9 +62,9 @@ struct TerminalSurfaceView: NSViewRepresentable {
     }
     
     class Coordinator : TerminalSurfaceDelegate {
-        let view: TerminalSurfaceView
+        let view: TerminalSurface
         
-        init(_ view: TerminalSurfaceView) {
+        init(_ view: TerminalSurface) {
             self.view = view
         }
         
@@ -80,7 +80,7 @@ protocol TerminalSurfaceDelegate: AnyObject {
 }
 
 /// The actual NSView implementation for the terminal surface.
-class TerminalSurfaceView_Real: NSView, NSTextInputClient, ObservableObject {
+class TerminalSurfaceView: NSView, NSTextInputClient, ObservableObject {
     weak var delegate: TerminalSurfaceDelegate?
     
     // The current title of the surface as defined by the pty. This can be

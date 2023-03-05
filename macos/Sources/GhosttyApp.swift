@@ -21,7 +21,7 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                TerminalView(app: ghostty.app!)
+                TerminalSplittableView(app: ghostty.app!)
                     .modifier(WindowObservationModifier())
             }
         }.commands {
@@ -160,7 +160,7 @@ class GhosttyState: ObservableObject {
     }
     
     static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {
-        let surfaceView = Unmanaged<TerminalSurfaceView_Real>.fromOpaque(userdata!).takeUnretainedValue()
+        let surfaceView = Unmanaged<TerminalSurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         guard let titleStr = String(cString: title!, encoding: .utf8) else { return }
         DispatchQueue.main.async {
             surfaceView.title = titleStr
@@ -169,7 +169,7 @@ class GhosttyState: ObservableObject {
     
     /// Returns the GhosttyState from the given userdata value.
     static func appState(fromSurface userdata: UnsafeMutableRawPointer?) -> GhosttyState? {
-        let surfaceView = Unmanaged<TerminalSurfaceView_Real>.fromOpaque(userdata!).takeUnretainedValue()
+        let surfaceView = Unmanaged<TerminalSurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         guard let surface = surfaceView.surface else { return nil }
         guard let app = ghostty_surface_app(surface) else { return nil }
         guard let app_ud = ghostty_app_userdata(app) else { return nil }

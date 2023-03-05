@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A507573E299FF33C009D7DC7 /* TerminalSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A507573D299FF33C009D7DC7 /* TerminalSurfaceView.swift */; };
+		A507573E299FF33C009D7DC7 /* TerminalSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A507573D299FF33C009D7DC7 /* TerminalSurface.swift */; };
 		A518502429A197C700E4CC4F /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A518502329A197C700E4CC4F /* TerminalView.swift */; };
 		A518502629A1A45100E4CC4F /* WindowTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A518502529A1A45100E4CC4F /* WindowTracker.swift */; };
 		A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535B9D9299C569B0017E2E4 /* ErrorView.swift */; };
@@ -19,7 +19,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A507573D299FF33C009D7DC7 /* TerminalSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSurfaceView.swift; sourceTree = "<group>"; };
+		A507573D299FF33C009D7DC7 /* TerminalSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSurface.swift; sourceTree = "<group>"; };
 		A518502329A197C700E4CC4F /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		A518502529A1A45100E4CC4F /* WindowTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTracker.swift; sourceTree = "<group>"; };
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
@@ -53,7 +53,7 @@
 				A55685DF29A03A9F004303CE /* AppError.swift */,
 				A59444F629A2ED5200725BBA /* SettingsView.swift */,
 				A518502329A197C700E4CC4F /* TerminalView.swift */,
-				A507573D299FF33C009D7DC7 /* TerminalSurfaceView.swift */,
+				A507573D299FF33C009D7DC7 /* TerminalSurface.swift */,
 				A518502529A1A45100E4CC4F /* WindowTracker.swift */,
 			);
 			path = Sources;
@@ -166,7 +166,7 @@
 				A518502629A1A45100E4CC4F /* WindowTracker.swift in Sources */,
 				A518502429A197C700E4CC4F /* TerminalView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
-				A507573E299FF33C009D7DC7 /* TerminalSurfaceView.swift in Sources */,
+				A507573E299FF33C009D7DC7 /* TerminalSurface.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */,
 			);
