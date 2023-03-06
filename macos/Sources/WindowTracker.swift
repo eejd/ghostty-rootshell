@@ -37,18 +37,29 @@ class WindowObserver: ObservableObject {
 
     weak var window: NSWindow? {
         didSet {
-            self.isKeyWindow = window?.isKeyWindow ?? false
-            guard let window = window else {
+            // Always remove our previous observers if we have any
+            if let previous = self.becomeKeyobserver {
+                NotificationCenter.default.removeObserver(previous)
                 self.becomeKeyobserver = nil
+            }
+            if let previous = self.resignKeyobserver {
+                NotificationCenter.default.removeObserver(previous)
                 self.resignKeyobserver = nil
+            }
+            
+            // If our window is becoming nil then we clear everything
+            guard let window = window else {
+                self.isKeyWindow = false
                 return
             }
             
+            self.isKeyWindow = window.isKeyWindow
             self.becomeKeyobserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didBecomeKeyNotification,
                 object: window,
                 queue: .main
             ) { (n) in
+                print("KEY WINDOW YES")
                 self.isKeyWindow = true
             }
             
@@ -57,6 +68,7 @@ class WindowObserver: ObservableObject {
                 object: window,
                 queue: .main
             ) { (n) in
+                print("KEY WINDOW RESIGN")
                 self.isKeyWindow = false
             }
         }
