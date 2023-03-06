@@ -59,7 +59,6 @@ class WindowObserver: ObservableObject {
                 object: window,
                 queue: .main
             ) { (n) in
-                print("KEY WINDOW YES")
                 self.isKeyWindow = true
             }
             
@@ -68,7 +67,6 @@ class WindowObserver: ObservableObject {
                 object: window,
                 queue: .main
             ) { (n) in
-                print("KEY WINDOW RESIGN")
                 self.isKeyWindow = false
             }
         }

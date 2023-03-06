@@ -49,52 +49,70 @@ struct TerminalSplittableView: View {
         case BottomRight
     }
     
+    /// The stored state between invocations.
+    class ViewState: ObservableObject {
+        /// The direction of the split currently
+        @Published var direction: Direction = .none
+        
+        /// The top or left view. This is always set.
+        @Published var topLeft: TerminalSurfaceView
+        
+        /// The bottom or right view. This can be nil if the direction == .none.
+        @Published var bottomRight: TerminalSurfaceView? = nil
+        
+        /// Initialize the view state for the first time. This will create our topLeft view from new.
+        init(_ app: ghostty_app_t) {
+            self.topLeft = TerminalSurfaceView(app)
+        }
+        
+        /// Initialize the view state using an existing top left. This is usually used when a split happens and
+        /// the child view inherits the top left.
+        init(topLeft: TerminalSurfaceView) {
+            self.topLeft = topLeft
+        }
+    }
+    
+    let app: ghostty_app_t
+    @StateObject private var state: ViewState
     @FocusState private var focusedSide: Side?
-    
-    let app: ghostty_app_t;
-    
-    @State private var topLeft: TerminalSurfaceView
-    
-    /// The bottom or right surface. This is private because in a splittable view it is only possible that we set
-    /// this, because it is triggered from a split event.
-    @State private var bottomRight: TerminalSurfaceView? = nil
-    
-    /// Direction of the current split. If this is "nil" then the terminal is not currently split at all.
-    @State private var splitDirection: Direction = .none
     
     init(_ app: ghostty_app_t) {
         self.app = app
-        _topLeft = State(wrappedValue: TerminalSurfaceView(app))
+        _state = StateObject(wrappedValue: ViewState(app))
     }
     
     init(_ app: ghostty_app_t, topLeft: TerminalSurfaceView) {
         self.app = app
-        _topLeft = State(wrappedValue: topLeft)
+        _state = StateObject(wrappedValue: ViewState(topLeft: topLeft))
     }
     
     func split(to: Direction) {
         assert(to != .none)
-        assert(splitDirection == .none)
-        splitDirection = to
-        bottomRight = TerminalSurfaceView(app)
+        assert(state.direction == .none)
+        
+        // Make the split the desired value
+        state.direction = to
+        
+        // Create the new split which always goes to the bottom right.
+        state.bottomRight = TerminalSurfaceView(app)
     }
     
     func closeTopLeft() {
-        assert(splitDirection != .none)
-        assert(bottomRight != nil)
-        topLeft = bottomRight!
-        splitDirection = .none
+        assert(state.direction != .none)
+        assert(state.bottomRight != nil)
+        state.topLeft = state.bottomRight!
+        state.direction = .none
     }
     
     func closeBottomRight() {
-        assert(splitDirection != .none)
-        assert(bottomRight != nil)
-        bottomRight = nil
-        splitDirection = .none
+        assert(state.direction != .none)
+        assert(state.bottomRight != nil)
+        state.bottomRight = nil
+        state.direction = .none
     }
 
     var body: some View {
-        switch (splitDirection) {
+        switch (state.direction) {
         case .none:
             VStack {
                 HStack {
@@ -102,7 +120,7 @@ struct TerminalSplittableView: View {
                     Button("Split Vertical") { split(to: .vertical) }
                 }
                 
-                TerminalView(surface: topLeft)
+                TerminalView(surface: state.topLeft)
                     .focused($focusedSide, equals: .TopLeft)
             }
         case .horizontal:
@@ -113,9 +131,9 @@ struct TerminalSplittableView: View {
                 }
                 
                 HSplitView {
-                    TerminalSplittableView(app, topLeft: topLeft)
+                    TerminalSplittableView(app, topLeft: state.topLeft)
                         .focused($focusedSide, equals: .TopLeft)
-                    TerminalSplittableView(app, topLeft: bottomRight!)
+                    TerminalSplittableView(app, topLeft: state.bottomRight!)
                         .focused($focusedSide, equals: .BottomRight)
                 }
             }
@@ -127,9 +145,9 @@ struct TerminalSplittableView: View {
                 }
                 
                 VSplitView {
-                    TerminalSplittableView(app, topLeft: topLeft)
+                    TerminalSplittableView(app, topLeft: state.topLeft)
                         .focused($focusedSide, equals: .TopLeft)
-                    TerminalSplittableView(app, topLeft: bottomRight!)
+                    TerminalSplittableView(app, topLeft: state.bottomRight!)
                         .focused($focusedSide, equals: .BottomRight)
                 }
             }
