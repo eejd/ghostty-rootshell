@@ -31,11 +31,13 @@ extension Ghostty {
         @ObservedObject var surfaceView: SurfaceView
         
         @FocusState private var surfaceFocus: Bool
-        @Environment(\.isKeyWindow) private var isKeyWindow: Bool
+        
+        // https://nilcoalescing.com/blog/DetectFocusedWindowOnMacOS/
+        @Environment(\.controlActiveState) var controlActiveState
         
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.
-        private var hasFocus: Bool { surfaceFocus && isKeyWindow }
+        private var hasFocus: Bool { surfaceFocus && controlActiveState == .key }
         
         var body: some View {
             // We use a GeometryReader to get the frame bounds so that our metal surface

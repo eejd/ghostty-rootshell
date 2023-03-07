@@ -23,7 +23,6 @@ struct GhosttyApp: App {
             case .ready:
                 Ghostty.TerminalSplitView()
                     .ghosttyApp(ghostty.app!)
-                    .modifier(WindowObservationModifier())
             }
         }.commands {
             CommandGroup(after: .newItem) {
