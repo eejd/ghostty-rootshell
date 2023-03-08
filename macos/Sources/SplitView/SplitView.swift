@@ -5,7 +5,7 @@ struct SplitView<L: View, R: View>: View {
     let left: L
     let right: R
     
-    private let splitterVisibleSize: CGFloat = 5
+    private let splitterVisibleSize: CGFloat = 2
     private let splitterInvisibleSize: CGFloat = 5
     
     @State var split: CGFloat = 0.5
@@ -25,8 +25,26 @@ struct SplitView<L: View, R: View>: View {
                     .offset(x: rightRect.origin.x, y: rightRect.origin.y)
                 Splitter(direction: direction, visibleSize: splitterVisibleSize, invisibleSize: splitterInvisibleSize)
                     .position(splitterPoint)
+                    .gesture(dragGesture(geo.size, splitterPoint: splitterPoint))
             }
         }
+    }
+    
+    func dragGesture(_ size: CGSize, splitterPoint: CGPoint) -> some Gesture {
+        return DragGesture()
+            .onChanged { gesture in
+                let minSize: CGFloat = 10
+                
+                switch (direction) {
+                case .horizontal:
+                    let new = min(max(minSize, gesture.location.x), size.width - minSize)
+                    split = new / size.width
+                    
+                case .vertical:
+                    let new = min(max(minSize, gesture.location.y), size.height - minSize)
+                    split = new / size.height
+                }
+            }
     }
     
     func leftRect(for size: CGSize) -> CGRect {
@@ -57,7 +75,9 @@ struct SplitView<L: View, R: View>: View {
             result.size.width -= result.origin.x
             
         case .vertical:
-            assert(false)
+            result.origin.y += leftRect.size.height
+            result.origin.y += splitterVisibleSize / 2
+            result.size.height -= result.origin.y
         }
         
         return result

@@ -21,7 +21,7 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                SplitView(.horizontal, left: {
+                SplitView(.vertical, left: {
                     Color.green
                 }, right: {
                     Color.red
