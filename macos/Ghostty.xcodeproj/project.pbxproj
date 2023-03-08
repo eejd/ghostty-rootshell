@@ -12,10 +12,12 @@
 		A55B7BB629B6F47F0055DE60 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB529B6F47F0055DE60 /* AppState.swift */; };
 		A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
 		A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */; };
-		A55B7BBE29B701360055DE60 /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBD29B701360055DE60 /* SplitView.swift */; };
+		A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B30534299BEAAA0047F10C /* GhosttyApp.swift */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
+		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
+		A5CEAFDE29B8058B00646FDA /* SplitView.Splitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Splitter.swift */; };
 		A5D495A2299BEC7E00DD1313 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 /* End PBXBuildFile section */
 
@@ -25,12 +27,14 @@
 		A55B7BB529B6F47F0055DE60 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A55B7BB729B6F53A0055DE60 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView.swift; sourceTree = "<group>"; };
-		A55B7BBD29B701360055DE60 /* SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.swift; sourceTree = "<group>"; };
+		A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.SplitView.swift; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30534299BEAAA0047F10C /* GhosttyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyApp.swift; sourceTree = "<group>"; };
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
+		A5CEAFDB29B8009000646FDA /* SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.swift; sourceTree = "<group>"; };
+		A5CEAFDD29B8058B00646FDA /* SplitView.Splitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Splitter.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -50,6 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				A5D495A0299BEC2200DD1313 /* Preview Content */,
+				A5CEAFDA29B8005900646FDA /* SplitView */,
 				A55B7BB429B6F4410055DE60 /* Ghostty */,
 				A5B30534299BEAAA0047F10C /* GhosttyApp.swift */,
 				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
@@ -65,7 +70,7 @@
 				A55B7BB729B6F53A0055DE60 /* Package.swift */,
 				A55B7BB529B6F47F0055DE60 /* AppState.swift */,
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
-				A55B7BBD29B701360055DE60 /* SplitView.swift */,
+				A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */,
 			);
 			path = Ghostty;
 			sourceTree = "<group>";
@@ -87,6 +92,15 @@
 				A5B30531299BEAAA0047F10C /* Ghostty.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A5CEAFDA29B8005900646FDA /* SplitView */ = {
+			isa = PBXGroup;
+			children = (
+				A5CEAFDB29B8009000646FDA /* SplitView.swift */,
+				A5CEAFDD29B8058B00646FDA /* SplitView.Splitter.swift */,
+			);
+			path = SplitView;
 			sourceTree = "<group>";
 		};
 		A5D495A0299BEC2200DD1313 /* Preview Content */ = {
@@ -176,11 +190,13 @@
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
-				A55B7BBE29B701360055DE60 /* SplitView.swift in Sources */,
+				A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */,
 				A55B7BB629B6F47F0055DE60 /* AppState.swift in Sources */,
+				A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */,
+				A5CEAFDE29B8058B00646FDA /* SplitView.Splitter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

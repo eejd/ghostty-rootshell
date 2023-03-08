@@ -21,8 +21,15 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                Ghostty.TerminalSplitView()
-                    .ghosttyApp(ghostty.app!)
+                SplitView(.horizontal, left: {
+                    Color.green
+                }, right: {
+                    Color.red
+                })
+/*
+ Ghostty.Terminal()
+     .ghosttyApp(ghostty.app!)
+ */
             }
         }.commands {
             CommandGroup(after: .newItem) {
