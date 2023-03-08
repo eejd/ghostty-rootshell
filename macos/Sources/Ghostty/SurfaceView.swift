@@ -107,7 +107,7 @@ extension Ghostty {
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
         
-        // I don't thikn we need this but this lets us know we should redraw our layer
+        // I don't think we need this but this lets us know we should redraw our layer
         // so we'll use that to tell ghostty to refresh.
         override var wantsUpdateLayer: Bool { return true }
         
@@ -159,6 +159,16 @@ extension Ghostty {
             // The size represents our final size we're going for.
             let scaledSize = self.convertToBacking(size)
             ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
+        }
+        
+        override func resignFirstResponder() -> Bool {
+            let result = super.resignFirstResponder()
+            
+            // We sometimes call this manually (see SplitView) as a way to force us to
+            // yield our focus state.
+            if (result) { focusDidChange(false) }
+            
+            return result
         }
         
         override func updateTrackingAreas() {
@@ -492,6 +502,14 @@ extension Ghostty {
         ];
     }
 
+}
+
+// MARK: Surface Notifications
+
+extension Ghostty.Notification {
+    /// Posted when a new split is requested. The sending object will be the surface that had focus. The
+    /// userdata has one key "direction" with the direction to split to.
+    static let ghosttyNewSplit = Notification.Name("com.mitchellh.ghostty.newSplit")
 }
 
 // MARK: Surface Environment Keys

@@ -103,56 +103,56 @@ extension Ghostty {
         /// that should have it.
         private func fixFocus() {
             DispatchQueue.main.async {
+                // The view we want to focus
+                var view = state.topLeft
+                if let right = state.bottomRight { view = right }
+                
                 // If the callback runs before the surface is attached to a view
                 // then the window will be nil. We just reschedule in that case.
-                guard let window = state.topLeft.window else {
+                guard let window = view.window else {
                     self.fixFocus()
                     return
                 }
                 
-                window.makeFirstResponder(state.topLeft)
+                _ = state.topLeft.resignFirstResponder()
+                _ = state.bottomRight?.resignFirstResponder()
+                window.makeFirstResponder(view)
+            }
+        }
+        
+        private func onNewSplit(notification: SwiftUI.Notification) {
+            guard let directionAny = notification.userInfo?["direction"] else { return }
+            guard let direction = directionAny as? ghostty_split_direction_e else { return }
+            switch (direction) {
+            case GHOSTTY_SPLIT_RIGHT:
+                split(to: .horizontal)
+                
+            case GHOSTTY_SPLIT_DOWN:
+                split(to: .vertical)
+                
+            default:
+                break
             }
         }
 
         var body: some View {
             switch (state.direction) {
             case .none:
-                VStack {
-                    HStack {
-                        Button("Split Horizontal") { split(to: .horizontal) }
-                            .keyboardShortcut("d", modifiers: .command)
-                        Button("Split Vertical") { split(to: .vertical) }
-                            .keyboardShortcut("d", modifiers: [.command, .shift])
-                    }
-                    
-                    SurfaceWrapper(surfaceView: state.topLeft)
-                }
+                let pub = NotificationCenter.default.publisher(for: Ghostty.Notification.ghosttyNewSplit, object: state.topLeft)
+                SurfaceWrapper(surfaceView: state.topLeft)
+                    .onReceive(pub) { onNewSplit(notification: $0) }
             case .horizontal:
-                VStack {
-                    HStack {
-                        Button("Close Left") { closeTopLeft() }
-                        Button("Close Right") { closeBottomRight() }
-                    }
-                    
-                    SplitView(.horizontal, left: {
-                        TerminalSplitChild(app, topLeft: state.topLeft)
-                    }, right: {
-                        TerminalSplitChild(app, topLeft: state.bottomRight!)
-                    })
-                }
+                SplitView(.horizontal, left: {
+                    TerminalSplitChild(app, topLeft: state.topLeft)
+                }, right: {
+                    TerminalSplitChild(app, topLeft: state.bottomRight!)
+                })
             case .vertical:
-                VStack {
-                    HStack {
-                        Button("Close Top") { closeTopLeft() }
-                        Button("Close Bottom") { closeBottomRight() }
-                    }
-                    
-                    SplitView(.vertical, left: {
-                        TerminalSplitChild(app, topLeft: state.topLeft)
-                    }, right: {
-                        TerminalSplitChild(app, topLeft: state.bottomRight!)
-                    })
-                }
+                SplitView(.vertical, left: {
+                    TerminalSplitChild(app, topLeft: state.topLeft)
+                }, right: {
+                    TerminalSplitChild(app, topLeft: state.bottomRight!)
+                })
             }
         }
     }

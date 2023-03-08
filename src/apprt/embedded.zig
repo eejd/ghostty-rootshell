@@ -44,6 +44,10 @@ pub const App = struct {
 
         /// Write the clipboard value.
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8) callconv(.C) void,
+
+        /// Create a new split view. If the embedder doesn't support split
+        /// views then this can be null.
+        new_split: ?*const fn (SurfaceUD, input.Binding.Action.SplitDirection) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -146,6 +150,15 @@ pub const Surface = struct {
 
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
+    }
+
+    pub fn newSplit(self: *const Surface, direction: input.SplitDirection) !void {
+        const func = self.app.opts.new_split orelse {
+            log.info("runtime embedder does not support splits", .{});
+            return;
+        };
+
+        func(self.opts.userdata, direction);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {

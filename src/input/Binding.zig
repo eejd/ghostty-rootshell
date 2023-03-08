@@ -195,7 +195,9 @@ pub const Action = union(enum) {
         application: []const u8,
     };
 
-    pub const SplitDirection = enum {
+    // This is made extern (c_int) to make interop easier with our embedded
+    // runtime. The small size cost doesn't make a difference in our union.
+    pub const SplitDirection = enum(c_int) {
         right,
         down,
 

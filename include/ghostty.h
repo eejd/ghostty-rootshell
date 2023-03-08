@@ -30,6 +30,7 @@ typedef void (*ghostty_runtime_wakeup_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
+typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
 
 typedef struct {
     void *userdata;
@@ -37,6 +38,7 @@ typedef struct {
     ghostty_runtime_set_title_cb set_title_cb;
     ghostty_runtime_read_clipboard_cb read_clipboard_cb;
     ghostty_runtime_write_clipboard_cb write_clipboard_cb;
+    ghostty_runtime_new_split_cb new_split_cb;
 } ghostty_runtime_config_s;
 
 typedef struct {
@@ -44,6 +46,11 @@ typedef struct {
     void *nsview;
     double scale_factor;
 } ghostty_surface_config_s;
+
+typedef enum {
+    GHOSTTY_SPLIT_RIGHT,
+    GHOSTTY_SPLIT_DOWN
+} ghostty_split_direction_e;
 
 typedef enum {
     GHOSTTY_MOUSE_RELEASE,

@@ -56,7 +56,9 @@ extension Ghostty {
                 wakeup_cb: { userdata in AppState.wakeup(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
                 read_clipboard_cb: { userdata in AppState.readClipboard(userdata) },
-                write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) })
+                write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) },
+                new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: ghostty_split_direction_e(UInt32(direction))) }
+            )
 
             // Create the ghostty app.
             guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
@@ -80,6 +82,13 @@ extension Ghostty {
         }
         
         // MARK: Ghostty Callbacks
+        
+        static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(name: Notification.ghosttyNewSplit, object: surface, userInfo: [
+                "direction": direction,
+            ])
+        }
         
         static func readClipboard(_ userdata: UnsafeMutableRawPointer?) -> UnsafePointer<CChar>? {
             guard let appState = self.appState(fromSurface: userdata) else { return nil }
@@ -117,12 +126,17 @@ extension Ghostty {
         }
         
         /// Returns the GhosttyState from the given userdata value.
-        static func appState(fromSurface userdata: UnsafeMutableRawPointer?) -> AppState? {
+        static private func appState(fromSurface userdata: UnsafeMutableRawPointer?) -> AppState? {
             let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
             guard let surface = surfaceView.surface else { return nil }
             guard let app = ghostty_surface_app(surface) else { return nil }
             guard let app_ud = ghostty_app_userdata(app) else { return nil }
             return Unmanaged<AppState>.fromOpaque(app_ud).takeUnretainedValue()
+        }
+        
+        /// Returns the surface view from the userdata.
+        static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView? {
+            return Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         }
     }
 }
