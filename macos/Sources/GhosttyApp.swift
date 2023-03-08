@@ -11,7 +11,7 @@ struct GhosttyApp: App {
     
     /// The ghostty global state. Only one per process.
     @StateObject private var ghostty = Ghostty.AppState()
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate;
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     
     var body: some Scene {
         WindowGroup {

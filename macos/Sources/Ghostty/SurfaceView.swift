@@ -46,6 +46,7 @@ extension Ghostty {
             GeometryReader { geo in
                 Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                     .focused($surfaceFocus)
+                    .focusedValue(\.ghosttySurfaceView, surfaceView)
                     .navigationTitle(surfaceView.title)
             }
             .ghosttySurfaceView(surfaceView)
@@ -511,3 +512,17 @@ extension View {
         environment(\.ghosttySurfaceView, surfaceView)
     }
 }
+
+// MARK: Surface Focus Keys
+
+extension FocusedValues {
+    var ghosttySurfaceView: Ghostty.SurfaceView? {
+        get { self[FocusedGhosttySurface.self] }
+        set { self[FocusedGhosttySurface.self] = newValue }
+    }
+    
+    struct FocusedGhosttySurface: FocusedValueKey {
+        typealias Value = Ghostty.SurfaceView
+    }
+}
+
