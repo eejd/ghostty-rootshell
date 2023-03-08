@@ -5,10 +5,12 @@ extension Ghostty {
     /// Render a terminal for the active app in the environment.
     struct Terminal: View {
         @Environment(\.ghosttyApp) private var app
+        @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
         
         var body: some View {
             if let app = self.app {
                 TerminalForApp(app)
+                    .navigationTitle(surfaceTitle ?? "Ghostty")
             }
         }
     }
@@ -46,8 +48,7 @@ extension Ghostty {
             GeometryReader { geo in
                 Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                     .focused($surfaceFocus)
-                    .focusedValue(\.ghosttySurfaceView, surfaceView)
-                    .navigationTitle(surfaceView.title)
+                    .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
             }
             .ghosttySurfaceView(surfaceView)
         }
@@ -544,6 +545,17 @@ extension FocusedValues {
     
     struct FocusedGhosttySurface: FocusedValueKey {
         typealias Value = Ghostty.SurfaceView
+    }
+}
+
+extension FocusedValues {
+    var ghosttySurfaceTitle: String? {
+        get { self[FocusedGhosttySurfaceTitle.self] }
+        set { self[FocusedGhosttySurfaceTitle.self] = newValue }
+    }
+    
+    struct FocusedGhosttySurfaceTitle: FocusedValueKey {
+        typealias Value = String
     }
 }
 

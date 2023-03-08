@@ -7,10 +7,12 @@ extension Ghostty {
     /// split direction by splitting the terminal.
     struct TerminalSplit: View {
         @Environment(\.ghosttyApp) private var app
+        @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
         
         var body: some View {
             if let app = app {
                 TerminalSplitChild(app)
+                    .navigationTitle(surfaceTitle ?? "Ghostty")
             }
         }
     }
@@ -20,11 +22,6 @@ extension Ghostty {
             case none
             case vertical
             case horizontal
-        }
-        
-        enum Side: Hashable {
-            case TopLeft
-            case BottomRight
         }
         
         /// The stored state between invocations.
