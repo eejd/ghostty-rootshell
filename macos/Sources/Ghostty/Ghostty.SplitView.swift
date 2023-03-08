@@ -108,12 +108,13 @@ extension Ghostty {
                         Button("Close Right") { closeBottomRight() }
                     }
                     
-                    HSplitView {
+                    SplitView(.horizontal, left: {
                         SplitViewChild(app, topLeft: state.topLeft)
                             .focused($focusedSide, equals: .TopLeft)
+                    }, right: {
                         SplitViewChild(app, topLeft: state.bottomRight!)
                             .focused($focusedSide, equals: .BottomRight)
-                    }
+                    })
                 }
             case .vertical:
                 VStack {
@@ -122,12 +123,13 @@ extension Ghostty {
                         Button("Close Bottom") { closeBottomRight() }
                     }
                     
-                    VSplitView {
+                    SplitView(.vertical, left: {
                         SplitViewChild(app, topLeft: state.topLeft)
                             .focused($focusedSide, equals: .TopLeft)
+                    }, right: {
                         SplitViewChild(app, topLeft: state.bottomRight!)
                             .focused($focusedSide, equals: .BottomRight)
-                    }
+                    })
                 }
             }
         }

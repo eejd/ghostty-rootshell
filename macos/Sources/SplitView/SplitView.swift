@@ -5,8 +5,8 @@ struct SplitView<L: View, R: View>: View {
     let left: L
     let right: R
     
-    private let splitterVisibleSize: CGFloat = 2
-    private let splitterInvisibleSize: CGFloat = 5
+    private let splitterVisibleSize: CGFloat = 1
+    private let splitterInvisibleSize: CGFloat = 6
     
     @State var split: CGFloat = 0.5
     
