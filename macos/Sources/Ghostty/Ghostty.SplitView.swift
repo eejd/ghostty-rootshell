@@ -52,7 +52,6 @@ extension Ghostty {
         
         let app: ghostty_app_t
         @StateObject private var state: ViewState
-        @FocusState private var focusedSide: Side?
         
         init(_ app: ghostty_app_t) {
             self.app = app
@@ -73,6 +72,9 @@ extension Ghostty {
             
             // Create the new split which always goes to the bottom right.
             state.bottomRight = Ghostty.SurfaceView(app)
+
+            // See fixFocus comment, we have to run this whenever split changes.
+            fixFocus()
         }
         
         func closeTopLeft() {
@@ -80,7 +82,9 @@ extension Ghostty {
             assert(state.bottomRight != nil)
             state.topLeft = state.bottomRight!
             state.direction = .none
-            focusedSide = .TopLeft
+            
+            // See fixFocus comment, we have to run this whenever split changes.
+            fixFocus()
         }
         
         func closeBottomRight() {
@@ -88,7 +92,26 @@ extension Ghostty {
             assert(state.bottomRight != nil)
             state.bottomRight = nil
             state.direction = .none
-            focusedSide = .TopLeft
+            
+            // See fixFocus comment, we have to run this whenever split changes.
+            fixFocus()
+        }
+
+        /// There is a bug I can't figure out where when changing the split state, the terminal view
+        /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
+        /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
+        /// that should have it.
+        private func fixFocus() {
+            DispatchQueue.main.async {
+                // If the callback runs before the surface is attached to a view
+                // then the window will be nil. We just reschedule in that case.
+                guard let window = state.topLeft.window else {
+                    self.fixFocus()
+                    return
+                }
+                
+                window.makeFirstResponder(state.topLeft)
+            }
         }
 
         var body: some View {
@@ -97,11 +120,12 @@ extension Ghostty {
                 VStack {
                     HStack {
                         Button("Split Horizontal") { split(to: .horizontal) }
+                            .keyboardShortcut("d", modifiers: .command)
                         Button("Split Vertical") { split(to: .vertical) }
+                            .keyboardShortcut("d", modifiers: [.command, .shift])
                     }
                     
                     SurfaceWrapper(surfaceView: state.topLeft)
-                        .focused($focusedSide, equals: .TopLeft)
                 }
             case .horizontal:
                 VStack {
@@ -112,10 +136,8 @@ extension Ghostty {
                     
                     SplitView(.horizontal, left: {
                         TerminalSplitChild(app, topLeft: state.topLeft)
-                            .focused($focusedSide, equals: .TopLeft)
                     }, right: {
                         TerminalSplitChild(app, topLeft: state.bottomRight!)
-                            .focused($focusedSide, equals: .BottomRight)
                     })
                 }
             case .vertical:
@@ -127,10 +149,8 @@ extension Ghostty {
                     
                     SplitView(.vertical, left: {
                         TerminalSplitChild(app, topLeft: state.topLeft)
-                            .focused($focusedSide, equals: .TopLeft)
                     }, right: {
                         TerminalSplitChild(app, topLeft: state.bottomRight!)
-                            .focused($focusedSide, equals: .BottomRight)
                     })
                 }
             }
