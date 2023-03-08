@@ -17,7 +17,7 @@
 		A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B30534299BEAAA0047F10C /* GhosttyApp.swift */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
 		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
-		A5CEAFDE29B8058B00646FDA /* SplitView.Splitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Splitter.swift */; };
+		A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */; };
 		A5D495A2299BEC7E00DD1313 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 /* End PBXBuildFile section */
 
@@ -34,7 +34,7 @@
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
 		A5CEAFDB29B8009000646FDA /* SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.swift; sourceTree = "<group>"; };
-		A5CEAFDD29B8058B00646FDA /* SplitView.Splitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Splitter.swift; sourceTree = "<group>"; };
+		A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Divider.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -98,7 +98,7 @@
 			isa = PBXGroup;
 			children = (
 				A5CEAFDB29B8009000646FDA /* SplitView.swift */,
-				A5CEAFDD29B8058B00646FDA /* SplitView.Splitter.swift */,
+				A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */,
 			);
 			path = SplitView;
 			sourceTree = "<group>";
@@ -196,7 +196,7 @@
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */,
-				A5CEAFDE29B8058B00646FDA /* SplitView.Splitter.swift in Sources */,
+				A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

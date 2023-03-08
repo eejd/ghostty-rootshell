@@ -21,7 +21,7 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                Ghostty.TerminalSplitView()
+                Ghostty.TerminalSplit()
                     .ghosttyApp(ghostty.app!)
             }
         }.commands {

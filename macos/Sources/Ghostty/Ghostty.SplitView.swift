@@ -5,17 +5,17 @@ extension Ghostty {
     /// A spittable terminal view is one where the terminal allows for "splits" (vertical and horizontal) within the
     /// view. The terminal starts in the unsplit state (a plain ol' TerminalView) but responds to changes to the
     /// split direction by splitting the terminal.
-    struct TerminalSplitView: View {
+    struct TerminalSplit: View {
         @Environment(\.ghosttyApp) private var app
         
         var body: some View {
             if let app = app {
-                SplitViewChild(app)
+                TerminalSplitChild(app)
             }
         }
     }
     
-    private struct SplitViewChild: View {
+    private struct TerminalSplitChild: View {
         enum Direction {
             case none
             case vertical
@@ -80,6 +80,7 @@ extension Ghostty {
             assert(state.bottomRight != nil)
             state.topLeft = state.bottomRight!
             state.direction = .none
+            focusedSide = .TopLeft
         }
         
         func closeBottomRight() {
@@ -87,6 +88,7 @@ extension Ghostty {
             assert(state.bottomRight != nil)
             state.bottomRight = nil
             state.direction = .none
+            focusedSide = .TopLeft
         }
 
         var body: some View {
@@ -109,10 +111,10 @@ extension Ghostty {
                     }
                     
                     SplitView(.horizontal, left: {
-                        SplitViewChild(app, topLeft: state.topLeft)
+                        TerminalSplitChild(app, topLeft: state.topLeft)
                             .focused($focusedSide, equals: .TopLeft)
                     }, right: {
-                        SplitViewChild(app, topLeft: state.bottomRight!)
+                        TerminalSplitChild(app, topLeft: state.bottomRight!)
                             .focused($focusedSide, equals: .BottomRight)
                     })
                 }
@@ -124,10 +126,10 @@ extension Ghostty {
                     }
                     
                     SplitView(.vertical, left: {
-                        SplitViewChild(app, topLeft: state.topLeft)
+                        TerminalSplitChild(app, topLeft: state.topLeft)
                             .focused($focusedSide, equals: .TopLeft)
                     }, right: {
-                        SplitViewChild(app, topLeft: state.bottomRight!)
+                        TerminalSplitChild(app, topLeft: state.bottomRight!)
                             .focused($focusedSide, equals: .BottomRight)
                     })
                 }

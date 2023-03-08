@@ -1,7 +1,8 @@
 import SwiftUI
 
 extension SplitView {
-    struct Splitter: View {
+    /// The split divider that is rendered and can be used to resize a split view.
+    struct Divider: View {
         let direction: Direction
         let visibleSize: CGFloat
         let invisibleSize: CGFloat
