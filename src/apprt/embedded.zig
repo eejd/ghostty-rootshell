@@ -47,7 +47,10 @@ pub const App = struct {
 
         /// Create a new split view. If the embedder doesn't support split
         /// views then this can be null.
-        new_split: ?*const fn (SurfaceUD, input.Binding.Action.SplitDirection) callconv(.C) void = null,
+        new_split: ?*const fn (SurfaceUD, input.SplitDirection) callconv(.C) void = null,
+
+        /// Close the current surface given by this function.
+        close_surface: ?*const fn (SurfaceUD) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -159,6 +162,15 @@ pub const Surface = struct {
         };
 
         func(self.opts.userdata, direction);
+    }
+
+    pub fn closeSurface(self: *const Surface) !void {
+        const func = self.app.opts.close_surface orelse {
+            log.info("runtime embedder does not closing a surface", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {

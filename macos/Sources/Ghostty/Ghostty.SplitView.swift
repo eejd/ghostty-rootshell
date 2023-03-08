@@ -143,15 +143,23 @@ extension Ghostty {
                     .onReceive(pub) { onNewSplit(notification: $0) }
             case .horizontal:
                 SplitView(.horizontal, left: {
+                    let pub = NotificationCenter.default.publisher(for: Ghostty.Notification.ghosttyCloseSurface, object: state.topLeft)
                     TerminalSplitChild(app, topLeft: state.topLeft)
+                        .onReceive(pub) { _ in closeTopLeft() }
                 }, right: {
+                    let pub = NotificationCenter.default.publisher(for: Ghostty.Notification.ghosttyCloseSurface, object: state.bottomRight!)
                     TerminalSplitChild(app, topLeft: state.bottomRight!)
+                        .onReceive(pub) { _ in closeBottomRight() }
                 })
             case .vertical:
                 SplitView(.vertical, left: {
+                    let pub = NotificationCenter.default.publisher(for: Ghostty.Notification.ghosttyCloseSurface, object: state.topLeft)
                     TerminalSplitChild(app, topLeft: state.topLeft)
+                        .onReceive(pub) { _ in closeTopLeft() }
                 }, right: {
+                    let pub = NotificationCenter.default.publisher(for: Ghostty.Notification.ghosttyCloseSurface, object: state.bottomRight!)
                     TerminalSplitChild(app, topLeft: state.bottomRight!)
+                        .onReceive(pub) { _ in closeBottomRight() }
                 })
             }
         }

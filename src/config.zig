@@ -278,8 +278,8 @@ pub const Config = struct {
         );
         try result.keybind.set.put(
             alloc,
-            .{ .key = .w, .mods = .{ .super = true } },
-            .{ .close_window = {} },
+            .{ .key = .w, .mods = .{ .super = true, .shift = true } },
+            .{ .close_surface = {} },
         );
         try result.keybind.set.put(
             alloc,

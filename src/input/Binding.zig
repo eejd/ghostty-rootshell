@@ -184,7 +184,11 @@ pub const Action = union(enum) {
     /// in the direction given.
     new_split: SplitDirection,
 
-    /// Close the current window or tab
+    /// Close the current "surface", whether that is a window, tab, split,
+    /// etc. This only closes ONE surface.
+    close_surface: void,
+
+    /// Close the window, regardless of how many tabs or splits there may be.
     close_window: void,
 
     /// Quit ghostty

@@ -510,6 +510,9 @@ extension Ghostty.Notification {
     /// Posted when a new split is requested. The sending object will be the surface that had focus. The
     /// userdata has one key "direction" with the direction to split to.
     static let ghosttyNewSplit = Notification.Name("com.mitchellh.ghostty.newSplit")
+    
+    /// Close the calling surface.
+    static let ghosttyCloseSurface = Notification.Name("com.mitchellh.ghostty.closeSurface")
 }
 
 // MARK: Surface Environment Keys

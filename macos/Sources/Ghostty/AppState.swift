@@ -57,7 +57,8 @@ extension Ghostty {
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
                 read_clipboard_cb: { userdata in AppState.readClipboard(userdata) },
                 write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) },
-                new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: ghostty_split_direction_e(UInt32(direction))) }
+                new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: ghostty_split_direction_e(UInt32(direction))) },
+                close_surface_cb: { userdata in AppState.closeSurface(userdata) }
             )
 
             // Create the ghostty app.
@@ -88,6 +89,11 @@ extension Ghostty {
             NotificationCenter.default.post(name: Notification.ghosttyNewSplit, object: surface, userInfo: [
                 "direction": direction,
             ])
+        }
+        
+        static func closeSurface(_ userdata: UnsafeMutableRawPointer?) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface)
         }
         
         static func readClipboard(_ userdata: UnsafeMutableRawPointer?) -> UnsafePointer<CChar>? {

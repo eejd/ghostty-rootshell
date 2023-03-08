@@ -946,6 +946,12 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement newSplit", .{});
                 },
 
+                .close_surface => {
+                    if (@hasDecl(apprt.Surface, "closeSurface")) {
+                        try self.rt_surface.closeSurface();
+                    } else log.warn("runtime doesn't implement closeSurface", .{});
+                },
+
                 .close_window => {
                     _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
                 },

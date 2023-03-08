@@ -31,6 +31,7 @@ typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
+typedef void (*ghostty_runtime_close_surface_cb)(void *);
 
 typedef struct {
     void *userdata;
@@ -39,6 +40,7 @@ typedef struct {
     ghostty_runtime_read_clipboard_cb read_clipboard_cb;
     ghostty_runtime_write_clipboard_cb write_clipboard_cb;
     ghostty_runtime_new_split_cb new_split_cb;
+    ghostty_runtime_close_surface_cb close_surface_cb;
 } ghostty_runtime_config_s;
 
 typedef struct {
