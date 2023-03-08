@@ -18,6 +18,15 @@ const log = std.log.scoped(.io_thread);
 /// the future if we want it configurable.
 pub const Mailbox = BlockingQueue(termio.Message, 64);
 
+/// This stores the information that is coalesced.
+const Coalesce = struct {
+    /// The number of milliseconds to coalesce certain messages like resize for.
+    /// Not all message types are coalesced.
+    const min_ms = 25;
+
+    resize: ?termio.Message.Resize = null,
+};
+
 /// Allocator used for some state
 alloc: std.mem.Allocator,
 
@@ -33,6 +42,12 @@ wakeup_c: xev.Completion = .{},
 /// This can be used to stop the thread on the next loop iteration.
 stop: xev.Async,
 stop_c: xev.Completion = .{},
+
+/// This is used to coalesce resize events.
+coalesce: xev.Timer,
+coalesce_c: xev.Completion = .{},
+coalesce_cancel_c: xev.Completion = .{},
+coalesce_data: Coalesce = .{},
 
 /// The underlying IO implementation.
 impl: *termio.Impl,
@@ -60,6 +75,10 @@ pub fn init(
     var stop_h = try xev.Async.init();
     errdefer stop_h.deinit();
 
+    // This timer is used to coalesce resize events.
+    var coalesce_h = try xev.Timer.init();
+    errdefer coalesce_h.deinit();
+
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
@@ -69,6 +88,7 @@ pub fn init(
         .loop = loop,
         .wakeup = wakeup_h,
         .stop = stop_h,
+        .coalesce = coalesce_h,
         .impl = impl,
         .mailbox = mailbox,
     };
@@ -77,6 +97,7 @@ pub fn init(
 /// Clean up the thread. This is only safe to call once the thread
 /// completes executing; the caller must join prior to this.
 pub fn deinit(self: *Thread) void {
+    self.coalesce.deinit();
     self.stop.deinit();
     self.wakeup.deinit();
     self.loop.deinit();
@@ -129,7 +150,7 @@ fn drainMailbox(self: *Thread) !void {
 
         log.debug("mailbox message={}", .{message});
         switch (message) {
-            .resize => |v| try self.impl.resize(v.grid_size, v.screen_size, v.padding),
+            .resize => |v| self.handleResize(v),
             .clear_screen => |v| try self.impl.clearScreen(v.history),
             .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
             .write_stable => |v| try self.impl.queueWrite(v),
@@ -145,6 +166,51 @@ fn drainMailbox(self: *Thread) !void {
     if (redraw) {
         try self.impl.renderer_wakeup.notify();
     }
+}
+
+fn handleResize(self: *Thread, resize: termio.Message.Resize) void {
+    self.coalesce_data.resize = resize;
+
+    // If the timer is already active we just return. In the future we want
+    // to reset the timer up to a maximum wait time but for now this ensures
+    // relatively smooth resizing.
+    if (self.coalesce_c.state() == .active) return;
+
+    self.coalesce.reset(
+        &self.loop,
+        &self.coalesce_c,
+        &self.coalesce_cancel_c,
+        Coalesce.min_ms,
+        Thread,
+        self,
+        coalesceCallback,
+    );
+}
+
+fn coalesceCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
+    _ = r catch |err| switch (err) {
+        error.Canceled => {},
+        else => {
+            log.warn("error during coalesce callback err={}", .{err});
+            return .disarm;
+        },
+    };
+
+    const self = self_ orelse return .disarm;
+
+    if (self.coalesce_data.resize) |v| {
+        self.coalesce_data.resize = null;
+        self.impl.resize(v.grid_size, v.screen_size, v.padding) catch |err| {
+            log.warn("error during resize err={}", .{err});
+        };
+    }
+
+    return .disarm;
 }
 
 fn wakeupCallback(

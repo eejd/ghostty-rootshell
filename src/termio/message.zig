@@ -15,8 +15,7 @@ pub const Message = union(enum) {
     /// in the future.
     pub const WriteReq = MessageData(u8, 38);
 
-    /// Resize the window.
-    resize: struct {
+    pub const Resize = struct {
         /// The grid size for the given screen size with padding applied.
         grid_size: renderer.GridSize,
 
@@ -27,7 +26,10 @@ pub const Message = union(enum) {
         /// The padding, so that the terminal implementation can subtract
         /// this to send to the pty.
         padding: renderer.Padding,
-    },
+    };
+
+    /// Resize the window.
+    resize: Resize,
 
     /// Clear the screen.
     clear_screen: struct {
