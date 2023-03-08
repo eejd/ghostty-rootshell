@@ -81,6 +81,7 @@ extension Ghostty {
             assert(state.direction != .none)
             assert(state.bottomRight != nil)
             state.topLeft = state.bottomRight!
+            state.bottomRight = nil
             state.direction = .none
             
             // See fixFocus comment, we have to run this whenever split changes.
