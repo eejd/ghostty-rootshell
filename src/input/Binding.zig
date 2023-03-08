@@ -105,7 +105,20 @@ pub fn parse(input: []const u8) !Binding {
                     // Cursor keys can't be set currently
                     Action.CursorKey => return Error.InvalidAction,
 
-                    else => unreachable,
+                    else => switch (@typeInfo(field.type)) {
+                        .Enum => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = actionRaw[idx + 1 ..];
+                            const value = std.meta.stringToEnum(
+                                field.type,
+                                param,
+                            ) orelse return Error.InvalidFormat;
+
+                            break :action @unionInit(Action, field.name, value);
+                        },
+
+                        else => unreachable,
+                    },
                 }
             }
         }
@@ -167,6 +180,10 @@ pub const Action = union(enum) {
     /// Go to the tab with the specific number, 1-indexed.
     goto_tab: usize,
 
+    /// Create a new split in the given direction. The new split will appear
+    /// in the direction given.
+    new_split: SplitDirection,
+
     /// Close the current window or tab
     close_window: void,
 
@@ -176,6 +193,13 @@ pub const Action = union(enum) {
     pub const CursorKey = struct {
         normal: []const u8,
         application: []const u8,
+    };
+
+    pub const SplitDirection = enum {
+        right,
+        down,
+
+        // Note: we don't support top or left yet
     };
 };
 
@@ -286,11 +310,15 @@ test "parse: triggers" {
     try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
 }
 
-test "parse: action" {
+test "parse: action invalid" {
     const testing = std.testing;
 
     // invalid action
     try testing.expectError(Error.InvalidFormat, parse("a=nopenopenope"));
+}
+
+test "parse: action no parameters" {
+    const testing = std.testing;
 
     // no parameters
     try testing.expectEqual(
@@ -298,11 +326,26 @@ test "parse: action" {
         try parse("a=ignore"),
     );
     try testing.expectError(Error.InvalidFormat, parse("a=ignore:A"));
+}
+
+test "parse: action with string" {
+    const testing = std.testing;
 
     // parameter
     {
         const binding = try parse("a=csi:A");
         try testing.expect(binding.action == .csi);
         try testing.expectEqualStrings("A", binding.action.csi);
+    }
+}
+
+test "parse: action with enum" {
+    const testing = std.testing;
+
+    // parameter
+    {
+        const binding = try parse("a=new_split:right");
+        try testing.expect(binding.action == .new_split);
+        try testing.expectEqual(Action.SplitDirection.right, binding.action.new_split);
     }
 }

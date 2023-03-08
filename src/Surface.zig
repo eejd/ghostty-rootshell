@@ -940,6 +940,12 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement gotoTab", .{});
                 },
 
+                .new_split => |direction| {
+                    if (@hasDecl(apprt.Surface, "newSplit")) {
+                        try self.rt_surface.newSplit(direction);
+                    } else log.warn("runtime doesn't implement newSplit", .{});
+                },
+
                 .close_window => {
                     _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
                 },
