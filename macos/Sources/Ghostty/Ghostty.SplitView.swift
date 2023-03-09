@@ -7,12 +7,10 @@ extension Ghostty {
     /// split direction by splitting the terminal.
     struct TerminalSplit: View {
         @Environment(\.ghosttyApp) private var app
-        @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
-        
+                
         var body: some View {
             if let app = app {
                 TerminalSplitRoot(app: app)
-                    .navigationTitle(surfaceTitle ?? "Ghostty")
             }
         }
     }
@@ -49,7 +47,6 @@ extension Ghostty {
         class Leaf: ObservableObject {
             let app: ghostty_app_t
             @Published var surface: SurfaceView
-            @Published var parent: SplitNode? = nil
             
             /// Initialize a new leaf which creates a new terminal surface.
             init(_ app: ghostty_app_t) {
@@ -85,21 +82,26 @@ extension Ghostty {
         /// This is an ignored value because at the root we can't close.
         @State private var ignoredRequestClose: Bool = false
         
+        @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
+        
         init(app: ghostty_app_t) {
-            _node = State(initialValue: SplitNode.noSplit(.init(app)))
+            _node = State(wrappedValue: SplitNode.noSplit(.init(app)))
         }
         
         var body: some View {
-            switch (node) {
-            case .noSplit(let leaf):
-                TerminalSplitLeaf(leaf: leaf, node: $node, requestClose: $ignoredRequestClose)
-                
-            case .horizontal(let container):
-                TerminalSplitContainer(direction: .horizontal, node: $node, container: container)
-                
-            case .vertical(let container):
-                TerminalSplitContainer(direction: .vertical, node: $node, container: container)
+            ZStack {
+                switch (node) {
+                case .noSplit(let leaf):
+                    TerminalSplitLeaf(leaf: leaf, node: $node, requestClose: $ignoredRequestClose)
+                    
+                case .horizontal(let container):
+                    TerminalSplitContainer(direction: .horizontal, node: $node, container: container)
+                    
+                case .vertical(let container):
+                    TerminalSplitContainer(direction: .vertical, node: $node, container: container)
+                }
             }
+            .navigationTitle(surfaceTitle ?? "Ghostty")
         }
     }
     

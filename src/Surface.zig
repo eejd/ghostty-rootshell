@@ -476,6 +476,7 @@ pub fn deinit(self: *Surface) void {
     self.alloc.destroy(self.font_group);
 
     self.alloc.destroy(self.renderer_state.mutex);
+    log.info("surface closed addr={x}", .{@ptrToInt(self)});
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
