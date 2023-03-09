@@ -7,7 +7,7 @@ import SwiftUI
 /// as time goes on. For example, the splitter divider size and styling is all hardcoded.
 struct SplitView<L: View, R: View>: View {
     /// Direction of the split
-    let direction: Direction
+    let direction: SplitViewDirection
     
     /// The left and right views to render.
     let left: L
@@ -41,7 +41,7 @@ struct SplitView<L: View, R: View>: View {
         }
     }
     
-    init(_ direction: Direction, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
+    init(_ direction: SplitViewDirection, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
         self.direction = direction
         self.left = left()
         self.right = right()
@@ -114,8 +114,6 @@ struct SplitView<L: View, R: View>: View {
     }
 }
 
-extension SplitView {
-    enum Direction {
-        case horizontal, vertical
-    }
+enum SplitViewDirection {
+    case horizontal, vertical
 }

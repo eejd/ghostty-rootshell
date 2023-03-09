@@ -9,21 +9,27 @@ extension Ghostty {
         
         var body: some View {
             if let app = self.app {
-                TerminalForApp(app)
-                    .navigationTitle(surfaceTitle ?? "Ghostty")
+                SurfaceForApp(app) { surfaceView in
+                    SurfaceWrapper(surfaceView: surfaceView)
+                }
+                .navigationTitle(surfaceTitle ?? "Ghostty")
             }
         }
     }
     
-    private struct TerminalForApp: View {
+    /// Yields a SurfaceView for a ghostty app that can then be used however you want.
+    struct SurfaceForApp<Content: View>: View {
+        let content: ((SurfaceView) -> Content)
+        
         @StateObject private var surfaceView: SurfaceView
         
-        init(_ app: ghostty_app_t) {
+        init(_ app: ghostty_app_t, @ViewBuilder content: @escaping ((SurfaceView) -> Content)) {
             _surfaceView = StateObject(wrappedValue: SurfaceView(app))
+            self.content = content
         }
         
         var body: some View {
-            SurfaceWrapper(surfaceView: surfaceView)
+            content(surfaceView)
         }
     }
     
