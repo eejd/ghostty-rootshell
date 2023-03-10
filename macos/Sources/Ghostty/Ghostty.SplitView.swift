@@ -159,25 +159,34 @@ extension Ghostty {
             }
             
             // See fixFocus comment, we have to run this whenever split changes.
-            Self.fixFocus(container.bottomRight)
+            Self.fixFocus(container.bottomRight, previous: node)
         }
         
         /// There is a bug I can't figure out where when changing the split state, the terminal view
         /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
         /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
         /// that should have it.
-        fileprivate static func fixFocus(_ target: SplitNode) {
+        fileprivate static func fixFocus(_ target: SplitNode, previous: SplitNode) {
             let view = target.preferredFocus()
             
             DispatchQueue.main.async {
                 // If the callback runs before the surface is attached to a view
                 // then the window will be nil. We just reschedule in that case.
                 guard let window = view.window else {
-                    self.fixFocus(target)
+                    self.fixFocus(target, previous: previous)
                     return
                 }
-                
+
                 window.makeFirstResponder(view)
+                
+                // If we had a previously focused node and its not where we're sending
+                // focus, make sure that we explicitly tell it to lose focus. In theory
+                // we should NOT have to do this but the focus callback isn't getting
+                // called for some reason.
+                let previous = previous.preferredFocus()
+                if previous != view {
+                    _ = previous.resignFirstResponder()
+                }
             }
         }
     }
@@ -199,7 +208,7 @@ extension Ghostty {
                         
                         // When closing the topLeft, our parent becomes the bottomRight.
                         node = container.bottomRight
-                        TerminalSplitLeaf.fixFocus(node)
+                        TerminalSplitLeaf.fixFocus(node, previous: container.topLeft)
                     }
             }, right: {
                 TerminalSplitNested(node: $container.bottomRight, requestClose: $closeBottomRight)
@@ -208,7 +217,7 @@ extension Ghostty {
                         
                         // When closing the bottomRight, our parent becomes the topLeft.
                         node = container.topLeft
-                        TerminalSplitLeaf.fixFocus(node)
+                        TerminalSplitLeaf.fixFocus(node, previous: container.bottomRight)
                     }
             })
         }
