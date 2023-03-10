@@ -82,6 +82,12 @@ extension Ghostty {
             ghostty_app_tick(app)
         }
         
+        /// Request that the given surface is closed. This will trigger the full normal surface close event
+        /// cycle which will call our close surface callback.
+        func requestClose(surface: ghostty_surface_t) {
+            ghostty_surface_request_close(surface)
+        }
+        
         // MARK: Ghostty Callbacks
         
         static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e) {

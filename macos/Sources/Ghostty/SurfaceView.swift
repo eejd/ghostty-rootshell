@@ -55,6 +55,7 @@ extension Ghostty {
                 Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                     .focused($surfaceFocus)
                     .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
+                    .focusedValue(\.ghosttySurfaceView, surfaceView)
             }
             .ghosttySurfaceView(surfaceView)
         }

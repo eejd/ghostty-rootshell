@@ -470,4 +470,10 @@ pub const CAPI = struct {
         x.* = pos.x;
         y.* = pos.y;
     }
+
+    /// Request that the surface become closed. This will go through the
+    /// normal trigger process that a close surface input binding would.
+    export fn ghostty_surface_request_close(ptr: *Surface) void {
+        ptr.closeSurface() catch {};
+    }
 };
