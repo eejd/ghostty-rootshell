@@ -88,6 +88,10 @@ extension Ghostty {
             ghostty_surface_request_close(surface)
         }
         
+        func split(surface: ghostty_surface_t, direction: ghostty_split_direction_e) {
+            ghostty_surface_split(surface, direction)
+        }
+        
         // MARK: Ghostty Callbacks
         
         static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e) {

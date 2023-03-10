@@ -31,6 +31,9 @@ struct GhosttyApp: App {
             CommandGroup(after: .newItem) {
                 Button("New Tab", action: Self.newTab).keyboardShortcut("t", modifiers: [.command])
                 Divider()
+                Button("Split Horizontally", action: splitHorizontally).keyboardShortcut("d", modifiers: [.command])
+                Button("Split Vertically", action: splitVertically).keyboardShortcut("d", modifiers: [.command, .shift])
+                Divider()
                 Button("Close", action: close).keyboardShortcut("w", modifiers: [.command])
                 Button("Close Window", action: Self.closeWindow).keyboardShortcut("w", modifiers: [.command, .shift])
              }
@@ -60,6 +63,18 @@ struct GhosttyApp: App {
         guard let surfaceView = focusedSurface else { return }
         guard let surface = surfaceView.surface else { return }
         ghostty.requestClose(surface: surface)
+    }
+    
+    func splitHorizontally() {
+        guard let surfaceView = focusedSurface else { return }
+        guard let surface = surfaceView.surface else { return }
+        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
+    }
+    
+    func splitVertically() {
+        guard let surfaceView = focusedSurface else { return }
+        guard let surface = surfaceView.surface else { return }
+        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
     }
 }
 

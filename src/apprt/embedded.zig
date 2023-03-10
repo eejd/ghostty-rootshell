@@ -476,4 +476,9 @@ pub const CAPI = struct {
     export fn ghostty_surface_request_close(ptr: *Surface) void {
         ptr.closeSurface() catch {};
     }
+
+    /// Request that the surface split in the given direction.
+    export fn ghostty_surface_split(ptr: *Surface, direction: input.SplitDirection) void {
+        ptr.newSplit(direction) catch {};
+    }
 };
