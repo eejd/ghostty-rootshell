@@ -24,15 +24,15 @@ struct GhosttyApp: App {
             case .error:
                 ErrorView()
             case .ready:
-                Ghostty.TerminalSplit()
+                Ghostty.TerminalSplit(onClose: Self.closeWindow)
                     .ghosttyApp(ghostty.app!)
             }
         }.commands {
             CommandGroup(after: .newItem) {
-                Button("New Tab", action: newTab).keyboardShortcut("t", modifiers: [.command])
+                Button("New Tab", action: Self.newTab).keyboardShortcut("t", modifiers: [.command])
                 Divider()
                 Button("Close", action: close).keyboardShortcut("w", modifiers: [.command])
-                Button("Close Window", action: closeWindow).keyboardShortcut("w", modifiers: [.command, .shift])
+                Button("Close Window", action: Self.closeWindow).keyboardShortcut("w", modifiers: [.command, .shift])
              }
         }
         
@@ -42,7 +42,7 @@ struct GhosttyApp: App {
     }
     
     // Create a new tab in the currently active window
-    func newTab() {
+    static func newTab() {
         guard let currentWindow = NSApp.keyWindow else { return }
         guard let windowController = currentWindow.windowController else { return }
         windowController.newWindowForTab(nil)
@@ -51,15 +51,15 @@ struct GhosttyApp: App {
         }
     }
     
+    static func closeWindow() {
+        guard let currentWindow = NSApp.keyWindow else { return }
+        currentWindow.close()
+    }
+    
     func close() {
         guard let surfaceView = focusedSurface else { return }
         guard let surface = surfaceView.surface else { return }
         ghostty.requestClose(surface: surface)
-    }
-    
-    func closeWindow() {
-        guard let currentWindow = NSApp.keyWindow else { return }
-        currentWindow.close()
     }
 }
 

@@ -7,10 +7,11 @@ extension Ghostty {
     /// split direction by splitting the terminal.
     struct TerminalSplit: View {
         @Environment(\.ghosttyApp) private var app
-                
+        let onClose: (() -> Void)?
+        
         var body: some View {
             if let app = app {
-                TerminalSplitRoot(app: app)
+                TerminalSplitRoot(app: app, onClose: onClose)
             }
         }
     }
@@ -78,13 +79,13 @@ extension Ghostty {
     /// one of these in a split tree.
     private struct TerminalSplitRoot: View {
         @State private var node: SplitNode
-        
-        /// This is an ignored value because at the root we can't close.
-        @State private var ignoredRequestClose: Bool = false
+        @State private var requestClose: Bool = false
+        let onClose: (() -> Void)?
         
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
         
-        init(app: ghostty_app_t) {
+        init(app: ghostty_app_t, onClose: (() ->Void)? = nil) {
+            self.onClose = onClose
             _node = State(wrappedValue: SplitNode.noSplit(.init(app)))
         }
         
@@ -92,7 +93,12 @@ extension Ghostty {
             ZStack {
                 switch (node) {
                 case .noSplit(let leaf):
-                    TerminalSplitLeaf(leaf: leaf, node: $node, requestClose: $ignoredRequestClose)
+                    TerminalSplitLeaf(leaf: leaf, node: $node, requestClose: $requestClose)
+                        .onChange(of: requestClose) { value in
+                            guard value else { return }
+                            guard let onClose = self.onClose else { return }
+                            onClose()
+                        }
                     
                 case .horizontal(let container):
                     TerminalSplitContainer(direction: .horizontal, node: $node, container: container)
