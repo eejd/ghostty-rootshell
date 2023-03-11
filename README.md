@@ -58,8 +58,8 @@ The high-level ambitious plan for the project, in order:
 | 1 | [Standards-compliant terminal emulation](docs/sequences.md)     | ⚠️ |
 | 2 | Competitive performance | ✅ |
 | 3 | Basic customizability -- fonts, bg colors, etc. | ✅ |
-| 4 | Richer windowing features -- multi-window, tabbing, panes | ⚠️  |
-| 5 | Native Platform Experiences (i.e. Mac Preference Panel) | ❌ |
+| 4 | Richer windowing features -- multi-window, tabbing, panes | ✅  |
+| 5 | Native Platform Experiences (i.e. Mac Preference Panel) | ⚠️ |
 | 6 | Windows Terminals (including PowerShell, Cmd, WSL) | ❌ |
 | N | Fancy features (to be expanded upon later) | ❌ |
 
@@ -95,19 +95,32 @@ feature rich.
 
 #### Richer Windowing Features
 
-We support multi-window and tabbing on Mac. We will support panes/splits
-in the future and we'll continue to improve multi-window features.
+The Mac app supports multi-window, tabbing, and splits.
+
+The Linux app built with GTK supports multi-window and tabbing. Splits
+will come soon in a future update.
+
+The Linux app built with GLFW is aimed for a lighter weight experience,
+particularly for users of tiled window managers who don't want multi-window
+or tabs as much. The GLFW-based app supports multi-window but does not support
+tabs or splits.
 
 #### Native Platform Experiences
 
-Ghostty is a cross-platform terminal emulator but is meant to feel native
-on each platform it runs on. On macOS, this means having a preferences window
-that is a native Mac window (versus only file-based configuratin). On
-Linux this means having a GTK option that has richer windowing features. Etc.
+Ghostty is a cross-platform terminal emulator but we don't aim for a
+least-common-denominator experience. There is a large, shared core written
+in Zig but we do a lot of platform-native thing:
 
-Right now, we're focusing on the macOS experience first. We are using Cocoa
-with Metal and rendering text with CoreText. We will be working to improve
-the windowing experience here.
+* The macOS app is a true SwiftUI-based application with all the things you
+  would expect such as real windowing, menu bars, a settings GUI, etc.
+* macOS uses a true Metal renderer with CoreText for font discovery.
+* The Linux app comes in both a GTK and GLFW flavor. The GTK flavor is
+  more feature rich and looks and acts like any other desktop application.
+  Both Linux versions use OpenGL.
+
+There are more improvements to be made. The macOS settings window is still
+a work-in-progress. Similar improvements will follow with Linux+GTK. The
+Linux+GLFW build will remain lightweight.
 
 ## Developing Ghostty
 
