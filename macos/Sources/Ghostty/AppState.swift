@@ -59,8 +59,8 @@ extension Ghostty {
                 write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) },
                 new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: ghostty_split_direction_e(UInt32(direction))) },
                 close_surface_cb: { userdata in AppState.closeSurface(userdata) },
-                focus_next_split_cb: { userdata in AppState.focusSplit(userdata, direction: .next) },
-                focus_previous_split_cb: { userdata in AppState.focusSplit(userdata, direction: .previous) }
+                focus_split_cb: { userdata, direction in
+                    AppState.focusSplit(userdata, direction: ghostty_split_focus_direction_e(UInt32(direction))) }
             )
 
             // Create the ghostty app.
@@ -95,13 +95,7 @@ extension Ghostty {
         }
         
         func splitMoveFocus(surface: ghostty_surface_t, direction: SplitFocusDirection) {
-            switch (direction) {
-            case .previous:
-                ghostty_surface_split_focus_previous(surface)
-                
-            case .next:
-                ghostty_surface_split_focus_next(surface)
-            }
+            ghostty_surface_split_focus(surface, direction.toNative())
         }
         
         // MARK: Ghostty Callbacks
@@ -118,13 +112,14 @@ extension Ghostty {
             NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface)
         }
         
-        static func focusSplit(_ userdata: UnsafeMutableRawPointer?, direction: SplitFocusDirection) {
+        static func focusSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_focus_direction_e) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            guard let splitDirection = SplitFocusDirection.from(direction: direction) else { return }
             NotificationCenter.default.post(
                 name: Notification.ghosttyFocusSplit,
                 object: surface,
                 userInfo: [
-                    Notification.SplitDirectionKey: direction,
+                    Notification.SplitDirectionKey: splitDirection,
                 ]
             )
         }

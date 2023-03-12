@@ -314,12 +314,12 @@ pub const Config = struct {
         try result.keybind.set.put(
             alloc,
             .{ .key = .left_bracket, .mods = .{ .super = true } },
-            .{ .previous_split = {} },
+            .{ .goto_split = .previous },
         );
         try result.keybind.set.put(
             alloc,
             .{ .key = .right_bracket, .mods = .{ .super = true } },
-            .{ .next_split = {} },
+            .{ .goto_split = .next },
         );
         {
             // Cmd+N for goto tab N

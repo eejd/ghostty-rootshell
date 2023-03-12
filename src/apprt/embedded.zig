@@ -53,8 +53,7 @@ pub const App = struct {
         close_surface: ?*const fn (SurfaceUD) callconv(.C) void = null,
 
         /// Focus the previous/next split (if any).
-        focus_next_split: ?*const fn (SurfaceUD) callconv(.C) void = null,
-        focus_previous_split: ?*const fn (SurfaceUD) callconv(.C) void = null,
+        focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -177,22 +176,13 @@ pub const Surface = struct {
         func(self.opts.userdata);
     }
 
-    pub fn gotoNextSplit(self: *const Surface) void {
-        const func = self.app.opts.focus_next_split orelse {
-            log.info("runtime embedder does not support focus next split", .{});
+    pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
+        const func = self.app.opts.focus_split orelse {
+            log.info("runtime embedder does not support focus split", .{});
             return;
         };
 
-        func(self.opts.userdata);
-    }
-
-    pub fn gotoPreviousSplit(self: *const Surface) void {
-        const func = self.app.opts.focus_previous_split orelse {
-            log.info("runtime embedder does not support focus previous split", .{});
-            return;
-        };
-
-        func(self.opts.userdata);
+        func(self.opts.userdata, direction);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
@@ -505,12 +495,7 @@ pub const CAPI = struct {
     }
 
     /// Focus on the next split (if any).
-    export fn ghostty_surface_split_focus_next(ptr: *Surface) void {
-        ptr.gotoNextSplit();
-    }
-
-    /// Focus on the previous split (if any).
-    export fn ghostty_surface_split_focus_previous(ptr: *Surface) void {
-        ptr.gotoPreviousSplit();
+    export fn ghostty_surface_split_focus(ptr: *Surface, direction: input.SplitFocusDirection) void {
+        ptr.gotoSplit(direction);
     }
 };

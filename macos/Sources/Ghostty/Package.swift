@@ -1,4 +1,5 @@
 import SwiftUI
+import GhosttyKit
 
 struct Ghostty {
     // All the notifications that will be emitted will be put here.
@@ -11,6 +12,30 @@ extension Ghostty {
     /// An enum that is used for the directions that a split focus event can change.
     enum SplitFocusDirection {
         case previous, next
+        
+        /// Initialize from a Ghostty API enum.
+        static func from(direction: ghostty_split_focus_direction_e) -> Self? {
+            switch (direction) {
+            case GHOSTTY_SPLIT_FOCUS_PREVIOUS:
+                return .previous
+                
+            case GHOSTTY_SPLIT_FOCUS_NEXT:
+                return .next
+                
+            default:
+                return nil
+            }
+        }
+        
+        func toNative() -> ghostty_split_focus_direction_e {
+            switch (self) {
+            case .previous:
+                return GHOSTTY_SPLIT_FOCUS_PREVIOUS
+                
+            case .next:
+                return GHOSTTY_SPLIT_FOCUS_NEXT
+            }
+        }
     }
 }
 

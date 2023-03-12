@@ -947,16 +947,10 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement newSplit", .{});
                 },
 
-                .next_split => {
-                    if (@hasDecl(apprt.Surface, "gotoNextSplit")) {
-                        self.rt_surface.gotoNextSplit();
-                    } else log.warn("runtime doesn't implement gotoNextSplit", .{});
-                },
-
-                .previous_split => {
-                    if (@hasDecl(apprt.Surface, "gotoPreviousSplit")) {
-                        self.rt_surface.gotoPreviousSplit();
-                    } else log.warn("runtime doesn't implement gotoPreviousSplit", .{});
+                .goto_split => |direction| {
+                    if (@hasDecl(apprt.Surface, "gotoSplit")) {
+                        self.rt_surface.gotoSplit(direction);
+                    } else log.warn("runtime doesn't implement gotoSplit", .{});
                 },
 
                 .close_surface => {
