@@ -51,6 +51,10 @@ pub const App = struct {
 
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD) callconv(.C) void = null,
+
+        /// Focus the previous/next split (if any).
+        focus_next_split: ?*const fn (SurfaceUD) callconv(.C) void = null,
+        focus_previous_split: ?*const fn (SurfaceUD) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -166,7 +170,25 @@ pub const Surface = struct {
 
     pub fn closeSurface(self: *const Surface) !void {
         const func = self.app.opts.close_surface orelse {
-            log.info("runtime embedder does not closing a surface", .{});
+            log.info("runtime embedder does not support closing a surface", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
+    }
+
+    pub fn gotoNextSplit(self: *const Surface) void {
+        const func = self.app.opts.focus_next_split orelse {
+            log.info("runtime embedder does not support focus next split", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
+    }
+
+    pub fn gotoPreviousSplit(self: *const Surface) void {
+        const func = self.app.opts.focus_previous_split orelse {
+            log.info("runtime embedder does not support focus previous split", .{});
             return;
         };
 

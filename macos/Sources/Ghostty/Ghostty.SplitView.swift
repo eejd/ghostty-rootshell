@@ -123,11 +123,14 @@ extension Ghostty {
         @Binding var requestClose: Bool
         
         var body: some View {
-            let pub = NotificationCenter.default.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
-            let pubClose = NotificationCenter.default.publisher(for: Notification.ghosttyCloseSurface, object: leaf.surface)
+            let center = NotificationCenter.default
+            let pub = center.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
+            let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: leaf.surface)
+            let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: leaf.surface)
             SurfaceWrapper(surfaceView: leaf.surface)
                 .onReceive(pub) { onNewSplit(notification: $0) }
                 .onReceive(pubClose) { _ in requestClose = true }
+                .onReceive(pubFocus) { onMoveFocus(notification: $0) }
         }
         
         private func onNewSplit(notification: SwiftUI.Notification) {
@@ -160,6 +163,13 @@ extension Ghostty {
             
             // See fixFocus comment, we have to run this whenever split changes.
             Self.fixFocus(container.bottomRight, previous: node)
+        }
+        
+        private func onMoveFocus(notification: SwiftUI.Notification) {
+            // Determine our desired direction
+            guard let directionAny = notification.userInfo?[Notification.SplitDirectionKey] else { return }
+            guard let direction = directionAny as? SplitFocusDirection else { return }
+            print("MOVE FOCUS: \(direction)")
         }
         
         /// There is a bug I can't figure out where when changing the split state, the terminal view

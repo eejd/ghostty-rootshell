@@ -311,6 +311,16 @@ pub const Config = struct {
             .{ .key = .d, .mods = .{ .super = true, .shift = true } },
             .{ .new_split = .down },
         );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .left_bracket, .mods = .{ .super = true } },
+            .{ .previous_split = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .right_bracket, .mods = .{ .super = true } },
+            .{ .next_split = {} },
+        );
         {
             // Cmd+N for goto tab N
             const start = @enumToInt(inputpkg.Key.one);

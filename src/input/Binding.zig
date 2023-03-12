@@ -184,6 +184,12 @@ pub const Action = union(enum) {
     /// in the direction given.
     new_split: SplitDirection,
 
+    /// Go to the previous split.
+    previous_split: void,
+
+    /// Go to the next split.
+    next_split: void,
+
     /// Close the current "surface", whether that is a window, tab, split,
     /// etc. This only closes ONE surface.
     close_surface: void,
