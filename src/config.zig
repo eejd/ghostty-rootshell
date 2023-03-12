@@ -166,6 +166,30 @@ pub const Config = struct {
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
+    /// Key is an enum of all the available configuration keys. This is used
+    /// when paired with diff to determine what fields have changed in a config,
+    /// amongst other things.
+    pub const Key = key: {
+        const field_infos = std.meta.fields(Config);
+        var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
+        var decls = [_]std.builtin.Type.Declaration{};
+        inline for (field_infos, 0..) |field, i| {
+            enumFields[i] = .{
+                .name = field.name,
+                .value = i,
+            };
+        }
+
+        break :key @Type(.{
+            .Enum = .{
+                .tag_type = std.math.IntFittingRange(0, field_infos.len - 1),
+                .fields = &enumFields,
+                .decls = &decls,
+                .is_exhaustive = true,
+            },
+        });
+    };
+
     pub fn deinit(self: *Config) void {
         if (self._arena) |arena| arena.deinit();
         self.* = undefined;
@@ -655,6 +679,77 @@ pub const Config = struct {
         }
     }
 
+    /// Returns an iterator that goes through each changed field from
+    /// old to new.
+    pub fn changeIterator(old: *const Config, new: *const Config) ChangeIterator {
+        return .{
+            .old = old,
+            .new = new,
+        };
+    }
+
+    fn equal(comptime T: type, old: T, new: T) bool {
+        // Do known named types first
+        switch (T) {
+            inline []const u8,
+            [:0]const u8,
+            => return std.mem.eql(u8, old, new),
+
+            else => {},
+        }
+
+        // Back into types of types
+        switch (@typeInfo(T)) {
+            inline .Bool,
+            .Int,
+            => return old == new,
+
+            .Optional => |info| {
+                if (old == null and new == null) return true;
+                if (old == null or new == null) return false;
+                return equal(info.child, old.?, new.?);
+            },
+
+            .Struct => return old.equal(new),
+
+            else => {
+                @compileLog(T);
+                @compileError("unsupported field type");
+            },
+        }
+    }
+
+    pub const ChangeIterator = struct {
+        old: *const Config,
+        new: *const Config,
+        i: usize = 0,
+
+        pub fn next(self: *ChangeIterator) ?Key {
+            const fields = comptime std.meta.fields(Config);
+
+            while (self.i < fields.len) {
+                switch (self.i) {
+                    inline 0...(fields.len - 1) => |i| {
+                        const field = fields[i];
+                        self.i += 1;
+
+                        if (field.name[0] == '_') return self.next();
+
+                        const old_value = @field(self.old, field.name);
+                        const new_value = @field(self.new, field.name);
+                        if (!equal(field.type, old_value, new_value)) {
+                            return @field(Key, field.name);
+                        }
+                    },
+
+                    else => unreachable,
+                }
+            }
+
+            return null;
+        }
+    };
+
     test "clone default" {
         const testing = std.testing;
         const alloc = testing.allocator;
@@ -663,6 +758,10 @@ pub const Config = struct {
         defer source.deinit();
         var dest = try source.clone(alloc);
         defer dest.deinit();
+
+        // Should have no changes
+        var it = source.changeIterator(&dest);
+        try testing.expectEqual(@as(?Key, null), it.next());
 
         // I want to do this but this doesn't work (the API doesn't work)
         // try testing.expectEqualDeep(dest, source);
@@ -691,6 +790,11 @@ pub const Color = struct {
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: Color, _: Allocator) !Color {
         return self;
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Color, other: Color) bool {
+        return std.meta.eql(self, other);
     }
 
     /// fromHex parses a color from a hex value such as #RRGGBB. The "#"
@@ -761,6 +865,11 @@ pub const Palette = struct {
         return self;
     }
 
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        return std.meta.eql(self, other);
+    }
+
     test "parseCLI" {
         const testing = std.testing;
 
@@ -799,6 +908,16 @@ pub const RepeatableString = struct {
         return .{
             .list = try self.list.clone(alloc),
         };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        const itemsA = self.list.items;
+        const itemsB = other.list.items;
+        if (itemsA.len != itemsB.len) return false;
+        for (itemsA, itemsB) |a, b| {
+            if (!std.mem.eql(u8, a, b)) return false;
+        } else return true;
     }
 
     test "parseCLI" {
@@ -852,6 +971,14 @@ pub const Keybinds = struct {
                 .bindings = try self.set.bindings.clone(alloc),
             },
         };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Keybinds, other: Keybinds) bool {
+        // TODO
+        _ = self;
+        _ = other;
+        return true;
     }
 
     test "parseCLI" {
