@@ -40,8 +40,21 @@ struct GhosttyApp: App {
             
             CommandGroup(before: .windowArrangement) {
                 Divider()
-                Button("Select Previous Split", action: splitMoveFocusPrevious).keyboardShortcut("[", modifiers: .command)
-                Button("Select Next Split", action: splitMoveFocusNext).keyboardShortcut("]", modifiers: .command)
+                Button("Select Previous Split") { splitMoveFocus(direction: .previous) }
+                    .keyboardShortcut("[", modifiers: .command)
+                Button("Select Next Split") { splitMoveFocus(direction: .next) }
+                    .keyboardShortcut("]", modifiers: .command)
+                Menu("Select Split") {
+                    Button("Select Split Above") { splitMoveFocus(direction: .top) }
+                        .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                    Button("Select Split Below") { splitMoveFocus(direction: .bottom) }
+                        .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                    Button("Select Split Left") { splitMoveFocus(direction: .left) }
+                        .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                    Button("Select Split Right") { splitMoveFocus(direction: .right)}
+                        .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                }
+                
                 Divider()
             }
         }
@@ -84,16 +97,10 @@ struct GhosttyApp: App {
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
     }
     
-    func splitMoveFocusPrevious() {
+    func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
         guard let surfaceView = focusedSurface else { return }
         guard let surface = surfaceView.surface else { return }
-        ghostty.splitMoveFocus(surface: surface, direction: .previous)
-    }
-    
-    func splitMoveFocusNext() {
-        guard let surfaceView = focusedSurface else { return }
-        guard let surface = surfaceView.surface else { return }
-        ghostty.splitMoveFocus(surface: surface, direction: .next)
+        ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
 }
 

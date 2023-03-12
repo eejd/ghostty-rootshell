@@ -92,6 +92,21 @@ extension Ghostty {
             /// No neighbors, used by the root node.
             static let empty: Self = .init()
             
+            /// Get the node for a given direction.
+            func get(direction: SplitFocusDirection) -> SplitNode? {
+                let map: [SplitFocusDirection : KeyPath<Self, SplitNode?>] = [
+                    .previous: \.previous,
+                    .next: \.next,
+                    .top: \.top,
+                    .bottom: \.bottom,
+                    .left: \.left,
+                    .right: \.right,
+                ]
+                
+                guard let path = map[direction] else { return nil }
+                return self[keyPath: path]
+            }
+            
             /// Update multiple keys and return a new copy.
             func update(_ attrs: [WritableKeyPath<Self, SplitNode?>: SplitNode?]) -> Self {
                 var clone = self
@@ -216,15 +231,8 @@ extension Ghostty {
             // Determine our desired direction
             guard let directionAny = notification.userInfo?[Notification.SplitDirectionKey] else { return }
             guard let direction = directionAny as? SplitFocusDirection else { return }
-            switch (direction) {
-            case .previous:
-                guard let next = neighbors.previous else { return }
-                Self.moveFocus(next, previous: node)
-                
-            case .next:
-                guard let next = neighbors.next else { return }
-                Self.moveFocus(next, previous: node)
-            }
+            guard let next = neighbors.get(direction: direction) else { return }
+            Self.moveFocus(next, previous: node)
         }
         
         /// There is a bug I can't figure out where when changing the split state, the terminal view
