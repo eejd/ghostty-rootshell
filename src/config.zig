@@ -597,6 +597,76 @@ pub const Config = struct {
             self.@"click-repeat-interval" = internal_os.clickInterval() orelse 500;
         }
     }
+
+    /// Create a copy of this configuration. This is useful as a starting
+    /// point for modifying a configuration since a config can NOT be
+    /// modified once it is in use by an app or surface.
+    pub fn clone(self: *const Config, alloc_gpa: Allocator) !Config {
+        // Start with an empty config with a new arena we're going
+        // to use for all our copies.
+        var result: Config = .{
+            ._arena = ArenaAllocator.init(alloc_gpa),
+        };
+        errdefer result.deinit();
+        const alloc = result._arena.?.allocator();
+
+        inline for (@typeInfo(Config).Struct.fields) |field| {
+            // Ignore fields starting with "_" since they're internal and
+            // not copied ever.
+            if (field.name[0] == '_') continue;
+
+            @field(result, field.name) = try cloneValue(
+                alloc,
+                field.type,
+                @field(self, field.name),
+            );
+        }
+
+        return result;
+    }
+
+    fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
+        // Do known named types first
+        switch (T) {
+            []const u8 => return try alloc.dupe(u8, src),
+            [:0]const u8 => return try alloc.dupeZ(u8, src),
+
+            else => {},
+        }
+
+        // Back into types of types
+        switch (@typeInfo(T)) {
+            inline .Bool,
+            .Int,
+            => return src,
+
+            .Optional => |info| return try cloneValue(
+                alloc,
+                info.child,
+                src orelse return null,
+            ),
+
+            .Struct => return try src.clone(alloc),
+
+            else => {
+                @compileLog(T);
+                @compileError("unsupported field type");
+            },
+        }
+    }
+
+    test "clone default" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var source = try Config.default(alloc);
+        defer source.deinit();
+        var dest = try source.clone(alloc);
+        defer dest.deinit();
+
+        // I want to do this but this doesn't work (the API doesn't work)
+        // try testing.expectEqualDeep(dest, source);
+    }
 };
 
 /// Color represents a color using RGB.
@@ -616,6 +686,11 @@ pub const Color = struct {
 
     pub fn parseCLI(input: ?[]const u8) !Color {
         return fromHex(input orelse return error.ValueRequired);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: Color, _: Allocator) !Color {
+        return self;
     }
 
     /// fromHex parses a color from a hex value such as #RRGGBB. The "#"
@@ -681,6 +756,11 @@ pub const Palette = struct {
         self.value[key] = .{ .r = rgb.r, .g = rgb.g, .b = rgb.b };
     }
 
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: Self, _: Allocator) !Self {
+        return self;
+    }
+
     test "parseCLI" {
         const testing = std.testing;
 
@@ -712,6 +792,13 @@ pub const RepeatableString = struct {
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
         try self.list.append(alloc, value);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        return .{
+            .list = try self.list.clone(alloc),
+        };
     }
 
     test "parseCLI" {
@@ -756,6 +843,15 @@ pub const Keybinds = struct {
             .unbind => self.set.remove(binding.trigger),
             else => try self.set.put(alloc, binding.trigger, binding.action),
         }
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
+        return .{
+            .set = .{
+                .bindings = try self.set.bindings.clone(alloc),
+            },
+        };
     }
 
     test "parseCLI" {
