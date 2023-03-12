@@ -503,4 +503,14 @@ pub const CAPI = struct {
     export fn ghostty_surface_split(ptr: *Surface, direction: input.SplitDirection) void {
         ptr.newSplit(direction) catch {};
     }
+
+    /// Focus on the next split (if any).
+    export fn ghostty_surface_split_focus_next(ptr: *Surface) void {
+        ptr.gotoNextSplit();
+    }
+
+    /// Focus on the previous split (if any).
+    export fn ghostty_surface_split_focus_previous(ptr: *Surface) void {
+        ptr.gotoPreviousSplit();
+    }
 };

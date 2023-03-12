@@ -94,6 +94,16 @@ extension Ghostty {
             ghostty_surface_split(surface, direction)
         }
         
+        func splitMoveFocus(surface: ghostty_surface_t, direction: SplitFocusDirection) {
+            switch (direction) {
+            case .previous:
+                ghostty_surface_split_focus_previous(surface)
+                
+            case .next:
+                ghostty_surface_split_focus_next(surface)
+            }
+        }
+        
         // MARK: Ghostty Callbacks
         
         static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e) {

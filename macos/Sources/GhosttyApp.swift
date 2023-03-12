@@ -37,6 +37,13 @@ struct GhosttyApp: App {
                 Button("Close", action: close).keyboardShortcut("w", modifiers: [.command])
                 Button("Close Window", action: Self.closeWindow).keyboardShortcut("w", modifiers: [.command, .shift])
              }
+            
+            CommandGroup(before: .windowArrangement) {
+                Divider()
+                Button("Select Previous Split", action: splitMoveFocusPrevious).keyboardShortcut("[", modifiers: .command)
+                Button("Select Next Split", action: splitMoveFocusNext).keyboardShortcut("]", modifiers: .command)
+                Divider()
+            }
         }
         
         Settings {
@@ -75,6 +82,18 @@ struct GhosttyApp: App {
         guard let surfaceView = focusedSurface else { return }
         guard let surface = surfaceView.surface else { return }
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
+    }
+    
+    func splitMoveFocusPrevious() {
+        guard let surfaceView = focusedSurface else { return }
+        guard let surface = surfaceView.surface else { return }
+        ghostty.splitMoveFocus(surface: surface, direction: .previous)
+    }
+    
+    func splitMoveFocusNext() {
+        guard let surfaceView = focusedSurface else { return }
+        guard let surface = surfaceView.surface else { return }
+        ghostty.splitMoveFocus(surface: surface, direction: .next)
     }
 }
 
