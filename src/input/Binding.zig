@@ -184,6 +184,9 @@ pub const Action = union(enum) {
     /// in the direction given.
     new_split: SplitDirection,
 
+    /// Focus on a split in a given direction.
+    goto_split: SplitFocusDirection,
+
     /// Close the current "surface", whether that is a window, tab, split,
     /// etc. This only closes ONE surface.
     close_surface: void,
@@ -206,6 +209,17 @@ pub const Action = union(enum) {
         down,
 
         // Note: we don't support top or left yet
+    };
+
+    // Extern because it is used in the embedded runtime ABI.
+    pub const SplitFocusDirection = enum(c_int) {
+        previous,
+        next,
+
+        top,
+        left,
+        bottom,
+        right,
     };
 };
 

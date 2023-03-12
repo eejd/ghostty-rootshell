@@ -311,6 +311,36 @@ pub const Config = struct {
             .{ .key = .d, .mods = .{ .super = true, .shift = true } },
             .{ .new_split = .down },
         );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .left_bracket, .mods = .{ .super = true } },
+            .{ .goto_split = .previous },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .right_bracket, .mods = .{ .super = true } },
+            .{ .goto_split = .next },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .up, .mods = .{ .super = true, .alt = true } },
+            .{ .goto_split = .top },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .down, .mods = .{ .super = true, .alt = true } },
+            .{ .goto_split = .bottom },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .left, .mods = .{ .super = true, .alt = true } },
+            .{ .goto_split = .left },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .right, .mods = .{ .super = true, .alt = true } },
+            .{ .goto_split = .right },
+        );
         {
             // Cmd+N for goto tab N
             const start = @enumToInt(inputpkg.Key.one);

@@ -947,6 +947,12 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement newSplit", .{});
                 },
 
+                .goto_split => |direction| {
+                    if (@hasDecl(apprt.Surface, "gotoSplit")) {
+                        self.rt_surface.gotoSplit(direction);
+                    } else log.warn("runtime doesn't implement gotoSplit", .{});
+                },
+
                 .close_surface => {
                     if (@hasDecl(apprt.Surface, "closeSurface")) {
                         try self.rt_surface.closeSurface();
