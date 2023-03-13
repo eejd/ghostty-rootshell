@@ -172,18 +172,24 @@ pub const Config = struct {
     pub const Key = key: {
         const field_infos = std.meta.fields(Config);
         var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
-        var decls = [_]std.builtin.Type.Declaration{};
-        inline for (field_infos, 0..) |field, i| {
+        var i: usize = 0;
+        inline for (field_infos) |field| {
+            // Ignore fields starting with "_" since they're internal and
+            // not copied ever.
+            if (field.name[0] == '_') continue;
+
             enumFields[i] = .{
                 .name = field.name,
                 .value = i,
             };
+            i += 1;
         }
 
+        var decls = [_]std.builtin.Type.Declaration{};
         break :key @Type(.{
             .Enum = .{
                 .tag_type = std.math.IntFittingRange(0, field_infos.len - 1),
-                .fields = &enumFields,
+                .fields = enumFields[0..i],
                 .decls = &decls,
                 .is_exhaustive = true,
             },
@@ -635,10 +641,7 @@ pub const Config = struct {
         const alloc = result._arena.?.allocator();
 
         inline for (@typeInfo(Config).Struct.fields) |field| {
-            // Ignore fields starting with "_" since they're internal and
-            // not copied ever.
-            if (field.name[0] == '_') continue;
-
+            if (!@hasField(Key, field.name)) continue;
             @field(result, field.name) = try cloneValue(
                 alloc,
                 field.type,
@@ -680,12 +683,32 @@ pub const Config = struct {
     }
 
     /// Returns an iterator that goes through each changed field from
-    /// old to new.
+    /// old to new. The order of old or new do not matter.
     pub fn changeIterator(old: *const Config, new: *const Config) ChangeIterator {
         return .{
             .old = old,
             .new = new,
         };
+    }
+
+    /// Returns true if the given key has changed from old to new. This
+    /// requires the key to be comptime known to make this more efficient.
+    pub fn changed(self: *const Config, new: *const Config, comptime key: Key) bool {
+        // Get the field at comptime
+        const field = comptime field: {
+            const fields = std.meta.fields(Config);
+            for (fields) |field| {
+                if (@field(Key, field.name) == key) {
+                    break :field field;
+                }
+            }
+
+            unreachable;
+        };
+
+        const old_value = @field(self, field.name);
+        const new_value = @field(new, field.name);
+        return !equal(field.type, old_value, new_value);
     }
 
     fn equal(comptime T: type, old: T, new: T) bool {
@@ -719,27 +742,21 @@ pub const Config = struct {
         }
     }
 
+    /// This yields a key for every changed field between old and new.
     pub const ChangeIterator = struct {
         old: *const Config,
         new: *const Config,
         i: usize = 0,
 
         pub fn next(self: *ChangeIterator) ?Key {
-            const fields = comptime std.meta.fields(Config);
-
+            const fields = comptime std.meta.fields(Key);
             while (self.i < fields.len) {
                 switch (self.i) {
                     inline 0...(fields.len - 1) => |i| {
                         const field = fields[i];
+                        const key = @field(Key, field.name);
                         self.i += 1;
-
-                        if (field.name[0] == '_') return self.next();
-
-                        const old_value = @field(self.old, field.name);
-                        const new_value = @field(self.new, field.name);
-                        if (!equal(field.type, old_value, new_value)) {
-                            return @field(Key, field.name);
-                        }
+                        if (self.old.changed(self.new, key)) return key;
                     },
 
                     else => unreachable,
@@ -765,6 +782,20 @@ pub const Config = struct {
 
         // I want to do this but this doesn't work (the API doesn't work)
         // try testing.expectEqualDeep(dest, source);
+    }
+
+    test "changed" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var source = try Config.default(alloc);
+        defer source.deinit();
+        var dest = try source.clone(alloc);
+        defer dest.deinit();
+        dest.@"font-family" = "something else";
+
+        try testing.expect(source.changed(&dest, .@"font-family"));
+        try testing.expect(!source.changed(&dest, .@"font-size"));
     }
 };
 
