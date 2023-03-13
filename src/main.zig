@@ -30,22 +30,8 @@ pub fn main() !void {
     const alloc = state.alloc;
 
     // Try reading our config
-    var config = try Config.default(alloc);
+    var config = try Config.load(alloc);
     defer config.deinit();
-
-    // If we have a configuration file in our home directory, parse that first.
-    try config.loadDefaultFiles(alloc);
-
-    // Parse the config from the CLI args
-    {
-        var iter = try std.process.argsWithAllocator(alloc);
-        defer iter.deinit();
-        try cli_args.parse(Config, alloc, &config, &iter);
-    }
-
-    // Parse the config files that were added from our file and CLI args.
-    try config.loadRecursiveFiles(alloc);
-    try config.finalize();
     //std.log.debug("config={}", .{config});
 
     // Create our app state

@@ -202,6 +202,34 @@ pub const Config = struct {
         self.* = undefined;
     }
 
+    /// Load the configuration according to the default rules:
+    ///
+    ///   1. Defaults
+    ///   2. XDG Config File
+    ///   3. CLI flags
+    ///   4. Recursively defined configuration files
+    ///
+    pub fn load(alloc_gpa: Allocator) !Config {
+        var result = try default(alloc_gpa);
+        errdefer result.deinit();
+
+        // If we have a configuration file in our home directory, parse that first.
+        try result.loadDefaultFiles(alloc_gpa);
+
+        // Parse the config from the CLI args
+        {
+            var iter = try std.process.argsWithAllocator(alloc_gpa);
+            defer iter.deinit();
+            try cli_args.parse(Config, alloc_gpa, &result, &iter);
+        }
+
+        // Parse the config files that were added from our file and CLI args.
+        try result.loadRecursiveFiles(alloc_gpa);
+        try result.finalize();
+
+        return result;
+    }
+
     pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         // Build up our basic config
         var result: Config = .{
