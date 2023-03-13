@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const fs = std.fs;
 const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
+const RunStep = std.build.RunStep;
 const apprt = @import("src/apprt.zig");
 const glfw = @import("vendor/mach/libs/glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
@@ -68,6 +69,10 @@ pub fn build(b: *std.build.Builder) !void {
 
     const wasm_target: WasmTarget = .browser;
 
+    // We use env vars throughout the build so we grab them immediately here.
+    var env = try std.process.getEnvMap(b.allocator);
+    defer env.deinit();
+
     tracy = b.option(
         bool,
         "tracy",
@@ -115,6 +120,25 @@ pub fn build(b: *std.build.Builder) !void {
         "emit-bench",
         "Build and install the benchmark executables.",
     ) orelse false;
+
+    // On NixOS, the built binary from `zig build` needs to patch the rpath
+    // into the built binary for it to be portable across the NixOS system
+    // it was built for. We default this to true if we can detect we're in
+    // a Nix shell and have LD_LIBRARY_PATH set.
+    const patch_rpath: ?[]const u8 = b.option(
+        []const u8,
+        "patch-rpath",
+        "Inject the LD_LIBRARY_PATH as the rpath in the built binary. " ++
+            "This defaults to LD_LIBRARY_PATH if we're in a Nix shell environment on NixOS.",
+    ) orelse patch_rpath: {
+        // We only do the patching if we're targeting our own CPU and its Linux.
+        if (!target.isLinux() or !target.isNativeCpu()) break :patch_rpath null;
+
+        // If we're in a nix shell we default to doing this.
+        // Note: we purposely never deinit envmap because we leak the strings
+        if (env.get("IN_NIX_SHELL") == null) break :patch_rpath null;
+        break :patch_rpath env.get("LD_LIBRARY_PATH");
+    };
 
     var version_string = b.option(
         []const u8,
@@ -179,16 +203,71 @@ pub fn build(b: *std.build.Builder) !void {
 
     // Exe
     {
+        exe.addOptions("build_options", exe_options);
+
         if (target.isDarwin()) {
             // See the comment in this file
             exe.addCSourceFile("src/renderer/metal_workaround.c", &.{});
         }
 
-        exe.addOptions("build_options", exe_options);
-        if (app_runtime != .none) exe.install();
-
         // Add the shared dependencies
         _ = try addDeps(b, exe, static);
+
+        // If we're in NixOS but not in the shell environment then we issue
+        // a warning because the rpath may not be setup properly.
+        const is_nixos = is_nixos: {
+            if (!target.isLinux()) break :is_nixos false;
+            if (!target.isNativeCpu()) break :is_nixos false;
+            if (target.getOsTag() != builtin.os.tag) break :is_nixos false;
+            break :is_nixos if (std.fs.accessAbsolute("/etc/NIXOS", .{})) true else |_| false;
+        };
+        if (is_nixos and env.get("IN_NIX_SHELL") == null) {
+            const notice = b.addLog(
+                "\x1b[" ++ color_map.get("yellow").? ++
+                    "\x1b[" ++ color_map.get("b").? ++
+                    "WARNING: " ++
+                    "\x1b[" ++ color_map.get("d").? ++
+                    \\Detected building on and for NixOS outside of the Nix shell enviornment.
+                    \\
+                    \\The resulting ghostty binary will likely fail on launch because it is
+                    \\unable to dynamically load the windowing libs (X11, Wayland, etc.).
+                    \\We highly recommend running only within the Nix build environment
+                    \\and the resulting binary will be portable across your system.
+                    \\
+                    \\To run in the Nix build environment, use the following command.
+                    \\Append any additional options like (`-Doptimize` flags). The resulting
+                    \\binary will be in zig-out as usual.
+                    \\
+                    \\  nix develop -c zig build
+                    \\
+                    ++
+                    "\x1b[0m",
+                .{},
+            );
+
+            exe.step.dependOn(&notice.step);
+        }
+
+        // If we're installing, we get the install step so we can add
+        // additional dependencies to it.
+        const install_step = if (app_runtime != .none) step: {
+            const step = b.addInstallArtifact(exe);
+            b.getInstallStep().dependOn(&step.step);
+            break :step step;
+        } else null;
+
+        // Patch our rpath if that option is specified.
+        if (patch_rpath) |rpath| {
+            if (rpath.len > 0) {
+                const run = RunStep.create(b, "patchelf rpath");
+                run.addArgs(&.{ "patchelf", "--set-rpath", rpath });
+                run.addArtifactArg(exe);
+
+                if (install_step) |step| {
+                    step.step.dependOn(&run.step);
+                }
+            }
+        }
     }
 
     // App (Linux)
