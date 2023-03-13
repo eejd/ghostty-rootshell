@@ -36,7 +36,17 @@ pub const App = struct {
     pub const Options = struct {};
 
     pub fn init(core_app: *CoreApp, _: Options) !App {
-        if (!glfw.init(.{})) return error.GlfwInitFailed;
+        if (!glfw.init(.{})) {
+            if (glfw.getError()) |err| {
+                log.err("error initializing GLFW err={} msg={s}", .{
+                    err.error_code,
+                    err.description,
+                });
+                return err.error_code;
+            }
+
+            return error.GlfwInitFailedUnknownReason;
+        }
         glfw.setErrorCallback(glfwErrorCallback);
 
         // Mac-specific state. For example, on Mac we enable window tabbing.
