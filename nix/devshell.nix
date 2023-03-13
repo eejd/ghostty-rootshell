@@ -2,7 +2,6 @@
 
 , debugedit
 , flatpak-builder
-, fpm
 , gdb
 , glxinfo
 , nodejs
@@ -67,7 +66,6 @@ in mkShell rec {
 
   nativeBuildInputs = [
     # For builds
-    fpm
     llvmPackages_latest.llvm
     pkg-config
     scdoc

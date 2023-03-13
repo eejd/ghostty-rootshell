@@ -61,6 +61,7 @@ stdenv.mkDerivation rec {
     export MACH_SDK_PATH=${src}/vendor/mach-sdk
     zig build \
       -Dcpu=baseline \
+      -Dversion-string="${version}-nixdev" \
       --prefix $out \
       install
 

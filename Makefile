@@ -11,15 +11,6 @@ dev/install:
 	cp zig-out/bin/ghostty ${HOME}/bin/devtty
 .PHONY: dev/install
 
-# Create a binary deb. This isn't meant for general purpose use. This is just
-# for testing. General purpose should use a real package manager (I don't
-# maintain it at the moment).
-deb:
-	rm -rf zig-out/
-	zig build -Doptimize=ReleaseFast -Dapp-runtime=gtk
-	fpm -C zig-out/ -s dir -t deb -n ghostty --prefix /usr ./
-.PHONY: deb
-
 # glad updates the GLAD loader. To use this, place the generated glad.zip
 # in this directory next to the Makefile, remove vendor/glad and run this target.
 #
