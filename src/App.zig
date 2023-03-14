@@ -18,7 +18,6 @@ const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
 const macos = @import("macos");
 const objc = @import("objc");
-const DevMode = @import("DevMode.zig");
 
 const log = std.log.scoped(.app);
 
@@ -43,9 +42,6 @@ quit: bool,
 pub fn create(
     alloc: Allocator,
 ) !*App {
-    // If we have DevMode on, store the config so we can show it
-    //if (DevMode.enabled) DevMode.instance.config = config;
-
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
     app.* = .{
@@ -93,17 +89,12 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
 }
 
 /// Update the configuration associated with the app. This can only be
-/// called from the main thread.
-///
-/// The caller owns the config memory. The prior config must not be freed
-/// until this function returns successfully.
+/// called from the main thread. The caller owns the config memory. The
+/// memory can be freed immediately when this returns.
 pub fn updateConfig(self: *App, config: *const Config) !void {
-    // Update our config
-    self.config = config;
-
     // Go through and update all of the surface configurations.
     for (self.surfaces.items) |surface| {
-        try surface.handleMessage(.{ .change_config = config });
+        try surface.core_surface.handleMessage(.{ .change_config = config });
     }
 }
 
@@ -144,9 +135,9 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
 }
 
 fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
-    _ = rt_app;
-    _ = self;
-    //try rt_app.reloadConfig();
+    if (try rt_app.reloadConfig()) |new| {
+        try self.updateConfig(new);
+    }
 }
 
 fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {

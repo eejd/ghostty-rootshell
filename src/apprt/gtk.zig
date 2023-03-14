@@ -137,6 +137,23 @@ pub const App = struct {
         glfw.terminate();
     }
 
+    /// Reload the configuration. This should return the new configuration.
+    /// The old value can be freed immediately at this point assuming a
+    /// successful return.
+    ///
+    /// The returned pointer value is only valid for a stable self pointer.
+    pub fn reloadConfig(self: *App) !?*const Config {
+        // Load our configuration
+        var config = try Config.load(self.core_app.alloc);
+        errdefer config.deinit();
+
+        // Update the existing config, be sure to clean up the old one.
+        self.config.deinit();
+        self.config = config;
+
+        return &self.config;
+    }
+
     pub fn wakeup(self: App) void {
         _ = self;
         c.g_main_context_wakeup(null);
