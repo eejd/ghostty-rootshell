@@ -19,6 +19,7 @@ const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
+const Config = @import("../config.zig").Config;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -29,6 +30,7 @@ const log = std.log.scoped(.glfw);
 
 pub const App = struct {
     app: *CoreApp,
+    config: Config,
 
     /// Mac-specific state.
     darwin: if (Darwin.enabled) Darwin else void,
@@ -53,14 +55,19 @@ pub const App = struct {
         var darwin = if (Darwin.enabled) try Darwin.init() else {};
         errdefer if (Darwin.enabled) darwin.deinit();
 
+        // Load our configuration
+        var config = try Config.load(core_app.alloc);
+        errdefer config.deinit();
+
         return .{
             .app = core_app,
+            .config = config,
             .darwin = darwin,
         };
     }
 
-    pub fn terminate(self: App) void {
-        _ = self;
+    pub fn terminate(self: *App) void {
+        self.config.deinit();
         glfw.terminate();
     }
 
@@ -139,7 +146,7 @@ pub const App = struct {
         errdefer surface.deinit();
 
         // If we have a parent, inherit some properties
-        if (self.app.config.@"window-inherit-font-size") {
+        if (self.config.@"window-inherit-font-size") {
             if (parent_) |parent| {
                 surface.core_surface.setFontSize(parent.font_size);
             }
@@ -313,7 +320,7 @@ pub const Surface = struct {
         // Initialize our surface now that we have the stable pointer.
         try self.core_surface.init(
             app.app.alloc,
-            app.app.config,
+            &app.config,
             .{ .rt_app = app, .mailbox = &app.app.mailbox },
             self,
         );

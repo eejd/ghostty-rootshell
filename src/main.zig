@@ -14,8 +14,6 @@ const xdg = @import("xdg.zig");
 const apprt = @import("apprt.zig");
 
 const App = @import("App.zig");
-const cli_args = @import("cli_args.zig");
-const Config = @import("config.zig").Config;
 const Ghostty = @import("main_c.zig").Ghostty;
 
 /// Global process state. This is initialized in main() for exe artifacts
@@ -29,13 +27,8 @@ pub fn main() !void {
     defer state.deinit();
     const alloc = state.alloc;
 
-    // Try reading our config
-    var config = try Config.load(alloc);
-    defer config.deinit();
-    //std.log.debug("config={}", .{config});
-
     // Create our app state
-    var app = try App.create(alloc, &config);
+    var app = try App.create(alloc);
     defer app.destroy();
 
     // Create our runtime app

@@ -2,6 +2,7 @@ const App = @import("../App.zig");
 const Surface = @import("../Surface.zig");
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
+const Config = @import("../config.zig").Config;
 
 /// The message types that can be sent to a single surface.
 pub const Message = union(enum) {
@@ -23,6 +24,11 @@ pub const Message = union(enum) {
 
     /// Write the clipboard contents.
     clipboard_write: WriteReq,
+
+    /// Change the configuration to the given configuration. The pointer is
+    /// not valid after receiving this message so any config must be used
+    /// and derived immediately.
+    change_config: *const Config,
 
     /// Close the surface. This will only close the current surface that
     /// receives this, not the full application.

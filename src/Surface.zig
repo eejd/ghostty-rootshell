@@ -528,6 +528,8 @@ pub fn close(self: *Surface) void {
 /// surface.
 pub fn handleMessage(self: *Surface, msg: Message) !void {
     switch (msg) {
+        .change_config => |config| try self.changeConfig(config),
+
         .set_title => |*v| {
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
@@ -551,6 +553,24 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .close => self.close(),
     }
+}
+
+/// Update our configuration at runtime.
+fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
+    // Update our new derived config immediately
+    const derived = DerivedConfig.init(self.alloc, config) catch |err| {
+        // If the derivation fails then we just log and return. We don't
+        // hard fail in this case because we don't want to error the surface
+        // when config fails we just want to keep using the old config.
+        log.err("error updating configuration err={}", .{err});
+        return;
+    };
+    self.config.deinit();
+    self.config = derived;
+
+    // Update our derived configurations for the renderer and termio,
+    // then send them a message to update.
+    // TODO
 }
 
 /// Returns the x/y coordinate of where the IME (Input Method Editor)

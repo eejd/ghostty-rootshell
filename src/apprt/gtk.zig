@@ -9,6 +9,7 @@ const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
+const Config = @import("../config.zig").Config;
 
 pub const c = @cImport({
     @cInclude("gtk/gtk.h");
@@ -37,6 +38,7 @@ pub const App = struct {
     };
 
     core_app: *CoreApp,
+    config: Config,
 
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
@@ -52,6 +54,10 @@ pub const App = struct {
         // figure out a reliable way to determine this ourselves, we can get
         // rid of this dep.
         if (!glfw.init(.{})) return error.GlfwInitFailed;
+
+        // Load our configuration
+        var config = try Config.load(core_app.alloc);
+        errdefer config.deinit();
 
         // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
@@ -108,6 +114,7 @@ pub const App = struct {
         return .{
             .core_app = core_app,
             .app = app,
+            .config = config,
             .ctx = ctx,
             .cursor_default = cursor_default,
             .cursor_ibeam = cursor_ibeam,
@@ -116,7 +123,7 @@ pub const App = struct {
 
     // Terminate the application. The application will not be restarted after
     // this so all global state can be cleaned up.
-    pub fn terminate(self: App) void {
+    pub fn terminate(self: *App) void {
         c.g_settings_sync();
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
@@ -124,6 +131,8 @@ pub const App = struct {
 
         c.g_object_unref(self.cursor_ibeam);
         c.g_object_unref(self.cursor_default);
+
+        self.config.deinit();
 
         glfw.terminate();
     }
@@ -575,7 +584,7 @@ pub const Surface = struct {
         // Initialize our surface now that we have the stable pointer.
         try self.core_surface.init(
             self.app.core_app.alloc,
-            self.app.core_app.config,
+            &self.app.config,
             .{ .rt_app = self.app, .mailbox = &self.app.core_app.mailbox },
             self,
         );
