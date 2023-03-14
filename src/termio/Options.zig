@@ -11,7 +11,9 @@ grid_size: renderer.GridSize,
 /// The size of the viewport in pixels.
 screen_size: renderer.ScreenSize,
 
-/// The app configuration.
+/// The app configuration. This must NOT be stored by any termio implementation.
+/// The memory it points to is NOT stable after the init call so any values
+/// in here must be copied.
 config: *const Config,
 
 /// The render state. The IO implementation can modify anything here. The

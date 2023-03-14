@@ -5,7 +5,9 @@ const font = @import("../font/main.zig");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
 
-/// The app configuration.
+/// The app configuration. This must NOT be stored by any termio implementation.
+/// The memory it points to is NOT stable after the init call so any values
+/// in here must be copied.
 config: *const Config,
 
 /// The font group that should be used.
