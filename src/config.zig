@@ -239,6 +239,12 @@ pub const Config = struct {
         const alloc = result._arena.?.allocator();
 
         // Add our default keybindings
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .space, .mods = .{ .super = true, .alt = true, .ctrl = true } },
+            .{ .reload_config = {} },
+        );
+
         {
             // On macOS we default to super but Linux ctrl+shift since
             // ctrl+c is to kill the process.

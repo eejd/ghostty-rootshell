@@ -852,6 +852,12 @@ pub fn keyCallback(
                 .unbind => unreachable,
                 .ignore => {},
 
+                .reload_config => {
+                    _ = self.app_mailbox.push(.{
+                        .reload_config = {},
+                    }, .{ .instant = {} });
+                },
+
                 .csi => |data| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = "\x1B[",

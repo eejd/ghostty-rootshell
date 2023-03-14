@@ -135,7 +135,9 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
 }
 
 fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
+    log.debug("reloading configuration", .{});
     if (try rt_app.reloadConfig()) |new| {
+        log.debug("new configuration received, applying", .{});
         try self.updateConfig(new);
     }
 }
