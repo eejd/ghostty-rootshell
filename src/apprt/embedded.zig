@@ -13,6 +13,7 @@ const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
+const Config = @import("../config.zig").Config;
 
 const log = std.log.scoped(.embedded_window);
 
@@ -34,6 +35,11 @@ pub const App = struct {
         /// Callback called to wakeup the event loop. This should trigger
         /// a full tick of the app loop.
         wakeup: *const fn (AppUD) callconv(.C) void,
+
+        /// Reload the configuration and return the new configuration.
+        /// The old configuration can be freed immediately when this is
+        /// called.
+        reload_config: *const fn (AppUD) callconv(.C) ?*const Config,
 
         /// Called to set the title of the window.
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
@@ -57,14 +63,29 @@ pub const App = struct {
     };
 
     core_app: *CoreApp,
+    config: *const Config,
     opts: Options,
 
-    pub fn init(core_app: *CoreApp, opts: Options) !App {
-        return .{ .core_app = core_app, .opts = opts };
+    pub fn init(core_app: *CoreApp, config: *const Config, opts: Options) !App {
+        return .{
+            .core_app = core_app,
+            .config = config,
+            .opts = opts,
+        };
     }
 
     pub fn terminate(self: App) void {
         _ = self;
+    }
+
+    pub fn reloadConfig(self: *App) !?*const Config {
+        // Reload
+        if (self.opts.reload_config(self.opts.userdata)) |new| {
+            self.config = new;
+            return self.config;
+        }
+
+        return null;
     }
 
     pub fn wakeup(self: App) void {
@@ -143,7 +164,7 @@ pub const Surface = struct {
         // ready to use.
         try self.core_surface.init(
             app.core_app.alloc,
-            app.core_app.config,
+            app.config,
             .{ .rt_app = app, .mailbox = &app.core_app.mailbox },
             self,
         );
@@ -338,7 +359,6 @@ pub const Surface = struct {
 // C API
 pub const CAPI = struct {
     const global = &@import("../main.zig").state;
-    const Config = @import("../config.zig").Config;
 
     /// Create a new app.
     export fn ghostty_app_new(
@@ -355,13 +375,13 @@ pub const CAPI = struct {
         opts: *const apprt.runtime.App.Options,
         config: *const Config,
     ) !*App {
-        var core_app = try CoreApp.create(global.alloc, config);
+        var core_app = try CoreApp.create(global.alloc);
         errdefer core_app.destroy();
 
         // Create our runtime app
         var app = try global.alloc.create(App);
         errdefer global.alloc.destroy(app);
-        app.* = try App.init(core_app, opts.*);
+        app.* = try App.init(core_app, config, opts.*);
         errdefer app.terminate();
 
         return app;

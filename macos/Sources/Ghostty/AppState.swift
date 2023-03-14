@@ -54,6 +54,7 @@ extension Ghostty {
             var runtime_cfg = ghostty_runtime_config_s(
                 userdata: Unmanaged.passUnretained(self).toOpaque(),
                 wakeup_cb: { userdata in AppState.wakeup(userdata) },
+                reload_config_cb: { userdata in AppState.reloadConfig(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
                 read_clipboard_cb: { userdata in AppState.readClipboard(userdata) },
                 write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) },
@@ -138,6 +139,13 @@ extension Ghostty {
             let pb = NSPasteboard.general
             pb.declareTypes([.string], owner: nil)
             pb.setString(valueStr, forType: .string)
+        }
+        
+        static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
+            // TODO: implement config reloading in the mac app
+            let state = Unmanaged<AppState>.fromOpaque(userdata!).takeUnretainedValue()
+            _ = state
+            return nil
         }
         
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
