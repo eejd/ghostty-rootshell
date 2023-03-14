@@ -19,6 +19,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -28,7 +29,7 @@ const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const trace = @import("tracy").trace;
 const terminal = @import("terminal/main.zig");
-const Config = @import("config.zig").Config;
+const configpkg = @import("config.zig");
 const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
@@ -85,8 +86,10 @@ cell_size: renderer.CellSize,
 /// Explicit padding due to configuration
 padding: renderer.Padding,
 
-/// The app configuration
-config: *const Config,
+/// The configuration derived from the main config. We "derive" it so that
+/// we don't have a shared pointer hanging around that we need to worry about
+/// the lifetime of. This makes updating config at runtime easier.
+config: DerivedConfig,
 
 /// Set to true for a single GLFW key/char callback cycle to cause the
 /// char callback to ignore. GLFW seems to always do key followed by char
@@ -123,13 +126,48 @@ const Mouse = struct {
     event_point: terminal.point.Viewport = .{},
 };
 
+/// The configuration that a surface has, this is copied from the main
+/// Config struct usually to prevent sharing a single value.
+const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
+    /// For docs for these, see the associated config they are derived from.
+    original_font_size: u8,
+    keybind: configpkg.Keybinds,
+    clipboard_read: bool,
+    clipboard_write: bool,
+    clipboard_trim_trailing_spaces: bool,
+
+    pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        return .{
+            .original_font_size = config.@"font-size",
+            .keybind = try config.keybind.clone(alloc),
+            .clipboard_read = config.@"clipboard-read",
+            .clipboard_write = config.@"clipboard-write",
+            .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+
+            // Assignments happen sequentially so we have to do this last
+            // so that the memory is captured from allocs above.
+            .arena = arena,
+        };
+    }
+
+    pub fn deinit(self: *DerivedConfig) void {
+        self.arena.deinit();
+    }
+};
+
 /// Create a new surface. This must be called from the main thread. The
 /// pointer to the memory for the surface must be provided and must be
 /// stable due to interfacing with various callbacks.
 pub fn init(
     self: *Surface,
     alloc: Allocator,
-    config: *const Config,
+    config: *const configpkg.Config,
     app_mailbox: App.Mailbox,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
@@ -369,7 +407,7 @@ pub fn init(
         .grid_size = grid_size,
         .cell_size = cell_size,
         .padding = padding,
-        .config = config,
+        .config = try DerivedConfig.init(alloc, config),
 
         .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
     };
@@ -476,6 +514,7 @@ pub fn deinit(self: *Surface) void {
     self.alloc.destroy(self.font_group);
 
     self.alloc.destroy(self.renderer_state.mutex);
+    self.config.deinit();
     log.info("surface closed addr={x}", .{@ptrToInt(self)});
 }
 
@@ -557,7 +596,7 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 }
 
 fn clipboardRead(self: *const Surface, kind: u8) !void {
-    if (!self.config.@"clipboard-read") {
+    if (!self.config.clipboard_read) {
         log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
         return;
     }
@@ -593,7 +632,7 @@ fn clipboardRead(self: *const Surface, kind: u8) !void {
 }
 
 fn clipboardWrite(self: *const Surface, data: []const u8) !void {
-    if (!self.config.@"clipboard-write") {
+    if (!self.config.clipboard_write) {
         log.info("application attempted to write clipboard, but 'clipboard-write' setting is off", .{});
         return;
     }
@@ -833,7 +872,7 @@ pub fn keyCallback(
                         var buf = self.io.terminal.screen.selectionString(
                             self.alloc,
                             sel,
-                            self.config.@"clipboard-trim-trailing-spaces",
+                            self.config.clipboard_trim_trailing_spaces,
                         ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;
@@ -901,7 +940,7 @@ pub fn keyCallback(
                     log.debug("reset font size", .{});
 
                     var size = self.font_size;
-                    size.points = self.config.@"font-size";
+                    size.points = self.config.original_font_size;
                     self.setFontSize(size);
                 },
 

@@ -30,7 +30,9 @@ alloc: Allocator,
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
 
-// The configuration for the app.
+// The configuration for the app. This may change (app runtimes are notified
+// via the callback), but the change will only ever happen during tick()
+// so app runtimes can ensure there are no data races in reading this.
 config: *const Config,
 
 /// The mailbox that can be used to send this thread messages. Note
