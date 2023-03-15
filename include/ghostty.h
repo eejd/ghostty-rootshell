@@ -23,34 +23,12 @@ extern "C" {
 //-------------------------------------------------------------------
 // Types
 
-// Fully defined types. This MUST be kept in sync with equivalent Zig
-// structs. To find the Zig struct, grep for this type name. The documentation
-// for all of these types is available in the Zig source.
-typedef void (*ghostty_runtime_wakeup_cb)(void *);
-typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
-typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
-typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
-typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
-typedef void (*ghostty_runtime_close_surface_cb)(void *);
-typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
+// Opaque types
+typedef void *ghostty_app_t;
+typedef void *ghostty_config_t;
+typedef void *ghostty_surface_t;
 
-typedef struct {
-    void *userdata;
-    ghostty_runtime_wakeup_cb wakeup_cb;
-    ghostty_runtime_set_title_cb set_title_cb;
-    ghostty_runtime_read_clipboard_cb read_clipboard_cb;
-    ghostty_runtime_write_clipboard_cb write_clipboard_cb;
-    ghostty_runtime_new_split_cb new_split_cb;
-    ghostty_runtime_close_surface_cb close_surface_cb;
-    ghostty_runtime_focus_split_cb focus_split_cb;
-} ghostty_runtime_config_s;
-
-typedef struct {
-    void *userdata;
-    void *nsview;
-    double scale_factor;
-} ghostty_surface_config_s;
-
+// Enums are up top so we can reference them later.
 typedef enum {
     GHOSTTY_SPLIT_RIGHT,
     GHOSTTY_SPLIT_DOWN
@@ -228,10 +206,33 @@ typedef enum {
     GHOSTTY_KEY_RIGHT_SUPER,
 } ghostty_input_key_e;
 
-// Opaque types
-typedef void *ghostty_app_t;
-typedef void *ghostty_config_t;
-typedef void *ghostty_surface_t;
+// Fully defined types. This MUST be kept in sync with equivalent Zig
+// structs. To find the Zig struct, grep for this type name. The documentation
+// for all of these types is available in the Zig source.
+typedef struct {
+    void *userdata;
+    void *nsview;
+    double scale_factor;
+} ghostty_surface_config_s;
+
+typedef void (*ghostty_runtime_wakeup_cb)(void *);
+typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
+typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
+typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
+typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
+typedef void (*ghostty_runtime_close_surface_cb)(void *);
+typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
+
+typedef struct {
+    void *userdata;
+    ghostty_runtime_wakeup_cb wakeup_cb;
+    ghostty_runtime_set_title_cb set_title_cb;
+    ghostty_runtime_read_clipboard_cb read_clipboard_cb;
+    ghostty_runtime_write_clipboard_cb write_clipboard_cb;
+    ghostty_runtime_new_split_cb new_split_cb;
+    ghostty_runtime_close_surface_cb close_surface_cb;
+    ghostty_runtime_focus_split_cb focus_split_cb;
+} ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------
 // Published API
