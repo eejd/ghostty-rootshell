@@ -27,7 +27,9 @@ struct GhosttyApp: App {
                 Ghostty.TerminalSplit(onClose: Self.closeWindow)
                     .ghosttyApp(ghostty.app!)
             }
-        }.commands {
+        }
+        .backport.defaultSize(width: 800, height: 600)
+        .commands {
             CommandGroup(after: .newItem) {
                 Button("New Tab", action: Self.newTab).keyboardShortcut("t", modifiers: [.command])
                 Divider()
