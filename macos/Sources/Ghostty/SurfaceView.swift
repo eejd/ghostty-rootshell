@@ -38,24 +38,42 @@ extension Ghostty {
         // remains the same, the surface that is being rendered remains the same.
         @ObservedObject var surfaceView: SurfaceView
         
+        // Maintain whether our view has focus or not
         @FocusState private var surfaceFocus: Bool
         
-        // https://nilcoalescing.com/blog/DetectFocusedWindowOnMacOS/
-        @Environment(\.controlActiveState) var controlActiveState
+        // Maintain whether our window has focus (is key) or not
+        @State private var windowFocus: Bool = false
         
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.
-        private var hasFocus: Bool { surfaceFocus && controlActiveState == .key }
+        private var hasFocus: Bool { surfaceFocus && windowFocus }
         
         var body: some View {
             // We use a GeometryReader to get the frame bounds so that our metal surface
             // is up to date. See TerminalSurfaceView for why we don't use the NSView
             // resize callback.
             GeometryReader { geo in
+                // We use these notifications to determine when the window our surface is
+                // attached to is or is not focused. 
+                let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
+                let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
+                
                 Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                     .focused($surfaceFocus)
                     .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
                     .focusedValue(\.ghosttySurfaceView, surfaceView)
+                    .onReceive(pubBecomeKey) { notification in
+                        guard let window = notification.object as? NSWindow else { return }
+                        guard let surfaceWindow = surfaceView.window else { return }
+                        windowFocus = surfaceWindow == window
+                    }
+                    .onReceive(pubResign) { notification in
+                        guard let window = notification.object as? NSWindow else { return }
+                        guard let surfaceWindow = surfaceView.window else { return }
+                        if (surfaceWindow == window) {
+                            windowFocus = false
+                        }
+                    }
             }
             .ghosttySurfaceView(surfaceView)
         }
