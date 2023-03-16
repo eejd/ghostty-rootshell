@@ -217,11 +217,7 @@ pub const Config = struct {
         try result.loadDefaultFiles(alloc_gpa);
 
         // Parse the config from the CLI args
-        {
-            var iter = try std.process.argsWithAllocator(alloc_gpa);
-            defer iter.deinit();
-            try cli_args.parse(Config, alloc_gpa, &result, &iter);
-        }
+        try result.loadCliArgs(alloc_gpa);
 
         // Parse the config files that were added from our file and CLI args.
         try result.loadRecursiveFiles(alloc_gpa);
@@ -562,6 +558,14 @@ pub const Config = struct {
                 .{ err, home_config_path },
             ),
         }
+    }
+
+    /// Load and parse the CLI args.
+    pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
+        // Parse the config from the CLI args
+        var iter = try std.process.argsWithAllocator(alloc_gpa);
+        defer iter.deinit();
+        try cli_args.parse(Config, alloc_gpa, self, &iter);
     }
 
     /// Load and parse the config files that were added in the "config-file" key.
@@ -1188,6 +1192,13 @@ pub const CAPI = struct {
             v.deinit();
             global.alloc.destroy(v);
         }
+    }
+
+    /// Load the configuration from the CLI args.
+    export fn ghostty_config_load_cli_args(self: *Config) void {
+        self.loadCliArgs(global.alloc) catch |err| {
+            log.err("error loading config err={}", .{err});
+        };
     }
 
     /// Load the configuration from a string in the same format as

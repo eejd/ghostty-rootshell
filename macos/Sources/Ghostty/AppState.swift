@@ -12,12 +12,25 @@ extension Ghostty {
         /// The readiness value of the state.
         @Published var readiness: AppReadiness = .loading
         
-        /// The ghostty global configuration.
-        var config: ghostty_config_t? = nil
+        /// The ghostty global configuration. This should only be changed when it is definitely
+        /// safe to change. It is definite safe to change only when the embedded app runtime
+        /// in Ghostty says so (usually, only in a reload configuration callback).
+        var config: ghostty_config_t? = nil {
+            didSet {
+                // Free the old value whenever we change
+                guard let old = oldValue else { return }
+                ghostty_config_free(old)
+            }
+        }
         
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
         /// in theory you can have multiple... I don't know why you would...
-        var app: ghostty_app_t? = nil
+        var app: ghostty_app_t? = nil {
+            didSet {
+                guard let old = oldValue else { return }
+                ghostty_app_free(old)
+            }
+        }
         
         /// Cached clipboard string for `read_clipboard` callback.
         private var cached_clipboard_string: String? = nil
@@ -31,23 +44,11 @@ extension Ghostty {
             }
             
             // Initialize the global configuration.
-            guard let cfg = ghostty_config_new() else {
-                GhosttyApp.logger.critical("ghostty_config_new failed")
+            guard let cfg = Self.reloadConfig() else {
                 readiness = .error
                 return
             }
             self.config = cfg;
-            
-            // Load our configuration files from the home directory.
-            ghostty_config_load_default_files(cfg);
-            ghostty_config_load_recursive_files(cfg);
-            
-            // TODO: we'd probably do some config loading here... for now we'd
-            // have to do this synchronously. When we support config updating we can do
-            // this async and update later.
-            
-            // Finalize will make our defaults available.
-            ghostty_config_finalize(cfg)
             
             // Create our "runtime" config. The "runtime" is the configuration that ghostty
             // uses to interface with the application runtime environment.
@@ -75,8 +76,32 @@ extension Ghostty {
         }
         
         deinit {
-            ghostty_app_free(app)
-            ghostty_config_free(config)
+            // This will force the didSet callbacks to run which free.
+            self.app = nil
+            self.config = nil
+        }
+        
+        /// Initializes a new configuration and loads all the values.
+        static func reloadConfig() -> ghostty_config_t? {
+            // Initialize the global configuration.
+            guard let cfg = ghostty_config_new() else {
+                GhosttyApp.logger.critical("ghostty_config_new failed")
+                return nil
+            }
+            
+            // Load our configuration files from the home directory.
+            ghostty_config_load_default_files(cfg);
+            ghostty_config_load_cli_args(cfg);
+            ghostty_config_load_recursive_files(cfg);
+            
+            // TODO: we'd probably do some config loading here... for now we'd
+            // have to do this synchronously. When we support config updating we can do
+            // this async and update later.
+            
+            // Finalize will make our defaults available.
+            ghostty_config_finalize(cfg)
+            
+            return cfg
         }
         
         func appTick() {
@@ -142,10 +167,17 @@ extension Ghostty {
         }
         
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
-            // TODO: implement config reloading in the mac app
+            guard let newConfig = AppState.reloadConfig() else {
+                GhosttyApp.logger.warning("failed to reload configuration")
+                return nil
+            }
+            
+            // Assign the new config. This will automatically free the old config.
+            // It is safe to free the old config from within this function call.
             let state = Unmanaged<AppState>.fromOpaque(userdata!).takeUnretainedValue()
-            _ = state
-            return nil
+            state.config = newConfig
+            
+            return newConfig
         }
         
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
