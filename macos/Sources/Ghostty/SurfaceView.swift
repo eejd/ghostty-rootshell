@@ -153,6 +153,16 @@ extension Ghostty {
             ghostty_surface_free(surface)
         }
         
+        /// Close the surface early. This will free the associated Ghostty surface and the view will
+        /// no longer render. The view can never be used again. This is a way for us to free the
+        /// Ghostty resources while references may still be held to this view. I've found that SwiftUI
+        /// tends to hold this view longer than it should so we free the expensive stuff explicitly.
+        func close() {
+            guard let surface = self.surface else { return }
+            ghostty_surface_free(surface)
+            self.surface = nil
+        }
+        
         func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             ghostty_surface_set_focus(surface, focused)
