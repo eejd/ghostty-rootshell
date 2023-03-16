@@ -14,6 +14,12 @@ pub const c = @cImport({
     @cInclude("gtk/gtk.h");
 });
 
+/// Compatibility with gobject < 2.74
+const G_CONNECT_DEFAULT = if (@hasDecl(c, "G_CONNECT_DEFAULT"))
+    c.G_CONNECT_DEFAULT
+else
+    0;
+
 const log = std.log.scoped(.gtk);
 
 /// App is the entrypoint for the application. This is called after all
@@ -47,7 +53,12 @@ pub const App = struct {
         // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
             opts.id.ptr,
-            c.G_APPLICATION_DEFAULT_FLAGS,
+
+            // GTK >= 2.74
+            if (@hasDecl(c, "G_APPLICATION_DEFAULT_FLAGS"))
+                c.G_APPLICATION_DEFAULT_FLAGS
+            else
+                c.G_APPLICATION_FLAGS_NONE,
         )) orelse return error.GtkInitFailed;
         errdefer c.g_object_unref(app);
         _ = c.g_signal_connect_data(
@@ -56,7 +67,7 @@ pub const App = struct {
             c.G_CALLBACK(&activate),
             null,
             null,
-            c.G_CONNECT_DEFAULT,
+            G_CONNECT_DEFAULT,
         );
 
         // We don't use g_application_run, we want to manually control the
@@ -197,7 +208,7 @@ const Window = struct {
         c.gtk_window_set_title(gtk_window, "Ghostty");
         c.gtk_window_set_default_size(gtk_window, 200, 200);
         c.gtk_widget_show(window);
-        _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, G_CONNECT_DEFAULT);
 
         // Create a notebook to hold our tabs.
         const notebook_widget = c.gtk_notebook_new();
@@ -210,7 +221,7 @@ const Window = struct {
         // Create our add button for new tabs
         const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
         c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
-        _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, G_CONNECT_DEFAULT);
 
         // The notebook is our main child
         c.gtk_window_set_child(gtk_window, notebook_widget);
@@ -241,7 +252,7 @@ const Window = struct {
         const label_close = @ptrCast(*c.GtkButton, label_close_widget);
         c.gtk_button_set_has_frame(label_close, 0);
         c.gtk_box_append(label_box, label_close_widget);
-        _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, G_CONNECT_DEFAULT);
 
         // Initialize the GtkGLArea and attach it to our surface.
         // The surface starts in the "unrealized" state because we have to
@@ -537,20 +548,20 @@ pub const Surface = struct {
         errdefer self.* = undefined;
 
         // GL events
-        _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, G_CONNECT_DEFAULT);
 
-        _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(ec_key_press, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(gesture_click, "released", c.G_CALLBACK(&gtkMouseUp), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(ec_motion, "motion", c.G_CALLBACK(&gtkMouseMotion), self, null, c.G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(ec_scroll, "scroll", c.G_CALLBACK(&gtkMouseScroll), self, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_key_press, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(gesture_click, "released", c.G_CALLBACK(&gtkMouseUp), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_motion, "motion", c.G_CALLBACK(&gtkMouseMotion), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(ec_scroll, "scroll", c.G_CALLBACK(&gtkMouseScroll), self, null, G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
