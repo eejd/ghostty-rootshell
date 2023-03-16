@@ -216,6 +216,7 @@ typedef struct {
 } ghostty_surface_config_s;
 
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
+typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
@@ -226,6 +227,7 @@ typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direc
 typedef struct {
     void *userdata;
     ghostty_runtime_wakeup_cb wakeup_cb;
+    ghostty_runtime_reload_config_cb reload_config_cb;
     ghostty_runtime_set_title_cb set_title_cb;
     ghostty_runtime_read_clipboard_cb read_clipboard_cb;
     ghostty_runtime_write_clipboard_cb write_clipboard_cb;
