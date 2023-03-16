@@ -45,6 +45,23 @@ extension Ghostty {
             }
         }
         
+        /// Close the surface associated with this node. This will likely deinitialize the
+        /// surface. At this point, the surface view in this node tree can never be used again.
+        func close() {
+            switch (self) {
+            case .noSplit(let leaf):
+                leaf.surface.close()
+                
+            case .horizontal(let container):
+                container.topLeft.close()
+                container.bottomRight.close()
+                
+            case .vertical(let container):
+                container.topLeft.close()
+                container.bottomRight.close()
+            }
+        }
+        
         class Leaf: ObservableObject {
             let app: ghostty_app_t
             @Published var surface: SurfaceView
@@ -144,6 +161,11 @@ extension Ghostty {
                     )
                     .onChange(of: requestClose) { value in
                         guard value else { return }
+                        
+                        // Free any resources associated with this root, we're closing.
+                        node.close()
+                        
+                        // Call our callback
                         guard let onClose = self.onClose else { return }
                         onClose()
                     }
@@ -289,6 +311,9 @@ extension Ghostty {
                 .onChange(of: closeTopLeft) { value in
                     guard value else { return }
                     
+                    // Close the top left and release all resources
+                    container.topLeft.close()
+                    
                     // When closing the topLeft, our parent becomes the bottomRight.
                     node = container.bottomRight
                     TerminalSplitLeaf.moveFocus(node, previous: container.topLeft)
@@ -306,6 +331,9 @@ extension Ghostty {
                 )
                 .onChange(of: closeBottomRight) { value in
                     guard value else { return }
+                    
+                    // Close the node and release all resources
+                    container.bottomRight.close()
                     
                     // When closing the bottomRight, our parent becomes the topLeft.
                     node = container.topLeft
