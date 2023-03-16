@@ -49,6 +49,44 @@ April 2022.
 | Linux (Other) | [Build from Source](#developing-ghostty)  | |
 | Windows | n/a | Not supported yet |
 
+### Configuration
+
+To configure Ghostty, you must use a configuration file. GUI-based configuration
+is on the roadmap but not yet supported. The configuration file must be
+placed at `$XDG_CONFIG_HOME/ghostty/config`, which defaults to 
+`~/.config/ghostty/config` if the [XDG environment is not set](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
+
+The file format is documented below as an example:
+
+```
+# The syntax is "key = value". The whitespace around the equals doesn't matter.
+background = 282c34
+foreground= ffffff
+
+# Blank lines are ignored!
+
+keybind =ctrl+z:close
+```
+
+The available keys and valid values are not easily documented yet, but they
+are easily visible if you're mildly comfortable with Zig. The available keys
+are just the keys (verbatim) in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config.zig).
+The keys are documented there, too.
+
+#### Debugging Configuration
+
+You can verify that configuration is being properly loaded by looking at
+the debug output of Ghostty. Documentation for how to view the debug output
+is in the "building Ghostty" section at the end of the README.
+
+In the debug output, you should see in the first 20 lines or so messages
+about loading (or not loading) a configuration file, as well as any errors
+it may have encountered. Ghostty currently ignores errors and treats it
+as if the configuration had not been set, so this is the best place to look
+if something isn't working.
+
+Eventually, we'll have a better mecanism for showing errors to the user.
+
 ## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
