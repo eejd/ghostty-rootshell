@@ -322,7 +322,7 @@ pub fn init(
 
     // Create our terminal grid with the initial size
     var renderer_impl = try Renderer.init(alloc, .{
-        .config = config,
+        .config = try Renderer.DerivedConfig.init(alloc, config),
         .font_group = font_group,
         .padding = .{
             .explicit = padding,

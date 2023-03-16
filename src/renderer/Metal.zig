@@ -11,6 +11,7 @@ const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
 const apprt = @import("../apprt.zig");
+const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -30,6 +31,9 @@ const log = std.log.scoped(.metal);
 
 /// Allocator that can be used
 alloc: std.mem.Allocator,
+
+/// The configuration we need derived from the main config.
+config: DerivedConfig,
 
 /// The mailbox for communicating with the window.
 surface_mailbox: apprt.surface.Mailbox,
@@ -51,17 +55,6 @@ focused: bool,
 /// blinking.
 cursor_visible: bool,
 cursor_style: renderer.CursorStyle,
-cursor_color: ?terminal.color.RGB,
-
-/// Default foreground color
-foreground: terminal.color.RGB,
-
-/// Default background color
-background: terminal.color.RGB,
-
-/// Default selection color
-selection_background: ?terminal.color.RGB,
-selection_foreground: ?terminal.color.RGB,
 
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
@@ -115,6 +108,48 @@ const GPUCellMode = enum(u8) {
     fg = 2,
     fg_color = 7,
     strikethrough = 8,
+};
+
+/// The configuration for this renderer that is derived from the main
+/// configuration. This must be exported so that we don't need to
+/// pass around Config pointers which makes memory management a pain.
+pub const DerivedConfig = struct {
+    cursor_color: ?terminal.color.RGB,
+    background: terminal.color.RGB,
+    foreground: terminal.color.RGB,
+    selection_background: ?terminal.color.RGB,
+    selection_foreground: ?terminal.color.RGB,
+
+    pub fn init(
+        alloc_gpa: Allocator,
+        config: *const configpkg.Config,
+    ) !DerivedConfig {
+        _ = alloc_gpa;
+
+        return .{
+            .cursor_color = if (config.@"cursor-color") |col|
+                col.toTerminalRGB()
+            else
+                null,
+
+            .background = config.background.toTerminalRGB(),
+            .foreground = config.foreground.toTerminalRGB(),
+
+            .selection_background = if (config.@"selection-background") |bg|
+                bg.toTerminalRGB()
+            else
+                null,
+
+            .selection_foreground = if (config.@"selection-foreground") |bg|
+                bg.toTerminalRGB()
+            else
+                null,
+        };
+    }
+
+    pub fn deinit(self: *DerivedConfig) void {
+        _ = self;
+    }
 };
 
 /// Returns the hints that we want for this
@@ -233,6 +268,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
     return Metal{
         .alloc = alloc,
+        .config = options.config,
         .surface_mailbox = options.surface_mailbox,
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .screen_size = null,
@@ -240,17 +276,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .focused = true,
         .cursor_visible = true,
         .cursor_style = .box,
-        .cursor_color = if (options.config.@"cursor-color") |col| col.toTerminalRGB() else null,
-        .background = options.config.background.toTerminalRGB(),
-        .foreground = options.config.foreground.toTerminalRGB(),
-        .selection_background = if (options.config.@"selection-background") |bg|
-            bg.toTerminalRGB()
-        else
-            null,
-        .selection_foreground = if (options.config.@"selection-foreground") |bg|
-            bg.toTerminalRGB()
-        else
-            null,
 
         // Render state
         .cells_bg = .{},
@@ -285,6 +310,8 @@ pub fn deinit(self: *Metal) void {
 
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
+
+    self.config.deinit();
 
     deinitMTLResource(self.buf_cells_bg);
     deinitMTLResource(self.buf_cells);
@@ -482,15 +509,15 @@ pub fn render(
         }
 
         // Swap bg/fg if the terminal is reversed
-        const bg = self.background;
-        const fg = self.foreground;
+        const bg = self.config.background;
+        const fg = self.config.foreground;
         defer {
-            self.background = bg;
-            self.foreground = fg;
+            self.config.background = bg;
+            self.config.foreground = fg;
         }
         if (state.terminal.modes.reverse_colors) {
-            self.background = fg;
-            self.foreground = bg;
+            self.config.background = fg;
+            self.config.foreground = bg;
         }
 
         // We used to share terminal state, but we've since learned through
@@ -516,7 +543,7 @@ pub fn render(
             null;
 
         break :critical .{
-            .bg = self.background,
+            .bg = self.config.background,
             .devmode = if (state.devmode) |dm| dm.visible else false,
             .selection = selection,
             .screen = screen_copy,
@@ -878,8 +905,8 @@ pub fn updateCell(
             // If we are selected, we our colors are just inverted fg/bg
             if (sel.contains(screen_point)) {
                 break :colors BgFg{
-                    .bg = self.selection_background orelse self.foreground,
-                    .fg = self.selection_foreground orelse self.background,
+                    .bg = self.config.selection_background orelse self.config.foreground,
+                    .fg = self.config.selection_foreground orelse self.config.background,
                 };
             }
         }
@@ -888,13 +915,13 @@ pub fn updateCell(
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = if (cell.attrs.has_bg) cell.bg else null,
-            .fg = if (cell.attrs.has_fg) cell.fg else self.foreground,
+            .fg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
         } else .{
             // In inverted mode, the background MUST be set to something
             // (is never null) so it is either the fg or default fg. The
             // fg is either the bg or default background.
-            .bg = if (cell.attrs.has_fg) cell.fg else self.foreground,
-            .fg = if (cell.attrs.has_bg) cell.bg else self.background,
+            .bg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
+            .fg = if (cell.attrs.has_bg) cell.bg else self.config.background,
         };
         break :colors res;
     };
@@ -988,7 +1015,7 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         screen.cursor.x,
     );
 
-    const color = self.cursor_color orelse terminal.color.RGB{
+    const color = self.config.cursor_color orelse terminal.color.RGB{
         .r = 0xFF,
         .g = 0xFF,
         .b = 0xFF,
