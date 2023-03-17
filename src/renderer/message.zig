@@ -22,4 +22,7 @@ pub const Message = union(enum) {
 
     /// Change the screen size.
     screen_size: renderer.ScreenSize,
+
+    /// The derived configuration to update the renderer with.
+    change_config: renderer.Renderer.DerivedConfig,
 };

@@ -255,6 +255,10 @@ fn drainMailbox(self: *Thread) !void {
             .screen_size => |size| {
                 try self.renderer.setScreenSize(size);
             },
+
+            .change_config => |config| {
+                try self.renderer.changeConfig(config);
+            },
         }
     }
 }

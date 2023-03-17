@@ -570,7 +570,13 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
 
     // Update our derived configurations for the renderer and termio,
     // then send them a message to update.
-    // TODO
+    var renderer_config = try Renderer.DerivedConfig.init(self.alloc, config);
+    errdefer renderer_config.deinit();
+    // TODO: termio config
+
+    _ = self.renderer_thread.mailbox.push(.{
+        .change_config = renderer_config,
+    }, .{ .forever = {} });
 }
 
 /// Returns the x/y coordinate of where the IME (Input Method Editor)
