@@ -37,6 +37,7 @@ pub const App = struct {
 
     core_app: *CoreApp,
 
+    app_id: [:0]const u8,
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
 
@@ -50,9 +51,13 @@ pub const App = struct {
         // rid of this dep.
         if (!glfw.init(.{})) return error.GlfwInitFailed;
 
+        // We have to copy our app ID because GTK says we own it.
+        var app_id = try core_app.alloc.dupeZ(u8, opts.id);
+        errdefer core_app.alloc.free(app_id);
+
         // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
-            opts.id.ptr,
+            app_id.ptr,
 
             // GTK >= 2.74
             if (@hasDecl(c, "G_APPLICATION_DEFAULT_FLAGS"))
@@ -104,6 +109,7 @@ pub const App = struct {
 
         return .{
             .core_app = core_app,
+            .app_id = app_id,
             .app = app,
             .ctx = ctx,
             .cursor_default = cursor_default,
@@ -121,6 +127,8 @@ pub const App = struct {
 
         c.g_object_unref(self.cursor_ibeam);
         c.g_object_unref(self.cursor_default);
+
+        self.core_app.alloc.free(self.app_id);
 
         glfw.terminate();
     }
