@@ -1175,7 +1175,7 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // The real end of the row is the final row in the soft-wrap.
     const end_row: usize = end_row: {
         var y: usize = pt.y;
-        while (y < y_max) : (y += 1) {
+        while (y <= y_max) : (y += 1) {
             const current = self.getRow(.{ .screen = y });
             if (y == y_max or !current.header().flags.wrap) break :end_row y;
         }
@@ -3057,6 +3057,33 @@ test "Screen: selectLine across soft-wrap ignores blank lines" {
         try testing.expectEqual(@as(usize, 0), sel.start.y);
         try testing.expectEqual(@as(usize, 3), sel.end.x);
         try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+}
+
+test "Screen: selectLine with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 2, 5);
+    defer s.deinit();
+    try s.testWriteString("1A\n2B\n3C\n4D\n5E");
+
+    // Selecting first line
+    {
+        const sel = s.selectLine(.{ .x = 0, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 1), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Selecting last line
+    {
+        const sel = s.selectLine(.{ .x = 0, .y = 4 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 4), sel.start.y);
+        try testing.expectEqual(@as(usize, 1), sel.end.x);
+        try testing.expectEqual(@as(usize, 4), sel.end.y);
     }
 }
 
