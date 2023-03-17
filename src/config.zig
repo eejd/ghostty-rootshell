@@ -180,16 +180,25 @@ pub const Config = struct {
         const alloc = result._arena.?.allocator();
 
         // Add our default keybindings
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .c, .mods = ctrlOrSuper(.{}) },
-            .{ .copy_to_clipboard = {} },
-        );
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .v, .mods = ctrlOrSuper(.{}) },
-            .{ .paste_from_clipboard = {} },
-        );
+        {
+            // On macOS we default to super but Linux ctrl+shift since
+            // ctrl+c is to kill the process.
+            const mods: inputpkg.Mods = if (builtin.target.isDarwin())
+                .{ .super = true }
+            else
+                .{ .ctrl = true, .shift = true };
+
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .c, .mods = mods },
+                .{ .copy_to_clipboard = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .v, .mods = mods },
+                .{ .paste_from_clipboard = {} },
+            );
+        }
 
         // Some control keys
         try result.keybind.set.put(alloc, .{ .key = .up }, .{ .cursor_key = .{
