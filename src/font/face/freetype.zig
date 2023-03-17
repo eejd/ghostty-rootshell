@@ -231,6 +231,11 @@ pub const Face = struct {
         const tgt_w = bitmap.width;
         const tgt_h = bitmap.rows;
 
+        // Must have non-empty bitmap because we return earlier
+        // if zero. We assume the rest of this that it is nont-zero so
+        // this is important.
+        assert(tgt_w > 0 and tgt_h > 0);
+
         // If we resized our bitmap, we need to recalculate some metrics that
         // we use such as the top/left offsets. These need to be scaled by the
         // same ratio as the resize.
@@ -248,10 +253,33 @@ pub const Face = struct {
             break :metrics copy;
         } else glyph.*;
 
-        const region = try atlas.reserve(alloc, tgt_w, tgt_h);
+        // Allocate our texture atlas region
+        const region = region: {
+            // We need to add a 1px padding to the font so that we don't
+            // get fuzzy issues when blending textures.
+            const padding = 1;
 
-        // If we have data, copy it into the atlas
-        if (region.width > 0 and region.height > 0) {
+            // Get the full padded region
+            var region = try atlas.reserve(
+                alloc,
+                tgt_w + (padding * 2), // * 2 because left+right
+                tgt_h + (padding * 2), // * 2 because top+bottom
+            );
+
+            // Modify the region so that we remove the padding so that
+            // we write to the non-zero location. The data in an Altlas
+            // is always initialized to zero (Atlas.clear) so we don't
+            // need to worry about zero-ing that.
+            region.x += padding;
+            region.y += padding;
+            region.width -= padding * 2;
+            region.height -= padding * 2;
+            break :region region;
+        };
+
+        // Copy the image into the region.
+        assert(region.width > 0 and region.height > 0);
+        {
             const depth = atlas.format.depth();
 
             // We can avoid a buffer copy if our atlas width and bitmap
