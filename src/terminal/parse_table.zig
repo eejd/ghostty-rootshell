@@ -25,7 +25,11 @@ pub const table = genTable();
 
 /// Table is the type of the state table. This is dynamically (comptime)
 /// generated to be exactly sized.
-pub const Table = genTableType();
+pub const Table = genTableType(false);
+
+/// OptionalTable is private to this file. We use this to accumulate and
+/// detect invalid transitions created.
+const OptionalTable = genTableType(true);
 
 // Transition is the transition to take within the table
 pub const Transition = struct {
@@ -34,24 +38,23 @@ pub const Transition = struct {
 };
 
 /// Table is the type of the state transition table.
-fn genTableType() type {
+fn genTableType(comptime optional: bool) type {
     const max_u8 = std.math.maxInt(u8);
     const stateInfo = @typeInfo(State);
     const max_state = stateInfo.Enum.fields.len;
-    return [max_u8 + 1][max_state]Transition;
+    const Elem = if (optional) ?Transition else Transition;
+    return [max_u8 + 1][max_state]Elem;
 }
 
 /// Function to generate the full state transition table for VT emulation.
 fn genTable() Table {
     @setEvalBranchQuota(20000);
-    var result: Table = undefined;
 
-    // Initialize everything so every state transition exists
-    var i: usize = 0;
-    while (i < result.len) : (i += 1) {
-        var j: usize = 0;
-        while (j < result[0].len) : (j += 1) {
-            result[i][j] = transition(@intToEnum(State, j), .none);
+    // We accumulate using an "optional" table so we can detect duplicates.
+    var result: OptionalTable = undefined;
+    for (0..result.len) |i| {
+        for (0..result[0].len) |j| {
+            result[i][j] = null;
         }
     }
 
@@ -126,9 +129,6 @@ fn genTable() Table {
         range(&result, 0, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
         range(&result, 0x20, 0x7F, source, source, .ignore);
-
-        // => ground
-        single(&result, 0x9C, source, .ground, .none);
     }
 
     // escape
@@ -218,9 +218,6 @@ fn genTable() Table {
         single(&result, 0x19, source, source, .ignore);
         range(&result, 0, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
-
-        // => ground
-        single(&result, 0x9C, source, .ground, .none);
     }
 
     // dcs_param
@@ -256,9 +253,6 @@ fn genTable() Table {
         range(&result, 0x1C, 0x1F, source, source, .put);
         range(&result, 0x20, 0x7E, source, source, .put);
         single(&result, 0x7F, source, source, .ignore);
-
-        // => ground
-        single(&result, 0x9C, source, .ground, .none);
     }
 
     // csi_param
@@ -348,24 +342,38 @@ fn genTable() Table {
 
         // events
         single(&result, 0x19, source, source, .ignore);
-        range(&result, 0, 0x06, source, source, .ignore);
-        range(&result, 0x08, 0x17, source, source, .ignore);
+        range(&result, 0, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
         range(&result, 0x20, 0x7F, source, source, .osc_put);
-
-        // => ground
-        single(&result, 0x07, source, .ground, .none);
-        single(&result, 0x9C, source, .ground, .none);
     }
 
-    return result;
+    // Create our immutable version
+    var final: Table = undefined;
+    for (0..final.len) |i| {
+        for (0..final[0].len) |j| {
+            final[i][j] = result[i][j] orelse transition(@intToEnum(State, j), .none);
+        }
+    }
+
+    return final;
 }
 
-fn single(t: *Table, c: u8, s0: State, s1: State, a: Action) void {
-    t[c][@enumToInt(s0)] = transition(s1, a);
+fn single(t: *OptionalTable, c: u8, s0: State, s1: State, a: Action) void {
+    const s0_int = @enumToInt(s0);
+
+    // TODO: enable this but it thinks we're in runtime right now
+    // if (t[c][s0_int]) |existing| {
+    //     @compileLog(c);
+    //     @compileLog(s0);
+    //     @compileLog(s1);
+    //     @compileLog(existing);
+    //     @compileError("transition set multiple times");
+    // }
+
+    t[c][s0_int] = transition(s1, a);
 }
 
-fn range(t: *Table, from: u8, to: u8, s0: State, s1: State, a: Action) void {
+fn range(t: *OptionalTable, from: u8, to: u8, s0: State, s1: State, a: Action) void {
     var i = from;
     while (i <= to) : (i += 1) single(t, i, s0, s1, a);
 }
