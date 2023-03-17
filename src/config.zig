@@ -307,12 +307,12 @@ pub const Config = struct {
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .d, .mods = .{ .ctrl = true } },
+                .{ .key = .o, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .right },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .d, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .e, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .down },
             );
             try result.keybind.set.put(
