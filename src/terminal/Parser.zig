@@ -15,7 +15,6 @@ const log = std.log.scoped(.parser);
 
 /// States for the state machine
 pub const State = enum {
-    anywhere,
     ground,
     escape,
     escape_intermediate,
@@ -225,14 +224,7 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
         return .{ self.next_utf8(c), null, null };
     }
 
-    const effect = effect: {
-        // First look up the transition in the anywhere table.
-        const anywhere = table[c][@enumToInt(State.anywhere)];
-        if (anywhere.state != .anywhere) break :effect anywhere;
-
-        // If we don't have any transition from anywhere, use our state.
-        break :effect table[c][@enumToInt(self.state)];
-    };
+    const effect = table[c][@enumToInt(self.state)];
 
     // log.info("next: {x}", .{c});
 
@@ -241,16 +233,6 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
 
     // After generating the actions, we set our next state.
     defer self.state = next_state;
-
-    // In debug mode, we log bad state transitions.
-    if (builtin.mode == .Debug) {
-        if (next_state == .anywhere) {
-            log.debug(
-                "state transition to 'anywhere' from '{}', likely binary input: {x}",
-                .{ self.state, c },
-            );
-        }
-    }
 
     // When going from one state to another, the actions take place in this order:
     //
