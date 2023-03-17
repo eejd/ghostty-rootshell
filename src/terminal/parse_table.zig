@@ -25,7 +25,11 @@ pub const table = genTable();
 
 /// Table is the type of the state table. This is dynamically (comptime)
 /// generated to be exactly sized.
-pub const Table = genTableType();
+pub const Table = genTableType(false);
+
+/// OptionalTable is private to this file. We use this to accumulate and
+/// detect invalid transitions created.
+const OptionalTable = genTableType(true);
 
 // Transition is the transition to take within the table
 pub const Transition = struct {
@@ -34,35 +38,61 @@ pub const Transition = struct {
 };
 
 /// Table is the type of the state transition table.
-fn genTableType() type {
+fn genTableType(comptime optional: bool) type {
     const max_u8 = std.math.maxInt(u8);
     const stateInfo = @typeInfo(State);
     const max_state = stateInfo.Enum.fields.len;
-    return [max_u8 + 1][max_state]Transition;
+    const Elem = if (optional) ?Transition else Transition;
+    return [max_u8 + 1][max_state]Elem;
 }
 
 /// Function to generate the full state transition table for VT emulation.
 fn genTable() Table {
     @setEvalBranchQuota(20000);
-    var result: Table = undefined;
 
-    // Initialize everything so every state transition exists
-    var i: usize = 0;
-    while (i < result.len) : (i += 1) {
-        var j: usize = 0;
-        while (j < result[0].len) : (j += 1) {
-            result[i][j] = transition(.anywhere, .none);
+    // We accumulate using an "optional" table so we can detect duplicates.
+    var result: OptionalTable = undefined;
+    for (0..result.len) |i| {
+        for (0..result[0].len) |j| {
+            result[i][j] = null;
         }
+    }
+
+    // anywhere transitions
+    const stateInfo = @typeInfo(State);
+    inline for (stateInfo.Enum.fields) |field| {
+        const source = @intToEnum(State, field.value);
+
+        // anywhere => ground
+        single(&result, 0x18, source, .ground, .execute);
+        single(&result, 0x1A, source, .ground, .execute);
+        range(&result, 0x80, 0x8F, source, .ground, .execute);
+        range(&result, 0x91, 0x97, source, .ground, .execute);
+        single(&result, 0x99, source, .ground, .execute);
+        single(&result, 0x9A, source, .ground, .execute);
+        single(&result, 0x9C, source, .ground, .none);
+
+        // anywhere => escape
+        single(&result, 0x1B, source, .escape, .none);
+
+        // anywhere => sos_pm_apc_string
+        single(&result, 0x98, source, .sos_pm_apc_string, .none);
+        single(&result, 0x9E, source, .sos_pm_apc_string, .none);
+        single(&result, 0x9F, source, .sos_pm_apc_string, .none);
+
+        // anywhere => csi_entry
+        single(&result, 0x9B, source, .csi_entry, .none);
+
+        // anywhere => dcs_entry
+        single(&result, 0x90, source, .dcs_entry, .none);
+
+        // anywhere => osc_string
+        single(&result, 0x9D, source, .osc_string, .none);
     }
 
     // ground
     {
         const source = State.ground;
-
-        // anywhere =>
-        single(&result, 0x18, .anywhere, .ground, .execute);
-        single(&result, 0x1A, .anywhere, .ground, .execute);
-        single(&result, 0x9C, .anywhere, .ground, .none);
 
         // events
         single(&result, 0x19, .ground, .ground, .execute);
@@ -94,27 +124,16 @@ fn genTable() Table {
     {
         const source = State.sos_pm_apc_string;
 
-        // anywhere =>
-        single(&result, 0x98, .anywhere, source, .none);
-        single(&result, 0x9E, .anywhere, source, .none);
-        single(&result, 0x9F, .anywhere, source, .none);
-
         // events
         single(&result, 0x19, source, source, .ignore);
         range(&result, 0, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
         range(&result, 0x20, 0x7F, source, source, .ignore);
-
-        // => ground
-        single(&result, 0x9C, source, .ground, .none);
     }
 
     // escape
     {
         const source = State.escape;
-
-        // anywhere =>
-        single(&result, 0x1B, .anywhere, source, .none);
 
         // events
         single(&result, 0x19, source, source, .execute);
@@ -151,9 +170,6 @@ fn genTable() Table {
     // dcs_entry
     {
         const source = State.dcs_entry;
-
-        // anywhere =>
-        single(&result, 0x90, .anywhere, source, .ignore);
 
         // events
         single(&result, 0x19, source, source, .ignore);
@@ -202,9 +218,6 @@ fn genTable() Table {
         single(&result, 0x19, source, source, .ignore);
         range(&result, 0, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
-
-        // => ground
-        single(&result, 0x9C, source, .ground, .none);
     }
 
     // dcs_param
@@ -240,9 +253,6 @@ fn genTable() Table {
         range(&result, 0x1C, 0x1F, source, source, .put);
         range(&result, 0x20, 0x7E, source, source, .put);
         single(&result, 0x7F, source, source, .ignore);
-
-        // => ground
-        single(&result, 0x9C, source, .ground, .none);
     }
 
     // csi_param
@@ -305,9 +315,6 @@ fn genTable() Table {
     {
         const source = State.csi_entry;
 
-        // anywhere =>
-        single(&result, 0x9B, .anywhere, source, .none);
-
         // events
         single(&result, 0x19, source, source, .execute);
         range(&result, 0, 0x17, source, source, .execute);
@@ -333,41 +340,40 @@ fn genTable() Table {
     {
         const source = State.osc_string;
 
-        // anywhere =>
-        single(&result, 0x9D, .anywhere, source, .none);
-
         // events
         single(&result, 0x19, source, source, .ignore);
-        range(&result, 0, 0x06, source, source, .ignore);
-        range(&result, 0x08, 0x17, source, source, .ignore);
+        range(&result, 0, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
         range(&result, 0x20, 0x7F, source, source, .osc_put);
-
-        // => ground
-        single(&result, 0x07, source, .ground, .none);
-        single(&result, 0x9C, source, .ground, .none);
     }
 
-    return result;
-}
-
-fn single(t: *Table, c: u8, s0: State, s1: State, a: Action) void {
-    // In debug mode, we want to verify that every state is marked
-    // exactly once.
-    if (builtin.mode == .Debug) {
-        const existing = t[c][@enumToInt(s0)];
-        if (existing.state != .anywhere) {
-            std.debug.print("transition set multiple times c={} s0={} existing={}", .{
-                c, s0, existing,
-            });
-            unreachable;
+    // Create our immutable version
+    var final: Table = undefined;
+    for (0..final.len) |i| {
+        for (0..final[0].len) |j| {
+            final[i][j] = result[i][j] orelse transition(@intToEnum(State, j), .none);
         }
     }
 
-    t[c][@enumToInt(s0)] = transition(s1, a);
+    return final;
 }
 
-fn range(t: *Table, from: u8, to: u8, s0: State, s1: State, a: Action) void {
+fn single(t: *OptionalTable, c: u8, s0: State, s1: State, a: Action) void {
+    const s0_int = @enumToInt(s0);
+
+    // TODO: enable this but it thinks we're in runtime right now
+    // if (t[c][s0_int]) |existing| {
+    //     @compileLog(c);
+    //     @compileLog(s0);
+    //     @compileLog(s1);
+    //     @compileLog(existing);
+    //     @compileError("transition set multiple times");
+    // }
+
+    t[c][s0_int] = transition(s1, a);
+}
+
+fn range(t: *OptionalTable, from: u8, to: u8, s0: State, s1: State, a: Action) void {
     var i = from;
     while (i <= to) : (i += 1) single(t, i, s0, s1, a);
 }
