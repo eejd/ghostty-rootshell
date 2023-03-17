@@ -739,10 +739,29 @@ pub const Surface = struct {
 
     /// render singal
     fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque) callconv(.C) void {
-        _ = area;
-        log.debug("gl resize {} {}", .{ width, height });
-
         const self = userdataSelf(ud.?);
+
+        // Some debug output to help understand what GTK is telling us.
+        {
+            const scale_factor = scale: {
+                const widget = @ptrCast(*c.GtkWidget, area);
+                break :scale c.gtk_widget_get_scale_factor(widget);
+            };
+
+            const window_scale_factor = scale: {
+                const window = @ptrCast(*c.GtkNative, self.window.window);
+                const gdk_surface = c.gtk_native_get_surface(window);
+                break :scale c.gdk_surface_get_scale_factor(gdk_surface);
+            };
+
+            log.debug("gl resize width={} height={} scale={} window_scale={}", .{
+                width,
+                height,
+                scale_factor,
+                window_scale_factor,
+            });
+        }
+
         self.size = .{
             .width = @intCast(u32, width),
             .height = @intCast(u32, height),
