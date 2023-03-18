@@ -101,6 +101,10 @@ pub const Mode = enum(u16) {
     /// Report mouse position in the SGR format.
     mouse_format_sgr = 1006,
 
+    /// Report mouse scroll events as cursor up/down keys. Any other mouse
+    /// mode overrides this.
+    mouse_alternate_scroll = 1007,
+
     /// Report mouse position in the urxvt format.
     mouse_format_urxvt = 1015,
 
