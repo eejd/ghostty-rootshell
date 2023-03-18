@@ -1074,14 +1074,18 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
         } else |_| {}
     }
 
-    //log.info("SCROLL: {} {}", .{ xoff, yoff });
-    _ = xoff;
+    // log.info("SCROLL: {} {}", .{ xoff, yoff });
 
     // Positive is up
-    const sign: isize = if (yoff > 0) -1 else 1;
-    const delta_unsigned = @max(@divFloor(self.grid_size.rows, 15), 1);
-    const delta: isize = sign * delta_unsigned;
-    log.info("scroll: delta={}", .{delta});
+    const y_sign: isize = if (yoff > 0) -1 else 1;
+    const y_delta_unsigned: usize = if (yoff == 0) 0 else @max(@divFloor(self.grid_size.rows, 15), 1);
+    const y_delta: isize = y_sign * @intCast(isize, y_delta_unsigned);
+
+    // Positive is right
+    const x_sign: isize = if (xoff < 0) -1 else 1;
+    const x_delta_unsigned: usize = if (xoff == 0) 0 else 1;
+    const x_delta: isize = x_sign * @intCast(isize, x_delta_unsigned);
+    log.info("scroll: delta_y={} delta_x={}", .{ y_delta, x_delta });
 
     {
         self.renderer_state.mutex.lock();
@@ -1095,11 +1099,22 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
             self.io.terminal.modes.mouse_event == .none and
             self.io.terminal.modes.mouse_alternate_scroll)
         {
-            const up_down_seq = if (delta < 0) "\x1bOA" else "\x1bOB";
-            for (0..delta_unsigned) |_| {
-                _ = self.io_thread.mailbox.push(.{
-                    .write_stable = up_down_seq,
-                }, .{ .forever = {} });
+            if (y_delta_unsigned > 0) {
+                const seq = if (y_delta < 0) "\x1bOA" else "\x1bOB";
+                for (0..y_delta_unsigned) |_| {
+                    _ = self.io_thread.mailbox.push(.{
+                        .write_stable = seq,
+                    }, .{ .forever = {} });
+                }
+            }
+
+            if (x_delta_unsigned > 0) {
+                const seq = if (x_delta < 0) "\x1bOC" else "\x1bOD";
+                for (0..x_delta_unsigned) |_| {
+                    _ = self.io_thread.mailbox.push(.{
+                        .write_stable = seq,
+                    }, .{ .forever = {} });
+                }
             }
 
             // After sending all our messages we have to notify our IO thread
@@ -1112,13 +1127,17 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
         // the normal logic.
 
         // Modify our viewport, this requires a lock since it affects rendering
-        try self.io.terminal.scrollViewport(.{ .delta = delta });
+        try self.io.terminal.scrollViewport(.{ .delta = y_delta });
 
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.
         if (yoff != 0) {
             const pos = try self.rt_surface.getCursorPos();
             try self.mouseReport(if (yoff < 0) .five else .four, .press, self.mouse.mods, pos);
+        }
+        if (xoff != 0) {
+            const pos = try self.rt_surface.getCursorPos();
+            try self.mouseReport(if (xoff > 0) .six else .seven, .press, self.mouse.mods, pos);
         }
     }
 
