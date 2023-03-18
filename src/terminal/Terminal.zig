@@ -80,6 +80,7 @@ modes: packed struct {
     deccolm: bool = false, // 3,
     deccolm_supported: bool = false, // 40
 
+    mouse_alternate_scroll: bool = true, // 1007
     mouse_event: MouseEvents = .none,
     mouse_format: MouseFormat = .x10,
 

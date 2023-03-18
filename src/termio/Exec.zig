@@ -951,6 +951,8 @@ const StreamHandler = struct {
             .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
             .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
 
+            .mouse_alternate_scroll => self.terminal.modes.mouse_alternate_scroll = enabled,
+
             else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
         }
     }

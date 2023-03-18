@@ -1079,12 +1079,37 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
 
     // Positive is up
     const sign: isize = if (yoff > 0) -1 else 1;
-    const delta: isize = sign * @max(@divFloor(self.grid_size.rows, 15), 1);
+    const delta_unsigned = @max(@divFloor(self.grid_size.rows, 15), 1);
+    const delta: isize = sign * delta_unsigned;
     log.info("scroll: delta={}", .{delta});
 
     {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
+
+        // If we're in alternate screen with alternate scroll enabled, then
+        // we convert to cursor keys. This only happens if we're:
+        // (1) alt screen (2) no explicit mouse reporting and (3) alt
+        // scroll mode enabled.
+        if (self.io.terminal.active_screen == .alternate and
+            self.io.terminal.modes.mouse_event == .none and
+            self.io.terminal.modes.mouse_alternate_scroll)
+        {
+            const up_down_seq = if (delta < 0) "\x1bOA" else "\x1bOB";
+            for (0..delta_unsigned) |_| {
+                _ = self.io_thread.mailbox.push(.{
+                    .write_stable = up_down_seq,
+                }, .{ .forever = {} });
+            }
+
+            // After sending all our messages we have to notify our IO thread
+            try self.io_thread.wakeup.notify();
+            return;
+        }
+
+        // We have mouse events, are not in an alternate scroll buffer,
+        // or have alternate scroll disabled. In this case, we just run
+        // the normal logic.
 
         // Modify our viewport, this requires a lock since it affects rendering
         try self.io.terminal.scrollViewport(.{ .delta = delta });
