@@ -27,7 +27,7 @@ pub var instance: DevMode = .{};
 visible: bool = false,
 
 /// Our app config
-config: ?*const Config = null,
+config: ?Config = null,
 
 /// The surface we're tracking.
 surface: ?*Surface = null,

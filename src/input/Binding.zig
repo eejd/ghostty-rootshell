@@ -187,6 +187,12 @@ pub const Action = union(enum) {
     /// Focus on a split in a given direction.
     goto_split: SplitFocusDirection,
 
+    /// Reload the configuration. The exact meaning depends on the app runtime
+    /// in use but this usually involves re-reading the configuration file
+    /// and applying any changes. Note that not all changes can be applied at
+    /// runtime.
+    reload_config: void,
+
     /// Close the current "surface", whether that is a window, tab, split,
     /// etc. This only closes ONE surface.
     close_surface: void,

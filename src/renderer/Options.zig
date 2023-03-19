@@ -5,8 +5,8 @@ const font = @import("../font/main.zig");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
 
-/// The app configuration.
-config: *const Config,
+/// The derived configuration for this renderer implementation.
+config: renderer.Renderer.DerivedConfig,
 
 /// The font group that should be used.
 font_group: *font.GroupCache,

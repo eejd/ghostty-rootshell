@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const apprt = @import("../apprt.zig");
+const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
 const imgui = @import("imgui");
 const renderer = @import("../renderer.zig");
@@ -42,6 +43,9 @@ const DrawMutex = if (single_threaded_draw) std.Thread.Mutex else void;
 const drawMutexZero = if (DrawMutex == void) void{} else .{};
 
 alloc: std.mem.Allocator,
+
+/// The configuration we need derived from the main config.
+config: DerivedConfig,
 
 /// Current cell dimensions for this grid.
 cell_size: renderer.CellSize,
@@ -84,17 +88,6 @@ font_shaper: font.Shaper,
 /// blinking.
 cursor_visible: bool,
 cursor_style: renderer.CursorStyle,
-cursor_color: ?terminal.color.RGB,
-
-/// Default foreground color
-foreground: terminal.color.RGB,
-
-/// Default background color
-background: terminal.color.RGB,
-
-/// Default selection color
-selection_background: ?terminal.color.RGB,
-selection_foreground: ?terminal.color.RGB,
 
 /// True if the window is focused
 focused: bool,
@@ -232,6 +225,48 @@ const GPUCellMode = enum(u8) {
     }
 };
 
+/// The configuration for this renderer that is derived from the main
+/// configuration. This must be exported so that we don't need to
+/// pass around Config pointers which makes memory management a pain.
+pub const DerivedConfig = struct {
+    cursor_color: ?terminal.color.RGB,
+    background: terminal.color.RGB,
+    foreground: terminal.color.RGB,
+    selection_background: ?terminal.color.RGB,
+    selection_foreground: ?terminal.color.RGB,
+
+    pub fn init(
+        alloc_gpa: Allocator,
+        config: *const configpkg.Config,
+    ) !DerivedConfig {
+        _ = alloc_gpa;
+
+        return .{
+            .cursor_color = if (config.@"cursor-color") |col|
+                col.toTerminalRGB()
+            else
+                null,
+
+            .background = config.background.toTerminalRGB(),
+            .foreground = config.foreground.toTerminalRGB(),
+
+            .selection_background = if (config.@"selection-background") |bg|
+                bg.toTerminalRGB()
+            else
+                null,
+
+            .selection_foreground = if (config.@"selection-foreground") |bg|
+                bg.toTerminalRGB()
+            else
+                null,
+        };
+    }
+
+    pub fn deinit(self: *DerivedConfig) void {
+        _ = self;
+    }
+};
+
 pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     // Create the initial font shaper
     var shape_buf = try alloc.alloc(font.shape.Cell, 1);
@@ -354,6 +389,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
 
     return OpenGL{
         .alloc = alloc,
+        .config = options.config,
         .cells_bg = .{},
         .cells = .{},
         .cells_lru = CellsLRU.init(0),
@@ -369,18 +405,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .font_shaper = shaper,
         .cursor_visible = true,
         .cursor_style = .box,
-        .cursor_color = if (options.config.@"cursor-color") |col| col.toTerminalRGB() else null,
-        .background = options.config.background.toTerminalRGB(),
-        .foreground = options.config.foreground.toTerminalRGB(),
-        .draw_background = options.config.background.toTerminalRGB(),
-        .selection_background = if (options.config.@"selection-background") |bg|
-            bg.toTerminalRGB()
-        else
-            null,
-        .selection_foreground = if (options.config.@"selection-foreground") |bg|
-            bg.toTerminalRGB()
-        else
-            null,
+        .draw_background = options.config.background,
         .focused = true,
         .padding = options.padding,
         .surface_mailbox = options.surface_mailbox,
@@ -404,6 +429,9 @@ pub fn deinit(self: *OpenGL) void {
 
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
+
+    self.config.deinit();
+
     self.* = undefined;
 }
 
@@ -673,15 +701,15 @@ pub fn render(
         }
 
         // Swap bg/fg if the terminal is reversed
-        const bg = self.background;
-        const fg = self.foreground;
+        const bg = self.config.background;
+        const fg = self.config.foreground;
         defer {
-            self.background = bg;
-            self.foreground = fg;
+            self.config.background = bg;
+            self.config.foreground = fg;
         }
         if (state.terminal.modes.reverse_colors) {
-            self.background = fg;
-            self.foreground = bg;
+            self.config.background = fg;
+            self.config.foreground = bg;
         }
 
         // Build our devmode draw data
@@ -723,7 +751,7 @@ pub fn render(
             null;
 
         break :critical .{
-            .gl_bg = self.background,
+            .gl_bg = self.config.background,
             .devmode_data = devmode_data,
             .active_screen = state.terminal.active_screen,
             .selection = selection,
@@ -944,7 +972,7 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
         screen.cursor.x,
     );
 
-    const color = self.cursor_color orelse terminal.color.RGB{
+    const color = self.config.cursor_color orelse terminal.color.RGB{
         .r = 0xFF,
         .g = 0xFF,
         .b = 0xFF,
@@ -1031,8 +1059,8 @@ pub fn updateCell(
             // If we are selected, we use the selection colors
             if (sel.contains(screen_point)) {
                 break :colors BgFg{
-                    .bg = self.selection_background orelse self.foreground,
-                    .fg = self.selection_foreground orelse self.background,
+                    .bg = self.config.selection_background orelse self.config.foreground,
+                    .fg = self.config.selection_foreground orelse self.config.background,
                 };
             }
         }
@@ -1041,13 +1069,13 @@ pub fn updateCell(
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = if (cell.attrs.has_bg) cell.bg else null,
-            .fg = if (cell.attrs.has_fg) cell.fg else self.foreground,
+            .fg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
         } else .{
             // In inverted mode, the background MUST be set to something
             // (is never null) so it is either the fg or default fg. The
             // fg is either the bg or default background.
-            .bg = if (cell.attrs.has_fg) cell.fg else self.foreground,
-            .fg = if (cell.attrs.has_bg) cell.bg else self.background,
+            .bg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
+            .fg = if (cell.attrs.has_bg) cell.bg else self.config.background,
         };
         break :colors res;
     };
@@ -1202,6 +1230,11 @@ fn gridSize(self: *const OpenGL, screen_size: renderer.ScreenSize) renderer.Grid
         screen_size.subPadding(self.padding.explicit),
         self.cell_size,
     );
+}
+
+/// Update the configuration.
+pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
+    self.config = config.*;
 }
 
 /// Set the screen size for rendering. This will update the projection

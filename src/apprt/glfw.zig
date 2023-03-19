@@ -19,6 +19,8 @@ const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
+const Config = @import("../config.zig").Config;
+const DevMode = @import("../DevMode.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -29,6 +31,7 @@ const log = std.log.scoped(.glfw);
 
 pub const App = struct {
     app: *CoreApp,
+    config: Config,
 
     /// Mac-specific state.
     darwin: if (Darwin.enabled) Darwin else void,
@@ -53,14 +56,24 @@ pub const App = struct {
         var darwin = if (Darwin.enabled) try Darwin.init() else {};
         errdefer if (Darwin.enabled) darwin.deinit();
 
+        // Load our configuration
+        var config = try Config.load(core_app.alloc);
+        errdefer config.deinit();
+
+        // If we have DevMode on, store the config so we can show it. This
+        // is messy because we're copying a thing here. We should clean this
+        // up when we take a pass at cleaning up the dev mode.
+        if (DevMode.enabled) DevMode.instance.config = config;
+
         return .{
             .app = core_app,
+            .config = config,
             .darwin = darwin,
         };
     }
 
-    pub fn terminate(self: App) void {
-        _ = self;
+    pub fn terminate(self: *App) void {
+        self.config.deinit();
         glfw.terminate();
     }
 
@@ -88,6 +101,23 @@ pub const App = struct {
     pub fn wakeup(self: *const App) void {
         _ = self;
         glfw.postEmptyEvent();
+    }
+
+    /// Reload the configuration. This should return the new configuration.
+    /// The old value can be freed immediately at this point assuming a
+    /// successful return.
+    ///
+    /// The returned pointer value is only valid for a stable self pointer.
+    pub fn reloadConfig(self: *App) !?*const Config {
+        // Load our configuration
+        var config = try Config.load(self.app.alloc);
+        errdefer config.deinit();
+
+        // Update the existing config, be sure to clean up the old one.
+        self.config.deinit();
+        self.config = config;
+
+        return &self.config;
     }
 
     /// Create a new window for the app.
@@ -139,7 +169,7 @@ pub const App = struct {
         errdefer surface.deinit();
 
         // If we have a parent, inherit some properties
-        if (self.app.config.@"window-inherit-font-size") {
+        if (self.config.@"window-inherit-font-size") {
             if (parent_) |parent| {
                 surface.core_surface.setFontSize(parent.font_size);
             }
@@ -313,7 +343,7 @@ pub const Surface = struct {
         // Initialize our surface now that we have the stable pointer.
         try self.core_surface.init(
             app.app.alloc,
-            app.app.config,
+            &app.config,
             .{ .rt_app = app, .mailbox = &app.app.mailbox },
             self,
         );

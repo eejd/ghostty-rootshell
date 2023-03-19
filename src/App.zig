@@ -18,7 +18,6 @@ const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
 const macos = @import("macos");
 const objc = @import("objc");
-const DevMode = @import("DevMode.zig");
 
 const log = std.log.scoped(.app);
 
@@ -29,9 +28,6 @@ alloc: Allocator,
 
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
-
-// The configuration for the app.
-config: *const Config,
 
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
@@ -45,17 +41,12 @@ quit: bool,
 /// "startup" logic.
 pub fn create(
     alloc: Allocator,
-    config: *const Config,
 ) !*App {
-    // If we have DevMode on, store the config so we can show it
-    if (DevMode.enabled) DevMode.instance.config = config;
-
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
     app.* = .{
         .alloc = alloc,
         .surfaces = .{},
-        .config = config,
         .mailbox = .{},
         .quit = false,
     };
@@ -97,6 +88,16 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
     return self.quit or self.surfaces.items.len == 0;
 }
 
+/// Update the configuration associated with the app. This can only be
+/// called from the main thread. The caller owns the config memory. The
+/// memory can be freed immediately when this returns.
+pub fn updateConfig(self: *App, config: *const Config) !void {
+    // Go through and update all of the surface configurations.
+    for (self.surfaces.items) |surface| {
+        try surface.core_surface.handleMessage(.{ .change_config = config });
+    }
+}
+
 /// Add an initialized surface. This is really only for the runtime
 /// implementations to call and should NOT be called by general app users.
 /// The surface must be from the pool.
@@ -123,12 +124,21 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
+            .reload_config => try self.reloadConfig(rt_app),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| try self.closeSurface(rt_app, surface),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
             .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
         }
+    }
+}
+
+fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
+    log.debug("reloading configuration", .{});
+    if (try rt_app.reloadConfig()) |new| {
+        log.debug("new configuration received, applying", .{});
+        try self.updateConfig(new);
     }
 }
 
@@ -193,6 +203,10 @@ fn hasSurface(self: *App, surface: *Surface) bool {
 
 /// The message types that can be sent to the app thread.
 pub const Message = union(enum) {
+    /// Reload the configuration for the entire app and propagate it to
+    /// all the active surfaces.
+    reload_config: void,
+
     /// Create a new terminal window.
     new_window: NewWindow,
 

@@ -19,6 +19,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -28,7 +29,7 @@ const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const trace = @import("tracy").trace;
 const terminal = @import("terminal/main.zig");
-const Config = @import("config.zig").Config;
+const configpkg = @import("config.zig");
 const input = @import("input.zig");
 const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
@@ -70,7 +71,6 @@ renderer_thr: std.Thread,
 
 /// Mouse state.
 mouse: Mouse,
-mouse_interval: u64,
 
 /// The terminal IO handler.
 io: termio.Impl,
@@ -85,8 +85,10 @@ cell_size: renderer.CellSize,
 /// Explicit padding due to configuration
 padding: renderer.Padding,
 
-/// The app configuration
-config: *const Config,
+/// The configuration derived from the main config. We "derive" it so that
+/// we don't have a shared pointer hanging around that we need to worry about
+/// the lifetime of. This makes updating config at runtime easier.
+config: DerivedConfig,
 
 /// Set to true for a single GLFW key/char callback cycle to cause the
 /// char callback to ignore. GLFW seems to always do key followed by char
@@ -123,13 +125,50 @@ const Mouse = struct {
     event_point: terminal.point.Viewport = .{},
 };
 
+/// The configuration that a surface has, this is copied from the main
+/// Config struct usually to prevent sharing a single value.
+const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
+    /// For docs for these, see the associated config they are derived from.
+    original_font_size: u8,
+    keybind: configpkg.Keybinds,
+    clipboard_read: bool,
+    clipboard_write: bool,
+    clipboard_trim_trailing_spaces: bool,
+    mouse_interval: u64,
+
+    pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        return .{
+            .original_font_size = config.@"font-size",
+            .keybind = try config.keybind.clone(alloc),
+            .clipboard_read = config.@"clipboard-read",
+            .clipboard_write = config.@"clipboard-write",
+            .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+            .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
+
+            // Assignments happen sequentially so we have to do this last
+            // so that the memory is captured from allocs above.
+            .arena = arena,
+        };
+    }
+
+    pub fn deinit(self: *DerivedConfig) void {
+        self.arena.deinit();
+    }
+};
+
 /// Create a new surface. This must be called from the main thread. The
 /// pointer to the memory for the surface must be provided and must be
 /// stable due to interfacing with various callbacks.
 pub fn init(
     self: *Surface,
     alloc: Allocator,
-    config: *const Config,
+    config: *const configpkg.Config,
     app_mailbox: App.Mailbox,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
@@ -284,7 +323,7 @@ pub fn init(
 
     // Create our terminal grid with the initial size
     var renderer_impl = try Renderer.init(alloc, .{
-        .config = config,
+        .config = try Renderer.DerivedConfig.init(alloc, config),
         .font_group = font_group,
         .padding = .{
             .explicit = padding,
@@ -324,7 +363,8 @@ pub fn init(
     var io = try termio.Impl.init(alloc, .{
         .grid_size = grid_size,
         .screen_size = screen_size,
-        .config = config,
+        .full_config = config,
+        .config = try termio.Impl.DerivedConfig.init(alloc, config),
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
@@ -361,7 +401,6 @@ pub fn init(
         },
         .renderer_thr = undefined,
         .mouse = .{},
-        .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
         .io = io,
         .io_thread = io_thread,
         .io_thr = undefined,
@@ -369,7 +408,7 @@ pub fn init(
         .grid_size = grid_size,
         .cell_size = cell_size,
         .padding = padding,
-        .config = config,
+        .config = try DerivedConfig.init(alloc, config),
 
         .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
     };
@@ -476,6 +515,7 @@ pub fn deinit(self: *Surface) void {
     self.alloc.destroy(self.font_group);
 
     self.alloc.destroy(self.renderer_state.mutex);
+    self.config.deinit();
     log.info("surface closed addr={x}", .{@ptrToInt(self)});
 }
 
@@ -489,6 +529,8 @@ pub fn close(self: *Surface) void {
 /// surface.
 pub fn handleMessage(self: *Surface, msg: Message) !void {
     switch (msg) {
+        .change_config => |config| try self.changeConfig(config),
+
         .set_title => |*v| {
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
@@ -512,6 +554,54 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .close => self.close(),
     }
+}
+
+/// Update our configuration at runtime.
+fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
+    // Update our new derived config immediately
+    const derived = DerivedConfig.init(self.alloc, config) catch |err| {
+        // If the derivation fails then we just log and return. We don't
+        // hard fail in this case because we don't want to error the surface
+        // when config fails we just want to keep using the old config.
+        log.err("error updating configuration err={}", .{err});
+        return;
+    };
+    self.config.deinit();
+    self.config = derived;
+
+    // We need to store our configs in a heap-allocated pointer so that
+    // our messages aren't huge.
+    var renderer_config_ptr = try self.alloc.create(Renderer.DerivedConfig);
+    errdefer self.alloc.destroy(renderer_config_ptr);
+    var termio_config_ptr = try self.alloc.create(termio.Impl.DerivedConfig);
+    errdefer self.alloc.destroy(termio_config_ptr);
+
+    // Update our derived configurations for the renderer and termio,
+    // then send them a message to update.
+    renderer_config_ptr.* = try Renderer.DerivedConfig.init(self.alloc, config);
+    errdefer renderer_config_ptr.deinit();
+    termio_config_ptr.* = try termio.Impl.DerivedConfig.init(self.alloc, config);
+    errdefer termio_config_ptr.deinit();
+    _ = self.renderer_thread.mailbox.push(.{
+        .change_config = .{
+            .alloc = self.alloc,
+            .ptr = renderer_config_ptr,
+        },
+    }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{
+        .change_config = .{
+            .alloc = self.alloc,
+            .ptr = termio_config_ptr,
+        },
+    }, .{ .forever = {} });
+
+    // With mailbox messages sent, we have to wake them up so they process it.
+    self.queueRender() catch |err| {
+        log.warn("failed to notify renderer of config change err={}", .{err});
+    };
+    self.io_thread.wakeup.notify() catch |err| {
+        log.warn("failed to notify io thread of config change err={}", .{err});
+    };
 }
 
 /// Returns the x/y coordinate of where the IME (Input Method Editor)
@@ -557,7 +647,7 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 }
 
 fn clipboardRead(self: *const Surface, kind: u8) !void {
-    if (!self.config.@"clipboard-read") {
+    if (!self.config.clipboard_read) {
         log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
         return;
     }
@@ -593,7 +683,7 @@ fn clipboardRead(self: *const Surface, kind: u8) !void {
 }
 
 fn clipboardWrite(self: *const Surface, data: []const u8) !void {
-    if (!self.config.@"clipboard-write") {
+    if (!self.config.clipboard_write) {
         log.info("application attempted to write clipboard, but 'clipboard-write' setting is off", .{});
         return;
     }
@@ -793,6 +883,12 @@ pub fn keyCallback(
                 .unbind => unreachable,
                 .ignore => {},
 
+                .reload_config => {
+                    _ = self.app_mailbox.push(.{
+                        .reload_config = {},
+                    }, .{ .instant = {} });
+                },
+
                 .csi => |data| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = "\x1B[",
@@ -833,7 +929,7 @@ pub fn keyCallback(
                         var buf = self.io.terminal.screen.selectionString(
                             self.alloc,
                             sel,
-                            self.config.@"clipboard-trim-trailing-spaces",
+                            self.config.clipboard_trim_trailing_spaces,
                         ) catch |err| {
                             log.err("error reading selection string err={}", .{err});
                             return;
@@ -901,7 +997,7 @@ pub fn keyCallback(
                     log.debug("reset font size", .{});
 
                     var size = self.font_size;
-                    size.points = self.config.@"font-size";
+                    size.points = self.config.original_font_size;
                     self.setFontSize(size);
                 },
 
@@ -1423,7 +1519,7 @@ pub fn mouseButtonCallback(
             // is less than and our interval and if so, increase the count.
             if (self.mouse.left_click_count > 0) {
                 const since = now.since(self.mouse.left_click_time);
-                if (since > self.mouse_interval) {
+                if (since > self.config.mouse_interval) {
                     self.mouse.left_click_count = 0;
                 }
             }

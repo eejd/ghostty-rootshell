@@ -1,3 +1,4 @@
+const config = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
@@ -166,9 +167,63 @@ pub const Config = struct {
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
+    /// Key is an enum of all the available configuration keys. This is used
+    /// when paired with diff to determine what fields have changed in a config,
+    /// amongst other things.
+    pub const Key = key: {
+        const field_infos = std.meta.fields(Config);
+        var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
+        var i: usize = 0;
+        inline for (field_infos) |field| {
+            // Ignore fields starting with "_" since they're internal and
+            // not copied ever.
+            if (field.name[0] == '_') continue;
+
+            enumFields[i] = .{
+                .name = field.name,
+                .value = i,
+            };
+            i += 1;
+        }
+
+        var decls = [_]std.builtin.Type.Declaration{};
+        break :key @Type(.{
+            .Enum = .{
+                .tag_type = std.math.IntFittingRange(0, field_infos.len - 1),
+                .fields = enumFields[0..i],
+                .decls = &decls,
+                .is_exhaustive = true,
+            },
+        });
+    };
+
     pub fn deinit(self: *Config) void {
         if (self._arena) |arena| arena.deinit();
         self.* = undefined;
+    }
+
+    /// Load the configuration according to the default rules:
+    ///
+    ///   1. Defaults
+    ///   2. XDG Config File
+    ///   3. CLI flags
+    ///   4. Recursively defined configuration files
+    ///
+    pub fn load(alloc_gpa: Allocator) !Config {
+        var result = try default(alloc_gpa);
+        errdefer result.deinit();
+
+        // If we have a configuration file in our home directory, parse that first.
+        try result.loadDefaultFiles(alloc_gpa);
+
+        // Parse the config from the CLI args
+        try result.loadCliArgs(alloc_gpa);
+
+        // Parse the config files that were added from our file and CLI args.
+        try result.loadRecursiveFiles(alloc_gpa);
+        try result.finalize();
+
+        return result;
     }
 
     pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
@@ -180,6 +235,12 @@ pub const Config = struct {
         const alloc = result._arena.?.allocator();
 
         // Add our default keybindings
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .space, .mods = .{ .super = true, .alt = true, .ctrl = true } },
+            .{ .reload_config = {} },
+        );
+
         {
             // On macOS we default to super but Linux ctrl+shift since
             // ctrl+c is to kill the process.
@@ -499,6 +560,14 @@ pub const Config = struct {
         }
     }
 
+    /// Load and parse the CLI args.
+    pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
+        // Parse the config from the CLI args
+        var iter = try std.process.argsWithAllocator(alloc_gpa);
+        defer iter.deinit();
+        try cli_args.parse(Config, alloc_gpa, self, &iter);
+    }
+
     /// Load and parse the config files that were added in the "config-file" key.
     pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
         // TODO(mitchellh): we should parse the files form the homedir first
@@ -605,7 +674,218 @@ pub const Config = struct {
             self.@"click-repeat-interval" = internal_os.clickInterval() orelse 500;
         }
     }
+
+    /// Create a copy of this configuration. This is useful as a starting
+    /// point for modifying a configuration since a config can NOT be
+    /// modified once it is in use by an app or surface.
+    pub fn clone(self: *const Config, alloc_gpa: Allocator) !Config {
+        // Start with an empty config with a new arena we're going
+        // to use for all our copies.
+        var result: Config = .{
+            ._arena = ArenaAllocator.init(alloc_gpa),
+        };
+        errdefer result.deinit();
+        const alloc = result._arena.?.allocator();
+
+        inline for (@typeInfo(Config).Struct.fields) |field| {
+            if (!@hasField(Key, field.name)) continue;
+            @field(result, field.name) = try cloneValue(
+                alloc,
+                field.type,
+                @field(self, field.name),
+            );
+        }
+
+        return result;
+    }
+
+    fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
+        // Do known named types first
+        switch (T) {
+            []const u8 => return try alloc.dupe(u8, src),
+            [:0]const u8 => return try alloc.dupeZ(u8, src),
+
+            else => {},
+        }
+
+        // Back into types of types
+        switch (@typeInfo(T)) {
+            inline .Bool,
+            .Int,
+            => return src,
+
+            .Optional => |info| return try cloneValue(
+                alloc,
+                info.child,
+                src orelse return null,
+            ),
+
+            .Struct => return try src.clone(alloc),
+
+            else => {
+                @compileLog(T);
+                @compileError("unsupported field type");
+            },
+        }
+    }
+
+    /// Returns an iterator that goes through each changed field from
+    /// old to new. The order of old or new do not matter.
+    pub fn changeIterator(old: *const Config, new: *const Config) ChangeIterator {
+        return .{
+            .old = old,
+            .new = new,
+        };
+    }
+
+    /// Returns true if the given key has changed from old to new. This
+    /// requires the key to be comptime known to make this more efficient.
+    pub fn changed(self: *const Config, new: *const Config, comptime key: Key) bool {
+        // Get the field at comptime
+        const field = comptime field: {
+            const fields = std.meta.fields(Config);
+            for (fields) |field| {
+                if (@field(Key, field.name) == key) {
+                    break :field field;
+                }
+            }
+
+            unreachable;
+        };
+
+        const old_value = @field(self, field.name);
+        const new_value = @field(new, field.name);
+        return !equal(field.type, old_value, new_value);
+    }
+
+    /// This yields a key for every changed field between old and new.
+    pub const ChangeIterator = struct {
+        old: *const Config,
+        new: *const Config,
+        i: usize = 0,
+
+        pub fn next(self: *ChangeIterator) ?Key {
+            const fields = comptime std.meta.fields(Key);
+            while (self.i < fields.len) {
+                switch (self.i) {
+                    inline 0...(fields.len - 1) => |i| {
+                        const field = fields[i];
+                        const key = @field(Key, field.name);
+                        self.i += 1;
+                        if (self.old.changed(self.new, key)) return key;
+                    },
+
+                    else => unreachable,
+                }
+            }
+
+            return null;
+        }
+    };
+
+    test "clone default" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var source = try Config.default(alloc);
+        defer source.deinit();
+        var dest = try source.clone(alloc);
+        defer dest.deinit();
+
+        // Should have no changes
+        var it = source.changeIterator(&dest);
+        try testing.expectEqual(@as(?Key, null), it.next());
+
+        // I want to do this but this doesn't work (the API doesn't work)
+        // try testing.expectEqualDeep(dest, source);
+    }
+
+    test "changed" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var source = try Config.default(alloc);
+        defer source.deinit();
+        var dest = try source.clone(alloc);
+        defer dest.deinit();
+        dest.@"font-family" = "something else";
+
+        try testing.expect(source.changed(&dest, .@"font-family"));
+        try testing.expect(!source.changed(&dest, .@"font-size"));
+    }
 };
+
+/// A config-specific helper to determine if two values of the same
+/// type are equal. This isn't the same as std.mem.eql or std.testing.equals
+/// because we expect structs to implement their own equality.
+///
+/// This also doesn't support ALL Zig types, because we only add to it
+/// as we need types for the config.
+fn equal(comptime T: type, old: T, new: T) bool {
+    // Do known named types first
+    switch (T) {
+        inline []const u8,
+        [:0]const u8,
+        => return std.mem.eql(u8, old, new),
+
+        else => {},
+    }
+
+    // Back into types of types
+    switch (@typeInfo(T)) {
+        .Void => return true,
+
+        inline .Bool,
+        .Int,
+        .Enum,
+        => return old == new,
+
+        .Optional => |info| {
+            if (old == null and new == null) return true;
+            if (old == null or new == null) return false;
+            return equal(info.child, old.?, new.?);
+        },
+
+        .Struct => |info| {
+            if (@hasDecl(T, "equal")) return old.equal(new);
+
+            // If a struct doesn't declare an "equal" function, we fall back
+            // to a recursive field-by-field compare.
+            inline for (info.fields) |field_info| {
+                if (!equal(
+                    field_info.type,
+                    @field(old, field_info.name),
+                    @field(new, field_info.name),
+                )) return false;
+            }
+            return true;
+        },
+
+        .Union => |info| {
+            const tag_type = info.tag_type.?;
+            const old_tag = std.meta.activeTag(old);
+            const new_tag = std.meta.activeTag(new);
+            if (old_tag != new_tag) return false;
+
+            inline for (info.fields) |field_info| {
+                if (@field(tag_type, field_info.name) == old_tag) {
+                    return equal(
+                        field_info.type,
+                        @field(old, field_info.name),
+                        @field(new, field_info.name),
+                    );
+                }
+            }
+
+            unreachable;
+        },
+
+        else => {
+            @compileLog(T);
+            @compileError("unsupported field type");
+        },
+    }
+}
 
 /// Color represents a color using RGB.
 pub const Color = struct {
@@ -624,6 +904,16 @@ pub const Color = struct {
 
     pub fn parseCLI(input: ?[]const u8) !Color {
         return fromHex(input orelse return error.ValueRequired);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: Color, _: Allocator) !Color {
+        return self;
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Color, other: Color) bool {
+        return std.meta.eql(self, other);
     }
 
     /// fromHex parses a color from a hex value such as #RRGGBB. The "#"
@@ -689,6 +979,16 @@ pub const Palette = struct {
         self.value[key] = .{ .r = rgb.r, .g = rgb.g, .b = rgb.b };
     }
 
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: Self, _: Allocator) !Self {
+        return self;
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        return std.meta.eql(self, other);
+    }
+
     test "parseCLI" {
         const testing = std.testing;
 
@@ -720,6 +1020,23 @@ pub const RepeatableString = struct {
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
         try self.list.append(alloc, value);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        return .{
+            .list = try self.list.clone(alloc),
+        };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        const itemsA = self.list.items;
+        const itemsB = other.list.items;
+        if (itemsA.len != itemsB.len) return false;
+        for (itemsA, itemsB) |a, b| {
+            if (!std.mem.eql(u8, a, b)) return false;
+        } else return true;
     }
 
     test "parseCLI" {
@@ -764,6 +1081,35 @@ pub const Keybinds = struct {
             .unbind => self.set.remove(binding.trigger),
             else => try self.set.put(alloc, binding.trigger, binding.action),
         }
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
+        return .{
+            .set = .{
+                .bindings = try self.set.bindings.clone(alloc),
+            },
+        };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Keybinds, other: Keybinds) bool {
+        const self_map = self.set.bindings;
+        const other_map = other.set.bindings;
+        if (self_map.count() != other_map.count()) return false;
+
+        var it = self_map.iterator();
+        while (it.next()) |self_entry| {
+            const other_entry = other_map.getEntry(self_entry.key_ptr.*) orelse
+                return false;
+            if (!config.equal(
+                inputpkg.Binding.Action,
+                self_entry.value_ptr.*,
+                other_entry.value_ptr.*,
+            )) return false;
+        }
+
+        return true;
     }
 
     test "parseCLI" {
@@ -854,6 +1200,13 @@ pub const CAPI = struct {
             v.deinit();
             global.alloc.destroy(v);
         }
+    }
+
+    /// Load the configuration from the CLI args.
+    export fn ghostty_config_load_cli_args(self: *Config) void {
+        self.loadCliArgs(global.alloc) catch |err| {
+            log.err("error loading config err={}", .{err});
+        };
     }
 
     /// Load the configuration from a string in the same format as

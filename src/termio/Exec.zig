@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
@@ -19,6 +20,7 @@ const trace = tracy.trace;
 const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
 const internal_os = @import("../os/main.zig");
+const configpkg = @import("../config.zig");
 
 const log = std.log.scoped(.io_exec);
 
@@ -62,9 +64,35 @@ grid_size: renderer.GridSize,
 /// The data associated with the currently running thread.
 data: ?*EventData,
 
+/// The configuration for this IO that is derived from the main
+/// configuration. This must be exported so that we don't need to
+/// pass around Config pointers which makes memory management a pain.
+pub const DerivedConfig = struct {
+    palette: terminal.color.Palette,
+
+    pub fn init(
+        alloc_gpa: Allocator,
+        config: *const configpkg.Config,
+    ) !DerivedConfig {
+        _ = alloc_gpa;
+
+        return .{
+            .palette = config.palette.value,
+        };
+    }
+
+    pub fn deinit(self: *DerivedConfig) void {
+        _ = self;
+    }
+};
+
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
+    // Clean up our derived config because we don't need it after this.
+    var config = opts.config;
+    defer config.deinit();
+
     // Create our terminal
     var term = try terminal.Terminal.init(
         alloc,
@@ -72,7 +100,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         opts.grid_size.rows,
     );
     errdefer term.deinit(alloc);
-    term.color_palette = opts.config.palette.value;
+    term.color_palette = opts.config.palette;
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
@@ -187,6 +215,21 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
 
     // Wait for our reader thread to end
     data.read_thread.join();
+}
+
+/// Update the configuration.
+pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
+    defer config.deinit();
+
+    // Update the configuration that we know about.
+    //
+    // Specific things we don't update:
+    //   - command, working-directory: we never restart the underlying
+    //   process so we don't care or need to know about these.
+
+    // Update the palette. Note this will only apply to new colors drawn
+    // since we decode all palette colors to RGB on usage.
+    self.terminal.color_palette = config.palette;
 }
 
 /// Resize the terminal.
@@ -413,7 +456,7 @@ const Subprocess = struct {
         const alloc = arena.allocator();
 
         // Determine the path to the binary we're executing
-        const path = (try Command.expandPath(alloc, opts.config.command orelse "sh")) orelse
+        const path = (try Command.expandPath(alloc, opts.full_config.command orelse "sh")) orelse
             return error.CommandNotFound;
 
         // On macOS, we launch the program as a login shell. This is a Mac-specific
@@ -487,10 +530,17 @@ const Subprocess = struct {
             break :args try args.toOwnedSlice();
         };
 
+        // We have to copy the cwd because there is no guarantee that
+        // pointers in full_config remain valid.
+        var cwd: ?[]u8 = if (opts.full_config.@"working-directory") |cwd|
+            try alloc.dupe(u8, cwd)
+        else
+            null;
+
         return .{
             .arena = arena,
             .env = env,
-            .cwd = opts.config.@"working-directory",
+            .cwd = cwd,
             .path = if (internal_os.isFlatpak()) args[0] else path,
             .args = args,
             .grid_size = opts.grid_size,
