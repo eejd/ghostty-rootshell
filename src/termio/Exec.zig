@@ -105,6 +105,10 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     // Start our subprocess
     const master_fd = try self.subprocess.start(alloc);
     errdefer self.subprocess.stop();
+    const pid = pid: {
+        const command = self.subprocess.command orelse return error.ProcessNotStarted;
+        break :pid command.pid orelse return error.ProcessNoPid;
+    };
 
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
@@ -118,13 +122,19 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     var wakeup = try xev.Async.init();
     errdefer wakeup.deinit();
 
+    // Watcher to detect subprocess exit
+    var process = try xev.Process.init(pid);
+    errdefer process.deinit();
+
     // Setup our event data before we start
     ev_data_ptr.* = .{
         .writer_mailbox = thread.mailbox,
         .writer_wakeup = thread.wakeup,
+        .surface_mailbox = self.surface_mailbox,
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
+        .process = process,
         .data_stream = stream,
         .loop = &thread.loop,
         .terminal_stream = .{
@@ -133,7 +143,6 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
                 .grid_size = &self.grid_size,
-                .surface_mailbox = self.surface_mailbox,
             },
         },
     };
@@ -142,6 +151,15 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
     errdefer self.data = null;
+
+    // Start our process watcher
+    process.wait(
+        ev_data_ptr.loop,
+        &ev_data_ptr.process_wait_c,
+        EventData,
+        ev_data_ptr,
+        processExit,
+    );
 
     // Start our reader thread
     const read_thread = try std.Thread.spawn(
@@ -164,6 +182,7 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     self.data = null;
 
     // Stop our subprocess
+    if (data.ev.process_exited) self.subprocess.externalExit();
     self.subprocess.stop();
 
     // Wait for our reader thread to end
@@ -258,6 +277,9 @@ const EventData = struct {
     writer_mailbox: *termio.Mailbox,
     writer_wakeup: xev.Async,
 
+    /// Mailbox for the surface.
+    surface_mailbox: apprt.surface.Mailbox,
+
     /// The stream parser. This parses the stream of escape codes and so on
     /// from the child process and calls callbacks in the stream handler.
     terminal_stream: terminal.Stream(StreamHandler),
@@ -271,6 +293,14 @@ const EventData = struct {
 
     /// The mailbox for notifying the renderer of things.
     renderer_mailbox: *renderer.Thread.Mailbox,
+
+    /// The process watcher
+    process: xev.Process,
+    process_exited: bool = false,
+
+    /// This is used for both waiting for the process to exit and then
+    /// subsequently to wait for the data_stream to close.
+    process_wait_c: xev.Completion = .{},
 
     /// The data stream is the main IO for the pty.
     data_stream: xev.Stream,
@@ -301,6 +331,9 @@ const EventData = struct {
 
         // Stop our data stream
         self.data_stream.deinit();
+
+        // Stop our process watcher
+        self.process.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
@@ -310,6 +343,26 @@ const EventData = struct {
         try self.renderer_wakeup.notify();
     }
 };
+
+fn processExit(
+    ev_: ?*EventData,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Process.WaitError!u32,
+) xev.CallbackAction {
+    const code = r catch unreachable;
+    log.debug("child process exited status={}", .{code});
+
+    const ev = ev_.?;
+    ev.process_exited = true;
+
+    // Notify our surface we want to close
+    _ = ev.surface_mailbox.push(.{
+        .close = {},
+    }, .{ .forever = {} });
+
+    return .disarm;
+}
 
 fn ttyWrite(
     ev_: ?*EventData,
@@ -537,6 +590,12 @@ const Subprocess = struct {
         return pty.master;
     }
 
+    /// Called to notify that we exited externally so we can unset our
+    /// running state.
+    pub fn externalExit(self: *Subprocess) void {
+        self.command = null;
+    }
+
     /// Stop the subprocess. This is safe to call anytime. This will wait
     /// for the subprocess to end so it will block.
     pub fn stop(self: *Subprocess) void {
@@ -752,7 +811,6 @@ const StreamHandler = struct {
     alloc: Allocator,
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
-    surface_mailbox: apprt.surface.Mailbox,
 
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
@@ -1099,7 +1157,7 @@ const StreamHandler = struct {
         std.mem.copy(u8, &buf, title);
         buf[title.len] = 0;
 
-        _ = self.surface_mailbox.push(.{
+        _ = self.ev.surface_mailbox.push(.{
             .set_title = buf,
         }, .{ .forever = {} });
     }
@@ -1111,14 +1169,14 @@ const StreamHandler = struct {
 
         // Get clipboard contents
         if (data.len == 1 and data[0] == '?') {
-            _ = self.surface_mailbox.push(.{
+            _ = self.ev.surface_mailbox.push(.{
                 .clipboard_read = kind,
             }, .{ .forever = {} });
             return;
         }
 
         // Write clipboard contents
-        _ = self.surface_mailbox.push(.{
+        _ = self.ev.surface_mailbox.push(.{
             .clipboard_write = try apprt.surface.Message.WriteReq.init(
                 self.alloc,
                 data,

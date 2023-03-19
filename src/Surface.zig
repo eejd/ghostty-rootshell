@@ -479,6 +479,12 @@ pub fn deinit(self: *Surface) void {
     log.info("surface closed addr={x}", .{@ptrToInt(self)});
 }
 
+/// Close this surface. This will trigger the runtime to start the
+/// close process, which should ultimately deinitialize this surface.
+pub fn close(self: *Surface) void {
+    self.rt_surface.close();
+}
+
 /// Called from the app thread to handle mailbox messages to our specific
 /// surface.
 pub fn handleMessage(self: *Surface, msg: Message) !void {
@@ -503,6 +509,8 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
                 try self.clipboardWrite(v.data);
             },
         },
+
+        .close => self.close(),
     }
 }
 
@@ -953,11 +961,7 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement gotoSplit", .{});
                 },
 
-                .close_surface => {
-                    if (@hasDecl(apprt.Surface, "closeSurface")) {
-                        try self.rt_surface.closeSurface();
-                    } else log.warn("runtime doesn't implement closeSurface", .{});
-                },
+                .close_surface => self.close(),
 
                 .close_window => {
                     _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });

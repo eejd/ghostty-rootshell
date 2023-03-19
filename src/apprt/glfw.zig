@@ -378,6 +378,11 @@ pub const Surface = struct {
         try self.app.newTab(&self.core_surface);
     }
 
+    /// Close this surface.
+    pub fn close(self: *const Surface) void {
+        self.window.setShouldClose(true);
+    }
+
     /// Set the size limits of the window.
     /// Note: this interface is not good, we should redo it if we plan
     /// to use this more. i.e. you can't set max width but no max height,

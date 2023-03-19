@@ -167,7 +167,7 @@ pub const Surface = struct {
         func(self.opts.userdata, direction);
     }
 
-    pub fn closeSurface(self: *const Surface) !void {
+    pub fn close(self: *const Surface) void {
         const func = self.app.opts.close_surface orelse {
             log.info("runtime embedder does not support closing a surface", .{});
             return;
@@ -486,7 +486,7 @@ pub const CAPI = struct {
     /// Request that the surface become closed. This will go through the
     /// normal trigger process that a close surface input binding would.
     export fn ghostty_surface_request_close(ptr: *Surface) void {
-        ptr.closeSurface() catch {};
+        ptr.close();
     }
 
     /// Request that the surface split in the given direction.
