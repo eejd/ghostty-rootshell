@@ -2,19 +2,11 @@ Performance:
 
 * for scrollback, investigate using segmented list for sufficiently large
   scrollback scenarios.
-* reflow: text reflow is really poorly implemented right now specifically
-  for shrinking columns. Look into this. This may require changing the
-  screen data structure.
 * Loading fonts on startups should probably happen in multiple threads
-* Windowing event loop should not check `shouldClose` on every window
-  and should use should close callbacks instead.
-* Window shutdown should be done in threads but GLFW window close cannot
-  be done in multiple threads making this a bit tricky.
 * `deleteLines` is very, very slow which makes scroll region benchmarks terrible
 
 Correctness:
 
-* `exit` in the shell should close the window
 * test wrap against wraptest: https://github.com/mattiase/wraptest
   - automate this in some way
 * Charsets: UTF-8 vs. ASCII mode
@@ -31,7 +23,6 @@ Improvements:
 
 Mac:
 
-* Set menubar
 * Preferences window
 
 Major Features:
