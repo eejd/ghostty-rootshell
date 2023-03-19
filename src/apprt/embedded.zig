@@ -167,7 +167,7 @@ pub const Surface = struct {
         func(self.opts.userdata, direction);
     }
 
-    pub fn closeSurface(self: *const Surface) !void {
+    pub fn close(self: *const Surface) void {
         const func = self.app.opts.close_surface orelse {
             log.info("runtime embedder does not support closing a surface", .{});
             return;

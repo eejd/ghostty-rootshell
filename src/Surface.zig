@@ -482,9 +482,9 @@ pub fn deinit(self: *Surface) void {
 /// Close this surface. This will trigger the runtime to start the
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
-    if (@hasDecl(apprt.Surface, "closeSurface")) {
-        try self.rt_surface.closeSurface();
-    } else log.warn("runtime doesn't implement closeSurface", .{});
+    if (@hasDecl(apprt.Surface, "close")) {
+        self.rt_surface.close();
+    } else log.warn("runtime doesn't implement close", .{});
 }
 
 /// Called from the app thread to handle mailbox messages to our specific

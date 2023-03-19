@@ -614,7 +614,7 @@ pub const Surface = struct {
     }
 
     /// Close this surface.
-    fn close(self: *Surface) void {
+    pub fn close(self: *Surface) void {
         self.window.closeSurface(self);
     }
 
