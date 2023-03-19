@@ -233,8 +233,8 @@ pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
     // our cached buffers that we can queue to the stream.
     var i: usize = 0;
     while (i < data.len) {
-        const req = try ev.write_req_pool.get();
-        const buf = try ev.write_buf_pool.get();
+        const req = try ev.write_req_pool.getGrow(self.alloc);
+        const buf = try ev.write_buf_pool.getGrow(self.alloc);
         const end = @min(data.len, i + buf.len);
         fastmem.copy(u8, buf, data[i..end]);
         ev.data_stream.queueWrite(
