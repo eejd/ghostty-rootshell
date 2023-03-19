@@ -31,13 +31,13 @@ const log = std.log.scoped(.gtk);
 /// the assumptions.
 pub const App = struct {
     pub const Options = struct {
-        /// GTK app ID
+        /// GTK app ID. This is currently unused but should remain populated
+        /// for the future.
         id: [:0]const u8 = "com.mitchellh.ghostty",
     };
 
     core_app: *CoreApp,
 
-    app_id: [:0]const u8,
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
 
@@ -45,19 +45,17 @@ pub const App = struct {
     cursor_ibeam: *c.GdkCursor,
 
     pub fn init(core_app: *CoreApp, opts: Options) !App {
+        _ = opts;
+
         // This is super weird, but we still use GLFW with GTK only so that
         // we can tap into their folklore logic to get screen DPI. If we can
         // figure out a reliable way to determine this ourselves, we can get
         // rid of this dep.
         if (!glfw.init(.{})) return error.GlfwInitFailed;
 
-        // We have to copy our app ID because GTK says we own it.
-        var app_id = try core_app.alloc.dupeZ(u8, opts.id);
-        errdefer core_app.alloc.free(app_id);
-
         // Create our GTK Application which encapsulates our process.
         const app = @ptrCast(?*c.GtkApplication, c.gtk_application_new(
-            app_id.ptr,
+            null,
 
             // GTK >= 2.74
             if (@hasDecl(c, "G_APPLICATION_DEFAULT_FLAGS"))
@@ -109,7 +107,6 @@ pub const App = struct {
 
         return .{
             .core_app = core_app,
-            .app_id = app_id,
             .app = app,
             .ctx = ctx,
             .cursor_default = cursor_default,
@@ -127,8 +124,6 @@ pub const App = struct {
 
         c.g_object_unref(self.cursor_ibeam);
         c.g_object_unref(self.cursor_default);
-
-        self.core_app.alloc.free(self.app_id);
 
         glfw.terminate();
     }
