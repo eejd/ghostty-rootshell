@@ -185,9 +185,6 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     if (data.ev.process_exited) self.subprocess.externalExit();
     self.subprocess.stop();
 
-    // Wait for our subprocess to report it exited.
-    // data.ev.loop.run(.once);
-
     // Wait for our reader thread to end
     data.read_thread.join();
 }
