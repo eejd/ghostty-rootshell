@@ -130,6 +130,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     ev_data_ptr.* = .{
         .writer_mailbox = thread.mailbox,
         .writer_wakeup = thread.wakeup,
+        .surface_mailbox = self.surface_mailbox,
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
@@ -142,7 +143,6 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
                 .grid_size = &self.grid_size,
-                .surface_mailbox = self.surface_mailbox,
             },
         },
     };
@@ -277,6 +277,9 @@ const EventData = struct {
     writer_mailbox: *termio.Mailbox,
     writer_wakeup: xev.Async,
 
+    /// Mailbox for the surface.
+    surface_mailbox: apprt.surface.Mailbox,
+
     /// The stream parser. This parses the stream of escape codes and so on
     /// from the child process and calls callbacks in the stream handler.
     terminal_stream: terminal.Stream(StreamHandler),
@@ -353,6 +356,11 @@ fn processExit(
     const ev = ev_.?;
     ev.process_exited = true;
     ev.data_stream.close(loop, completion, EventData, ev, ttyClose);
+
+    // Notify our surface we want to close
+    _ = ev.surface_mailbox.push(.{
+        .close = {},
+    }, .{ .forever = {} });
 
     return .disarm;
 }
@@ -820,7 +828,6 @@ const StreamHandler = struct {
     alloc: Allocator,
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
-    surface_mailbox: apprt.surface.Mailbox,
 
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
@@ -1167,7 +1174,7 @@ const StreamHandler = struct {
         std.mem.copy(u8, &buf, title);
         buf[title.len] = 0;
 
-        _ = self.surface_mailbox.push(.{
+        _ = self.ev.surface_mailbox.push(.{
             .set_title = buf,
         }, .{ .forever = {} });
     }
@@ -1179,14 +1186,14 @@ const StreamHandler = struct {
 
         // Get clipboard contents
         if (data.len == 1 and data[0] == '?') {
-            _ = self.surface_mailbox.push(.{
+            _ = self.ev.surface_mailbox.push(.{
                 .clipboard_read = kind,
             }, .{ .forever = {} });
             return;
         }
 
         // Write clipboard contents
-        _ = self.surface_mailbox.push(.{
+        _ = self.ev.surface_mailbox.push(.{
             .clipboard_write = try apprt.surface.Message.WriteReq.init(
                 self.alloc,
                 data,

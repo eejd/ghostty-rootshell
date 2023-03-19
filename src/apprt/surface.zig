@@ -23,6 +23,10 @@ pub const Message = union(enum) {
 
     /// Write the clipboard contents.
     clipboard_write: WriteReq,
+
+    /// Close the surface. This will only close the current surface that
+    /// receives this, not the full application.
+    close: void,
 };
 
 /// A surface mailbox.
