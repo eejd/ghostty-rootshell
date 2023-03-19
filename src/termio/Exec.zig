@@ -346,8 +346,8 @@ const EventData = struct {
 
 fn processExit(
     ev_: ?*EventData,
-    loop: *xev.Loop,
-    completion: *xev.Completion,
+    _: *xev.Loop,
+    _: *xev.Completion,
     r: xev.Process.WaitError!u32,
 ) xev.CallbackAction {
     const code = r catch unreachable;
@@ -355,7 +355,6 @@ fn processExit(
 
     const ev = ev_.?;
     ev.process_exited = true;
-    ev.data_stream.close(loop, completion, EventData, ev, ttyClose);
 
     // Notify our surface we want to close
     _ = ev.surface_mailbox.push(.{
