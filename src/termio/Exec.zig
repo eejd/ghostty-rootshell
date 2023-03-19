@@ -222,6 +222,14 @@ pub fn changeConfig(self: *Exec, config: DerivedConfig) !void {
     var copy = config;
     defer copy.deinit();
 
+    // Update the configuration that we know about.
+    //
+    // Specific things we don't update:
+    //   - command, working-directory: we never restart the underlying
+    //   process so we don't care or need to know about these.
+
+    // Update the palette. Note this will only apply to new colors drawn
+    // since we decode all palette colors to RGB on usage.
     self.terminal.color_palette = config.palette;
 }
 
