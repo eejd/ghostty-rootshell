@@ -364,22 +364,6 @@ fn processExit(
     return .disarm;
 }
 
-fn ttyClose(
-    _: ?*EventData,
-    _: *xev.Loop,
-    _: *xev.Completion,
-    _: xev.Stream,
-    r: xev.Stream.CloseError!void,
-) xev.CallbackAction {
-    _ = r catch |err| {
-        log.warn("error closing tty err={}", .{err});
-        return .disarm;
-    };
-
-    log.debug("tty parent closed", .{});
-    return .disarm;
-}
-
 fn ttyWrite(
     ev_: ?*EventData,
     _: *xev.Loop,
