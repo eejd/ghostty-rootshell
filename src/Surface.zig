@@ -71,7 +71,6 @@ renderer_thr: std.Thread,
 
 /// Mouse state.
 mouse: Mouse,
-mouse_interval: u64,
 
 /// The terminal IO handler.
 io: termio.Impl,
@@ -137,6 +136,7 @@ const DerivedConfig = struct {
     clipboard_read: bool,
     clipboard_write: bool,
     clipboard_trim_trailing_spaces: bool,
+    mouse_interval: u64,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -149,6 +149,7 @@ const DerivedConfig = struct {
             .clipboard_read = config.@"clipboard-read",
             .clipboard_write = config.@"clipboard-write",
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+            .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -400,7 +401,6 @@ pub fn init(
         },
         .renderer_thr = undefined,
         .mouse = .{},
-        .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
         .io = io,
         .io_thread = io_thread,
         .io_thr = undefined,
@@ -1506,7 +1506,7 @@ pub fn mouseButtonCallback(
             // is less than and our interval and if so, increase the count.
             if (self.mouse.left_click_count > 0) {
                 const since = now.since(self.mouse.left_click_time);
-                if (since > self.mouse_interval) {
+                if (since > self.config.mouse_interval) {
                     self.mouse.left_click_count = 0;
                 }
             }
