@@ -105,6 +105,10 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     // Start our subprocess
     const master_fd = try self.subprocess.start(alloc);
     errdefer self.subprocess.stop();
+    const pid = pid: {
+        const command = self.subprocess.command orelse return error.ProcessNotStarted;
+        break :pid command.pid orelse return error.ProcessNoPid;
+    };
 
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
@@ -118,6 +122,10 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     var wakeup = try xev.Async.init();
     errdefer wakeup.deinit();
 
+    // Watcher to detect subprocess exit
+    var process = try xev.Process.init(pid);
+    errdefer process.deinit();
+
     // Setup our event data before we start
     ev_data_ptr.* = .{
         .writer_mailbox = thread.mailbox,
@@ -125,6 +133,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
+        .process = process,
         .data_stream = stream,
         .loop = &thread.loop,
         .terminal_stream = .{
@@ -142,6 +151,15 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     // Store our data so our callbacks can access it
     self.data = ev_data_ptr;
     errdefer self.data = null;
+
+    // Start our process watcher
+    process.wait(
+        ev_data_ptr.loop,
+        &ev_data_ptr.process_wait_c,
+        EventData,
+        ev_data_ptr,
+        processExit,
+    );
 
     // Start our reader thread
     const read_thread = try std.Thread.spawn(
@@ -164,7 +182,11 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     self.data = null;
 
     // Stop our subprocess
+    if (data.ev.process_exited) self.subprocess.externalExit();
     self.subprocess.stop();
+
+    // Wait for our subprocess to report it exited.
+    // data.ev.loop.run(.once);
 
     // Wait for our reader thread to end
     data.read_thread.join();
@@ -272,6 +294,14 @@ const EventData = struct {
     /// The mailbox for notifying the renderer of things.
     renderer_mailbox: *renderer.Thread.Mailbox,
 
+    /// The process watcher
+    process: xev.Process,
+    process_exited: bool = false,
+
+    /// This is used for both waiting for the process to exit and then
+    /// subsequently to wait for the data_stream to close.
+    process_wait_c: xev.Completion = .{},
+
     /// The data stream is the main IO for the pty.
     data_stream: xev.Stream,
 
@@ -301,6 +331,9 @@ const EventData = struct {
 
         // Stop our data stream
         self.data_stream.deinit();
+
+        // Stop our process watcher
+        self.process.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
@@ -310,6 +343,38 @@ const EventData = struct {
         try self.renderer_wakeup.notify();
     }
 };
+
+fn processExit(
+    ev_: ?*EventData,
+    loop: *xev.Loop,
+    completion: *xev.Completion,
+    r: xev.Process.WaitError!u32,
+) xev.CallbackAction {
+    const code = r catch unreachable;
+    log.debug("child process exited status={}", .{code});
+
+    const ev = ev_.?;
+    ev.process_exited = true;
+    ev.data_stream.close(loop, completion, EventData, ev, ttyClose);
+
+    return .disarm;
+}
+
+fn ttyClose(
+    _: ?*EventData,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    _: xev.Stream,
+    r: xev.Stream.CloseError!void,
+) xev.CallbackAction {
+    _ = r catch |err| {
+        log.warn("error closing tty err={}", .{err});
+        return .disarm;
+    };
+
+    log.debug("tty parent closed", .{});
+    return .disarm;
+}
 
 fn ttyWrite(
     ev_: ?*EventData,
@@ -535,6 +600,12 @@ const Subprocess = struct {
 
         self.command = cmd;
         return pty.master;
+    }
+
+    /// Called to notify that we exited externally so we can unset our
+    /// running state.
+    pub fn externalExit(self: *Subprocess) void {
+        self.command = null;
     }
 
     /// Stop the subprocess. This is safe to call anytime. This will wait
