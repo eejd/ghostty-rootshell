@@ -557,33 +557,41 @@ pub const Config = struct {
             if (self.command == null or wd_home) command: {
                 const alloc = self._arena.?.allocator();
 
-                // We don't do this in flatpak because SHELL in Flatpak is
-                // always set to /bin/sh
-                if (!internal_os.isFlatpak()) {
-                    // First look up the command using the SHELL env var.
-                    if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
-                        log.debug("default shell source=env value={s}", .{value});
-                        self.command = value;
+                // First look up the command using the SHELL env var if needed.
+                // We don't do this in flatpak because SHELL in Flatpak is always
+                // set to /bin/sh.
+                if (self.command) |cmd|
+                    log.info("shell src=config value={s}", .{cmd})
+                else {
+                    if (!internal_os.isFlatpak()) {
+                        if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
+                            log.info("default shell source=env value={s}", .{value});
+                            self.command = value;
 
-                        // If we don't need the working directory, then we can exit now.
-                        if (!wd_home) break :command;
-                    } else |_| {}
+                            // If we don't need the working directory, then we can exit now.
+                            if (!wd_home) break :command;
+                        } else |_| {}
+                    }
                 }
 
                 // We need the passwd entry for the remainder
                 const pw = try passwd.get(alloc);
                 if (self.command == null) {
                     if (pw.shell) |sh| {
-                        log.debug("default shell src=passwd value={s}", .{sh});
+                        log.info("default shell src=passwd value={s}", .{sh});
                         self.command = sh;
                     }
                 }
 
                 if (wd_home) {
                     if (pw.home) |home| {
-                        log.debug("default working directory src=passwd value={s}", .{home});
+                        log.info("default working directory src=passwd value={s}", .{home});
                         self.@"working-directory" = home;
                     }
+                }
+
+                if (self.command == null) {
+                    log.warn("no default shell found, will default to using sh", .{});
                 }
             }
         }
