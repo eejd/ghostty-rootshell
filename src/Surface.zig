@@ -362,7 +362,8 @@ pub fn init(
     var io = try termio.Impl.init(alloc, .{
         .grid_size = grid_size,
         .screen_size = screen_size,
-        .config = config,
+        .full_config = config,
+        .config = try termio.Impl.DerivedConfig.init(alloc, config),
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
@@ -572,11 +573,22 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     // then send them a message to update.
     var renderer_config = try Renderer.DerivedConfig.init(self.alloc, config);
     errdefer renderer_config.deinit();
-    // TODO: termio config
-
+    var termio_config = try termio.Impl.DerivedConfig.init(self.alloc, config);
+    errdefer termio_config.deinit();
     _ = self.renderer_thread.mailbox.push(.{
         .change_config = renderer_config,
     }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{
+        .change_config = termio_config,
+    }, .{ .forever = {} });
+
+    // With mailbox messages sent, we have to wake them up so they process it.
+    self.queueRender() catch |err| {
+        log.warn("failed to notify renderer of config change err={}", .{err});
+    };
+    self.io_thread.wakeup.notify() catch |err| {
+        log.warn("failed to notify io thread of config change err={}", .{err});
+    };
 }
 
 /// Returns the x/y coordinate of where the IME (Input Method Editor)

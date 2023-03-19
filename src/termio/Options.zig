@@ -4,6 +4,7 @@ const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const renderer = @import("../renderer.zig");
 const Config = @import("../config.zig").Config;
+const termio = @import("../termio.zig");
 
 /// The size of the terminal grid.
 grid_size: renderer.GridSize,
@@ -11,10 +12,13 @@ grid_size: renderer.GridSize,
 /// The size of the viewport in pixels.
 screen_size: renderer.ScreenSize,
 
-/// The app configuration. This must NOT be stored by any termio implementation.
+/// The full app configuration. This is only available during initialization.
 /// The memory it points to is NOT stable after the init call so any values
 /// in here must be copied.
-config: *const Config,
+full_config: *const Config,
+
+/// The derived configuration for this termio implementation.
+config: termio.Impl.DerivedConfig,
 
 /// The render state. The IO implementation can modify anything here. The
 /// surface thread will setup the initial "terminal" pointer but the IO impl

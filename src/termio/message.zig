@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
+const termio = @import("../termio.zig");
 
 /// The messages that can be sent to an IO thread.
 ///
@@ -27,6 +28,9 @@ pub const Message = union(enum) {
         /// this to send to the pty.
         padding: renderer.Padding,
     };
+
+    /// The derived configuration to update the implementation with.
+    change_config: termio.Impl.DerivedConfig,
 
     /// Resize the window.
     resize: Resize,
