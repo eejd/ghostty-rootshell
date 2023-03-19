@@ -257,7 +257,8 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .change_config => |config| {
-                try self.renderer.changeConfig(config);
+                defer config.alloc.destroy(config.ptr);
+                try self.renderer.changeConfig(config.ptr);
             },
         }
     }

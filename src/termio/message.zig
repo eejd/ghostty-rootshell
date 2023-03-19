@@ -29,8 +29,12 @@ pub const Message = union(enum) {
         padding: renderer.Padding,
     };
 
-    /// The derived configuration to update the implementation with.
-    change_config: termio.Impl.DerivedConfig,
+    /// The derived configuration to update the implementation with. This
+    /// is allocated via the allocator and is expected to be freed when done.
+    change_config: struct {
+        alloc: Allocator,
+        ptr: *termio.Impl.DerivedConfig,
+    },
 
     /// Resize the window.
     resize: Resize,

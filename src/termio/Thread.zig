@@ -150,7 +150,10 @@ fn drainMailbox(self: *Thread) !void {
 
         log.debug("mailbox message={}", .{message});
         switch (message) {
-            .change_config => |config| try self.impl.changeConfig(config),
+            .change_config => |config| {
+                defer config.alloc.destroy(config.ptr);
+                try self.impl.changeConfig(config.ptr);
+            },
             .resize => |v| self.handleResize(v),
             .clear_screen => |v| try self.impl.clearScreen(v.history),
             .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),

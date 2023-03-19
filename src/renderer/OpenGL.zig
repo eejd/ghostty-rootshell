@@ -1233,8 +1233,8 @@ fn gridSize(self: *const OpenGL, screen_size: renderer.ScreenSize) renderer.Grid
 }
 
 /// Update the configuration.
-pub fn changeConfig(self: *OpenGL, config: DerivedConfig) !void {
-    self.config = config;
+pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
+    self.config = config.*;
 }
 
 /// Set the screen size for rendering. This will update the projection

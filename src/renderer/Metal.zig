@@ -725,8 +725,8 @@ fn drawCells(
 }
 
 /// Update the configuration.
-pub fn changeConfig(self: *Metal, config: DerivedConfig) !void {
-    self.config = config;
+pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
+    self.config = config.*;
 }
 
 /// Resize the screen.

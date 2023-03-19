@@ -24,5 +24,8 @@ pub const Message = union(enum) {
     screen_size: renderer.ScreenSize,
 
     /// The derived configuration to update the renderer with.
-    change_config: renderer.Renderer.DerivedConfig,
+    change_config: struct {
+        alloc: Allocator,
+        ptr: *renderer.Renderer.DerivedConfig,
+    },
 };

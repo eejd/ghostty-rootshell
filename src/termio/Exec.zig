@@ -218,9 +218,8 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
 }
 
 /// Update the configuration.
-pub fn changeConfig(self: *Exec, config: DerivedConfig) !void {
-    var copy = config;
-    defer copy.deinit();
+pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
+    defer config.deinit();
 
     // Update the configuration that we know about.
     //
