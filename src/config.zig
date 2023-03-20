@@ -562,6 +562,13 @@ pub const Config = struct {
 
     /// Load and parse the CLI args.
     pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
+        switch (builtin.os.tag) {
+            .windows => {},
+
+            // Fast-path if we are non-Windows and no args, do nothing.
+            else => if (std.os.argv.len <= 1) return,
+        }
+
         // Parse the config from the CLI args
         var iter = try std.process.argsWithAllocator(alloc_gpa);
         defer iter.deinit();
