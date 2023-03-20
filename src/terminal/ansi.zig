@@ -95,6 +95,9 @@ pub const Mode = enum(u16) {
     /// to track mouse movement.
     mouse_event_any = 1003,
 
+    /// Send focus in/out events.
+    focus_event = 1004,
+
     /// Report mouse position in the utf8 format to support larger screens.
     mouse_format_utf8 = 1005,
 

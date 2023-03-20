@@ -1061,6 +1061,8 @@ const StreamHandler = struct {
 
             .mouse_alternate_scroll => self.terminal.modes.mouse_alternate_scroll = enabled,
 
+            .focus_event => self.terminal.modes.focus_event = enabled,
+
             else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
         }
     }

@@ -1152,6 +1152,22 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
 
     // Schedule render which also drains our mailbox
     try self.queueRender();
+
+    // Notify the app about focus in/out if it is requesting it
+    {
+        self.renderer_state.mutex.lock();
+        const focus_event = self.io.terminal.modes.focus_event;
+        self.renderer_state.mutex.unlock();
+
+        if (focus_event) {
+            const seq = if (focused) "\x1b[I" else "\x1b[O";
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = seq,
+            }, .{ .forever = {} });
+
+            try self.io_thread.wakeup.notify();
+        }
+    }
 }
 
 pub fn refreshCallback(self: *Surface) !void {
