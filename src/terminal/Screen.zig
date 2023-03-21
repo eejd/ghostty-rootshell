@@ -1440,68 +1440,85 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // then we expand out to there.
     const rows_written = self.rowsWritten();
     const viewport_bottom = self.viewport + self.rows;
-    if (viewport_bottom > rows_written) {
-        // The number of new rows we need is the number of rows off our
-        // previous bottom we are growing.
-        const new_rows_needed = viewport_bottom - rows_written;
+    if (viewport_bottom <= rows_written) return;
 
-        // If we can't fit into our capacity but we have space, resize the
-        // buffer to allocate more scrollback.
-        const rows_final = rows_written + new_rows_needed;
-        if (rows_final > self.rowsCapacity()) {
-            const max_capacity = self.maxCapacity();
-            if (self.storage.capacity() < max_capacity) {
-                // The capacity we want to allocate. We take whatever is greater
-                // of what we actually need and two pages. We don't want to
-                // allocate one row at a time (common for scrolling) so we do this
-                // to chunk it.
-                const needed_capacity = @max(
-                    rows_final * (self.cols + 1),
-                    @min(self.storage.capacity() * 2, max_capacity),
-                );
+    // The number of new rows we need is the number of rows off our
+    // previous bottom we are growing.
+    const new_rows_needed = viewport_bottom - rows_written;
 
-                // Allocate what we can.
-                try self.storage.resize(
-                    self.alloc,
-                    @min(max_capacity, needed_capacity),
-                );
-            }
+    // If we can't fit into our capacity but we have space, resize the
+    // buffer to allocate more scrollback.
+    const rows_final = rows_written + new_rows_needed;
+    if (rows_final > self.rowsCapacity()) {
+        const max_capacity = self.maxCapacity();
+        if (self.storage.capacity() < max_capacity) {
+            // The capacity we want to allocate. We take whatever is greater
+            // of what we actually need and two pages. We don't want to
+            // allocate one row at a time (common for scrolling) so we do this
+            // to chunk it.
+            const needed_capacity = @max(
+                rows_final * (self.cols + 1),
+                @min(self.storage.capacity() * 2, max_capacity),
+            );
+
+            // Allocate what we can.
+            try self.storage.resize(
+                self.alloc,
+                @min(max_capacity, needed_capacity),
+            );
         }
-
-        // If we can't fit our rows into our capacity, we delete some scrollback.
-        const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
-            const rows_to_delete = rows_final - self.rowsCapacity();
-
-            // Fast-path: we have no graphemes.
-            // Slow-path: we have graphemes, we have to check each row
-            // we're going to delete to see if they contain graphemes and
-            // clear the ones that do so we clear memory properly.
-            if (self.graphemes.count() > 0) {
-                var y: usize = 0;
-                while (y < rows_to_delete) : (y += 1) {
-                    const row = self.getRow(.{ .active = y });
-                    if (row.storage[0].header.flags.grapheme) row.clear(.{});
-                }
-            }
-
-            self.viewport -= rows_to_delete;
-            self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
-            break :deleted rows_to_delete;
-        } else 0;
-
-        // If we have more rows than what shows on our screen, we have a
-        // history boundary.
-        const rows_written_final = rows_final - rows_deleted;
-        if (rows_written_final > self.rows) {
-            self.history = rows_written_final - self.rows;
-        }
-
-        // Ensure we have "written" our last row so that it shows up
-        _ = self.storage.getPtrSlice(
-            (rows_written_final - 1) * (self.cols + 1),
-            self.cols + 1,
-        );
     }
+
+    // If we can't fit our rows into our capacity, we delete some scrollback.
+    const rows_deleted = if (rows_final > self.rowsCapacity()) deleted: {
+        const rows_to_delete = rows_final - self.rowsCapacity();
+
+        // Fast-path: we have no graphemes.
+        // Slow-path: we have graphemes, we have to check each row
+        // we're going to delete to see if they contain graphemes and
+        // clear the ones that do so we clear memory properly.
+        if (self.graphemes.count() > 0) {
+            var y: usize = 0;
+            while (y < rows_to_delete) : (y += 1) {
+                const row = self.getRow(.{ .active = y });
+                if (row.storage[0].header.flags.grapheme) row.clear(.{});
+            }
+        }
+
+        self.viewport -= rows_to_delete;
+        self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
+        break :deleted rows_to_delete;
+    } else 0;
+
+    // If we are deleting rows and have a selection, then we need to offset
+    // the selection by the rows we're deleting.
+    if (self.selection) |*sel| {
+        // If we're deleting more rows than our Y values, we also move
+        // the X over to 0 because we're in the middle of the selection now.
+        if (rows_deleted > sel.start.y) sel.start.x = 0;
+        if (rows_deleted > sel.end.y) sel.end.x = 0;
+
+        // Remove the deleted rows from both y values. We use saturating
+        // subtraction so that we can detect when we're at zero.
+        sel.start.y -|= rows_deleted;
+        sel.end.y -|= rows_deleted;
+
+        // If the selection is now empty, just clear it.
+        if (sel.empty()) self.selection = null;
+    }
+
+    // If we have more rows than what shows on our screen, we have a
+    // history boundary.
+    const rows_written_final = rows_final - rows_deleted;
+    if (rows_written_final > self.rows) {
+        self.history = rows_written_final - self.rows;
+    }
+
+    // Ensure we have "written" our last row so that it shows up
+    _ = self.storage.getPtrSlice(
+        (rows_written_final - 1) * (self.cols + 1),
+        self.cols + 1,
+    );
 }
 
 /// Returns the raw text associated with a selection. This will unwrap
@@ -2773,6 +2790,128 @@ test "Screen: scrollback empty" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scrolling moves selection" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Select a single line
+    s.selection = .{
+        .start = .{ .x = 0, .y = 1 },
+        .end = .{ .x = s.cols - 1, .y = 1 },
+    };
+
+    // Scroll down, should still be bottom
+    try s.scroll(.{ .delta = 1 });
+    try testing.expect(s.viewportIsBottom());
+
+    // Our selection should've moved up
+    try testing.expectEqual(Selection{
+        .start = .{ .x = 0, .y = 0 },
+        .end = .{ .x = s.cols - 1, .y = 0 },
+    }, s.selection.?);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling to the bottom does nothing
+    try s.scroll(.{ .bottom = {} });
+
+    // Our selection should've stayed the same
+    try testing.expectEqual(Selection{
+        .start = .{ .x = 0, .y = 0 },
+        .end = .{ .x = s.cols - 1, .y = 0 },
+    }, s.selection.?);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scroll up again
+    try s.scroll(.{ .delta = 1 });
+
+    // Our selection should be null because it left the screen.
+    try testing.expect(s.selection == null);
+}
+
+test "Screen: scrolling with scrollback available doesn't move selection" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 1);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Select a single line
+    s.selection = .{
+        .start = .{ .x = 0, .y = 1 },
+        .end = .{ .x = s.cols - 1, .y = 1 },
+    };
+
+    // Scroll down, should still be bottom
+    try s.scroll(.{ .delta = 1 });
+    try testing.expect(s.viewportIsBottom());
+
+    // Our selection should NOT move since we have scrollback
+    try testing.expectEqual(Selection{
+        .start = .{ .x = 0, .y = 1 },
+        .end = .{ .x = s.cols - 1, .y = 1 },
+    }, s.selection.?);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+
+    // Scrolling back should make it visible again
+    try s.scroll(.{ .delta = -1 });
+    try testing.expect(!s.viewportIsBottom());
+
+    // Our selection should NOT move since we have scrollback
+    try testing.expectEqual(Selection{
+        .start = .{ .x = 0, .y = 1 },
+        .end = .{ .x = s.cols - 1, .y = 1 },
+    }, s.selection.?);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    // Scroll down, this sends us off the scrollback
+    try s.scroll(.{ .delta = 2 });
+    try testing.expect(s.viewportIsBottom());
+
+    // Selection should move since we went down 2
+    try testing.expectEqual(Selection{
+        .start = .{ .x = 0, .y = 0 },
+        .end = .{ .x = s.cols - 1, .y = 0 },
+    }, s.selection.?);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("3IJKL", contents);
     }
 }
 
