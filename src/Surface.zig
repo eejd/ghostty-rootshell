@@ -822,8 +822,8 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
         defer self.renderer_state.mutex.unlock();
 
         // Clear the selction if we have one.
-        if (self.io.terminal.selection != null) {
-            self.io.terminal.selection = null;
+        if (self.io.terminal.screen.selection != null) {
+            self.io.terminal.screen.selection = null;
             try self.queueRender();
         }
 
@@ -941,7 +941,7 @@ pub fn keyCallback(
                 .copy_to_clipboard => {
                     // We can read from the renderer state without holding
                     // the lock because only we will write to this field.
-                    if (self.io.terminal.selection) |sel| {
+                    if (self.io.terminal.screen.selection) |sel| {
                         var buf = self.io.terminal.screen.selectionString(
                             self.alloc,
                             sel,
@@ -1584,8 +1584,8 @@ pub fn mouseButtonCallback(
 
         switch (self.mouse.left_click_count) {
             // First mouse click, clear selection
-            1 => if (self.io.terminal.selection != null) {
-                self.io.terminal.selection = null;
+            1 => if (self.io.terminal.screen.selection != null) {
+                self.io.terminal.screen.selection = null;
                 try self.queueRender();
             },
 
@@ -1593,7 +1593,7 @@ pub fn mouseButtonCallback(
             2 => {
                 const sel_ = self.io.terminal.screen.selectWord(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    self.io.terminal.selection = sel;
+                    self.io.terminal.screen.selection = sel;
                     try self.queueRender();
                 }
             },
@@ -1602,7 +1602,7 @@ pub fn mouseButtonCallback(
             3 => {
                 const sel_ = self.io.terminal.screen.selectLine(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    self.io.terminal.selection = sel;
+                    self.io.terminal.screen.selection = sel;
                     try self.queueRender();
                 }
             },
@@ -1686,7 +1686,7 @@ fn dragLeftClickDouble(
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectWord(self.mouse.left_click_point) orelse {
-        self.io.terminal.selection = word;
+        self.io.terminal.screen.selection = word;
         return;
     };
 
@@ -1696,7 +1696,7 @@ fn dragLeftClickDouble(
     } else {
         sel.end = word.end;
     }
-    self.io.terminal.selection = sel;
+    self.io.terminal.screen.selection = sel;
 }
 
 /// Triple-click dragging moves the selection one "line" at a time.
@@ -1711,7 +1711,7 @@ fn dragLeftClickTriple(
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectLine(self.mouse.left_click_point) orelse {
-        self.io.terminal.selection = word;
+        self.io.terminal.screen.selection = word;
         return;
     };
 
@@ -1721,7 +1721,7 @@ fn dragLeftClickTriple(
     } else {
         sel.end = word.end;
     }
-    self.io.terminal.selection = sel;
+    self.io.terminal.screen.selection = sel;
 }
 
 fn dragLeftClickSingle(
@@ -1738,13 +1738,13 @@ fn dragLeftClickSingle(
     // If we were selecting, and we switched directions, then we restart
     // calculations because it forces us to reconsider if the first cell is
     // selected.
-    if (self.io.terminal.selection) |sel| {
+    if (self.io.terminal.screen.selection) |sel| {
         const reset: bool = if (sel.end.before(sel.start))
             sel.start.before(screen_point)
         else
             screen_point.before(sel.start);
 
-        if (reset) self.io.terminal.selection = null;
+        if (reset) self.io.terminal.screen.selection = null;
     }
 
     // Our logic for determing if the starting cell is selected:
@@ -1776,7 +1776,7 @@ fn dragLeftClickSingle(
         else
             cell_xpos < cell_xboundary;
 
-        self.io.terminal.selection = if (selected) .{
+        self.io.terminal.screen.selection = if (selected) .{
             .start = screen_point,
             .end = screen_point,
         } else null;
@@ -1786,7 +1786,7 @@ fn dragLeftClickSingle(
 
     // If this is a different cell and we haven't started selection,
     // we determine the starting cell first.
-    if (self.io.terminal.selection == null) {
+    if (self.io.terminal.screen.selection == null) {
         //   - If we're moving to a point before the start, then we select
         //     the starting cell if we started after the boundary, else
         //     we start selection of the prior cell.
@@ -1818,7 +1818,7 @@ fn dragLeftClickSingle(
             }
         };
 
-        self.io.terminal.selection = .{ .start = start, .end = screen_point };
+        self.io.terminal.screen.selection = .{ .start = start, .end = screen_point };
         return;
     }
 
@@ -1827,8 +1827,8 @@ fn dragLeftClickSingle(
 
     // We moved! Set the selection end point. The start point should be
     // set earlier.
-    assert(self.io.terminal.selection != null);
-    self.io.terminal.selection.?.end = screen_point;
+    assert(self.io.terminal.screen.selection != null);
+    self.io.terminal.screen.selection.?.end = screen_point;
 }
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {

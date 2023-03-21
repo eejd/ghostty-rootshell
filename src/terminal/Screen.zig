@@ -774,6 +774,9 @@ cursor: Cursor = .{},
 /// Saved cursor saved with DECSC (ESC 7).
 saved_cursor: Cursor = .{},
 
+/// The selection for this screen (if any).
+selection: ?Selection = null,
+
 /// Initialize a new screen.
 pub fn init(
     alloc: Allocator,

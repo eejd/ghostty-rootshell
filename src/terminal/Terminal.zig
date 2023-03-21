@@ -15,7 +15,6 @@ const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
-const Selection = @import("Selection.zig");
 const Tabstops = @import("Tabstops.zig");
 const trace = @import("tracy").trace;
 const color = @import("color.zig");
@@ -38,9 +37,6 @@ pub const ScreenType = enum {
 active_screen: ScreenType,
 screen: Screen,
 secondary_screen: Screen,
-
-/// The current selection (if any).
-selection: ?Selection = null,
 
 /// Whether we're currently writing to the status line (DECSASD and DECSSDT).
 /// We don't support a status line currently so we just black hole this
@@ -204,7 +200,7 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.screen.cursor = .{};
 
     // Clear our selection
-    self.selection = null;
+    self.screen.selection = null;
 
     if (options.clear_on_enter) {
         self.eraseDisplay(.complete);
@@ -231,7 +227,7 @@ pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.active_screen = .primary;
 
     // Clear our selection
-    self.selection = null;
+    self.screen.selection = null;
 
     // Restore the cursor from the primary screen
     if (options.cursor_save) self.restoreCursor();
@@ -1393,7 +1389,6 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
 /// Full reset
 pub fn fullReset(self: *Terminal) void {
     self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
-    self.selection = null;
     self.charset = .{};
     self.eraseDisplay(.scrollback);
     self.eraseDisplay(.complete);
@@ -1401,6 +1396,7 @@ pub fn fullReset(self: *Terminal) void {
     self.tabstops.reset(0);
     self.screen.cursor = .{};
     self.screen.saved_cursor = .{};
+    self.screen.selection = null;
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
     self.previous_char = null;
 }
