@@ -897,6 +897,15 @@ pub fn keyCallback(
                         .write_stable = data,
                     }, .{ .forever = {} });
                     try self.io_thread.wakeup.notify();
+
+                    // CSI triggers a scroll.
+                    {
+                        self.renderer_state.mutex.lock();
+                        defer self.renderer_state.mutex.unlock();
+                        self.scrollToBottom() catch |err| {
+                            log.warn("error scrolling to bottom err={}", .{err});
+                        };
+                    }
                 },
 
                 .cursor_key => |ck| {
@@ -906,6 +915,13 @@ pub fn keyCallback(
                     const normal = normal: {
                         self.renderer_state.mutex.lock();
                         defer self.renderer_state.mutex.unlock();
+
+                        // With the lock held, we must scroll to the bottom.
+                        // We always scroll to the bottom for these inputs.
+                        self.scrollToBottom() catch |err| {
+                            log.warn("error scrolling to bottom err={}", .{err});
+                        };
+
                         break :normal !self.io.terminal.modes.cursor_keys;
                     };
 
@@ -953,6 +969,13 @@ pub fn keyCallback(
                         const bracketed = bracketed: {
                             self.renderer_state.mutex.lock();
                             defer self.renderer_state.mutex.unlock();
+
+                            // With the lock held, we must scroll to the bottom.
+                            // We always scroll to the bottom for these inputs.
+                            self.scrollToBottom() catch |err| {
+                                log.warn("error scrolling to bottom err={}", .{err});
+                            };
+
                             break :bracketed self.io.terminal.modes.bracketed_paste;
                         };
 
@@ -1140,6 +1163,15 @@ pub fn keyCallback(
 
             // After sending all our messages we have to notify our IO thread
             try self.io_thread.wakeup.notify();
+
+            // Control charactesr trigger a scroll
+            {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                self.scrollToBottom() catch |err| {
+                    log.warn("error scrolling to bottom err={}", .{err});
+                };
+            }
         }
     }
 }
@@ -1820,6 +1852,14 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
             break :y @min(y, self.grid_size.rows - 1);
         },
     };
+}
+
+/// Scroll to the bottom of the viewport.
+///
+/// Precondition: the render_state mutex must be held.
+fn scrollToBottom(self: *Surface) !void {
+    try self.io.terminal.scrollViewport(.{ .bottom = {} });
+    try self.queueRender();
 }
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
