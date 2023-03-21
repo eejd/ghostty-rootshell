@@ -33,6 +33,11 @@ pub fn toViewport(self: Selection, screen: *const Screen) ?Selection {
     };
 }
 
+/// Returns true if the selection is empty.
+pub fn empty(self: Selection) bool {
+    return self.start.x == self.end.x and self.start.y == self.end.y;
+}
+
 /// Returns true if the selection contains the given point.
 ///
 /// This recalculates top left and bottom right each call. If you have

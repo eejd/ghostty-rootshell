@@ -745,7 +745,7 @@ pub fn render(
 
         // Convert our selection to viewport points because we copy only
         // the viewport above.
-        const selection: ?terminal.Selection = if (state.terminal.selection) |sel|
+        const selection: ?terminal.Selection = if (state.terminal.screen.selection) |sel|
             sel.toViewport(&state.terminal.screen)
         else
             null;
