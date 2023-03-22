@@ -1657,17 +1657,27 @@ pub fn cursorPosCallback(
     // All roads lead to requiring a re-render at this pont.
     try self.queueRender();
 
-    // Convert to pixels from screen coords
-    const xpos = pos.x;
-    const ypos = pos.y;
+    // If our y is negative, we're above the window. In this case, we scroll
+    // up. The amount we scroll up is dependent on how negative we are.
+    // Note: one day, we can change this from distance to time based if we want.
+    //log.warn("CURSOR POS: {} {}", .{ pos, self.screen_size });
+    const max_y = @intToFloat(f32, self.screen_size.height);
+    if (pos.y < 0 or pos.y > max_y) {
+        const delta: isize = if (pos.y < 0) -1 else 1;
+        try self.io.terminal.scrollViewport(.{ .delta = delta });
+
+        // TODO: We want a timer or something to repeat while we're still
+        // at this cursor position. Right now, the user has to jiggle their
+        // mouse in order to scroll.
+    }
 
     // Convert to points
-    const viewport_point = self.posToViewport(xpos, ypos);
+    const viewport_point = self.posToViewport(pos.x, pos.y);
     const screen_point = viewport_point.toScreen(&self.io.terminal.screen);
 
     // Handle dragging depending on click count
     switch (self.mouse.left_click_count) {
-        1 => self.dragLeftClickSingle(screen_point, xpos),
+        1 => self.dragLeftClickSingle(screen_point, pos.x),
         2 => self.dragLeftClickDouble(screen_point),
         3 => self.dragLeftClickTriple(screen_point),
         else => unreachable,
