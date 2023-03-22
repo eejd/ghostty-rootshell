@@ -71,7 +71,18 @@ pub fn contains(self: Selection, p: ScreenPoint) bool {
 pub fn within(self: Selection, start: ScreenPoint, end: ScreenPoint) bool {
     const tl = self.topLeft();
     const br = self.bottomRight();
-    return tl.y >= start.y and br.y <= end.y;
+
+    // Bottom right is before start, no way we are in it.
+    if (br.y < start.y) return false;
+    // Bottom right is the first line, only if our x is in it.
+    if (br.y == start.y) return br.x >= start.x;
+
+    // If top left is beyond the end, we're not in it.
+    if (tl.y > end.y) return false;
+    // If top left is on the end, only if our x is in it.
+    if (tl.y == end.y) return tl.x <= end.x;
+
+    return true;
 }
 
 /// Returns true if the selection contains the row of the given point,
@@ -159,8 +170,16 @@ test "Selection: within" {
             .end = .{ .x = 3, .y = 2 },
         };
 
+        // Fully within
         try testing.expect(sel.within(.{ .x = 6, .y = 0 }, .{ .x = 6, .y = 3 }));
         try testing.expect(sel.within(.{ .x = 3, .y = 1 }, .{ .x = 6, .y = 3 }));
         try testing.expect(sel.within(.{ .x = 3, .y = 0 }, .{ .x = 6, .y = 2 }));
+
+        // Partially within
+        try testing.expect(sel.within(.{ .x = 1, .y = 2 }, .{ .x = 6, .y = 3 }));
+        try testing.expect(sel.within(.{ .x = 1, .y = 0 }, .{ .x = 6, .y = 1 }));
+
+        // Not within at all
+        try testing.expect(!sel.within(.{ .x = 0, .y = 0 }, .{ .x = 4, .y = 1 }));
     }
 }
