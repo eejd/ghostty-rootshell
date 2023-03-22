@@ -83,12 +83,27 @@ texture_color: objc.Object, // MTLTexture
 const GPUCell = extern struct {
     mode: GPUCellMode,
     grid_pos: [2]f32,
-    cell_width: u8,
-    color: [4]u8,
     glyph_pos: [2]u32 = .{ 0, 0 },
     glyph_size: [2]u32 = .{ 0, 0 },
     glyph_offset: [2]i32 = .{ 0, 0 },
+    color: [4]u8,
+    cell_width: u8,
 };
+
+// Intel macOS 13 doesn't like it when any field in a vertex buffer is not
+// aligned on the alignment of the struct. I don't understand it, I think
+// this must be some macOS 13 Metal GPU driver bug because it doesn't matter
+// on macOS 12 or Apple Silicon macOS 13.
+//
+// To be safe, we put this test in here.
+test "GPUCell offsets" {
+    const testing = std.testing;
+    const alignment = @alignOf(GPUCell);
+    inline for (@typeInfo(GPUCell).Struct.fields) |field| {
+        const offset = @offsetOf(GPUCell, field.name);
+        try testing.expectEqual(0, @mod(offset, alignment));
+    }
+}
 
 const GPUUniforms = extern struct {
     /// The projection matrix for turning world coordinates to normalized.
