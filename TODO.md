@@ -18,7 +18,6 @@ Correctness:
 Improvements:
 
 * scrollback: configurable
-* selection on top/bottom should scroll up/down (while extending selection)
 * shift-click and drag to continue selection
 
 Mac:
