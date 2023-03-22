@@ -18,7 +18,6 @@ Correctness:
 Improvements:
 
 * scrollback: configurable
-* shift-click and drag to continue selection
 
 Mac:
 
