@@ -57,8 +57,14 @@ pub const Shaper = struct {
         self: *Shaper,
         group: *font.GroupCache,
         row: terminal.Screen.Row,
+        selection: ?terminal.Selection,
     ) font.shape.RunIterator {
-        return .{ .hooks = .{ .shaper = self }, .group = group, .row = row };
+        return .{
+            .hooks = .{ .shaper = self },
+            .group = group,
+            .row = row,
+            .selection = selection,
+        };
     }
 
     /// Shape the given text run. The text run must be the immediately

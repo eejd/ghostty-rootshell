@@ -146,8 +146,19 @@ pub fn bottomRight(self: Selection) ScreenPoint {
     };
 }
 
+/// Returns the selection in the given order.
+pub fn ordered(self: Selection, desired: Order) Selection {
+    if (self.order() == desired) return self;
+    const tl = self.topLeft();
+    const br = self.bottomRight();
+    return switch (desired) {
+        .forward => .{ .start = tl, .end = br },
+        .reverse => .{ .start = br, .end = tl },
+    };
+}
+
 /// The order of the selection (whether it is selecting forward or back).
-const Order = enum { forward, reverse };
+pub const Order = enum { forward, reverse };
 
 fn order(self: Selection) Order {
     if (self.start.y < self.end.y) return .forward;

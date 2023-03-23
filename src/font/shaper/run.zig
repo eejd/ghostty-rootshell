@@ -28,6 +28,7 @@ pub const RunIterator = struct {
     hooks: font.Shaper.RunIteratorHook,
     group: *font.GroupCache,
     row: terminal.Screen.Row,
+    selection: ?terminal.Selection = null,
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
@@ -55,6 +56,16 @@ pub const RunIterator = struct {
         while (j < max) : (j += 1) {
             const cluster = j;
             const cell = self.row.getCell(j);
+
+            // If we have a selection and we're at a boundary point, then
+            // we break the run here.
+            if (self.selection) |unordered_sel| {
+                if (j > self.i) {
+                    const sel = unordered_sel.ordered(.forward);
+                    if (sel.start.x > 0 and j == sel.start.x) break;
+                    if (sel.end.x > 0 and j == sel.end.x + 1) break;
+                }
+            }
 
             // If we're a spacer, then we ignore it
             if (cell.attrs.wide_spacer_tail) continue;
