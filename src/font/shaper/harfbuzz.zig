@@ -43,12 +43,22 @@ pub const Shaper = struct {
     /// Returns an iterator that returns one text run at a time for the
     /// given terminal row. Note that text runs are are only valid one at a time
     /// for a Shaper struct since they share state.
+    ///
+    /// The selection must be a row-only selection (height = 1). See
+    /// Selection.containedRow. The run iterator will ONLY look at X values
+    /// and assume the y value matches.
     pub fn runIterator(
         self: *Shaper,
         group: *GroupCache,
         row: terminal.Screen.Row,
+        selection: ?terminal.Selection,
     ) font.shape.RunIterator {
-        return .{ .hooks = .{ .shaper = self }, .group = group, .row = row };
+        return .{
+            .hooks = .{ .shaper = self },
+            .group = group,
+            .row = row,
+            .selection = selection,
+        };
     }
 
     /// Shape the given text run. The text run must be the immediately previous
@@ -136,7 +146,7 @@ test "run iterator" {
 
         // Get our run iterator
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |_| count += 1;
         try testing.expectEqual(@as(usize, 1), count);
@@ -149,7 +159,7 @@ test "run iterator" {
         try screen.testWriteString("ABCD   EFG");
 
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |_| count += 1;
         try testing.expectEqual(@as(usize, 1), count);
@@ -163,7 +173,7 @@ test "run iterator" {
 
         // Get our run iterator
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |_| {
             count += 1;
@@ -197,7 +207,7 @@ test "run iterator: empty cells with background set" {
 
         // Get our run iterator
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -211,6 +221,7 @@ test "run iterator: empty cells with background set" {
         try testing.expectEqual(@as(usize, 1), count);
     }
 }
+
 test "shape" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -231,7 +242,7 @@ test "shape" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -254,7 +265,7 @@ test "shape inconsolata ligs" {
         try screen.testWriteString(">=");
 
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -271,7 +282,7 @@ test "shape inconsolata ligs" {
         try screen.testWriteString("===");
 
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -296,7 +307,7 @@ test "shape emoji width" {
         try screen.testWriteString("👍");
 
         var shaper = testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -330,7 +341,7 @@ test "shape emoji width long" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -361,7 +372,7 @@ test "shape variation selector VS15" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -392,7 +403,7 @@ test "shape variation selector VS16" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -420,7 +431,7 @@ test "shape with empty cells in between" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -452,7 +463,7 @@ test "shape Chinese characters" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -493,7 +504,7 @@ test "shape box glyphs" {
 
     // Get our run iterator
     var shaper = testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }));
+    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -506,6 +517,99 @@ test "shape box glyphs" {
         try testing.expectEqual(@as(u16, 1), cells[1].x);
     }
     try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "shape selection boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("a1b2c3d4e5");
+
+    // Full line selection
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = screen.cols - 1, .y = 0 },
+        });
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+
+    // Offset x, goes to end of line selection
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
+            .start = .{ .x = 2, .y = 0 },
+            .end = .{ .x = screen.cols - 1, .y = 0 },
+        });
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 2), count);
+    }
+
+    // Offset x, starts at beginning of line
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 3, .y = 0 },
+        });
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 2), count);
+    }
+
+    // Selection only subset of line
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
+            .start = .{ .x = 1, .y = 0 },
+            .end = .{ .x = 3, .y = 0 },
+        });
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 3), count);
+    }
+
+    // Selection only one character
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
+            .start = .{ .x = 1, .y = 0 },
+            .end = .{ .x = 1, .y = 0 },
+        });
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 3), count);
+    }
 }
 
 const TestShaper = struct {

@@ -65,9 +65,6 @@ const fastmem = @import("../fastmem.zig");
 
 const log = std.log.scoped(.screen);
 
-/// Whitespace characters for selection purposes
-const whitespace = &[_]u32{ 0, ' ', '\t' };
-
 /// Cursor represents the cursor state.
 pub const Cursor = struct {
     // x, y where the cursor currently exists (0-indexed). This x/y is
@@ -1157,6 +1154,9 @@ pub fn clearHistory(self: *Screen) void {
 /// over whitespace but the line has non-whitespace characters elsewhere, the
 /// line will be selected.
 pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Whitespace characters for selection purposes
+    const whitespace = &[_]u32{ 0, ' ', '\t' };
+
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
     if (pt.y > y_max or pt.x >= self.cols) return null;
@@ -1258,6 +1258,9 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
 /// This will return null if a selection is impossible. The only scenario
 /// this happens is if the point pt is outside of the written screen space.
 pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Boundary characters for selection purposes
+    const boundary = &[_]u32{ 0, ' ', '\t', '\'', '"' };
+
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
     if (pt.y > y_max) return null;
@@ -1270,8 +1273,8 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // areas where the screen is not yet written.
     if (start_cell.empty()) return null;
 
-    // Determine if we are whitespace or not to determine what our boundary is.
-    const expect_whitespace = std.mem.indexOfAny(u32, whitespace, &[_]u32{start_cell.char}) != null;
+    // Determine if we are a boundary or not to determine what our boundary is.
+    const expect_boundary = std.mem.indexOfAny(u32, boundary, &[_]u32{start_cell.char}) != null;
 
     // Go forwards to find our end boundary
     const end: point.ScreenPoint = boundary: {
@@ -1290,12 +1293,12 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
                 if (cell.empty()) break :boundary prev;
 
                 // If we do not match our expected set, we hit a boundary
-                const this_whitespace = std.mem.indexOfAny(
+                const this_boundary = std.mem.indexOfAny(
                     u32,
-                    whitespace,
+                    boundary,
                     &[_]u32{cell.char},
                 ) != null;
-                if (this_whitespace != expect_whitespace) break :boundary prev;
+                if (this_boundary != expect_boundary) break :boundary prev;
 
                 // Increase our prev
                 prev.x = x;
@@ -1324,12 +1327,12 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
             // we reach a boundary condition.
             while (x > 0) : (x -= 1) {
                 const cell = current_row.getCell(x - 1);
-                const this_whitespace = std.mem.indexOfAny(
+                const this_boundary = std.mem.indexOfAny(
                     u32,
-                    whitespace,
+                    boundary,
                     &[_]u32{cell.char},
                 ) != null;
-                if (this_whitespace != expect_whitespace) break :boundary prev;
+                if (this_boundary != expect_boundary) break :boundary prev;
 
                 // Update our prev
                 prev.x = x - 1;
@@ -3365,6 +3368,53 @@ test "Screen: selectWord whitespace across soft-wrap" {
         try testing.expectEqual(@as(usize, 0), sel.start.y);
         try testing.expectEqual(@as(usize, 2), sel.end.x);
         try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+}
+
+test "Screen: selectWord with single quote boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 20, 0);
+    defer s.deinit();
+    try s.testWriteString(" 'abc' \n123");
+
+    // Inside quotes forward
+    {
+        const sel = s.selectWord(.{ .x = 2, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 2), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 4), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Inside quotes backward
+    {
+        const sel = s.selectWord(.{ .x = 4, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 2), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 4), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // Inside quotes bidirectional
+    {
+        const sel = s.selectWord(.{ .x = 3, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 2), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 4), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+
+    // On quote
+    // NOTE: this behavior is not ideal, so we can change this one day,
+    // but I think its also not that important compared to the above.
+    {
+        const sel = s.selectWord(.{ .x = 1, .y = 0 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 1), sel.end.x);
+        try testing.expectEqual(@as(usize, 0), sel.end.y);
     }
 }
 

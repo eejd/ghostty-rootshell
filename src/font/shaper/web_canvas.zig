@@ -57,8 +57,14 @@ pub const Shaper = struct {
         self: *Shaper,
         group: *font.GroupCache,
         row: terminal.Screen.Row,
+        selection: ?terminal.Selection,
     ) font.shape.RunIterator {
-        return .{ .hooks = .{ .shaper = self }, .group = group, .row = row };
+        return .{
+            .hooks = .{ .shaper = self },
+            .group = group,
+            .row = row,
+            .selection = selection,
+        };
     }
 
     /// Shape the given text run. The text run must be the immediately
@@ -281,7 +287,7 @@ pub const Wasm = struct {
         while (rowIter.next()) |row| {
             defer y += 1;
 
-            var iter = self.runIterator(group, row);
+            var iter = self.runIterator(group, row, null);
             while (try iter.next(alloc)) |run| {
                 const cells = try self.shape(run);
                 log.info("y={} run={d} shape={any} idx={}", .{

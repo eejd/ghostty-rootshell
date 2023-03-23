@@ -844,8 +844,24 @@ fn rebuildCells(
             }
         };
 
+        // We need to get this row's selection if there is one for proper
+        // run splitting.
+        const row_selection = sel: {
+            if (term_selection) |sel| {
+                const screen_point = (terminal.point.Viewport{
+                    .x = 0,
+                    .y = y,
+                }).toScreen(screen);
+                if (sel.containedRow(screen, screen_point)) |row_sel| {
+                    break :sel row_sel;
+                }
+            }
+
+            break :sel null;
+        };
+
         // Split our row into runs and shape each one.
-        var iter = self.font_shaper.runIterator(self.font_group, row);
+        var iter = self.font_shaper.runIterator(self.font_group, row, row_selection);
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
                 if (self.updateCell(
