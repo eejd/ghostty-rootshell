@@ -269,6 +269,20 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
                     .final = c,
                 },
             },
+            .utf8 => utf8: {
+                // When entering the UTF8 state, we need to grab the
+                // last intermediate as our first byte and reset
+                // the intermediates, because prior actions (i.e. CSI)
+                // can pollute the intermediates and we use it to build
+                // our UTF-8 string.
+                if (self.intermediates_idx > 1) {
+                    const last = self.intermediates_idx - 1;
+                    self.intermediates[0] = self.intermediates[last];
+                    self.clear();
+                    self.intermediates_idx = 1;
+                }
+                break :utf8 null;
+            },
             else => null,
         },
     };
@@ -665,4 +679,34 @@ test "print: utf8 invalid" {
 
     const rune = a[0].?.print;
     try testing.expectEqual(try std.unicode.utf8Decode("�"), rune);
+}
+
+test "csi followed by utf8" {
+    var p = init();
+    const prefix = &[_]u8{
+        // CSI sequence
+        0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34, 0x64, '\r',
+
+        // UTF8 prefix (not complete)
+        0xe2,
+    };
+    for (prefix) |char| {
+        _ = p.next(char);
+    }
+
+    {
+        const a = p.next(0x94);
+        try testing.expect(p.state == .utf8);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next(0x94);
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0].? == .print);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
 }
