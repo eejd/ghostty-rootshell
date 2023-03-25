@@ -409,8 +409,11 @@ pub const Surface = struct {
     }
 
     /// Close this surface.
-    pub fn close(self: *const Surface) void {
-        self.window.setShouldClose(true);
+    pub fn close(self: *Surface, processActive: bool) void {
+        _ = processActive;
+        self.setShouldClose();
+        self.deinit();
+        self.app.app.alloc.destroy(self);
     }
 
     /// Set the size limits of the window.

@@ -74,7 +74,7 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
     while (i < self.surfaces.items.len) {
         const surface = self.surfaces.items[i];
         if (surface.shouldClose()) {
-            rt_app.closeSurface(surface);
+            surface.close(false);
             continue;
         }
 
@@ -143,8 +143,10 @@ fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
 }
 
 fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
+    _ = rt_app;
+
     if (!self.hasSurface(surface)) return;
-    rt_app.closeSurface(surface.rt_surface);
+    surface.close();
 }
 
 fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {

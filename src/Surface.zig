@@ -96,6 +96,10 @@ config: DerivedConfig,
 /// like such as "control-v" will write a "v" even if they're intercepted.
 ignore_char: bool = false,
 
+/// This is set to true if our IO thread notifies us our child exited.
+/// This is used to determine if we need to confirm, hold open, etc.
+child_exited: bool = false,
+
 /// Mouse state for the surface.
 const Mouse = struct {
     /// The last tracked mouse button state by button.
@@ -522,7 +526,7 @@ pub fn deinit(self: *Surface) void {
 /// Close this surface. This will trigger the runtime to start the
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
-    self.rt_surface.close();
+    self.rt_surface.close(!self.child_exited);
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
@@ -553,6 +557,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .close => self.close(),
+
+        // Close without confirmation.
+        .child_exited => {
+            self.child_exited = true;
+            self.close();
+        },
     }
 }
 

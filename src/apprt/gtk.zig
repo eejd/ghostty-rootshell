@@ -171,11 +171,6 @@ pub const App = struct {
     }
 
     /// Close the given surface.
-    pub fn closeSurface(self: *App, surface: *Surface) void {
-        _ = self;
-        surface.close();
-    }
-
     pub fn redrawSurface(self: *App, surface: *Surface) void {
         _ = self;
         surface.invalidate();
@@ -635,7 +630,12 @@ pub const Surface = struct {
     }
 
     /// Close this surface.
-    pub fn close(self: *Surface) void {
+    pub fn close(self: *Surface, processActive: bool) void {
+        if (!processActive) {
+            self.window.closeSurface(self);
+            return;
+        }
+
         // I'd like to make this prettier one day:
         //   - Make the "Yes" button red
         //   - Make the "No" button default
@@ -658,7 +658,6 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
 
         c.gtk_widget_show(alert);
-        //self.window.closeSurface(self);
     }
 
     pub fn newTab(self: *Surface) !void {
