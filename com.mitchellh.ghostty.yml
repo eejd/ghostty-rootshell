@@ -33,13 +33,13 @@ modules:
       - cp -r ./* /app/tmp/zig
     sources:
       - type: archive
-        url: https://ziglang.org/builds/zig-linux-x86_64-0.11.0-dev.1817+f6c934677.tar.xz
-        sha256: 5c401d9839f83355059b375ad15fda6ab11ef120ce497c02485ee3105678c06c
+        url: https://ziglang.org/builds/zig-linux-x86_64-0.11.0-dev.2247+38ee46dda.tar.xz
+        sha256: 2eef41bd10ccfa4c31c00fd3c9373275c430eeefaf78ba275da129a4e8e2a25e
         only-arches:
           - x86_64
       - type: archive
-        url: https://ziglang.org/builds/zig-linux-aarch64-0.11.0-dev.1817+f6c934677.tar.xz
-        sha256: 9c986f35f1c393aed91b252bed35a1f65a8c7b9f5d1a8d8a4fe41f84b4de1759
+        url: https://ziglang.org/builds/zig-linux-aarch64-0.11.0-dev.2247+38ee46dda.tar.xz
+        sha256: f7b1a46a8904c30154c9e902784744c8c4f67d9a2ad204fe53e78115b6c04d72
         only-arches:
           - aarch64
 

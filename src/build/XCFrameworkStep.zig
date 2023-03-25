@@ -5,7 +5,8 @@ const XCFrameworkStep = @This();
 
 const std = @import("std");
 const Step = std.build.Step;
-const GeneratedFile = std.build.GeneratedFile;
+const RunStep = std.build.RunStep;
+const FileSource = std.build.FileSource;
 
 pub const Options = struct {
     /// The name of the xcframework to create.
@@ -21,61 +22,38 @@ pub const Options = struct {
     headers: std.build.FileSource,
 };
 
-step: Step,
-builder: *std.build.Builder,
+step: *Step,
 
-/// See Options
-name: []const u8,
-out_path: []const u8,
-library: std.build.FileSource,
-headers: std.build.FileSource,
+pub fn create(b: *std.Build, opts: Options) *XCFrameworkStep {
+    const self = b.allocator.create(XCFrameworkStep) catch @panic("OOM");
 
-pub fn create(builder: *std.build.Builder, opts: Options) *XCFrameworkStep {
-    const self = builder.allocator.create(XCFrameworkStep) catch @panic("OOM");
-    self.* = .{
-        .step = Step.init(.custom, builder.fmt(
-            "xcframework {s}",
-            .{opts.name},
-        ), builder.allocator, make),
-        .builder = builder,
-        .name = opts.name,
-        .out_path = opts.out_path,
-        .library = opts.library,
-        .headers = opts.headers,
+    // We have to delete the old xcframework first since we're writing
+    // to a static path.
+    const run_delete = run: {
+        const run = RunStep.create(b, b.fmt("xcframework delete {s}", .{opts.name}));
+        run.has_side_effects = true;
+        run.addArgs(&.{ "rm", "-rf", opts.out_path });
+        break :run run;
     };
-    return self;
-}
 
-fn make(step: *Step) !void {
-    const self = @fieldParentPtr(XCFrameworkStep, "step", step);
-
-    // TODO: use the zig cache system when it is in the stdlib
-    // https://github.com/ziglang/zig/pull/14571
-    const output_path = self.out_path;
-
-    // We use a RunStep here to ease our configuration.
-    {
-        const run = std.build.RunStep.create(self.builder, self.builder.fmt(
-            "xcframework delete {s}",
-            .{self.name},
-        ));
-        run.condition = .always;
-        run.addArgs(&.{ "rm", "-rf", output_path });
-        try run.step.make();
-    }
-    {
-        const run = std.build.RunStep.create(self.builder, self.builder.fmt(
-            "xcframework {s}",
-            .{self.name},
-        ));
-        run.condition = .always;
+    // Then we run xcodebuild to create the framework.
+    const run_create = run: {
+        const run = RunStep.create(b, b.fmt("xcframework {s}", .{opts.name}));
+        run.has_side_effects = true;
         run.addArgs(&.{ "xcodebuild", "-create-xcframework" });
         run.addArg("-library");
-        run.addFileSourceArg(self.library);
+        run.addFileSourceArg(opts.library);
         run.addArg("-headers");
-        run.addFileSourceArg(self.headers);
+        run.addFileSourceArg(opts.headers);
         run.addArg("-output");
-        run.addArg(output_path);
-        try run.step.make();
-    }
+        run.addArg(opts.out_path);
+        break :run run;
+    };
+    run_create.step.dependOn(&run_delete.step);
+
+    self.* = .{
+        .step = &run_create.step,
+    };
+
+    return self;
 }

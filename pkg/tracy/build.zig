@@ -47,7 +47,7 @@ pub fn buildTracy(
 
     lib.addIncludePath(root);
     lib.addCSourceFile(try std.fs.path.join(
-        lib.builder.allocator,
+        b.allocator,
         &.{ root, "TracyClient.cpp" },
     ), flags.items);
 

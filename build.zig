@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const fs = std.fs;
-const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
 const RunStep = std.build.RunStep;
 const apprt = @import("src/apprt.zig");
@@ -54,7 +53,7 @@ var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
 var font_backend: font.Backend = .freetype;
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = target: {
         var result = b.standardTargetOptions(.{});
@@ -222,10 +221,8 @@ pub fn build(b: *std.build.Builder) !void {
             break :is_nixos if (std.fs.accessAbsolute("/etc/NIXOS", .{})) true else |_| false;
         };
         if (is_nixos and env.get("IN_NIX_SHELL") == null) {
-            const notice = b.addLog(
+            try exe.step.addError(
                 "\x1b[" ++ color_map.get("yellow").? ++
-                    "\x1b[" ++ color_map.get("b").? ++
-                    "WARNING: " ++
                     "\x1b[" ++ color_map.get("d").? ++
                     \\Detected building on and for NixOS outside of the Nix shell enviornment.
                     \\
@@ -244,8 +241,6 @@ pub fn build(b: *std.build.Builder) !void {
                     "\x1b[0m",
                 .{},
             );
-
-            exe.step.dependOn(&notice.step);
         }
 
         // If we're installing, we get the install step so we can add
@@ -296,8 +291,11 @@ pub fn build(b: *std.build.Builder) !void {
 
     // App (Mac)
     if (target.isDarwin()) {
-        const bin_path = try std.fmt.allocPrint(b.allocator, "{s}/bin/ghostty", .{b.install_path});
-        b.installFile(bin_path, "Ghostty.app/Contents/MacOS/ghostty");
+        const bin_install = b.addInstallFile(
+            .{ .generated = &exe.output_path_source },
+            "Ghostty.app/Contents/MacOS/ghostty",
+        );
+        b.getInstallStep().dependOn(&bin_install.step);
         b.installFile("dist/macos/Info.plist", "Ghostty.app/Contents/Info.plist");
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
@@ -327,7 +325,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .sources = lib_list.items,
             });
             libtool.step.dependOn(&lib.step);
-            b.default_step.dependOn(&libtool.step);
+            b.default_step.dependOn(libtool.step);
 
             break :lib libtool;
         };
@@ -355,7 +353,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .sources = lib_list.items,
             });
             libtool.step.dependOn(&lib.step);
-            b.default_step.dependOn(&libtool.step);
+            b.default_step.dependOn(libtool.step);
 
             break :lib libtool;
         };
@@ -363,22 +361,22 @@ pub fn build(b: *std.build.Builder) !void {
         const static_lib_universal = LipoStep.create(b, .{
             .name = "ghostty",
             .out_name = "libghostty.a",
-            .input_a = .{ .generated = &static_lib_aarch64.out_path },
-            .input_b = .{ .generated = &static_lib_x86_64.out_path },
+            .input_a = static_lib_aarch64.output,
+            .input_b = static_lib_x86_64.output,
         });
-        static_lib_universal.step.dependOn(&static_lib_aarch64.step);
-        static_lib_universal.step.dependOn(&static_lib_x86_64.step);
+        static_lib_universal.step.dependOn(static_lib_aarch64.step);
+        static_lib_universal.step.dependOn(static_lib_x86_64.step);
 
         // The xcframework wraps our ghostty library so that we can link
         // it to the final app built with Swift.
         const xcframework = XCFrameworkStep.create(b, .{
             .name = "GhosttyKit",
             .out_path = "macos/GhosttyKit.xcframework",
-            .library = .{ .generated = &static_lib_universal.out_path },
+            .library = static_lib_universal.output,
             .headers = .{ .path = "include" },
         });
-        xcframework.step.dependOn(&static_lib_universal.step);
-        b.default_step.dependOn(&xcframework.step);
+        xcframework.step.dependOn(static_lib_universal.step);
+        b.default_step.dependOn(xcframework.step);
     }
 
     // wasm
@@ -477,24 +475,13 @@ pub fn build(b: *std.build.Builder) !void {
             .target = target,
         });
         {
-            if (emit_test_exe) {
-                const main_test_exe = b.addTest(.{
-                    .name = "ghostty-test",
-                    .kind = .test_exe,
-                    .root_source_file = .{ .path = "src/main.zig" },
-                    .target = target,
-                });
-                main_test_exe.install();
-            }
+            if (emit_test_exe) main_test.install();
             main_test.setFilter(test_filter);
             _ = try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
 
-            var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
-            var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
-            test_step.dependOn(&before.step);
-            test_step.dependOn(&main_test.step);
-            test_step.dependOn(&after.step);
+            const test_run = main_test.run();
+            test_step.dependOn(&test_run.step);
         }
 
         // Named package dependencies don't have their tests run by reference,
@@ -507,35 +494,21 @@ pub fn build(b: *std.build.Builder) !void {
             if (std.mem.eql(u8, name, "build_options")) continue;
             if (std.mem.eql(u8, name, "glfw")) continue;
 
-            var buf: [256]u8 = undefined;
-            var test_run = b.addTest(.{
-                .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
-                .kind = .@"test",
+            const test_exe = b.addTest(.{
+                .name = b.fmt("{s}-test", .{name}),
                 .root_source_file = module.source_file,
                 .target = target,
             });
+            if (emit_test_exe) test_exe.install();
 
-            _ = try addDeps(b, test_run, true);
+            _ = try addDeps(b, test_exe, true);
             // if (pkg.dependencies) |children| {
             //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
             //     try test_.packages.appendSlice(children);
             // }
 
-            var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{name});
-            var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
-            test_step.dependOn(&before.step);
+            const test_run = test_exe.run();
             test_step.dependOn(&test_run.step);
-            test_step.dependOn(&after.step);
-
-            if (emit_test_exe) {
-                const test_exe = b.addTest(.{
-                    .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
-                    .kind = .test_exe,
-                    .root_source_file = module.source_file,
-                    .target = target,
-                });
-                test_exe.install();
-            }
         }
     }
 }
@@ -545,7 +518,7 @@ const FileSourceList = std.ArrayList(std.build.FileSource);
 
 /// Adds and links all of the primary dependencies for the exe.
 fn addDeps(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     static: bool,
 ) !FileSourceList {
@@ -762,7 +735,7 @@ fn addDeps(
 }
 
 fn benchSteps(
-    b: *std.build.Builder,
+    b: *std.Build,
     target: std.zig.CrossTarget,
     optimize: std.builtin.Mode,
     install: bool,
@@ -804,7 +777,7 @@ fn benchSteps(
 }
 
 fn conformanceSteps(
-    b: *std.build.Builder,
+    b: *std.Build,
     target: std.zig.CrossTarget,
     optimize: std.builtin.Mode,
 ) !std.StringHashMap(*LibExeObjStep) {
