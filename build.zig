@@ -223,8 +223,6 @@ pub fn build(b: *std.Build) !void {
         if (is_nixos and env.get("IN_NIX_SHELL") == null) {
             try exe.step.addError(
                 "\x1b[" ++ color_map.get("yellow").? ++
-                    "\x1b[" ++ color_map.get("b").? ++
-                    "WARNING: " ++
                     "\x1b[" ++ color_map.get("d").? ++
                     \\Detected building on and for NixOS outside of the Nix shell enviornment.
                     \\
