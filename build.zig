@@ -479,7 +479,9 @@ pub fn build(b: *std.build.Builder) !void {
             main_test.setFilter(test_filter);
             _ = try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
-            test_step.dependOn(&main_test.step);
+
+            const test_run = main_test.run();
+            test_step.dependOn(&test_run.step);
         }
 
         // Named package dependencies don't have their tests run by reference,
@@ -492,22 +494,21 @@ pub fn build(b: *std.build.Builder) !void {
             if (std.mem.eql(u8, name, "build_options")) continue;
             if (std.mem.eql(u8, name, "glfw")) continue;
 
-            var buf: [256]u8 = undefined;
-            var test_run = b.addTest(.{
-                .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
+            const test_exe = b.addTest(.{
+                .name = b.fmt("{s}-test", .{name}),
                 .root_source_file = module.source_file,
                 .target = target,
             });
+            if (emit_test_exe) test_exe.install();
 
-            _ = try addDeps(b, test_run, true);
+            _ = try addDeps(b, test_exe, true);
             // if (pkg.dependencies) |children| {
             //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
             //     try test_.packages.appendSlice(children);
             // }
 
+            const test_run = test_exe.run();
             test_step.dependOn(&test_run.step);
-
-            if (emit_test_exe) test_run.install();
         }
     }
 }
