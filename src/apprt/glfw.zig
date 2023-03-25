@@ -683,8 +683,10 @@ pub const Surface = struct {
             => .invalid,
         };
 
+        // TODO: we need to do mapped keybindings
+
         const core_win = window.getUserPointer(CoreSurface) orelse return;
-        core_win.keyCallback(action, key, mods) catch |err| {
+        core_win.keyCallback(action, key, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };

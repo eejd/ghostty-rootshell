@@ -850,6 +850,7 @@ pub fn keyCallback(
     self: *Surface,
     action: input.Action,
     key: input.Key,
+    unmapped_key: input.Key,
     mods: input.Mods,
 ) !void {
     const tracy = trace(@src());
@@ -870,13 +871,24 @@ pub fn keyCallback(
     self.ignore_char = false;
 
     if (action == .press or action == .repeat) {
-        const trigger: input.Binding.Trigger = .{
-            .mods = mods,
-            .key = key,
+        const binding_action_: ?input.Binding.Action = action: {
+            var trigger: input.Binding.Trigger = .{
+                .mods = mods,
+                .key = key,
+            };
+            //log.warn("BINDING TRIGGER={}", .{trigger});
+
+            const set = self.config.keybind.set;
+            if (set.get(trigger)) |v| break :action v;
+
+            trigger.key = unmapped_key;
+            trigger.unmapped = true;
+            if (set.get(trigger)) |v| break :action v;
+
+            break :action null;
         };
 
-        //log.warn("BINDING TRIGGER={}", .{trigger});
-        if (self.config.keybind.set.get(trigger)) |binding_action| {
+        if (binding_action_) |binding_action| {
             //log.warn("BINDING ACTION={}", .{binding_action});
 
             switch (binding_action) {
