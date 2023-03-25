@@ -636,10 +636,7 @@ pub const Surface = struct {
             return;
         }
 
-        // I'd like to make this prettier one day:
-        //   - Make the "Yes" button red
-        //   - Make the "No" button default
-        //
+        // Setup our basic message
         const alert = c.gtk_message_dialog_new(
             self.window.window,
             c.GTK_DIALOG_MODAL,
@@ -653,6 +650,19 @@ pub const Surface = struct {
                 "Closing the terminal will kill this process. " ++
                 "Are you sure you want to close the terminal?" ++
                 "Click 'No' to cancel and return to your terminal.",
+        );
+
+        // We want the "yes" to appear destructive.
+        const yes_widget = c.gtk_dialog_get_widget_for_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_YES,
+        );
+        c.gtk_widget_add_css_class(yes_widget, "destructive-action");
+
+        // We want the "no" to be the default action
+        c.gtk_dialog_set_default_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_NO,
         );
 
         _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
