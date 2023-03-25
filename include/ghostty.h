@@ -221,7 +221,7 @@ typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
-typedef void (*ghostty_runtime_close_surface_cb)(void *);
+typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 
 typedef struct {
