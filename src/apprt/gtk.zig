@@ -935,7 +935,7 @@ pub const Surface = struct {
         const key = translateKey(keyval);
         const mods = translateMods(state);
         log.debug("key-press code={} key={} mods={}", .{ keycode, key, mods });
-        self.core_surface.keyCallback(.press, key, mods) catch |err| {
+        self.core_surface.keyCallback(.press, key, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return 0;
         };
@@ -965,7 +965,7 @@ pub const Surface = struct {
         const key = translateKey(keyval);
         const mods = translateMods(state);
         const self = userdataSelf(ud.?);
-        self.core_surface.keyCallback(.release, key, mods) catch |err| {
+        self.core_surface.keyCallback(.release, key, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return 0;
         };
