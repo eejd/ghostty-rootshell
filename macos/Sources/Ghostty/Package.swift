@@ -75,3 +75,6 @@ extension Ghostty.Notification {
     static let ghosttyFocusSplit = Notification.Name("com.mitchellh.ghostty.focusSplit")
     static let SplitDirectionKey = ghosttyFocusSplit.rawValue
 }
+
+// Make the input enum hashable.
+extension ghostty_input_key_e : Hashable {}
