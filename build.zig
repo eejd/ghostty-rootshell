@@ -291,8 +291,11 @@ pub fn build(b: *std.Build) !void {
 
     // App (Mac)
     if (target.isDarwin()) {
-        const bin_path = try std.fmt.allocPrint(b.allocator, "{s}/bin/ghostty", .{b.install_path});
-        b.installFile(bin_path, "Ghostty.app/Contents/MacOS/ghostty");
+        const bin_install = b.addInstallFile(
+            .{ .generated = &exe.output_path_source },
+            "Ghostty.app/Contents/MacOS/ghostty",
+        );
+        b.getInstallStep().dependOn(&bin_install.step);
         b.installFile("dist/macos/Info.plist", "Ghostty.app/Contents/Info.plist");
         b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
