@@ -4,8 +4,8 @@ const LibtoolStep = @This();
 
 const std = @import("std");
 const Step = std.build.Step;
+const RunStep = std.build.RunStep;
 const FileSource = std.build.FileSource;
-const GeneratedFile = std.build.GeneratedFile;
 
 pub const Options = struct {
     /// The name of this step.
@@ -19,47 +19,26 @@ pub const Options = struct {
     sources: []FileSource,
 };
 
-step: Step,
-builder: *std.Build,
+/// The step to depend on.
+step: *Step,
 
-/// Resulting binary
-out_path: GeneratedFile,
+/// The output file from the libtool run.
+output: FileSource,
 
-/// See Options
-name: []const u8,
-out_name: []const u8,
-sources: []FileSource,
+/// Run libtool against a list of library files to combine into a single
+/// static library.
+pub fn create(b: *std.Build, opts: Options) *LibtoolStep {
+    const self = b.allocator.create(LibtoolStep) catch @panic("OOM");
 
-pub fn create(builder: *std.Build, opts: Options) *LibtoolStep {
-    const self = builder.allocator.create(LibtoolStep) catch @panic("OOM");
+    const run_step = RunStep.create(b, b.fmt("libtool {s}", .{opts.name}));
+    run_step.addArgs(&.{ "libtool", "-static", "-o" });
+    const output = run_step.addOutputFileArg(opts.out_name);
+    for (opts.sources) |source| run_step.addFileSourceArg(source);
+
     self.* = .{
-        .step = Step.init(.custom, builder.fmt("lipo {s}", .{opts.name}), builder.allocator, make),
-        .builder = builder,
-        .name = opts.name,
-        .out_path = .{ .step = &self.step },
-        .out_name = opts.out_name,
-        .sources = opts.sources,
+        .step = &run_step.step,
+        .output = output,
     };
+
     return self;
-}
-
-fn make(step: *Step) !void {
-    const self = @fieldParentPtr(LibtoolStep, "step", step);
-
-    // We use a RunStep here to ease our configuration.
-    const run = std.build.RunStep.create(self.builder, self.builder.fmt(
-        "libtool {s}",
-        .{self.name},
-    ));
-    run.addArgs(&.{
-        "libtool",
-        "-static",
-        "-o",
-    });
-    try run.argv.append(.{ .output = .{
-        .generated_file = &self.out_path,
-        .basename = self.out_name,
-    } });
-    for (self.sources) |source| run.addFileSourceArg(source);
-    try run.step.make();
 }

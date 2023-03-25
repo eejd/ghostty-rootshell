@@ -222,7 +222,7 @@ pub fn build(b: *std.build.Builder) !void {
             break :is_nixos if (std.fs.accessAbsolute("/etc/NIXOS", .{})) true else |_| false;
         };
         if (is_nixos and env.get("IN_NIX_SHELL") == null) {
-            const notice = b.addLog(
+            try exe.step.addError(
                 "\x1b[" ++ color_map.get("yellow").? ++
                     "\x1b[" ++ color_map.get("b").? ++
                     "WARNING: " ++
@@ -244,8 +244,6 @@ pub fn build(b: *std.build.Builder) !void {
                     "\x1b[0m",
                 .{},
             );
-
-            exe.step.dependOn(&notice.step);
         }
 
         // If we're installing, we get the install step so we can add
@@ -327,7 +325,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .sources = lib_list.items,
             });
             libtool.step.dependOn(&lib.step);
-            b.default_step.dependOn(&libtool.step);
+            b.default_step.dependOn(libtool.step);
 
             break :lib libtool;
         };
@@ -355,7 +353,7 @@ pub fn build(b: *std.build.Builder) !void {
                 .sources = lib_list.items,
             });
             libtool.step.dependOn(&lib.step);
-            b.default_step.dependOn(&libtool.step);
+            b.default_step.dependOn(libtool.step);
 
             break :lib libtool;
         };
@@ -363,22 +361,22 @@ pub fn build(b: *std.build.Builder) !void {
         const static_lib_universal = LipoStep.create(b, .{
             .name = "ghostty",
             .out_name = "libghostty.a",
-            .input_a = .{ .generated = &static_lib_aarch64.out_path },
-            .input_b = .{ .generated = &static_lib_x86_64.out_path },
+            .input_a = static_lib_aarch64.output,
+            .input_b = static_lib_x86_64.output,
         });
-        static_lib_universal.step.dependOn(&static_lib_aarch64.step);
-        static_lib_universal.step.dependOn(&static_lib_x86_64.step);
+        static_lib_universal.step.dependOn(static_lib_aarch64.step);
+        static_lib_universal.step.dependOn(static_lib_x86_64.step);
 
         // The xcframework wraps our ghostty library so that we can link
         // it to the final app built with Swift.
         const xcframework = XCFrameworkStep.create(b, .{
             .name = "GhosttyKit",
             .out_path = "macos/GhosttyKit.xcframework",
-            .library = .{ .generated = &static_lib_universal.out_path },
+            .library = static_lib_universal.output,
             .headers = .{ .path = "include" },
         });
-        xcframework.step.dependOn(&static_lib_universal.step);
-        b.default_step.dependOn(&xcframework.step);
+        xcframework.step.dependOn(static_lib_universal.step);
+        b.default_step.dependOn(xcframework.step);
     }
 
     // wasm
@@ -477,24 +475,11 @@ pub fn build(b: *std.build.Builder) !void {
             .target = target,
         });
         {
-            if (emit_test_exe) {
-                const main_test_exe = b.addTest(.{
-                    .name = "ghostty-test",
-                    .kind = .test_exe,
-                    .root_source_file = .{ .path = "src/main.zig" },
-                    .target = target,
-                });
-                main_test_exe.install();
-            }
+            if (emit_test_exe) main_test.install();
             main_test.setFilter(test_filter);
             _ = try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
-
-            var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{"ghostty"});
-            var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
-            test_step.dependOn(&before.step);
             test_step.dependOn(&main_test.step);
-            test_step.dependOn(&after.step);
         }
 
         // Named package dependencies don't have their tests run by reference,
@@ -510,7 +495,6 @@ pub fn build(b: *std.build.Builder) !void {
             var buf: [256]u8 = undefined;
             var test_run = b.addTest(.{
                 .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
-                .kind = .@"test",
                 .root_source_file = module.source_file,
                 .target = target,
             });
@@ -521,21 +505,9 @@ pub fn build(b: *std.build.Builder) !void {
             //     try test_.packages.appendSlice(children);
             // }
 
-            var before = b.addLog("\x1b[" ++ color_map.get("cyan").? ++ "\x1b[" ++ color_map.get("b").? ++ "[{s} tests]" ++ "\x1b[" ++ color_map.get("d").? ++ " ----" ++ "\x1b[0m", .{name});
-            var after = b.addLog("\x1b[" ++ color_map.get("d").? ++ "–––---\n\n" ++ "\x1b[0m", .{});
-            test_step.dependOn(&before.step);
             test_step.dependOn(&test_run.step);
-            test_step.dependOn(&after.step);
 
-            if (emit_test_exe) {
-                const test_exe = b.addTest(.{
-                    .name = try std.fmt.bufPrint(&buf, "{s}-test", .{name}),
-                    .kind = .test_exe,
-                    .root_source_file = module.source_file,
-                    .target = target,
-                });
-                test_exe.install();
-            }
+            if (emit_test_exe) test_run.install();
         }
     }
 }
