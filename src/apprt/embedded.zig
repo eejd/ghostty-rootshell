@@ -324,10 +324,11 @@ pub const Surface = struct {
         self: *Surface,
         action: input.Action,
         key: input.Key,
+        unmapped_key: input.Key,
         mods: input.Mods,
     ) void {
         // log.warn("key action={} key={} mods={}", .{ action, key, mods });
-        self.core_surface.keyCallback(action, key, mods) catch |err| {
+        self.core_surface.keyCallback(action, key, unmapped_key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
@@ -460,11 +461,13 @@ pub const CAPI = struct {
         surface: *Surface,
         action: input.Action,
         key: input.Key,
+        unmapped_key: input.Key,
         mods: c_int,
     ) void {
         surface.keyCallback(
             action,
             key,
+            unmapped_key,
             @bitCast(input.Mods, @truncate(u8, @bitCast(c_uint, mods))),
         );
     }

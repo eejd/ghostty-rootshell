@@ -302,9 +302,20 @@ extension Ghostty {
         }
 
         override func keyDown(with event: NSEvent) {
+            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+            keyAction(action, event: event)
+            
+            self.interpretKeyEvents([event])
+        }
+        
+        override func keyUp(with event: NSEvent) {
+            keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+        }
+        
+        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
-            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+            let unmapped_key = Self.keycodes[event.keyCode] ?? GHOSTTY_KEY_INVALID
 
             // We translate the key to the localized keyboard layout. However, we only support
             // ASCII characters to make our translation easier across platforms. This is something
@@ -320,19 +331,10 @@ extension Ghostty {
                     }
                 }
                 
-                return Self.keycodes[event.keyCode] ?? GHOSTTY_KEY_INVALID
+                return unmapped_key
             }()
             
-            ghostty_surface_key(surface, action, key, mods)
-            
-            self.interpretKeyEvents([event])
-        }
-        
-        override func keyUp(with event: NSEvent) {
-            guard let surface = self.surface else { return }
-            let key = Self.keycodes[event.keyCode] ?? GHOSTTY_KEY_INVALID
-            let mods = Self.translateFlags(event.modifierFlags)
-            ghostty_surface_key(surface, GHOSTTY_ACTION_RELEASE, key, mods)
+            ghostty_surface_key(surface, action, key, unmapped_key, mods)
         }
         
         // MARK: NSTextInputClient
