@@ -636,7 +636,29 @@ pub const Surface = struct {
 
     /// Close this surface.
     pub fn close(self: *Surface) void {
-        self.window.closeSurface(self);
+        // I'd like to make this prettier one day:
+        //   - Make the "Yes" button red
+        //   - Make the "No" button default
+        //
+        const alert = c.gtk_message_dialog_new(
+            self.window.window,
+            c.GTK_DIALOG_MODAL,
+            c.GTK_MESSAGE_QUESTION,
+            c.GTK_BUTTONS_YES_NO,
+            "Close this terminal?",
+        );
+        c.gtk_message_dialog_format_secondary_text(
+            @ptrCast(*c.GtkMessageDialog, alert),
+            "There is still a running process in the terminal. " ++
+                "Closing the terminal will kill this process. " ++
+                "Are you sure you want to close the terminal?" ++
+                "Click 'No' to cancel and return to your terminal.",
+        );
+
+        _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
+
+        c.gtk_widget_show(alert);
+        //self.window.closeSurface(self);
     }
 
     pub fn newTab(self: *Surface) !void {
@@ -1008,6 +1030,18 @@ pub const Surface = struct {
             log.err("error in focus callback err={}", .{err});
             return;
         };
+    }
+
+    fn gtkCloseConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        c.gtk_window_destroy(@ptrCast(*c.GtkWindow, alert));
+        if (response == c.GTK_RESPONSE_YES) {
+            const self = userdataSelf(ud.?);
+            self.window.closeSurface(self);
+        }
     }
 
     fn userdataSelf(ud: *anyopaque) *Surface {
