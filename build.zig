@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const fs = std.fs;
-const Builder = std.build.Builder;
 const LibExeObjStep = std.build.LibExeObjStep;
 const RunStep = std.build.RunStep;
 const apprt = @import("src/apprt.zig");
@@ -54,7 +53,7 @@ var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
 var font_backend: font.Backend = .freetype;
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = target: {
         var result = b.standardTargetOptions(.{});
@@ -518,7 +517,7 @@ const FileSourceList = std.ArrayList(std.build.FileSource);
 
 /// Adds and links all of the primary dependencies for the exe.
 fn addDeps(
-    b: *std.build.Builder,
+    b: *std.Build,
     step: *std.build.LibExeObjStep,
     static: bool,
 ) !FileSourceList {
@@ -735,7 +734,7 @@ fn addDeps(
 }
 
 fn benchSteps(
-    b: *std.build.Builder,
+    b: *std.Build,
     target: std.zig.CrossTarget,
     optimize: std.builtin.Mode,
     install: bool,
@@ -777,7 +776,7 @@ fn benchSteps(
 }
 
 fn conformanceSteps(
-    b: *std.build.Builder,
+    b: *std.Build,
     target: std.zig.CrossTarget,
     optimize: std.builtin.Mode,
 ) !std.StringHashMap(*LibExeObjStep) {
