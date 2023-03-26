@@ -63,6 +63,12 @@ pub fn build(b: *std.Build) !void {
             result.glibc_version = .{ .major = 2, .minor = 28 };
         }
 
+        if (result.isDarwin()) {
+            if (result.os_version_min == null) {
+                result.os_version_min = .{ .semver = .{ .major = 12, .minor = 0 } };
+            }
+        }
+
         break :target result;
     };
 
@@ -301,12 +307,16 @@ pub fn build(b: *std.Build) !void {
     }
 
     // On Mac we can build the embedding library.
-    if (builtin.target.isDarwin()) {
+    if (builtin.target.isDarwin() and target.isDarwin()) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
                 .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = try std.zig.CrossTarget.parse(.{ .arch_os_abi = "aarch64-macos" }),
+                .target = .{
+                    .cpu_arch = .aarch64,
+                    .os_tag = .macos,
+                    .os_version_min = target.os_version_min,
+                },
                 .optimize = optimize,
             });
             lib.bundle_compiler_rt = true;
@@ -334,7 +344,11 @@ pub fn build(b: *std.Build) !void {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
                 .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = try std.zig.CrossTarget.parse(.{ .arch_os_abi = "x86_64-macos" }),
+                .target = .{
+                    .cpu_arch = .x86_64,
+                    .os_tag = .macos,
+                    .os_version_min = target.os_version_min,
+                },
                 .optimize = optimize,
             });
             lib.bundle_compiler_rt = true;
