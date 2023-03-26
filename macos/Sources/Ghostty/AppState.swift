@@ -133,10 +133,10 @@ extension Ghostty {
         }
         
         static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
-            // TODO: handle processAlive to show confirmation dialog. We probably want to attach
-            // it to the notification and let downstream handle it.
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
-            NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface)
+            NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface, userInfo: [
+                "process_alive": processAlive,
+            ])
         }
         
         static func focusSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_focus_direction_e) {

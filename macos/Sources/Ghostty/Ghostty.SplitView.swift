@@ -205,6 +205,9 @@ extension Ghostty {
         ///  This will be set to true when the split requests that is become closed.
         @Binding var requestClose: Bool
         
+        /// This controls whether we're actively confirming if we want to close or not.
+        @State private var confirmClose: Bool = false
+        
         var body: some View {
             let center = NotificationCenter.default
             let pub = center.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
@@ -212,8 +215,38 @@ extension Ghostty {
             let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: leaf.surface)
             SurfaceWrapper(surfaceView: leaf.surface)
                 .onReceive(pub) { onNewSplit(notification: $0) }
-                .onReceive(pubClose) { _ in requestClose = true }
+                .onReceive(pubClose) { onClose(notification: $0) }
                 .onReceive(pubFocus) { onMoveFocus(notification: $0) }
+                .confirmationDialog(
+                    "Close Terminal?",
+                    isPresented: $confirmClose) {
+                        Button("Close the Terminal", role: .destructive) {
+                            confirmClose = false
+                            requestClose = true
+                        }
+                        .keyboardShortcut(.defaultAction)
+                    } message: {
+                        Text("The terminal still has a running process. If you close the terminal " +
+                        "the process will be killed.")
+                    }
+        }
+        
+        private func onClose(notification: SwiftUI.Notification) {
+            var processAlive = false
+            if let valueAny = notification.userInfo?["process_alive"] {
+                if let value = valueAny as? Bool {
+                    processAlive = value
+                }
+            }
+            
+            // If the child process is not alive, then we exit immediately
+            guard processAlive else {
+                requestClose = true
+                return
+            }
+
+            // Child process is alive, so we want to show a confirmation.
+            confirmClose = true
         }
         
         private func onNewSplit(notification: SwiftUI.Notification) {
