@@ -401,7 +401,7 @@ fn processExit(
 
     // Notify our surface we want to close
     _ = ev.surface_mailbox.push(.{
-        .close = {},
+        .child_exited = {},
     }, .{ .forever = {} });
 
     return .disarm;

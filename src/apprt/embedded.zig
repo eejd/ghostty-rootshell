@@ -56,7 +56,7 @@ pub const App = struct {
         new_split: ?*const fn (SurfaceUD, input.SplitDirection) callconv(.C) void = null,
 
         /// Close the current surface given by this function.
-        close_surface: ?*const fn (SurfaceUD) callconv(.C) void = null,
+        close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
         /// Focus the previous/next split (if any).
         focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
@@ -188,13 +188,13 @@ pub const Surface = struct {
         func(self.opts.userdata, direction);
     }
 
-    pub fn close(self: *const Surface) void {
+    pub fn close(self: *const Surface, process_alive: bool) void {
         const func = self.app.opts.close_surface orelse {
             log.info("runtime embedder does not support closing a surface", .{});
             return;
         };
 
-        func(self.opts.userdata);
+        func(self.opts.userdata, process_alive);
     }
 
     pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
@@ -509,7 +509,7 @@ pub const CAPI = struct {
     /// Request that the surface become closed. This will go through the
     /// normal trigger process that a close surface input binding would.
     export fn ghostty_surface_request_close(ptr: *Surface) void {
-        ptr.close();
+        ptr.core_surface.close();
     }
 
     /// Request that the surface split in the given direction.

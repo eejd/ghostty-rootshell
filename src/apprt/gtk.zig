@@ -171,11 +171,6 @@ pub const App = struct {
     }
 
     /// Close the given surface.
-    pub fn closeSurface(self: *App, surface: *Surface) void {
-        _ = self;
-        surface.close();
-    }
-
     pub fn redrawSurface(self: *App, surface: *Surface) void {
         _ = self;
         surface.invalidate();
@@ -635,8 +630,44 @@ pub const Surface = struct {
     }
 
     /// Close this surface.
-    pub fn close(self: *Surface) void {
-        self.window.closeSurface(self);
+    pub fn close(self: *Surface, processActive: bool) void {
+        if (!processActive) {
+            self.window.closeSurface(self);
+            return;
+        }
+
+        // Setup our basic message
+        const alert = c.gtk_message_dialog_new(
+            self.window.window,
+            c.GTK_DIALOG_MODAL,
+            c.GTK_MESSAGE_QUESTION,
+            c.GTK_BUTTONS_YES_NO,
+            "Close this terminal?",
+        );
+        c.gtk_message_dialog_format_secondary_text(
+            @ptrCast(*c.GtkMessageDialog, alert),
+            "There is still a running process in the terminal. " ++
+                "Closing the terminal will kill this process. " ++
+                "Are you sure you want to close the terminal?" ++
+                "Click 'No' to cancel and return to your terminal.",
+        );
+
+        // We want the "yes" to appear destructive.
+        const yes_widget = c.gtk_dialog_get_widget_for_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_YES,
+        );
+        c.gtk_widget_add_css_class(yes_widget, "destructive-action");
+
+        // We want the "no" to be the default action
+        c.gtk_dialog_set_default_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_NO,
+        );
+
+        _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
+
+        c.gtk_widget_show(alert);
     }
 
     pub fn newTab(self: *Surface) !void {
@@ -1008,6 +1039,18 @@ pub const Surface = struct {
             log.err("error in focus callback err={}", .{err});
             return;
         };
+    }
+
+    fn gtkCloseConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        c.gtk_window_destroy(@ptrCast(*c.GtkWindow, alert));
+        if (response == c.GTK_RESPONSE_YES) {
+            const self = userdataSelf(ud.?);
+            self.window.closeSurface(self);
+        }
     }
 
     fn userdataSelf(ud: *anyopaque) *Surface {
