@@ -82,7 +82,11 @@ struct GhosttyApp: App {
     }
     
     func close() {
-        guard let surfaceView = focusedSurface else { return }
+        guard let surfaceView = focusedSurface else {
+            Self.closeWindow()
+            return
+        }
+        
         guard let surface = surfaceView.surface else { return }
         ghostty.requestClose(surface: surface)
     }
