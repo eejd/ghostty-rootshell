@@ -233,6 +233,7 @@ pub const App = struct {
 /// The state for a single, real GTK window.
 const Window = struct {
     const TAB_CLOSE_PAGE = "tab_close_page";
+    const TAB_CLOSE_SURFACE = "tab_close_surface";
 
     app: *App,
 
@@ -258,6 +259,7 @@ const Window = struct {
         c.gtk_window_set_title(gtk_window, "Ghostty");
         c.gtk_window_set_default_size(gtk_window, 200, 200);
         c.gtk_widget_show(window);
+        _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, G_CONNECT_DEFAULT);
 
         // Create a notebook to hold our tabs.
@@ -332,6 +334,7 @@ const Window = struct {
         // Set the userdata of the close button so it points to this page.
         const page = c.gtk_notebook_get_page(self.notebook, gl_area) orelse
             return error.GtkNotebookPageNotFound;
+        c.g_object_set_data(@ptrCast(*c.GObject, label_close), TAB_CLOSE_SURFACE, surface);
         c.g_object_set_data(@ptrCast(*c.GObject, label_close), TAB_CLOSE_PAGE, page);
         c.g_object_set_data(@ptrCast(*c.GObject, gl_area), TAB_CLOSE_PAGE, page);
 
@@ -361,6 +364,9 @@ const Window = struct {
 
             else => {},
         }
+
+        // If we have remaining tabs, we need to make sure we grab focus.
+        if (remaining > 0) self.focusCurrentTab();
     }
 
     /// Close the surface. This surface must be definitely part of this window.
@@ -426,8 +432,22 @@ const Window = struct {
     }
 
     fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-        const self = userdataSelf(ud.?);
-        self.closeTab(getNotebookPage(@ptrCast(*c.GObject, btn)) orelse return);
+        _ = ud;
+        const surface = @ptrCast(*Surface, @alignCast(
+            @alignOf(Surface),
+            c.g_object_get_data(@ptrCast(*c.GObject, btn), TAB_CLOSE_SURFACE) orelse return,
+        ));
+
+        surface.core_surface.close();
+    }
+
+    fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
+        _ = v;
+        _ = ud;
+        log.debug("window close request", .{});
+
+        //const self = userdataSelf(ud.?);
+        return false;
     }
 
     /// "destroy" signal for the window
