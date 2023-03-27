@@ -18,15 +18,7 @@ struct GhosttyApp: App {
     
     var body: some Scene {
         WindowGroup {
-            switch ghostty.readiness {
-            case .loading:
-                Text("Loading")
-            case .error:
-                ErrorView()
-            case .ready:
-                Ghostty.TerminalSplit(onClose: Self.closeWindow)
-                    .ghosttyApp(ghostty.app!)
-            }
+            ContentView(ghostty: ghostty)
         }
         .backport.defaultSize(width: 800, height: 600)
         .commands {
@@ -110,7 +102,9 @@ struct GhosttyApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    @Published var confirmQuit: Bool = false
+    
     // See CursedMenuManager for more information.
     private var menuManager: CursedMenuManager?
     
@@ -123,6 +117,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create our menu manager to create some custom menu items that
         // we can't create from SwiftUI.
         menuManager = CursedMenuManager()
+    }
+    
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        confirmQuit = true
+        return .terminateLater
     }
 }
 
