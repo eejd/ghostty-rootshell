@@ -106,7 +106,13 @@ extension Ghostty {
         
         func appTick() {
             guard let app = self.app else { return }
-            ghostty_app_tick(app)
+            
+            // Tick our app, which lets us know if we want to quit
+            let exit = ghostty_app_tick(app)
+            if (!exit) { return }
+                
+            // We want to quit, start that process
+            NSApplication.shared.terminate(nil)
         }
         
         /// Request that the given surface is closed. This will trigger the full normal surface close event
