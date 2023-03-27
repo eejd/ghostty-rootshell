@@ -21,6 +21,7 @@
 		A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
 		A5D495A2299BEC7E00DD1313 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 		A5FECBD729D1FC3900022361 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FECBD629D1FC3900022361 /* ContentView.swift */; };
+		A5FECBD929D2010400022361 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FECBD829D2010400022361 /* WindowAccessor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 		A5CEAFFE29C2410700646FDA /* Backport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backport.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 		A5FECBD629D1FC3900022361 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A5FECBD829D2010400022361 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +68,7 @@
 				A59444F629A2ED5200725BBA /* SettingsView.swift */,
 				A5CEAFFE29C2410700646FDA /* Backport.swift */,
 				A5FECBD629D1FC3900022361 /* ContentView.swift */,
+				A5FECBD829D2010400022361 /* WindowAccessor.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -201,6 +204,7 @@
 				A55B7BB629B6F47F0055DE60 /* AppState.swift in Sources */,
 				A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
+				A5FECBD929D2010400022361 /* WindowAccessor.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
