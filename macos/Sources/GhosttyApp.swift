@@ -120,6 +120,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let windows = NSApplication.shared.windows
+        if (windows.isEmpty) { return .terminateNow }
+        
+        // This probably isn't fully safe. The isEmpty check above is aspirational, it doesn't
+        // quit work with SwiftUI because windows are retained on close. So instead we check
+        // if there are any that are visible. I'm guessing this breaks under certain scenarios.
+        if (windows.allSatisfy { !$0.isVisible }) { return .terminateNow }
+        
+        // We have some visible window, and all our windows will watch the confirmQuit.
         confirmQuit = true
         return .terminateLater
     }
