@@ -81,8 +81,12 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
         i += 1;
     }
 
-    // Drain our mailbox only if we're not quitting.
-    if (!self.quit) try self.drainMailbox(rt_app);
+    // Drain our mailbox
+    try self.drainMailbox(rt_app);
+
+    // No matter what, we reset the quit flag after a tick. If the apprt
+    // doesn't want to quit, then we can't force it to.
+    defer self.quit = false;
 
     // We quit if our quit flag is on or if we have closed all surfaces.
     return self.quit or self.surfaces.items.len == 0;
@@ -175,11 +179,6 @@ fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
 fn setQuit(self: *App) !void {
     if (self.quit) return;
     self.quit = true;
-
-    // Mark that all our surfaces should close
-    for (self.surfaces.items) |surface| {
-        surface.setShouldClose();
-    }
 }
 
 /// Handle a window message

@@ -348,6 +348,11 @@ pub const Config = struct {
             );
             try result.keybind.set.put(
                 alloc,
+                .{ .key = .q, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .quit = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
                 .{ .key = .f4, .mods = .{ .alt = true } },
                 .{ .close_window = {} },
             );

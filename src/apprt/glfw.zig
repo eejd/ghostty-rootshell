@@ -93,7 +93,13 @@ pub const App = struct {
 
             // Tick the terminal app
             const should_quit = try self.app.tick(self);
-            if (should_quit) return;
+            if (should_quit) {
+                for (self.app.surfaces.items) |surface| {
+                    surface.close(false);
+                }
+
+                return;
+            }
         }
     }
 

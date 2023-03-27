@@ -251,7 +251,7 @@ void ghostty_config_finalize(ghostty_config_t);
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);
-int ghostty_app_tick(ghostty_app_t);
+bool ghostty_app_tick(ghostty_app_t);
 void *ghostty_app_userdata(ghostty_app_t);
 
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);

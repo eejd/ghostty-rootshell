@@ -46,6 +46,9 @@ pub const App = struct {
     cursor_default: *c.GdkCursor,
     cursor_ibeam: *c.GdkCursor,
 
+    /// This is set to false when the main loop should exit.
+    running: bool = true,
+
     pub fn init(core_app: *CoreApp, opts: Options) !App {
         _ = opts;
 
@@ -161,12 +164,12 @@ pub const App = struct {
 
     /// Run the event loop. This doesn't return until the app exits.
     pub fn run(self: *App) !void {
-        while (true) {
+        while (self.running) {
             _ = c.g_main_context_iteration(self.ctx, 1);
 
             // Tick the terminal app
             const should_quit = try self.core_app.tick(self);
-            if (should_quit) return;
+            if (should_quit) self.quit();
         }
     }
 
@@ -192,6 +195,72 @@ pub const App = struct {
         try window.init(self);
     }
 
+    fn quit(self: *App) void {
+        // If we have no toplevel windows, then we're done.
+        const list = c.gtk_window_list_toplevels();
+        if (list == null) {
+            self.running = false;
+            return;
+        }
+        c.g_list_free(list);
+
+        // If we have windows, then we want to confirm that we want to exit.
+        const alert = c.gtk_message_dialog_new(
+            null,
+            c.GTK_DIALOG_MODAL,
+            c.GTK_MESSAGE_QUESTION,
+            c.GTK_BUTTONS_YES_NO,
+            "Quit Ghostty?",
+        );
+        c.gtk_message_dialog_format_secondary_text(
+            @ptrCast(*c.GtkMessageDialog, alert),
+            "All active terminal sessions will be terminated.",
+        );
+
+        // We want the "yes" to appear destructive.
+        const yes_widget = c.gtk_dialog_get_widget_for_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_YES,
+        );
+        c.gtk_widget_add_css_class(yes_widget, "destructive-action");
+
+        // We want the "no" to be the default action
+        c.gtk_dialog_set_default_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_NO,
+        );
+
+        _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkQuitConfirmation), self, null, G_CONNECT_DEFAULT);
+
+        c.gtk_widget_show(alert);
+    }
+
+    fn gtkQuitConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        _ = ud;
+
+        // Close the alert window
+        c.gtk_window_destroy(@ptrCast(*c.GtkWindow, alert));
+
+        // If we didn't confirm then we're done
+        if (response != c.GTK_RESPONSE_YES) return;
+
+        // Force close all open windows
+        const list = c.gtk_window_list_toplevels();
+        defer c.g_list_free(list);
+        c.g_list_foreach(list, struct {
+            fn callback(data: c.gpointer, _: c.gpointer) callconv(.C) void {
+                const ptr = data orelse return;
+                const widget = @ptrCast(*c.GtkWidget, @alignCast(@alignOf(c.GtkWidget), ptr));
+                const window = @ptrCast(*c.GtkWindow, widget);
+                c.gtk_window_destroy(window);
+            }
+        }.callback, null);
+    }
+
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
         _ = app;
         _ = ud;
@@ -207,6 +276,7 @@ pub const App = struct {
 /// The state for a single, real GTK window.
 const Window = struct {
     const TAB_CLOSE_PAGE = "tab_close_page";
+    const TAB_CLOSE_SURFACE = "tab_close_surface";
 
     app: *App,
 
@@ -232,6 +302,7 @@ const Window = struct {
         c.gtk_window_set_title(gtk_window, "Ghostty");
         c.gtk_window_set_default_size(gtk_window, 200, 200);
         c.gtk_widget_show(window);
+        _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, G_CONNECT_DEFAULT);
 
         // Create a notebook to hold our tabs.
@@ -306,6 +377,7 @@ const Window = struct {
         // Set the userdata of the close button so it points to this page.
         const page = c.gtk_notebook_get_page(self.notebook, gl_area) orelse
             return error.GtkNotebookPageNotFound;
+        c.g_object_set_data(@ptrCast(*c.GObject, label_close), TAB_CLOSE_SURFACE, surface);
         c.g_object_set_data(@ptrCast(*c.GObject, label_close), TAB_CLOSE_PAGE, page);
         c.g_object_set_data(@ptrCast(*c.GObject, gl_area), TAB_CLOSE_PAGE, page);
 
@@ -335,6 +407,9 @@ const Window = struct {
 
             else => {},
         }
+
+        // If we have remaining tabs, we need to make sure we grab focus.
+        if (remaining > 0) self.focusCurrentTab();
     }
 
     /// Close the surface. This surface must be definitely part of this window.
@@ -400,8 +475,62 @@ const Window = struct {
     }
 
     fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+        _ = ud;
+        const surface = @ptrCast(*Surface, @alignCast(
+            @alignOf(Surface),
+            c.g_object_get_data(@ptrCast(*c.GObject, btn), TAB_CLOSE_SURFACE) orelse return,
+        ));
+
+        surface.core_surface.close();
+    }
+
+    fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
+        _ = v;
+        log.debug("window close request", .{});
         const self = userdataSelf(ud.?);
-        self.closeTab(getNotebookPage(@ptrCast(*c.GObject, btn)) orelse return);
+
+        // Setup our basic message
+        const alert = c.gtk_message_dialog_new(
+            self.window,
+            c.GTK_DIALOG_MODAL,
+            c.GTK_MESSAGE_QUESTION,
+            c.GTK_BUTTONS_YES_NO,
+            "Close this window?",
+        );
+        c.gtk_message_dialog_format_secondary_text(
+            @ptrCast(*c.GtkMessageDialog, alert),
+            "All terminal sessions in this window will be terminated.",
+        );
+
+        // We want the "yes" to appear destructive.
+        const yes_widget = c.gtk_dialog_get_widget_for_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_YES,
+        );
+        c.gtk_widget_add_css_class(yes_widget, "destructive-action");
+
+        // We want the "no" to be the default action
+        c.gtk_dialog_set_default_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_NO,
+        );
+
+        _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
+
+        c.gtk_widget_show(alert);
+        return true;
+    }
+
+    fn gtkCloseConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        c.gtk_window_destroy(@ptrCast(*c.GtkWindow, alert));
+        if (response == c.GTK_RESPONSE_YES) {
+            const self = userdataSelf(ud.?);
+            c.gtk_window_destroy(self.window);
+        }
     }
 
     /// "destroy" signal for the window
