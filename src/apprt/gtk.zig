@@ -443,11 +443,51 @@ const Window = struct {
 
     fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
         _ = v;
-        _ = ud;
         log.debug("window close request", .{});
+        const self = userdataSelf(ud.?);
 
-        //const self = userdataSelf(ud.?);
-        return false;
+        // Setup our basic message
+        const alert = c.gtk_message_dialog_new(
+            self.window,
+            c.GTK_DIALOG_MODAL,
+            c.GTK_MESSAGE_QUESTION,
+            c.GTK_BUTTONS_YES_NO,
+            "Close this window?",
+        );
+        c.gtk_message_dialog_format_secondary_text(
+            @ptrCast(*c.GtkMessageDialog, alert),
+            "All terminal sessions in this window will be terminated.",
+        );
+
+        // We want the "yes" to appear destructive.
+        const yes_widget = c.gtk_dialog_get_widget_for_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_YES,
+        );
+        c.gtk_widget_add_css_class(yes_widget, "destructive-action");
+
+        // We want the "no" to be the default action
+        c.gtk_dialog_set_default_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_NO,
+        );
+
+        _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
+
+        c.gtk_widget_show(alert);
+        return true;
+    }
+
+    fn gtkCloseConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        c.gtk_window_destroy(@ptrCast(*c.GtkWindow, alert));
+        if (response == c.GTK_RESPONSE_YES) {
+            const self = userdataSelf(ud.?);
+            c.gtk_window_destroy(self.window);
+        }
     }
 
     /// "destroy" signal for the window
