@@ -196,20 +196,63 @@ pub const App = struct {
     }
 
     fn quit(self: *App) void {
-        const list = c.gtk_window_list_toplevels();
-
         // If we have no toplevel windows, then we're done.
+        const list = c.gtk_window_list_toplevels();
         if (list == null) {
             self.running = false;
             return;
         }
+        c.g_list_free(list);
 
-        // We have toplevel windows, so we want to go through each and
-        // request that they exit.
+        // If we have windows, then we want to confirm that we want to exit.
+        const alert = c.gtk_message_dialog_new(
+            null,
+            c.GTK_DIALOG_MODAL,
+            c.GTK_MESSAGE_QUESTION,
+            c.GTK_BUTTONS_YES_NO,
+            "Quit Ghostty?",
+        );
+        c.gtk_message_dialog_format_secondary_text(
+            @ptrCast(*c.GtkMessageDialog, alert),
+            "All active terminal sessions will be terminated.",
+        );
+
+        // We want the "yes" to appear destructive.
+        const yes_widget = c.gtk_dialog_get_widget_for_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_YES,
+        );
+        c.gtk_widget_add_css_class(yes_widget, "destructive-action");
+
+        // We want the "no" to be the default action
+        c.gtk_dialog_set_default_response(
+            @ptrCast(*c.GtkDialog, alert),
+            c.GTK_RESPONSE_NO,
+        );
+
+        _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkQuitConfirmation), self, null, G_CONNECT_DEFAULT);
+
+        c.gtk_widget_show(alert);
+    }
+
+    fn gtkQuitConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        _ = ud;
+
+        // Close the alert window
+        c.gtk_window_destroy(@ptrCast(*c.GtkWindow, alert));
+
+        // If we didn't confirm then we're done
+        if (response != c.GTK_RESPONSE_YES) return;
+
+        // Force close all open windows
+        const list = c.gtk_window_list_toplevels();
         defer c.g_list_free(list);
         c.g_list_foreach(list, struct {
-            fn callback(data: c.gpointer, ud: c.gpointer) callconv(.C) void {
-                _ = ud;
+            fn callback(data: c.gpointer, _: c.gpointer) callconv(.C) void {
                 const ptr = data orelse return;
                 const widget = @ptrCast(*c.GtkWidget, @alignCast(@alignOf(c.GtkWidget), ptr));
                 const window = @ptrCast(*c.GtkWindow, widget);
