@@ -46,6 +46,9 @@ pub const App = struct {
     cursor_default: *c.GdkCursor,
     cursor_ibeam: *c.GdkCursor,
 
+    /// This is set to false when the main loop should exit.
+    running: bool = true,
+
     pub fn init(core_app: *CoreApp, opts: Options) !App {
         _ = opts;
 
@@ -161,12 +164,12 @@ pub const App = struct {
 
     /// Run the event loop. This doesn't return until the app exits.
     pub fn run(self: *App) !void {
-        while (true) {
+        while (self.running) {
             _ = c.g_main_context_iteration(self.ctx, 1);
 
             // Tick the terminal app
             const should_quit = try self.core_app.tick(self);
-            if (should_quit) return;
+            if (should_quit) self.quit();
         }
     }
 
@@ -190,6 +193,29 @@ pub const App = struct {
         var window = try alloc.create(Window);
         errdefer alloc.destroy(window);
         try window.init(self);
+    }
+
+    fn quit(self: *App) void {
+        const list = c.gtk_window_list_toplevels();
+
+        // If we have no toplevel windows, then we're done.
+        if (list == null) {
+            self.running = false;
+            return;
+        }
+
+        // We have toplevel windows, so we want to go through each and
+        // request that they exit.
+        defer c.g_list_free(list);
+        c.g_list_foreach(list, struct {
+            fn callback(data: c.gpointer, ud: c.gpointer) callconv(.C) void {
+                _ = ud;
+                const ptr = data orelse return;
+                const widget = @ptrCast(*c.GtkWidget, @alignCast(@alignOf(c.GtkWidget), ptr));
+                const window = @ptrCast(*c.GtkWindow, widget);
+                c.gtk_window_destroy(window);
+            }
+        }.callback, null);
     }
 
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
