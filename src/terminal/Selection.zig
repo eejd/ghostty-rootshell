@@ -20,7 +20,7 @@ end: ScreenPoint,
 /// of the screen.
 pub fn toViewport(self: Selection, screen: *const Screen) ?Selection {
     const top = (point.Viewport{ .x = 0, .y = 0 }).toScreen(screen);
-    const bot = (point.Viewport{ .x = 0, .y = screen.rows - 1 }).toScreen(screen);
+    const bot = (point.Viewport{ .x = screen.cols - 1, .y = screen.rows - 1 }).toScreen(screen);
 
     // If our selection isn't within the viewport, do nothing.
     if (!self.within(top, bot)) return null;
@@ -103,7 +103,9 @@ pub fn containedRow(self: Selection, screen: *const Screen, p: ScreenPoint) ?Sel
 
     if (p.y == tl.y) {
         // If the selection is JUST this line, return it as-is.
-        if (p.y == br.y) return self;
+        if (p.y == br.y) {
+            return self;
+        }
 
         // Selection top-left line matches only.
         return .{
