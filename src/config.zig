@@ -164,6 +164,10 @@ pub const Config = struct {
     /// Additional configuration files to read.
     @"config-file": RepeatableString = .{},
 
+    // Confirms that a surface should be closed before closing it. This defaults
+    // to true. If set to false, surfaces will close without any confirmation.
+    @"confirm-close-surface": bool = true,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 

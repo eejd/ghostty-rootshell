@@ -140,6 +140,7 @@ const DerivedConfig = struct {
     clipboard_read: bool,
     clipboard_write: bool,
     clipboard_trim_trailing_spaces: bool,
+    confirm_close_surface: bool,
     mouse_interval: u64,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
@@ -153,6 +154,7 @@ const DerivedConfig = struct {
             .clipboard_read = config.@"clipboard-read",
             .clipboard_write = config.@"clipboard-write",
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+            .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
 
             // Assignments happen sequentially so we have to do this last
@@ -526,7 +528,22 @@ pub fn deinit(self: *Surface) void {
 /// Close this surface. This will trigger the runtime to start the
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
-    self.rt_surface.close(!self.child_exited);
+    const process_alive = process_alive: {
+        // Inform close() if it should hold open the surface or not. If the child
+        // exited, we don't want to
+        var process_alive = !self.child_exited;
+
+        // However, if we are configured to not hold open surfaces explicitly,
+        // just tell close to not hold them open by saying there are no alive
+        // processes
+        if (!self.config.confirm_close_surface) {
+            process_alive = false;
+        }
+
+        break :process_alive process_alive;
+    };
+
+    self.rt_surface.close(process_alive);
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
