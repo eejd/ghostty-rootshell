@@ -275,7 +275,7 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
     // If our allocation and rectangle add succeeded, we can go ahead
     // and persist our new size and copy over the old data.
     self.size = size_new;
-    std.mem.set(u8, self.data, 0);
+    @memset(self.data, 0);
     self.set(.{
         .x = 0, // don't bother skipping border so we can avoid strides
         .y = 1, // skip the first border row
@@ -291,7 +291,7 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
 // Empty the atlas. This doesn't reclaim any previously allocated memory.
 pub fn clear(self: *Atlas) void {
     self.modified = true;
-    std.mem.set(u8, self.data, 0);
+    @memset(self.data, 0);
     self.nodes.clearRetainingCapacity();
 
     // Add our initial rectangle. This is the size of the full texture
@@ -403,7 +403,7 @@ pub const Wasm = struct {
                 // Convert from A8 to RGBA so every 4th byte is set to a value.
                 var buf: []u8 = try alloc.alloc(u8, self.data.len * 4);
                 errdefer alloc.free(buf);
-                std.mem.set(u8, buf, 0);
+                @memset(buf, 0);
                 for (self.data, 0..) |value, i| {
                     buf[(i * 4) + 3] = value;
                 }

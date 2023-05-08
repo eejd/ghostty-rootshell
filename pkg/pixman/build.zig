@@ -28,10 +28,10 @@ pub fn build(b: *std.Build) !void {
     tests.setBuildMode(mode);
     tests.setTarget(target);
     _ = try link(b, tests, .{});
-    tests.install();
+    b.installArtifact(tests);
 
     const test_step = b.step("test", "Run tests");
-    const tests_run = tests.run();
+    const tests_run = b.addRunArtifact(tests);
     test_step.dependOn(&tests_run.step);
 }
 

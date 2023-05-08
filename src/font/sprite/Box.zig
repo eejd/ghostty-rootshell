@@ -2178,7 +2178,7 @@ fn draw_light_arc(
     // Allocate our supersample sized canvas
     var ss_data = try alloc.alloc(u8, height * width);
     defer alloc.free(ss_data);
-    std.mem.set(u8, ss_data, 0);
+    @memset(ss_data, 0);
 
     const height_pixels = self.height;
     const width_pixels = self.width;

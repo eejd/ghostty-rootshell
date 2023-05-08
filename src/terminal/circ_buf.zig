@@ -28,7 +28,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// Initialize a new circular buffer that can store size elements.
         pub fn init(alloc: Allocator, size: usize) !Self {
             var buf = try alloc.alloc(T, size);
-            std.mem.set(T, buf, default);
+            @memset(buf, default);
 
             return Self{
                 .storage = buf,
@@ -60,7 +60,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             // If we grew, we need to set our new defaults. We can add it
             // at the end since we rotated to start.
             if (size > prev_cap) {
-                std.mem.set(T, self.storage[prev_cap..], default);
+                @memset(self.storage[prev_cap..], default);
 
                 // Fix up our head/tail
                 if (self.full) {
@@ -127,7 +127,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
             // Clear the values back to default
             const slices = self.getPtrSlice(0, n);
-            inline for (slices) |slice| std.mem.set(T, slice, default);
+            inline for (slices) |slice| @memset(slice, default);
 
             // If we're not full, we can just advance the tail. We know
             // it'll be less than the length because otherwise we'd be full.

@@ -27,7 +27,7 @@
 	url = https://github.com/cimgui/cimgui.git
 [submodule "vendor/pixman"]
 	path = vendor/pixman
-	url = https://github.com/freedesktop/pixman.git
+	url = https://gitlab.freedesktop.org/pixman/pixman.git
 [submodule "vendor/zig-js"]
 	path = vendor/zig-js
 	url = https://github.com/mitchellh/zig-js.git

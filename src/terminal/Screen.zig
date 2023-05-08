@@ -319,7 +319,7 @@ pub const Row = struct {
 
         // If our row has no graphemes, then this is a fast copy
         if (!self.storage[0].header.flags.grapheme) {
-            std.mem.set(StorageCell, self.storage[start + 1 .. len + 1], .{ .cell = cell });
+            @memset(self.storage[start + 1 .. len + 1], .{ .cell = cell });
             return;
         }
 
@@ -1013,7 +1013,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
             // is a lot more of that.
             const dst_offset = total_copy;
             const dst = buf[dst_offset..];
-            std.mem.set(StorageCell, dst, .{ .cell = self.cursor.pen });
+            @memset(dst, .{ .cell = self.cursor.pen });
 
             // Then we make sure our row headers are zeroed out. We set
             // the value to a dirty row header so that the renderer re-draws.
@@ -1093,7 +1093,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
         if (offset >= slices[i].len) continue;
 
         const dst = slices[i][offset..];
-        std.mem.set(StorageCell, dst, .{ .cell = self.cursor.pen });
+        @memset(dst, .{ .cell = self.cursor.pen });
 
         var j: usize = offset;
         while (j < slices[i].len) : (j += self.cols + 1) {
@@ -1557,8 +1557,7 @@ pub fn selectionString(
                     // we use are correct by default.
                     if (std.debug.runtime_safety) {
                         if (cell.header.id == 0) {
-                            std.mem.set(
-                                StorageCell,
+                            @memset(
                                 slice[i + 1 .. i + 1 + self.cols],
                                 .{ .cell = .{} },
                             );

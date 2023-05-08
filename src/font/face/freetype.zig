@@ -440,7 +440,7 @@ pub const Face = struct {
             // cell height (mainly: non-scalable fonts, i.e. emoji)
             break :underline_pos cell_height - 1;
         };
-        const underline_thickness = @max(1, fontUnitsToPxY(
+        const underline_thickness = @max(@as(f32, 1), fontUnitsToPxY(
             face,
             face.handle.*.underline_thickness,
         ));
@@ -461,7 +461,7 @@ pub const Face = struct {
 
                 break :pos @intToFloat(f32, ascender_px - declared_px);
             },
-            .thickness = @max(1, fontUnitsToPxY(face, os2.yStrikeoutSize)),
+            .thickness = @max(@as(f32, 1), fontUnitsToPxY(face, os2.yStrikeoutSize)),
         } else .{
             .pos = cell_baseline * 0.6,
             .thickness = underline_thickness,

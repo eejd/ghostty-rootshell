@@ -105,11 +105,12 @@ pub const Padding = struct {
         const padding_top = @min(padding_left, @floor(space_bot / 2));
         const padding_bot = space_bot - padding_top;
 
+        const zero = @as(f32, 0);
         return .{
-            .top = @max(0, padding_top),
-            .bottom = @max(0, padding_bot),
-            .right = @max(0, padding_right),
-            .left = @max(0, padding_left),
+            .top = @max(zero, padding_top),
+            .bottom = @max(zero, padding_bot),
+            .right = @max(zero, padding_right),
+            .left = @max(zero, padding_left),
         };
     }
 

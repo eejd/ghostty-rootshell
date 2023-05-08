@@ -145,8 +145,8 @@ pub fn capacity(self: Tabstops) usize {
 /// Unset all tabstops and then reset the initial tabstops to the given
 /// interval. An interval of 0 sets no tabstops.
 pub fn reset(self: *Tabstops, interval: usize) void {
-    std.mem.set(Unit, &self.prealloc_stops, 0);
-    std.mem.set(Unit, self.dynamic_stops, 0);
+    @memset(&self.prealloc_stops, 0);
+    @memset(self.dynamic_stops, 0);
 
     if (interval > 0) {
         var i: usize = interval - 1;

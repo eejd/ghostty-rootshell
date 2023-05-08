@@ -1116,12 +1116,21 @@ fn syncCells(
     }
 
     // We can fit within the vertex buffer so we can just replace bytes.
-    const ptr = target.msgSend(?[*]u8, objc.sel("contents"), .{}) orelse {
-        log.warn("buf_cells contents ptr is null", .{});
-        return error.MetalFailed;
+    const dst = dst: {
+        const ptr = target.msgSend(?[*]u8, objc.sel("contents"), .{}) orelse {
+            log.warn("buf_cells contents ptr is null", .{});
+            return error.MetalFailed;
+        };
+
+        break :dst ptr[0..req_bytes];
     };
 
-    @memcpy(ptr, @ptrCast([*]const u8, cells.items.ptr), req_bytes);
+    const src = src: {
+        const ptr = @ptrCast([*]const u8, cells.items.ptr);
+        break :src ptr[0..req_bytes];
+    };
+
+    @memcpy(dst, src);
 }
 
 /// Sync the atlas data to the given texture. This copies the bytes

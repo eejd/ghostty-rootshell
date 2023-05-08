@@ -427,7 +427,6 @@ pub fn build(b: *std.Build) !void {
             .target = wasm_crosstarget,
             .optimize = optimize,
         });
-        wasm.setOutputDir("zig-out");
         wasm.addOptions("build_options", exe_options);
 
         // So that we can use web workers with our wasm binary
@@ -442,8 +441,12 @@ pub fn build(b: *std.Build) !void {
         // Wasm-specific deps
         _ = try addDeps(b, wasm, true);
 
+        // Install
+        const wasm_install = b.addInstallArtifact(wasm);
+        wasm_install.dest_dir = .{ .prefix = {} };
+
         const step = b.step("wasm", "Build the wasm library");
-        step.dependOn(&wasm.step);
+        step.dependOn(&wasm_install.step);
 
         // We support tests via wasmtime. wasmtime uses WASI so this
         // isn't an exact match to our freestanding target above but
@@ -468,8 +471,8 @@ pub fn build(b: *std.Build) !void {
             defer conformance_exes.deinit();
             break :blk conformance_exes.get(name) orelse return error.InvalidConformance;
         } else exe;
-        const run_cmd = run_exe.run();
-        run_cmd.step.dependOn(&run_exe.step);
+
+        const run_cmd = b.addRunArtifact(run_exe);
         if (b.args) |args| {
             run_cmd.addArgs(args);
         }
@@ -487,14 +490,14 @@ pub fn build(b: *std.Build) !void {
             .name = "ghostty-test",
             .root_source_file = .{ .path = "src/main.zig" },
             .target = target,
+            .filter = test_filter,
         });
         {
-            if (emit_test_exe) main_test.install();
-            main_test.setFilter(test_filter);
+            if (emit_test_exe) b.installArtifact(main_test);
             _ = try addDeps(b, main_test, true);
             main_test.addOptions("build_options", exe_options);
 
-            const test_run = main_test.run();
+            const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
         }
 
@@ -513,7 +516,7 @@ pub fn build(b: *std.Build) !void {
                 .root_source_file = module.source_file,
                 .target = target,
             });
-            if (emit_test_exe) test_exe.install();
+            if (emit_test_exe) b.installArtifact(test_exe);
 
             _ = try addDeps(b, test_exe, true);
             // if (pkg.dependencies) |children| {
@@ -521,7 +524,7 @@ pub fn build(b: *std.Build) !void {
             //     try test_.packages.appendSlice(children);
             // }
 
-            const test_run = test_exe.run();
+            const test_run = b.addRunArtifact(test_exe);
             test_step.dependOn(&test_run.step);
         }
     }
@@ -785,7 +788,7 @@ fn benchSteps(
             .optimize = optimize,
         });
         c_exe.setMainPkgPath("./src");
-        if (install) c_exe.install();
+        if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, true);
     }
 }
@@ -823,8 +826,10 @@ fn conformanceSteps(
             .target = target,
             .optimize = optimize,
         });
-        c_exe.setOutputDir("zig-out/bin/conformance");
-        c_exe.install();
+
+        const install = b.addInstallArtifact(c_exe);
+        install.dest_sub_path = "conformance";
+        b.getInstallStep().dependOn(&install.step);
 
         // Store the mapping
         try map.put(name, c_exe);

@@ -171,7 +171,7 @@ test "create and destroy" {
     const len = height * @intCast(usize, stride);
     var data = try alloc.alloc(u32, len);
     defer alloc.free(data);
-    std.mem.set(u32, data, 0);
+    @memset(data, 0);
     const img = try Image.createBitsNoClear(.g1, width, height, data.ptr, stride);
     try testing.expectEqual(@as(c_int, height), img.getHeight());
     try testing.expectEqual(@as(c_int, stride), img.getStride());
@@ -193,7 +193,7 @@ test "fill boxes a1" {
     const len = height * @intCast(usize, stride);
     var data = try alloc.alloc(u32, len);
     defer alloc.free(data);
-    std.mem.set(u32, data, 0);
+    @memset(data, 0);
     const img = try Image.createBitsNoClear(format, width, height, data.ptr, stride);
     defer _ = img.unref();
 

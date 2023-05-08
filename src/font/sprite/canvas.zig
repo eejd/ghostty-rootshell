@@ -310,7 +310,7 @@ const PixmanImpl = struct {
         // by 4 since u32 / u8 = 4.
         var data = try alloc.alloc(u32, len / 4);
         errdefer alloc.free(data);
-        std.mem.set(u32, data, 0);
+        @memset(data, 0);
 
         // Create the image we'll draw to
         const img = try pixman.Image.createBitsNoClear(

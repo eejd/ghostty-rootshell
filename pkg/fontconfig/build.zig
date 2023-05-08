@@ -116,7 +116,7 @@ pub fn buildFontconfig(
         "-DHAVE_RAND",
         "-DHAVE_RANDOM",
         "-DHAVE_LRAND48",
-        "-DHAVE_RANDOM_R",
+        //"-DHAVE_RANDOM_R",
         "-DHAVE_RAND_R",
         "-DHAVE_READLINK",
         "-DHAVE_FSTATVFS",
