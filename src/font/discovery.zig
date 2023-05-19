@@ -251,10 +251,8 @@ pub const CoreText = struct {
         defer ct_desc.release();
 
         // Our descriptors have to be in an array
-        const desc_arr = try macos.foundation.Array.create(
-            macos.text.FontDescriptor,
-            &[_]*const macos.text.FontDescriptor{ct_desc},
-        );
+        var ct_desc_arr = [_]*const macos.text.FontDescriptor{ct_desc};
+        const desc_arr = try macos.foundation.Array.create(macos.text.FontDescriptor, &ct_desc_arr);
         defer desc_arr.release();
 
         // Build our collection

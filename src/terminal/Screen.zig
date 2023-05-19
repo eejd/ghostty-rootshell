@@ -3547,7 +3547,7 @@ test "Screen: scrollRegionUp buffer wrap" {
     }
 }
 
-test "Screen: scrollRegionUp buffer wrap" {
+test "Screen: scrollRegionUp buffer wrap alternate" {
     const testing = std.testing;
     const alloc = testing.allocator;
 

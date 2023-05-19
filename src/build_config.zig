@@ -20,13 +20,13 @@ pub const artifact = Artifact.detect();
 /// The runtime to back exe artifacts with.
 pub const app_runtime: apprt.Runtime = switch (artifact) {
     .lib => .none,
-    else => std.meta.stringToEnum(apprt.Runtime, std.meta.tagName(options.app_runtime)).?,
+    else => std.meta.stringToEnum(apprt.Runtime, @tagName(options.app_runtime)).?,
 };
 
 /// The font backend desired for the build.
 pub const font_backend: font.Backend = std.meta.stringToEnum(
     font.Backend,
-    std.meta.tagName(options.font_backend),
+    @tagName(options.font_backend),
 ).?;
 
 /// Whether our devmode UI is enabled or not. This requires imgui to be

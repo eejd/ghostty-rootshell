@@ -103,10 +103,8 @@ test "from descriptors" {
     const desc = try text.FontDescriptor.createWithNameAndSize(name, 12);
     defer desc.release();
 
-    const arr = try foundation.Array.create(
-        text.FontDescriptor,
-        &[_]*const text.FontDescriptor{desc},
-    );
+    var desc_arr = [_]*const text.FontDescriptor{desc};
+    const arr = try foundation.Array.create(text.FontDescriptor, &desc_arr);
     defer arr.release();
 
     const v = try FontCollection.createWithFontDescriptors(arr);
@@ -129,10 +127,8 @@ test "from descriptors no match" {
     const desc = try text.FontDescriptor.createWithNameAndSize(name, 12);
     defer desc.release();
 
-    const arr = try foundation.Array.create(
-        text.FontDescriptor,
-        &[_]*const text.FontDescriptor{desc},
-    );
+    var desc_arr = [_]*const text.FontDescriptor{desc};
+    const arr = try foundation.Array.create(text.FontDescriptor, &desc_arr);
     defer arr.release();
 
     const v = try FontCollection.createWithFontDescriptors(arr);
