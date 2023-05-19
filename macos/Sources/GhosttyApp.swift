@@ -124,9 +124,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if (windows.isEmpty) { return .terminateNow }
         
         // This probably isn't fully safe. The isEmpty check above is aspirational, it doesn't
-        // quit work with SwiftUI because windows are retained on close. So instead we check
+        // quite work with SwiftUI because windows are retained on close. So instead we check
         // if there are any that are visible. I'm guessing this breaks under certain scenarios.
         if (windows.allSatisfy { !$0.isVisible }) { return .terminateNow }
+        
+        // If the user is shutting down, restarting, or logging out, we don't confirm quit.
+        if let event = NSAppleEventManager.shared().currentAppleEvent {
+            if let why = event.attributeDescriptor(forKeyword: AEKeyword("why?")!) {
+                switch (why.typeCodeValue) {
+                case kAEShutDown:
+                    fallthrough
+                    
+                case kAERestart:
+                    fallthrough
+                    
+                case kAEReallyLogOut:
+                    return .terminateNow
+                    
+                default:
+                    break
+                }
+            }
+        }
         
         // We have some visible window, and all our windows will watch the confirmQuit.
         confirmQuit = true
