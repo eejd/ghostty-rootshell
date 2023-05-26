@@ -869,7 +869,8 @@ pub fn rebuildCells(
         // If this is the row with our cursor, then we may have to modify
         // the cell with the cursor.
         const start_i: usize = self.cells.items.len;
-        defer if (self.cursor_visible and
+        defer if (draw_cursor and
+            self.cursor_visible and
             self.cursor_style == .box and
             screen.viewportIsBottom() and
             y == screen.cursor.y)
@@ -951,13 +952,15 @@ pub fn rebuildCells(
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    if (draw_cursor) self.addCursor(screen);
-    if (cursor_cell) |*cell| {
-        cell.fg_r = 0;
-        cell.fg_g = 0;
-        cell.fg_b = 0;
-        cell.fg_a = 255;
-        self.cells.appendAssumeCapacity(cell.*);
+    if (draw_cursor) {
+        self.addCursor(screen);
+        if (cursor_cell) |*cell| {
+            cell.fg_r = 0;
+            cell.fg_g = 0;
+            cell.fg_b = 0;
+            cell.fg_a = 255;
+            self.cells.appendAssumeCapacity(cell.*);
+        }
     }
 
     // Some debug mode safety checks
