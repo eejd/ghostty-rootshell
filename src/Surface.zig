@@ -529,18 +529,18 @@ pub fn deinit(self: *Surface) void {
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
     const process_alive = process_alive: {
-        // Inform close() if it should hold open the surface or not. If the child
-        // exited, we don't want to
-        var process_alive = !self.child_exited;
+        // If the child has exited then our process is certainly not alive.
+        // We check this first to avoid the locking overhead below.
+        if (self.child_exited) break :process_alive false;
 
-        // However, if we are configured to not hold open surfaces explicitly,
-        // just tell close to not hold them open by saying there are no alive
-        // processes
-        if (!self.config.confirm_close_surface) {
-            process_alive = false;
-        }
+        // If we are configured to not hold open surfaces explicitly, just
+        // always say there is nothing alive.
+        if (!self.config.confirm_close_surface) break :process_alive false;
 
-        break :process_alive process_alive;
+        // We have to talk to the terminal.
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        break :process_alive !self.io.terminal.cursorIsAtPrompt();
     };
 
     self.rt_surface.close(process_alive);
