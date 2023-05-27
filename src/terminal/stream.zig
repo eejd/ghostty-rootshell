@@ -483,6 +483,12 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
+                .end_of_input => {
+                    if (@hasDecl(T, "endOfInput")) {
+                        try self.handler.endOfInput();
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
                 .end_of_command => |end| {
                     if (@hasDecl(T, "endOfCommand")) {
                         try self.handler.endOfCommand(end.exit_code);

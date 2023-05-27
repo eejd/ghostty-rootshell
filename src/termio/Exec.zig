@@ -1235,4 +1235,16 @@ const StreamHandler = struct {
             ),
         }, .{ .forever = {} });
     }
+
+    pub fn promptStart(self: *StreamHandler) !void {
+        self.terminal.markSemanticPrompt(.prompt);
+    }
+
+    pub fn promptEnd(self: *StreamHandler) !void {
+        self.terminal.markSemanticPrompt(.input);
+    }
+
+    pub fn endOfInput(self: *StreamHandler) !void {
+        self.terminal.markSemanticPrompt(.command);
+    }
 };
