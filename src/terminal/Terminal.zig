@@ -1401,6 +1401,7 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
 /// (OSC 133) only allow setting this for wherever the current active cursor
 /// is located.
 pub fn markSemanticPrompt(self: *Terminal, p: SemanticPrompt) void {
+    log.warn("semantic_prompt: {}", .{p});
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
     row.setSemanticPrompt(switch (p) {
         .prompt => .prompt,
