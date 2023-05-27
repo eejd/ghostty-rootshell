@@ -42,7 +42,7 @@ extension Ghostty {
         @FocusState private var surfaceFocus: Bool
         
         // Maintain whether our window has focus (is key) or not
-        @State private var windowFocus: Bool = false
+        @State private var windowFocus: Bool = true
         
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.
