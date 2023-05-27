@@ -87,6 +87,20 @@ if something isn't working.
 
 Eventually, we'll have a better mecanism for showing errors to the user.
 
+### Shell Integration
+
+Ghostty supports some features that require shell integration. I am aiming
+to support many of the features that 
+[Kitty supports for shell integration](https://sw.kovidgoyal.net/kitty/shell-integration/).
+
+Today, the most important quality-of-life feature is that Ghostty will
+not confirm window close if it detects that the cursor is sitting at a prompt
+input (i.e. no subprocess is running). 
+
+To enable this functionality, I recommend sourcing Kitty's shell integration
+files directly for your shell configuration when running Ghostty. For
+example, for fish, [source this file](https://github.com/kovidgoyal/kitty/blob/master/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish).
+
 ## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
