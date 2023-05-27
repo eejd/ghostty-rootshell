@@ -136,7 +136,32 @@ pub const RowHeader = struct {
 
         /// True if any cell in this row has a grapheme associated with it.
         grapheme: bool = false,
+
+        /// True if this row is an active prompt (awaiting input). This is
+        /// set to false when the semantic prompt events (OSC 133) are received.
+        /// There are scenarios where the shell may never send this event, so
+        /// in order to reliably test prompt status, you need to iterate
+        /// backwards from the cursor to check the current line status going
+        /// back.
+        semantic_prompt: SemanticPrompt = .unknown,
     } = .{},
+
+    /// Semantic prompt type.
+    pub const SemanticPrompt = enum(u3) {
+        /// Unknown, the running application didn't tell us for this line.
+        unknown = 0,
+
+        /// This is a prompt line, meaning it only contains the shell prompt.
+        /// For poorly behaving shells, this may also be the input.
+        prompt = 1,
+
+        /// This line contains the input area. We don't currently track
+        /// where this actually is in the line, so we just assume it is somewhere.
+        input = 2,
+
+        /// This line is the start of command output.
+        command = 3,
+    };
 };
 
 /// Cell is a single cell within the screen.
@@ -274,6 +299,16 @@ pub const Row = struct {
 
     pub inline fn isDirty(self: Row) bool {
         return self.storage[0].header.flags.dirty;
+    }
+
+    /// Set the semantic prompt state for this row.
+    pub fn setSemanticPrompt(self: Row, p: RowHeader.SemanticPrompt) void {
+        self.storage[0].header.flags.semantic_prompt = p;
+    }
+
+    /// Retrieve the semantic prompt state for this row.
+    pub fn getSemanticPrompt(self: Row) RowHeader.SemanticPrompt {
+        return self.storage[0].header.flags.semantic_prompt;
     }
 
     /// Retrieve the header for this row.

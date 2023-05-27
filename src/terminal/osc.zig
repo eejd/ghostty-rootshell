@@ -276,6 +276,7 @@ pub const Parser = struct {
                     self.command = .{ .end_of_command = .{} };
                     self.complete = true;
                 },
+
                 else => self.state = .invalid,
             },
 

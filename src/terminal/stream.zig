@@ -471,6 +471,24 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
+                .prompt_start => {
+                    if (@hasDecl(T, "promptStart")) {
+                        try self.handler.promptStart();
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
+                .prompt_end => {
+                    if (@hasDecl(T, "promptEnd")) {
+                        try self.handler.promptEnd();
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
+                .end_of_command => |end| {
+                    if (@hasDecl(T, "endOfCommand")) {
+                        try self.handler.endOfCommand(end.exit_code);
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
                 else => if (@hasDecl(T, "oscUnimplemented"))
                     try self.handler.oscUnimplemented(cmd)
                 else

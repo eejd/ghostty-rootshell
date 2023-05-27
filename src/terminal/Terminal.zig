@@ -31,6 +31,17 @@ pub const ScreenType = enum {
     alternate,
 };
 
+/// The semantic prompt type. This is used when tracking a line type and
+/// requires integration with the shell. By default, we mark a line as "none"
+/// meaning we don't know what type it is.
+///
+/// See: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
+pub const SemanticPrompt = enum {
+    prompt,
+    input,
+    command,
+};
+
 /// Screen is the current screen state. The "active_screen" field says what
 /// the current screen is. The backup screen is the opposite of the active
 /// screen.
@@ -1386,6 +1397,50 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
     self.setCursorPos(1, 1);
 }
 
+/// Mark the current semantic prompt information. Current escape sequences
+/// (OSC 133) only allow setting this for wherever the current active cursor
+/// is located.
+pub fn markSemanticPrompt(self: *Terminal, p: SemanticPrompt) void {
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    row.setSemanticPrompt(switch (p) {
+        .prompt => .prompt,
+        .input => .input,
+        .command => .command,
+    });
+}
+
+/// Returns true if the cursor is currently at a prompt. Another way to look
+/// at this is it returns false if the shell is currently outputing something.
+/// This requires shell integration (semantic prompt integration).
+///
+/// If the shell integration doesn't exist, this will always return false.
+pub fn cursorIsAtPrompt(self: *Terminal) bool {
+    // If we're on the secondary screen, we're never at a prompt.
+    if (self.active_screen == .alternate) return false;
+
+    var y: usize = 0;
+    while (y <= self.screen.cursor.y) : (y += 1) {
+        // We want to go bottom up
+        const bottom_y = self.screen.cursor.y - y;
+        const row = self.screen.getRow(.{ .active = bottom_y });
+        switch (row.getSemanticPrompt()) {
+            // If we're at a prompt or input area, then we are at a prompt.
+            .prompt,
+            .input,
+            => return true,
+
+            // If we have command output, then we're most certainly not
+            // at a prompt.
+            .command => return false,
+
+            // If we don't know, we keep searching.
+            .unknown => {},
+        }
+    }
+
+    return false;
+}
+
 /// Full reset
 pub fn fullReset(self: *Terminal) void {
     self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
@@ -2116,4 +2171,50 @@ test "Terminal: insertBlanks more than size" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("", str);
     }
+}
+
+test "Terminal: cursorIsAtPrompt" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 2);
+    defer t.deinit(alloc);
+
+    try testing.expect(!t.cursorIsAtPrompt());
+    t.markSemanticPrompt(.prompt);
+    try testing.expect(t.cursorIsAtPrompt());
+
+    // Input is also a prompt
+    t.markSemanticPrompt(.input);
+    try testing.expect(t.cursorIsAtPrompt());
+
+    // Newline -- we expect we're still at a prompt if we received
+    // prompt stuff before.
+    try t.linefeed();
+    try testing.expect(t.cursorIsAtPrompt());
+
+    // But once we say we're starting output, we're not a prompt
+    t.markSemanticPrompt(.command);
+    try testing.expect(!t.cursorIsAtPrompt());
+    try t.linefeed();
+    try testing.expect(!t.cursorIsAtPrompt());
+
+    // Until we know we're at a prompt again
+    try t.linefeed();
+    t.markSemanticPrompt(.prompt);
+    try testing.expect(t.cursorIsAtPrompt());
+}
+
+test "Terminal: cursorIsAtPrompt alternate screen" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 2);
+    defer t.deinit(alloc);
+
+    try testing.expect(!t.cursorIsAtPrompt());
+    t.markSemanticPrompt(.prompt);
+    try testing.expect(t.cursorIsAtPrompt());
+
+    // Secondary screen is never a prompt
+    t.alternateScreen(.{});
+    try testing.expect(!t.cursorIsAtPrompt());
+    t.markSemanticPrompt(.prompt);
+    try testing.expect(!t.cursorIsAtPrompt());
 }
