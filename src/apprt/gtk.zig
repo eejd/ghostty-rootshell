@@ -1028,7 +1028,7 @@ pub const Surface = struct {
     ) callconv(.C) void {
         const self = userdataSelf(ud.?);
         self.cursor_pos = .{
-            .x = @max(0, @floatCast(f32, x)),
+            .x = @max(@as(f32, 0), @floatCast(f32, x)),
             .y = @floatCast(f32, y),
         };
 

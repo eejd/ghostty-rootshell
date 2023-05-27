@@ -284,7 +284,7 @@ pub const FlatpakHostCommand = struct {
         // The params for our RPC call
         const params = c.g_variant_new(
             "(^ay^aay@a{uh}@a{ss}u)",
-            if (self.cwd) |cwd| cwd.ptr else g_cwd,
+            @as(*const anyopaque, if (self.cwd) |*cwd| cwd.ptr else g_cwd),
             args,
             c.g_variant_builder_end(fd_builder),
             c.g_variant_builder_end(env_builder),
