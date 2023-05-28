@@ -45,8 +45,9 @@ pub const App = struct {
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
 
         /// Read the clipboard value. The return value must be preserved
-        /// by the host until the next call.
-        read_clipboard: *const fn (SurfaceUD) callconv(.C) [*:0]const u8,
+        /// by the host until the next call. If there is no valid clipboard
+        /// value then this should return null.
+        read_clipboard: *const fn (SurfaceUD) callconv(.C) ?[*:0]const u8,
 
         /// Write the clipboard value.
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8) callconv(.C) void,
@@ -228,7 +229,7 @@ pub const Surface = struct {
     }
 
     pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
-        const ptr = self.app.opts.read_clipboard(self.opts.userdata);
+        const ptr = self.app.opts.read_clipboard(self.opts.userdata) orelse return "";
         return std.mem.sliceTo(ptr, 0);
     }
 
