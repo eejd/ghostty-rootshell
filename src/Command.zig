@@ -248,7 +248,7 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
         };
         defer f.close();
         const stat = try f.stat();
-        if (stat.kind != .Directory and stat.mode & 0o0111 != 0) {
+        if (stat.kind != .directory and stat.mode & 0o0111 != 0) {
             return try alloc.dupe(u8, full_path);
         }
     }

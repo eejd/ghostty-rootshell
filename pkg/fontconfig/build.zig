@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const NativeTargetInfo = std.zig.system.NativeTargetInfo;
 
 /// Directories with our includes.
 const root = thisDir() ++ "../../../vendor/fontconfig-2.14.0/";
@@ -153,8 +154,8 @@ pub fn buildFontconfig(
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",
     });
-    const arch = target.cpu_arch orelse builtin.cpu.arch;
-    switch (arch.ptrBitWidth()) {
+    const target_info = try NativeTargetInfo.detect(target);
+    switch (target_info.target.ptrBitWidth()) {
         32 => try flags.appendSlice(&.{
             "-DSIZEOF_VOID_P=4",
             "-DALIGNOF_VOID_P=4",
