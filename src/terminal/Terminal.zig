@@ -94,6 +94,12 @@ modes: packed struct {
 
     bracketed_paste: bool = false, // 2004
 
+    // This isn't a mode, this is set by OSC 133 using the "A" event.
+    // If this is true, it tells us that the shell supports redrawing
+    // the prompt and that when we resize, if the cursor is at a prompt,
+    // then we should clear the screen below and allow the shell to redraw.
+    shell_redraws_prompt: bool = false,
+
     test {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
@@ -312,6 +318,7 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
 
     // If we're making the screen smaller, dealloc the unused items.
     if (self.active_screen == .primary) {
+        self.clearPromptForResize();
         try self.screen.resize(rows, cols);
         try self.secondary_screen.resizeWithoutReflow(rows, cols);
     } else {
@@ -328,6 +335,58 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
         .top = 0,
         .bottom = rows - 1,
     };
+}
+
+/// If modes.shell_redraws_prompt is true and we're on the primary screen,
+/// then this will clear the screen from the cursor down if the cursor is
+/// on a prompt in order to allow the shell to redraw the prompt.
+fn clearPromptForResize(self: *Terminal) void {
+    assert(self.active_screen == .primary);
+
+    if (!self.modes.shell_redraws_prompt) return;
+
+    // We need to find the first y that is a prompt. If we find any line
+    // that is NOT a prompt (or input -- which is part of a prompt) then
+    // we are not at a prompt and we can exit this function.
+    const prompt_y: usize = prompt_y: {
+        // Keep track of the found value, because we want to find the START
+        var found: ?usize = null;
+
+        // Search from the cursor up
+        var y: usize = 0;
+        while (y <= self.screen.cursor.y) : (y += 1) {
+            const real_y = self.screen.cursor.y - y;
+            const row = self.screen.getRow(.{ .active = real_y });
+            switch (row.getSemanticPrompt()) {
+                // If we're at a prompt or input area, then we are at a prompt.
+                // We mark our found value and continue because the prompt
+                // may be multi-line.
+                .prompt,
+                .input,
+                => found = real_y,
+
+                // If we have command output, then we're most certainly not
+                // at a prompt. Break out of the loop.
+                .command => break,
+
+                // If we don't know, we keep searching.
+                .unknown => {},
+            }
+        }
+
+        if (found) |found_y| break :prompt_y found_y;
+        return;
+    };
+    assert(prompt_y < self.rows);
+
+    // We want to clear all the lines from prompt_y downwards because
+    // the shell will redraw the prompt.
+    for (prompt_y..self.rows) |y| {
+        const row = self.screen.getRow(.{ .active = y });
+        row.setWrapped(false);
+        row.setDirty(true);
+        row.clear(.{});
+    }
 }
 
 /// Return the current string value of the terminal. Newlines are

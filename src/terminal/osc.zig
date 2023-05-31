@@ -26,6 +26,7 @@ pub const Command = union(enum) {
     /// not all shells will send the prompt end code.
     prompt_start: struct {
         aid: ?[]const u8 = null,
+        redraw: bool = true,
     },
 
     /// End of prompt and start of user input, terminated by a OSC "133;C"
@@ -345,6 +346,29 @@ pub const Parser = struct {
                 .prompt_start => |*v| v.aid = value,
                 else => {},
             }
+        } else if (mem.eql(u8, self.temp_state.key, "redraw")) {
+            // Kitty supports a "redraw" option for prompt_start. I can't find
+            // this documented anywhere but can see in the code that this is used
+            // by shell environments to tell the terminal that the shell will NOT
+            // redraw the prompt so we should attempt to resize it.
+            switch (self.command) {
+                .prompt_start => |*v| {
+                    const valid = if (value.len == 1) valid: {
+                        switch (value[0]) {
+                            '0' => v.redraw = false,
+                            '1' => v.redraw = true,
+                            else => break :valid false,
+                        }
+
+                        break :valid true;
+                    } else false;
+
+                    if (!valid) {
+                        log.info("OSC 133 A invalid redraw value: {s}", .{value});
+                    }
+                },
+                else => {},
+            }
         } else log.info("unknown semantic prompts option: {s}", .{self.temp_state.key});
     }
 
@@ -416,6 +440,7 @@ test "OSC: prompt_start" {
     const cmd = p.end().?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.aid == null);
+    try testing.expect(cmd.prompt_start.redraw);
 }
 
 test "OSC: prompt_start with single option" {
@@ -429,6 +454,32 @@ test "OSC: prompt_start with single option" {
     const cmd = p.end().?;
     try testing.expect(cmd == .prompt_start);
     try testing.expectEqualStrings("14", cmd.prompt_start.aid.?);
+}
+
+test "OSC: prompt_start with redraw disabled" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "133;A;redraw=0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .prompt_start);
+    try testing.expect(!cmd.prompt_start.redraw);
+}
+
+test "OSC: prompt_start with redraw invalid value" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "133;A;redraw=42";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .prompt_start);
+    try testing.expect(cmd.prompt_start.redraw);
 }
 
 test "OSC: end_of_command no exit code" {
