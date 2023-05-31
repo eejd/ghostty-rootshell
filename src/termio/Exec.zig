@@ -1236,8 +1236,10 @@ const StreamHandler = struct {
         }, .{ .forever = {} });
     }
 
-    pub fn promptStart(self: *StreamHandler) !void {
+    pub fn promptStart(self: *StreamHandler, aid: ?[]const u8, redraw: bool) !void {
+        _ = aid;
         self.terminal.markSemanticPrompt(.prompt);
+        self.terminal.modes.shell_redraws_prompt = redraw;
     }
 
     pub fn promptEnd(self: *StreamHandler) !void {

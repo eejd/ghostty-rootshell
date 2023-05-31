@@ -471,9 +471,9 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .prompt_start => {
+                .prompt_start => |v| {
                     if (@hasDecl(T, "promptStart")) {
-                        try self.handler.promptStart();
+                        try self.handler.promptStart(v.aid, v.redraw);
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 

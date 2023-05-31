@@ -2027,6 +2027,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         try self.scroll(.{ .delta = 1 });
                     }
                     new_row = self.getRow(.{ .active = y });
+                    new_row.setSemanticPrompt(old_row.getSemanticPrompt());
                 }
             }
         }
@@ -2112,6 +2113,8 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                 }
 
                 const row = self.getRow(.{ .active = y });
+                row.setSemanticPrompt(old_row.getSemanticPrompt());
+
                 fastmem.copy(
                     StorageCell,
                     row.storage[1..],
@@ -2125,6 +2128,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             // Slow path: the row is wrapped or doesn't fit so we have to
             // wrap ourselves. In this case, we basically just "print and wrap"
             var row = self.getRow(.{ .active = y });
+            row.setSemanticPrompt(old_row.getSemanticPrompt());
             var x: usize = 0;
             var cur_old_row = old_row;
             var cur_old_row_wrapped = old_row_wrapped;
@@ -2145,6 +2149,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         }
 
                         row = self.getRow(.{ .active = y });
+                        row.setSemanticPrompt(cur_old_row.getSemanticPrompt());
                     }
 
                     // If our cursor is on this char, then set the new cursor.
