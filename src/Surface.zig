@@ -1148,6 +1148,9 @@ pub fn keyCallback(
             // we convert to a non-printable.
             if (mods_int == ctrl_only) {
                 const val: u8 = switch (key) {
+                    .left_bracket => 0x1B,
+                    .backslash => 0x1C,
+                    .right_bracket => 0x1D,
                     .a => 0x01,
                     .b => 0x02,
                     .c => 0x03,
