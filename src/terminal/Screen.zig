@@ -4455,6 +4455,53 @@ test "Screen: resize more cols trailing background colors" {
     }
 }
 
+test "Screen: resize more cols no reflow preserves semantic prompt" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Set one of the rows to be a prompt
+    {
+        const row = s.getRow(.{ .active = 1 });
+        row.setSemanticPrompt(.prompt);
+    }
+
+    const cursor = s.cursor;
+    try s.resize(3, 10);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Our one row should still be a semantic prompt, the others should not.
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(row.getSemanticPrompt() == .unknown);
+    }
+    {
+        const row = s.getRow(.{ .active = 1 });
+        try testing.expect(row.getSemanticPrompt() == .prompt);
+    }
+    {
+        const row = s.getRow(.{ .active = 2 });
+        try testing.expect(row.getSemanticPrompt() == .unknown);
+    }
+}
+
 test "Screen: resize more cols grapheme map" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -4975,6 +5022,55 @@ test "Screen: resize less cols with graphemes" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize less cols no reflow preserves semantic prompt" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1AB\n2EF\n3IJ";
+    try s.testWriteString(str);
+
+    // Set one of the rows to be a prompt
+    {
+        const row = s.getRow(.{ .active = 1 });
+        row.setSemanticPrompt(.prompt);
+    }
+
+    s.cursor.x = 0;
+    s.cursor.y = 0;
+    const cursor = s.cursor;
+    try s.resize(3, 3);
+
+    // Cursor should not move
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Our one row should still be a semantic prompt, the others should not.
+    {
+        const row = s.getRow(.{ .active = 0 });
+        try testing.expect(row.getSemanticPrompt() == .unknown);
+    }
+    {
+        const row = s.getRow(.{ .active = 1 });
+        try testing.expect(row.getSemanticPrompt() == .prompt);
+    }
+    {
+        const row = s.getRow(.{ .active = 2 });
+        try testing.expect(row.getSemanticPrompt() == .unknown);
     }
 }
 
