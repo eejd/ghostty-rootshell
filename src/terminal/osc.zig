@@ -72,6 +72,16 @@ pub const Command = union(enum) {
         kind: u8,
         data: []const u8,
     },
+
+    /// OSC 7. Reports the current working directory of the shell. This is
+    /// a moderately flawed escape sequence but one that many major terminals
+    /// support so we also support it. To understand the flaws, read through
+    /// this terminal-wg issue: https://gitlab.freedesktop.org/terminal-wg/specifications/-/issues/20
+    report_pwd: struct {
+        /// The reported pwd value. This is not checked for validity. It should
+        /// be a file URL but it is up to the caller to utilize this value.
+        value: []const u8,
+    },
 };
 
 pub const Parser = struct {
@@ -121,6 +131,7 @@ pub const Parser = struct {
         @"2",
         @"5",
         @"52",
+        @"7",
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -173,6 +184,7 @@ pub const Parser = struct {
                 '1' => self.state = .@"1",
                 '2' => self.state = .@"2",
                 '5' => self.state = .@"5",
+                '7' => self.state = .@"7",
                 else => self.state = .invalid,
             },
 
@@ -225,6 +237,17 @@ pub const Parser = struct {
 
             .@"5" => switch (c) {
                 '2' => self.state = .@"52",
+                else => self.state = .invalid,
+            },
+
+            .@"7" => switch (c) {
+                ';' => {
+                    self.command = .{ .report_pwd = .{ .value = undefined } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.report_pwd.value };
+                    self.buf_start = self.buf_idx;
+                },
                 else => self.state = .invalid,
             },
 
@@ -555,6 +578,19 @@ test "OSC: get/set clipboard" {
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 's');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
+}
+
+test "OSC: report pwd" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "7;file:///tmp/example";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .report_pwd);
+    try testing.expect(std.mem.eql(u8, "file:///tmp/example", cmd.report_pwd.value));
 }
 
 test "OSC: longer than buffer" {
