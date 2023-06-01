@@ -1224,6 +1224,13 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
         .focus = focused,
     }, .{ .forever = {} });
 
+    // Notify our app if we gained focus.
+    if (focused) {
+        _ = self.app_mailbox.push(.{
+            .focus = self,
+        }, .{ .forever = {} });
+    }
+
     // Schedule render which also drains our mailbox
     try self.queueRender();
 

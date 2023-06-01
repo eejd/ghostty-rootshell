@@ -29,6 +29,10 @@ alloc: Allocator,
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
 
+/// The last focused surface. This surface may not be valid;
+/// you must always call hasSurface to validate it.
+focused_surface: ?*Surface = null,
+
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: Mailbox.Queue,
@@ -131,6 +135,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .reload_config => try self.reloadConfig(rt_app),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| try self.closeSurface(rt_app, surface),
+            .focus => |surface| try self.focusSurface(rt_app, surface),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
             .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
@@ -151,6 +156,13 @@ fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
 
     if (!self.hasSurface(surface)) return;
     surface.close();
+}
+
+fn focusSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
+    _ = rt_app;
+
+    if (!self.hasSurface(surface)) return;
+    self.focused_surface = surface;
 }
 
 fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {
@@ -214,6 +226,11 @@ pub const Message = union(enum) {
     /// Close a surface. This notifies the runtime that a surface
     /// should close.
     close: *Surface,
+
+    /// The last focused surface. The app keeps track of this to
+    /// enable "inheriting" various configurations from the last
+    /// surface.
+    focus: *Surface,
 
     /// Quit
     quit: void,
