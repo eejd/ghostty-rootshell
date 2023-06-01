@@ -691,6 +691,21 @@ pub const Config = struct {
         }
     }
 
+    /// Create a shallow copy of this config. This will share all the memory
+    /// allocated with the previous config but will have a new arena for
+    /// any changes or new allocations. The config should have `deinit`
+    /// called when it is complete.
+    ///
+    /// Beware: these shallow clones are not meant for a long lifetime,
+    /// they are just meant to exist temporarily for the duration of some
+    /// modifications. It is very important that the original config not
+    /// be deallocated while shallow clones exist.
+    pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
+        var result = self.*;
+        result._arena = ArenaAllocator.init(alloc_gpa);
+        return result;
+    }
+
     /// Create a copy of this configuration. This is useful as a starting
     /// point for modifying a configuration since a config can NOT be
     /// modified once it is in use by an app or surface.

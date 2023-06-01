@@ -346,24 +346,13 @@ pub const Surface = struct {
         try app.app.addSurface(self);
         errdefer app.app.deleteSurface(self);
 
-        // Our parent pwd will be tracked here
-        const alloc = app.app.alloc;
-        var parent_pwd: ?[]const u8 = null;
-        defer if (parent_pwd) |v| alloc.free(v);
-
-        // Shallow copy the config so that we can modify it.
-        var config = app.config;
-
-        // Get our previously focused surface
-        const parent = app.app.focusedSurface();
-        if (parent) |p| {
-            parent_pwd = try p.pwd(alloc);
-            if (parent_pwd) |v| config.@"working-directory" = v;
-        }
+        // Get our new surface config
+        var config = try apprt.surface.newConfig(app.app, &app.config);
+        defer config.deinit();
 
         // Initialize our surface now that we have the stable pointer.
         try self.core_surface.init(
-            alloc,
+            app.app.alloc,
             &config,
             .{ .rt_app = app, .mailbox = &app.app.mailbox },
             self,

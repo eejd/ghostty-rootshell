@@ -722,10 +722,14 @@ pub const Surface = struct {
         try self.app.core_app.addSurface(self);
         errdefer self.app.core_app.deleteSurface(self);
 
+        // Get our new surface config
+        var config = try apprt.surface.newConfig(self.app.core_app, &self.app.config);
+        defer config.deinit();
+
         // Initialize our surface now that we have the stable pointer.
         try self.core_surface.init(
             self.app.core_app.alloc,
-            &self.app.config,
+            &config,
             .{ .rt_app = self.app, .mailbox = &self.app.core_app.mailbox },
             self,
         );

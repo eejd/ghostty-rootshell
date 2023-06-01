@@ -129,7 +129,7 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
 
 /// The last focused surface. This is only valid while on the main thread
 /// before tick is called.
-pub fn focusedSurface(self: *App) ?*Surface {
+pub fn focusedSurface(self: *const App) ?*Surface {
     const surface = self.focused_surface orelse return null;
     if (!self.hasSurface(surface)) return null;
     return surface;
@@ -214,7 +214,7 @@ fn surfaceMessage(self: *App, surface: *Surface, msg: apprt.surface.Message) !vo
     // Not a problem.
 }
 
-fn hasSurface(self: *App, surface: *Surface) bool {
+fn hasSurface(self: *const App, surface: *const Surface) bool {
     for (self.surfaces.items) |v| {
         if (&v.core_surface == surface) return true;
     }

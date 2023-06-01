@@ -61,3 +61,24 @@ pub const Mailbox = struct {
         }, timeout);
     }
 };
+
+/// Returns a new config for a surface for the given app that should be
+/// used for any new surfaces. The resulting config should be deinitialized
+/// after the surface is initialized.
+pub fn newConfig(app: *const App, config: *const Config) !Config {
+    // Create a shallow clone
+    var copy = config.shallowClone(app.alloc);
+
+    // Our allocator is our config's arena
+    const alloc = copy._arena.?.allocator();
+
+    // Get our previously focused surface for some inherited values.
+    const prev = app.focusedSurface();
+    if (prev) |p| {
+        if (try p.pwd(alloc)) |pwd| {
+            copy.@"working-directory" = pwd;
+        }
+    }
+
+    return copy;
+}
