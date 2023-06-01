@@ -495,6 +495,12 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
+                .report_pwd => |v| {
+                    if (@hasDecl(T, "reportPwd")) {
+                        try self.handler.reportPwd(v.value);
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
                 else => if (@hasDecl(T, "oscUnimplemented"))
                     try self.handler.oscUnimplemented(cmd)
                 else

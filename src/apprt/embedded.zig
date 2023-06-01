@@ -161,11 +161,15 @@ pub const Surface = struct {
         try app.core_app.addSurface(self);
         errdefer app.core_app.deleteSurface(self);
 
+        // Shallow copy the config so that we can modify it.
+        var config = try apprt.surface.newConfig(app.core_app, app.config);
+        defer config.deinit();
+
         // Initialize our surface right away. We're given a view that is
         // ready to use.
         try self.core_surface.init(
             app.core_app.alloc,
-            app.config,
+            &config,
             .{ .rt_app = app, .mailbox = &app.core_app.mailbox },
             self,
         );
