@@ -1249,4 +1249,46 @@ const StreamHandler = struct {
     pub fn endOfInput(self: *StreamHandler) !void {
         self.terminal.markSemanticPrompt(.command);
     }
+
+    pub fn reportPwd(self: *StreamHandler, url: []const u8) !void {
+        const uri = std.Uri.parse(url) catch |e| {
+            log.warn("invalid url in OSC 7: {}", .{e});
+            return;
+        };
+
+        if (!std.mem.eql(u8, "file", uri.scheme) and
+            !std.mem.eql(u8, "kitty-shell-cwd", uri.scheme))
+        {
+            log.warn("OSC 7 scheme must be file, got: {s}", .{uri.scheme});
+            return;
+        }
+
+        // OSC 7 is a little sketchy because anyone can send any value from
+        // any host (such an SSH session). The best practice terminals follow
+        // is to valid the hostname to be local.
+        const host_valid = host_valid: {
+            const host = uri.host orelse break :host_valid false;
+
+            // Empty or localhost is always good
+            if (host.len == 0 or std.mem.eql(u8, "localhost", host)) {
+                break :host_valid true;
+            }
+
+            // Otherwise, it must match our hostname.
+            var buf: [std.os.HOST_NAME_MAX]u8 = undefined;
+            const hostname = std.os.gethostname(&buf) catch |err| {
+                log.warn("failed to get hostname for OSC 7 validation: {}", .{err});
+                break :host_valid false;
+            };
+
+            break :host_valid std.mem.eql(u8, host, hostname);
+        };
+        if (!host_valid) {
+            log.warn("OSC 7 host must be local", .{});
+            return;
+        }
+
+        log.debug("terminal pwd: {s}", .{uri.path});
+        try self.terminal.setPwd(uri.path);
+    }
 };

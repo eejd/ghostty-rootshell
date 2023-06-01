@@ -242,7 +242,7 @@ pub const Parser = struct {
 
             .@"7" => switch (c) {
                 ';' => {
-                    self.command = .{ .report_pwd = .{ .value = undefined } };
+                    self.command = .{ .report_pwd = .{ .value = "" } };
 
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.report_pwd.value };
@@ -591,6 +591,17 @@ test "OSC: report pwd" {
     const cmd = p.end().?;
     try testing.expect(cmd == .report_pwd);
     try testing.expect(std.mem.eql(u8, "file:///tmp/example", cmd.report_pwd.value));
+}
+
+test "OSC: report pwd empty" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "7;";
+    for (input) |ch| p.next(ch);
+
+    try testing.expect(p.end() == null);
 }
 
 test "OSC: longer than buffer" {

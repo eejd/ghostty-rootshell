@@ -64,6 +64,9 @@ cols: usize,
 /// The current scrolling region.
 scrolling_region: ScrollingRegion,
 
+/// The last reported pwd, if any.
+pwd: std.ArrayList(u8),
+
 /// The charset state
 charset: CharsetState = .{},
 
@@ -169,6 +172,7 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
             .top = 0,
             .bottom = rows - 1,
         },
+        .pwd = std.ArrayList(u8).init(alloc),
     };
 }
 
@@ -176,6 +180,7 @@ pub fn deinit(self: *Terminal, alloc: Allocator) void {
     self.tabstops.deinit(alloc);
     self.screen.deinit();
     self.secondary_screen.deinit();
+    self.pwd.deinit();
     self.* = undefined;
 }
 
@@ -1501,6 +1506,19 @@ pub fn cursorIsAtPrompt(self: *Terminal) bool {
     return false;
 }
 
+/// Set the pwd for the terminal.
+pub fn setPwd(self: *Terminal, pwd: []const u8) !void {
+    self.pwd.clearRetainingCapacity();
+    try self.pwd.appendSlice(pwd);
+}
+
+/// Returns the pwd for the terminal, if any. The memory is owned by the
+/// Terminal and is not copied. It is safe until a reset or setPwd.
+pub fn getPwd(self: *Terminal) ?[]const u8 {
+    if (self.pwd.items.len == 0) return null;
+    return self.pwd.items;
+}
+
 /// Full reset
 pub fn fullReset(self: *Terminal) void {
     self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
@@ -1514,6 +1532,7 @@ pub fn fullReset(self: *Terminal) void {
     self.screen.selection = null;
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
     self.previous_char = null;
+    self.pwd.clearRetainingCapacity();
 }
 
 test "Terminal: input with no control characters" {
