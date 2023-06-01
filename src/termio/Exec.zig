@@ -614,12 +614,24 @@ const Subprocess = struct {
             return pty.master;
         }
 
+        // If we can't access the cwd, then don't set any cwd and inherit.
+        // This is important because our cwd can be set by the shell (OSC 7)
+        // and we don't want to break new windows.
+        const cwd: ?[]const u8 = if (self.cwd) |proposed| cwd: {
+            if (std.fs.accessAbsolute(proposed, .{})) {
+                break :cwd proposed;
+            } else |err| {
+                log.warn("cannot access cwd, ignoring: {}", .{err});
+                break :cwd null;
+            }
+        } else null;
+
         // Build our subcommand
         var cmd: Command = .{
             .path = self.path,
             .args = self.args,
             .env = &self.env,
-            .cwd = self.cwd,
+            .cwd = cwd,
             .stdin = .{ .handle = pty.slave },
             .stdout = .{ .handle = pty.slave },
             .stderr = .{ .handle = pty.slave },
