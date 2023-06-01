@@ -53,7 +53,7 @@ April 2022.
 
 To configure Ghostty, you must use a configuration file. GUI-based configuration
 is on the roadmap but not yet supported. The configuration file must be
-placed at `$XDG_CONFIG_HOME/ghostty/config`, which defaults to 
+placed at `$XDG_CONFIG_HOME/ghostty/config`, which defaults to
 `~/.config/ghostty/config` if the [XDG environment is not set](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).
 
 The file format is documented below as an example:
@@ -90,16 +90,18 @@ Eventually, we'll have a better mecanism for showing errors to the user.
 ### Shell Integration
 
 Ghostty supports some features that require shell integration. I am aiming
-to support many of the features that 
+to support many of the features that
 [Kitty supports for shell integration](https://sw.kovidgoyal.net/kitty/shell-integration/).
-
-Today, the most important quality-of-life feature is that Ghostty will
-not confirm window close if it detects that the cursor is sitting at a prompt
-input (i.e. no subprocess is running). 
 
 To enable this functionality, I recommend sourcing Kitty's shell integration
 files directly for your shell configuration when running Ghostty. For
 example, for fish, [source this file](https://github.com/kovidgoyal/kitty/blob/master/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish).
+
+The currently support shell integration features in Ghostty:
+
+  * We do not confirm close for windows where the cursor is at a prompt.
+  * New terminals start in the working directory of the previously focused terminal.
+  * The cursor at the prompt is turned into a bar.
 
 ## Roadmap and Status
 
