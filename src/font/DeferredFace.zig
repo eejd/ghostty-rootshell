@@ -113,7 +113,21 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
 
         .coretext, .coretext_freetype => if (self.ct) |ct| {
             const display_name = ct.font.copyDisplayName();
-            return display_name.cstringPtr(.utf8) orelse "<unsupported internal encoding>";
+            return display_name.cstringPtr(.utf8) orelse unsupported: {
+                // "NULL if the internal storage of theString does not allow
+                // this to be returned efficiently." In this case, we need
+                // to allocate. But we can't return an allocated string because
+                // we don't have an allocator. Let's use the stack and log it.
+                var buf: [1024]u8 = undefined;
+                const buf_name = display_name.cstring(&buf, .utf8) orelse
+                    "<not enough internal storage space>";
+
+                log.info(
+                    "CoreText font required too much space to copy, value = {s}",
+                    .{buf_name},
+                );
+                break :unsupported "<CoreText internal storage limited, see logs>";
+            };
         },
 
         .web_canvas => if (self.wc) |wc| return wc.font_str,
