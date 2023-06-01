@@ -1514,7 +1514,7 @@ pub fn setPwd(self: *Terminal, pwd: []const u8) !void {
 
 /// Returns the pwd for the terminal, if any. The memory is owned by the
 /// Terminal and is not copied. It is safe until a reset or setPwd.
-pub fn getPwd(self: *Terminal) ?[]const u8 {
+pub fn getPwd(self: *const Terminal) ?[]const u8 {
     if (self.pwd.items.len == 0) return null;
     return self.pwd.items;
 }

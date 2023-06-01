@@ -127,6 +127,14 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
     }
 }
 
+/// The last focused surface. This is only valid while on the main thread
+/// before tick is called.
+pub fn focusedSurface(self: *App) ?*Surface {
+    const surface = self.focused_surface orelse return null;
+    if (!self.hasSurface(surface)) return null;
+    return surface;
+}
+
 /// Drain the mailbox.
 fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
     while (self.mailbox.pop()) |message| {

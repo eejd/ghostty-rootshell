@@ -631,6 +631,16 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     };
 }
 
+/// Returns the pwd of the terminal, if any. This is always copied because
+/// the pwd can change at any point from termio. If we are calling from the IO
+/// thread you should just check the terminal directly.
+pub fn pwd(self: *const Surface, alloc: Allocator) !?[]const u8 {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    const terminal_pwd = self.io.terminal.getPwd() orelse return null;
+    return try alloc.dupe(u8, terminal_pwd);
+}
+
 /// Returns the x/y coordinate of where the IME (Input Method Editor)
 /// keyboard should be rendered.
 pub fn imePoint(self: *const Surface) apprt.IMEPos {

@@ -144,6 +144,8 @@ pub const Surface = struct {
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
+        const alloc = app.core_app.alloc;
+
         self.* = .{
             .app = app,
             .core_surface = undefined,
@@ -161,11 +163,25 @@ pub const Surface = struct {
         try app.core_app.addSurface(self);
         errdefer app.core_app.deleteSurface(self);
 
+        // Our parent pwd will be tracked here
+        var parent_pwd: ?[]const u8 = null;
+        defer if (parent_pwd) |v| alloc.free(v);
+
+        // Shallow copy the config so that we can modify it.
+        var config = app.config.*;
+
+        // Get our previously focused surface
+        const parent = app.core_app.focusedSurface();
+        if (parent) |p| {
+            parent_pwd = try p.pwd(alloc);
+            if (parent_pwd) |v| config.@"working-directory" = v;
+        }
+
         // Initialize our surface right away. We're given a view that is
         // ready to use.
         try self.core_surface.init(
-            app.core_app.alloc,
-            app.config,
+            alloc,
+            &config,
             .{ .rt_app = app, .mailbox = &app.core_app.mailbox },
             self,
         );
