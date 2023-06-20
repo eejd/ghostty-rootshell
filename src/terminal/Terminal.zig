@@ -461,6 +461,9 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.underline = .none;
         },
 
+        // TODO
+        .underline_color, .reset_underline_color => {},
+
         .blink => {
             log.warn("blink requested, but not implemented", .{});
             self.screen.cursor.pen.attrs.blink = true;
