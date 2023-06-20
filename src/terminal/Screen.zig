@@ -182,6 +182,12 @@ pub const Cell = struct {
     fg: color.RGB = .{},
     bg: color.RGB = .{},
 
+    /// Underline color.
+    /// NOTE(mitchellh): This is very rarely set so ideally we wouldn't waste
+    /// cell space for this. For now its on this struct because it is convenient
+    /// but we should consider a lookaside table for this.
+    underline_fg: color.RGB = .{},
+
     /// On/off attributes that can be set
     attrs: packed struct {
         has_bg: bool = false,
@@ -194,6 +200,7 @@ pub const Cell = struct {
         inverse: bool = false,
         strikethrough: bool = false,
         underline: sgr.Attribute.Underline = .none,
+        underline_color: bool = false,
 
         /// True if this is a wide character. This char takes up
         /// two cells. The following cell ALWAYS is a space.
@@ -265,7 +272,7 @@ pub const Cell = struct {
 
     test {
         //log.warn("CELL={} bits={} {}", .{ @sizeOf(Cell), @bitSizeOf(Cell), @alignOf(Cell) });
-        try std.testing.expectEqual(12, @sizeOf(Cell));
+        try std.testing.expectEqual(16, @sizeOf(Cell));
     }
 };
 
