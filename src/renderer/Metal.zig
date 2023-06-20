@@ -1023,11 +1023,13 @@ pub fn updateCell(
             null,
         );
 
+        const color = if (cell.attrs.underline_color) cell.underline_fg else colors.fg;
+
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
             .cell_width = cell.widthLegacy(),
-            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .color = .{ color.r, color.g, color.b, alpha },
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },

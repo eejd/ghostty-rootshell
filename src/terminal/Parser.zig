@@ -524,9 +524,64 @@ test "csi: SGR ESC [ 38 : 2 m" {
 
         const d = a[1].?.csi_dispatch;
         try testing.expect(d.final == 'm');
+        try testing.expect(d.sep == .colon);
         try testing.expect(d.params.len == 2);
         try testing.expectEqual(@as(u16, 38), d.params[0]);
         try testing.expectEqual(@as(u16, 2), d.params[1]);
+    }
+}
+
+test "csi: SGR ESC [4:3m colon" {
+    var p = init();
+    _ = p.next(0x1B);
+    _ = p.next('[');
+    _ = p.next('4');
+    _ = p.next(':');
+    _ = p.next('3');
+
+    {
+        const a = p.next('m');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+
+        const d = a[1].?.csi_dispatch;
+        try testing.expect(d.final == 'm');
+        try testing.expect(d.sep == .colon);
+        try testing.expect(d.params.len == 2);
+        try testing.expectEqual(@as(u16, 4), d.params[0]);
+        try testing.expectEqual(@as(u16, 3), d.params[1]);
+    }
+}
+
+test "csi: SGR with many blank and colon" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("[58:2::240:143:104") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('m');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+
+        const d = a[1].?.csi_dispatch;
+        try testing.expect(d.final == 'm');
+        try testing.expect(d.sep == .colon);
+        try testing.expect(d.params.len == 6);
+        try testing.expectEqual(@as(u16, 58), d.params[0]);
+        try testing.expectEqual(@as(u16, 2), d.params[1]);
+        try testing.expectEqual(@as(u16, 0), d.params[2]);
+        try testing.expectEqual(@as(u16, 240), d.params[3]);
+        try testing.expectEqual(@as(u16, 143), d.params[4]);
+        try testing.expectEqual(@as(u16, 104), d.params[5]);
     }
 }
 

@@ -1181,6 +1181,9 @@ pub fn updateCell(
             @enumToInt(sprite),
             null,
         );
+
+        const color = if (cell.attrs.underline_color) cell.underline_fg else colors.fg;
+
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_col = @intCast(u16, x),
@@ -1192,9 +1195,9 @@ pub fn updateCell(
             .glyph_height = underline_glyph.height,
             .glyph_offset_x = underline_glyph.offset_x,
             .glyph_offset_y = underline_glyph.offset_y,
-            .fg_r = colors.fg.r,
-            .fg_g = colors.fg.g,
-            .fg_b = colors.fg.b,
+            .fg_r = color.r,
+            .fg_g = color.g,
+            .fg_b = color.b,
             .fg_a = alpha,
             .bg_r = 0,
             .bg_g = 0,

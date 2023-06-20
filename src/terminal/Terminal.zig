@@ -461,6 +461,19 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.underline = .none;
         },
 
+        .underline_color => |rgb| {
+            self.screen.cursor.pen.attrs.underline_color = true;
+            self.screen.cursor.pen.underline_fg = .{
+                .r = rgb.r,
+                .g = rgb.g,
+                .b = rgb.b,
+            };
+        },
+
+        .reset_underline_color => {
+            self.screen.cursor.pen.attrs.underline_color = false;
+        },
+
         .blink => {
             log.warn("blink requested, but not implemented", .{});
             self.screen.cursor.pen.attrs.blink = true;

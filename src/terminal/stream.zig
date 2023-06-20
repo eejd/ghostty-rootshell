@@ -385,7 +385,10 @@ pub fn Stream(comptime Handler: type) type {
                 // SGR - Select Graphic Rendition
                 'm' => if (@hasDecl(T, "setAttribute")) {
                     var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
-                    while (p.next()) |attr| try self.handler.setAttribute(attr);
+                    while (p.next()) |attr| {
+                        // log.info("SGR attribute: {}", .{attr});
+                        try self.handler.setAttribute(attr);
+                    }
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // CPR - Request Cursor Postion Report

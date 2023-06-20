@@ -33,6 +33,8 @@ pub const Attribute = union(enum) {
     /// Underline the text
     underline: Underline,
     reset_underline: void,
+    underline_color: RGB,
+    reset_underline_color: void,
 
     /// Blink the text
     blink: void,
@@ -210,8 +212,12 @@ pub const Parser = struct {
             48 => if (slice.len >= 5 and slice[1] == 2) {
                 self.idx += 4;
 
-                // In the 6-len form, ignore the 3rd param.
-                const rgb = slice[2..5];
+                // In the 6-len form, ignore the 3rd param. Otherwise, use it.
+                const rgb = if (slice.len == 5) slice[2..5] else rgb: {
+                    // Consume one more element
+                    self.idx += 1;
+                    break :rgb slice[3..6];
+                };
 
                 // We use @truncate because the value should be 0 to 255. If
                 // it isn't, the behavior is undefined so we just... truncate it.
@@ -230,6 +236,29 @@ pub const Parser = struct {
             },
 
             49 => return Attribute{ .reset_bg = {} },
+
+            58 => if (slice.len >= 5 and slice[1] == 2) {
+                self.idx += 4;
+
+                // In the 6-len form, ignore the 3rd param. Otherwise, use it.
+                const rgb = if (slice.len == 5) slice[2..5] else rgb: {
+                    // Consume one more element
+                    self.idx += 1;
+                    break :rgb slice[3..6];
+                };
+
+                // We use @truncate because the value should be 0 to 255. If
+                // it isn't, the behavior is undefined so we just... truncate it.
+                return Attribute{
+                    .underline_color = .{
+                        .r = @truncate(u8, rgb[0]),
+                        .g = @truncate(u8, rgb[1]),
+                        .b = @truncate(u8, rgb[2]),
+                    },
+                };
+            },
+
+            59 => return Attribute{ .reset_underline_color = {} },
 
             90...97 => return Attribute{
                 // 82 instead of 90 to offset to "bright" colors
@@ -345,6 +374,12 @@ test "sgr: underline styles" {
     }
 
     {
+        const v = testParseColon(&[_]u16{ 4, 3 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .curly);
+    }
+
+    {
         const v = testParseColon(&[_]u16{ 4, 4 });
         try testing.expect(v == .underline);
         try testing.expect(v.underline == .dotted);
@@ -430,4 +465,27 @@ test "sgr: 256 color" {
     var p: Parser = .{ .params = &[_]u16{ 38, 5, 161, 48, 5, 236 } };
     try testing.expect(p.next().? == .@"256_fg");
     try testing.expect(p.next().? == .@"256_bg");
+}
+
+test "sgr: underline color" {
+    {
+        const v = testParseColon(&[_]u16{ 58, 2, 1, 2, 3 });
+        try testing.expect(v == .underline_color);
+        try testing.expectEqual(@as(u8, 1), v.underline_color.r);
+        try testing.expectEqual(@as(u8, 2), v.underline_color.g);
+        try testing.expectEqual(@as(u8, 3), v.underline_color.b);
+    }
+
+    {
+        const v = testParseColon(&[_]u16{ 58, 2, 0, 1, 2, 3 });
+        try testing.expect(v == .underline_color);
+        try testing.expectEqual(@as(u8, 1), v.underline_color.r);
+        try testing.expectEqual(@as(u8, 2), v.underline_color.g);
+        try testing.expectEqual(@as(u8, 3), v.underline_color.b);
+    }
+}
+
+test "sgr: reset underline color" {
+    var p: Parser = .{ .params = &[_]u16{59} };
+    try testing.expect(p.next().? == .reset_underline_color);
 }
