@@ -1081,7 +1081,7 @@ const StreamHandler = struct {
 
     pub fn setAttribute(self: *StreamHandler, attr: terminal.Attribute) !void {
         switch (attr) {
-            .unknown => |unk| log.warn("unimplemented or unknown attribute: {any}", .{unk}),
+            .unknown => |unk| log.warn("unimplemented or unknown SGR attribute: {any}", .{unk}),
 
             else => self.terminal.setAttribute(attr) catch |err|
                 log.warn("error setting attribute {}: {}", .{ attr, err }),

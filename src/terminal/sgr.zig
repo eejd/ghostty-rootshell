@@ -345,6 +345,12 @@ test "sgr: underline styles" {
     }
 
     {
+        const v = testParseColon(&[_]u16{ 4, 3 });
+        try testing.expect(v == .underline);
+        try testing.expect(v.underline == .curly);
+    }
+
+    {
         const v = testParseColon(&[_]u16{ 4, 4 });
         try testing.expect(v == .underline);
         try testing.expect(v.underline == .dotted);
