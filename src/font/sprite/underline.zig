@@ -91,16 +91,26 @@ const Draw = struct {
 
     /// Draw a double underline.
     fn drawDouble(self: Draw, canvas: *font.sprite.Canvas) void {
+        // The maximum y value has to have space for the bottom underline.
+        // If we underflow (saturated) to 0, then we don't draw. This should
+        // never happen but we don't want to draw something undefined.
+        const y_max = self.height -| 1 -| self.thickness;
+        if (y_max == 0) return;
+
+        const space = self.thickness * 2;
+        const bottom = @min(self.pos + space, y_max);
+        const top = bottom - space;
+
         canvas.rect(.{
             .x = 0,
-            .y = @intCast(i32, self.pos),
+            .y = @intCast(i32, top),
             .width = self.width,
             .height = self.thickness,
         }, .on);
 
         canvas.rect(.{
             .x = 0,
-            .y = @intCast(i32, self.pos + (self.thickness * 2)),
+            .y = @intCast(i32, bottom),
             .width = self.width,
             .height = self.thickness,
         }, .on);
