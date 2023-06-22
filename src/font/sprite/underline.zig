@@ -24,10 +24,6 @@ pub fn renderGlyph(
     line_pos: u32,
     line_thickness: u32,
 ) !font.Glyph {
-    // Berkeley: warning: UNDERLINE RENDER width:18 height:37 pos:35 thickness:2
-    // Normal: warning: UNDERLINE RENDER width:18 height:38 pos:30 thickness:2
-    std.log.warn("UNDERLINE RENDER width:{} height:{} pos:{} thickness:{}", .{ width, height, line_pos, line_thickness });
-
     // Create the canvas we'll use to draw. We draw the underline in
     // a full cell size and position it according to "pos".
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
