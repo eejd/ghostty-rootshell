@@ -87,16 +87,26 @@ const Draw = struct {
 
     /// Draw a double underline.
     fn drawDouble(self: Draw, canvas: *font.sprite.Canvas) void {
+        // The maximum y value has to have space for the bottom underline.
+        // If we underflow (saturated) to 0, then we don't draw. This should
+        // never happen but we don't want to draw something undefined.
+        const y_max = self.height -| 1 -| self.thickness;
+        if (y_max == 0) return;
+
+        const space = self.thickness * 2;
+        const bottom = @min(self.pos + space, y_max);
+        const top = bottom - space;
+
         canvas.rect(.{
             .x = 0,
-            .y = @intCast(i32, self.pos),
+            .y = @intCast(i32, top),
             .width = self.width,
             .height = self.thickness,
         }, .on);
 
         canvas.rect(.{
             .x = 0,
-            .y = @intCast(i32, self.pos + (self.thickness * 2)),
+            .y = @intCast(i32, bottom),
             .width = self.width,
             .height = self.thickness,
         }, .on);
@@ -139,12 +149,21 @@ const Draw = struct {
         // This is the lowest that the curl can go.
         const y_max = self.height - 1;
 
+        // Some fonts put the underline too close to the bottom of the
+        // cell height and this doesn't allow us to make a high enough
+        // wave. This constant is arbitrary, change it for aesthetics.
+        const pos = pos: {
+            const MIN_HEIGHT = 7;
+            const height = y_max - self.pos;
+            break :pos if (height < MIN_HEIGHT) self.pos -| MIN_HEIGHT else self.pos;
+        };
+
         // The full heightof the wave can be from the bottom to the
         // underline position. We also calculate our starting y which is
         // slightly below our descender since our wave will move about that.
-        const wave_height = @intToFloat(f64, y_max - self.pos);
+        const wave_height = @intToFloat(f64, y_max - pos);
         const half_height = wave_height / 4;
-        const y = self.pos + @floatToInt(u32, half_height);
+        const y = pos + @floatToInt(u32, half_height);
 
         const x_factor = (2 * std.math.pi) / @intToFloat(f64, self.width);
         var x: u32 = 0;
