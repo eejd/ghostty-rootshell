@@ -24,6 +24,10 @@ pub fn renderGlyph(
     line_pos: u32,
     line_thickness: u32,
 ) !font.Glyph {
+    // Berkeley: warning: UNDERLINE RENDER width:18 height:37 pos:35 thickness:2
+    // Normal: warning: UNDERLINE RENDER width:18 height:38 pos:30 thickness:2
+    std.log.warn("UNDERLINE RENDER width:{} height:{} pos:{} thickness:{}", .{ width, height, line_pos, line_thickness });
+
     // Create the canvas we'll use to draw. We draw the underline in
     // a full cell size and position it according to "pos".
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
@@ -139,12 +143,21 @@ const Draw = struct {
         // This is the lowest that the curl can go.
         const y_max = self.height - 1;
 
+        // Some fonts put the underline too close to the bottom of the
+        // cell height and this doesn't allow us to make a high enough
+        // wave. This constant is arbitrary, change it for aesthetics.
+        const pos = pos: {
+            const MIN_HEIGHT = 7;
+            const height = y_max - self.pos;
+            break :pos if (height < MIN_HEIGHT) self.pos -| MIN_HEIGHT else self.pos;
+        };
+
         // The full heightof the wave can be from the bottom to the
         // underline position. We also calculate our starting y which is
         // slightly below our descender since our wave will move about that.
-        const wave_height = @intToFloat(f64, y_max - self.pos);
+        const wave_height = @intToFloat(f64, y_max - pos);
         const half_height = wave_height / 4;
-        const y = self.pos + @floatToInt(u32, half_height);
+        const y = pos + @floatToInt(u32, half_height);
 
         const x_factor = (2 * std.math.pi) / @intToFloat(f64, self.width);
         var x: u32 = 0;
