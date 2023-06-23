@@ -346,7 +346,8 @@ test "fontconfig codepoint" {
 }
 
 test "coretext" {
-    if (options.backend != .coretext) return error.SkipZigTest;
+    if (options.backend != .coretext and options.backend != .coretext_freetype)
+        return error.SkipZigTest;
 
     const testing = std.testing;
 
@@ -363,7 +364,8 @@ test "coretext" {
 }
 
 test "coretext codepoint" {
-    if (options.backend != .coretext) return error.SkipZigTest;
+    if (options.backend != .coretext and options.backend != .coretext_freetype)
+        return error.SkipZigTest;
 
     const testing = std.testing;
 

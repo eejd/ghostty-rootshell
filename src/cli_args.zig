@@ -375,7 +375,22 @@ pub fn LineIterator(comptime ReaderType: type) type {
                     // Trim spaces around '='
                     if (mem.indexOf(u8, entry, "=")) |idx| {
                         const key = std.mem.trim(u8, entry[0..idx], whitespace);
-                        const value = std.mem.trim(u8, entry[idx + 1 ..], whitespace);
+                        const value = value: {
+                            var value = std.mem.trim(u8, entry[idx + 1 ..], whitespace);
+
+                            // Detect a quoted string.
+                            if (value.len >= 2 and
+                                value[0] == '"' and
+                                value[value.len - 1] == '"')
+                            {
+                                // Trim quotes since our CLI args processor expects
+                                // quotes to already be gone.
+                                value = value[1 .. value.len - 1];
+                            }
+
+                            break :value value;
+                        };
+
                         const len = key.len + value.len + 1;
                         if (entry.len != len) {
                             std.mem.copy(u8, entry, key);
@@ -414,6 +429,9 @@ test "LineIterator" {
         \\
         \\  # An indented comment
         \\  E
+        \\
+        \\# A quoted string with whitespace
+        \\F=  "value "
     );
 
     var iter = lineIterator(fbs.reader());
@@ -422,6 +440,7 @@ test "LineIterator" {
     try testing.expectEqualStrings("--C", iter.next().?);
     try testing.expectEqualStrings("--D", iter.next().?);
     try testing.expectEqualStrings("--E", iter.next().?);
+    try testing.expectEqualStrings("--F=value ", iter.next().?);
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
 }
