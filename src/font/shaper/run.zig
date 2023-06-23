@@ -70,10 +70,17 @@ pub const RunIterator = struct {
             // If we're a spacer, then we ignore it
             if (cell.attrs.wide_spacer_tail) continue;
 
-            const style: font.Style = if (cell.attrs.bold)
-                .bold
-            else
-                .regular;
+            // Text runs break when font styles change so we need to get
+            // the proper style.
+            const style: font.Style = style: {
+                if (cell.attrs.bold) {
+                    if (cell.attrs.italic) break :style .bold_italic;
+                    break :style .bold;
+                }
+
+                if (cell.attrs.italic) break :style .italic;
+                break :style .regular;
+            };
 
             // Determine the presentation format for this glyph.
             const presentation: ?font.Presentation = if (cell.attrs.grapheme) p: {
