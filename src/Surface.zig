@@ -305,7 +305,7 @@ pub fn init(
             });
             defer disco_it.deinit();
             if (try disco_it.next()) |face| {
-                log.debug("font emoji: {s}", .{try face.name()});
+                log.info("font emoji: {s}", .{try face.name()});
                 try group.addFace(alloc, .regular, face);
             }
         }
@@ -313,6 +313,8 @@ pub fn init(
         break :group group;
     });
     errdefer font_group.deinit(alloc);
+
+    log.info("font loading complete, any non-logged faces are using the built-in font", .{});
 
     // Pre-calculate our initial cell size ourselves.
     const cell_size = try renderer.CellSize.init(alloc, font_group);
