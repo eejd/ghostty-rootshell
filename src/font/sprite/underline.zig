@@ -77,9 +77,14 @@ const Draw = struct {
 
     /// Draw a single underline.
     fn drawSingle(self: Draw, canvas: *font.sprite.Canvas) void {
+        // Ensure we never overflow out of bounds on the canvas
+        const y_max = self.height -| 1;
+        const bottom = @min(self.pos + self.thickness, y_max);
+        const y = @intCast(i32, bottom - self.thickness);
+
         canvas.rect(.{
             .x = 0,
-            .y = @intCast(i32, self.pos),
+            .y = y,
             .width = self.width,
             .height = self.thickness,
         }, .on);
@@ -114,14 +119,20 @@ const Draw = struct {
 
     /// Draw a dotted underline.
     fn drawDotted(self: Draw, canvas: *font.sprite.Canvas) void {
+        const y_max = self.height -| 1 -| self.thickness;
+        if (y_max == 0) return;
+        const y = @min(self.pos, y_max);
         const dot_width = @max(self.thickness, 3);
         const dot_count = self.width / dot_width;
         var i: u32 = 0;
         while (i < dot_count) : (i += 2) {
+            // Ensure we never go out of bounds for the rect
+            const x = @min(i * dot_width, self.width - 1);
+            const width = @min(self.width - 1 - x, dot_width);
             canvas.rect(.{
                 .x = @intCast(i32, i * dot_width),
-                .y = @intCast(i32, self.pos),
-                .width = dot_width,
+                .y = @intCast(i32, y),
+                .width = width,
                 .height = self.thickness,
             }, .on);
         }
@@ -129,14 +140,20 @@ const Draw = struct {
 
     /// Draw a dashed underline.
     fn drawDashed(self: Draw, canvas: *font.sprite.Canvas) void {
+        const y_max = self.height -| 1 -| self.thickness;
+        if (y_max == 0) return;
+        const y = @min(self.pos, y_max);
         const dash_width = self.width / 3 + 1;
         const dash_count = (self.width / dash_width) + 1;
         var i: u32 = 0;
         while (i < dash_count) : (i += 2) {
+            // Ensure we never go out of bounds for the rect
+            const x = @min(i * dash_width, self.width - 1);
+            const width = @min(self.width - 1 - x, dash_width);
             canvas.rect(.{
-                .x = @intCast(i32, i * dash_width),
-                .y = @intCast(i32, self.pos),
-                .width = dash_width,
+                .x = @intCast(i32, x),
+                .y = @intCast(i32, y),
+                .width = width,
                 .height = self.thickness,
             }, .on);
         }
