@@ -1019,7 +1019,9 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
     // If top is outside of the range of bot, we do nothing.
     if (top_y >= bot_y) return;
 
-    assert(count <= (bot_y - top_y));
+    // We can only scroll up to the number of rows in the region. The "+ 1"
+    // is because our y values are 0-based and count is 1-based.
+    assert(count <= (bot_y - top_y + 1));
 
     // Get the storage pointer for the full scroll region. We're going to
     // be modifying the whole thing so we get it right away.
