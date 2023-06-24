@@ -48,7 +48,7 @@ pub fn Stream(comptime Handler: type) type {
             tracy.value(@intCast(u64, c));
             defer tracy.end();
 
-            //log.debug("char: {x}", .{c});
+            // log.debug("char: {c}", .{c});
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
                 // if (action_opt) |action| {

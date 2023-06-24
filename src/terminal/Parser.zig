@@ -531,6 +531,35 @@ test "csi: SGR ESC [ 38 : 2 m" {
     }
 }
 
+test "csi: SGR ESC [ 48 : 2 m" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("[48:2:240:143:104") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('m');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+
+        const d = a[1].?.csi_dispatch;
+        try testing.expect(d.final == 'm');
+        try testing.expect(d.sep == .colon);
+        try testing.expect(d.params.len == 5);
+        try testing.expectEqual(@as(u16, 48), d.params[0]);
+        try testing.expectEqual(@as(u16, 2), d.params[1]);
+        try testing.expectEqual(@as(u16, 240), d.params[2]);
+        try testing.expectEqual(@as(u16, 143), d.params[3]);
+        try testing.expectEqual(@as(u16, 104), d.params[4]);
+    }
+}
+
 test "csi: SGR ESC [4:3m colon" {
     var p = init();
     _ = p.next(0x1B);
