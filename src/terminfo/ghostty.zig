@@ -80,6 +80,56 @@ pub const ghostty: Source = .{
 
         // Number of color pairs on the screen.
         .{ .name = "pairs", .value = .{ .numeric = 32767 } },
+
+        // Alternate character set. This is the VT100 alternate character set.
+        // I don't know what the value means, I copied this from Kitty and
+        // verified with some other terminals (looks similar).
+        .{ .name = "acsc", .value = .{ .string = "++\\,\\,--..00``aaffgghhiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~" } },
+
+        // These are all capabilities that should be pretty straightforward
+        // and map to input sequences.
+        .{ .name = "bel", .value = .{ .string = "^G" } },
+        .{ .name = "blink", .value = .{ .string = "\\E[5m" } },
+        .{ .name = "bold", .value = .{ .string = "\\E[1m" } },
+        .{ .name = "cbt", .value = .{ .string = "\\E[Z" } },
+        .{ .name = "civis", .value = .{ .string = "\\E[?25l" } },
+        .{ .name = "clear", .value = .{ .string = "\\E[H\\E[2J" } },
+        .{ .name = "cnorm", .value = .{ .string = "\\E[?25h" } },
+        .{ .name = "cr", .value = .{ .string = "\\r" } },
+        .{ .name = "csr", .value = .{ .string = "\\E[%i%p1%d;%p2%dr" } },
+        .{ .name = "cub", .value = .{ .string = "\\E[%p1%dD" } },
+        .{ .name = "cub1", .value = .{ .string = "^H" } },
+        .{ .name = "cud", .value = .{ .string = "\\E[%p1%dB" } },
+        .{ .name = "cud1", .value = .{ .string = "^J" } },
+        .{ .name = "cuf", .value = .{ .string = "\\E[%p1%dC" } },
+        .{ .name = "cuf1", .value = .{ .string = "\\E[C" } },
+        .{ .name = "cup", .value = .{ .string = "\\E[%i%p1%d;%p2%dH" } },
+        .{ .name = "cuu", .value = .{ .string = "\\E[%p1%dA" } },
+        .{ .name = "cuu1", .value = .{ .string = "\\E[A" } },
+        .{ .name = "cvvis", .value = .{ .string = "\\E[?12;25h" } },
+        .{ .name = "dch", .value = .{ .string = "\\E[%p1%dP" } },
+        .{ .name = "dch1", .value = .{ .string = "\\E[P" } },
+        .{ .name = "dim", .value = .{ .string = "\\E[2m" } },
+        .{ .name = "dl", .value = .{ .string = "\\E[%p1%dM" } },
+        .{ .name = "dl1", .value = .{ .string = "\\E[M" } },
+        .{ .name = "dsl", .value = .{ .string = "\\E]2;\\007" } },
+        .{ .name = "ech", .value = .{ .string = "\\E[%p1%dX" } },
+        .{ .name = "ed", .value = .{ .string = "\\E[J" } },
+        .{ .name = "el", .value = .{ .string = "\\E[K" } },
+        .{ .name = "el1", .value = .{ .string = "\\E[1K" } },
+        .{ .name = "flash", .value = .{ .string = "\\E[?5h$<100/>\\E[?5l" } },
+        .{ .name = "fsl", .value = .{ .string = "^G" } },
+        .{ .name = "home", .value = .{ .string = "\\E[H" } },
+        .{ .name = "hpa", .value = .{ .string = "\\E[%i%p1%dG" } },
+        .{ .name = "ht", .value = .{ .string = "^I" } },
+        .{ .name = "hts", .value = .{ .string = "\\EH" } },
+        .{ .name = "ich", .value = .{ .string = "\\E[%p1%d@" } },
+        .{ .name = "il", .value = .{ .string = "\\E[%p1%dL" } },
+        .{ .name = "il1", .value = .{ .string = "\\E[L" } },
+        .{ .name = "ind", .value = .{ .string = "\\n" } },
+        .{ .name = "indn", .value = .{ .string = "\\E[%p1%dS" } },
+        .{ .name = "initc", .value = .{ .string = "\\E]4;%p1%d;rgb\\:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\\E\\\\" } },
+        .{ .name = "invis", .value = .{ .string = "\\E[8m" } },
     },
 };
 
