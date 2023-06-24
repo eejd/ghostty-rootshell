@@ -286,6 +286,42 @@ pub fn build(b: *std.Build) !void {
         const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
         const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
         b.getInstallStep().dependOn(&src_install.step);
+
+        // Convert to termcap source format if thats helpful to people and
+        // install it. The resulting value here is the termcap source in case
+        // that is used for other commands.
+        const cap_source = cap_source: {
+            const run_step = RunStep.create(b, "infotocap");
+            run_step.addArg("infotocap");
+            run_step.addFileSourceArg(src_source);
+            const out_source = run_step.captureStdOut();
+            _ = run_step.captureStdErr(); // so we don't see stderr
+
+            const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
+            b.getInstallStep().dependOn(&cap_install.step);
+
+            break :cap_source out_source;
+        };
+        _ = cap_source;
+
+        // Compile the terminfo source into a terminfo database
+        {
+            // Hardcoded until: https://github.com/ziglang/zig/issues/16187
+            const path = "zig-cache/tmp/tic";
+
+            const run_step = RunStep.create(b, "tic");
+            run_step.addArgs(&.{ "tic", "-x", "-o", path });
+            run_step.addFileSourceArg(src_source);
+            _ = run_step.captureStdErr(); // so we don't see stderr
+
+            const install = b.addInstallDirectory(.{
+                .source_dir = path,
+                .install_dir = .prefix,
+                .install_subdir = "share/terminfo",
+            });
+            install.step.dependOn(&run_step.step);
+            b.getInstallStep().dependOn(&install.step);
+        }
     }
 
     // App (Linux)
