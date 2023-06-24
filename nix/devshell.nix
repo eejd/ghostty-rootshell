@@ -4,6 +4,7 @@
 , flatpak-builder
 , gdb
 , glxinfo
+, ncurses
 , nodejs
 , parallel
 , pkg-config
@@ -67,6 +68,7 @@ in mkShell rec {
   nativeBuildInputs = [
     # For builds
     llvmPackages_latest.llvm
+    ncurses
     pkg-config
     scdoc
     zig
