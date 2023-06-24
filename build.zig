@@ -324,6 +324,10 @@ pub fn build(b: *std.Build) !void {
             run_step.addFileSourceArg(src_source);
             _ = run_step.captureStdErr(); // so we don't see stderr
 
+            // Depend on the terminfo source install step so that Zig build
+            // creates the "share" directory for us.
+            run_step.step.dependOn(&src_install.step);
+
             {
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
