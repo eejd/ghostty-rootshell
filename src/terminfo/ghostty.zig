@@ -4,8 +4,15 @@ const Source = @import("Source.zig");
 /// Ghostty's terminfo entry.
 pub const ghostty: Source = .{
     .names = &.{
+        // The preferred name
         "ghostty",
+
+        // We support the "xterm-" prefix because some poorly behaved programs
+        // use this to detect if the terminal supports 256 colors and other
+        // features.
         "xterm-ghostty",
+
+        // Our "formal" name
         "Ghostty",
     },
 
@@ -320,7 +327,7 @@ pub const ghostty: Source = .{
 
 test "encode" {
     // Encode
-    var buf: [1024]u8 = undefined;
+    var buf: [4096]u8 = undefined;
     var buf_stream = std.io.fixedBufferStream(&buf);
     try ghostty.encode(buf_stream.writer());
     try std.testing.expect(buf_stream.getWritten().len > 0);
