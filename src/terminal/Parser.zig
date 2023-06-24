@@ -382,15 +382,7 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                 self.params_idx += 1;
             }
 
-            // We only allow the colon separator for the 'm' command.
-            switch (self.params_sep) {
-                .none => {},
-                .semicolon => {},
-                .colon => if (c != 'm') break :csi_dispatch null,
-                .mixed => break :csi_dispatch null,
-            }
-
-            break :csi_dispatch Action{
+            const result: Action = .{
                 .csi_dispatch = .{
                     .intermediates = self.intermediates[0..self.intermediates_idx],
                     .params = self.params[0..self.params_idx],
@@ -398,10 +390,35 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                     .sep = switch (self.params_sep) {
                         .none, .semicolon => .semicolon,
                         .colon => .colon,
-                        .mixed => unreachable,
+
+                        // This should never happen because of the checks below
+                        // but we have to exhaustively handle the switch.
+                        .mixed => .semicolon,
                     },
                 },
             };
+
+            // We only allow the colon separator for the 'm' command.
+            switch (self.params_sep) {
+                .none => {},
+                .semicolon => {},
+                .colon => if (c != 'm') {
+                    log.warn(
+                        "CSI colon separator only allowed for 'm' command, got: {}",
+                        .{result},
+                    );
+                    break :csi_dispatch null;
+                },
+                .mixed => {
+                    log.warn(
+                        "CSI command had mixed colons and semicolons, got: {}",
+                        .{result},
+                    );
+                    break :csi_dispatch null;
+                },
+            }
+
+            break :csi_dispatch result;
         },
         .esc_dispatch => Action{
             .esc_dispatch = .{
@@ -418,6 +435,7 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
 fn clear(self: *Parser) void {
     self.intermediates_idx = 0;
     self.params_idx = 0;
+    self.params_sep = .none;
     self.param_acc = 0;
     self.param_acc_idx = 0;
 }
@@ -528,6 +546,35 @@ test "csi: SGR ESC [ 38 : 2 m" {
         try testing.expect(d.params.len == 2);
         try testing.expectEqual(@as(u16, 38), d.params[0]);
         try testing.expectEqual(@as(u16, 2), d.params[1]);
+    }
+}
+
+test "csi: SGR colon followed by semicolon" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("[48:2") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('m');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+    }
+
+    _ = p.next(0x1B);
+    _ = p.next('[');
+    {
+        const a = p.next('H');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
     }
 }
 

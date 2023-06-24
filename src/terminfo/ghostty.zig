@@ -155,9 +155,7 @@ pub const ghostty: Source = .{
         .{ .name = "rmxx", .value = .{ .string = "\\E[29m" } },
         .{ .name = "setab", .value = .{ .string = "\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m" } },
         .{ .name = "setaf", .value = .{ .string = "\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m" } },
-        .{ .name = "setrgbb", .value = .{ .string = "\\E[48;2;%p1%d;%p2%d;%p3%dm" } },
-        // This causes weird rendering issues, why?
-        //.{ .name = "setrgbb", .value = .{ .string = "\\E[48:2:%p1%d:%p2%d:%p3%dm" } },
+        .{ .name = "setrgbb", .value = .{ .string = "\\E[48:2:%p1%d:%p2%d:%p3%dm" } },
         .{ .name = "setrgbf", .value = .{ .string = "\\E[38:2:%p1%d:%p2%d:%p3%dm" } },
         .{ .name = "sgr", .value = .{ .string = "%?%p9%t\\E(0%e\\E(B%;\\E[0%?%p6%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m" } },
         .{ .name = "sgr0", .value = .{ .string = "\\E(B\\E[m" } },
