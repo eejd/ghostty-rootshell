@@ -318,34 +318,28 @@ pub fn build(b: *std.Build) !void {
 
         // Compile the terminfo source into a terminfo database
         {
-            // Hardcoded until: https://github.com/ziglang/zig/issues/16187
-            const path = "zig-cache/tmp/terminfo";
-
             const run_step = RunStep.create(b, "tic");
-            run_step.addArgs(&.{ "tic", "-x", "-o", path });
+            run_step.addArgs(&.{ "tic", "-x", "-o" });
+            const path = run_step.addOutputFileArg("terminfo");
             run_step.addFileSourceArg(src_source);
             _ = run_step.captureStdErr(); // so we don't see stderr
 
-            const copy_step = RunStep.create(b, "copy terminfo db");
-            copy_step.step.dependOn(&run_step.step);
-            copy_step.addArgs(&.{
-                "cp",
-                "-R",
-                path,
-                b.fmt("{s}/share", .{b.install_prefix}),
-            });
-            b.getInstallStep().dependOn(&copy_step.step);
+            {
+                const copy_step = RunStep.create(b, "copy terminfo db");
+                copy_step.addArgs(&.{ "cp", "-R" });
+                copy_step.addFileSourceArg(path);
+                copy_step.addArg(b.fmt("{s}/share", .{b.install_prefix}));
+                b.getInstallStep().dependOn(&copy_step.step);
+            }
 
             if (target.isDarwin()) {
-                const mac_copy_step = RunStep.create(b, "copy terminfo db");
-                mac_copy_step.step.dependOn(&run_step.step);
-                mac_copy_step.addArgs(&.{
-                    "cp",
-                    "-R",
-                    path,
+                const copy_step = RunStep.create(b, "copy terminfo db");
+                copy_step.addArgs(&.{ "cp", "-R" });
+                copy_step.addFileSourceArg(path);
+                copy_step.addArg(
                     b.fmt("{s}/Ghostty.app/Contents/Resources", .{b.install_prefix}),
-                });
-                b.getInstallStep().dependOn(&mac_copy_step.step);
+                );
+                b.getInstallStep().dependOn(&copy_step.step);
             }
         }
     }

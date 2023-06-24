@@ -101,7 +101,7 @@ pub const ghostty: Source = .{
         .{ .name = "cbt", .value = .{ .string = "\\E[Z" } },
         .{ .name = "civis", .value = .{ .string = "\\E[?25l" } },
         .{ .name = "clear", .value = .{ .string = "\\E[H\\E[2J" } },
-        .{ .name = "cnorm", .value = .{ .string = "\\E[?25h" } },
+        .{ .name = "cnorm", .value = .{ .string = "\\E[?12l\\E[?25h" } },
         .{ .name = "cr", .value = .{ .string = "\\r" } },
         .{ .name = "csr", .value = .{ .string = "\\E[%i%p1%d;%p2%dr" } },
         .{ .name = "cub", .value = .{ .string = "\\E[%p1%dD" } },
