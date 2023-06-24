@@ -6,6 +6,8 @@ const builtin = @import("builtin");
 ///
 /// This function can be very slow. The caller can choose to cache the value
 /// if they want but this function itself doesn't handle caching.
+///
+/// From: https://unix.stackexchange.com/questions/317211/absolute-path-to-currently-executing-program
 pub fn exePath(buf: []u8) !?[]const u8 {
     if (comptime builtin.target.isDarwin()) {
         // We put the path into a temporary buffer first because we need

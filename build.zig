@@ -286,11 +286,18 @@ pub fn build(b: *std.Build) !void {
         const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
         const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
         b.getInstallStep().dependOn(&src_install.step);
+        if (target.isDarwin()) {
+            const mac_src_install = b.addInstallFile(
+                src_source,
+                "Ghostty.app/Contents/Resources/terminfo/ghostty.terminfo",
+            );
+            b.getInstallStep().dependOn(&mac_src_install.step);
+        }
 
         // Convert to termcap source format if thats helpful to people and
         // install it. The resulting value here is the termcap source in case
         // that is used for other commands.
-        const cap_source = cap_source: {
+        {
             const run_step = RunStep.create(b, "infotocap");
             run_step.addArg("infotocap");
             run_step.addFileSourceArg(src_source);
@@ -300,9 +307,14 @@ pub fn build(b: *std.Build) !void {
             const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
             b.getInstallStep().dependOn(&cap_install.step);
 
-            break :cap_source out_source;
-        };
-        _ = cap_source;
+            if (target.isDarwin()) {
+                const mac_cap_install = b.addInstallFile(
+                    out_source,
+                    "Ghostty.app/Contents/Resources/terminfo/ghostty.termcap",
+                );
+                b.getInstallStep().dependOn(&mac_cap_install.step);
+            }
+        }
 
         // Compile the terminfo source into a terminfo database
         {
@@ -321,6 +333,16 @@ pub fn build(b: *std.Build) !void {
             });
             install.step.dependOn(&run_step.step);
             b.getInstallStep().dependOn(&install.step);
+
+            if (target.isDarwin()) {
+                const mac_install = b.addInstallDirectory(.{
+                    .source_dir = path,
+                    .install_dir = .prefix,
+                    .install_subdir = "Ghostty.app/Contents/Resources/terminfo",
+                });
+                mac_install.step.dependOn(&run_step.step);
+                b.getInstallStep().dependOn(&mac_install.step);
+            }
         }
     }
 
