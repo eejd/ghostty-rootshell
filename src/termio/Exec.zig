@@ -775,7 +775,7 @@ const Subprocess = struct {
 
         // Get the path to our running binary
         var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        var exe = (try internal_os.exePath(&exe_buf)) orelse return null;
+        var exe: []const u8 = std.fs.selfExePath(&exe_buf) catch return null;
 
         // We have an exe path! Climb the tree looking for the terminfo
         // bundle as we expect it.
