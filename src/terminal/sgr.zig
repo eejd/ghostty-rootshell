@@ -467,6 +467,16 @@ test "sgr: 256 color" {
     try testing.expect(p.next().? == .@"256_bg");
 }
 
+test "sgr: 24-bit bg color" {
+    {
+        const v = testParseColon(&[_]u16{ 48, 2, 1, 2, 3 });
+        try testing.expect(v == .direct_color_bg);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_bg.r);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_bg.g);
+        try testing.expectEqual(@as(u8, 3), v.direct_color_bg.b);
+    }
+}
+
 test "sgr: underline color" {
     {
         const v = testParseColon(&[_]u16{ 58, 2, 1, 2, 3 });

@@ -190,6 +190,7 @@ test {
     // Libraries
     _ = @import("segmented_pool.zig");
     _ = @import("terminal/main.zig");
+    _ = @import("terminfo/main.zig");
 
     // TODO
     _ = @import("blocking_queue.zig");

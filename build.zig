@@ -3,7 +3,16 @@ const builtin = @import("builtin");
 const fs = std.fs;
 const LibExeObjStep = std.build.LibExeObjStep;
 const RunStep = std.build.RunStep;
+
 const apprt = @import("src/apprt.zig");
+const font = @import("src/font/main.zig");
+const terminfo = @import("src/terminfo/main.zig");
+const WasmTarget = @import("src/os/wasm/target.zig").Target;
+const LibtoolStep = @import("src/build/LibtoolStep.zig");
+const LipoStep = @import("src/build/LipoStep.zig");
+const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
+const Version = @import("src/build/Version.zig");
+
 const glfw = @import("vendor/mach-glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
@@ -21,12 +30,6 @@ const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
-const font = @import("src/font/main.zig");
-const WasmTarget = @import("src/os/wasm/target.zig").Target;
-const LibtoolStep = @import("src/build/LibtoolStep.zig");
-const LipoStep = @import("src/build/LipoStep.zig");
-const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
-const Version = @import("src/build/Version.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -267,6 +270,80 @@ pub fn build(b: *std.Build) !void {
                 if (install_step) |step| {
                     step.step.dependOn(&run.step);
                 }
+            }
+        }
+    }
+
+    // Terminfo
+    {
+        // Encode our terminfo
+        var str = std.ArrayList(u8).init(b.allocator);
+        defer str.deinit();
+        try terminfo.ghostty.encode(str.writer());
+
+        // Write it
+        var wf = b.addWriteFiles();
+        const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
+        const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
+        b.getInstallStep().dependOn(&src_install.step);
+        if (target.isDarwin()) {
+            const mac_src_install = b.addInstallFile(
+                src_source,
+                "Ghostty.app/Contents/Resources/terminfo/ghostty.terminfo",
+            );
+            b.getInstallStep().dependOn(&mac_src_install.step);
+        }
+
+        // Convert to termcap source format if thats helpful to people and
+        // install it. The resulting value here is the termcap source in case
+        // that is used for other commands.
+        {
+            const run_step = RunStep.create(b, "infotocap");
+            run_step.addArg("infotocap");
+            run_step.addFileSourceArg(src_source);
+            const out_source = run_step.captureStdOut();
+            _ = run_step.captureStdErr(); // so we don't see stderr
+
+            const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
+            b.getInstallStep().dependOn(&cap_install.step);
+
+            if (target.isDarwin()) {
+                const mac_cap_install = b.addInstallFile(
+                    out_source,
+                    "Ghostty.app/Contents/Resources/terminfo/ghostty.termcap",
+                );
+                b.getInstallStep().dependOn(&mac_cap_install.step);
+            }
+        }
+
+        // Compile the terminfo source into a terminfo database
+        {
+            const run_step = RunStep.create(b, "tic");
+            run_step.addArgs(&.{ "tic", "-x", "-o" });
+            const path = run_step.addOutputFileArg("terminfo");
+            run_step.addFileSourceArg(src_source);
+            _ = run_step.captureStdErr(); // so we don't see stderr
+
+            // Depend on the terminfo source install step so that Zig build
+            // creates the "share" directory for us.
+            run_step.step.dependOn(&src_install.step);
+
+            {
+                const copy_step = RunStep.create(b, "copy terminfo db");
+                copy_step.addArgs(&.{ "cp", "-R" });
+                copy_step.addFileSourceArg(path);
+                copy_step.addArg(b.fmt("{s}/share", .{b.install_prefix}));
+                b.getInstallStep().dependOn(&copy_step.step);
+            }
+
+            if (target.isDarwin()) {
+                const copy_step = RunStep.create(b, "copy terminfo db");
+                copy_step.addArgs(&.{ "cp", "-R" });
+                copy_step.addFileSourceArg(path);
+                copy_step.addArg(
+                    b.fmt("{s}/Ghostty.app/Contents/Resources", .{b.install_prefix}),
+                );
+                b.getInstallStep().dependOn(&copy_step.step);
             }
         }
     }
