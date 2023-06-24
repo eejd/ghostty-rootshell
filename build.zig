@@ -3,7 +3,16 @@ const builtin = @import("builtin");
 const fs = std.fs;
 const LibExeObjStep = std.build.LibExeObjStep;
 const RunStep = std.build.RunStep;
+
 const apprt = @import("src/apprt.zig");
+const font = @import("src/font/main.zig");
+const terminfo = @import("src/terminfo/main.zig");
+const WasmTarget = @import("src/os/wasm/target.zig").Target;
+const LibtoolStep = @import("src/build/LibtoolStep.zig");
+const LipoStep = @import("src/build/LipoStep.zig");
+const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
+const Version = @import("src/build/Version.zig");
+
 const glfw = @import("vendor/mach-glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
@@ -21,12 +30,6 @@ const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
-const font = @import("src/font/main.zig");
-const WasmTarget = @import("src/os/wasm/target.zig").Target;
-const LibtoolStep = @import("src/build/LibtoolStep.zig");
-const LipoStep = @import("src/build/LipoStep.zig");
-const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
-const Version = @import("src/build/Version.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -269,6 +272,20 @@ pub fn build(b: *std.Build) !void {
                 }
             }
         }
+    }
+
+    // Terminfo
+    {
+        // Encode our terminfo
+        var str = std.ArrayList(u8).init(b.allocator);
+        defer str.deinit();
+        try terminfo.ghostty.encode(str.writer());
+
+        // Write it
+        var wf = b.addWriteFiles();
+        const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
+        const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
+        b.getInstallStep().dependOn(&src_install.step);
     }
 
     // App (Linux)
