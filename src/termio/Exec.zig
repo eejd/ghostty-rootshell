@@ -491,8 +491,27 @@ const Subprocess = struct {
             break :env try std.process.getEnvMap(alloc);
         };
         errdefer env.deinit();
-        try env.put("TERM", "xterm-256color");
-        try env.put("COLORTERM", "truecolor");
+
+        // Set our TERM var. This is a bit complicated because we want to use
+        // the ghostty TERM value but we want to only do that if we have
+        // ghostty in the TERMINFO database.
+        //
+        // For now, we just look up a bundled dir but in the future we should
+        // also load the terminfo database and look for it.
+        if (try terminfoDir(alloc)) |dir| {
+            try env.put("TERM", "xterm-ghostty");
+            try env.put("COLORTERM", "truecolor");
+            try env.put("TERMINFO", dir);
+        } else {
+            if (comptime builtin.target.isDarwin()) {
+                log.warn("ghostty terminfo not found, using xterm-256color", .{});
+                log.warn("the terminfo SHOULD exist on macos, please ensure", .{});
+                log.warn("you're using a valid app bundle.", .{});
+            }
+
+            try env.put("TERM", "xterm-256color");
+            try env.put("COLORTERM", "truecolor");
+        }
 
         // When embedding in macOS and running via XCode, XCode injects
         // a bunch of things that break our shell process. We remove those.
@@ -744,6 +763,41 @@ const Subprocess = struct {
     /// This sends a signal via the Flatpak API.
     fn killCommandFlatpak(command: *FlatpakHostCommand) !void {
         try command.signal(c.SIGHUP, true);
+    }
+
+    /// Gets the directory to the terminfo database, if it can be detected.
+    /// The memory returned can't be easily freed so the alloc should be
+    /// an arena or something similar.
+    fn terminfoDir(alloc: Allocator) !?[]const u8 {
+        // We only support Mac lookups right now because the terminfo
+        // DB can be embedded directly in the App bundle.
+        if (comptime !builtin.target.isDarwin()) return null;
+
+        // Get the path to our running binary
+        var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var exe = (try internal_os.exePath(&exe_buf)) orelse return null;
+
+        // We have an exe path! Climb the tree looking for the terminfo
+        // bundle as we expect it.
+        while (std.fs.path.dirname(exe)) |dir| {
+            exe = dir;
+
+            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const path = try std.fmt.bufPrint(
+                &buf,
+                "{s}/Contents/Resources/terminfo",
+                .{dir},
+            );
+
+            if (std.fs.accessAbsolute(path, .{})) {
+                return try alloc.dupe(u8, path);
+            } else |_| {
+                // Folder doesn't exist. If a different error happens its okay
+                // we just ignore it and move on.
+            }
+        }
+
+        return null;
     }
 };
 
