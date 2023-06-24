@@ -319,29 +319,33 @@ pub fn build(b: *std.Build) !void {
         // Compile the terminfo source into a terminfo database
         {
             // Hardcoded until: https://github.com/ziglang/zig/issues/16187
-            const path = "zig-cache/tmp/tic";
+            const path = "zig-cache/tmp/terminfo";
 
             const run_step = RunStep.create(b, "tic");
             run_step.addArgs(&.{ "tic", "-x", "-o", path });
             run_step.addFileSourceArg(src_source);
             _ = run_step.captureStdErr(); // so we don't see stderr
 
-            const install = b.addInstallDirectory(.{
-                .source_dir = path,
-                .install_dir = .prefix,
-                .install_subdir = "share/terminfo",
+            const copy_step = RunStep.create(b, "copy terminfo db");
+            copy_step.step.dependOn(&run_step.step);
+            copy_step.addArgs(&.{
+                "cp",
+                "-R",
+                path,
+                b.fmt("{s}/share", .{b.install_prefix}),
             });
-            install.step.dependOn(&run_step.step);
-            b.getInstallStep().dependOn(&install.step);
+            b.getInstallStep().dependOn(&copy_step.step);
 
             if (target.isDarwin()) {
-                const mac_install = b.addInstallDirectory(.{
-                    .source_dir = path,
-                    .install_dir = .prefix,
-                    .install_subdir = "Ghostty.app/Contents/Resources/terminfo",
+                const mac_copy_step = RunStep.create(b, "copy terminfo db");
+                mac_copy_step.step.dependOn(&run_step.step);
+                mac_copy_step.addArgs(&.{
+                    "cp",
+                    "-R",
+                    path,
+                    b.fmt("{s}/Ghostty.app/Contents/Resources", .{b.install_prefix}),
                 });
-                mac_install.step.dependOn(&run_step.step);
-                b.getInstallStep().dependOn(&mac_install.step);
+                b.getInstallStep().dependOn(&mac_copy_step.step);
             }
         }
     }
