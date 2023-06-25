@@ -198,6 +198,7 @@ pub const Cell = struct {
         faint: bool = false,
         blink: bool = false,
         inverse: bool = false,
+        invisible: bool = false,
         strikethrough: bool = false,
         underline: sgr.Attribute.Underline = .none,
         underline_color: bool = false,
@@ -272,7 +273,7 @@ pub const Cell = struct {
 
     test {
         //log.warn("CELL={} bits={} {}", .{ @sizeOf(Cell), @bitSizeOf(Cell), @alignOf(Cell) });
-        try std.testing.expectEqual(16, @sizeOf(Cell));
+        try std.testing.expectEqual(20, @sizeOf(Cell));
     }
 };
 

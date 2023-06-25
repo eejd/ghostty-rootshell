@@ -491,6 +491,14 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             self.screen.cursor.pen.attrs.inverse = false;
         },
 
+        .invisible => {
+            self.screen.cursor.pen.attrs.invisible = true;
+        },
+
+        .reset_invisible => {
+            self.screen.cursor.pen.attrs.invisible = false;
+        },
+
         .strikethrough => {
             self.screen.cursor.pen.attrs.strikethrough = true;
         },

@@ -935,22 +935,26 @@ pub fn updateCell(
         // cell is selected.
         // TODO(perf): we can check in advance if selection is in
         // our viewport at all and not run this on every point.
-        if (selection) |sel| {
-            const screen_point = (terminal.point.Viewport{
-                .x = x,
-                .y = y,
-            }).toScreen(screen);
+        var selection_res: ?BgFg = sel_colors: {
+            if (selection) |sel| {
+                const screen_point = (terminal.point.Viewport{
+                    .x = x,
+                    .y = y,
+                }).toScreen(screen);
 
-            // If we are selected, we our colors are just inverted fg/bg
-            if (sel.contains(screen_point)) {
-                break :colors BgFg{
-                    .bg = self.config.selection_background orelse self.config.foreground,
-                    .fg = self.config.selection_foreground orelse self.config.background,
-                };
+                // If we are selected, we our colors are just inverted fg/bg
+                if (sel.contains(screen_point)) {
+                    break :sel_colors BgFg{
+                        .bg = self.config.selection_background orelse self.config.foreground,
+                        .fg = self.config.selection_foreground orelse self.config.background,
+                    };
+                }
             }
-        }
 
-        const res: BgFg = if (!cell.attrs.inverse) .{
+            break :sel_colors null;
+        };
+
+        const res: BgFg = selection_res orelse if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = if (cell.attrs.has_bg) cell.bg else null,
@@ -962,6 +966,16 @@ pub fn updateCell(
             .bg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
             .fg = if (cell.attrs.has_bg) cell.bg else self.config.background,
         };
+
+        // If the cell is "invisible" then we just make fg = bg so that
+        // the cell is transparent but still copy-able.
+        if (cell.attrs.invisible) {
+            break :colors BgFg{
+                .bg = res.bg,
+                .fg = res.bg orelse self.config.background,
+            };
+        }
+
         break :colors res;
     };
 
