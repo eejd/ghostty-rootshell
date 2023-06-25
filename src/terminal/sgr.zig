@@ -1,4 +1,4 @@
-//! SGR (Select Graphic Rendition) attribute parsing and types.
+//! SGR (Select Graphic Rendition) attrinvbute parsing and types.
 
 const std = @import("std");
 const testing = std.testing;
@@ -43,6 +43,10 @@ pub const Attribute = union(enum) {
     /// Invert fg/bg colors.
     inverse: void,
     reset_inverse: void,
+
+    /// Invisible
+    invisible: void,
+    reset_invisible: void,
 
     /// Strikethrough the text.
     strikethrough: void,
@@ -163,6 +167,8 @@ pub const Parser = struct {
 
             7 => return Attribute{ .inverse = {} },
 
+            8 => return Attribute{ .invisible = {} },
+
             9 => return Attribute{ .strikethrough = {} },
 
             22 => return Attribute{ .reset_bold = {} },
@@ -174,6 +180,8 @@ pub const Parser = struct {
             25 => return Attribute{ .reset_blink = {} },
 
             27 => return Attribute{ .reset_inverse = {} },
+
+            28 => return Attribute{ .reset_invisible = {} },
 
             29 => return Attribute{ .reset_strikethrough = {} },
 
@@ -498,4 +506,10 @@ test "sgr: underline color" {
 test "sgr: reset underline color" {
     var p: Parser = .{ .params = &[_]u16{59} };
     try testing.expect(p.next().? == .reset_underline_color);
+}
+
+test "sgr: invisible" {
+    var p: Parser = .{ .params = &[_]u16{ 8, 28 } };
+    try testing.expect(p.next().? == .invisible);
+    try testing.expect(p.next().? == .reset_invisible);
 }
