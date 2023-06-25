@@ -141,7 +141,7 @@ pub fn Stream(comptime Handler: type) type {
 
             switch (action.final) {
                 // CUU - Cursor Up
-                'A' => if (@hasDecl(T, "setCursorUp")) try self.handler.setCursorUp(
+                'A', 'k' => if (@hasDecl(T, "setCursorUp")) try self.handler.setCursorUp(
                     switch (action.params.len) {
                         0 => 1,
                         1 => action.params[0],
@@ -177,7 +177,7 @@ pub fn Stream(comptime Handler: type) type {
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // CUB - Cursor Left
-                'D' => if (@hasDecl(T, "setCursorLeft")) try self.handler.setCursorLeft(
+                'D', 'j' => if (@hasDecl(T, "setCursorLeft")) try self.handler.setCursorLeft(
                     switch (action.params.len) {
                         0 => 1,
                         1 => action.params[0],
