@@ -8,9 +8,9 @@ const c = @import("c.zig");
 
 pub const Font = opaque {
     pub fn createWithFontDescriptor(desc: *text.FontDescriptor, size: f32) Allocator.Error!*Font {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*Font,
-            @ptrToInt(c.CTFontCreateWithFontDescriptor(
+            @intFromPtr(c.CTFontCreateWithFontDescriptor(
                 @ptrCast(c.CTFontDescriptorRef, desc),
                 size,
                 null,
@@ -19,9 +19,9 @@ pub const Font = opaque {
     }
 
     pub fn copyWithAttributes(self: *Font, size: f32, attrs: ?*text.FontDescriptor) Allocator.Error!*Font {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*Font,
-            @ptrToInt(c.CTFontCreateCopyWithAttributes(
+            @intFromPtr(c.CTFontCreateCopyWithAttributes(
                 @ptrCast(c.CTFontRef, self),
                 size,
                 null,
@@ -69,7 +69,7 @@ pub const Font = opaque {
         if (rects) |s| assert(glyphs.len == s.len);
         return @bitCast(graphics.Rect, c.CTFontGetBoundingRectsForGlyphs(
             @ptrCast(c.CTFontRef, self),
-            @enumToInt(orientation),
+            @intFromEnum(orientation),
             glyphs.ptr,
             @ptrCast(?[*]c.struct_CGRect, if (rects) |s| s.ptr else null),
             @intCast(c_long, glyphs.len),
@@ -85,7 +85,7 @@ pub const Font = opaque {
         if (advances) |s| assert(glyphs.len == s.len);
         return c.CTFontGetAdvancesForGlyphs(
             @ptrCast(c.CTFontRef, self),
-            @enumToInt(orientation),
+            @intFromEnum(orientation),
             glyphs.ptr,
             @ptrCast(?[*]c.struct_CGSize, if (advances) |s| s.ptr else null),
             @intCast(c_long, glyphs.len),
@@ -93,16 +93,16 @@ pub const Font = opaque {
     }
 
     pub fn copyAttribute(self: *Font, comptime attr: text.FontAttribute) attr.Value() {
-        return @intToPtr(attr.Value(), @ptrToInt(c.CTFontCopyAttribute(
+        return @ptrFromInt(attr.Value(), @intFromPtr(c.CTFontCopyAttribute(
             @ptrCast(c.CTFontRef, self),
             @ptrCast(c.CFStringRef, attr.key()),
         )));
     }
 
     pub fn copyDisplayName(self: *Font) *foundation.String {
-        return @intToPtr(
+        return @ptrFromInt(
             *foundation.String,
-            @ptrToInt(c.CTFontCopyDisplayName(@ptrCast(c.CTFontRef, self))),
+            @intFromPtr(c.CTFontCopyDisplayName(@ptrCast(c.CTFontRef, self))),
         );
     }
 

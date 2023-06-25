@@ -8,9 +8,9 @@ const c = @import("c.zig");
 
 pub const Line = opaque {
     pub fn createWithAttributedString(str: *foundation.AttributedString) Allocator.Error!*Line {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*Line,
-            @ptrToInt(c.CTLineCreateWithAttributedString(
+            @intFromPtr(c.CTLineCreateWithAttributedString(
                 @ptrCast(c.CFAttributedStringRef, str),
             )),
         ) orelse Allocator.Error.OutOfMemory;

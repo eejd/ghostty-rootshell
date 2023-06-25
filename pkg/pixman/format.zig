@@ -93,7 +93,7 @@ pub const FormatCode = enum(c_uint) {
 
     // Converted from pixman.h
     fn reshift(self: FormatCode, ofs: u5, num: u5) u32 {
-        const val = @enumToInt(self);
+        const val = @intFromEnum(self);
         const v1 = val >> ofs;
         const v2 = @as(c_uint, 1) << num;
         const v3 = @intCast(u5, (val >> 22) & 3);

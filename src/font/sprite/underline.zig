@@ -52,7 +52,7 @@ pub fn renderGlyph(
         .offset_y = offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
-        .advance_x = @intToFloat(f32, width),
+        .advance_x = @floatFromInt(f32, width),
     };
 }
 
@@ -178,16 +178,16 @@ const Draw = struct {
         // The full heightof the wave can be from the bottom to the
         // underline position. We also calculate our starting y which is
         // slightly below our descender since our wave will move about that.
-        const wave_height = @intToFloat(f64, y_max - pos);
+        const wave_height = @floatFromInt(f64, y_max - pos);
         const half_height = wave_height / 4;
-        const y = pos + @floatToInt(u32, half_height);
+        const y = pos + @intFromFloat(u32, half_height);
 
-        const x_factor = (2 * std.math.pi) / @intToFloat(f64, self.width);
+        const x_factor = (2 * std.math.pi) / @floatFromInt(f64, self.width);
         var x: u32 = 0;
         while (x < self.width) : (x += 1) {
-            const vertical = @floatToInt(
+            const vertical = @intFromFloat(
                 u32,
-                (-1 * half_height) * @sin(@intToFloat(f64, x) * x_factor) + half_height,
+                (-1 * half_height) * @sin(@floatFromInt(f64, x) * x_factor) + half_height,
             );
 
             var row: u32 = 0;

@@ -20,7 +20,7 @@ pub fn fixMaxFiles() void {
         //   setrlimit() now returns with errno set to EINVAL in places that historically succeeded.
         //   It no longer accepts "rlim_cur = RLIM.INFINITY" for RLIM.NOFILE.
         //   Use "rlim_cur = min(OPEN_MAX, rlim_max)".
-        lim.max = std.math.min(std.os.darwin.OPEN_MAX, lim.max);
+        lim.max = @min(std.os.darwin.OPEN_MAX, lim.max);
     }
 
     // If we're already at the max, we're done.

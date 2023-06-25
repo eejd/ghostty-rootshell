@@ -213,10 +213,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
     // Set the sprite font up
     options.font_group.group.sprite = font.sprite.Face{
-        .width = @floatToInt(u32, metrics.cell_width),
-        .height = @floatToInt(u32, metrics.cell_height),
+        .width = @intFromFloat(u32, metrics.cell_width),
+        .height = @intFromFloat(u32, metrics.cell_height),
         .thickness = 2,
-        .underline_position = @floatToInt(u32, metrics.underline_position),
+        .underline_position = @intFromFloat(u32, metrics.underline_position),
     };
 
     // Create the font shaper. We initially create a shaper that can support
@@ -480,10 +480,10 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
 
     // Set the sprite font up
     self.font_group.group.sprite = font.sprite.Face{
-        .width = @floatToInt(u32, self.cell_size.width),
-        .height = @floatToInt(u32, self.cell_size.height),
+        .width = @intFromFloat(u32, self.cell_size.width),
+        .height = @intFromFloat(u32, self.cell_size.height),
         .thickness = 2,
-        .underline_position = @floatToInt(u32, metrics.underline_position),
+        .underline_position = @intFromFloat(u32, metrics.underline_position),
     };
 
     // Notify the window that the cell size changed.
@@ -618,13 +618,13 @@ pub fn render(
                 // which ironically doesn't implement CAMetalDrawable as a
                 // property so we just send a message.
                 const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
-                attachment.setProperty("loadAction", @enumToInt(MTLLoadAction.clear));
-                attachment.setProperty("storeAction", @enumToInt(MTLStoreAction.store));
+                attachment.setProperty("loadAction", @intFromEnum(MTLLoadAction.clear));
+                attachment.setProperty("storeAction", @intFromEnum(MTLStoreAction.store));
                 attachment.setProperty("texture", texture);
                 attachment.setProperty("clearColor", MTLClearColor{
-                    .red = @intToFloat(f32, critical.bg.r) / 255,
-                    .green = @intToFloat(f32, critical.bg.g) / 255,
-                    .blue = @intToFloat(f32, critical.bg.b) / 255,
+                    .red = @floatFromInt(f32, critical.bg.r) / 255,
+                    .green = @floatFromInt(f32, critical.bg.g) / 255,
+                    .blue = @floatFromInt(f32, critical.bg.b) / 255,
                     .alpha = 1.0,
                 });
             }
@@ -728,9 +728,9 @@ fn drawCells(
             void,
             objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
             .{
-                @enumToInt(MTLPrimitiveType.triangle),
+                @intFromEnum(MTLPrimitiveType.triangle),
                 @as(c_ulong, 6),
-                @enumToInt(MTLIndexType.uint16),
+                @intFromEnum(MTLIndexType.uint16),
                 self.buf_instance.value,
                 @as(c_ulong, 0),
                 @as(c_ulong, cells.items.len),
@@ -771,8 +771,8 @@ pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
 
     // Set the size of the drawable surface to the bounds
     self.swapchain.setProperty("drawableSize", macos.graphics.Size{
-        .width = @intToFloat(f64, dim.width),
-        .height = @intToFloat(f64, dim.height),
+        .width = @floatFromInt(f64, dim.width),
+        .height = @floatFromInt(f64, dim.height),
     });
 
     // Setup our uniforms
@@ -780,8 +780,8 @@ pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
     self.uniforms = .{
         .projection_matrix = math.ortho2d(
             -1 * padding.left,
-            @intToFloat(f32, padded_dim.width) + padding.right,
-            @intToFloat(f32, padded_dim.height) + padding.bottom,
+            @floatFromInt(f32, padded_dim.width) + padding.right,
+            @floatFromInt(f32, padded_dim.height) + padding.bottom,
             -1 * padding.top,
         ),
         .cell_size = .{ self.cell_size.width, self.cell_size.height },
@@ -836,7 +836,7 @@ fn rebuildCells(
             y == screen.cursor.y)
         {
             for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_pos[0] == @intToFloat(f32, screen.cursor.x) and
+                if (cell.grid_pos[0] == @floatFromInt(f32, screen.cursor.x) and
                     cell.mode == .fg)
                 {
                     cursor_cell = cell;
@@ -986,7 +986,7 @@ pub fn updateCell(
     if (colors.bg) |rgb| {
         self.cells_bg.appendAssumeCapacity(.{
             .mode = .bg,
-            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .grid_pos = .{ @floatFromInt(f32, x), @floatFromInt(f32, y) },
             .cell_width = cell.widthLegacy(),
             .color = .{ rgb.r, rgb.g, rgb.b, alpha },
         });
@@ -999,7 +999,7 @@ pub fn updateCell(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index,
-            @floatToInt(u16, @ceil(self.cell_size.height)),
+            @intFromFloat(u16, @ceil(self.cell_size.height)),
         );
 
         // If we're rendering a color font, we use the color atlas
@@ -1011,7 +1011,7 @@ pub fn updateCell(
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
-            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .grid_pos = .{ @floatFromInt(f32, x), @floatFromInt(f32, y) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
@@ -1033,7 +1033,7 @@ pub fn updateCell(
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             font.sprite_index,
-            @enumToInt(sprite),
+            @intFromEnum(sprite),
             null,
         );
 
@@ -1041,7 +1041,7 @@ pub fn updateCell(
 
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
-            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .grid_pos = .{ @floatFromInt(f32, x), @floatFromInt(f32, y) },
             .cell_width = cell.widthLegacy(),
             .color = .{ color.r, color.g, color.b, alpha },
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
@@ -1053,7 +1053,7 @@ pub fn updateCell(
     if (cell.attrs.strikethrough) {
         self.cells.appendAssumeCapacity(.{
             .mode = .strikethrough,
-            .grid_pos = .{ @intToFloat(f32, x), @intToFloat(f32, y) },
+            .grid_pos = .{ @floatFromInt(f32, x), @floatFromInt(f32, y) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
         });
@@ -1085,7 +1085,7 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
     const glyph = self.font_group.renderGlyph(
         self.alloc,
         font.sprite_index,
-        @enumToInt(sprite),
+        @intFromEnum(sprite),
         null,
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
@@ -1095,8 +1095,8 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
     self.cells.appendAssumeCapacity(.{
         .mode = .fg,
         .grid_pos = .{
-            @intToFloat(f32, screen.cursor.x),
-            @intToFloat(f32, screen.cursor.y),
+            @floatFromInt(f32, screen.cursor.x),
+            @floatFromInt(f32, screen.cursor.y),
         },
         .cell_width = if (cell.attrs.wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, 0xFF },
@@ -1285,7 +1285,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 0)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uchar));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "mode")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1296,7 +1296,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 1)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.float2));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.float2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "grid_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1307,7 +1307,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 2)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.uint2));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uint2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1318,7 +1318,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 3)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.uint2));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uint2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_size")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1329,7 +1329,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 4)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.int2));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.int2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_offset")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1340,7 +1340,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 5)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar4));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uchar4));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1351,7 +1351,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 6)},
             );
 
-            attr.setProperty("format", @enumToInt(MTLVertexFormat.uchar));
+            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uchar));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "cell_width")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1366,7 +1366,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             // Access each GPUCell per instance, not per vertex.
-            layout.setProperty("stepFunction", @enumToInt(MTLVertexStepFunction.per_instance));
+            layout.setProperty("stepFunction", @intFromEnum(MTLVertexStepFunction.per_instance));
             layout.setProperty("stride", @as(c_ulong, @sizeOf(GPUCell)));
         }
 
@@ -1401,12 +1401,12 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
         // Blending. This is required so that our text we render on top
         // of our drawable properly blends into the bg.
         attachment.setProperty("blendingEnabled", true);
-        attachment.setProperty("rgbBlendOperation", @enumToInt(MTLBlendOperation.add));
-        attachment.setProperty("alphaBlendOperation", @enumToInt(MTLBlendOperation.add));
-        attachment.setProperty("sourceRGBBlendFactor", @enumToInt(MTLBlendFactor.one));
-        attachment.setProperty("sourceAlphaBlendFactor", @enumToInt(MTLBlendFactor.one));
-        attachment.setProperty("destinationRGBBlendFactor", @enumToInt(MTLBlendFactor.one_minus_source_alpha));
-        attachment.setProperty("destinationAlphaBlendFactor", @enumToInt(MTLBlendFactor.one_minus_source_alpha));
+        attachment.setProperty("rgbBlendOperation", @intFromEnum(MTLBlendOperation.add));
+        attachment.setProperty("alphaBlendOperation", @intFromEnum(MTLBlendOperation.add));
+        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(MTLBlendFactor.one));
+        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(MTLBlendFactor.one));
+        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(MTLBlendFactor.one_minus_source_alpha));
+        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(MTLBlendFactor.one_minus_source_alpha));
     }
 
     // Make our state
@@ -1439,7 +1439,7 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
     };
 
     // Set our properties
-    desc.setProperty("pixelFormat", @enumToInt(pixel_format));
+    desc.setProperty("pixelFormat", @intFromEnum(pixel_format));
     desc.setProperty("width", @intCast(c_ulong, atlas.size));
     desc.setProperty("height", @intCast(c_ulong, atlas.size));
 
@@ -1569,7 +1569,7 @@ const MTLBlendOperation = enum(c_ulong) {
 
 /// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc
 /// (incomplete, we only use this mode so we just hardcode it)
-const MTLResourceStorageModeShared: c_ulong = @enumToInt(MTLStorageMode.shared) << 4;
+const MTLResourceStorageModeShared: c_ulong = @intFromEnum(MTLStorageMode.shared) << 4;
 
 const MTLClearColor = extern struct {
     red: f64,

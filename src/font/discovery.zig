@@ -64,12 +64,12 @@ pub const Descriptor = struct {
         ));
         if (self.bold) assert(pat.add(
             .weight,
-            .{ .integer = @enumToInt(fontconfig.Weight.bold) },
+            .{ .integer = @intFromEnum(fontconfig.Weight.bold) },
             false,
         ));
         if (self.italic) assert(pat.add(
             .slant,
-            .{ .integer = @enumToInt(fontconfig.Slant.italic) },
+            .{ .integer = @intFromEnum(fontconfig.Slant.italic) },
             false,
         ));
 

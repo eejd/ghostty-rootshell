@@ -5,9 +5,9 @@ const c = @import("c.zig");
 
 pub const Data = opaque {
     pub fn createWithBytesNoCopy(data: []const u8) Allocator.Error!*Data {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*Data,
-            @ptrToInt(c.CFDataCreateWithBytesNoCopy(
+            @intFromPtr(c.CFDataCreateWithBytesNoCopy(
                 null,
                 data.ptr,
                 @intCast(c_long, data.len),

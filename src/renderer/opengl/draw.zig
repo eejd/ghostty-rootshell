@@ -16,7 +16,7 @@ pub fn drawArrays(mode: c.GLenum, first: c.GLint, count: c.GLsizei) !void {
 }
 
 pub fn drawElements(mode: c.GLenum, count: c.GLsizei, typ: c.GLenum, offset: usize) !void {
-    const offsetPtr = if (offset == 0) null else @intToPtr(*const anyopaque, offset);
+    const offsetPtr = if (offset == 0) null else @ptrFromInt(*const anyopaque, offset);
     glad.context.DrawElements.?(mode, count, typ, offsetPtr);
     try errors.getError();
 }

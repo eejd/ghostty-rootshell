@@ -5,16 +5,16 @@ const c = @import("c.zig");
 
 pub const ColorSpace = opaque {
     pub fn createDeviceGray() Allocator.Error!*ColorSpace {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*ColorSpace,
-            @ptrToInt(c.CGColorSpaceCreateDeviceGray()),
+            @intFromPtr(c.CGColorSpaceCreateDeviceGray()),
         ) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn createDeviceRGB() Allocator.Error!*ColorSpace {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*ColorSpace,
-            @ptrToInt(c.CGColorSpaceCreateDeviceRGB()),
+            @intFromPtr(c.CGColorSpaceCreateDeviceRGB()),
         ) orelse Allocator.Error.OutOfMemory;
     }
 

@@ -46,7 +46,7 @@ pub const Config = opaque {
         return c.FcConfigSubstitute(
             self.cval(),
             pat.cval(),
-            @enumToInt(kind),
+            @intFromEnum(kind),
         ) == c.FcTrue;
     }
 

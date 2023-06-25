@@ -34,7 +34,7 @@ pub const Value = union(Type) {
     range: *const Range,
 
     pub fn init(cvalue: *c.struct__FcValue) Value {
-        return switch (@intToEnum(Type, cvalue.type)) {
+        return switch (@enumFromInt(Type, cvalue.type)) {
             .unknown => .{ .unknown = {} },
             .void => .{ .void = {} },
             .string => .{ .string = std.mem.sliceTo(cvalue.u.s, 0) },
@@ -51,7 +51,7 @@ pub const Value = union(Type) {
 
     pub fn cval(self: Value) c.struct__FcValue {
         return .{
-            .type = @enumToInt(std.meta.activeTag(self)),
+            .type = @intFromEnum(std.meta.activeTag(self)),
             .u = switch (self) {
                 .unknown => undefined,
                 .void => undefined,

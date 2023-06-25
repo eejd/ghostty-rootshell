@@ -881,7 +881,7 @@ const ReadThread = struct {
         const end = buf.len;
         if (ev.terminal_stream.parser.state == .ground) {
             for (buf[i..end]) |ch| {
-                switch (terminal.parse_table.table[ch][@enumToInt(terminal.Parser.State.ground)].action) {
+                switch (terminal.parse_table.table[ch][@intFromEnum(terminal.Parser.State.ground)].action) {
                     // Print, call directly.
                     .print => ev.terminal_stream.handler.print(@intCast(u21, ch)) catch |err|
                         log.err("error processing terminal data: {}", .{err}),

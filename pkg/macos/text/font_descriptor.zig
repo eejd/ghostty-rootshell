@@ -5,16 +5,16 @@ const c = @import("c.zig");
 
 pub const FontDescriptor = opaque {
     pub fn createWithNameAndSize(name: *foundation.String, size: f64) Allocator.Error!*FontDescriptor {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*FontDescriptor,
-            @ptrToInt(c.CTFontDescriptorCreateWithNameAndSize(@ptrCast(c.CFStringRef, name), size)),
+            @intFromPtr(c.CTFontDescriptorCreateWithNameAndSize(@ptrCast(c.CFStringRef, name), size)),
         ) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn createWithAttributes(dict: *foundation.Dictionary) Allocator.Error!*FontDescriptor {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*FontDescriptor,
-            @ptrToInt(c.CTFontDescriptorCreateWithAttributes(@ptrCast(c.CFDictionaryRef, dict))),
+            @intFromPtr(c.CTFontDescriptorCreateWithAttributes(@ptrCast(c.CFDictionaryRef, dict))),
         ) orelse Allocator.Error.OutOfMemory;
     }
 
@@ -22,9 +22,9 @@ pub const FontDescriptor = opaque {
         original: *FontDescriptor,
         dict: *foundation.Dictionary,
     ) Allocator.Error!*FontDescriptor {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*FontDescriptor,
-            @ptrToInt(c.CTFontDescriptorCreateCopyWithAttributes(
+            @intFromPtr(c.CTFontDescriptorCreateCopyWithAttributes(
                 @ptrCast(c.CTFontDescriptorRef, original),
                 @ptrCast(c.CFDictionaryRef, dict),
             )),
@@ -36,14 +36,14 @@ pub const FontDescriptor = opaque {
     }
 
     pub fn copyAttribute(self: *FontDescriptor, comptime attr: FontAttribute) attr.Value() {
-        return @intToPtr(attr.Value(), @ptrToInt(c.CTFontDescriptorCopyAttribute(
+        return @ptrFromInt(attr.Value(), @intFromPtr(c.CTFontDescriptorCopyAttribute(
             @ptrCast(c.CTFontDescriptorRef, self),
             @ptrCast(c.CFStringRef, attr.key()),
         )));
     }
 
     pub fn copyAttributes(self: *FontDescriptor) *foundation.Dictionary {
-        return @intToPtr(*foundation.Dictionary, @ptrToInt(c.CTFontDescriptorCopyAttributes(
+        return @ptrFromInt(*foundation.Dictionary, @intFromPtr(c.CTFontDescriptorCopyAttributes(
             @ptrCast(c.CTFontDescriptorRef, self),
         )));
     }
@@ -76,7 +76,7 @@ pub const FontAttribute = enum {
     downloaded,
 
     pub fn key(self: FontAttribute) *foundation.String {
-        return @intToPtr(*foundation.String, @ptrToInt(switch (self) {
+        return @ptrFromInt(*foundation.String, @intFromPtr(switch (self) {
             .url => c.kCTFontURLAttribute,
             .name => c.kCTFontNameAttribute,
             .display_name => c.kCTFontDisplayNameAttribute,
@@ -141,7 +141,7 @@ pub const FontTraitKey = enum {
     slant,
 
     pub fn key(self: FontTraitKey) *foundation.String {
-        return @intToPtr(*foundation.String, @ptrToInt(switch (self) {
+        return @ptrFromInt(*foundation.String, @intFromPtr(switch (self) {
             .symbolic => c.kCTFontSymbolicTrait,
             .weight => c.kCTFontWeightTrait,
             .width => c.kCTFontWidthTrait,

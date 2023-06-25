@@ -87,7 +87,7 @@ pub fn deinit(self: *Pty) void {
 /// Return the size of the pty.
 pub fn getSize(self: Pty) !winsize {
     var ws: winsize = undefined;
-    if (c.ioctl(self.master, TIOCGWINSZ, @ptrToInt(&ws)) < 0)
+    if (c.ioctl(self.master, TIOCGWINSZ, @intFromPtr(&ws)) < 0)
         return error.IoctlFailed;
 
     return ws;
@@ -95,7 +95,7 @@ pub fn getSize(self: Pty) !winsize {
 
 /// Set the size of the pty.
 pub fn setSize(self: Pty, size: winsize) !void {
-    if (c.ioctl(self.master, TIOCSWINSZ, @ptrToInt(&size)) < 0)
+    if (c.ioctl(self.master, TIOCSWINSZ, @intFromPtr(&size)) < 0)
         return error.IoctlFailed;
 }
 

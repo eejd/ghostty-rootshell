@@ -17,9 +17,9 @@ pub const BitmapContext = opaque {
         space: *graphics.ColorSpace,
         opts: c_uint,
     ) Allocator.Error!*BitmapContext {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*BitmapContext,
-            @ptrToInt(c.CGBitmapContextCreate(
+            @intFromPtr(c.CGBitmapContextCreate(
                 @ptrCast(?*anyopaque, if (data) |d| d.ptr else null),
                 width,
                 height,

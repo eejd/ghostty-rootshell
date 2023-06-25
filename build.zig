@@ -36,7 +36,7 @@ const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.11.0-dev.3312+ab37ab33c";
+    const required_zig = "0.11.0-dev.3803+7ad104227";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -48,7 +48,7 @@ comptime {
 }
 
 /// The version of the next release.
-const app_version = std.builtin.Version{ .major = 0, .minor = 1, .patch = 0 };
+const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
 /// Build options, see the build options help for more info.
 var tracy: bool = false;
@@ -63,12 +63,12 @@ pub fn build(b: *std.Build) !void {
 
         if (result.isLinux() and result.isGnuLibC()) {
             // https://github.com/ziglang/zig/issues/9485
-            result.glibc_version = .{ .major = 2, .minor = 28 };
+            result.glibc_version = .{ .major = 2, .minor = 28, .patch = 0 };
         }
 
         if (result.isDarwin()) {
             if (result.os_version_min == null) {
-                result.os_version_min = .{ .semver = .{ .major = 12, .minor = 0 } };
+                result.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };
             }
         }
 

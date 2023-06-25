@@ -196,8 +196,8 @@ pub fn init(
     // The font size we desire along with the DPI determined for the surface
     const font_size: font.face.DesiredSize = .{
         .points = config.@"font-size",
-        .xdpi = @floatToInt(u16, x_dpi),
-        .ydpi = @floatToInt(u16, y_dpi),
+        .xdpi = @intFromFloat(u16, x_dpi),
+        .ydpi = @intFromFloat(u16, y_dpi),
     };
 
     // Find all the fonts for this surface
@@ -320,8 +320,8 @@ pub fn init(
     const cell_size = try renderer.CellSize.init(alloc, font_group);
 
     // Convert our padding from points to pixels
-    const padding_x = (@intToFloat(f32, config.@"window-padding-x") * x_dpi) / 72;
-    const padding_y = (@intToFloat(f32, config.@"window-padding-y") * y_dpi) / 72;
+    const padding_x = (@floatFromInt(f32, config.@"window-padding-x") * x_dpi) / 72;
+    const padding_y = (@floatFromInt(f32, config.@"window-padding-y") * y_dpi) / 72;
     const padding: renderer.Padding = .{
         .top = padding_y,
         .bottom = padding_y,
@@ -425,8 +425,8 @@ pub fn init(
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
     try rt_surface.setSizeLimits(.{
-        .width = @floatToInt(u32, cell_size.width * 10),
-        .height = @floatToInt(u32, cell_size.height * 4),
+        .width = @intFromFloat(u32, cell_size.width * 10),
+        .height = @intFromFloat(u32, cell_size.height * 4),
     }, null);
 
     // Call our size callback which handles all our retina setup
@@ -446,7 +446,7 @@ pub fn init(
         const dev_atlas = @ptrCast(*imgui.FontAtlas, dev_io.cval().Fonts);
         dev_atlas.addFontFromMemoryTTF(
             face_ttf,
-            @intToFloat(f32, font_size.pixels()),
+            @floatFromInt(f32, font_size.pixels()),
         );
 
         // Default dark style
@@ -524,7 +524,7 @@ pub fn deinit(self: *Surface) void {
 
     self.alloc.destroy(self.renderer_state.mutex);
     self.config.deinit();
-    log.info("surface closed addr={x}", .{@ptrToInt(self)});
+    log.info("surface closed addr={x}", .{@intFromPtr(self)});
 }
 
 /// Close this surface. This will trigger the runtime to start the
@@ -658,7 +658,7 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const x: f64 = x: {
         // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatCast(f64, @intToFloat(f32, cursor.x) * self.cell_size.width);
+        var x: f64 = @floatCast(f64, @floatFromInt(f32, cursor.x) * self.cell_size.width);
 
         // We want the midpoint
         x += self.cell_size.width / 2;
@@ -671,7 +671,7 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const y: f64 = y: {
         // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatCast(f64, @intToFloat(f32, cursor.y) * self.cell_size.height);
+        var y: f64 = @floatCast(f64, @floatFromInt(f32, cursor.y) * self.cell_size.height);
 
         // We want the bottom
         y += self.cell_size.height;
@@ -1572,7 +1572,7 @@ pub fn mouseButtonCallback(
     }
 
     // Always record our latest mouse state
-    self.mouse.click_state[@intCast(usize, @enumToInt(button))] = action;
+    self.mouse.click_state[@intCast(usize, @intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(input.Mods, mods);
 
     // Shift-click continues the previous mouse state. cursorPosCallback
@@ -1713,7 +1713,7 @@ pub fn cursorPosCallback(
         // since the spec (afaict) does not say...
         const button: ?input.MouseButton = button: for (self.mouse.click_state, 0..) |state, i| {
             if (state == .press)
-                break :button @intToEnum(input.MouseButton, i);
+                break :button @enumFromInt(input.MouseButton, i);
         } else null;
 
         try self.mouseReport(button, .motion, self.mouse.mods, pos);
@@ -1724,7 +1724,7 @@ pub fn cursorPosCallback(
     }
 
     // If the cursor isn't clicked currently, it doesn't matter
-    if (self.mouse.click_state[@enumToInt(input.MouseButton.left)] != .press) return;
+    if (self.mouse.click_state[@intFromEnum(input.MouseButton.left)] != .press) return;
 
     // All roads lead to requiring a re-render at this pont.
     try self.queueRender();
@@ -1733,7 +1733,7 @@ pub fn cursorPosCallback(
     // up. The amount we scroll up is dependent on how negative we are.
     // Note: one day, we can change this from distance to time based if we want.
     //log.warn("CURSOR POS: {} {}", .{ pos, self.screen_size });
-    const max_y = @intToFloat(f32, self.screen_size.height);
+    const max_y = @floatFromInt(f32, self.screen_size.height);
     if (pos.y < 0 or pos.y > max_y) {
         const delta: isize = if (pos.y < 0) -1 else 1;
         try self.io.terminal.scrollViewport(.{ .delta = delta });
@@ -1845,7 +1845,7 @@ fn dragLeftClickSingle(
     const cell_xboundary = self.cell_size.width * 0.6;
 
     // first xpos of the clicked cell
-    const cell_xstart = @intToFloat(f32, self.mouse.left_click_point.x) * self.cell_size.width;
+    const cell_xstart = @floatFromInt(f32, self.mouse.left_click_point.x) * self.cell_size.width;
     const cell_start_xpos = self.mouse.left_click_xpos - cell_xstart;
 
     // If this is the same cell, then we only start the selection if weve
@@ -1921,7 +1921,7 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
         .x = if (xpos < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
             const cell_width = @floatCast(f64, self.cell_size.width);
-            const x = @floatToInt(usize, xpos / cell_width);
+            const x = @intFromFloat(usize, xpos / cell_width);
 
             // Can be off the screen if the user drags it out, so max
             // it out on our available columns
@@ -1930,7 +1930,7 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
 
         .y = if (ypos < 0) 0 else y: {
             const cell_height = @floatCast(f64, self.cell_size.height);
-            const y = @floatToInt(usize, ypos / cell_height);
+            const y = @intFromFloat(usize, ypos / cell_height);
             break :y @min(y, self.grid_size.rows - 1);
         },
     };

@@ -186,7 +186,7 @@ pub const Parser = struct {
             29 => return Attribute{ .reset_strikethrough = {} },
 
             30...37 => return Attribute{
-                .@"8_fg" = @intToEnum(color.Name, slice[0] - 30),
+                .@"8_fg" = @enumFromInt(color.Name, slice[0] - 30),
             },
 
             38 => if (slice.len >= 5 and slice[1] == 2) {
@@ -214,7 +214,7 @@ pub const Parser = struct {
             39 => return Attribute{ .reset_fg = {} },
 
             40...47 => return Attribute{
-                .@"8_bg" = @intToEnum(color.Name, slice[0] - 40),
+                .@"8_bg" = @enumFromInt(color.Name, slice[0] - 40),
             },
 
             48 => if (slice.len >= 5 and slice[1] == 2) {
@@ -270,11 +270,11 @@ pub const Parser = struct {
 
             90...97 => return Attribute{
                 // 82 instead of 90 to offset to "bright" colors
-                .@"8_bright_fg" = @intToEnum(color.Name, slice[0] - 82),
+                .@"8_bright_fg" = @enumFromInt(color.Name, slice[0] - 82),
             },
 
             100...107 => return Attribute{
-                .@"8_bright_bg" = @intToEnum(color.Name, slice[0] - 92),
+                .@"8_bright_bg" = @enumFromInt(color.Name, slice[0] - 92),
             },
 
             else => {},

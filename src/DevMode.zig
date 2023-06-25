@@ -99,7 +99,7 @@ pub fn update(self: *const DevMode) !void {
                     const atlas = &surface.font_group.atlas_greyscale;
                     const tex = switch (Renderer) {
                         renderer.OpenGL => @intCast(usize, surface.renderer.texture.id),
-                        renderer.Metal => @ptrToInt(surface.renderer.texture_greyscale.value),
+                        renderer.Metal => @intFromPtr(surface.renderer.texture_greyscale.value),
                         else => @compileError("renderer unsupported, add it!"),
                     };
                     try self.atlasInfo(atlas, tex);
@@ -110,7 +110,7 @@ pub fn update(self: *const DevMode) !void {
                     const atlas = &surface.font_group.atlas_color;
                     const tex = switch (Renderer) {
                         renderer.OpenGL => @intCast(usize, surface.renderer.texture_color.id),
-                        renderer.Metal => @ptrToInt(surface.renderer.texture_color.value),
+                        renderer.Metal => @intFromPtr(surface.renderer.texture_color.value),
                         else => @compileError("renderer unsupported, add it!"),
                     };
                     try self.atlasInfo(atlas, tex);
@@ -166,10 +166,10 @@ fn atlasInfo(self: *const DevMode, atlas: *font.Atlas, tex: ?usize) !void {
 
     if (tex) |id| {
         imgui.c.igImage(
-            @intToPtr(*anyopaque, id),
+            @ptrFromInt(*anyopaque, id),
             .{
-                .x = @intToFloat(f32, atlas.size),
-                .y = @intToFloat(f32, atlas.size),
+                .x = @floatFromInt(f32, atlas.size),
+                .y = @floatFromInt(f32, atlas.size),
             },
             .{ .x = 0, .y = 0 },
             .{ .x = 1, .y = 1 },

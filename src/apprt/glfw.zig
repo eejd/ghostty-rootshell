@@ -291,8 +291,8 @@ pub const Surface = struct {
             };
             const physical_size = monitor.getPhysicalSize();
             const video_mode = monitor.getVideoMode() orelse return glfw.mustGetErrorCode();
-            const physical_x_dpi = @intToFloat(f32, video_mode.getWidth()) / (@intToFloat(f32, physical_size.width_mm) / 25.4);
-            const physical_y_dpi = @intToFloat(f32, video_mode.getHeight()) / (@intToFloat(f32, physical_size.height_mm) / 25.4);
+            const physical_x_dpi = @floatFromInt(f32, video_mode.getWidth()) / (@floatFromInt(f32, physical_size.width_mm) / 25.4);
+            const physical_y_dpi = @floatFromInt(f32, video_mode.getHeight()) / (@floatFromInt(f32, physical_size.height_mm) / 25.4);
             log.debug("physical dpi x={} y={}", .{
                 physical_x_dpi,
                 physical_y_dpi,
@@ -512,8 +512,8 @@ pub const Surface = struct {
         if (fb_size.width == size.width and fb_size.height == size.height)
             return pos;
 
-        const x_scale = @intToFloat(f64, fb_size.width) / @intToFloat(f64, size.width);
-        const y_scale = @intToFloat(f64, fb_size.height) / @intToFloat(f64, size.height);
+        const x_scale = @floatFromInt(f64, fb_size.width) / @floatFromInt(f64, size.width);
+        const y_scale = @floatFromInt(f64, fb_size.height) / @floatFromInt(f64, size.height);
         return .{
             .xpos = pos.xpos * x_scale,
             .ypos = pos.ypos * y_scale,
