@@ -1300,6 +1300,13 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
+        // If we have an active mouse reporting mode, clear the selection.
+        // The selection can occur if the user uses the shift mod key to
+        // override mouse grabbing from the window.
+        if (self.io.terminal.modes.mouse_event != .none) {
+            self.io.terminal.screen.selection = null;
+        }
+
         // If we're in alternate screen with alternate scroll enabled, then
         // we convert to cursor keys. This only happens if we're:
         // (1) alt screen (2) no explicit mouse reporting and (3) alt
@@ -1601,7 +1608,15 @@ pub fn mouseButtonCallback(
     defer self.renderer_state.mutex.unlock();
 
     // Report mouse events if enabled
-    if (self.io.terminal.modes.mouse_event != .none) {
+    if (self.io.terminal.modes.mouse_event != .none) report: {
+        // Shift overrides mouse "grabbing" in the window, taken from Kitty.
+        if (mods.shift) break :report;
+
+        // In any other mouse button scenario without shift pressed we
+        // clear the selection since the underlying application can handle
+        // that in any way (i.e. "scrolling").
+        self.io.terminal.screen.selection = null;
+
         const pos = try self.rt_surface.getCursorPos();
 
         const report_action: MouseReportAction = switch (action) {
@@ -1719,7 +1734,10 @@ pub fn cursorPosCallback(
     defer self.renderer_state.mutex.unlock();
 
     // Do a mouse report
-    if (self.io.terminal.modes.mouse_event != .none) {
+    if (self.io.terminal.modes.mouse_event != .none) report: {
+        // Shift overrides mouse "grabbing" in the window, taken from Kitty.
+        if (self.mouse.mods.shift) break :report;
+
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
         const button: ?input.MouseButton = button: for (self.mouse.click_state, 0..) |state, i| {
