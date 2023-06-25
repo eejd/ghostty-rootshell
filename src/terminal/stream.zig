@@ -198,7 +198,7 @@ pub fn Stream(comptime Handler: type) type {
 
                 // CUP - Set Cursor Position.
                 // TODO: test
-                'H' => if (@hasDecl(T, "setCursorPos")) switch (action.params.len) {
+                'H', 'f' => if (@hasDecl(T, "setCursorPos")) switch (action.params.len) {
                     0 => try self.handler.setCursorPos(1, 1),
                     1 => try self.handler.setCursorPos(action.params[0], 1),
                     2 => try self.handler.setCursorPos(action.params[0], action.params[1]),
