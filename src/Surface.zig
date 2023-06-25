@@ -1416,8 +1416,8 @@ fn mouseReport(
         } else {
             acc = switch (button.?) {
                 .left => 0,
-                .right => 1,
-                .middle => 2,
+                .middle => 1,
+                .right => 2,
                 .four => 64,
                 .five => 65,
                 else => return, // unsupported
