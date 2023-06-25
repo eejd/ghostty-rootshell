@@ -317,33 +317,39 @@ pub fn Stream(comptime Handler: type) type {
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // Cursor Tabulation Control
-                'W' => switch (action.params.len) {
-                    1 => switch (action.params[0]) {
-                        0 => if (@hasDecl(T, "tabSet"))
-                            try self.handler.tabSet()
-                        else
-                            log.warn("unimplemented tab set callback: {}", .{action}),
-
-                        2 => if (@hasDecl(T, "tabClear"))
-                            try self.handler.tabClear(.current)
-                        else
-                            log.warn("unimplemented tab clear callback: {}", .{action}),
-
-                        5 => if (@hasDecl(T, "tabClear"))
-                            try self.handler.tabClear(.all)
-                        else
-                            log.warn("unimplemented tab clear callback: {}", .{action}),
-
-                        else => {
-                            log.warn("invalid cursor tabulation control: {}", .{action});
-                            return;
+                'W' => {
+                    switch (action.params.len) {
+                        0 => if (action.intermediates.len == 1 and action.intermediates[0] == '?') {
+                            if (@hasDecl(T, "tabClear"))
+                                try self.handler.tabClear(.all)
+                            else
+                                log.warn("unimplemented tab clear callback: {}", .{action});
                         },
-                    },
 
-                    else => {
-                        log.warn("invalid cursor tabulation control: {}", .{action});
-                        return;
-                    },
+                        1 => switch (action.params[0]) {
+                            0 => if (@hasDecl(T, "tabSet"))
+                                try self.handler.tabSet()
+                            else
+                                log.warn("unimplemented tab set callback: {}", .{action}),
+
+                            2 => if (@hasDecl(T, "tabClear"))
+                                try self.handler.tabClear(.current)
+                            else
+                                log.warn("unimplemented tab clear callback: {}", .{action}),
+
+                            5 => if (@hasDecl(T, "tabClear"))
+                                try self.handler.tabClear(.all)
+                            else
+                                log.warn("unimplemented tab clear callback: {}", .{action}),
+
+                            else => {},
+                        },
+
+                        else => {},
+                    }
+
+                    log.warn("invalid cursor tabulation control: {}", .{action});
+                    return;
                 },
 
                 // Erase Characters (ECH)
