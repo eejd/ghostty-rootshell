@@ -959,8 +959,20 @@ const StreamHandler = struct {
         self.terminal.backspace();
     }
 
-    pub fn horizontalTab(self: *StreamHandler) !void {
-        try self.terminal.horizontalTab();
+    pub fn horizontalTab(self: *StreamHandler, count: u16) !void {
+        for (0..count) |_| {
+            const x = self.terminal.screen.cursor.x;
+            try self.terminal.horizontalTab();
+            if (x == self.terminal.screen.cursor.x) break;
+        }
+    }
+
+    pub fn horizontalTabBack(self: *StreamHandler, count: u16) !void {
+        for (0..count) |_| {
+            const x = self.terminal.screen.cursor.x;
+            try self.terminal.horizontalTabBack();
+            if (x == self.terminal.screen.cursor.x) break;
+        }
     }
 
     pub fn linefeed(self: *StreamHandler) !void {

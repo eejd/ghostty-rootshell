@@ -92,7 +92,7 @@ pub fn Stream(comptime Handler: type) type {
                     log.warn("unimplemented execute: {x}", .{c}),
 
                 .HT => if (@hasDecl(T, "horizontalTab"))
-                    try self.handler.horizontalTab()
+                    try self.handler.horizontalTab(1)
                 else
                     log.warn("unimplemented execute: {x}", .{c}),
 
@@ -205,6 +205,18 @@ pub fn Stream(comptime Handler: type) type {
                     else => log.warn("invalid CUP command: {}", .{action}),
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
+                // CHT - Cursor Horizontal Tabulation
+                'I' => if (@hasDecl(T, "horizontalTab")) try self.handler.horizontalTab(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid horizontal tab command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
                 // Erase Display
                 // TODO: test
                 'J' => if (@hasDecl(T, "eraseDisplay")) try self.handler.eraseDisplay(
@@ -311,6 +323,18 @@ pub fn Stream(comptime Handler: type) type {
                         1 => action.params[0],
                         else => {
                             log.warn("invalid erase characters command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                // CHT - Cursor Horizontal Tabulation Back
+                'Z' => if (@hasDecl(T, "horizontalTabBack")) try self.handler.horizontalTabBack(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid horizontal tab back command: {}", .{action});
                             return;
                         },
                     },
