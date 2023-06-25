@@ -1218,6 +1218,21 @@ pub fn horizontalTab(self: *Terminal) !void {
     }
 }
 
+// Same as horizontalTab but moves to the previous tabstop instead of the next.
+pub fn horizontalTabBack(self: *Terminal) !void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    while (true) {
+        // If we're already at the edge of the screen, then we're done.
+        if (self.screen.cursor.x == 0) return;
+
+        // Move the cursor left
+        self.screen.cursor.x -= 1;
+        if (self.tabstops.get(self.screen.cursor.x)) return;
+    }
+}
+
 /// Clear tab stops.
 /// TODO: test
 pub fn tabClear(self: *Terminal, cmd: csi.TabClear) void {
@@ -1796,6 +1811,29 @@ test "Terminal: horizontal tabs" {
     try testing.expectEqual(@as(usize, 19), t.screen.cursor.x);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 19), t.screen.cursor.x);
+}
+
+test "Terminal: horizontal tabs back" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    // Edge of screen
+    t.screen.cursor.x = 19;
+
+    // HT
+    try t.horizontalTabBack();
+    try testing.expectEqual(@as(usize, 15), t.screen.cursor.x);
+
+    // HT
+    try t.horizontalTabBack();
+    try testing.expectEqual(@as(usize, 7), t.screen.cursor.x);
+
+    // HT
+    try t.horizontalTabBack();
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try t.horizontalTabBack();
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 }
 
 test "Terminal: setCursorPosition" {
