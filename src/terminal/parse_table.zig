@@ -61,7 +61,7 @@ fn genTable() Table {
     // anywhere transitions
     const stateInfo = @typeInfo(State);
     inline for (stateInfo.Enum.fields) |field| {
-        const source = @intToEnum(State, field.value);
+        const source = @enumFromInt(State, field.value);
 
         // anywhere => ground
         single(&result, 0x18, source, .ground, .execute);
@@ -357,7 +357,7 @@ fn genTable() Table {
     var final: Table = undefined;
     for (0..final.len) |i| {
         for (0..final[0].len) |j| {
-            final[i][j] = result[i][j] orelse transition(@intToEnum(State, j), .none);
+            final[i][j] = result[i][j] orelse transition(@enumFromInt(State, j), .none);
         }
     }
 
@@ -365,7 +365,7 @@ fn genTable() Table {
 }
 
 fn single(t: *OptionalTable, c: u8, s0: State, s1: State, a: Action) void {
-    const s0_int = @enumToInt(s0);
+    const s0_int = @intFromEnum(s0);
 
     // TODO: enable this but it thinks we're in runtime right now
     // if (t[c][s0_int]) |existing| {

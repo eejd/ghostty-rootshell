@@ -138,7 +138,7 @@ pub const FontIndex = packed struct(u8) {
 
     /// Initialize a special font index.
     pub fn initSpecial(v: Special) FontIndex {
-        return .{ .style = .regular, .idx = @enumToInt(v) };
+        return .{ .style = .regular, .idx = @intFromEnum(v) };
     }
 
     /// Convert to int
@@ -151,7 +151,7 @@ pub const FontIndex = packed struct(u8) {
     /// this font.
     pub fn special(self: FontIndex) ?Special {
         if (self.idx < Special.start) return null;
-        return @intToEnum(Special, self.idx);
+        return @enumFromInt(Special, self.idx);
     }
 
     test {
@@ -327,15 +327,15 @@ pub const Wasm = struct {
 
         // Set details for our sprite font
         self.sprite = font.sprite.Face{
-            .width = @floatToInt(u32, metrics.cell_width),
-            .height = @floatToInt(u32, metrics.cell_height),
+            .width = @intFromFloat(u32, metrics.cell_width),
+            .height = @intFromFloat(u32, metrics.cell_height),
             .thickness = 2,
-            .underline_position = @floatToInt(u32, metrics.underline_position),
+            .underline_position = @intFromFloat(u32, metrics.underline_position),
         };
     }
 
     export fn group_add_face(self: *Group, style: u16, face: *font.DeferredFace) void {
-        return self.addFace(alloc, @intToEnum(Style, style), face.*) catch |err| {
+        return self.addFace(alloc, @enumFromInt(Style, style), face.*) catch |err| {
             log.warn("error adding face to group err={}", .{err});
             return;
         };
@@ -350,10 +350,10 @@ pub const Wasm = struct {
 
     /// Presentation is negative for doesn't matter.
     export fn group_index_for_codepoint(self: *Group, cp: u32, style: u16, p: i16) i16 {
-        const presentation = if (p < 0) null else @intToEnum(Presentation, p);
+        const presentation = if (p < 0) null else @enumFromInt(Presentation, p);
         const idx = self.indexForCodepoint(
             cp,
-            @intToEnum(Style, style),
+            @enumFromInt(Style, style),
             presentation,
         ) orelse return -1;
         return @intCast(i16, @bitCast(u8, idx));
@@ -473,7 +473,7 @@ test "box glyph" {
     // Should find a box glyph
     const idx = group.indexForCodepoint(0x2500, .regular, null).?;
     try testing.expectEqual(Style.regular, idx.style);
-    try testing.expectEqual(@enumToInt(FontIndex.Special.sprite), idx.idx);
+    try testing.expectEqual(@intFromEnum(FontIndex.Special.sprite), idx.idx);
 
     // Should render it
     const glyph = try group.renderGlyph(
@@ -597,6 +597,6 @@ test "faceFromIndex returns pointer" {
         const idx = group.indexForCodepoint('A', .regular, null).?;
         const face1 = try group.faceFromIndex(idx);
         const face2 = try group.faceFromIndex(idx);
-        try testing.expectEqual(@ptrToInt(face1), @ptrToInt(face2));
+        try testing.expectEqual(@intFromPtr(face1), @intFromPtr(face2));
     }
 }

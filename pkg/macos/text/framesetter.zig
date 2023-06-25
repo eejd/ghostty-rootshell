@@ -8,9 +8,9 @@ const c = @import("c.zig");
 
 pub const Framesetter = opaque {
     pub fn createWithAttributedString(str: *foundation.AttributedString) Allocator.Error!*Framesetter {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*Framesetter,
-            @ptrToInt(c.CTFramesetterCreateWithAttributedString(
+            @intFromPtr(c.CTFramesetterCreateWithAttributedString(
                 @ptrCast(c.CFAttributedStringRef, str),
             )),
         ) orelse Allocator.Error.OutOfMemory;
@@ -26,9 +26,9 @@ pub const Framesetter = opaque {
         path: *graphics.Path,
         attrs: ?*foundation.Dictionary,
     ) !*text.Frame {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*text.Frame,
-            @ptrToInt(c.CTFramesetterCreateFrame(
+            @intFromPtr(c.CTFramesetterCreateFrame(
                 @ptrCast(c.CTFramesetterRef, self),
                 @bitCast(c.CFRange, range),
                 @ptrCast(c.CGPathRef, path),

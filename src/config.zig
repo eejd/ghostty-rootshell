@@ -418,8 +418,8 @@ pub const Config = struct {
         }
         {
             // Cmd+N for goto tab N
-            const start = @enumToInt(inputpkg.Key.one);
-            const end = @enumToInt(inputpkg.Key.nine);
+            const start = @intFromEnum(inputpkg.Key.one);
+            const end = @intFromEnum(inputpkg.Key.nine);
             var i: usize = start;
             while (i <= end) : (i += 1) {
                 // On macOS we default to super but everywhere else
@@ -431,7 +431,7 @@ pub const Config = struct {
 
                 try result.keybind.set.put(
                     alloc,
-                    .{ .key = @intToEnum(inputpkg.Key, i), .mods = mods },
+                    .{ .key = @enumFromInt(inputpkg.Key, i), .mods = mods },
                     .{ .goto_tab = (i - start) + 1 },
                 );
             }

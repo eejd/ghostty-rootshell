@@ -39,13 +39,13 @@ pub const Buffer = struct {
     /// Sets the type of buffer contents. Buffers are either empty, contain
     /// characters (before shaping), or contain glyphs (the result of shaping).
     pub fn setContentType(self: Buffer, ct: ContentType) void {
-        c.hb_buffer_set_content_type(self.handle, @enumToInt(ct));
+        c.hb_buffer_set_content_type(self.handle, @intFromEnum(ct));
     }
 
     /// Fetches the type of buffer contents. Buffers are either empty, contain
     /// characters (before shaping), or contain glyphs (the result of shaping).
     pub fn getContentType(self: Buffer) ContentType {
-        return @intToEnum(ContentType, c.hb_buffer_get_content_type(self.handle));
+        return @enumFromInt(ContentType, c.hb_buffer_get_content_type(self.handle));
     }
 
     /// Appends a character with the Unicode value of codepoint to buffer,
@@ -144,12 +144,12 @@ pub const Buffer = struct {
     /// direction is not the same as keeping the text in logical order and
     /// shaping with RTL direction.
     pub fn setDirection(self: Buffer, dir: Direction) void {
-        c.hb_buffer_set_direction(self.handle, @enumToInt(dir));
+        c.hb_buffer_set_direction(self.handle, @intFromEnum(dir));
     }
 
     /// See hb_buffer_set_direction()
     pub fn getDirection(self: Buffer) Direction {
-        return @intToEnum(Direction, c.hb_buffer_get_direction(self.handle));
+        return @enumFromInt(Direction, c.hb_buffer_get_direction(self.handle));
     }
 
     /// Sets the script of buffer to script.
@@ -162,12 +162,12 @@ pub const Buffer = struct {
     /// hb_script_from_string() or hb_script_from_iso15924_tag() to get the
     /// corresponding script from an ISO 15924 script tag.
     pub fn setScript(self: Buffer, script: Script) void {
-        c.hb_buffer_set_script(self.handle, @enumToInt(script));
+        c.hb_buffer_set_script(self.handle, @intFromEnum(script));
     }
 
     /// See hb_buffer_set_script()
     pub fn getScript(self: Buffer) Script {
-        return @intToEnum(Script, c.hb_buffer_get_script(self.handle));
+        return @enumFromInt(Script, c.hb_buffer_get_script(self.handle));
     }
 
     /// Sets the language of buffer to language .

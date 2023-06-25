@@ -18,9 +18,9 @@ pub const AttributedString = opaque {
     }
 
     pub fn getString(self: *AttributedString) *foundation.String {
-        return @intToPtr(
+        return @ptrFromInt(
             *foundation.String,
-            @ptrToInt(
+            @intFromPtr(
                 c.CFAttributedStringGetString(@ptrCast(c.CFAttributedStringRef, self)),
             ),
         );
@@ -29,9 +29,9 @@ pub const AttributedString = opaque {
 
 pub const MutableAttributedString = opaque {
     pub fn create(cap: usize) Allocator.Error!*MutableAttributedString {
-        return @intToPtr(
+        return @ptrFromInt(
             ?*MutableAttributedString,
-            @ptrToInt(c.CFAttributedStringCreateMutable(
+            @intFromPtr(c.CFAttributedStringCreateMutable(
                 null,
                 @intCast(c.CFIndex, cap),
             )),

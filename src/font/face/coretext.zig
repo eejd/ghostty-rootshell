@@ -42,7 +42,7 @@ pub const Face = struct {
     /// adjusted to the final size for final load.
     pub fn initFontCopy(base: *macos.text.Font, size: font.face.DesiredSize) !Face {
         // Create a copy
-        const ct_font = try base.copyWithAttributes(@intToFloat(f32, size.points), null);
+        const ct_font = try base.copyWithAttributes(@floatFromInt(f32, size.points), null);
         errdefer ct_font.release();
 
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
@@ -115,8 +115,8 @@ pub const Face = struct {
         // of the bitmap. We use the rounded up width/height of the bounding rect.
         var bounding: [1]macos.graphics.Rect = undefined;
         _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
-        const glyph_width = @floatToInt(u32, @ceil(bounding[0].size.width));
-        const glyph_height = @floatToInt(u32, @ceil(bounding[0].size.height));
+        const glyph_width = @intFromFloat(u32, @ceil(bounding[0].size.width));
+        const glyph_height = @intFromFloat(u32, @ceil(bounding[0].size.height));
 
         // Width and height. Note the padding doubling is because we want
         // the padding on both sides (top/bottom, left/right).
@@ -156,8 +156,8 @@ pub const Face = struct {
             8,
             width,
             space,
-            @enumToInt(macos.graphics.BitmapInfo.alpha_mask) &
-                @enumToInt(macos.graphics.ImageAlphaInfo.none),
+            @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
+                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
         );
         defer ctx.release();
 
@@ -195,13 +195,13 @@ pub const Face = struct {
             // by default below the line. We have to add height (glyph height)
             // so that we shift the glyph UP to be on the line, then we add our
             // baseline offset to move the glyph further UP to match the baseline.
-            break :offset_y @intCast(i32, height) + @floatToInt(i32, @ceil(baseline_with_offset));
+            break :offset_y @intCast(i32, height) + @intFromFloat(i32, @ceil(baseline_with_offset));
         };
 
         return font.Glyph{
             .width = glyph_width,
             .height = glyph_height,
-            .offset_x = @floatToInt(i32, @ceil(bounding[0].origin.x)),
+            .offset_x = @intFromFloat(i32, @ceil(bounding[0].origin.x)),
             .offset_y = offset_y,
             .atlas_x = region.x + padding,
             .atlas_y = region.y + padding,

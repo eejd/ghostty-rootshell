@@ -242,14 +242,14 @@ pub const Face = struct {
         const glyph_metrics = if (bitmap_resized) |bm| metrics: {
             // Our ratio for the resize
             const ratio = ratio: {
-                const new = @intToFloat(f64, bm.rows);
-                const old = @intToFloat(f64, bitmap_original.rows);
+                const new = @floatFromInt(f64, bm.rows);
+                const old = @floatFromInt(f64, bitmap_original.rows);
                 break :ratio new / old;
             };
 
             var copy = glyph.*;
-            copy.bitmap_top = @floatToInt(c_int, @round(@intToFloat(f64, copy.bitmap_top) * ratio));
-            copy.bitmap_left = @floatToInt(c_int, @round(@intToFloat(f64, copy.bitmap_left) * ratio));
+            copy.bitmap_top = @intFromFloat(c_int, @round(@floatFromInt(f64, copy.bitmap_top) * ratio));
+            copy.bitmap_left = @intFromFloat(c_int, @round(@floatFromInt(f64, copy.bitmap_left) * ratio));
             break :metrics copy;
         } else glyph.*;
 
@@ -325,7 +325,7 @@ pub const Face = struct {
             // baseline calculation. The baseline calculation is so that everything
             // is properly centered when we render it out into a monospace grid.
             // Note: we add here because our X/Y is actually reversed, adding goes UP.
-            break :offset_y glyph_metrics.bitmap_top + @floatToInt(c_int, self.metrics.cell_baseline);
+            break :offset_y glyph_metrics.bitmap_top + @intFromFloat(c_int, self.metrics.cell_baseline);
         };
 
         // Store glyph metadata
@@ -351,7 +351,7 @@ pub const Face = struct {
 
     /// Convert 26.6 pixel format to f32
     fn f26dot6ToFloat(v: freetype.c.FT_F26Dot6) f32 {
-        return @intToFloat(f32, v >> 6);
+        return @floatFromInt(f32, v >> 6);
     }
 
     /// Calculate the metrics associated with a face. This is not public because
@@ -398,8 +398,8 @@ pub const Face = struct {
                 if (face.getCharIndex('_')) |glyph_index| {
                     if (face.loadGlyph(glyph_index, .{ .render = true })) {
                         var res: f32 = f26dot6ToFloat(size_metrics.ascender);
-                        res -= @intToFloat(f32, face.handle.*.glyph.*.bitmap_top);
-                        res += @intToFloat(f32, face.handle.*.glyph.*.bitmap.rows);
+                        res -= @floatFromInt(f32, face.handle.*.glyph.*.bitmap_top);
+                        res += @floatFromInt(f32, face.handle.*.glyph.*.bitmap.rows);
                         break :underscore res;
                     } else |_| {
                         // Ignore the error since we just fall back below
@@ -434,7 +434,7 @@ pub const Face = struct {
             // We use the declared underline position if its available
             const declared = ascender_px - declared_px;
             if (declared > 0)
-                break :underline_pos @intToFloat(f32, declared);
+                break :underline_pos @floatFromInt(f32, declared);
 
             // If we have no declared underline position, we go slightly under the
             // cell height (mainly: non-scalable fonts, i.e. emoji)
@@ -459,7 +459,7 @@ pub const Face = struct {
                     @intCast(i32, face.handle.*.size.*.metrics.y_scale),
                 ) >> 6;
 
-                break :pos @intToFloat(f32, ascender_px - declared_px);
+                break :pos @floatFromInt(f32, ascender_px - declared_px);
             },
             .thickness = @max(@as(f32, 1), fontUnitsToPxY(face, os2.yStrikeoutSize)),
         } else .{
@@ -491,7 +491,7 @@ pub const Face = struct {
     /// Convert freetype "font units" to pixels using the Y scale.
     fn fontUnitsToPxY(face: freetype.Face, x: i32) f32 {
         const mul = freetype.mulFix(x, @intCast(i32, face.handle.*.size.*.metrics.y_scale));
-        const div = @intToFloat(f32, mul) / 64;
+        const div = @floatFromInt(f32, mul) / 64;
         return @ceil(div);
     }
 };

@@ -527,12 +527,12 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .@"8_fg" => |n| {
             self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette[@enumToInt(n)];
+            self.screen.cursor.pen.fg = self.color_palette[@intFromEnum(n)];
         },
 
         .@"8_bg" => |n| {
             self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette[@enumToInt(n)];
+            self.screen.cursor.pen.bg = self.color_palette[@intFromEnum(n)];
         },
 
         .reset_fg => self.screen.cursor.pen.attrs.has_fg = false,
@@ -541,12 +541,12 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .@"8_bright_fg" => |n| {
             self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette[@enumToInt(n)];
+            self.screen.cursor.pen.fg = self.color_palette[@intFromEnum(n)];
         },
 
         .@"8_bright_bg" => |n| {
             self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette[@enumToInt(n)];
+            self.screen.cursor.pen.bg = self.color_palette[@intFromEnum(n)];
         },
 
         .@"256_fg" => |idx| {

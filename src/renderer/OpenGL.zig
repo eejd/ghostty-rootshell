@@ -147,8 +147,8 @@ const SetScreenSize = struct {
             // 2D orthographic projection with the full w/h
             math.ortho2d(
                 -1 * padding.left,
-                @intToFloat(f32, padded_size.width) + padding.right,
-                @intToFloat(f32, padded_size.height) + padding.bottom,
+                @floatFromInt(f32, padded_size.width) + padding.right,
+                @floatFromInt(f32, padded_size.height) + padding.bottom,
                 -1 * padding.top,
             ),
         );
@@ -218,9 +218,9 @@ const GPUCellMode = enum(u8) {
 
     /// Apply a mask to the mode.
     pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
-        return @intToEnum(
+        return @enumFromInt(
             GPUCellMode,
-            @enumToInt(self) | @enumToInt(m),
+            @intFromEnum(self) | @intFromEnum(m),
         );
     }
 };
@@ -661,10 +661,10 @@ fn resetFontMetrics(
 
     // Set details for our sprite font
     font_group.group.sprite = font.sprite.Face{
-        .width = @floatToInt(u32, metrics.cell_width),
-        .height = @floatToInt(u32, metrics.cell_height),
+        .width = @intFromFloat(u32, metrics.cell_width),
+        .height = @intFromFloat(u32, metrics.cell_height),
         .thickness = 2,
-        .underline_position = @floatToInt(u32, metrics.underline_position),
+        .underline_position = @intFromFloat(u32, metrics.underline_position),
     };
 
     return metrics;
@@ -993,7 +993,7 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
     const glyph = self.font_group.renderGlyph(
         self.alloc,
         font.sprite_index,
-        @enumToInt(sprite),
+        @intFromEnum(sprite),
         null,
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
@@ -1147,7 +1147,7 @@ pub fn updateCell(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index,
-            @floatToInt(u16, @ceil(self.cell_size.height)),
+            @intFromFloat(u16, @ceil(self.cell_size.height)),
         );
 
         // If we're rendering a color font, we use the color atlas
@@ -1192,7 +1192,7 @@ pub fn updateCell(
         const underline_glyph = try self.font_group.renderGlyph(
             self.alloc,
             font.sprite_index,
-            @enumToInt(sprite),
+            @intFromEnum(sprite),
             null,
         );
 
@@ -1388,9 +1388,9 @@ pub fn draw(self: *OpenGL) !void {
 
     // Clear the surface
     gl.clearColor(
-        @intToFloat(f32, self.draw_background.r) / 255,
-        @intToFloat(f32, self.draw_background.g) / 255,
-        @intToFloat(f32, self.draw_background.b) / 255,
+        @floatFromInt(f32, self.draw_background.r) / 255,
+        @floatFromInt(f32, self.draw_background.g) / 255,
+        @floatFromInt(f32, self.draw_background.b) / 255,
         1.0,
     );
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);

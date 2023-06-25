@@ -317,7 +317,7 @@ pub const Wasm = struct {
         const atlas = init(
             alloc,
             size,
-            @intToEnum(Format, format),
+            @enumFromInt(Format, format),
         ) catch return null;
         const result = alloc.create(Atlas) catch return null;
         result.* = atlas;
@@ -449,12 +449,12 @@ pub const Wasm = struct {
         // Draw it
         try ctx.call(void, "putImageData", .{ image_data, 0, 0 });
 
-        const id = @bitCast(js.Ref, @enumToInt(canvas.value)).id;
+        const id = @bitCast(js.Ref, @intFromEnum(canvas.value)).id;
         return id;
     }
 
     test "happy path" {
-        var atlas = atlas_new(512, @enumToInt(Format.greyscale)).?;
+        var atlas = atlas_new(512, @intFromEnum(Format.greyscale)).?;
         defer atlas_free(atlas);
 
         const reg = atlas_reserve(atlas, 2, 2).?;

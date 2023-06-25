@@ -68,16 +68,16 @@ pub const Color = enum(u8) {
     fn pixmanColor(self: Color) pixman.Color {
         // pixman uses u16 for color while our color value is u8 so we
         // scale it up proportionally.
-        const max = @intToFloat(f32, std.math.maxInt(u8));
-        const max_u16 = @intToFloat(f32, std.math.maxInt(u16));
-        const unscaled = @intToFloat(f32, @enumToInt(self));
-        const scaled = @floatToInt(u16, (unscaled * max_u16) / max);
+        const max = @floatFromInt(f32, std.math.maxInt(u8));
+        const max_u16 = @floatFromInt(f32, std.math.maxInt(u16));
+        const unscaled = @floatFromInt(f32, @intFromEnum(self));
+        const scaled = @intFromFloat(u16, (unscaled * max_u16) / max);
         return .{ .red = 0, .green = 0, .blue = 0, .alpha = scaled };
     }
 
     fn cssColor(self: Color, buf: []u8) ![]u8 {
         return try std.fmt.bufPrint(buf, "rgba(0, 0, 0, {:.2})", .{
-            @intToFloat(f32, @enumToInt(self)) / 255,
+            @floatFromInt(f32, @intFromEnum(self)) / 255,
         });
     }
 };

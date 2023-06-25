@@ -24,9 +24,9 @@ pub const Frame = opaque {
     }
 
     pub fn getLines(self: *Frame) *foundation.Array {
-        return @intToPtr(
+        return @ptrFromInt(
             *foundation.Array,
-            @ptrToInt(c.CTFrameGetLines(@ptrCast(c.CTFrameRef, self))),
+            @intFromPtr(c.CTFrameGetLines(@ptrCast(c.CTFrameRef, self))),
         );
     }
 };

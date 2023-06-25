@@ -42,7 +42,7 @@ pub const Binding = struct {
         usage: Usage,
     ) !void {
         const info = dataInfo(&data);
-        glad.context.BufferData.?(@enumToInt(b.target), info.size, info.ptr, @enumToInt(usage));
+        glad.context.BufferData.?(@intFromEnum(b.target), info.size, info.ptr, @intFromEnum(usage));
         try errors.getError();
     }
 
@@ -54,7 +54,7 @@ pub const Binding = struct {
         data: anytype,
     ) !void {
         const info = dataInfo(data);
-        glad.context.BufferSubData.?(@enumToInt(b.target), @intCast(c_long, offset), info.size, info.ptr);
+        glad.context.BufferSubData.?(@intFromEnum(b.target), @intCast(c_long, offset), info.size, info.ptr);
         try errors.getError();
     }
 
@@ -66,7 +66,7 @@ pub const Binding = struct {
         comptime T: type,
         usage: Usage,
     ) !void {
-        glad.context.BufferData.?(@enumToInt(b.target), @sizeOf(T), null, @enumToInt(usage));
+        glad.context.BufferData.?(@intFromEnum(b.target), @sizeOf(T), null, @intFromEnum(usage));
         try errors.getError();
     }
 
@@ -76,7 +76,7 @@ pub const Binding = struct {
         size: usize,
         usage: Usage,
     ) !void {
-        glad.context.BufferData.?(@enumToInt(b.target), @intCast(c_long, size), null, @enumToInt(usage));
+        glad.context.BufferData.?(@intFromEnum(b.target), @intCast(c_long, size), null, @intFromEnum(usage));
         try errors.getError();
     }
 
@@ -169,7 +169,7 @@ pub const Binding = struct {
     ) !void {
         const normalized_c: c.GLboolean = if (normalized) c.GL_TRUE else c.GL_FALSE;
         const offsetPtr = if (offset > 0)
-            @intToPtr(*const anyopaque, offset)
+            @ptrFromInt(*const anyopaque, offset)
         else
             null;
 
@@ -186,7 +186,7 @@ pub const Binding = struct {
         offset: usize,
     ) !void {
         const offsetPtr = if (offset > 0)
-            @intToPtr(*const anyopaque, offset)
+            @ptrFromInt(*const anyopaque, offset)
         else
             null;
 
@@ -195,7 +195,7 @@ pub const Binding = struct {
     }
 
     pub inline fn unbind(b: *Binding) void {
-        glad.context.BindBuffer.?(@enumToInt(b.target), 0);
+        glad.context.BindBuffer.?(@intFromEnum(b.target), 0);
         b.* = undefined;
     }
 };
@@ -209,7 +209,7 @@ pub inline fn create() !Buffer {
 
 /// glBindBuffer
 pub inline fn bind(v: Buffer, target: Target) !Binding {
-    glad.context.BindBuffer.?(@enumToInt(target), v.id);
+    glad.context.BindBuffer.?(@intFromEnum(target), v.id);
     return Binding{ .target = target };
 }
 

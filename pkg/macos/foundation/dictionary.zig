@@ -15,7 +15,7 @@ pub const Dictionary = opaque {
             assert(keys.?.len == values.?.len);
         }
 
-        return @intToPtr(?*Dictionary, @ptrToInt(c.CFDictionaryCreate(
+        return @ptrFromInt(?*Dictionary, @intFromPtr(c.CFDictionaryCreate(
             null,
             @ptrCast([*c]?*const anyopaque, if (keys) |slice| slice.ptr else null),
             @ptrCast([*c]?*const anyopaque, if (values) |slice| slice.ptr else null),
@@ -34,7 +34,7 @@ pub const Dictionary = opaque {
     }
 
     pub fn getValue(self: *Dictionary, comptime V: type, key: ?*const anyopaque) ?*V {
-        return @intToPtr(?*V, @ptrToInt(c.CFDictionaryGetValue(
+        return @ptrFromInt(?*V, @intFromPtr(c.CFDictionaryGetValue(
             @ptrCast(c.CFDictionaryRef, self),
             key,
         )));
@@ -43,7 +43,7 @@ pub const Dictionary = opaque {
 
 pub const MutableDictionary = opaque {
     pub fn create(cap: usize) Allocator.Error!*MutableDictionary {
-        return @intToPtr(?*MutableDictionary, @ptrToInt(c.CFDictionaryCreateMutable(
+        return @ptrFromInt(?*MutableDictionary, @intFromPtr(c.CFDictionaryCreateMutable(
             null,
             @intCast(c.CFIndex, cap),
             &c.kCFTypeDictionaryKeyCallBacks,
@@ -52,7 +52,7 @@ pub const MutableDictionary = opaque {
     }
 
     pub fn createMutableCopy(cap: usize, src: *Dictionary) Allocator.Error!*MutableDictionary {
-        return @intToPtr(?*MutableDictionary, @ptrToInt(c.CFDictionaryCreateMutableCopy(
+        return @ptrFromInt(?*MutableDictionary, @intFromPtr(c.CFDictionaryCreateMutableCopy(
             null,
             @intCast(c.CFIndex, cap),
             @ptrCast(c.CFDictionaryRef, src),

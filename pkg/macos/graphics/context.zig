@@ -69,7 +69,7 @@ pub fn Context(comptime T: type) type {
         pub fn setTextDrawingMode(self: *T, mode: TextDrawingMode) void {
             c.CGContextSetTextDrawingMode(
                 @ptrCast(c.CGContextRef, self),
-                @enumToInt(mode),
+                @intFromEnum(mode),
             );
         }
 

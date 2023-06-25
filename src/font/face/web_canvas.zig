@@ -370,7 +370,7 @@ pub const Face = struct {
         // Get the width and height of the render
         const metrics = try measure_ctx.call(js.Object, "measureText", .{glyph_str});
         errdefer metrics.deinit();
-        const width: u32 = @floatToInt(u32, @ceil(width: {
+        const width: u32 = @intFromFloat(u32, @ceil(width: {
             // We prefer the bounding box since it is tighter but certain
             // text such as emoji do not have a bounding box set so we use
             // the full run width instead.
@@ -389,7 +389,7 @@ pub const Face = struct {
         const broken_bbox = asc + desc < 0.001;
 
         // Height is our ascender + descender for this char
-        const height = if (!broken_bbox) @floatToInt(u32, @ceil(asc + desc)) + 1 else width;
+        const height = if (!broken_bbox) @intFromFloat(u32, @ceil(asc + desc)) + 1 else width;
 
         // Note: width and height both get "+ 1" added to them above. This
         // is important so that there is a 1px border around the glyph to avoid
@@ -435,7 +435,7 @@ pub const Face = struct {
         try ctx.call(void, "fillText", .{
             glyph_str,
             left + 1,
-            if (!broken_bbox) asc + 1 else @intToFloat(f32, height),
+            if (!broken_bbox) asc + 1 else @floatFromInt(f32, height),
         });
 
         // Read the image data and get it into a []u8 on our side
@@ -501,7 +501,7 @@ pub const Wasm = struct {
             alloc,
             ptr[0..len],
             .{ .points = pts },
-            @intToEnum(font.Presentation, presentation),
+            @enumFromInt(font.Presentation, presentation),
         );
         errdefer face.deinit();
 

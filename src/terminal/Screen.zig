@@ -1048,7 +1048,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
             const dst = buf;
             const src_offset = count * (self.cols + 1);
             const src = buf[src_offset..];
-            assert(@ptrToInt(dst.ptr) < @ptrToInt(src.ptr));
+            assert(@intFromPtr(dst.ptr) < @intFromPtr(src.ptr));
             fastmem.move(StorageCell, dst, src);
         }
 
@@ -1093,7 +1093,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
         // Source starts in the top... so we can copy some from there.
         const dst = slices[0];
         const src = slices[0][src_offset..];
-        assert(@ptrToInt(dst.ptr) < @ptrToInt(src.ptr));
+        assert(@intFromPtr(dst.ptr) < @intFromPtr(src.ptr));
         fastmem.move(StorageCell, dst, src);
         remaining = total_copy - src.len;
         if (remaining == 0) break :zero_offset .{ src.len, 0 };

@@ -76,19 +76,19 @@ pub const Binding = struct {
     target: Target,
 
     pub inline fn unbind(b: *Binding) void {
-        glad.context.BindTexture.?(@enumToInt(b.target), 0);
+        glad.context.BindTexture.?(@intFromEnum(b.target), 0);
         b.* = undefined;
     }
 
     pub fn generateMipmap(b: Binding) void {
-        glad.context.GenerateMipmap.?(@enumToInt(b.target));
+        glad.context.GenerateMipmap.?(@intFromEnum(b.target));
     }
 
     pub fn parameter(b: Binding, name: Parameter, value: anytype) !void {
         switch (@TypeOf(value)) {
             c.GLint => glad.context.TexParameteri.?(
-                @enumToInt(b.target),
-                @enumToInt(name),
+                @intFromEnum(b.target),
+                @intFromEnum(name),
                 value,
             ),
             else => unreachable,
@@ -107,14 +107,14 @@ pub const Binding = struct {
         data: ?*const anyopaque,
     ) !void {
         glad.context.TexImage2D.?(
-            @enumToInt(b.target),
+            @intFromEnum(b.target),
             level,
-            @enumToInt(internal_format),
+            @intFromEnum(internal_format),
             width,
             height,
             border,
-            @enumToInt(format),
-            @enumToInt(typ),
+            @intFromEnum(format),
+            @intFromEnum(typ),
             data,
         );
     }
@@ -131,14 +131,14 @@ pub const Binding = struct {
         data: ?*const anyopaque,
     ) !void {
         glad.context.TexSubImage2D.?(
-            @enumToInt(b.target),
+            @intFromEnum(b.target),
             level,
             xoffset,
             yoffset,
             width,
             height,
-            @enumToInt(format),
-            @enumToInt(typ),
+            @intFromEnum(format),
+            @intFromEnum(typ),
             data,
         );
     }
@@ -153,7 +153,7 @@ pub inline fn create() !Texture {
 
 /// glBindTexture
 pub inline fn bind(v: Texture, target: Target) !Binding {
-    glad.context.BindTexture.?(@enumToInt(target), v.id);
+    glad.context.BindTexture.?(@intFromEnum(target), v.id);
     try errors.getError();
     return Binding{ .target = target };
 }

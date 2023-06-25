@@ -33,7 +33,7 @@ pub const Face = struct {
 
     /// Select a given charmap by its encoding tag (as listed in freetype.h).
     pub fn selectCharmap(self: Face, encoding: Encoding) Error!void {
-        return intToError(c.FT_Select_Charmap(self.handle, @enumToInt(encoding)));
+        return intToError(c.FT_Select_Charmap(self.handle, @intFromEnum(encoding)));
     }
 
     /// Call FT_Request_Size to request the nominal size (in points).
@@ -81,7 +81,7 @@ pub const Face = struct {
         const T = tag.DataType();
         return @ptrCast(?*T, @alignCast(@alignOf(T), c.FT_Get_Sfnt_Table(
             self.handle,
-            @enumToInt(tag),
+            @intFromEnum(tag),
         )));
     }
 };

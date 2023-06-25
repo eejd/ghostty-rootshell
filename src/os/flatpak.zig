@@ -164,7 +164,7 @@ pub const FlatpakHostCommand = struct {
                 "(uub)",
                 pid,
                 sig,
-                @intCast(c_int, @boolToInt(pg)),
+                @intCast(c_int, @intFromBool(pg)),
             ),
             c.G_VARIANT_TYPE("()"),
             c.G_DBUS_CALL_FLAGS_NONE,

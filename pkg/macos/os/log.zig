@@ -8,7 +8,7 @@ pub const Log = opaque {
         subsystem: [:0]const u8,
         category: [:0]const u8,
     ) *Log {
-        return @intToPtr(?*Log, @ptrToInt(c.os_log_create(
+        return @ptrFromInt(?*Log, @intFromPtr(c.os_log_create(
             subsystem.ptr,
             category.ptr,
         ))).?;
@@ -21,7 +21,7 @@ pub const Log = opaque {
     pub fn typeEnabled(self: *Log, typ: LogType) bool {
         return c.os_log_type_enabled(
             @ptrCast(c.os_log_t, self),
-            @enumToInt(typ),
+            @intFromEnum(typ),
         );
     }
 

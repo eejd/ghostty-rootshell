@@ -11,7 +11,7 @@ pub const Image = opaque {
         stride: c_int,
     ) pixman.Error!*Image {
         return @ptrCast(?*Image, c.pixman_image_create_bits_no_clear(
-            @enumToInt(format),
+            @intFromEnum(format),
             width,
             height,
             bits,
@@ -66,7 +66,7 @@ pub const Image = opaque {
         boxes: []const pixman.Box32,
     ) pixman.Error!void {
         if (c.pixman_image_fill_boxes(
-            @enumToInt(op),
+            @intFromEnum(op),
             @ptrCast(*c.pixman_image_t, self),
             @ptrCast(*const c.pixman_color_t, &color),
             @intCast(c_int, boxes.len),
@@ -81,7 +81,7 @@ pub const Image = opaque {
         rects: []const pixman.Rectangle16,
     ) pixman.Error!void {
         if (c.pixman_image_fill_rectangles(
-            @enumToInt(op),
+            @intFromEnum(op),
             @ptrCast(*c.pixman_image_t, self),
             @ptrCast(*const c.pixman_color_t, &color),
             @intCast(c_int, rects.len),
@@ -118,7 +118,7 @@ pub const Image = opaque {
         height: u16,
     ) void {
         c.pixman_image_composite(
-            @enumToInt(op),
+            @intFromEnum(op),
             @ptrCast(*c.pixman_image_t, src),
             @ptrCast(?*c.pixman_image_t, mask),
             @ptrCast(*c.pixman_image_t, self),
@@ -145,10 +145,10 @@ pub const Image = opaque {
         tris: []const pixman.Triangle,
     ) void {
         c.pixman_composite_triangles(
-            @enumToInt(op),
+            @intFromEnum(op),
             @ptrCast(*c.pixman_image_t, src),
             @ptrCast(*c.pixman_image_t, self),
-            @enumToInt(mask_format),
+            @intFromEnum(mask_format),
             x_src,
             y_src,
             x_dst,
