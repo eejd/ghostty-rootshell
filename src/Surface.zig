@@ -1575,14 +1575,25 @@ pub fn mouseButtonCallback(
     self.mouse.click_state[@intCast(usize, @intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(input.Mods, mods);
 
-    // Shift-click continues the previous mouse state. cursorPosCallback
-    // will also do a mouse report so we don't need to do any the logic
-    // below.
+    // Shift-click continues the previous mouse state if we have a selection.
+    // cursorPosCallback will also do a mouse report so we don't need to do any
+    // of the logic below.
     if (button == .left and action == .press) {
         if (mods.shift and self.mouse.left_click_count > 0) {
-            const pos = try self.rt_surface.getCursorPos();
-            try self.cursorPosCallback(pos);
-            return;
+            // Checking for selection requires the renderer state mutex which
+            // sucks but this should be pretty rare of an event so it won't
+            // cause a ton of contention.
+            const selection = selection: {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                break :selection self.io.terminal.screen.selection != null;
+            };
+
+            if (selection) {
+                const pos = try self.rt_surface.getCursorPos();
+                try self.cursorPosCallback(pos);
+                return;
+            }
         }
     }
 
