@@ -15,6 +15,7 @@
 		A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */; };
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
+		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
 		A5B30535299BEAAA0047F10C /* GhosttyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B30534299BEAAA0047F10C /* GhosttyApp.swift */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
 		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
@@ -33,6 +34,7 @@
 		A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.SplitView.swift; sourceTree = "<group>"; };
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A5A1F8842A489D6800D1E8BC /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "../zig-out/share/terminfo"; sourceTree = "<group>"; };
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30534299BEAAA0047F10C /* GhosttyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyApp.swift; sourceTree = "<group>"; };
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -85,6 +87,14 @@
 			path = Ghostty;
 			sourceTree = "<group>";
 		};
+		A5A1F8862A489D7400D1E8BC /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A5A1F8842A489D6800D1E8BC /* terminfo */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
 		A5B30528299BEAAA0047F10C = {
 			isa = PBXGroup;
 			children = (
@@ -93,6 +103,7 @@
 				A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */,
 				A54CD6ED299BEB14008C95BB /* Sources */,
 				A5D495A3299BECBA00DD1313 /* Frameworks */,
+				A5A1F8862A489D7400D1E8BC /* Resources */,
 				A5B30532299BEAAA0047F10C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -187,6 +198,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
 				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
