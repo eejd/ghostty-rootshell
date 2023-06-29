@@ -298,8 +298,8 @@ extension Ghostty {
             var y = event.scrollingDeltaY
             if event.hasPreciseScrollingDeltas {
                 mods = 1
-                x *= 0.1
-                y *= 0.1
+                
+                // TODO(mitchellh): do we have to scale the x/y here?
             }
             
             // Determine our momentum value
