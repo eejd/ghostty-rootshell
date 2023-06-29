@@ -298,7 +298,7 @@ extension Ghostty {
                 y *= 0.1
             }
             
-            ghostty_surface_mouse_scroll(surface, x, y)
+            ghostty_surface_mouse_scroll(surface, x, y, 0)
         }
 
         override func keyDown(with event: NSEvent) {

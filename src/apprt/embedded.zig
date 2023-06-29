@@ -502,7 +502,13 @@ pub const CAPI = struct {
         surface.cursorPosCallback(x, y);
     }
 
-    export fn ghostty_surface_mouse_scroll(surface: *Surface, x: f64, y: f64) void {
+    export fn ghostty_surface_mouse_scroll(
+        surface: *Surface,
+        x: f64,
+        y: f64,
+        scroll_mods: c_int,
+    ) void {
+        _ = scroll_mods;
         surface.scrollCallback(x, y);
     }
 

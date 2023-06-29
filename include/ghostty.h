@@ -56,6 +56,21 @@ typedef enum {
 } ghostty_input_mouse_button_e;
 
 typedef enum {
+    GHOSTTY_MOUSE_MOMENTUM_NONE,
+    GHOSTTY_MOUSE_MOMENTUM_BEGAN,
+    GHOSTTY_MOUSE_MOMENTUM_STATIONARY,
+    GHOSTTY_MOUSE_MOMENTUM_CHANGED,
+    GHOSTTY_MOUSE_MOMENTUM_ENDED,
+    GHOSTTY_MOUSE_MOMENTUM_CANCELLED,
+    GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN,
+} ghostty_input_mouse_momentum_e;
+
+// This is a packed struct (see src/input/mouse.zig) but the C standard
+// afaik doesn't let us reliably define packed structs so we build it up
+// from scratch.
+typedef int ghostty_input_scroll_mods_t;
+
+typedef enum {
     GHOSTTY_MODS_NONE  = 0,
     GHOSTTY_MODS_SHIFT = 1 << 0,
     GHOSTTY_MODS_CTRL  = 1 << 1,
@@ -265,7 +280,7 @@ void ghostty_surface_key(ghostty_surface_t, ghostty_input_action_e, ghostty_inpu
 void ghostty_surface_char(ghostty_surface_t, uint32_t);
 void ghostty_surface_mouse_button(ghostty_surface_t, ghostty_input_mouse_state_e, ghostty_input_mouse_button_e, ghostty_input_mods_e);
 void ghostty_surface_mouse_pos(ghostty_surface_t, double, double);
-void ghostty_surface_mouse_scroll(ghostty_surface_t, double, double);
+void ghostty_surface_mouse_scroll(ghostty_surface_t, double, double, ghostty_input_scroll_mods_t);
 void ghostty_surface_ime_point(ghostty_surface_t, double *, double *);
 void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);

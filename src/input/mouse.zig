@@ -1,3 +1,5 @@
+const std = @import("std");
+
 /// The state of a mouse button.
 ///
 /// This is backed by a c_int so we can use this as-is for our embedding API.
@@ -44,4 +46,43 @@ pub const MouseButton = enum(c_int) {
     nine = 9,
     ten = 10,
     eleven = 11,
+};
+
+/// The "momentum" of a mouse scroll event. This matches the macOS events
+/// because it is the only reliable source right now of momentum events.
+/// This is used to handle "intertial scrolling" (i.e. flicking).
+///
+/// https://developer.apple.com/documentation/appkit/nseventphase
+pub const MouseMomentum = enum(u3) {
+    none = 0,
+    began = 1,
+    stationary = 2,
+    changed = 3,
+    ended = 4,
+    cancelled = 5,
+    may_begin = 6,
+};
+
+/// The bitmask for mods for scroll events.
+pub const ScrollMods = packed struct(u8) {
+    /// True if this is a high-precision scroll event. For example, Apple
+    /// devices such as Magic Mouse, trackpads, etc. are high-precision
+    /// and send very detailed scroll events.
+    precision: bool = false,
+
+    /// The momentum phase (if available, supported) of the scroll event.
+    /// This is used to handle "intertial scrolling" (i.e. flicking).
+    momentum: MouseMomentum = .none,
+
+    _padding: u4 = 0,
+
+    // For our own understanding
+    test {
+        const testing = std.testing;
+        try testing.expectEqual(@bitCast(u8, ScrollMods{}), @as(u8, 0b0));
+        try testing.expectEqual(
+            @bitCast(u8, ScrollMods{ .precision = true }),
+            @as(u8, 0b0000_0001),
+        );
+    }
 };
