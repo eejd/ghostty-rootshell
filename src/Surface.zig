@@ -1268,7 +1268,14 @@ pub fn refreshCallback(self: *Surface) !void {
     try self.queueRender();
 }
 
-pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
+pub fn scrollCallback(
+    self: *Surface,
+    xoff: f64,
+    yoff: f64,
+    scroll_mods: input.ScrollMods,
+) !void {
+    _ = scroll_mods;
+
     const tracy = trace(@src());
     defer tracy.end();
 

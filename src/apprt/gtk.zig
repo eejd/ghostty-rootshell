@@ -1049,7 +1049,11 @@ pub const Surface = struct {
         ud: ?*anyopaque,
     ) callconv(.C) void {
         const self = userdataSelf(ud.?);
-        self.core_surface.scrollCallback(x, y * -1) catch |err| {
+
+        // GTK doesn't support any of the scroll mods.
+        const scroll_mods: input.ScrollMods = .{};
+
+        self.core_surface.scrollCallback(x, y * -1, scroll_mods) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
