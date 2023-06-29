@@ -127,6 +127,10 @@ const Mouse = struct {
 
     /// The last x/y sent for mouse reports.
     event_point: terminal.point.Viewport = .{},
+
+    /// Pending scroll amounts for high-precision scrolls
+    pending_scroll_x: f64 = 0,
+    pending_scroll_y: f64 = 0,
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -1268,7 +1272,12 @@ pub fn refreshCallback(self: *Surface) !void {
     try self.queueRender();
 }
 
-pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
+pub fn scrollCallback(
+    self: *Surface,
+    xoff: f64,
+    yoff: f64,
+    scroll_mods: input.ScrollMods,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1283,18 +1292,82 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
         } else |_| {}
     }
 
-    // log.info("SCROLL: {} {}", .{ xoff, yoff });
+    // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
 
-    // Positive is up
-    const y_sign: isize = if (yoff > 0) -1 else 1;
-    const y_delta_unsigned: usize = if (yoff == 0) 0 else @max(@divFloor(self.grid_size.rows, 15), 1);
-    const y_delta: isize = y_sign * @intCast(isize, y_delta_unsigned);
+    const ScrollAmount = struct {
+        // Positive is up, right
+        sign: isize = 1,
+        delta_unsigned: usize = 0,
+        delta: isize = 0,
+    };
 
-    // Positive is right
-    const x_sign: isize = if (xoff < 0) -1 else 1;
-    const x_delta_unsigned: usize = if (xoff == 0) 0 else 1;
-    const x_delta: isize = x_sign * @intCast(isize, x_delta_unsigned);
-    log.info("scroll: delta_y={} delta_x={}", .{ y_delta, x_delta });
+    const y: ScrollAmount = if (yoff == 0) .{} else y: {
+        // Non-precision scrolling is easy to calculate.
+        if (!scroll_mods.precision) {
+            const y_sign: isize = if (yoff > 0) -1 else 1;
+            const y_delta_unsigned: usize = @max(@divFloor(self.grid_size.rows, 15), 1);
+            const y_delta: isize = y_sign * @intCast(isize, y_delta_unsigned);
+            break :y .{ .sign = y_sign, .delta_unsigned = y_delta_unsigned, .delta = y_delta };
+        }
+
+        // Precision scrolling is more complicated. We need to maintain state
+        // to build up a pending scroll amount if we're only scrolling by a
+        // tiny amount so that we can scroll by a full row when we have enough.
+
+        // Add our previously saved pending amount to the offset to get the
+        // new offset value.
+        //
+        // NOTE: we currently mutiply by -1 because macOS sends the opposite
+        // of what we expect. This is jank we should audit our sign usage and
+        // carefully document what we expect so this can work cross platform.
+        // Right now this isn't important because macOS is the only high-precision
+        // scroller.
+        const poff = self.mouse.pending_scroll_y + (yoff * -1);
+
+        // If the new offset is less than a single unit of scroll, we save
+        // the new pending value and do not scroll yet.
+        const cell_size = self.cell_size.height;
+        if (@fabs(poff) < cell_size) {
+            self.mouse.pending_scroll_y = poff;
+            break :y .{};
+        }
+
+        // We scroll by the number of rows in the offset and save the remainder
+        const amount = poff / cell_size;
+        self.mouse.pending_scroll_y = poff - (amount * cell_size);
+
+        break :y .{
+            .delta_unsigned = @intFromFloat(usize, @fabs(amount)),
+            .delta = @intFromFloat(isize, amount),
+        };
+    };
+
+    // For detailed comments see the y calculation above.
+    const x: ScrollAmount = if (xoff == 0) .{} else x: {
+        if (!scroll_mods.precision) {
+            const x_sign: isize = if (xoff < 0) -1 else 1;
+            const x_delta_unsigned: usize = 1;
+            const x_delta: isize = x_sign * @intCast(isize, x_delta_unsigned);
+            break :x .{ .sign = x_sign, .delta_unsigned = x_delta_unsigned, .delta = x_delta };
+        }
+
+        const poff = self.mouse.pending_scroll_x + (xoff * -1);
+        const cell_size = self.cell_size.width;
+        if (@fabs(poff) < cell_size) {
+            self.mouse.pending_scroll_x = poff;
+            break :x .{};
+        }
+
+        const amount = poff / cell_size;
+        self.mouse.pending_scroll_x = poff - (amount * cell_size);
+
+        break :x .{
+            .delta_unsigned = @intFromFloat(usize, @fabs(amount)),
+            .delta = @intFromFloat(isize, amount),
+        };
+    };
+
+    log.info("scroll: delta_y={} delta_x={}", .{ y.delta, x.delta });
 
     {
         self.renderer_state.mutex.lock();
@@ -1315,18 +1388,18 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
             self.io.terminal.modes.mouse_event == .none and
             self.io.terminal.modes.mouse_alternate_scroll)
         {
-            if (y_delta_unsigned > 0) {
-                const seq = if (y_delta < 0) "\x1bOA" else "\x1bOB";
-                for (0..y_delta_unsigned) |_| {
+            if (y.delta_unsigned > 0) {
+                const seq = if (y.delta < 0) "\x1bOA" else "\x1bOB";
+                for (0..y.delta_unsigned) |_| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = seq,
                     }, .{ .forever = {} });
                 }
             }
 
-            if (x_delta_unsigned > 0) {
-                const seq = if (x_delta < 0) "\x1bOC" else "\x1bOD";
-                for (0..x_delta_unsigned) |_| {
+            if (x.delta_unsigned > 0) {
+                const seq = if (x.delta < 0) "\x1bOC" else "\x1bOD";
+                for (0..x.delta_unsigned) |_| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = seq,
                     }, .{ .forever = {} });
@@ -1343,7 +1416,7 @@ pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) !void {
         // the normal logic.
 
         // Modify our viewport, this requires a lock since it affects rendering
-        try self.io.terminal.scrollViewport(.{ .delta = y_delta });
+        try self.io.terminal.scrollViewport(.{ .delta = y.delta });
 
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.

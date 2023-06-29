@@ -731,8 +731,11 @@ pub const Surface = struct {
         const tracy = trace(@src());
         defer tracy.end();
 
+        // Glfw doesn't support any of the scroll mods.
+        const scroll_mods: input.ScrollMods = .{};
+
         const core_win = window.getUserPointer(CoreSurface) orelse return;
-        core_win.scrollCallback(xoff, yoff) catch |err| {
+        core_win.scrollCallback(xoff, yoff, scroll_mods) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };

@@ -299,8 +299,13 @@ pub const Surface = struct {
         };
     }
 
-    pub fn scrollCallback(self: *Surface, xoff: f64, yoff: f64) void {
-        self.core_surface.scrollCallback(xoff, yoff) catch |err| {
+    pub fn scrollCallback(
+        self: *Surface,
+        xoff: f64,
+        yoff: f64,
+        mods: input.ScrollMods,
+    ) void {
+        self.core_surface.scrollCallback(xoff, yoff, mods) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
@@ -502,8 +507,17 @@ pub const CAPI = struct {
         surface.cursorPosCallback(x, y);
     }
 
-    export fn ghostty_surface_mouse_scroll(surface: *Surface, x: f64, y: f64) void {
-        surface.scrollCallback(x, y);
+    export fn ghostty_surface_mouse_scroll(
+        surface: *Surface,
+        x: f64,
+        y: f64,
+        scroll_mods: c_int,
+    ) void {
+        surface.scrollCallback(
+            x,
+            y,
+            @bitCast(input.ScrollMods, @truncate(u8, @bitCast(c_uint, scroll_mods))),
+        );
     }
 
     export fn ghostty_surface_ime_point(surface: *Surface, x: *f64, y: *f64) void {
