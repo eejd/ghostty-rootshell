@@ -299,7 +299,11 @@ extension Ghostty {
             if event.hasPreciseScrollingDeltas {
                 mods = 1
                 
-                // TODO(mitchellh): do we have to scale the x/y here?
+                // We do a 2x speed multiplier. This is subjective, it "feels" better to me.
+                x *= 2;
+                y *= 2;
+                
+                // TODO(mitchellh): do we have to scale the x/y here by window scale factor?
             }
             
             // Determine our momentum value

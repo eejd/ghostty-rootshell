@@ -1342,11 +1342,32 @@ pub fn scrollCallback(
         };
     };
 
-    // Positive is right
-    const x_sign: isize = if (xoff < 0) -1 else 1;
-    const x_delta_unsigned: usize = if (xoff == 0) 0 else 1;
-    const x_delta: isize = x_sign * @intCast(isize, x_delta_unsigned);
-    log.info("scroll: delta_y={} delta_x={}", .{ y.delta, x_delta });
+    // For detailed comments see the y calculation above.
+    const x: ScrollAmount = if (xoff == 0) .{} else x: {
+        if (!scroll_mods.precision) {
+            const x_sign: isize = if (xoff < 0) -1 else 1;
+            const x_delta_unsigned: usize = 1;
+            const x_delta: isize = x_sign * @intCast(isize, x_delta_unsigned);
+            break :x .{ .sign = x_sign, .delta_unsigned = x_delta_unsigned, .delta = x_delta };
+        }
+
+        const poff = self.mouse.pending_scroll_x + (xoff * -1);
+        const cell_size = self.cell_size.width;
+        if (@fabs(poff) < cell_size) {
+            self.mouse.pending_scroll_x = poff;
+            break :x .{};
+        }
+
+        const amount = poff / cell_size;
+        self.mouse.pending_scroll_x = poff - (amount * cell_size);
+
+        break :x .{
+            .delta_unsigned = @intFromFloat(usize, @fabs(amount)),
+            .delta = @intFromFloat(isize, amount),
+        };
+    };
+
+    log.info("scroll: delta_y={} delta_x={}", .{ y.delta, x.delta });
 
     {
         self.renderer_state.mutex.lock();
@@ -1376,9 +1397,9 @@ pub fn scrollCallback(
                 }
             }
 
-            if (x_delta_unsigned > 0) {
-                const seq = if (x_delta < 0) "\x1bOC" else "\x1bOD";
-                for (0..x_delta_unsigned) |_| {
+            if (x.delta_unsigned > 0) {
+                const seq = if (x.delta < 0) "\x1bOC" else "\x1bOD";
+                for (0..x.delta_unsigned) |_| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = seq,
                     }, .{ .forever = {} });
