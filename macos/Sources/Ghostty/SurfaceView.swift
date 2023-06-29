@@ -291,14 +291,40 @@ extension Ghostty {
         override func scrollWheel(with event: NSEvent) {
             guard let surface = self.surface else { return }
             
+            // Builds up the "input.ScrollMods" bitmask
+            var mods: Int32 = 0
+            
             var x = event.scrollingDeltaX
             var y = event.scrollingDeltaY
             if event.hasPreciseScrollingDeltas {
+                mods = 1
                 x *= 0.1
                 y *= 0.1
             }
             
-            ghostty_surface_mouse_scroll(surface, x, y, 0)
+            // Determine our momentum value
+            var momentum: ghostty_input_mouse_momentum_e = GHOSTTY_MOUSE_MOMENTUM_NONE
+            switch (event.momentumPhase) {
+            case .began:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_BEGAN
+            case .stationary:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_STATIONARY
+            case .changed:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_CHANGED
+            case .ended:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_ENDED
+            case .cancelled:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_CANCELLED
+            case .mayBegin:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN
+            default:
+                break
+            }
+            
+            // Pack our momentum value into the mods bitmask
+            mods |= Int32(momentum.rawValue) << 1
+            
+            ghostty_surface_mouse_scroll(surface, x, y, mods)
         }
 
         override func keyDown(with event: NSEvent) {

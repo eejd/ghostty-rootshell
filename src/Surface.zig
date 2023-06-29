@@ -1290,7 +1290,7 @@ pub fn scrollCallback(
         } else |_| {}
     }
 
-    // log.info("SCROLL: {} {}", .{ xoff, yoff });
+    // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
 
     // Positive is up
     const y_sign: isize = if (yoff > 0) -1 else 1;
