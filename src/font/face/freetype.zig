@@ -467,15 +467,15 @@ pub const Face = struct {
             .thickness = underline_thickness,
         };
 
-        // log.warn("METRICS={} width={d} height={d} baseline={d} underline_pos={d} underline_thickness={d} strikethrough={}", .{
-        //     size_metrics,
-        //     cell_width,
-        //     cell_height,
-        //     cell_height - cell_baseline,
-        //     underline_position,
-        //     underline_thickness,
-        //     strikethrough,
-        // });
+        log.warn("METRICS={} width={d} height={d} baseline={d} underline_pos={d} underline_thickness={d} strikethrough={}", .{
+            size_metrics,
+            cell_width,
+            cell_height,
+            cell_height - cell_baseline,
+            underline_position,
+            underline_thickness,
+            strikethrough,
+        });
 
         return .{
             .cell_width = cell_width,

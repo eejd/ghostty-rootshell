@@ -95,6 +95,122 @@ pub const Face = struct {
         return @intCast(glyphs[0]);
     }
 
+    pub fn renderGlyph2(
+        self: Face,
+        alloc: Allocator,
+        atlas: *font.Atlas,
+        glyph_index: u32,
+        max_height: ?u16,
+    ) !font.Glyph {
+        _ = max_height;
+
+        var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
+
+        // Get the bounding rect for this glyph to determine the width/height
+        // of the bitmap. We use the rounded up width/height of the bounding rect.
+        var bounding: [1]macos.graphics.Rect = undefined;
+        const rect = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
+        const rasterized_left: i32 = @intFromFloat(@floor(rect.origin.x));
+        const rasterized_width: u32 = @intFromFloat(@ceil(
+            rect.origin.x - @floor(rect.origin.x) + rect.size.width,
+        ));
+        const rasterized_descent: i32 = @intFromFloat(@ceil(-rect.origin.y));
+        const rasterized_ascent: i32 = @intFromFloat(@ceil(rect.size.height + rect.origin.y));
+        const rasterized_height: u32 = @intCast(rasterized_descent + rasterized_ascent);
+
+        // This bitmap is blank. I've seen it happen in a font, I don't know why.
+        // If it is empty, we just return a valid glyph struct that does nothing.
+        if (rasterized_width == 0 or rasterized_height == 0) return font.Glyph{
+            .width = 0,
+            .height = 0,
+            .offset_x = 0,
+            .offset_y = 0,
+            .atlas_x = 0,
+            .atlas_y = 0,
+            .advance_x = 0,
+        };
+
+        // Our buffer for rendering
+        // TODO(perf): cache this buffer
+        // TODO(mitchellh): color is going to require a depth here
+        var buf = try alloc.alloc(u8, rasterized_width * rasterized_height);
+        defer alloc.free(buf);
+        @memset(buf, 0);
+
+        const space = try macos.graphics.ColorSpace.createDeviceGray();
+        defer space.release();
+
+        const ctx = try macos.graphics.BitmapContext.create(
+            buf,
+            rasterized_width,
+            rasterized_height,
+            8,
+            rasterized_width,
+            space,
+            @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
+                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
+        );
+        defer ctx.release();
+
+        // Perform an initial fill. This ensures that we don't have any
+        // uninitialized pixels in the bitmap.
+        ctx.setGrayFillColor(0, 0);
+        ctx.fillRect(.{
+            .origin = .{ .x = 0, .y = 0 },
+            .size = .{
+                .width = @floatFromInt(rasterized_width),
+                .height = @floatFromInt(rasterized_height),
+            },
+        });
+
+        ctx.setAllowsFontSmoothing(true);
+        ctx.setShouldSmoothFonts(true);
+        ctx.setAllowsFontSubpixelQuantization(true);
+        ctx.setShouldSubpixelQuantizeFonts(true);
+        ctx.setAllowsFontSubpixelPositioning(true);
+        ctx.setShouldSubpixelPositionFonts(true);
+        ctx.setAllowsAntialiasing(true);
+        ctx.setShouldAntialias(true);
+
+        // Set our color for drawing
+        ctx.setGrayFillColor(1, 1);
+        ctx.setGrayStrokeColor(1, 1);
+        // ctx.setTextDrawingMode(.fill_stroke);
+        // ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
+        // ctx.setTextPosition(0, 0);
+
+        // We want to render the glyphs at (0,0), but the glyphs themselves
+        // are offset by bearings, so we have to undo those bearings in order
+        // to get them to 0,0.
+        self.font.drawGlyphs(&glyphs, &.{
+            .{
+                .x = -1 * @as(f64, @floatFromInt(rasterized_left)),
+                .y = @as(f64, @floatFromInt(rasterized_descent)),
+            },
+        }, ctx);
+
+        const region = try atlas.reserve(alloc, rasterized_width, rasterized_height);
+        atlas.set(region, buf);
+
+        std.log.warn("FONT FONT FONT rasterized_left={} rasterized_width={} rasterized_descent={} rasterized_ascent={} rasterized_height={}", .{
+            rasterized_left,
+            rasterized_width,
+            rasterized_descent,
+            rasterized_ascent,
+            rasterized_height,
+        });
+
+        return .{
+            .width = @intCast(rasterized_width),
+            .height = @intCast(rasterized_height),
+            .advance_x = 0,
+            .offset_x = @intCast(rasterized_left),
+            .offset_y = @intCast(rasterized_ascent),
+            .atlas_x = @intCast(region.x),
+            .atlas_y = @intCast(region.y),
+        };
+    }
+
     /// Render a glyph using the glyph index. The rendered glyph is stored in the
     /// given texture atlas.
     pub fn renderGlyph(
@@ -124,6 +240,8 @@ pub const Face = struct {
         // the padding on both sides (top/bottom, left/right).
         const width = glyph_width + (padding * 2);
         const height = glyph_height + (padding * 2);
+
+        if (true) return try self.renderGlyph2(alloc, atlas, glyph_index, 0);
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
@@ -333,13 +451,14 @@ pub const Face = struct {
         // const units_per_em = ct_font.getUnitsPerEm();
         // const units_per_point = @intToFloat(f64, units_per_em) / ct_font.getSize();
 
-        // std.log.warn("width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
-        //     cell_width,
-        //     cell_height,
-        //     cell_baseline,
-        //     underline_position,
-        //     underline_thickness,
-        // });
+        std.log.warn("font size size={d}", .{ct_font.getSize()});
+        std.log.warn("font metrics width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
+            cell_width,
+            cell_height,
+            cell_baseline,
+            underline_position,
+            underline_thickness,
+        });
         return font.face.Metrics{
             .cell_width = cell_width,
             .cell_height = cell_height,
