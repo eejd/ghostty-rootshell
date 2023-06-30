@@ -5,6 +5,8 @@ const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
 
+const log = std.log.scoped(.font_face);
+
 pub const Face = struct {
     /// Our font face
     font: *macos.text.Font,
@@ -171,6 +173,15 @@ pub const Face = struct {
                 @intFromEnum(macos.graphics.ImageAlphaInfo.premultiplied_first),
         };
         defer color.space.release();
+
+        // This is just a safety check.
+        if (atlas.format.depth() != color.depth) {
+            log.warn("font atlas color depth doesn't equal font color depth atlas={} font={}", .{
+                atlas.format.depth(),
+                color.depth,
+            });
+            return error.InvalidAtlasFormat;
+        }
 
         // Our buffer for rendering
         // TODO(perf): cache this buffer
