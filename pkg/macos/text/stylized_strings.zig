@@ -5,7 +5,7 @@ pub const StringAttribute = enum {
     font,
 
     pub fn key(self: StringAttribute) *foundation.String {
-        return @ptrFromInt(*foundation.String, @intFromPtr(switch (self) {
+        return @ptrFromInt(@intFromPtr(switch (self) {
             .font => c.kCTFontAttributeName,
         }));
     }

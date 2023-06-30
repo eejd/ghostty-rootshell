@@ -11,15 +11,15 @@ pub fn fini() void {
 }
 
 pub fn initLoadConfig() *Config {
-    return @ptrCast(*Config, c.FcInitLoadConfig());
+    return @ptrCast(c.FcInitLoadConfig());
 }
 
 pub fn initLoadConfigAndFonts() *Config {
-    return @ptrCast(*Config, c.FcInitLoadConfigAndFonts());
+    return @ptrCast(c.FcInitLoadConfigAndFonts());
 }
 
 pub fn version() u32 {
-    return @intCast(u32, c.FcGetVersion());
+    return @intCast(c.FcGetVersion());
 }
 
 test "version" {

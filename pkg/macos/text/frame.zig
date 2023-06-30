@@ -17,17 +17,14 @@ pub const Frame = opaque {
         points: []graphics.Point,
     ) void {
         c.CTFrameGetLineOrigins(
-            @ptrCast(c.CTFrameRef, self),
-            @bitCast(c.CFRange, range),
-            @ptrCast(*c.CGPoint, points.ptr),
+            @ptrCast(self),
+            @bitCast(range),
+            @ptrCast(points.ptr),
         );
     }
 
     pub fn getLines(self: *Frame) *foundation.Array {
-        return @ptrFromInt(
-            *foundation.Array,
-            @intFromPtr(c.CTFrameGetLines(@ptrCast(c.CTFrameRef, self))),
-        );
+        return @ptrFromInt(@intFromPtr(c.CTFrameGetLines(@ptrCast(self))));
     }
 };
 

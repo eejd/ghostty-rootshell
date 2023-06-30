@@ -4,19 +4,13 @@ const foundation = @import("../foundation.zig");
 const c = @import("c.zig");
 
 pub fn createFontDescriptorsFromURL(url: *foundation.URL) ?*foundation.Array {
-    return @ptrFromInt(
-        ?*foundation.Array,
-        @intFromPtr(c.CTFontManagerCreateFontDescriptorsFromURL(
-            @ptrCast(c.CFURLRef, url),
-        )),
-    );
+    return @ptrFromInt(@intFromPtr(c.CTFontManagerCreateFontDescriptorsFromURL(
+        @ptrCast(url),
+    )));
 }
 
 pub fn createFontDescriptorsFromData(data: *foundation.Data) ?*foundation.Array {
-    return @ptrFromInt(
-        ?*foundation.Array,
-        @intFromPtr(c.CTFontManagerCreateFontDescriptorsFromData(
-            @ptrCast(c.CFDataRef, data),
-        )),
-    );
+    return @ptrFromInt(@intFromPtr(c.CTFontManagerCreateFontDescriptorsFromData(
+        @ptrCast(data),
+    )));
 }

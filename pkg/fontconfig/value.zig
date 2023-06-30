@@ -34,18 +34,18 @@ pub const Value = union(Type) {
     range: *const Range,
 
     pub fn init(cvalue: *c.struct__FcValue) Value {
-        return switch (@enumFromInt(Type, cvalue.type)) {
+        return switch (@as(Type, @enumFromInt(cvalue.type))) {
             .unknown => .{ .unknown = {} },
             .void => .{ .void = {} },
             .string => .{ .string = std.mem.sliceTo(cvalue.u.s, 0) },
-            .integer => .{ .integer = @intCast(i32, cvalue.u.i) },
+            .integer => .{ .integer = @intCast(cvalue.u.i) },
             .double => .{ .double = cvalue.u.d },
             .bool => .{ .bool = cvalue.u.b == c.FcTrue },
-            .matrix => .{ .matrix = @ptrCast(*const Matrix, cvalue.u.m) },
-            .char_set => .{ .char_set = @ptrCast(*const CharSet, cvalue.u.c) },
-            .ft_face => .{ .ft_face = @ptrCast(*anyopaque, cvalue.u.f) },
-            .lang_set => .{ .lang_set = @ptrCast(*const LangSet, cvalue.u.l) },
-            .range => .{ .range = @ptrCast(*const Range, cvalue.u.r) },
+            .matrix => .{ .matrix = @ptrCast(cvalue.u.m) },
+            .char_set => .{ .char_set = @ptrCast(cvalue.u.c) },
+            .ft_face => .{ .ft_face = @ptrCast(cvalue.u.f) },
+            .lang_set => .{ .lang_set = @ptrCast(cvalue.u.l) },
+            .range => .{ .range = @ptrCast(cvalue.u.r) },
         };
     }
 
@@ -55,15 +55,15 @@ pub const Value = union(Type) {
             .u = switch (self) {
                 .unknown => undefined,
                 .void => undefined,
-                .integer => |v| .{ .i = @intCast(c_int, v) },
+                .integer => |v| .{ .i = @intCast(v) },
                 .double => |v| .{ .d = v },
                 .string => |v| .{ .s = v.ptr },
                 .bool => |v| .{ .b = if (v) c.FcTrue else c.FcFalse },
-                .matrix => |v| .{ .m = @ptrCast(*const c.struct__FcMatrix, v) },
-                .char_set => |v| .{ .c = @ptrCast(*const c.struct__FcCharSet, v) },
+                .matrix => |v| .{ .m = @ptrCast(v) },
+                .char_set => |v| .{ .c = @ptrCast(v) },
                 .ft_face => |v| .{ .f = v },
-                .lang_set => |v| .{ .l = @ptrCast(*const c.struct__FcLangSet, v) },
-                .range => |v| .{ .r = @ptrCast(*const c.struct__FcRange, v) },
+                .lang_set => |v| .{ .l = @ptrCast(v) },
+                .range => |v| .{ .r = @ptrCast(v) },
             },
         };
     }

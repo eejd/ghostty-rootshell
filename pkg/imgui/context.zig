@@ -4,9 +4,9 @@ const Allocator = std.mem.Allocator;
 
 pub const Context = opaque {
     pub fn create() Allocator.Error!*Context {
-        return @ptrCast(
+        return @as(
             ?*Context,
-            c.igCreateContext(null),
+            @ptrCast(c.igCreateContext(null)),
         ) orelse Allocator.Error.OutOfMemory;
     }
 
@@ -19,10 +19,7 @@ pub const Context = opaque {
     }
 
     pub inline fn cval(self: *Context) *c.ImGuiContext {
-        return @ptrCast(
-            *c.ImGuiContext,
-            @alignCast(@alignOf(c.ImGuiContext), self),
-        );
+        return @ptrCast(@alignCast(self));
     }
 };
 

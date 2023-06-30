@@ -431,7 +431,7 @@ pub const Config = struct {
 
                 try result.keybind.set.put(
                     alloc,
-                    .{ .key = @enumFromInt(inputpkg.Key, i), .mods = mods },
+                    .{ .key = @enumFromInt(i), .mods = mods },
                     .{ .goto_tab = (i - start) + 1 },
                 );
             }

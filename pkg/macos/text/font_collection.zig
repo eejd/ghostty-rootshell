@@ -6,19 +6,19 @@ const c = @import("c.zig");
 
 pub const FontCollection = opaque {
     pub fn createFromAvailableFonts() Allocator.Error!*FontCollection {
-        return @ptrFromInt(
+        return @as(
             ?*FontCollection,
-            @intFromPtr(c.CTFontCollectionCreateFromAvailableFonts(null)),
+            @ptrFromInt(@intFromPtr(c.CTFontCollectionCreateFromAvailableFonts(null))),
         ) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn createWithFontDescriptors(descs: *foundation.Array) Allocator.Error!*FontCollection {
-        return @ptrFromInt(
+        return @as(
             ?*FontCollection,
-            @intFromPtr(c.CTFontCollectionCreateWithFontDescriptors(
-                @ptrCast(c.CFArrayRef, descs),
+            @ptrFromInt(@intFromPtr(c.CTFontCollectionCreateWithFontDescriptors(
+                @ptrCast(descs),
                 null,
-            )),
+            ))),
         ) orelse Allocator.Error.OutOfMemory;
     }
 
@@ -27,12 +27,8 @@ pub const FontCollection = opaque {
     }
 
     pub fn createMatchingFontDescriptors(self: *FontCollection) *foundation.Array {
-        const result = c.CTFontCollectionCreateMatchingFontDescriptors(
-            @ptrCast(c.CTFontCollectionRef, self),
-        );
-        if (result) |ptr| {
-            return @ptrFromInt(*foundation.Array, @intFromPtr(ptr));
-        }
+        const result = c.CTFontCollectionCreateMatchingFontDescriptors(@ptrCast(self));
+        if (result) |ptr| return @ptrFromInt(@intFromPtr(ptr));
 
         // If we have no results, we create an empty array. This is not
         // exactly matching the Mac API. We can fix this later if we want

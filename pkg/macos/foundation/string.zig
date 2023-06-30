@@ -10,13 +10,13 @@ pub const String = opaque {
         encoding: StringEncoding,
         external: bool,
     ) Allocator.Error!*String {
-        return @ptrFromInt(?*String, @intFromPtr(c.CFStringCreateWithBytes(
+        return @as(?*String, @ptrFromInt(@intFromPtr(c.CFStringCreateWithBytes(
             null,
             bs.ptr,
-            @intCast(c_long, bs.len),
+            @intCast(bs.len),
             @intFromEnum(encoding),
             @intFromBool(external),
-        ))) orelse Allocator.Error.OutOfMemory;
+        )))) orelse Allocator.Error.OutOfMemory;
     }
 
     pub fn release(self: *String) void {
@@ -24,13 +24,13 @@ pub const String = opaque {
     }
 
     pub fn getLength(self: *String) usize {
-        return @intCast(usize, c.CFStringGetLength(@ptrCast(c.CFStringRef, self)));
+        return @intCast(c.CFStringGetLength(@ptrCast(self)));
     }
 
     pub fn hasPrefix(self: *String, prefix: *String) bool {
         return c.CFStringHasPrefix(
-            @ptrCast(c.CFStringRef, self),
-            @ptrCast(c.CFStringRef, prefix),
+            @ptrCast(self),
+            @ptrCast(prefix),
         ) == 1;
     }
 
@@ -39,21 +39,18 @@ pub const String = opaque {
         other: *String,
         options: StringComparison,
     ) foundation.ComparisonResult {
-        return @enumFromInt(
-            foundation.ComparisonResult,
-            c.CFStringCompare(
-                @ptrCast(c.CFStringRef, self),
-                @ptrCast(c.CFStringRef, other),
-                @intCast(c_ulong, @bitCast(c_int, options)),
-            ),
-        );
+        return @enumFromInt(c.CFStringCompare(
+            @ptrCast(self),
+            @ptrCast(other),
+            @intCast(@as(c_int, @bitCast(options))),
+        ));
     }
 
     pub fn cstring(self: *String, buf: []u8, encoding: StringEncoding) ?[]const u8 {
         if (c.CFStringGetCString(
-            @ptrCast(c.CFStringRef, self),
+            @ptrCast(self),
             buf.ptr,
-            @intCast(c_long, buf.len),
+            @intCast(buf.len),
             @intFromEnum(encoding),
         ) == 0) return null;
         return std.mem.sliceTo(buf, 0);
@@ -61,7 +58,7 @@ pub const String = opaque {
 
     pub fn cstringPtr(self: *String, encoding: StringEncoding) ?[:0]const u8 {
         const ptr = c.CFStringGetCStringPtr(
-            @ptrCast(c.CFStringRef, self),
+            @ptrCast(self),
             @intFromEnum(encoding),
         );
         if (ptr == null) return null;

@@ -136,8 +136,8 @@ const SetScreenSize = struct {
         try gl.viewport(
             0,
             0,
-            @intCast(i32, self.size.width),
-            @intCast(i32, self.size.height),
+            @intCast(self.size.width),
+            @intCast(self.size.height),
         );
 
         // Update the projection uniform within our shader
@@ -147,8 +147,8 @@ const SetScreenSize = struct {
             // 2D orthographic projection with the full w/h
             math.ortho2d(
                 -1 * padding.left,
-                @floatFromInt(f32, padded_size.width) + padding.right,
-                @floatFromInt(f32, padded_size.height) + padding.bottom,
+                @as(f32, @floatFromInt(padded_size.width)) + padding.right,
+                @as(f32, @floatFromInt(padded_size.height)) + padding.bottom,
                 -1 * padding.top,
             ),
         );
@@ -218,10 +218,7 @@ const GPUCellMode = enum(u8) {
 
     /// Apply a mask to the mode.
     pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
-        return @enumFromInt(
-            GPUCellMode,
-            @intFromEnum(self) | @intFromEnum(m),
-        );
+        return @enumFromInt(@intFromEnum(self) | @intFromEnum(m));
     }
 };
 
@@ -357,8 +354,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         try texbind.image2D(
             0,
             .Red,
-            @intCast(c_int, options.font_group.atlas_greyscale.size),
-            @intCast(c_int, options.font_group.atlas_greyscale.size),
+            @intCast(options.font_group.atlas_greyscale.size),
+            @intCast(options.font_group.atlas_greyscale.size),
             0,
             .Red,
             .UnsignedByte,
@@ -378,8 +375,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         try texbind.image2D(
             0,
             .RGBA,
-            @intCast(c_int, options.font_group.atlas_color.size),
-            @intCast(c_int, options.font_group.atlas_color.size),
+            @intCast(options.font_group.atlas_color.size),
+            @intCast(options.font_group.atlas_color.size),
             0,
             .BGRA,
             .UnsignedByte,
@@ -476,8 +473,8 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
             const version = try gl.glad.load(null);
             errdefer gl.glad.unload();
             log.info("loaded OpenGL {}.{}", .{
-                gl.glad.versionMajor(@intCast(c_uint, version)),
-                gl.glad.versionMinor(@intCast(c_uint, version)),
+                gl.glad.versionMajor(@intCast(version)),
+                gl.glad.versionMinor(@intCast(version)),
             });
         },
 
@@ -515,7 +512,7 @@ pub fn initDevMode(self: *const OpenGL, surface: *apprt.Surface) !void {
     if (DevMode.enabled) {
         // Initialize for our window
         assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(*imgui.ImplGlfw.GLFWWindow, surface.window.handle),
+            @ptrCast(surface.window.handle),
             true,
         ));
         assert(imgui.ImplOpenGL3.init("#version 330 core"));
@@ -561,8 +558,8 @@ pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
             const version = try gl.glad.load(&glfw.getProcAddress);
             errdefer gl.glad.unload();
             log.info("loaded OpenGL {}.{}", .{
-                gl.glad.versionMajor(@intCast(c_uint, version)),
-                gl.glad.versionMinor(@intCast(c_uint, version)),
+                gl.glad.versionMajor(@intCast(version)),
+                gl.glad.versionMinor(@intCast(version)),
             });
         },
     }
@@ -661,10 +658,10 @@ fn resetFontMetrics(
 
     // Set details for our sprite font
     font_group.group.sprite = font.sprite.Face{
-        .width = @intFromFloat(u32, metrics.cell_width),
-        .height = @intFromFloat(u32, metrics.cell_height),
+        .width = @intFromFloat(metrics.cell_width),
+        .height = @intFromFloat(metrics.cell_height),
         .thickness = 2,
-        .underline_position = @intFromFloat(u32, metrics.underline_position),
+        .underline_position = @intFromFloat(metrics.underline_position),
     };
 
     return metrics;
@@ -895,7 +892,7 @@ pub fn rebuildCells(
             var i: usize = self.cells.items.len;
             for (gop.value_ptr.items) |cell| {
                 self.cells.appendAssumeCapacity(cell);
-                self.cells.items[i].grid_row = @intCast(u16, y);
+                self.cells.items[i].grid_row = @intCast(y);
                 i += 1;
             }
 
@@ -1002,8 +999,8 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) void {
 
     self.cells.appendAssumeCapacity(.{
         .mode = .fg,
-        .grid_col = @intCast(u16, screen.cursor.x),
-        .grid_row = @intCast(u16, screen.cursor.y),
+        .grid_col = @intCast(screen.cursor.x),
+        .grid_row = @intCast(screen.cursor.y),
         .grid_width = if (cell.attrs.wide) 2 else 1,
         .fg_r = color.r,
         .fg_g = color.g,
@@ -1120,8 +1117,8 @@ pub fn updateCell(
 
         self.cells_bg.appendAssumeCapacity(.{
             .mode = mode,
-            .grid_col = @intCast(u16, x),
-            .grid_row = @intCast(u16, y),
+            .grid_col = @intCast(x),
+            .grid_row = @intCast(y),
             .grid_width = cell.widthLegacy(),
             .glyph_x = 0,
             .glyph_y = 0,
@@ -1147,7 +1144,7 @@ pub fn updateCell(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index,
-            @intFromFloat(u16, @ceil(self.cell_size.height)),
+            @intFromFloat(@ceil(self.cell_size.height)),
         );
 
         // If we're rendering a color font, we use the color atlas
@@ -1159,8 +1156,8 @@ pub fn updateCell(
 
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
-            .grid_col = @intCast(u16, x),
-            .grid_row = @intCast(u16, y),
+            .grid_col = @intCast(x),
+            .grid_row = @intCast(y),
             .grid_width = cell.widthLegacy(),
             .glyph_x = glyph.atlas_x,
             .glyph_y = glyph.atlas_y,
@@ -1200,8 +1197,8 @@ pub fn updateCell(
 
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
-            .grid_col = @intCast(u16, x),
-            .grid_row = @intCast(u16, y),
+            .grid_col = @intCast(x),
+            .grid_row = @intCast(y),
             .grid_width = cell.widthLegacy(),
             .glyph_x = underline_glyph.atlas_x,
             .glyph_y = underline_glyph.atlas_y,
@@ -1223,8 +1220,8 @@ pub fn updateCell(
     if (cell.attrs.strikethrough) {
         self.cells.appendAssumeCapacity(.{
             .mode = .strikethrough,
-            .grid_col = @intCast(u16, x),
-            .grid_row = @intCast(u16, y),
+            .grid_col = @intCast(x),
+            .grid_row = @intCast(y),
             .grid_width = cell.widthLegacy(),
             .glyph_x = 0,
             .glyph_y = 0,
@@ -1312,8 +1309,8 @@ fn flushAtlas(self: *OpenGL) !void {
                 try texbind.image2D(
                     0,
                     .Red,
-                    @intCast(c_int, atlas.size),
-                    @intCast(c_int, atlas.size),
+                    @intCast(atlas.size),
+                    @intCast(atlas.size),
                     0,
                     .Red,
                     .UnsignedByte,
@@ -1324,8 +1321,8 @@ fn flushAtlas(self: *OpenGL) !void {
                     0,
                     0,
                     0,
-                    @intCast(c_int, atlas.size),
-                    @intCast(c_int, atlas.size),
+                    @intCast(atlas.size),
+                    @intCast(atlas.size),
                     .Red,
                     .UnsignedByte,
                     atlas.data.ptr,
@@ -1346,8 +1343,8 @@ fn flushAtlas(self: *OpenGL) !void {
                 try texbind.image2D(
                     0,
                     .RGBA,
-                    @intCast(c_int, atlas.size),
-                    @intCast(c_int, atlas.size),
+                    @intCast(atlas.size),
+                    @intCast(atlas.size),
                     0,
                     .BGRA,
                     .UnsignedByte,
@@ -1358,8 +1355,8 @@ fn flushAtlas(self: *OpenGL) !void {
                     0,
                     0,
                     0,
-                    @intCast(c_int, atlas.size),
-                    @intCast(c_int, atlas.size),
+                    @intCast(atlas.size),
+                    @intCast(atlas.size),
                     .BGRA,
                     .UnsignedByte,
                     atlas.data.ptr,
@@ -1388,9 +1385,9 @@ pub fn draw(self: *OpenGL) !void {
 
     // Clear the surface
     gl.clearColor(
-        @floatFromInt(f32, self.draw_background.r) / 255,
-        @floatFromInt(f32, self.draw_background.g) / 255,
-        @floatFromInt(f32, self.draw_background.b) / 255,
+        @as(f32, @floatFromInt(self.draw_background.r)) / 255,
+        @as(f32, @floatFromInt(self.draw_background.g)) / 255,
+        @as(f32, @floatFromInt(self.draw_background.b)) / 255,
         1.0,
     );
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);

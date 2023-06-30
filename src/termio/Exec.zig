@@ -581,10 +581,10 @@ const Subprocess = struct {
 
         // Create our pty
         var pty = try Pty.open(.{
-            .ws_row = @intCast(u16, self.grid_size.rows),
-            .ws_col = @intCast(u16, self.grid_size.columns),
-            .ws_xpixel = @intCast(u16, self.screen_size.width),
-            .ws_ypixel = @intCast(u16, self.screen_size.height),
+            .ws_row = @intCast(self.grid_size.rows),
+            .ws_col = @intCast(self.grid_size.columns),
+            .ws_xpixel = @intCast(self.screen_size.width),
+            .ws_ypixel = @intCast(self.screen_size.height),
         });
         self.pty = pty;
         errdefer {
@@ -720,10 +720,10 @@ const Subprocess = struct {
 
         if (self.pty) |pty| {
             try pty.setSize(.{
-                .ws_row = @intCast(u16, grid_size.rows),
-                .ws_col = @intCast(u16, grid_size.columns),
-                .ws_xpixel = @intCast(u16, screen_size.width),
-                .ws_ypixel = @intCast(u16, screen_size.height),
+                .ws_row = @intCast(grid_size.rows),
+                .ws_col = @intCast(grid_size.columns),
+                .ws_xpixel = @intCast(screen_size.width),
+                .ws_ypixel = @intCast(screen_size.height),
             });
         }
     }
@@ -883,7 +883,7 @@ const ReadThread = struct {
             for (buf[i..end]) |ch| {
                 switch (terminal.parse_table.table[ch][@intFromEnum(terminal.Parser.State.ground)].action) {
                     // Print, call directly.
-                    .print => ev.terminal_stream.handler.print(@intCast(u21, ch)) catch |err|
+                    .print => ev.terminal_stream.handler.print(@intCast(ch)) catch |err|
                         log.err("error processing terminal data: {}", .{err}),
 
                     // C0 execute, let our stream handle this one but otherwise
@@ -1196,7 +1196,7 @@ const StreamHandler = struct {
                     pos.y + 1,
                     pos.x + 1,
                 });
-                msg.write_small.len = @intCast(u8, resp.len);
+                msg.write_small.len = @intCast(resp.len);
 
                 self.messageWriter(msg);
             },

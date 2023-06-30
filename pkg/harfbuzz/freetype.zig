@@ -63,7 +63,7 @@ test {
     try testing.expect(ftc.FT_New_Memory_Face(
         ft_lib,
         testFont,
-        @intCast(c_long, testFont.len),
+        @intCast(testFont.len),
         0,
         &ft_face,
     ) == ftok);
