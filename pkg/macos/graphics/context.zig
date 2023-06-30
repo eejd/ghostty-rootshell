@@ -101,6 +101,16 @@ pub fn Context(comptime T: type) type {
             );
         }
 
+        pub fn setRGBStrokeColor(self: *T, r: f64, g: f64, b: f64, alpha: f64) void {
+            c.CGContextSetRGBStrokeColor(
+                @ptrCast(self),
+                r,
+                g,
+                b,
+                alpha,
+            );
+        }
+
         pub fn setTextDrawingMode(self: *T, mode: TextDrawingMode) void {
             c.CGContextSetTextDrawingMode(
                 @ptrCast(self),

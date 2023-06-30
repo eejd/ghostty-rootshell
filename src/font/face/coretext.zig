@@ -151,31 +151,50 @@ pub const Face = struct {
         const width = glyph_width + (padding * 2);
         const height = glyph_height + (padding * 2);
 
+        // Settings that are specific to if we are rendering text or emoji.
+        const color: struct {
+            color: bool,
+            depth: u32,
+            space: *macos.graphics.ColorSpace,
+            context_opts: c_uint,
+        } = if (self.presentation == .text) .{
+            .color = false,
+            .depth = 1,
+            .space = try macos.graphics.ColorSpace.createDeviceGray(),
+            .context_opts = @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
+                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
+        } else .{
+            .color = true,
+            .depth = 4,
+            .space = try macos.graphics.ColorSpace.createDeviceRGB(),
+            .context_opts = @intFromEnum(macos.graphics.BitmapInfo.byte_order_32_little) |
+                @intFromEnum(macos.graphics.ImageAlphaInfo.premultiplied_first),
+        };
+        defer color.space.release();
+
         // Our buffer for rendering
         // TODO(perf): cache this buffer
-        // TODO(mitchellh): color is going to require a depth here
-        var buf = try alloc.alloc(u8, width * height);
+        var buf = try alloc.alloc(u8, width * height * color.depth);
         defer alloc.free(buf);
         @memset(buf, 0);
-
-        const space = try macos.graphics.ColorSpace.createDeviceGray();
-        defer space.release();
 
         const ctx = try macos.graphics.BitmapContext.create(
             buf,
             width,
             height,
             8,
-            width,
-            space,
-            @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
-                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
+            width * color.depth,
+            color.space,
+            color.context_opts,
         );
         defer ctx.release();
 
         // Perform an initial fill. This ensures that we don't have any
         // uninitialized pixels in the bitmap.
-        ctx.setGrayFillColor(0, 0);
+        if (color.color)
+            ctx.setRGBFillColor(1, 1, 1, 0)
+        else
+            ctx.setGrayFillColor(0, 0);
         ctx.fillRect(.{
             .origin = .{ .x = 0, .y = 0 },
             .size = .{
@@ -185,7 +204,7 @@ pub const Face = struct {
         });
 
         ctx.setAllowsFontSmoothing(true);
-        ctx.setShouldSmoothFonts(true);
+        ctx.setShouldSmoothFonts(true); // The amadeus "enthicken"
         ctx.setAllowsFontSubpixelQuantization(true);
         ctx.setShouldSubpixelQuantizeFonts(true);
         ctx.setAllowsFontSubpixelPositioning(true);
@@ -194,8 +213,13 @@ pub const Face = struct {
         ctx.setShouldAntialias(true);
 
         // Set our color for drawing
-        ctx.setGrayFillColor(1, 1);
-        ctx.setGrayStrokeColor(1, 1);
+        if (color.color) {
+            ctx.setRGBFillColor(1, 1, 1, 1);
+            ctx.setRGBStrokeColor(1, 1, 1, 1);
+        } else {
+            ctx.setGrayFillColor(1, 1);
+            ctx.setGrayStrokeColor(1, 1);
+        }
 
         // We want to render the glyphs at (0,0), but the glyphs themselves
         // are offset by bearings, so we have to undo those bearings in order
