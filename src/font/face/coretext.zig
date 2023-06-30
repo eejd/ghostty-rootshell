@@ -41,8 +41,10 @@ pub const Face = struct {
     /// because the font is loaded at a default size during discovery, and then
     /// adjusted to the final size for final load.
     pub fn initFontCopy(base: *macos.text.Font, size: font.face.DesiredSize) !Face {
-        // Create a copy
-        const ct_font = try base.copyWithAttributes(@floatFromInt(size.points), null);
+        // Create a copy. The copyWithAttributes docs say the size is in points,
+        // but we need to scale the points by the DPI and to do that we use our
+        // function called "pixels".
+        const ct_font = try base.copyWithAttributes(@floatFromInt(size.pixels()), null);
         errdefer ct_font.release();
 
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
