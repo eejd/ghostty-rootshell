@@ -175,9 +175,7 @@ pub const Face = struct {
         ctx.setShouldAntialias(true);
         ctx.setShouldSmoothFonts(true);
         ctx.setGrayFillColor(1, 1);
-        // With this set the text gets chunky. With it unset the text doesn't
-        // look right at small font sizes. Something isn't right.
-        // ctx.setGrayStrokeColor(1, 1);
+        ctx.setGrayStrokeColor(1, 1);
         ctx.setTextDrawingMode(.fill_stroke);
         ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
         ctx.setTextPosition(0, 0);
