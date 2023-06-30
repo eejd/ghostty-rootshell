@@ -144,7 +144,7 @@ pub const Face = struct {
         // TODO(mitchellh): color is going to require a depth here
         var buf = try alloc.alloc(u8, width * height);
         defer alloc.free(buf);
-        std.mem.set(u8, buf, 0);
+        @memset(buf, 0);
 
         const space = try macos.graphics.ColorSpace.createDeviceGray();
         defer space.release();
@@ -166,8 +166,8 @@ pub const Face = struct {
         ctx.fillRect(.{
             .origin = .{ .x = 0, .y = 0 },
             .size = .{
-                .width = @intToFloat(f64, width),
-                .height = @intToFloat(f64, height),
+                .width = @floatFromInt(width),
+                .height = @floatFromInt(height),
             },
         });
 

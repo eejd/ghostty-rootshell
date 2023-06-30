@@ -132,11 +132,11 @@ pub const Font = opaque {
     }
 
     pub fn getUnitsPerEm(self: *Font) u32 {
-        return c.CTFontGetUnitsPerEm(@ptrCast(c.CTFontRef, self));
+        return c.CTFontGetUnitsPerEm(@ptrCast(self));
     }
 
     pub fn getSize(self: *Font) f64 {
-        return c.CTFontGetSize(@ptrCast(c.CTFontRef, self));
+        return c.CTFontGetSize(@ptrCast(self));
     }
 };
 
