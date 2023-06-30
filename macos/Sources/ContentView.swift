@@ -5,11 +5,23 @@ struct ContentView: View {
     let ghostty: Ghostty.AppState
     
     // We need access to our app delegate to know if we're quitting or not.
-    @EnvironmentObject private var appDelegate: AppDelegate
+    // Make sure to use `@ObservedObject` so we can keep track of `appDelegate.confirmQuit`.
+    @ObservedObject var appDelegate: AppDelegate
+    
+    // We need this to report back up the app controller which surface in this view is focused.
+    let focusedSurfaceWrapper: FocusedSurfaceWrapper
     
     // We need access to our window to know if we're the key window to determine
     // if we show the quit confirmation or not.
     @State private var window: NSWindow?
+    
+    // This handles non-native fullscreen
+    @State private var fsHandler = FullScreenHandler()
+    
+    // This seems like a crutch after switchign from SwiftUI to AppKit lifecycle.
+    @FocusState private var focused: Bool
+    
+    @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
     
     var body: some View {
         switch ghostty.readiness {
@@ -35,12 +47,17 @@ struct ContentView: View {
             }, set: {
                 self.appDelegate.confirmQuit = $0
             })
-                                                        
+            
             Ghostty.TerminalSplit(onClose: Self.closeWindow)
                 .ghosttyApp(ghostty.app!)
                 .background(WindowAccessor(window: $window))
                 .onReceive(gotoTab) { onGotoTab(notification: $0) }
                 .onReceive(toggleFullscreen) { onToggleFullscreen(notification: $0) }
+                .focused($focused)
+                .onAppear { self.focused = true }
+                .onChange(of: focusedSurface) { newValue in
+                    self.focusedSurfaceWrapper.surface = newValue?.surface
+                }
                 .confirmationDialog(
                     "Quit Ghostty?",
                     isPresented: confirmQuitting) {
@@ -63,7 +80,7 @@ struct ContentView: View {
         guard let currentWindow = NSApp.keyWindow else { return }
         currentWindow.close()
     }
-        
+    
     private func onGotoTab(notification: SwiftUI.Notification) {
         // Notification center indiscriminately sends to every subscriber (makes sense)
         // but we only want to process this once. In order to process it once lets only
@@ -94,6 +111,8 @@ struct ContentView: View {
         guard let window = self.window else { return }
         guard window.isKeyWindow else { return }
         
-        window.toggleFullScreen(nil)
+        self.fsHandler.toggleFullscreen(window: window)
+        // After toggling fullscreen we need to focus the terminal again.
+        self.focused = true
     }
 }
