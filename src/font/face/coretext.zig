@@ -102,25 +102,41 @@ pub const Face = struct {
         glyph_index: u32,
         max_height: ?u16,
     ) !font.Glyph {
+        // We add a small pixel padding around the edge of our glyph so that
+        // anti-aliasing and smoothing doesn't cause us to pick up the pixels
+        // of another glyph when packed into the atlas.
+        const padding = 1;
+
         _ = max_height;
 
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
-        // Get the bounding rect for this glyph to determine the width/height
-        // of the bitmap. We use the rounded up width/height of the bounding rect.
-        var bounding: [1]macos.graphics.Rect = undefined;
-        const rect = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
-        const rasterized_left: i32 = @intFromFloat(@floor(rect.origin.x));
-        const rasterized_width: u32 = @intFromFloat(@ceil(
-            rect.origin.x - @floor(rect.origin.x) + rect.size.width,
-        ));
-        const rasterized_descent: i32 = @intFromFloat(@ceil(-rect.origin.y));
-        const rasterized_ascent: i32 = @intFromFloat(@ceil(rect.size.height + rect.origin.y));
-        const rasterized_height: u32 = @intCast(rasterized_descent + rasterized_ascent);
+        // Get the bounding rect for rendering this glyph.
+        const rect = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, null);
+
+        // The x/y that we render the glyph at. The Y value has to be flipped
+        // because our coordinates in 3D space are (0, 0) bottom left with
+        // +y being up.
+        const render_x = @floor(rect.origin.x);
+        const render_y = @ceil(-rect.origin.y);
+
+        // The ascent is the amount of pixels above the baseline this glyph
+        // is rendered. The ascent can be calculated by adding the full
+        // glyph height to the origin.
+        const glyph_ascent = @ceil(rect.size.height + rect.origin.y);
+
+        // The glyph height is basically rect.size.height but we do the
+        // ascent plus the descent because both are rounded elements that
+        // will make us more accurate.
+        const glyph_height: u32 = @intFromFloat(glyph_ascent + render_y);
+
+        // The glyph width is our advertised bounding with plus the rounding
+        // difference from our rendering X.
+        const glyph_width: u32 = @intFromFloat(@ceil(rect.size.width + (rect.origin.x - render_x)));
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
-        if (rasterized_width == 0 or rasterized_height == 0) return font.Glyph{
+        if (glyph_width == 0 or glyph_height == 0) return font.Glyph{
             .width = 0,
             .height = 0,
             .offset_x = 0,
@@ -130,10 +146,15 @@ pub const Face = struct {
             .advance_x = 0,
         };
 
+        // Width and height. Note the padding doubling is because we want
+        // the padding on both sides (top/bottom, left/right).
+        const width = glyph_width + (padding * 2);
+        const height = glyph_height + (padding * 2);
+
         // Our buffer for rendering
         // TODO(perf): cache this buffer
         // TODO(mitchellh): color is going to require a depth here
-        var buf = try alloc.alloc(u8, rasterized_width * rasterized_height);
+        var buf = try alloc.alloc(u8, width * height);
         defer alloc.free(buf);
         @memset(buf, 0);
 
@@ -142,10 +163,10 @@ pub const Face = struct {
 
         const ctx = try macos.graphics.BitmapContext.create(
             buf,
-            rasterized_width,
-            rasterized_height,
+            width,
+            height,
             8,
-            rasterized_width,
+            width,
             space,
             @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
                 @intFromEnum(macos.graphics.ImageAlphaInfo.none),
@@ -158,8 +179,8 @@ pub const Face = struct {
         ctx.fillRect(.{
             .origin = .{ .x = 0, .y = 0 },
             .size = .{
-                .width = @floatFromInt(rasterized_width),
-                .height = @floatFromInt(rasterized_height),
+                .width = @floatFromInt(width),
+                .height = @floatFromInt(height),
             },
         });
 
@@ -175,39 +196,44 @@ pub const Face = struct {
         // Set our color for drawing
         ctx.setGrayFillColor(1, 1);
         ctx.setGrayStrokeColor(1, 1);
-        // ctx.setTextDrawingMode(.fill_stroke);
-        // ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
-        // ctx.setTextPosition(0, 0);
 
         // We want to render the glyphs at (0,0), but the glyphs themselves
         // are offset by bearings, so we have to undo those bearings in order
-        // to get them to 0,0.
+        // to get them to 0,0. We also add the padding so that they render
+        // slightly off the edge of the bitmap.
         self.font.drawGlyphs(&glyphs, &.{
             .{
-                .x = -1 * @as(f64, @floatFromInt(rasterized_left)),
-                .y = @as(f64, @floatFromInt(rasterized_descent)),
+                .x = padding + (-1 * render_x),
+                .y = padding + render_y,
             },
         }, ctx);
 
-        const region = try atlas.reserve(alloc, rasterized_width, rasterized_height);
+        const region = try atlas.reserve(alloc, width, height);
         atlas.set(region, buf);
 
-        std.log.warn("FONT FONT FONT rasterized_left={} rasterized_width={} rasterized_descent={} rasterized_ascent={} rasterized_height={}", .{
-            rasterized_left,
-            rasterized_width,
-            rasterized_descent,
-            rasterized_ascent,
-            rasterized_height,
-        });
+        const offset_y: i32 = offset_y: {
+            // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
+            // We need to calculate our baseline from the bottom of a cell.
+            const baseline_from_bottom = self.metrics.cell_height - self.metrics.cell_baseline;
+
+            // Next we offset our baseline by the bearing in the font. We
+            // ADD here because CoreText y is UP.
+            const baseline_with_offset = baseline_from_bottom + glyph_ascent;
+
+            break :offset_y @intFromFloat(@ceil(baseline_with_offset));
+        };
 
         return .{
-            .width = @intCast(rasterized_width),
-            .height = @intCast(rasterized_height),
+            .width = glyph_width,
+            .height = glyph_height,
+            .offset_x = @intFromFloat(render_x),
+            .offset_y = offset_y,
+            .atlas_x = region.x + padding,
+            .atlas_y = region.y + padding,
+
+            // This is not used, so we don't bother calculating it. If we
+            // ever need it, we can calculate it using getAdvancesForGlyph.
             .advance_x = 0,
-            .offset_x = @intCast(rasterized_left),
-            .offset_y = @intCast(rasterized_ascent),
-            .atlas_x = @intCast(region.x),
-            .atlas_y = @intCast(region.y),
         };
     }
 
