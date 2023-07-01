@@ -231,7 +231,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font regular: {s}", .{try face.name()});
                     try group.addFace(alloc, .regular, face);
-                }
+                } else std.log.warn("font-family not found: {s}", .{family});
             }
             if (config.@"font-family-bold") |family| {
                 var disco_it = try disco.discover(.{
@@ -243,7 +243,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font bold: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold, face);
-                }
+                } else std.log.warn("font-family-bold not found: {s}", .{family});
             }
             if (config.@"font-family-italic") |family| {
                 var disco_it = try disco.discover(.{
@@ -255,7 +255,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font italic: {s}", .{try face.name()});
                     try group.addFace(alloc, .italic, face);
-                }
+                } else std.log.warn("font-family-italic not found: {s}", .{family});
             }
             if (config.@"font-family-bold-italic") |family| {
                 var disco_it = try disco.discover(.{
@@ -268,7 +268,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font bold+italic: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold_italic, face);
-                }
+                } else std.log.warn("font-family-bold-italic not found: {s}", .{family});
             }
         }
 

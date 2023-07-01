@@ -26,6 +26,27 @@ pub fn Context(comptime T: type) type {
             );
         }
 
+        pub fn setAllowsFontSmoothing(self: *T, v: bool) void {
+            c.CGContextSetAllowsFontSmoothing(
+                @ptrCast(self),
+                v,
+            );
+        }
+
+        pub fn setAllowsFontSubpixelPositioning(self: *T, v: bool) void {
+            c.CGContextSetAllowsFontSubpixelPositioning(
+                @ptrCast(self),
+                v,
+            );
+        }
+
+        pub fn setAllowsFontSubpixelQuantization(self: *T, v: bool) void {
+            c.CGContextSetAllowsFontSubpixelQuantization(
+                @ptrCast(self),
+                v,
+            );
+        }
+
         pub fn setShouldAntialias(self: *T, v: bool) void {
             c.CGContextSetShouldAntialias(
                 @ptrCast(self),
@@ -35,6 +56,20 @@ pub fn Context(comptime T: type) type {
 
         pub fn setShouldSmoothFonts(self: *T, v: bool) void {
             c.CGContextSetShouldSmoothFonts(
+                @ptrCast(self),
+                v,
+            );
+        }
+
+        pub fn setShouldSubpixelPositionFonts(self: *T, v: bool) void {
+            c.CGContextSetShouldSubpixelPositionFonts(
+                @ptrCast(self),
+                v,
+            );
+        }
+
+        pub fn setShouldSubpixelQuantizeFonts(self: *T, v: bool) void {
+            c.CGContextSetShouldSubpixelQuantizeFonts(
                 @ptrCast(self),
                 v,
             );
@@ -58,6 +93,16 @@ pub fn Context(comptime T: type) type {
 
         pub fn setRGBFillColor(self: *T, r: f64, g: f64, b: f64, alpha: f64) void {
             c.CGContextSetRGBFillColor(
+                @ptrCast(self),
+                r,
+                g,
+                b,
+                alpha,
+            );
+        }
+
+        pub fn setRGBStrokeColor(self: *T, r: f64, g: f64, b: f64, alpha: f64) void {
+            c.CGContextSetRGBStrokeColor(
                 @ptrCast(self),
                 r,
                 g,

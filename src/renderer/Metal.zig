@@ -129,6 +129,7 @@ const GPUCellMode = enum(u8) {
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
+    font_thicken: bool,
     cursor_color: ?terminal.color.RGB,
     background: terminal.color.RGB,
     foreground: terminal.color.RGB,
@@ -142,6 +143,8 @@ pub const DerivedConfig = struct {
         _ = alloc_gpa;
 
         return .{
+            .font_thicken = config.@"font-thicken",
+
             .cursor_color = if (config.@"cursor-color") |col|
                 col.toTerminalRGB()
             else
@@ -738,6 +741,14 @@ fn drawCells(
 
 /// Update the configuration.
 pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
+    // If font thickening settings change, we need to reset our
+    // font texture completely because we need to re-render the glyphs.
+    if (self.config.font_thicken != config.font_thicken) {
+        self.font_group.reset();
+        self.font_group.atlas_greyscale.clear();
+        self.font_group.atlas_color.clear();
+    }
+
     self.config = config.*;
 }
 
@@ -996,7 +1007,10 @@ pub fn updateCell(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index,
-            @intFromFloat(@ceil(self.cell_size.height)),
+            .{
+                .max_height = @intFromFloat(@ceil(self.cell_size.height)),
+                .thicken = self.config.font_thicken,
+            },
         );
 
         // If we're rendering a color font, we use the color atlas
@@ -1031,7 +1045,7 @@ pub fn updateCell(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
-            null,
+            .{},
         );
 
         const color = if (cell.attrs.underline_color) cell.underline_fg else colors.fg;
@@ -1083,7 +1097,7 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
-        null,
+        .{},
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
         return;

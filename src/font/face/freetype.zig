@@ -124,7 +124,7 @@ pub const Face = struct {
         alloc: Allocator,
         atlas: *font.Atlas,
         glyph_index: u32,
-        max_height: ?u16,
+        opts: font.face.RenderOptions,
     ) !Glyph {
         // If our glyph has color, we want to render the color
         try self.face.loadGlyph(glyph_index, .{
@@ -188,7 +188,7 @@ pub const Face = struct {
         // and copy the atlas.
         const bitmap_original = bitmap_converted orelse bitmap_ft;
         const bitmap_resized: ?freetype.c.struct_FT_Bitmap_ = resized: {
-            const max = max_height orelse break :resized null;
+            const max = opts.max_height orelse break :resized null;
             const bm = bitmap_original;
             if (bm.rows <= max) break :resized null;
 
@@ -327,6 +327,14 @@ pub const Face = struct {
             // Note: we add here because our X/Y is actually reversed, adding goes UP.
             break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intFromFloat(self.metrics.cell_baseline));
         };
+
+        // log.warn("renderGlyph width={} height={} offset_x={} offset_y={} glyph_metrics={}", .{
+        //     tgt_w,
+        //     tgt_h,
+        //     glyph_metrics.bitmap_left,
+        //     offset_y,
+        //     glyph_metrics,
+        // });
 
         // Store glyph metadata
         return Glyph{
@@ -514,16 +522,16 @@ test {
     // Generate all visible ASCII
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
-        _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?, null);
+        _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex(i).?, .{});
     }
 
     // Test resizing
     {
-        const g1 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, null);
+        const g1 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, .{});
         try testing.expectEqual(@as(u32, 11), g1.height);
 
         try ft_font.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
-        const g2 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, null);
+        const g2 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, .{});
         try testing.expectEqual(@as(u32, 21), g2.height);
     }
 }
@@ -543,11 +551,13 @@ test "color emoji" {
 
     try testing.expectEqual(Presentation.emoji, ft_font.presentation);
 
-    _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, null);
+    _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, .{});
 
     // resize
     {
-        const glyph = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, 24);
+        const glyph = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, .{
+            .max_height = 24,
+        });
         try testing.expectEqual(@as(u32, 24), glyph.height);
     }
 }
@@ -602,5 +612,5 @@ test "mono to rgba" {
     defer ft_font.deinit();
 
     // glyph 3 is mono in Noto
-    _ = try ft_font.renderGlyph(alloc, &atlas, 3, null);
+    _ = try ft_font.renderGlyph(alloc, &atlas, 3, .{});
 }

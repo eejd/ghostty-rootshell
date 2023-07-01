@@ -122,7 +122,7 @@ pub fn renderGlyph(
     alloc: Allocator,
     index: Group.FontIndex,
     glyph_index: u32,
-    max_height: ?u16,
+    opts: font.face.RenderOptions,
 ) !Glyph {
     const key: GlyphKey = .{ .index = index, .glyph = glyph_index };
     const gop = try self.glyphs.getOrPut(alloc, key);
@@ -140,7 +140,7 @@ pub fn renderGlyph(
         atlas,
         index,
         glyph_index,
-        max_height,
+        opts,
     ) catch |err| switch (err) {
         // If the atlas is full, we resize it
         error.AtlasFull => blk: {
@@ -150,7 +150,7 @@ pub fn renderGlyph(
                 atlas,
                 index,
                 glyph_index,
-                max_height,
+                opts,
             );
         },
 
@@ -203,7 +203,7 @@ test {
             alloc,
             idx,
             glyph_index,
-            null,
+            .{},
         );
     }
 
@@ -225,7 +225,7 @@ test {
                 alloc,
                 idx,
                 glyph_index,
-                null,
+                .{},
             );
         }
     }
@@ -300,7 +300,9 @@ pub const Wasm = struct {
     ) !*Glyph {
         const idx = @as(Group.FontIndex, @bitCast(@as(u8, @intCast(idx_))));
         const max_height = if (max_height_ <= 0) null else max_height_;
-        const glyph = try self.renderGlyph(alloc, idx, cp, max_height);
+        const glyph = try self.renderGlyph(alloc, idx, cp, .{
+            .max_height = max_height,
+        });
 
         var result = try alloc.create(Glyph);
         errdefer alloc.destroy(result);
@@ -352,7 +354,7 @@ test "resize" {
             alloc,
             idx,
             glyph_index,
-            null,
+            .{},
         );
 
         try testing.expectEqual(@as(u32, 11), glyph.height);
@@ -368,7 +370,7 @@ test "resize" {
             alloc,
             idx,
             glyph_index,
-            null,
+            .{},
         );
 
         try testing.expectEqual(@as(u32, 21), glyph.height);

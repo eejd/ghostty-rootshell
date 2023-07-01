@@ -30,29 +30,11 @@ pub const Line = opaque {
         self: *Line,
         opts: LineBoundsOptions,
     ) graphics.Rect {
-        // return @bitCast(c.CGRect, c.CTLineGetBoundsWithOptions(
-        //     @ptrCast(c.CTLineRef, self),
-        //     opts.cval(),
-        // ));
-
-        // We have to use a custom C wrapper here because there is some
-        // C ABI issue happening.
-        var result: graphics.Rect = undefined;
-        zig_cabi_CTLineGetBoundsWithOptions(
+        return @bitCast(c.CTLineGetBoundsWithOptions(
             @ptrCast(self),
             opts.cval(),
-            @ptrCast(&result),
-        );
-
-        return result;
+        ));
     }
-
-    // See getBoundsWithOptions
-    extern "c" fn zig_cabi_CTLineGetBoundsWithOptions(
-        c.CTLineRef,
-        c.CTLineBoundsOptions,
-        *c.CGRect,
-    ) void;
 
     pub fn getTypographicBounds(
         self: *Line,

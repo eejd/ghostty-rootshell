@@ -5,6 +5,8 @@ const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
 
+const log = std.log.scoped(.font_face);
+
 pub const Face = struct {
     /// Our font face
     font: *macos.text.Font,
@@ -41,8 +43,10 @@ pub const Face = struct {
     /// because the font is loaded at a default size during discovery, and then
     /// adjusted to the final size for final load.
     pub fn initFontCopy(base: *macos.text.Font, size: font.face.DesiredSize) !Face {
-        // Create a copy
-        const ct_font = try base.copyWithAttributes(@floatFromInt(size.points), null);
+        // Create a copy. The copyWithAttributes docs say the size is in points,
+        // but we need to scale the points by the DPI and to do that we use our
+        // function called "pixels".
+        const ct_font = try base.copyWithAttributes(@floatFromInt(size.pixels()), null);
         errdefer ct_font.release();
 
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
@@ -93,39 +97,41 @@ pub const Face = struct {
         return @intCast(glyphs[0]);
     }
 
-    /// Render a glyph using the glyph index. The rendered glyph is stored in the
-    /// given texture atlas.
     pub fn renderGlyph(
         self: Face,
         alloc: Allocator,
         atlas: *font.Atlas,
         glyph_index: u32,
-        max_height: ?u16,
+        opts: font.face.RenderOptions,
     ) !font.Glyph {
-        // We add a small pixel padding around the edge of our glyph so that
-        // anti-aliasing and smoothing doesn't cause us to pick up the pixels
-        // of another glyph when packed into the atlas.
-        const padding = 1;
-
-        _ = max_height;
-
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
-        // Get the bounding rect for this glyph to determine the width/height
-        // of the bitmap. We use the rounded up width/height of the bounding rect.
-        var bounding: [1]macos.graphics.Rect = undefined;
-        _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
-        const glyph_width = @as(u32, @intFromFloat(@ceil(bounding[0].size.width)));
-        const glyph_height = @as(u32, @intFromFloat(@ceil(bounding[0].size.height)));
+        // Get the bounding rect for rendering this glyph.
+        const rect = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, null);
 
-        // Width and height. Note the padding doubling is because we want
-        // the padding on both sides (top/bottom, left/right).
-        const width = glyph_width + (padding * 2);
-        const height = glyph_height + (padding * 2);
+        // The x/y that we render the glyph at. The Y value has to be flipped
+        // because our coordinates in 3D space are (0, 0) bottom left with
+        // +y being up.
+        const render_x = @floor(rect.origin.x);
+        const render_y = @ceil(-rect.origin.y);
+
+        // The ascent is the amount of pixels above the baseline this glyph
+        // is rendered. The ascent can be calculated by adding the full
+        // glyph height to the origin.
+        const glyph_ascent = @ceil(rect.size.height + rect.origin.y);
+
+        // The glyph height is basically rect.size.height but we do the
+        // ascent plus the descent because both are rounded elements that
+        // will make us more accurate.
+        const height: u32 = @intFromFloat(glyph_ascent + render_y);
+
+        // The glyph width is our advertised bounding with plus the rounding
+        // difference from our rendering X.
+        const width: u32 = @intFromFloat(@ceil(rect.size.width + (rect.origin.x - render_x)));
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
-        if (glyph_width == 0) return font.Glyph{
+        if (width == 0 or height == 0) return font.Glyph{
             .width = 0,
             .height = 0,
             .offset_x = 0,
@@ -135,77 +141,157 @@ pub const Face = struct {
             .advance_x = 0,
         };
 
-        // Get the advance that we need for the glyph
-        var advances: [1]macos.graphics.Size = undefined;
-        _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
+        // Settings that are specific to if we are rendering text or emoji.
+        const color: struct {
+            color: bool,
+            depth: u32,
+            space: *macos.graphics.ColorSpace,
+            context_opts: c_uint,
+        } = if (self.presentation == .text) .{
+            .color = false,
+            .depth = 1,
+            .space = try macos.graphics.ColorSpace.createDeviceGray(),
+            .context_opts = @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
+                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
+        } else .{
+            .color = true,
+            .depth = 4,
+            .space = try macos.graphics.ColorSpace.createDeviceRGB(),
+            .context_opts = @intFromEnum(macos.graphics.BitmapInfo.byte_order_32_little) |
+                @intFromEnum(macos.graphics.ImageAlphaInfo.premultiplied_first),
+        };
+        defer color.space.release();
 
-        // Our buffer for rendering
-        // TODO(perf): cache this buffer
-        // TODO(mitchellh): color is going to require a depth here
-        var buf = try alloc.alloc(u8, width * height);
+        // This is just a safety check.
+        if (atlas.format.depth() != color.depth) {
+            log.warn("font atlas color depth doesn't equal font color depth atlas={} font={}", .{
+                atlas.format.depth(),
+                color.depth,
+            });
+            return error.InvalidAtlasFormat;
+        }
+
+        // Our buffer for rendering. We could cache this but glyph rasterization
+        // usually stabilizes pretty quickly and is very infrequent so I think
+        // the allocation overhead is acceptable compared to the cost of
+        // caching it forever or having to deal with a cache lifetime.
+        var buf = try alloc.alloc(u8, width * height * color.depth);
         defer alloc.free(buf);
-        std.mem.set(u8, buf, 0);
-
-        const space = try macos.graphics.ColorSpace.createDeviceGray();
-        defer space.release();
+        @memset(buf, 0);
 
         const ctx = try macos.graphics.BitmapContext.create(
             buf,
             width,
             height,
             8,
-            width,
-            space,
-            @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
-                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
+            width * color.depth,
+            color.space,
+            color.context_opts,
         );
         defer ctx.release();
 
+        // Perform an initial fill. This ensures that we don't have any
+        // uninitialized pixels in the bitmap.
+        if (color.color)
+            ctx.setRGBFillColor(1, 1, 1, 0)
+        else
+            ctx.setGrayFillColor(0, 0);
+        ctx.fillRect(.{
+            .origin = .{ .x = 0, .y = 0 },
+            .size = .{
+                .width = @floatFromInt(width),
+                .height = @floatFromInt(height),
+            },
+        });
+
+        ctx.setAllowsFontSmoothing(true);
+        ctx.setShouldSmoothFonts(opts.thicken); // The amadeus "enthicken"
+        ctx.setAllowsFontSubpixelQuantization(true);
+        ctx.setShouldSubpixelQuantizeFonts(true);
+        ctx.setAllowsFontSubpixelPositioning(true);
+        ctx.setShouldSubpixelPositionFonts(true);
         ctx.setAllowsAntialiasing(true);
         ctx.setShouldAntialias(true);
-        ctx.setShouldSmoothFonts(true);
-        ctx.setGrayFillColor(1, 1);
-        ctx.setGrayStrokeColor(1, 1);
-        ctx.setTextDrawingMode(.fill_stroke);
-        ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
-        ctx.setTextPosition(0, 0);
+
+        // Set our color for drawing
+        if (color.color) {
+            ctx.setRGBFillColor(1, 1, 1, 1);
+            ctx.setRGBStrokeColor(1, 1, 1, 1);
+        } else {
+            ctx.setGrayFillColor(1, 1);
+            ctx.setGrayStrokeColor(1, 1);
+        }
 
         // We want to render the glyphs at (0,0), but the glyphs themselves
         // are offset by bearings, so we have to undo those bearings in order
-        // to get them to 0,0.
-        var pos = [_]macos.graphics.Point{.{
-            .x = padding + (-1 * bounding[0].origin.x),
-            .y = padding + (-1 * bounding[0].origin.y),
-        }};
-        self.font.drawGlyphs(&glyphs, &pos, ctx);
+        // to get them to 0,0. We also add the padding so that they render
+        // slightly off the edge of the bitmap.
+        self.font.drawGlyphs(&glyphs, &.{
+            .{
+                .x = -1 * render_x,
+                .y = render_y,
+            },
+        }, ctx);
 
-        const region = try atlas.reserve(alloc, width, height);
+        const region = region: {
+            // We need to add a 1px padding to the font so that we don't
+            // get fuzzy issues when blending textures.
+            const padding = 1;
+
+            // Get the full padded region
+            var region = try atlas.reserve(
+                alloc,
+                width + (padding * 2), // * 2 because left+right
+                height + (padding * 2), // * 2 because top+bottom
+            );
+
+            // Modify the region so that we remove the padding so that
+            // we write to the non-zero location. The data in an Altlas
+            // is always initialized to zero (Atlas.clear) so we don't
+            // need to worry about zero-ing that.
+            region.x += padding;
+            region.y += padding;
+            region.width -= padding * 2;
+            region.height -= padding * 2;
+            break :region region;
+        };
         atlas.set(region, buf);
 
-        const offset_y = offset_y: {
+        const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
             const baseline_from_bottom = self.metrics.cell_height - self.metrics.cell_baseline;
 
             // Next we offset our baseline by the bearing in the font. We
             // ADD here because CoreText y is UP.
-            const baseline_with_offset = baseline_from_bottom + bounding[0].origin.y;
+            const baseline_with_offset = baseline_from_bottom + glyph_ascent;
 
-            // Finally, since we're rendering at (0, 0), the glyph will render
-            // by default below the line. We have to add height (glyph height)
-            // so that we shift the glyph UP to be on the line, then we add our
-            // baseline offset to move the glyph further UP to match the baseline.
-            break :offset_y @as(i32, @intCast(height)) + @as(i32, @intFromFloat(@ceil(baseline_with_offset)));
+            break :offset_y @intFromFloat(@ceil(baseline_with_offset));
         };
 
-        return font.Glyph{
-            .width = glyph_width,
-            .height = glyph_height,
-            .offset_x = @intFromFloat(@ceil(bounding[0].origin.x)),
+        // log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
+        //     rect,
+        //     width,
+        //     height,
+        //     render_x,
+        //     render_y,
+        //     offset_y,
+        //     glyph_ascent,
+        //     self.metrics.cell_height,
+        //     self.metrics.cell_baseline,
+        // });
+
+        return .{
+            .width = width,
+            .height = height,
+            .offset_x = @intFromFloat(render_x),
             .offset_y = offset_y,
-            .atlas_x = region.x + padding,
-            .atlas_y = region.y + padding,
-            .advance_x = @floatCast(advances[0].width),
+            .atlas_x = region.x,
+            .atlas_y = region.y,
+
+            // This is not used, so we don't bother calculating it. If we
+            // ever need it, we can calculate it using getAdvancesForGlyph.
+            .advance_x = 0,
         };
     }
 
@@ -273,8 +359,32 @@ pub const Face = struct {
             defer fs.release();
 
             // Create a rectangle to fit all of this and create a frame of it.
+            // The rectangle needs to fit all of our text so we use some
+            // heuristics based on cell_width to calculate it. We are
+            // VERY generous with our rect here because the text must fit.
+            const path_rect = rect: {
+                // The cell width at this point is valid, so let's make it
+                // fit 50 characters wide.
+                const width = cell_width * 50;
+
+                // We are trying to calculate height so we don't know how
+                // high to make our frame. Well-behaved fonts will probably
+                // not have a height greater than 4x the width, so let's just
+                // generously use that metric to ensure we fit the frame.
+                const big_cell_height = cell_width * 4;
+
+                // If we are fitting about ~50 characters per row, we need
+                // unit.len / 50 rows to fit all of our text.
+                const rows = (unit.len / 50) * 2;
+
+                // Our final height is the number of rows times our generous height.
+                const height = rows * big_cell_height;
+
+                break :rect macos.graphics.Rect.init(10, 10, width, height);
+            };
+
             const path = try macos.graphics.MutablePath.create();
-            path.addRect(null, macos.graphics.Rect.init(10, 10, 200, 200));
+            path.addRect(null, path_rect);
             defer path.release();
             const frame = try fs.createFrame(
                 macos.foundation.Range.init(0, 0),
@@ -292,38 +402,53 @@ pub const Face = struct {
             const lines = frame.getLines();
             const line = lines.getValueAtIndex(macos.text.Line, 0);
 
-            // NOTE(mitchellh): For some reason, CTLineGetBoundsWithOptions
-            // returns garbage and I can't figure out why... so we use the
-            // raw ascender.
+            // Get the bounds of the line to determine the ascent.
+            const bounds = line.getBoundsWithOptions(.{ .exclude_leading = true });
+            const bounds_ascent = bounds.size.height + bounds.origin.y;
+            const baseline = @floor(bounds_ascent + 0.5);
 
-            var ascent: f64 = 0;
-            var descent: f64 = 0;
-            var leading: f64 = 0;
-            _ = line.getTypographicBounds(&ascent, &descent, &leading);
+            // This is an alternate approach to the above to calculate the
+            // baseline by simply using the ascender. Using this approach led
+            // to less accurate results, but I'm leaving it here for reference.
+            // var ascent: f64 = 0;
+            // var descent: f64 = 0;
+            // var leading: f64 = 0;
+            // _ = line.getTypographicBounds(&ascent, &descent, &leading);
             //std.log.warn("ascent={} descent={} leading={}", .{ ascent, descent, leading });
 
             break :metrics .{
                 .height = @floatCast(points[0].y - points[1].y),
-                .ascent = @floatCast(ascent),
+                .ascent = @floatCast(baseline),
             };
         };
 
         // All of these metrics are based on our layout above.
         const cell_height = layout_metrics.height;
         const cell_baseline = layout_metrics.ascent;
-        const underline_position = @ceil(layout_metrics.ascent -
-            @as(f32, @floatCast(ct_font.getUnderlinePosition())));
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
         const strikethrough_position = cell_baseline * 0.6;
         const strikethrough_thickness = underline_thickness;
 
-        // std.log.warn("width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
+        // Underline position is based on our baseline because the font advertised
+        // underline position is based on a zero baseline. We add a small amount
+        // to the underline position to make it look better.
+        const underline_position = @ceil(cell_baseline -
+            @as(f32, @floatCast(ct_font.getUnderlinePosition())) +
+            1);
+
+        // Note: is this useful?
+        // const units_per_em = ct_font.getUnitsPerEm();
+        // const units_per_point = @intToFloat(f64, units_per_em) / ct_font.getSize();
+
+        // std.log.warn("font size size={d}", .{ct_font.getSize()});
+        // std.log.warn("font metrics width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
         //     cell_width,
         //     cell_height,
         //     cell_baseline,
         //     underline_position,
         //     underline_thickness,
         // });
+
         return font.face.Metrics{
             .cell_width = cell_width,
             .cell_height = cell_height,
@@ -359,7 +484,7 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, null);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
 
@@ -403,6 +528,6 @@ test "in-memory" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, null);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
