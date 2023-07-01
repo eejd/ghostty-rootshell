@@ -437,14 +437,15 @@ pub const Face = struct {
         // const units_per_em = ct_font.getUnitsPerEm();
         // const units_per_point = @intToFloat(f64, units_per_em) / ct_font.getSize();
 
-        std.log.warn("font size size={d}", .{ct_font.getSize()});
-        std.log.warn("font metrics width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
-            cell_width,
-            cell_height,
-            cell_baseline,
-            underline_position,
-            underline_thickness,
-        });
+        // std.log.warn("font size size={d}", .{ct_font.getSize()});
+        // std.log.warn("font metrics width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
+        //     cell_width,
+        //     cell_height,
+        //     cell_baseline,
+        //     underline_position,
+        //     underline_thickness,
+        // });
+
         return font.face.Metrics{
             .cell_width = cell_width,
             .cell_height = cell_height,
