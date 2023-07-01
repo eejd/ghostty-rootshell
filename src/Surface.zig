@@ -1337,6 +1337,7 @@ pub fn scrollCallback(
         self.mouse.pending_scroll_y = poff - (amount * cell_size);
 
         break :y .{
+            .sign = if (yoff > 0) 1 else -1,
             .delta_unsigned = @intFromFloat(@fabs(amount)),
             .delta = @intFromFloat(amount),
         };
@@ -1420,13 +1421,13 @@ pub fn scrollCallback(
 
         // If we're scrolling up or down, then send a mouse event. This requires
         // a lock since we read terminal state.
-        if (yoff != 0) {
+        if (y.delta != 0) {
             const pos = try self.rt_surface.getCursorPos();
-            try self.mouseReport(if (yoff < 0) .five else .four, .press, self.mouse.mods, pos);
+            try self.mouseReport(if (y.sign < 0) .five else .four, .press, self.mouse.mods, pos);
         }
-        if (xoff != 0) {
+        if (x.delta != 0) {
             const pos = try self.rt_surface.getCursorPos();
-            try self.mouseReport(if (xoff > 0) .six else .seven, .press, self.mouse.mods, pos);
+            try self.mouseReport(if (x.delta > 0) .six else .seven, .press, self.mouse.mods, pos);
         }
     }
 
