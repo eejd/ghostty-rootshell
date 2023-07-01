@@ -213,11 +213,6 @@ pub fn build(b: *std.Build) !void {
     {
         exe.addOptions("build_options", exe_options);
 
-        if (target.isDarwin()) {
-            // See the comment in this file
-            exe.addCSourceFile("src/renderer/metal_workaround.c", &.{});
-        }
-
         // Add the shared dependencies
         _ = try addDeps(b, exe, static);
 

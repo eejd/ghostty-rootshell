@@ -1176,54 +1176,27 @@ fn syncAtlasTexture(device: objc.Object, atlas: *const font.Atlas, texture: *obj
         texture.* = try initAtlasTexture(device, atlas);
     }
 
-    // Workaround for: https://github.com/ziglang/zig/issues/13598
-    ghostty_metal_replaceregion(
-        texture.value,
-        objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:").value,
-        MTLRegion{
-            .origin = .{ .x = 0, .y = 0, .z = 0 },
-            .size = .{
-                .width = @intCast(atlas.size),
-                .height = @intCast(atlas.size),
-                .depth = 1,
-            },
-        },
-        0,
-        atlas.data.ptr,
-        @as(c_ulong, atlas.format.depth() * atlas.size),
-    );
-
     // Once the above linked issue is fixed, this is what we actually
     // want to do:
     //
-    // texture.msgSend(
-    //     void,
-    //     objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
-    //     .{
-    //         MTLRegion{
-    //             .origin = .{ .x = 0, .y = 0, .z = 0 },
-    //             .size = .{
-    //                 .width = @intCast(c_ulong, atlas.size),
-    //                 .height = @intCast(c_ulong, atlas.size),
-    //                 .depth = 1,
-    //             },
-    //         },
-    //         @as(c_ulong, 0),
-    //         atlas.data.ptr,
-    //         @as(c_ulong, atlas.format.depth() * atlas.size),
-    //     },
-    // );
-
+    texture.msgSend(
+        void,
+        objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
+        .{
+            MTLRegion{
+                .origin = .{ .x = 0, .y = 0, .z = 0 },
+                .size = .{
+                    .width = @intCast(atlas.size),
+                    .height = @intCast(atlas.size),
+                    .depth = 1,
+                },
+            },
+            @as(c_ulong, 0),
+            atlas.data.ptr,
+            @as(c_ulong, atlas.format.depth() * atlas.size),
+        },
+    );
 }
-
-extern "c" fn ghostty_metal_replaceregion(
-    objc.c.id,
-    objc.c.SEL,
-    MTLRegion,
-    c_ulong,
-    *anyopaque,
-    c_ulong,
-) void;
 
 /// Initialize the shader library.
 fn initLibrary(device: objc.Object, data: []const u8) !objc.Object {
