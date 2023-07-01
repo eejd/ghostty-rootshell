@@ -402,9 +402,7 @@ pub const Face = struct {
             const lines = frame.getLines();
             const line = lines.getValueAtIndex(macos.text.Line, 0);
 
-            // NOTE(mitchellh): For some reason, CTLineGetBoundsWithOptions
-            // returns garbage and I can't figure out why... so we use the
-            // raw ascender.
+            // Get the bounds of the line to determine the ascent.
             const bounds = line.getBoundsWithOptions(.{ .exclude_leading = true });
             const bounds_ascent = bounds.size.height + bounds.origin.y;
             const baseline = @floor(bounds_ascent + 0.5);
