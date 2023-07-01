@@ -258,18 +258,6 @@ pub const Face = struct {
         atlas.set(region, buf);
 
         const offset_y: i32 = offset_y: {
-            // For non-scalable colorized fonts, we assume they are pictographic
-            // and just center the glyph. So far this has only applied to emoji
-            // fonts. Emoji fonts don't always report a correct ascender/descender
-            // (mainly Apple Emoji) so we just center them. Also, since emoji font
-            // aren't scalable, cell_baseline is incorrect anyways.
-            //
-            // NOTE(mitchellh): I don't know if this is right, this doesn't
-            // _feel_ right, but it makes all my limited test cases work.
-            if (color.color) {
-                break :offset_y @intFromFloat(self.metrics.cell_height);
-            }
-
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
             const baseline_from_bottom = self.metrics.cell_height - self.metrics.cell_baseline;
@@ -281,17 +269,17 @@ pub const Face = struct {
             break :offset_y @intFromFloat(@ceil(baseline_with_offset));
         };
 
-        log.warn("FONT FONT FONT rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
-            rect,
-            width,
-            height,
-            render_x,
-            render_y,
-            offset_y,
-            glyph_ascent,
-            self.metrics.cell_height,
-            self.metrics.cell_baseline,
-        });
+        // log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
+        //     rect,
+        //     width,
+        //     height,
+        //     render_x,
+        //     render_y,
+        //     offset_y,
+        //     glyph_ascent,
+        //     self.metrics.cell_height,
+        //     self.metrics.cell_baseline,
+        // });
 
         return .{
             .width = width,

@@ -328,6 +328,14 @@ pub const Face = struct {
             break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intFromFloat(self.metrics.cell_baseline));
         };
 
+        // log.warn("renderGlyph width={} height={} offset_x={} offset_y={} glyph_metrics={}", .{
+        //     tgt_w,
+        //     tgt_h,
+        //     glyph_metrics.bitmap_left,
+        //     offset_y,
+        //     glyph_metrics,
+        // });
+
         // Store glyph metadata
         return Glyph{
             .width = tgt_w,
