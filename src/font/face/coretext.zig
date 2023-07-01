@@ -104,11 +104,6 @@ pub const Face = struct {
         glyph_index: u32,
         max_height: ?u16,
     ) !font.Glyph {
-        // We add a small pixel padding around the edge of our glyph so that
-        // anti-aliasing and smoothing doesn't cause us to pick up the pixels
-        // of another glyph when packed into the atlas.
-        const padding = 1;
-
         _ = max_height;
 
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
@@ -130,15 +125,15 @@ pub const Face = struct {
         // The glyph height is basically rect.size.height but we do the
         // ascent plus the descent because both are rounded elements that
         // will make us more accurate.
-        const glyph_height: u32 = @intFromFloat(glyph_ascent + render_y);
+        const height: u32 = @intFromFloat(glyph_ascent + render_y);
 
         // The glyph width is our advertised bounding with plus the rounding
         // difference from our rendering X.
-        const glyph_width: u32 = @intFromFloat(@ceil(rect.size.width + (rect.origin.x - render_x)));
+        const width: u32 = @intFromFloat(@ceil(rect.size.width + (rect.origin.x - render_x)));
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
-        if (glyph_width == 0 or glyph_height == 0) return font.Glyph{
+        if (width == 0 or height == 0) return font.Glyph{
             .width = 0,
             .height = 0,
             .offset_x = 0,
@@ -147,11 +142,6 @@ pub const Face = struct {
             .atlas_y = 0,
             .advance_x = 0,
         };
-
-        // Width and height. Note the padding doubling is because we want
-        // the padding on both sides (top/bottom, left/right).
-        const width = glyph_width + (padding * 2);
-        const height = glyph_height + (padding * 2);
 
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {
@@ -238,12 +228,33 @@ pub const Face = struct {
         // slightly off the edge of the bitmap.
         self.font.drawGlyphs(&glyphs, &.{
             .{
-                .x = padding + (-1 * render_x),
-                .y = padding + render_y,
+                .x = -1 * render_x,
+                .y = render_y,
             },
         }, ctx);
 
-        const region = try atlas.reserve(alloc, width, height);
+        const region = region: {
+            // We need to add a 1px padding to the font so that we don't
+            // get fuzzy issues when blending textures.
+            const padding = 1;
+
+            // Get the full padded region
+            var region = try atlas.reserve(
+                alloc,
+                width + (padding * 2), // * 2 because left+right
+                height + (padding * 2), // * 2 because top+bottom
+            );
+
+            // Modify the region so that we remove the padding so that
+            // we write to the non-zero location. The data in an Altlas
+            // is always initialized to zero (Atlas.clear) so we don't
+            // need to worry about zero-ing that.
+            region.x += padding;
+            region.y += padding;
+            region.width -= padding * 2;
+            region.height -= padding * 2;
+            break :region region;
+        };
         atlas.set(region, buf);
 
         const offset_y: i32 = offset_y: {
@@ -270,9 +281,10 @@ pub const Face = struct {
             break :offset_y @intFromFloat(@ceil(baseline_with_offset));
         };
 
-        log.warn("FONT FONT FONT width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
-            glyph_width,
-            glyph_height,
+        log.warn("FONT FONT FONT rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
+            rect,
+            width,
+            height,
             render_x,
             render_y,
             offset_y,
@@ -282,12 +294,12 @@ pub const Face = struct {
         });
 
         return .{
-            .width = glyph_width,
-            .height = glyph_height,
+            .width = width,
+            .height = height,
             .offset_x = @intFromFloat(render_x),
             .offset_y = offset_y,
-            .atlas_x = region.x + padding,
-            .atlas_y = region.y + padding,
+            .atlas_x = region.x,
+            .atlas_y = region.y,
 
             // This is not used, so we don't bother calculating it. If we
             // ever need it, we can calculate it using getAdvancesForGlyph.
