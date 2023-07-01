@@ -411,12 +411,12 @@ test {
     defer group.deinit();
 
     try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
         try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
     }
+    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     // Should find all visible ASCII
     var i: u32 = 32;
@@ -441,16 +441,15 @@ test {
     {
         const idx = group.indexForCodepoint('🥸', .regular, null).?;
         try testing.expectEqual(Style.regular, idx.style);
-
-        const expected: FontIndex.IndexInt = if (font.options.backend == .coretext) 1 else 2;
-        try testing.expectEqual(expected, idx.idx);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
     }
 
     // Try text emoji
     {
         const idx = group.indexForCodepoint(0x270C, .regular, .text).?;
         try testing.expectEqual(Style.regular, idx.style);
-        try testing.expectEqual(@as(FontIndex.IndexInt, 1), idx.idx);
+        const text_idx = if (font.options.backend == .coretext) 1 else 2;
+        try testing.expectEqual(@as(FontIndex.IndexInt, text_idx), idx.idx);
     }
     {
         const idx = group.indexForCodepoint(0x270C, .regular, .emoji).?;

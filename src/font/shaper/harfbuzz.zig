@@ -648,11 +648,11 @@ fn testShaper(alloc: Allocator) !TestShaper {
 
     // Setup group
     try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
-    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
         try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
     }
+    try cache_ptr.group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     var cell_buf = try alloc.alloc(font.shape.Cell, 80);
     errdefer alloc.free(cell_buf);
