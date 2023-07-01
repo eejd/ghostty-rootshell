@@ -61,6 +61,9 @@ pub const App = struct {
 
         /// Focus the previous/next split (if any).
         focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
+
+        /// Goto tab
+        goto_tab: ?*const fn (SurfaceUD, usize) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -357,6 +360,15 @@ pub const Surface = struct {
             log.err("error in focus callback err={}", .{err});
             return;
         };
+    }
+
+    pub fn gotoTab(self: *Surface, n: usize) void {
+        const func = self.app.opts.goto_tab orelse {
+            log.info("runtime embedder does not goto_tab", .{});
+            return;
+        };
+
+        func(self.opts.userdata, n);
     }
 
     /// The cursor position from the host directly is in screen coordinates but
