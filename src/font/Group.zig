@@ -282,7 +282,9 @@ pub fn renderGlyph(
 
     const face = &self.faces.get(index.style).items[@intCast(index.idx)];
     try face.load(self.lib, self.size);
-    return try face.face.?.renderGlyph(alloc, atlas, glyph_index, max_height);
+    const glyph = try face.face.?.renderGlyph(alloc, atlas, glyph_index, max_height);
+    // log.warn("GLYPH={}", .{glyph});
+    return glyph;
 }
 
 /// The wasm-compatible API.

@@ -545,16 +545,22 @@ pub const Face = struct {
             // NOTE(mitchellh): For some reason, CTLineGetBoundsWithOptions
             // returns garbage and I can't figure out why... so we use the
             // raw ascender.
+            const bounds = line.getBoundsWithOptions(.{ .exclude_leading = true });
+            const bounds_ascent = bounds.size.height + bounds.origin.y;
+            const baseline = @floor(bounds_ascent + 0.5);
 
-            var ascent: f64 = 0;
-            var descent: f64 = 0;
-            var leading: f64 = 0;
-            _ = line.getTypographicBounds(&ascent, &descent, &leading);
+            // This is an alternate approach to the above to calculate the
+            // baseline by simply using the ascender. Using this approach led
+            // to less accurate results, but I'm leaving it here for reference.
+            // var ascent: f64 = 0;
+            // var descent: f64 = 0;
+            // var leading: f64 = 0;
+            // _ = line.getTypographicBounds(&ascent, &descent, &leading);
             //std.log.warn("ascent={} descent={} leading={}", .{ ascent, descent, leading });
 
             break :metrics .{
                 .height = @floatCast(points[0].y - points[1].y),
-                .ascent = @floatCast(ascent),
+                .ascent = @floatCast(baseline),
             };
         };
 
