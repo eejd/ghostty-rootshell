@@ -71,12 +71,10 @@ pub const Backend = enum {
             };
         }
 
-        return if (target.isDarwin()) darwin: {
-            // On macOS right now, the coretext renderer is still pretty buggy
-            // so we default to coretext for font discovery and freetype for
-            // rasterization.
-            break :darwin .coretext_freetype;
-        } else .fontconfig_freetype;
+        // macOS also supports "coretext_freetype" but there is no scenario
+        // that is the default. It is only used by people who want to
+        // self-compile Ghostty and prefer the freetype aesthetic.
+        return if (target.isDarwin()) .coretext else .fontconfig_freetype;
     }
 
     // All the functions below can be called at comptime or runtime to
