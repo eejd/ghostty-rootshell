@@ -121,7 +121,7 @@ pub fn Context(comptime T: type) type {
         pub fn setTextMatrix(self: *T, matrix: graphics.AffineTransform) void {
             c.CGContextSetTextMatrix(
                 @ptrCast(self),
-                matrix.cval(),
+                @bitCast(matrix),
             );
         }
 

@@ -1,12 +1,10 @@
+const std = @import("std");
+const assert = std.debug.assert;
 const c = @import("c.zig");
 
 pub const Point = extern struct {
     x: c.CGFloat,
     y: c.CGFloat,
-
-    pub fn cval(self: Point) c.struct_CGPoint {
-        return @bitCast(self);
-    }
 };
 
 pub const Rect = extern struct {
@@ -17,20 +15,20 @@ pub const Rect = extern struct {
         return @bitCast(c.CGRectMake(x, y, width, height));
     }
 
-    pub fn cval(self: Rect) c.struct_CGRect {
-        return @bitCast(self);
+    pub fn isNull(self: Rect) bool {
+        return c.CGRectIsNull(@bitCast(self));
     }
 
-    pub fn isNull(self: Rect) bool {
-        return c.CGRectIsNull(self.cval());
+    pub fn getHeight(self: Rect) c.CGFloat {
+        return c.CGRectGetHeight(@bitCast(self));
+    }
+
+    pub fn getWidth(self: Rect) c.CGFloat {
+        return c.CGRectGetWidth(@bitCast(self));
     }
 };
 
 pub const Size = extern struct {
     width: c.CGFloat,
     height: c.CGFloat,
-
-    pub fn cval(self: Size) c.struct_CGSize {
-        return @bitCast(self);
-    }
 };

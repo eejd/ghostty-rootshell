@@ -13,8 +13,4 @@ pub const AffineTransform = extern struct {
     pub fn identity() AffineTransform {
         return @bitCast(c.CGAffineTransformIdentity);
     }
-
-    pub fn cval(self: AffineTransform) c.struct_CGAffineTransform {
-        return @bitCast(self);
-    }
 };

@@ -43,7 +43,7 @@ pub const MutableAttributedString = opaque {
     ) void {
         c.CFAttributedStringReplaceString(
             @ptrCast(self),
-            range.cval(),
+            @bitCast(range),
             @ptrCast(replacement),
         );
     }
@@ -64,10 +64,14 @@ pub const MutableAttributedString = opaque {
 
         c.CFAttributedStringSetAttribute(
             @ptrCast(self),
-            range.cval(),
+            @bitCast(range),
             @ptrCast(key_arg),
             value,
         );
+    }
+
+    pub fn getLength(self: *MutableAttributedString) usize {
+        return @intCast(c.CFAttributedStringGetLength(@ptrCast(self)));
     }
 };
 

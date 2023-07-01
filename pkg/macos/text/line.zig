@@ -32,7 +32,7 @@ pub const Line = opaque {
     ) graphics.Rect {
         return @bitCast(c.CTLineGetBoundsWithOptions(
             @ptrCast(self),
-            opts.cval(),
+            @bitCast(opts),
         ));
     }
 
@@ -59,10 +59,6 @@ pub const LineBoundsOptions = packed struct {
     use_optical_bounds: bool = false,
     language_extents: bool = false,
     _padding: u58 = 0,
-
-    pub fn cval(self: LineBoundsOptions) c.CTLineBoundsOptions {
-        return @bitCast(self);
-    }
 
     test {
         try std.testing.expectEqual(

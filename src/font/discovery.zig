@@ -126,7 +126,7 @@ pub const Descriptor = struct {
             .bold = self.bold,
             .italic = self.italic,
         };
-        const traits_cval = traits.cval();
+        const traits_cval: u32 = @bitCast(traits);
         if (traits_cval > 0) {
             // Setting traits is a pain. We have to create a nested dictionary
             // of the symbolic traits value, and set that in our attributes.

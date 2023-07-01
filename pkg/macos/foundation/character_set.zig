@@ -19,7 +19,7 @@ pub const CharacterSet = opaque {
     ) Allocator.Error!*CharacterSet {
         return @as(?*CharacterSet, @ptrFromInt(@intFromPtr(c.CFCharacterSetCreateWithCharactersInRange(
             null,
-            range.cval(),
+            @bitCast(range),
         )))) orelse Allocator.Error.OutOfMemory;
     }
 

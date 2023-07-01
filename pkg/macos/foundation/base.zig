@@ -1,3 +1,5 @@
+const std = @import("std");
+const assert = std.debug.assert;
 const c = @import("c.zig");
 
 pub const ComparisonResult = enum(c_int) {
@@ -12,9 +14,5 @@ pub const Range = extern struct {
 
     pub fn init(loc: usize, len: usize) Range {
         return @bitCast(c.CFRangeMake(@intCast(loc), @intCast(len)));
-    }
-
-    pub fn cval(self: Range) c.CFRange {
-        return @bitCast(self);
     }
 };
