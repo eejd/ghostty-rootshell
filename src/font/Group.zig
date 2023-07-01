@@ -269,7 +269,7 @@ pub fn renderGlyph(
     atlas: *font.Atlas,
     index: FontIndex,
     glyph_index: u32,
-    max_height: ?u16,
+    opts: font.face.RenderOptions,
 ) !Glyph {
     // Special-case fonts are rendered directly.
     if (index.special()) |sp| switch (sp) {
@@ -282,7 +282,7 @@ pub fn renderGlyph(
 
     const face = &self.faces.get(index.style).items[@intCast(index.idx)];
     try face.load(self.lib, self.size);
-    const glyph = try face.face.?.renderGlyph(alloc, atlas, glyph_index, max_height);
+    const glyph = try face.face.?.renderGlyph(alloc, atlas, glyph_index, opts);
     // log.warn("GLYPH={}", .{glyph});
     return glyph;
 }
@@ -383,7 +383,9 @@ pub const Wasm = struct {
     ) !*Glyph {
         const idx = @as(FontIndex, @bitCast(@as(u8, @intCast(idx_))));
         const max_height = if (max_height_ <= 0) null else max_height_;
-        const glyph = try self.renderGlyph(alloc, atlas, idx, cp, max_height);
+        const glyph = try self.renderGlyph(alloc, atlas, idx, cp, .{
+            .max_height = max_height,
+        });
 
         var result = try alloc.create(Glyph);
         errdefer alloc.destroy(result);
@@ -427,7 +429,7 @@ test {
             &atlas_greyscale,
             idx,
             glyph_index,
-            null,
+            .{},
         );
     }
 
@@ -483,7 +485,7 @@ test "box glyph" {
         &atlas_greyscale,
         idx,
         0x2500,
-        null,
+        .{},
     );
     try testing.expectEqual(@as(u32, 36), glyph.height);
 }
@@ -514,7 +516,7 @@ test "resize" {
             &atlas_greyscale,
             idx,
             glyph_index,
-            null,
+            .{},
         );
 
         try testing.expectEqual(@as(u32, 11), glyph.height);
@@ -531,7 +533,7 @@ test "resize" {
             &atlas_greyscale,
             idx,
             glyph_index,
-            null,
+            .{},
         );
 
         try testing.expectEqual(@as(u32, 21), glyph.height);
@@ -574,7 +576,7 @@ test "discover monospace with fontconfig and freetype" {
             &atlas_greyscale,
             idx,
             glyph_index,
-            null,
+            .{},
         );
     }
 }

@@ -58,6 +58,20 @@ pub const Metrics = struct {
     strikethrough_thickness: f32,
 };
 
+/// Additional options for rendering glyphs.
+pub const RenderOptions = struct {
+    /// The maximum height of the glyph. If this is set, then any glyph
+    /// larger than this height will be shrunk to this height. The scaling
+    /// is typically naive, but ultimately up to the rasterizer.
+    max_height: ?u16 = null,
+
+    /// Thicken the glyph. This draws the glyph with a thicker stroke width.
+    /// This is purely an aesthetic setting.
+    ///
+    /// This only works with CoreText currently.
+    thicken: bool = false,
+};
+
 pub const Foo = if (options.backend == .coretext) coretext.Face else void;
 
 test {

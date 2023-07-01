@@ -996,7 +996,9 @@ pub fn updateCell(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index,
-            @intFromFloat(@ceil(self.cell_size.height)),
+            .{
+                .max_height = @intFromFloat(@ceil(self.cell_size.height)),
+            },
         );
 
         // If we're rendering a color font, we use the color atlas
@@ -1031,7 +1033,7 @@ pub fn updateCell(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
-            null,
+            .{},
         );
 
         const color = if (cell.attrs.underline_color) cell.underline_fg else colors.fg;
@@ -1083,7 +1085,7 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
-        null,
+        .{},
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
         return;

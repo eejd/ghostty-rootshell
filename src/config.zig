@@ -34,6 +34,10 @@ pub const Config = struct {
         else => 12,
     },
 
+    /// Draw fonts with a thicker stroke, if supported. This is only supported
+    /// currently on macOS.
+    @"font-thicken": bool = false,
+
     /// Background color for the window.
     background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 

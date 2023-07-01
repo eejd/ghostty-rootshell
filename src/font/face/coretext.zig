@@ -102,10 +102,8 @@ pub const Face = struct {
         alloc: Allocator,
         atlas: *font.Atlas,
         glyph_index: u32,
-        max_height: ?u16,
+        opts: font.face.RenderOptions,
     ) !font.Glyph {
-        _ = max_height;
-
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
         // Get the bounding rect for rendering this glyph.
@@ -205,7 +203,7 @@ pub const Face = struct {
         });
 
         ctx.setAllowsFontSmoothing(true);
-        ctx.setShouldSmoothFonts(false); // The amadeus "enthicken"
+        ctx.setShouldSmoothFonts(opts.thicken); // The amadeus "enthicken"
         ctx.setAllowsFontSubpixelQuantization(true);
         ctx.setShouldSubpixelQuantizeFonts(true);
         ctx.setAllowsFontSubpixelPositioning(true);
@@ -479,7 +477,7 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, null);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
 
@@ -523,6 +521,6 @@ test "in-memory" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, null);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }

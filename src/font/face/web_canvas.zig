@@ -190,9 +190,9 @@ pub const Face = struct {
         alloc: Allocator,
         atlas: *font.Atlas,
         glyph_index: u32,
-        max_height: ?u16,
+        opts: font.face.RenderOptions,
     ) !font.Glyph {
-        _ = max_height;
+        _ = opts;
 
         var render = try self.renderGlyphInternal(alloc, glyph_index);
         defer render.deinit();
@@ -551,7 +551,7 @@ pub const Wasm = struct {
     }
 
     fn face_render_glyph_(face: *Face, atlas: *font.Atlas, codepoint: u32) !*font.Glyph {
-        const glyph = try face.renderGlyph(alloc, atlas, codepoint, null);
+        const glyph = try face.renderGlyph(alloc, atlas, codepoint, .{});
 
         const result = try alloc.create(font.Glyph);
         errdefer alloc.destroy(result);
