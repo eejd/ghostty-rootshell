@@ -423,11 +423,16 @@ pub const Face = struct {
         // All of these metrics are based on our layout above.
         const cell_height = layout_metrics.height;
         const cell_baseline = layout_metrics.ascent;
-        const underline_position = @ceil(layout_metrics.ascent -
-            @as(f32, @floatCast(ct_font.getUnderlinePosition())));
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
         const strikethrough_position = cell_baseline * 0.6;
         const strikethrough_thickness = underline_thickness;
+
+        // Underline position is based on our baseline because the font advertised
+        // underline position is based on a zero baseline. We add a small amount
+        // to the underline position to make it look better.
+        const underline_position = @ceil(cell_baseline -
+            @as(f32, @floatCast(ct_font.getUnderlinePosition())) +
+            1);
 
         // Note: is this useful?
         // const units_per_em = ct_font.getUnitsPerEm();
