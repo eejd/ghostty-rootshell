@@ -1176,9 +1176,6 @@ fn syncAtlasTexture(device: objc.Object, atlas: *const font.Atlas, texture: *obj
         texture.* = try initAtlasTexture(device, atlas);
     }
 
-    // Once the above linked issue is fixed, this is what we actually
-    // want to do:
-    //
     texture.msgSend(
         void,
         objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),

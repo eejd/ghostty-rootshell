@@ -395,9 +395,6 @@ pub fn build(b: *std.Build) !void {
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
 
-            // See the comment in this file
-            lib.addCSourceFile("src/renderer/metal_workaround.c", &.{});
-
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
             try lib_list.append(.{ .generated = &lib.output_path_source });
@@ -426,9 +423,6 @@ pub fn build(b: *std.Build) !void {
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
             lib.addOptions("build_options", exe_options);
-
-            // See the comment in this file
-            lib.addCSourceFile("src/renderer/metal_workaround.c", &.{});
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
