@@ -97,7 +97,7 @@ pub const Face = struct {
         return @intCast(glyphs[0]);
     }
 
-    pub fn renderGlyph2(
+    pub fn renderGlyph(
         self: Face,
         alloc: Allocator,
         atlas: *font.Atlas,
@@ -292,134 +292,6 @@ pub const Face = struct {
             // This is not used, so we don't bother calculating it. If we
             // ever need it, we can calculate it using getAdvancesForGlyph.
             .advance_x = 0,
-        };
-    }
-
-    /// Render a glyph using the glyph index. The rendered glyph is stored in the
-    /// given texture atlas.
-    pub fn renderGlyph(
-        self: Face,
-        alloc: Allocator,
-        atlas: *font.Atlas,
-        glyph_index: u32,
-        max_height: ?u16,
-    ) !font.Glyph {
-        // We add a small pixel padding around the edge of our glyph so that
-        // anti-aliasing and smoothing doesn't cause us to pick up the pixels
-        // of another glyph when packed into the atlas.
-        const padding = 1;
-
-        _ = max_height;
-
-        var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
-
-        // Get the bounding rect for this glyph to determine the width/height
-        // of the bitmap. We use the rounded up width/height of the bounding rect.
-        var bounding: [1]macos.graphics.Rect = undefined;
-        _ = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, &bounding);
-        const glyph_width = @as(u32, @intFromFloat(@ceil(bounding[0].size.width)));
-        const glyph_height = @as(u32, @intFromFloat(@ceil(bounding[0].size.height)));
-
-        // Width and height. Note the padding doubling is because we want
-        // the padding on both sides (top/bottom, left/right).
-        const width = glyph_width + (padding * 2);
-        const height = glyph_height + (padding * 2);
-
-        if (true) return try self.renderGlyph2(alloc, atlas, glyph_index, 0);
-
-        // This bitmap is blank. I've seen it happen in a font, I don't know why.
-        // If it is empty, we just return a valid glyph struct that does nothing.
-        if (glyph_width == 0) return font.Glyph{
-            .width = 0,
-            .height = 0,
-            .offset_x = 0,
-            .offset_y = 0,
-            .atlas_x = 0,
-            .atlas_y = 0,
-            .advance_x = 0,
-        };
-
-        // Get the advance that we need for the glyph
-        var advances: [1]macos.graphics.Size = undefined;
-        _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
-
-        // Our buffer for rendering
-        // TODO(perf): cache this buffer
-        // TODO(mitchellh): color is going to require a depth here
-        var buf = try alloc.alloc(u8, width * height);
-        defer alloc.free(buf);
-        @memset(buf, 0);
-
-        const space = try macos.graphics.ColorSpace.createDeviceGray();
-        defer space.release();
-
-        const ctx = try macos.graphics.BitmapContext.create(
-            buf,
-            width,
-            height,
-            8,
-            width,
-            space,
-            @intFromEnum(macos.graphics.BitmapInfo.alpha_mask) &
-                @intFromEnum(macos.graphics.ImageAlphaInfo.none),
-        );
-        defer ctx.release();
-
-        // Perform an initial fill so that we're sure it starts as we want.
-        ctx.setGrayFillColor(0, 0);
-        ctx.fillRect(.{
-            .origin = .{ .x = 0, .y = 0 },
-            .size = .{
-                .width = @floatFromInt(width),
-                .height = @floatFromInt(height),
-            },
-        });
-
-        ctx.setAllowsAntialiasing(true);
-        ctx.setShouldAntialias(true);
-        ctx.setShouldSmoothFonts(true);
-        ctx.setGrayFillColor(1, 1);
-        ctx.setGrayStrokeColor(1, 1);
-        ctx.setTextDrawingMode(.fill_stroke);
-        ctx.setTextMatrix(macos.graphics.AffineTransform.identity());
-        ctx.setTextPosition(0, 0);
-
-        // We want to render the glyphs at (0,0), but the glyphs themselves
-        // are offset by bearings, so we have to undo those bearings in order
-        // to get them to 0,0.
-        var pos = [_]macos.graphics.Point{.{
-            .x = padding + (-1 * bounding[0].origin.x),
-            .y = padding + (-1 * bounding[0].origin.y),
-        }};
-        self.font.drawGlyphs(&glyphs, &pos, ctx);
-
-        const region = try atlas.reserve(alloc, width, height);
-        atlas.set(region, buf);
-
-        const offset_y = offset_y: {
-            // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
-            // We need to calculate our baseline from the bottom of a cell.
-            const baseline_from_bottom = self.metrics.cell_height - self.metrics.cell_baseline;
-
-            // Next we offset our baseline by the bearing in the font. We
-            // ADD here because CoreText y is UP.
-            const baseline_with_offset = baseline_from_bottom + bounding[0].origin.y;
-
-            // Finally, since we're rendering at (0, 0), the glyph will render
-            // by default below the line. We have to add height (glyph height)
-            // so that we shift the glyph UP to be on the line, then we add our
-            // baseline offset to move the glyph further UP to match the baseline.
-            break :offset_y @as(i32, @intCast(height)) + @as(i32, @intFromFloat(@ceil(baseline_with_offset)));
-        };
-
-        return font.Glyph{
-            .width = glyph_width,
-            .height = glyph_height,
-            .offset_x = @intFromFloat(@ceil(bounding[0].origin.x)),
-            .offset_y = offset_y,
-            .atlas_x = region.x + padding,
-            .atlas_y = region.y + padding,
-            .advance_x = @floatCast(advances[0].width),
         };
     }
 
