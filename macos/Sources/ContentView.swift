@@ -38,7 +38,7 @@ struct ContentView: View {
                 .confirmationDialog(
                     "Quit Ghostty?",
                     isPresented: confirmQuitting) {
-                        Button("Close Ghostty", role: .destructive) {
+                        Button("Close Ghostty") {
                             NSApplication.shared.reply(toApplicationShouldTerminate: true)
                         }
                         .keyboardShortcut(.defaultAction)
