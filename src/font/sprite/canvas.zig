@@ -340,7 +340,31 @@ const PixmanImpl = struct {
 
         const width = @as(u32, @intCast(self.image.getWidth()));
         const height = @as(u32, @intCast(self.image.getHeight()));
-        const region = try atlas.reserve(alloc, width, height);
+
+        // Allocate our texture atlas region
+        const region = region: {
+            // We need to add a 1px padding to the font so that we don't
+            // get fuzzy issues when blending textures.
+            const padding = 1;
+
+            // Get the full padded region
+            var region = try atlas.reserve(
+                alloc,
+                width + (padding * 2), // * 2 because left+right
+                height + (padding * 2), // * 2 because top+bottom
+            );
+
+            // Modify the region so that we remove the padding so that
+            // we write to the non-zero location. The data in an Altlas
+            // is always initialized to zero (Atlas.clear) so we don't
+            // need to worry about zero-ing that.
+            region.x += padding;
+            region.y += padding;
+            region.width -= padding * 2;
+            region.height -= padding * 2;
+            break :region region;
+        };
+
         if (region.width > 0 and region.height > 0) {
             const depth = atlas.format.depth();
 
