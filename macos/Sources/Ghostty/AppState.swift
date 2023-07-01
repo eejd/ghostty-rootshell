@@ -61,7 +61,8 @@ extension Ghostty {
                 write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) },
                 new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: direction) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
-                focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) }
+                focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
+                goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) }
             )
 
             // Create the ghostty app.
@@ -153,6 +154,17 @@ extension Ghostty {
                 object: surface,
                 userInfo: [
                     Notification.SplitDirectionKey: splitDirection,
+                ]
+            )
+        }
+        
+        static func gotoTab(_ userdata: UnsafeMutableRawPointer?, n: Int32) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(
+                name: Notification.ghosttyGotoTab,
+                object: surface,
+                userInfo: [
+                    Notification.GotoTabKey: n,
                 ]
             )
         }

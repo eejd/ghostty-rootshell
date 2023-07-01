@@ -20,7 +20,9 @@ struct GhosttyApp: App {
         WindowGroup {
             ContentView(ghostty: ghostty)
         }
+
         .backport.defaultSize(width: 800, height: 600)
+
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New Tab", action: Self.newTab).keyboardShortcut("t", modifiers: [.command])
