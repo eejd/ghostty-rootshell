@@ -17,13 +17,8 @@ struct GhosttyApp: App {
     @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
     
     var body: some Scene {
-        let center = NotificationCenter.default
-        let gotoTab = center.publisher(for: Ghostty.Notification.ghosttyGotoTab)
-
         WindowGroup {
             ContentView(ghostty: ghostty)
-            // TODO: This is wrong. This fires for every open tab.
-                .onReceive(gotoTab) { onGotoTab(notification: $0) }
         }
 
         .backport.defaultSize(width: 800, height: 600)
@@ -107,26 +102,6 @@ struct GhosttyApp: App {
         guard let surface = surfaceView.surface else { return }
         ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
-    
-    private func onGotoTab(notification: SwiftUI.Notification) {
-        // Get the tab index from the notification
-        guard let tabIndexAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
-        guard let tabIndex = tabIndexAny as? Int32 else { return }
-        
-        guard let currentWindow = NSApp.keyWindow else { return }
-        guard let windowController = currentWindow.windowController else { return }
-        guard let tabGroup = windowController.window?.tabGroup else { return }
-        
-        let tabbedWindows = tabGroup.windows
-        
-        // Tabs are 0-indexed here, so we subtract one from the key the user hit.
-        let adjustedIndex = Int(tabIndex - 1);
-        guard adjustedIndex >= 0 && adjustedIndex < tabbedWindows.count else { return }
-        
-        let targetWindow = tabbedWindows[adjustedIndex]
-        targetWindow.makeKeyAndOrderFront(nil)
-    }
-
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {

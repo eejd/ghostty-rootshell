@@ -26,6 +26,9 @@ struct ContentView: View {
                     NSApplication.shared.reply(toApplicationShouldTerminate: true)
                 }
         case .ready:
+            let center = NotificationCenter.default
+            let gotoTab = center.publisher(for: Ghostty.Notification.ghosttyGotoTab)
+            
             let confirmQuitting = Binding<Bool>(get: {
                 self.appDelegate.confirmQuit && (self.window?.isKeyWindow ?? false)
             }, set: {
@@ -35,6 +38,7 @@ struct ContentView: View {
             Ghostty.TerminalSplit(onClose: Self.closeWindow)
                 .ghosttyApp(ghostty.app!)
                 .background(WindowAccessor(window: $window))
+                .onReceive(gotoTab) { onGotoTab(notification: $0) }
                 .confirmationDialog(
                     "Quit Ghostty?",
                     isPresented: confirmQuitting) {
@@ -56,5 +60,28 @@ struct ContentView: View {
     static func closeWindow() {
         guard let currentWindow = NSApp.keyWindow else { return }
         currentWindow.close()
+    }
+        
+    private func onGotoTab(notification: SwiftUI.Notification) {
+        // Notification center indiscriminately sends to every subscriber (makes sense)
+        // but we only want to process this once. In order to process it once lets only
+        // handle it if we're the focused window.
+        guard let window = self.window else { return }
+        guard window.isKeyWindow else { return }
+        
+        // Get the tab index from the notification
+        guard let tabIndexAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
+        guard let tabIndex = tabIndexAny as? Int32 else { return }
+        
+        guard let windowController = window.windowController else { return }
+        guard let tabGroup = windowController.window?.tabGroup else { return }
+        let tabbedWindows = tabGroup.windows
+        
+        // Tabs are 0-indexed here, so we subtract one from the key the user hit.
+        let adjustedIndex = Int(tabIndex - 1);
+        guard adjustedIndex >= 0 && adjustedIndex < tabbedWindows.count else { return }
+        
+        let targetWindow = tabbedWindows[adjustedIndex]
+        targetWindow.makeKeyAndOrderFront(nil)
     }
 }
