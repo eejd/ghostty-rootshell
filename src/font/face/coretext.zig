@@ -30,6 +30,7 @@ pub const Face = struct {
         const arr = macos.text.createFontDescriptorsFromData(data) orelse
             return error.FontInitFailure;
         defer arr.release();
+        if (arr.getCount() == 0) return error.FontInitFailure;
 
         const desc = arr.getValueAtIndex(macos.text.FontDescriptor, 0);
         const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
