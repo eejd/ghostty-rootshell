@@ -171,8 +171,10 @@ pub const Face = struct {
             return error.InvalidAtlasFormat;
         }
 
-        // Our buffer for rendering
-        // TODO(perf): cache this buffer
+        // Our buffer for rendering. We could cache this but glyph rasterization
+        // usually stabilizes pretty quickly and is very infrequent so I think
+        // the allocation overhead is acceptable compared to the cost of
+        // caching it forever or having to deal with a cache lifetime.
         var buf = try alloc.alloc(u8, width * height * color.depth);
         defer alloc.free(buf);
         @memset(buf, 0);
