@@ -499,8 +499,32 @@ pub const Face = struct {
             defer fs.release();
 
             // Create a rectangle to fit all of this and create a frame of it.
+            // The rectangle needs to fit all of our text so we use some
+            // heuristics based on cell_width to calculate it. We are
+            // VERY generous with our rect here because the text must fit.
+            const path_rect = rect: {
+                // The cell width at this point is valid, so let's make it
+                // fit 50 characters wide.
+                const width = cell_width * 50;
+
+                // We are trying to calculate height so we don't know how
+                // high to make our frame. Well-behaved fonts will probably
+                // not have a height greater than 4x the width, so let's just
+                // generously use that metric to ensure we fit the frame.
+                const big_cell_height = cell_width * 4;
+
+                // If we are fitting about ~50 characters per row, we need
+                // unit.len / 50 rows to fit all of our text.
+                const rows = (unit.len / 50) * 2;
+
+                // Our final height is the number of rows times our generous height.
+                const height = rows * big_cell_height;
+
+                break :rect macos.graphics.Rect.init(10, 10, width, height);
+            };
+
             const path = try macos.graphics.MutablePath.create();
-            path.addRect(null, macos.graphics.Rect.init(10, 10, 200, 200));
+            path.addRect(null, path_rect);
             defer path.release();
             const frame = try fs.createFrame(
                 macos.foundation.Range.init(0, 0),
