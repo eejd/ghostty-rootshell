@@ -213,6 +213,7 @@ extension Ghostty {
             let pub = center.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
             let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: leaf.surface)
             let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: leaf.surface)
+            
             SurfaceWrapper(surfaceView: leaf.surface)
                 .onReceive(pub) { onNewSplit(notification: $0) }
                 .onReceive(pubClose) { onClose(notification: $0) }
@@ -220,7 +221,7 @@ extension Ghostty {
                 .confirmationDialog(
                     "Close Terminal?",
                     isPresented: $confirmClose) {
-                        Button("Close the Terminal", role: .destructive) {
+                        Button("Close the Terminal") {
                             confirmClose = false
                             requestClose = true
                         }
