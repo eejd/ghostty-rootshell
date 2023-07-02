@@ -441,6 +441,13 @@ pub const Config = struct {
             }
         }
 
+        // Toggle fullscreen
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .enter, .mods = ctrlOrSuper(.{}) },
+            .{ .toggle_fullscreen = {} },
+        );
+
         // Mac-specific keyboard bindings.
         if (comptime builtin.target.isDarwin()) {
             try result.keybind.set.put(

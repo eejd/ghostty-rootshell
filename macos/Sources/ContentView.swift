@@ -28,6 +28,7 @@ struct ContentView: View {
         case .ready:
             let center = NotificationCenter.default
             let gotoTab = center.publisher(for: Ghostty.Notification.ghosttyGotoTab)
+            let toggleFullscreen = center.publisher(for: Ghostty.Notification.ghosttyToggleFullscreen)
             
             let confirmQuitting = Binding<Bool>(get: {
                 self.appDelegate.confirmQuit && (self.window?.isKeyWindow ?? false)
@@ -39,6 +40,7 @@ struct ContentView: View {
                 .ghosttyApp(ghostty.app!)
                 .background(WindowAccessor(window: $window))
                 .onReceive(gotoTab) { onGotoTab(notification: $0) }
+                .onReceive(toggleFullscreen) { onToggleFullscreen(notification: $0) }
                 .confirmationDialog(
                     "Quit Ghostty?",
                     isPresented: confirmQuitting) {
@@ -83,5 +85,15 @@ struct ContentView: View {
         
         let targetWindow = tabbedWindows[adjustedIndex]
         targetWindow.makeKeyAndOrderFront(nil)
+    }
+
+    private func onToggleFullscreen(notification: SwiftUI.Notification) {
+        // Just like in `onGotoTab`, we might receive this multiple times. But
+        // it's fine, because `toggleFullscreen` should only apply to the
+        // currently focused window.
+        guard let window = self.window else { return }
+        guard window.isKeyWindow else { return }
+        
+        window.toggleFullScreen(nil)
     }
 }

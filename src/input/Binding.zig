@@ -207,6 +207,9 @@ pub const Action = union(enum) {
     /// Close the window, regardless of how many tabs or splits there may be.
     close_window: void,
 
+    /// Toggle fullscreen mode of window.
+    toggle_fullscreen: void,
+
     /// Quit ghostty
     quit: void,
 

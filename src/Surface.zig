@@ -1135,6 +1135,12 @@ pub fn keyCallback(
                     } else log.warn("runtime doesn't implement gotoSplit", .{});
                 },
 
+                .toggle_fullscreen => {
+                    if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
+                        self.rt_surface.toggleFullscreen();
+                    } else log.warn("runtime doesn't implement toggleFullscreen", .{});
+                },
+
                 .close_surface => self.close(),
 
                 .close_window => {
