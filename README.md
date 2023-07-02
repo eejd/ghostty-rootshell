@@ -66,6 +66,34 @@ foreground= ffffff
 # Blank lines are ignored!
 
 keybind =ctrl+z:close
+
+# Colors can be changed by setting the 16 colors of `palette`, which each color
+# being defined as regular and bold.
+#
+# black
+palette = 0=#1d2021
+palette = 8=#7c6f64
+# red
+palette = 1=#cc241d
+palette = 9=#fb4934
+# green
+palette = 2=#98971a
+palette = 10=#b8bb26
+# yellow
+palette = 3=#d79921
+palette = 11=#fabd2f
+# blue
+palette = 4=#458588
+palette = 12=#83a598
+# purple
+palette = 5=#b16286
+palette = 13=#d3869b
+# aqua
+palette = 6=#689d6a
+palette = 14=#8ec07c
+# white
+palette = 7=#a89984
+palette = 15=#fbf1c7
 ```
 
 The available keys and valid values are not easily documented yet, but they
