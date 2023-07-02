@@ -78,6 +78,9 @@ extension Ghostty.Notification {
     /// Goto tab. Has tab index in the userinfo.
     static let ghosttyGotoTab = Notification.Name("com.mitchellh.ghostty.gotoTab")
     static let GotoTabKey = ghosttyGotoTab.rawValue
+
+    /// Toggle fullscreen of current window
+    static let ghosttyToggleFullscreen = Notification.Name("com.mitchellh.ghostty.toggleFullscreen")
 }
 
 // Make the input enum hashable.
