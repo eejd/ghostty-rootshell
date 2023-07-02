@@ -2023,23 +2023,32 @@ fn dragLeftClickSingle(
 }
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
+    // xpos/ypos need to be adjusted for window padding
+    // (i.e. "window-padding-*" settings. NOTE we don't adjust for
+    // "window-padding-balance" because we don't have access to the balance
+    // amount from the renderer. This is a bug but realistically balanced
+    // padding is so small it doesn't affect selection. This may not be true
+    // at large font sizes...
+    const xpos_adjusted: f64 = xpos - @as(f64, @floatCast(self.padding.left));
+    const ypos_adjusted: f64 = ypos - @as(f64, @floatCast(self.padding.top));
+
     // xpos and ypos can be negative if while dragging, the user moves the
     // mouse off the surface. Likewise, they can be larger than our surface
     // width if the user drags out of the surface positively.
     return .{
-        .x = if (xpos < 0) 0 else x: {
+        .x = if (xpos_adjusted < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
             const cell_width: f64 = @floatCast(self.cell_size.width);
-            const x: usize = @intFromFloat(xpos / cell_width);
+            const x: usize = @intFromFloat(xpos_adjusted / cell_width);
 
             // Can be off the screen if the user drags it out, so max
             // it out on our available columns
             break :x @min(x, self.grid_size.columns - 1);
         },
 
-        .y = if (ypos < 0) 0 else y: {
+        .y = if (ypos_adjusted < 0) 0 else y: {
             const cell_height: f64 = @floatCast(self.cell_size.height);
-            const y: usize = @intFromFloat(ypos / cell_height);
+            const y: usize = @intFromFloat(ypos_adjusted / cell_height);
             break :y @min(y, self.grid_size.rows - 1);
         },
     };
