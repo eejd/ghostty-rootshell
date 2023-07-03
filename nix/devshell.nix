@@ -8,7 +8,7 @@
 , nodejs
 , parallel
 , pkg-config
-, python
+, python3
 , scdoc
 , tracy
 , valgrind
@@ -78,9 +78,8 @@ in mkShell rec {
     nodejs
 
     # Testing
-    gdb
     parallel
-    python
+    python3
     tracy
     vttest
 
@@ -92,6 +91,8 @@ in mkShell rec {
     debugedit
     flatpak-builder
 
+    # Testing
+    gdb
     valgrind
     wraptest
   ];
