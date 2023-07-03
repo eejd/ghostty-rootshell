@@ -19,6 +19,17 @@ const Presentation = @import("main.zig").Presentation;
 
 const log = std.log.scoped(.deferred_face);
 
+/// The struct used for deferred face state.
+///
+/// TODO: Change the "fc", "ct", "wc" fields in @This to just use one field
+/// with the state since there should be no world in which multiple are used.
+const FaceState = switch (options.backend) {
+    .freetype => void,
+    .fontconfig_freetype => Fontconfig,
+    .coretext_freetype, .coretext => CoreText,
+    .web_canvas => WebCanvas,
+};
+
 /// The loaded face (once loaded).
 face: ?Face = null,
 
@@ -60,6 +71,22 @@ pub const CoreText = struct {
     pub fn deinit(self: *CoreText) void {
         self.font.release();
         self.* = undefined;
+    }
+
+    /// Auto-italicize the font by applying a skew.
+    pub fn italicize(self: *const CoreText) !CoreText {
+        const skew = macos.graphics.AffineTransform{
+            .a = 1,
+            .b = 0,
+            .c = 0.267949, // approx. tan(15)
+            .d = 1,
+            .tx = 0,
+            .ty = 0,
+        };
+
+        const ct_font = try self.font.copyWithAttributes(0.0, &skew, null);
+        errdefer ct_font.release();
+        return .{ .font = ct_font };
     }
 };
 
@@ -331,6 +358,40 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     // This is unreachable because discovery mechanisms terminate, and
     // if we're not using a discovery mechanism, the face MUST be loaded.
     unreachable;
+}
+
+/// Returns true if our deferred font implementation supports auto-itacilization.
+pub fn canItalicize() bool {
+    return @hasDecl(FaceState, "italicize") and @hasDecl(Face, "italicize");
+}
+
+/// Returns a new deferred face with the italicized version of this face
+/// by applying a skew. This is NOT TRUE italics. You should use the discovery
+/// mechanism to try to find an italic font. This is a fallback for when
+/// that fails.
+pub fn italicize(self: *const DeferredFace) !?DeferredFace {
+    if (comptime !canItalicize()) return null;
+
+    var result: DeferredFace = .{};
+
+    if (self.face) |face| {
+        result.face = try face.italicize();
+    }
+
+    switch (options.backend) {
+        .freetype => {},
+        .fontconfig_freetype => if (self.fc) |*fc| {
+            result.fc = try fc.italicize();
+        },
+        .coretext, .coretext_freetype => if (self.ct) |*ct| {
+            result.ct = try ct.italicize();
+        },
+        .web_canvas => if (self.wc) |*wc| {
+            result.wc = try wc.italicize();
+        },
+    }
+
+    return result;
 }
 
 /// The wasm-compatible API.

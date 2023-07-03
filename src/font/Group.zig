@@ -99,6 +99,15 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace)
     try list.append(alloc, face);
 }
 
+/// Get the face for the given style. This will always return the first
+/// face (if it exists). The returned pointer is only valid as long as
+/// the faces do not change.
+pub fn getFace(self: *Group, style: Style) ?*DeferredFace {
+    const list = self.faces.getPtr(style);
+    if (list.items.len == 0) return null;
+    return &list.items[0];
+}
+
 /// Resize the fonts to the desired size.
 pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
     // Note: there are some issues here with partial failure. We don't
