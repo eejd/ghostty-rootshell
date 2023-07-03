@@ -261,7 +261,7 @@ pub const Face = struct {
         const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
-            const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_height - self.metrics.cell_baseline);
+            const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_baseline);
 
             // Next we offset our baseline by the bearing in the font. We
             // ADD here because CoreText y is UP.
@@ -425,17 +425,19 @@ pub const Face = struct {
 
         // All of these metrics are based on our layout above.
         const cell_height = @ceil(layout_metrics.height);
-        const cell_baseline = @ceil(layout_metrics.ascent);
+        const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
-        const strikethrough_position = cell_baseline * 0.6;
+        const strikethrough_position = @ceil(layout_metrics.height - (layout_metrics.ascent * 0.6));
         const strikethrough_thickness = underline_thickness;
 
-        // Underline position is based on our baseline because the font advertised
-        // underline position is based on a zero baseline. We add a small amount
-        // to the underline position to make it look better.
-        const underline_position = @ceil(cell_baseline -
-            @as(f32, @floatCast(ct_font.getUnderlinePosition())) +
-            1);
+        // Underline position reported is usually something like "-1" to
+        // represent the amount under the baseline. We add this to our real
+        // baseline to get the actual value from the bottom (+y is up).
+        // The final underline position is +y from the TOP (confusing)
+        // so we have to substract from the cell height.
+        const underline_position = cell_height -
+            (cell_baseline + @ceil(@as(f32, @floatCast(ct_font.getUnderlinePosition())))) +
+            1;
 
         // Note: is this useful?
         // const units_per_em = ct_font.getUnitsPerEm();
