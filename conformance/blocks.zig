@@ -12,7 +12,7 @@ pub fn main() !void {
         while (i <= 0x257F) : (i += step) {
             var j: usize = 0;
             while (j < step) : (j += 1) {
-                try stdout.print("{u} ", .{@intCast(u21, i + j)});
+                try stdout.print("{u} ", .{@as(u21, @intCast(i + j))});
             }
 
             try stdout.print("\n\n", .{});
@@ -27,7 +27,7 @@ pub fn main() !void {
         while (i <= 0x259f) : (i += step) {
             var j: usize = 0;
             while (j < step) : (j += 1) {
-                try stdout.print("{u} ", .{@intCast(u21, i + j)});
+                try stdout.print("{u} ", .{@as(u21, @intCast(i + j))});
             }
 
             try stdout.print("\n\n", .{});
@@ -42,7 +42,7 @@ pub fn main() !void {
         while (i <= 0x28FF) : (i += step) {
             var j: usize = 0;
             while (j < step) : (j += 1) {
-                try stdout.print("{u} ", .{@intCast(u21, i + j)});
+                try stdout.print("{u} ", .{@as(u21, @intCast(i + j))});
             }
 
             try stdout.print("\n\n", .{});
@@ -58,7 +58,7 @@ pub fn main() !void {
             var j: usize = 0;
             while (j < step) : (j += 1) {
                 const v = i + j;
-                if (v <= end) try stdout.print("{u} ", .{@intCast(u21, v)});
+                if (v <= end) try stdout.print("{u} ", .{@as(u21, @intCast(v))});
             }
 
             try stdout.print("\n\n", .{});
@@ -74,7 +74,7 @@ pub fn main() !void {
             var j: usize = 0;
             while (j < step) : (j += 1) {
                 const v = i + j;
-                if (v <= end) try stdout.print("{u} ", .{@intCast(u21, v)});
+                if (v <= end) try stdout.print("{u} ", .{@as(u21, @intCast(v))});
             }
 
             try stdout.print("\n\n", .{});
@@ -90,7 +90,7 @@ pub fn main() !void {
             var j: usize = 0;
             while (j < step) : (j += 1) {
                 const v = i + j;
-                if (v <= end) try stdout.print("{u} ", .{@intCast(u21, v)});
+                if (v <= end) try stdout.print("{u} ", .{@as(u21, @intCast(v))});
             }
 
             try stdout.print("\n\n", .{});
