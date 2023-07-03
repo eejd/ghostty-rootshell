@@ -325,7 +325,7 @@ pub const Face = struct {
             // baseline calculation. The baseline calculation is so that everything
             // is properly centered when we render it out into a monospace grid.
             // Note: we add here because our X/Y is actually reversed, adding goes UP.
-            break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intFromFloat(self.metrics.cell_baseline));
+            break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intCast(self.metrics.cell_baseline));
         };
 
         // log.warn("renderGlyph width={} height={} offset_x={} offset_y={} glyph_metrics={}", .{
@@ -475,25 +475,20 @@ pub const Face = struct {
             .thickness = underline_thickness,
         };
 
-        // log.warn("METRICS={} width={d} height={d} baseline={d} underline_pos={d} underline_thickness={d} strikethrough={}", .{
-        //     size_metrics,
-        //     cell_width,
-        //     cell_height,
-        //     cell_height - cell_baseline,
-        //     underline_position,
-        //     underline_thickness,
-        //     strikethrough,
-        // });
-
-        return .{
-            .cell_width = cell_width,
-            .cell_height = cell_height,
-            .cell_baseline = cell_baseline,
-            .underline_position = underline_position,
-            .underline_thickness = underline_thickness,
-            .strikethrough_position = strikethrough.pos,
-            .strikethrough_thickness = strikethrough.thickness,
+        const result = font.face.Metrics{
+            .cell_width = @intFromFloat(cell_width),
+            .cell_height = @intFromFloat(cell_height),
+            .cell_baseline = @intFromFloat(cell_baseline),
+            .underline_position = @intFromFloat(underline_position),
+            .underline_thickness = @intFromFloat(underline_thickness),
+            .strikethrough_position = @intFromFloat(strikethrough.pos),
+            .strikethrough_thickness = @intFromFloat(strikethrough.thickness),
         };
+
+        // std.log.warn("font size size={d}", .{ct_font.getSize()});
+        // std.log.warn("font metrics={}", .{result});
+
+        return result;
     }
 
     /// Convert freetype "font units" to pixels using the Y scale.

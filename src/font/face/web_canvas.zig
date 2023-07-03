@@ -273,16 +273,17 @@ pub const Face = struct {
         const underline_position = cell_height - 1;
         const underline_thickness: f32 = 1;
 
-        self.metrics = .{
-            .cell_width = cell_width,
-            .cell_height = cell_height,
-            .cell_baseline = cell_baseline,
-            .underline_position = underline_position,
-            .underline_thickness = underline_thickness,
-            .strikethrough_position = underline_position,
-            .strikethrough_thickness = underline_thickness,
+        const result = font.face.Metrics{
+            .cell_width = @intFromFloat(cell_width),
+            .cell_height = @intFromFloat(cell_height),
+            .cell_baseline = @intFromFloat(cell_baseline),
+            .underline_position = @intFromFloat(underline_position),
+            .underline_thickness = @intFromFloat(underline_thickness),
+            .strikethrough_position = @intFromFloat(underline_position),
+            .strikethrough_thickness = @intFromFloat(underline_thickness),
         };
 
+        self.metrics = result;
         log.debug("metrics font={s} value={}", .{ self.font_str, self.metrics });
     }
 

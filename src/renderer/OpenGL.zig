@@ -161,10 +161,19 @@ const SetFontSize = struct {
     fn apply(self: SetFontSize, r: *const OpenGL) !void {
         try r.program.setUniform(
             "cell_size",
-            @Vector(2, f32){ self.metrics.cell_width, self.metrics.cell_height },
+            @Vector(2, f32){
+                @floatFromInt(self.metrics.cell_width),
+                @floatFromInt(self.metrics.cell_height),
+            },
         );
-        try r.program.setUniform("strikethrough_position", self.metrics.strikethrough_position);
-        try r.program.setUniform("strikethrough_thickness", self.metrics.strikethrough_thickness);
+        try r.program.setUniform(
+            "strikethrough_position",
+            @as(f32, @floatFromInt(self.metrics.strikethrough_position)),
+        );
+        try r.program.setUniform(
+            "strikethrough_thickness",
+            @as(f32, @floatFromInt(self.metrics.strikethrough_thickness)),
+        );
     }
 };
 
@@ -661,10 +670,10 @@ fn resetFontMetrics(
 
     // Set details for our sprite font
     font_group.group.sprite = font.sprite.Face{
-        .width = @intFromFloat(metrics.cell_width),
-        .height = @intFromFloat(metrics.cell_height),
+        .width = metrics.cell_width,
+        .height = metrics.cell_height,
         .thickness = 2,
-        .underline_position = @intFromFloat(metrics.underline_position),
+        .underline_position = metrics.underline_position,
     };
 
     return metrics;
@@ -1148,7 +1157,7 @@ pub fn updateCell(
             shaper_run.font_index,
             shaper_cell.glyph_index,
             .{
-                .max_height = @intFromFloat(@ceil(self.cell_size.height)),
+                .max_height = @intCast(self.cell_size.height),
                 .thicken = self.config.font_thicken,
             },
         );
