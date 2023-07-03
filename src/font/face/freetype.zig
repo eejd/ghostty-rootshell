@@ -485,7 +485,6 @@ pub const Face = struct {
             .strikethrough_thickness = @intFromFloat(strikethrough.thickness),
         };
 
-        // std.log.warn("font size size={d}", .{ct_font.getSize()});
         // std.log.warn("font metrics={}", .{result});
 
         return result;

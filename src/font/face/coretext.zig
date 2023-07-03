@@ -270,7 +270,7 @@ pub const Face = struct {
             break :offset_y @intFromFloat(@ceil(baseline_with_offset));
         };
 
-        // log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
+        // std.log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
         //     rect,
         //     width,
         //     height,
@@ -331,95 +331,20 @@ pub const Face = struct {
             break :cell_width @floatCast(@ceil(max));
         };
 
-        // Calculate the cell height by using CoreText's layout engine
-        // to tell us after laying out some text. This is inspired by Kitty's
-        // approach. Previously we were using descent/ascent math and it wasn't
-        // quite the same with CoreText and I never figured out why.
+        // Calculate the layout metrics for height/ascent by just asking
+        // the font. I also tried Kitty's approach at one point which is to
+        // use the CoreText layout engine but this led to some glyphs being
+        // set incorrectly.
         const layout_metrics: struct {
             height: f32,
             ascent: f32,
         } = metrics: {
-            const unit = "AQWMH_gyl " ** 100;
-
-            // Setup our string we'll layout. We just stylize a string of
-            // ASCII characters to setup the letters.
-            const string = try macos.foundation.MutableAttributedString.create(unit.len);
-            defer string.release();
-            const rep = try macos.foundation.String.createWithBytes(unit, .utf8, false);
-            defer rep.release();
-            string.replaceString(macos.foundation.Range.init(0, 0), rep);
-            string.setAttribute(
-                macos.foundation.Range.init(0, unit.len),
-                macos.text.StringAttribute.font,
-                ct_font,
-            );
-
-            // Create our framesetter with our string. This is used to
-            // emit "frames" for the layout.
-            const fs = try macos.text.Framesetter.createWithAttributedString(@ptrCast(string));
-            defer fs.release();
-
-            // Create a rectangle to fit all of this and create a frame of it.
-            // The rectangle needs to fit all of our text so we use some
-            // heuristics based on cell_width to calculate it. We are
-            // VERY generous with our rect here because the text must fit.
-            const path_rect = rect: {
-                // The cell width at this point is valid, so let's make it
-                // fit 50 characters wide.
-                const width = cell_width * 50;
-
-                // We are trying to calculate height so we don't know how
-                // high to make our frame. Well-behaved fonts will probably
-                // not have a height greater than 4x the width, so let's just
-                // generously use that metric to ensure we fit the frame.
-                const big_cell_height = cell_width * 4;
-
-                // If we are fitting about ~50 characters per row, we need
-                // unit.len / 50 rows to fit all of our text.
-                const rows = (unit.len / 50) * 2;
-
-                // Our final height is the number of rows times our generous height.
-                const height = rows * big_cell_height;
-
-                break :rect macos.graphics.Rect.init(10, 10, width, height);
-            };
-
-            const path = try macos.graphics.MutablePath.create();
-            path.addRect(null, path_rect);
-            defer path.release();
-            const frame = try fs.createFrame(
-                macos.foundation.Range.init(0, 0),
-                @ptrCast(path),
-                null,
-            );
-            defer frame.release();
-
-            // Use our text layout from earlier to measure the difference
-            // between the lines.
-            var points: [2]macos.graphics.Point = undefined;
-            frame.getLineOrigins(macos.foundation.Range.init(0, 1), points[0..]);
-            frame.getLineOrigins(macos.foundation.Range.init(1, 1), points[1..]);
-
-            const lines = frame.getLines();
-            const line = lines.getValueAtIndex(macos.text.Line, 0);
-
-            // Get the bounds of the line to determine the ascent.
-            const bounds = line.getBoundsWithOptions(.{ .exclude_leading = true });
-            const bounds_ascent = bounds.size.height + bounds.origin.y;
-            const baseline = @floor(bounds_ascent + 0.5);
-
-            // This is an alternate approach to the above to calculate the
-            // baseline by simply using the ascender. Using this approach led
-            // to less accurate results, but I'm leaving it here for reference.
-            // var ascent: f64 = 0;
-            // var descent: f64 = 0;
-            // var leading: f64 = 0;
-            // _ = line.getTypographicBounds(&ascent, &descent, &leading);
-            //std.log.warn("ascent={} descent={} leading={}", .{ ascent, descent, leading });
-
+            const ascent = @round(ct_font.getAscent());
+            const descent = @round(ct_font.getDescent());
+            const leading = @round(ct_font.getLeading());
             break :metrics .{
-                .height = @floatCast(points[0].y - points[1].y),
-                .ascent = @floatCast(baseline),
+                .height = @floatCast(ascent + descent + leading),
+                .ascent = @floatCast(ascent),
             };
         };
 
