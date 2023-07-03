@@ -296,6 +296,9 @@ pub fn init(
                 }
             }
         } else {
+            // We don't support auto-italics. If we don't have an italic font
+            // face let the user know so they aren't surprised (if they look
+            // at logs).
             if (group.getFace(.italic) == null) {
                 log.warn("no italic font face available, italics will not render", .{});
             }
