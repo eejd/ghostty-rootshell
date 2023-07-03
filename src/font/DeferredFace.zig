@@ -75,16 +75,7 @@ pub const CoreText = struct {
 
     /// Auto-italicize the font by applying a skew.
     pub fn italicize(self: *const CoreText) !CoreText {
-        const skew = macos.graphics.AffineTransform{
-            .a = 1,
-            .b = 0,
-            .c = 0.267949, // approx. tan(15)
-            .d = 1,
-            .tx = 0,
-            .ty = 0,
-        };
-
-        const ct_font = try self.font.copyWithAttributes(0.0, &skew, null);
+        const ct_font = try self.font.copyWithAttributes(0.0, &Face.italic_skew, null);
         errdefer ct_font.release();
         return .{ .font = ct_font };
     }
