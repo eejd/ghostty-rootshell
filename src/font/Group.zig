@@ -329,10 +329,10 @@ pub const Wasm = struct {
 
         // Set details for our sprite font
         self.sprite = font.sprite.Face{
-            .width = @intFromFloat(metrics.cell_width),
-            .height = @intFromFloat(metrics.cell_height),
+            .width = metrics.cell_width,
+            .height = metrics.cell_height,
             .thickness = 2,
-            .underline_position = @intFromFloat(metrics.underline_position),
+            .underline_position = metrics.underline_position,
         };
     }
 

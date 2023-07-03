@@ -216,10 +216,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
     // Set the sprite font up
     options.font_group.group.sprite = font.sprite.Face{
-        .width = @intFromFloat(metrics.cell_width),
-        .height = @intFromFloat(metrics.cell_height),
+        .width = metrics.cell_width,
+        .height = metrics.cell_height,
         .thickness = 2,
-        .underline_position = @intFromFloat(metrics.underline_position),
+        .underline_position = metrics.underline_position,
     };
 
     // Create the font shaper. We initially create a shaper that can support
@@ -301,8 +301,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
-            .strikethrough_position = metrics.strikethrough_position,
-            .strikethrough_thickness = metrics.strikethrough_thickness,
+            .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
+            .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
         },
 
         // Fonts
@@ -460,9 +460,12 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     // Update our uniforms
     self.uniforms = .{
         .projection_matrix = self.uniforms.projection_matrix,
-        .cell_size = .{ new_cell_size.width, new_cell_size.height },
-        .strikethrough_position = metrics.strikethrough_position,
-        .strikethrough_thickness = metrics.strikethrough_thickness,
+        .cell_size = .{
+            @floatFromInt(new_cell_size.width),
+            @floatFromInt(new_cell_size.height),
+        },
+        .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
+        .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
     };
 
     // Recalculate our cell size. If it is the same as before, then we do
@@ -480,10 +483,10 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
 
     // Set the sprite font up
     self.font_group.group.sprite = font.sprite.Face{
-        .width = @intFromFloat(self.cell_size.width),
-        .height = @intFromFloat(self.cell_size.height),
+        .width = self.cell_size.width,
+        .height = self.cell_size.height,
         .thickness = 2,
-        .underline_position = @intFromFloat(metrics.underline_position),
+        .underline_position = metrics.underline_position,
     };
 
     // Notify the window that the cell size changed.
@@ -792,7 +795,10 @@ pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
             @as(f32, @floatFromInt(padded_dim.height)) + padding.bottom,
             -1 * padding.top,
         ),
-        .cell_size = .{ self.cell_size.width, self.cell_size.height },
+        .cell_size = .{
+            @floatFromInt(self.cell_size.width),
+            @floatFromInt(self.cell_size.height),
+        },
         .strikethrough_position = old.strikethrough_position,
         .strikethrough_thickness = old.strikethrough_thickness,
     };
@@ -1008,7 +1014,7 @@ pub fn updateCell(
             shaper_run.font_index,
             shaper_cell.glyph_index,
             .{
-                .max_height = @intFromFloat(@ceil(self.cell_size.height)),
+                .max_height = @intCast(self.cell_size.height),
                 .thicken = self.config.font_thicken,
             },
         );

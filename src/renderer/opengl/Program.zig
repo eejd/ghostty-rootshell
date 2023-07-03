@@ -101,7 +101,10 @@ pub inline fn setUniform(
             c.GL_FALSE,
             @ptrCast(&value),
         ),
-        else => unreachable,
+        else => {
+            log.warn("unsupported uniform type {}", .{@TypeOf(value)});
+            unreachable;
+        },
     }
     try errors.getError();
 }

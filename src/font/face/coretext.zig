@@ -261,7 +261,7 @@ pub const Face = struct {
         const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
-            const baseline_from_bottom = self.metrics.cell_height - self.metrics.cell_baseline;
+            const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_height - self.metrics.cell_baseline);
 
             // Next we offset our baseline by the bearing in the font. We
             // ADD here because CoreText y is UP.
@@ -328,7 +328,7 @@ pub const Face = struct {
                 max = @max(advances[i].width, max);
             }
 
-            break :cell_width @floatCast(max);
+            break :cell_width @floatCast(@ceil(max));
         };
 
         // Calculate the cell height by using CoreText's layout engine
@@ -424,8 +424,8 @@ pub const Face = struct {
         };
 
         // All of these metrics are based on our layout above.
-        const cell_height = layout_metrics.height;
-        const cell_baseline = layout_metrics.ascent;
+        const cell_height = @ceil(layout_metrics.height);
+        const cell_baseline = @ceil(layout_metrics.ascent);
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
         const strikethrough_position = cell_baseline * 0.6;
         const strikethrough_thickness = underline_thickness;
@@ -441,24 +441,20 @@ pub const Face = struct {
         // const units_per_em = ct_font.getUnitsPerEm();
         // const units_per_point = @intToFloat(f64, units_per_em) / ct_font.getSize();
 
-        // std.log.warn("font size size={d}", .{ct_font.getSize()});
-        // std.log.warn("font metrics width={d}, height={d} baseline={d} underline_pos={d} underline_thickness={d}", .{
-        //     cell_width,
-        //     cell_height,
-        //     cell_baseline,
-        //     underline_position,
-        //     underline_thickness,
-        // });
-
-        return font.face.Metrics{
-            .cell_width = cell_width,
-            .cell_height = cell_height,
-            .cell_baseline = cell_baseline,
-            .underline_position = underline_position,
-            .underline_thickness = underline_thickness,
-            .strikethrough_position = strikethrough_position,
-            .strikethrough_thickness = strikethrough_thickness,
+        const result = font.face.Metrics{
+            .cell_width = @intFromFloat(cell_width),
+            .cell_height = @intFromFloat(cell_height),
+            .cell_baseline = @intFromFloat(cell_baseline),
+            .underline_position = @intFromFloat(underline_position),
+            .underline_thickness = @intFromFloat(underline_thickness),
+            .strikethrough_position = @intFromFloat(strikethrough_position),
+            .strikethrough_thickness = @intFromFloat(strikethrough_thickness),
         };
+
+        // std.log.warn("font size size={d}", .{ct_font.getSize()});
+        // std.log.warn("font metrics={}", .{result});
+
+        return result;
     }
 };
 

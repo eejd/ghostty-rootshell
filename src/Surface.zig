@@ -429,8 +429,8 @@ pub fn init(
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
     try rt_surface.setSizeLimits(.{
-        .width = @intFromFloat(cell_size.width * 10),
-        .height = @intFromFloat(cell_size.height * 4),
+        .width = cell_size.width * 10,
+        .height = cell_size.height * 4,
     }, null);
 
     // Call our size callback which handles all our retina setup
@@ -662,10 +662,10 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const x: f64 = x: {
         // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatCast(@as(f32, @floatFromInt(cursor.x)) * self.cell_size.width);
+        var x: f64 = @floatFromInt(cursor.x * self.cell_size.width);
 
         // We want the midpoint
-        x += self.cell_size.width / 2;
+        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
 
         // And scale it
         x /= content_scale.x;
@@ -675,10 +675,10 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const y: f64 = y: {
         // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatCast(@as(f32, @floatFromInt(cursor.y)) * self.cell_size.height);
+        var y: f64 = @floatFromInt(cursor.y * self.cell_size.height);
 
         // We want the bottom
-        y += self.cell_size.height;
+        y += @floatFromInt(self.cell_size.height);
 
         // And scale it
         y /= content_scale.y;
@@ -1332,7 +1332,7 @@ pub fn scrollCallback(
 
         // If the new offset is less than a single unit of scroll, we save
         // the new pending value and do not scroll yet.
-        const cell_size = self.cell_size.height;
+        const cell_size: f64 = @floatFromInt(self.cell_size.height);
         if (@fabs(poff) < cell_size) {
             self.mouse.pending_scroll_y = poff;
             break :y .{};
@@ -1359,7 +1359,7 @@ pub fn scrollCallback(
         }
 
         const poff = self.mouse.pending_scroll_x + (xoff * -1);
-        const cell_size = self.cell_size.width;
+        const cell_size: f64 = @floatFromInt(self.cell_size.width);
         if (@fabs(poff) < cell_size) {
             self.mouse.pending_scroll_x = poff;
             break :x .{};
@@ -1724,7 +1724,7 @@ pub fn mouseButtonCallback(
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
         if (self.mouse.left_click_count > 0) {
-            const max_distance = self.cell_size.width;
+            const max_distance: f64 = @floatFromInt(self.cell_size.width);
             const distance = @sqrt(
                 std.math.pow(f64, pos.x - self.mouse.left_click_xpos, 2) +
                     std.math.pow(f64, pos.y - self.mouse.left_click_ypos, 2),
@@ -1951,10 +1951,13 @@ fn dragLeftClickSingle(
     //
 
     // the boundary point at which we consider selection or non-selection
-    const cell_xboundary = self.cell_size.width * 0.6;
+    const cell_xboundary = @as(f32, @floatFromInt(self.cell_size.width)) * 0.6;
 
     // first xpos of the clicked cell
-    const cell_xstart = @as(f32, @floatFromInt(self.mouse.left_click_point.x)) * self.cell_size.width;
+    const cell_xstart = @as(
+        f32,
+        @floatFromInt(self.mouse.left_click_point.x),
+    ) * @as(f32, @floatFromInt(self.cell_size.width));
     const cell_start_xpos = self.mouse.left_click_xpos - cell_xstart;
 
     // If this is the same cell, then we only start the selection if weve
@@ -2038,7 +2041,7 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
     return .{
         .x = if (xpos_adjusted < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
-            const cell_width: f64 = @floatCast(self.cell_size.width);
+            const cell_width: f64 = @floatFromInt(self.cell_size.width);
             const x: usize = @intFromFloat(xpos_adjusted / cell_width);
 
             // Can be off the screen if the user drags it out, so max
@@ -2047,7 +2050,7 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
         },
 
         .y = if (ypos_adjusted < 0) 0 else y: {
-            const cell_height: f64 = @floatCast(self.cell_size.height);
+            const cell_height: f64 = @floatFromInt(self.cell_size.height);
             const y: usize = @intFromFloat(ypos_adjusted / cell_height);
             break :y @min(y, self.grid_size.rows - 1);
         },

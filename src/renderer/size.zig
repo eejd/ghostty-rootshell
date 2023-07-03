@@ -14,8 +14,8 @@ const log = std.log.scoped(.renderer_size);
 /// The units for the width and height are in world space. They have to
 /// be normalized for any renderer implementation.
 pub const CellSize = struct {
-    width: f32,
-    height: f32,
+    width: u32,
+    height: u32,
 
     /// Initialize the cell size information from a font group. This ensures
     /// that all renderers use the same cell sizing information for the same
@@ -71,8 +71,14 @@ pub const GridSize = struct {
     /// Update the columns/rows for the grid based on the given screen and
     /// cell size.
     pub fn update(self: *GridSize, screen: ScreenSize, cell: CellSize) void {
-        self.columns = @max(1, @as(Unit, @intFromFloat(@as(f32, @floatFromInt(screen.width)) / cell.width)));
-        self.rows = @max(1, @as(Unit, @intFromFloat(@as(f32, @floatFromInt(screen.height)) / cell.height)));
+        const cell_width: f32 = @floatFromInt(cell.width);
+        const cell_height: f32 = @floatFromInt(cell.height);
+        const screen_width: f32 = @floatFromInt(screen.width);
+        const screen_height: f32 = @floatFromInt(screen.height);
+        const calc_cols: Unit = @intFromFloat(screen_width / cell_width);
+        const calc_rows: Unit = @intFromFloat(screen_height / cell_height);
+        self.columns = @max(1, calc_cols);
+        self.rows = @max(1, calc_rows);
     }
 };
 
@@ -86,9 +92,13 @@ pub const Padding = struct {
     /// Returns padding that balances the whitespace around the screen
     /// for the given grid and cell sizes.
     pub fn balanced(screen: ScreenSize, grid: GridSize, cell: CellSize) Padding {
+        // Turn our cell sizes into floats for the math
+        const cell_width: f32 = @floatFromInt(cell.width);
+        const cell_height: f32 = @floatFromInt(cell.height);
+
         // The size of our full grid
-        const grid_width = @as(f32, @floatFromInt(grid.columns)) * cell.width;
-        const grid_height = @as(f32, @floatFromInt(grid.rows)) * cell.height;
+        const grid_width = @as(f32, @floatFromInt(grid.columns)) * cell_width;
+        const grid_height = @as(f32, @floatFromInt(grid.rows)) * cell_height;
 
         // The empty space to the right of a line and bottom of the last row
         const space_right = @as(f32, @floatFromInt(screen.width)) - grid_width;
