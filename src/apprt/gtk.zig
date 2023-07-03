@@ -459,6 +459,16 @@ const Window = struct {
         }
     }
 
+    /// Toggle fullscreen for this window.
+    fn toggleFullscreen(self: *Window) void {
+        const is_fullscreen = c.gtk_window_is_fullscreen(self.window);
+        if (is_fullscreen == 0) {
+            c.gtk_window_fullscreen(self.window);
+        } else {
+            c.gtk_window_unfullscreen(self.window);
+        }
+    }
+
     /// Grabs focus on the currently selected tab.
     fn focusCurrentTab(self: *Window) void {
         const page_idx = c.gtk_notebook_get_current_page(self.notebook);
@@ -793,6 +803,10 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, G_CONNECT_DEFAULT);
 
         c.gtk_widget_show(alert);
+    }
+
+    pub fn toggleFullscreen(self: *Surface) void {
+        self.window.toggleFullscreen();
     }
 
     pub fn newTab(self: *Surface) !void {
