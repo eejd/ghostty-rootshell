@@ -231,7 +231,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font regular: {s}", .{try face.name()});
                     try group.addFace(alloc, .regular, face);
-                } else std.log.warn("font-family not found: {s}", .{family});
+                } else log.warn("font-family not found: {s}", .{family});
             }
             if (config.@"font-family-bold") |family| {
                 var disco_it = try disco.discover(.{
@@ -243,7 +243,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font bold: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold, face);
-                } else std.log.warn("font-family-bold not found: {s}", .{family});
+                } else log.warn("font-family-bold not found: {s}", .{family});
             }
             if (config.@"font-family-italic") |family| {
                 var disco_it = try disco.discover(.{
@@ -255,7 +255,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font italic: {s}", .{try face.name()});
                     try group.addFace(alloc, .italic, face);
-                } else std.log.warn("font-family-italic not found: {s}", .{family});
+                } else log.warn("font-family-italic not found: {s}", .{family});
             }
             if (config.@"font-family-bold-italic") |family| {
                 var disco_it = try disco.discover(.{
@@ -268,7 +268,7 @@ pub fn init(
                 if (try disco_it.next()) |face| {
                     log.info("font bold+italic: {s}", .{try face.name()});
                     try group.addFace(alloc, .bold_italic, face);
-                } else std.log.warn("font-family-bold-italic not found: {s}", .{family});
+                } else log.warn("font-family-bold-italic not found: {s}", .{family});
             }
         }
 
@@ -283,6 +283,26 @@ pub fn init(
             .bold,
             font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_bold_ttf, font_size)),
         );
+
+        // If we support auto-italicization and we don't have an italic face,
+        // then we can try to auto-italicize our regular face.
+        if (comptime font.DeferredFace.canItalicize()) {
+            if (group.getFace(.italic) == null) {
+                if (group.getFace(.regular)) |regular| {
+                    if (try regular.italicize()) |face| {
+                        log.info("font auto-italicized: {s}", .{try face.name()});
+                        try group.addFace(alloc, .italic, face);
+                    }
+                }
+            }
+        } else {
+            // We don't support auto-italics. If we don't have an italic font
+            // face let the user know so they aren't surprised (if they look
+            // at logs).
+            if (group.getFace(.italic) == null) {
+                log.warn("no italic font face available, italics will not render", .{});
+            }
+        }
 
         // Emoji fallback. We don't include this on Mac since Mac is expected
         // to always have the Apple Emoji available.

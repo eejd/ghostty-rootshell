@@ -18,13 +18,18 @@ pub const Font = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
-    pub fn copyWithAttributes(self: *Font, size: f32, attrs: ?*text.FontDescriptor) Allocator.Error!*Font {
+    pub fn copyWithAttributes(
+        self: *Font,
+        size: f32,
+        matrix: ?*const graphics.AffineTransform,
+        attrs: ?*text.FontDescriptor,
+    ) Allocator.Error!*Font {
         return @as(
             ?*Font,
             @ptrFromInt(@intFromPtr(c.CTFontCreateCopyWithAttributes(
                 @ptrCast(self),
                 size,
-                null,
+                @ptrCast(matrix),
                 @ptrCast(attrs),
             ))),
         ) orelse Allocator.Error.OutOfMemory;
@@ -217,6 +222,6 @@ test "copy" {
     const font = try Font.createWithFontDescriptor(desc, 12);
     defer font.release();
 
-    const f2 = try font.copyWithAttributes(14, null);
+    const f2 = try font.copyWithAttributes(14, null, null);
     defer f2.release();
 }

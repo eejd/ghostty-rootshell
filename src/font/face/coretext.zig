@@ -20,6 +20,16 @@ pub const Face = struct {
     /// Metrics for this font face. These are useful for renderers.
     metrics: font.face.Metrics,
 
+    /// The matrix applied to a regular font to auto-italicize it.
+    pub const italic_skew = macos.graphics.AffineTransform{
+        .a = 1,
+        .b = 0,
+        .c = 0.267949, // approx. tan(15)
+        .d = 1,
+        .tx = 0,
+        .ty = 0,
+    };
+
     /// Initialize a CoreText-based font from a TTF/TTC in memory.
     pub fn init(lib: font.Library, source: [:0]const u8, size: font.face.DesiredSize) !Face {
         _ = lib;
@@ -47,7 +57,7 @@ pub const Face = struct {
         // Create a copy. The copyWithAttributes docs say the size is in points,
         // but we need to scale the points by the DPI and to do that we use our
         // function called "pixels".
-        const ct_font = try base.copyWithAttributes(@floatFromInt(size.pixels()), null);
+        const ct_font = try base.copyWithAttributes(@floatFromInt(size.pixels()), null, null);
         errdefer ct_font.release();
 
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
@@ -67,6 +77,14 @@ pub const Face = struct {
         self.font.release();
         self.hb_font.destroy();
         self.* = undefined;
+    }
+
+    /// Return a new face that is the same as this but has a transformation
+    /// matrix applied to italicize it.
+    pub fn italicize(self: *const Face) !Face {
+        const ct_font = try self.font.copyWithAttributes(0.0, &italic_skew, null);
+        defer ct_font.release();
+        return try initFontCopy(ct_font, .{ .points = 0 });
     }
 
     /// Resize the font in-place. If this succeeds, the caller is responsible

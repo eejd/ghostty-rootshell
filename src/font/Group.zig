@@ -99,6 +99,15 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace)
     try list.append(alloc, face);
 }
 
+/// Get the face for the given style. This will always return the first
+/// face (if it exists). The returned pointer is only valid as long as
+/// the faces do not change.
+pub fn getFace(self: *Group, style: Style) ?*DeferredFace {
+    const list = self.faces.getPtr(style);
+    if (list.items.len == 0) return null;
+    return &list.items[0];
+}
+
 /// Resize the fonts to the desired size.
 pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
     // Note: there are some issues here with partial failure. We don't
@@ -189,8 +198,15 @@ pub fn indexForCodepoint(
     // If we can find the exact value, then return that.
     if (self.indexForCodepointExact(cp, style, p)) |value| return value;
 
-    // Try looking for another font that will satisfy this request.
-    if (font.Discover != void) {
+    // If we're not a regular font style, try looking for a regular font
+    // that will satisfy this request. Blindly looking for unmatched styled
+    // fonts to satisfy one codepoint results in some ugly rendering.
+    if (style != .regular) {
+        if (self.indexForCodepoint(cp, .regular, p)) |value| return value;
+    }
+
+    // If we are regular, try looking for a fallback using discovery.
+    if (style == .regular and font.Discover != void) {
         if (self.discover) |*disco| discover: {
             var disco_it = disco.discover(.{
                 .codepoint = cp,
