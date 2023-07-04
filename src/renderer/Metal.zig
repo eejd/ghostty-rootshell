@@ -944,30 +944,25 @@ pub fn updateCell(
         fg: terminal.color.RGB,
     };
 
+    // True if this cell is selected
+    // TODO(perf): we can check in advance if selection is in
+    // our viewport at all and not run this on every point.
+    const selected: bool = if (selection) |sel| selected: {
+        const screen_point = (terminal.point.Viewport{
+            .x = x,
+            .y = y,
+        }).toScreen(screen);
+
+        break :selected sel.contains(screen_point);
+    } else false;
+
     // The colors for the cell.
     const colors: BgFg = colors: {
-        // If we have a selection, then we need to check if this
-        // cell is selected.
-        // TODO(perf): we can check in advance if selection is in
-        // our viewport at all and not run this on every point.
-        var selection_res: ?BgFg = sel_colors: {
-            if (selection) |sel| {
-                const screen_point = (terminal.point.Viewport{
-                    .x = x,
-                    .y = y,
-                }).toScreen(screen);
-
-                // If we are selected, we our colors are just inverted fg/bg
-                if (sel.contains(screen_point)) {
-                    break :sel_colors BgFg{
-                        .bg = self.config.selection_background orelse self.config.foreground,
-                        .fg = self.config.selection_foreground orelse self.config.background,
-                    };
-                }
-            }
-
-            break :sel_colors null;
-        };
+        // If we are selected, we our colors are just inverted fg/bg
+        var selection_res: ?BgFg = if (selected) .{
+            .bg = self.config.selection_background orelse self.config.foreground,
+            .fg = self.config.selection_foreground orelse self.config.background,
+        } else null;
 
         const res: BgFg = selection_res orelse if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
@@ -999,11 +994,37 @@ pub fn updateCell(
 
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
+        // Determine our background alpha. If we have transparency configured
+        // then this is dynamic depending on some situations. This is all
+        // in an attempt to make transparency look the best for various
+        // situations. See inline comments.
+        const bg_alpha: u8 = bg_alpha: {
+            if (self.config.background_opacity >= 1) break :bg_alpha alpha;
+
+            // If we're selected, we do not apply background opacity
+            if (selected) break :bg_alpha alpha;
+
+            // If we're reversed, do not apply background opacity
+            if (cell.attrs.inverse) break :bg_alpha alpha;
+
+            // If we have a background and its not the default background
+            // then we apply background opacity
+            if (cell.attrs.has_bg and !std.meta.eql(rgb, self.config.background)) {
+                break :bg_alpha alpha;
+            }
+
+            // We apply background opacity.
+            var bg_alpha: f64 = @floatFromInt(alpha);
+            bg_alpha *= self.config.background_opacity;
+            bg_alpha = @ceil(bg_alpha);
+            break :bg_alpha @intFromFloat(bg_alpha);
+        };
+
         self.cells_bg.appendAssumeCapacity(.{
             .mode = .bg,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
-            .color = .{ rgb.r, rgb.g, rgb.b, alpha },
+            .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
         });
     }
 
