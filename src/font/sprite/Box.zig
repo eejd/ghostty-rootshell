@@ -2559,7 +2559,7 @@ fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
 
-    self.vline(canvas, 0, self.height - thick_px, 0, thick_px);
+    self.vline(canvas, 0, self.height, 0, thick_px);
 }
 
 fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
