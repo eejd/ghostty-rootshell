@@ -72,6 +72,15 @@ pub const Config = struct {
     /// affect new windows, tabs, and splits.
     @"background-opacity": f64 = 1.0,
 
+    /// A positive value enables blurring of the background when
+    /// background-opacity is less than 1. The value is the blur radius to
+    /// apply. A value of 20 is reasonable for a good looking blur.
+    /// Higher values will cause strange rendering issues as well as
+    /// performance issues.
+    ///
+    /// This is only supported on macOS.
+    @"background-blur-radius": u8 = 0,
+
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH. If this is not set, a default will
     /// be looked up from your system. The rules for the default lookup are:

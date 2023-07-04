@@ -291,6 +291,10 @@ void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
 
+// APIs I'd like to get rid of eventually but are still needed for now.
+// Don't use these unless you know what you're doing.
+void ghostty_set_window_background_blur(ghostty_surface_t, void *);
+
 #ifdef __cplusplus
 }
 #endif
