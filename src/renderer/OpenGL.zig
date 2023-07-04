@@ -238,6 +238,7 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     cursor_color: ?terminal.color.RGB,
     background: terminal.color.RGB,
+    background_opacity: f64,
     foreground: terminal.color.RGB,
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
@@ -249,6 +250,7 @@ pub const DerivedConfig = struct {
         _ = alloc_gpa;
 
         return .{
+            .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
 
             .cursor_color = if (config.@"cursor-color") |col|
@@ -461,7 +463,7 @@ fn resetCellsLRU(self: *OpenGL) void {
 }
 
 /// Returns the hints that we want for this
-pub fn glfwWindowHints() glfw.Window.Hints {
+pub fn glfwWindowHints(config: *const configpkg.Config) glfw.Window.Hints {
     return .{
         .context_version_major = 3,
         .context_version_minor = 3,
@@ -469,6 +471,7 @@ pub fn glfwWindowHints() glfw.Window.Hints {
         .opengl_forward_compat = true,
         .cocoa_graphics_switching = builtin.os.tag == .macos,
         .cocoa_retina_framebuffer = true,
+        .transparent_framebuffer = config.@"background-opacity" < 1,
     };
 }
 
@@ -1059,30 +1062,25 @@ pub fn updateCell(
         fg: terminal.color.RGB,
     };
 
+    // True if this cell is selected
+    // TODO(perf): we can check in advance if selection is in
+    // our viewport at all and not run this on every point.
+    const selected: bool = if (selection) |sel| selected: {
+        const screen_point = (terminal.point.Viewport{
+            .x = x,
+            .y = y,
+        }).toScreen(screen);
+
+        break :selected sel.contains(screen_point);
+    } else false;
+
     // The colors for the cell.
     const colors: BgFg = colors: {
-        // If we have a selection, then we need to check if this
-        // cell is selected.
-        // TODO(perf): we can check in advance if selection is in
-        // our viewport at all and not run this on every point.
-        var selection_res: ?BgFg = sel_colors: {
-            if (selection) |sel| {
-                const screen_point = (terminal.point.Viewport{
-                    .x = x,
-                    .y = y,
-                }).toScreen(screen);
-
-                // If we are selected, we our colors are just inverted fg/bg
-                if (sel.contains(screen_point)) {
-                    break :sel_colors BgFg{
-                        .bg = self.config.selection_background orelse self.config.foreground,
-                        .fg = self.config.selection_foreground orelse self.config.background,
-                    };
-                }
-            }
-
-            break :sel_colors null;
-        };
+        // If we are selected, we our colors are just inverted fg/bg
+        var selection_res: ?BgFg = if (selected) .{
+            .bg = self.config.selection_background orelse self.config.foreground,
+            .fg = self.config.selection_foreground orelse self.config.background,
+        } else null;
 
         const res: BgFg = selection_res orelse if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
@@ -1125,10 +1123,34 @@ pub fn updateCell(
 
     // If the cell has a background, we always draw it.
     if (colors.bg) |rgb| {
-        var mode: GPUCellMode = .bg;
+        // Determine our background alpha. If we have transparency configured
+        // then this is dynamic depending on some situations. This is all
+        // in an attempt to make transparency look the best for various
+        // situations. See inline comments.
+        const bg_alpha: u8 = bg_alpha: {
+            if (self.config.background_opacity >= 1) break :bg_alpha alpha;
+
+            // If we're selected, we do not apply background opacity
+            if (selected) break :bg_alpha alpha;
+
+            // If we're reversed, do not apply background opacity
+            if (cell.attrs.inverse) break :bg_alpha alpha;
+
+            // If we have a background and its not the default background
+            // then we apply background opacity
+            if (cell.attrs.has_bg and !std.meta.eql(rgb, self.config.background)) {
+                break :bg_alpha alpha;
+            }
+
+            // We apply background opacity.
+            var bg_alpha: f64 = @floatFromInt(alpha);
+            bg_alpha *= self.config.background_opacity;
+            bg_alpha = @ceil(bg_alpha);
+            break :bg_alpha @intFromFloat(bg_alpha);
+        };
 
         self.cells_bg.appendAssumeCapacity(.{
-            .mode = mode,
+            .mode = .bg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
             .grid_width = cell.widthLegacy(),
@@ -1145,7 +1167,7 @@ pub fn updateCell(
             .bg_r = rgb.r,
             .bg_g = rgb.g,
             .bg_b = rgb.b,
-            .bg_a = alpha,
+            .bg_a = bg_alpha,
         });
     }
 
@@ -1411,7 +1433,7 @@ pub fn draw(self: *OpenGL) !void {
         @as(f32, @floatFromInt(self.draw_background.r)) / 255,
         @as(f32, @floatFromInt(self.draw_background.g)) / 255,
         @as(f32, @floatFromInt(self.draw_background.b)) / 255,
-        1.0,
+        @floatCast(self.config.background_opacity),
     );
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
