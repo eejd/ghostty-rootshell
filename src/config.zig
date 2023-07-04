@@ -65,6 +65,11 @@ pub const Config = struct {
 
     /// The opacity level (opposite of transparency) of the background.
     /// A value of 1 is fully opaque and a value of 0 is fully transparent.
+    /// A value less than 0 or greater than 1 will be clamped to the nearest
+    /// valid value.
+    ///
+    /// This can be changed at runtime for native macOS and Linux GTK builds.
+    /// This can NOT be changed at runtime for GLFW builds (not common).
     @"background-opacity": f64 = 1.0,
 
     /// The command to run, usually a shell. If this is not an absolute path,

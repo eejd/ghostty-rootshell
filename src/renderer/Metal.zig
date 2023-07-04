@@ -132,6 +132,7 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     cursor_color: ?terminal.color.RGB,
     background: terminal.color.RGB,
+    background_opacity: f64,
     foreground: terminal.color.RGB,
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
@@ -143,6 +144,7 @@ pub const DerivedConfig = struct {
         _ = alloc_gpa;
 
         return .{
+            .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
 
             .cursor_color = if (config.@"cursor-color") |col|
@@ -171,11 +173,10 @@ pub const DerivedConfig = struct {
 };
 
 /// Returns the hints that we want for this
-pub fn glfwWindowHints() glfw.Window.Hints {
+pub fn glfwWindowHints(config: *const configpkg.Config) glfw.Window.Hints {
     return .{
         .client_api = .no_api,
-        // .cocoa_graphics_switching = builtin.os.tag == .macos,
-        // .cocoa_retina_framebuffer = true,
+        .transparent_framebuffer = config.@"background-opacity" < 1,
     };
 }
 
@@ -196,7 +197,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         const CAMetalLayer = objc.Class.getClass("CAMetalLayer").?;
         const swapchain = CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
         swapchain.setProperty("device", device.value);
-        swapchain.setProperty("opaque", true);
+        swapchain.setProperty("opaque", options.config.background_opacity >= 1);
 
         // disable v-sync
         swapchain.setProperty("displaySyncEnabled", false);
@@ -628,7 +629,7 @@ pub fn render(
                     .red = @as(f32, @floatFromInt(critical.bg.r)) / 255,
                     .green = @as(f32, @floatFromInt(critical.bg.g)) / 255,
                     .blue = @as(f32, @floatFromInt(critical.bg.b)) / 255,
-                    .alpha = 1.0,
+                    .alpha = self.config.background_opacity,
                 });
             }
 
