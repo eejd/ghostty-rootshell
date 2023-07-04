@@ -63,6 +63,10 @@ pub const Config = struct {
     /// The color of the cursor. If this is not set, a default will be chosen.
     @"cursor-color": ?Color = null,
 
+    /// The opacity level (opposite of transparency) of the background.
+    /// A value of 1 is fully opaque and a value of 0 is fully transparent.
+    @"background-opacity": f64 = 1.0,
+
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH. If this is not set, a default will
     /// be looked up from your system. The rules for the default lookup are:
@@ -754,6 +758,7 @@ pub const Config = struct {
         switch (@typeInfo(T)) {
             inline .Bool,
             .Int,
+            .Float,
             => return src,
 
             .Optional => |info| return try cloneValue(
@@ -879,6 +884,7 @@ fn equal(comptime T: type, old: T, new: T) bool {
 
         inline .Bool,
         .Int,
+        .Float,
         .Enum,
         => return old == new,
 
