@@ -278,7 +278,7 @@ pub const Surface = struct {
             "ghostty",
             null,
             null,
-            Renderer.glfwWindowHints(),
+            Renderer.glfwWindowHints(&app.config),
         ) orelse return glfw.mustGetErrorCode();
         errdefer win.destroy();
 

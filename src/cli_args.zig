@@ -144,6 +144,11 @@ fn parseIntoField(
                     0,
                 ),
 
+                f64 => try std.fmt.parseFloat(
+                    f64,
+                    value orelse return error.ValueRequired,
+                ),
+
                 else => unreachable,
             };
 
@@ -296,6 +301,20 @@ test "parseIntoField: unsigned numbers" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "u8", "1");
     try testing.expectEqual(@as(u8, 1), data.u8);
+}
+
+test "parseIntoField: floats" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        f64: f64,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "f64", "1");
+    try testing.expectEqual(@as(f64, 1.0), data.f64);
 }
 
 test "parseIntoField: optional field" {

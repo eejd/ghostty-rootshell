@@ -470,6 +470,11 @@ pub const CAPI = struct {
         return surface.app;
     }
 
+    /// Returns ture if the surface has transparency set.
+    export fn ghostty_surface_transparent(surface: *Surface) bool {
+        return surface.app.config.@"background-opacity" < 1.0;
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_refresh(surface: *Surface) void {
         surface.refresh();
@@ -565,4 +570,34 @@ pub const CAPI = struct {
     export fn ghostty_surface_split_focus(ptr: *Surface, direction: input.SplitFocusDirection) void {
         ptr.gotoSplit(direction);
     }
+
+    /// Sets the window background blur on macOS to the desired value.
+    /// I do this in Zig as an extern function because I don't know how to
+    /// call these functions in Swift.
+    ///
+    /// This uses an undocumented, non-public API because this is what
+    /// every terminal appears to use, including Terminal.app.
+    export fn ghostty_set_window_background_blur(
+        ptr: *Surface,
+        window: *anyopaque,
+    ) void {
+        const config = ptr.app.config;
+
+        // Do nothing if we don't have background transparency enabled
+        if (config.@"background-opacity" >= 1.0) return;
+
+        // Do nothing if our blur value is zero
+        if (config.@"background-blur-radius" == 0) return;
+
+        const nswindow = objc.Object.fromId(window);
+        _ = CGSSetWindowBackgroundBlurRadius(
+            CGSDefaultConnectionForThread(),
+            nswindow.msgSend(usize, objc.sel("windowNumber"), .{}),
+            @intCast(config.@"background-blur-radius"),
+        );
+    }
+
+    /// See ghostty_set_window_background_blur
+    extern "c" fn CGSSetWindowBackgroundBlurRadius(*anyopaque, usize, c_int) i32;
+    extern "c" fn CGSDefaultConnectionForThread() *anyopaque;
 };

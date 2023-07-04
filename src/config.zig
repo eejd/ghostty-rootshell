@@ -63,6 +63,24 @@ pub const Config = struct {
     /// The color of the cursor. If this is not set, a default will be chosen.
     @"cursor-color": ?Color = null,
 
+    /// The opacity level (opposite of transparency) of the background.
+    /// A value of 1 is fully opaque and a value of 0 is fully transparent.
+    /// A value less than 0 or greater than 1 will be clamped to the nearest
+    /// valid value.
+    ///
+    /// Changing this value at runtime (and reloading config) will only
+    /// affect new windows, tabs, and splits.
+    @"background-opacity": f64 = 1.0,
+
+    /// A positive value enables blurring of the background when
+    /// background-opacity is less than 1. The value is the blur radius to
+    /// apply. A value of 20 is reasonable for a good looking blur.
+    /// Higher values will cause strange rendering issues as well as
+    /// performance issues.
+    ///
+    /// This is only supported on macOS.
+    @"background-blur-radius": u8 = 0,
+
     /// The command to run, usually a shell. If this is not an absolute path,
     /// it'll be looked up in the PATH. If this is not set, a default will
     /// be looked up from your system. The rules for the default lookup are:
@@ -754,6 +772,7 @@ pub const Config = struct {
         switch (@typeInfo(T)) {
             inline .Bool,
             .Int,
+            .Float,
             => return src,
 
             .Optional => |info| return try cloneValue(
@@ -879,6 +898,7 @@ fn equal(comptime T: type, old: T, new: T) bool {
 
         inline .Bool,
         .Int,
+        .Float,
         .Enum,
         => return old == new,
 

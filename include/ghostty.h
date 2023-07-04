@@ -276,6 +276,7 @@ void *ghostty_app_userdata(ghostty_app_t);
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
+bool ghostty_surface_transparent(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
@@ -289,6 +290,10 @@ void ghostty_surface_ime_point(ghostty_surface_t, double *, double *);
 void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
+
+// APIs I'd like to get rid of eventually but are still needed for now.
+// Don't use these unless you know what you're doing.
+void ghostty_set_window_background_blur(ghostty_surface_t, void *);
 
 #ifdef __cplusplus
 }

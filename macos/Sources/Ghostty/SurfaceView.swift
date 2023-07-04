@@ -197,6 +197,20 @@ extension Ghostty {
             ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
         }
         
+        override func viewDidMoveToWindow() {
+            guard let window = self.window else { return }
+            guard let surface = self.surface else { return }
+            guard ghostty_surface_transparent(surface) else { return }
+            
+            // Set the window transparency settings
+            window.isOpaque = false
+            window.hasShadow = false
+            window.backgroundColor = .clear
+            
+            // If we have a blur, set the blur
+            ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
+        }
+        
         override func resignFirstResponder() -> Bool {
             let result = super.resignFirstResponder()
             
