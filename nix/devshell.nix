@@ -8,7 +8,7 @@
 , nodejs
 , parallel
 , pkg-config
-, python
+, python3
 , scdoc
 , tracy
 , valgrind
@@ -80,7 +80,7 @@ in mkShell rec {
     # Testing
     gdb
     parallel
-    python
+    python3
     tracy
     vttest
 
