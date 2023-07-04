@@ -68,8 +68,8 @@ pub const Config = struct {
     /// A value less than 0 or greater than 1 will be clamped to the nearest
     /// valid value.
     ///
-    /// This can be changed at runtime for native macOS and Linux GTK builds.
-    /// This can NOT be changed at runtime for GLFW builds (not common).
+    /// Changing this value at runtime (and reloading config) will only
+    /// affect new windows, tabs, and splits.
     @"background-opacity": f64 = 1.0,
 
     /// The command to run, usually a shell. If this is not an absolute path,
