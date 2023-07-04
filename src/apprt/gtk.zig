@@ -286,6 +286,9 @@ const Window = struct {
     /// The notebook (tab grouping) for this window.
     notebook: *c.GtkNotebook,
 
+    /// The background CSS for the window (if any).
+    css_window_background: ?[]u8 = null,
+
     pub fn init(self: *Window, app: *App) !void {
         // Set up our own state
         self.* = .{
@@ -301,6 +304,27 @@ const Window = struct {
         self.window = gtk_window;
         c.gtk_window_set_title(gtk_window, "Ghostty");
         c.gtk_window_set_default_size(gtk_window, 200, 200);
+
+        // Apply background opacity if we have it
+        if (app.config.@"background-opacity" < 1) {
+            var css = try std.fmt.allocPrint(
+                app.core_app.alloc,
+                ".window-transparent {{ background-color: rgba(0, 0, 0, {d}); }}",
+                .{app.config.@"background-opacity"},
+            );
+            self.css_window_background = css;
+
+            const display = c.gtk_widget_get_display(@ptrCast(window));
+            const provider = c.gtk_css_provider_new();
+            c.gtk_css_provider_load_from_data(provider, css.ptr, @intCast(css.len));
+            c.gtk_style_context_add_provider_for_display(
+                display,
+                @ptrCast(provider),
+                c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            c.gtk_widget_add_css_class(@ptrCast(window), "window-transparent");
+        }
+
         c.gtk_widget_show(window);
         _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, G_CONNECT_DEFAULT);
@@ -326,9 +350,7 @@ const Window = struct {
     }
 
     pub fn deinit(self: *Window) void {
-        // Notify our app we're gone.
-        // TODO
-        _ = self;
+        if (self.css_window_background) |ptr| self.app.core_app.alloc.free(ptr);
     }
 
     /// Add a new tab to this window.
