@@ -26,6 +26,17 @@ pub const Config = struct {
     @"font-family-italic": ?[:0]const u8 = null,
     @"font-family-bold-italic": ?[:0]const u8 = null,
 
+    /// Apply a font feature. This can be repeated multiple times to enable
+    /// multiple font features. You can NOT set multiple font features with
+    /// a single value (yet).
+    ///
+    /// The font feature will apply to all fonts rendered by Ghostty. A
+    /// future enhancement will allow targetting specific faces.
+    ///
+    /// A valid value is the name of a feature. Prefix the feature with a
+    /// "-" to explicitly disable it. Example: "ss20" or "-ss20".
+    @"font-feature": RepeatableString = .{},
+
     /// Font size in points
     @"font-size": u8 = switch (builtin.os.tag) {
         // On Mac we default a little bigger since this tends to look better.
