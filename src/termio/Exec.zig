@@ -258,20 +258,34 @@ pub fn resize(
 
 /// Clear the screen.
 pub fn clearScreen(self: *Exec, history: bool) !void {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
 
-    // If we're on the alternate screen, we do not clear. Since this is an
-    // emulator-level screen clear, this messes up the running programs
-    // knowledge of where the cursor is and causes rendering issues. So,
-    // for alt screen, we do nothing.
-    if (self.terminal.active_screen == .alternate) return;
+        // If we're on the alternate screen, we do not clear. Since this is an
+        // emulator-level screen clear, this messes up the running programs
+        // knowledge of where the cursor is and causes rendering issues. So,
+        // for alt screen, we do nothing.
+        if (self.terminal.active_screen == .alternate) return;
 
-    // Clear our scrollback
-    if (history) try self.terminal.screen.clear(.history);
+        // Clear our scrollback
+        if (history) try self.terminal.screen.clear(.history);
 
-    // Clear above the cursor
-    try self.terminal.screen.clear(.above_cursor);
+        // If we're not at a prompt, we clear the screen manually using
+        // the terminal screen state. If we are at a prompt, we send
+        // form-feed so that the shell can repaint the entire screen.
+        if (!self.terminal.cursorIsAtPrompt()) {
+            // Clear above the cursor
+            try self.terminal.screen.clear(.above_cursor);
+
+            // Exit
+            return;
+        }
+    }
+
+    // If we reached here it means we're at a prompt, so we send a form-feed.
+    assert(self.terminal.cursorIsAtPrompt());
+    try self.queueWrite(&[_]u8{0x0C});
 }
 
 pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
