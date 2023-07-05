@@ -1181,17 +1181,59 @@ fn maxCapacity(self: Screen) usize {
     return (self.rows + self.max_scrollback) * (self.cols + 1);
 }
 
-/// Clear all the history. This moves the viewport back to the "top", too.
-pub fn clearHistory(self: *Screen) void {
-    // If there is no history, do nothing.
-    if (self.history == 0) return;
+pub const ClearMode = enum {
+    /// Delete all history. This will also move the viewport area to the top
+    /// so that the viewport area never contains history. This does NOT
+    /// change the active area.
+    history,
 
-    // Delete all our history
-    self.storage.deleteOldest(self.history * (self.cols + 1));
-    self.history = 0;
+    /// Clear all the lines above the cursor in the active area. This does
+    /// not touch history.
+    above_cursor,
+};
 
-    // Back to the top
-    self.viewport = 0;
+/// Clear the screen contents according to the given mode.
+pub fn clear(self: *Screen, mode: ClearMode) !void {
+    switch (mode) {
+        .history => {
+            // If there is no history, do nothing.
+            if (self.history == 0) return;
+
+            // Delete all our history
+            self.storage.deleteOldest(self.history * (self.cols + 1));
+            self.history = 0;
+
+            // Back to the top
+            self.viewport = 0;
+        },
+
+        .above_cursor => {
+            // First we copy all the rows from our cursor down to the top
+            // of the active area.
+            var y: usize = self.cursor.y;
+            const y_max = @min(self.rows, self.rowsWritten()) - 1;
+            const copy_n = (y_max - y) + 1;
+            while (y <= y_max) : (y += 1) {
+                const dst_y = y - self.cursor.y;
+                const dst = self.getRow(.{ .active = dst_y });
+                const src = self.getRow(.{ .active = y });
+                try dst.copyRow(src);
+            }
+
+            // Next we want to clear all the rows below the copied amount.
+            y = copy_n;
+            while (y <= y_max) : (y += 1) {
+                const dst = self.getRow(.{ .active = y });
+                dst.clear(.{});
+            }
+
+            // Move our cursor to the top
+            self.cursor.y = 0;
+
+            // Scroll to the top of the viewport
+            self.viewport = self.history;
+        },
+    }
 }
 
 /// Select the line under the given point. This will select across soft-wrapped
@@ -3631,7 +3673,7 @@ test "Screen: clear history with no history" {
     defer s.deinit();
     try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
     try testing.expect(s.viewportIsBottom());
-    s.clearHistory();
+    try s.clear(.history);
     try testing.expect(s.viewportIsBottom());
     {
         // Test our contents rotated
@@ -3665,7 +3707,7 @@ test "Screen: clear history" {
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
     }
 
-    s.clearHistory();
+    try s.clear(.history);
     try testing.expect(s.viewportIsBottom());
     {
         // Test our contents rotated
@@ -3679,6 +3721,57 @@ test "Screen: clear history" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("4ABCD\n5EFGH\n6IJKL", contents);
     }
+}
+
+test "Screen: clear above cursor" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 10, 3);
+    defer s.deinit();
+    try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+    try s.clear(.above_cursor);
+    try testing.expect(s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("6IJKL", contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("6IJKL", contents);
+    }
+
+    try testing.expectEqual(@as(usize, 5), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
+}
+
+test "Screen: clear above cursor with history" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 10, 3);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n");
+    try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+    try s.clear(.above_cursor);
+    try testing.expect(s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("6IJKL", contents);
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL\n6IJKL", contents);
+    }
+
+    try testing.expectEqual(@as(usize, 5), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
 }
 
 test "Screen: selectionString basic" {

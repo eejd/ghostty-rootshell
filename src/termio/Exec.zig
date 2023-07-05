@@ -258,15 +258,20 @@ pub fn resize(
 
 /// Clear the screen.
 pub fn clearScreen(self: *Exec, history: bool) !void {
-    // Queue form-feed ASCII code to clear the visible page.
-    try self.queueWrite(&[_]u8{0x0C});
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    // If we're on the alternate screen, we do not clear. Since this is an
+    // emulator-level screen clear, this messes up the running programs
+    // knowledge of where the cursor is and causes rendering issues. So,
+    // for alt screen, we do nothing.
+    if (self.terminal.active_screen == .alternate) return;
 
     // Clear our scrollback
-    if (history) {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        self.terminal.screen.clearHistory();
-    }
+    if (history) try self.terminal.screen.clear(.history);
+
+    // Clear above the cursor
+    try self.terminal.screen.clear(.above_cursor);
 }
 
 pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
