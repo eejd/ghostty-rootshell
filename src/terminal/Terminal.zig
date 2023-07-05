@@ -1063,7 +1063,10 @@ pub fn eraseDisplay(
             self.screen.cursor.pending_wrap = false;
         },
 
-        .scrollback => self.screen.clearHistory(),
+        .scrollback => self.screen.clear(.history) catch |err| {
+            // This isn't a huge issue, so just log it.
+            log.err("failed to clear scrollback: {}", .{err});
+        },
     }
 }
 
