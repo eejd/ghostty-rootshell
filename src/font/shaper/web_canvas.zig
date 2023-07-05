@@ -37,10 +37,12 @@ pub const Shaper = struct {
 
     /// The cell_buf argument is the buffer to use for storing shaped results.
     /// This should be at least the number of columns in the terminal.
-    pub fn init(alloc: Allocator, cell_buf: []font.shape.Cell) !Shaper {
+    pub fn init(alloc: Allocator, opts: font.shape.Options) !Shaper {
+        // Note: we do not support opts.font_features
+
         return Shaper{
             .alloc = alloc,
-            .cell_buf = cell_buf,
+            .cell_buf = opts.cell_buf,
             .run_buf = .{},
         };
     }
@@ -238,7 +240,7 @@ pub const Wasm = struct {
         var cell_buf = try alloc.alloc(font.shape.Cell, cap);
         errdefer alloc.free(cell_buf);
 
-        var shaper = try Shaper.init(alloc, cell_buf);
+        var shaper = try Shaper.init(alloc, .{ .cell_buf = cell_buf });
         errdefer shaper.deinit();
 
         var result = try alloc.create(Shaper);

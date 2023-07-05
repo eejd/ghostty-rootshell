@@ -236,6 +236,7 @@ const GPUCellMode = enum(u8) {
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
     font_thicken: bool,
+    font_features: std.ArrayList([]const u8),
     cursor_color: ?terminal.color.RGB,
     background: terminal.color.RGB,
     background_opacity: f64,
@@ -247,11 +248,17 @@ pub const DerivedConfig = struct {
         alloc_gpa: Allocator,
         config: *const configpkg.Config,
     ) !DerivedConfig {
-        _ = alloc_gpa;
+        // Copy our font features
+        var font_features = features: {
+            var clone = try config.@"font-feature".list.clone(alloc_gpa);
+            break :features clone.toManaged(alloc_gpa);
+        };
+        errdefer font_features.deinit();
 
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
+            .font_features = font_features,
 
             .cursor_color = if (config.@"cursor-color") |col|
                 col.toTerminalRGB()
@@ -274,7 +281,7 @@ pub const DerivedConfig = struct {
     }
 
     pub fn deinit(self: *DerivedConfig) void {
-        _ = self;
+        self.font_features.deinit();
     }
 };
 
@@ -282,7 +289,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     // Create the initial font shaper
     var shape_buf = try alloc.alloc(font.shape.Cell, 1);
     errdefer alloc.free(shape_buf);
-    var shaper = try font.Shaper.init(alloc, shape_buf);
+    var shaper = try font.Shaper.init(alloc, .{
+        .cell_buf = shape_buf,
+        .features = options.config.font_features.items,
+    });
     errdefer shaper.deinit();
 
     // Create our shader
@@ -1299,6 +1309,20 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
         self.font_group.atlas_color.clear();
     }
 
+    // We always redo the font shaper in case font features changed. We
+    // could check to see if there was an actual config change but this is
+    // easier and rare enough to not cause performance issues.
+    {
+        var font_shaper = try font.Shaper.init(self.alloc, .{
+            .cell_buf = self.font_shaper.cell_buf,
+            .features = config.font_features.items,
+        });
+        errdefer font_shaper.deinit();
+        self.font_shaper.deinit();
+        self.font_shaper = font_shaper;
+    }
+
+    self.config.deinit();
     self.config = config.*;
 }
 

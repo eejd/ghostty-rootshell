@@ -24,20 +24,49 @@ pub const Shaper = struct {
     /// The shared memory used for shaping results.
     cell_buf: []font.shape.Cell,
 
+    /// The features to use for shaping.
+    hb_feats: FeatureList,
+
+    const FeatureList = std.ArrayList(harfbuzz.Feature);
+
     /// The cell_buf argument is the buffer to use for storing shaped results.
     /// This should be at least the number of columns in the terminal.
-    pub fn init(alloc: Allocator, cell_buf: []font.shape.Cell) !Shaper {
-        // Allocator is not used because harfbuzz uses libc
-        _ = alloc;
+    pub fn init(alloc: Allocator, opts: font.shape.Options) !Shaper {
+        // Parse all the features we want to use. We use
+        var hb_feats = hb_feats: {
+            // These features are hardcoded to always be on by default. Users
+            // can turn them off by setting the features to "-liga" for example.
+            const hardcoded_features = [_][]const u8{ "dlig", "liga" };
+
+            var list = try FeatureList.initCapacity(alloc, opts.features.len + hardcoded_features.len);
+            errdefer list.deinit();
+
+            for (hardcoded_features) |name| {
+                if (harfbuzz.Feature.fromString(name)) |feat| {
+                    try list.append(feat);
+                } else log.warn("failed to parse font feature: {s}", .{name});
+            }
+
+            for (opts.features) |name| {
+                if (harfbuzz.Feature.fromString(name)) |feat| {
+                    try list.append(feat);
+                } else log.warn("failed to parse font feature: {s}", .{name});
+            }
+
+            break :hb_feats list;
+        };
+        errdefer hb_feats.deinit();
 
         return Shaper{
             .hb_buf = try harfbuzz.Buffer.create(),
-            .cell_buf = cell_buf,
+            .cell_buf = opts.cell_buf,
+            .hb_feats = hb_feats,
         };
     }
 
     pub fn deinit(self: *Shaper) void {
         self.hb_buf.destroy();
+        self.hb_feats.deinit();
     }
 
     /// Returns an iterator that returns one text run at a time for the
@@ -75,14 +104,8 @@ pub const Shaper = struct {
         // We only do shaping if the font is not a special-case. For special-case
         // fonts, the codepoint == glyph_index so we don't need to run any shaping.
         if (run.font_index.special() == null) {
-            // TODO: we do not want to hardcode these
-            const hb_feats = &[_]harfbuzz.Feature{
-                harfbuzz.Feature.fromString("dlig").?,
-                harfbuzz.Feature.fromString("liga").?,
-            };
-
             const face = try run.group.group.faceFromIndex(run.font_index);
-            harfbuzz.shape(face.hb_font, self.hb_buf, hb_feats);
+            harfbuzz.shape(face.hb_font, self.hb_buf, self.hb_feats.items);
         }
 
         // If our buffer is empty, we short-circuit the rest of the work
@@ -657,7 +680,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
     var cell_buf = try alloc.alloc(font.shape.Cell, 80);
     errdefer alloc.free(cell_buf);
 
-    var shaper = try Shaper.init(alloc, cell_buf);
+    var shaper = try Shaper.init(alloc, .{ .cell_buf = cell_buf });
     errdefer shaper.deinit();
 
     return TestShaper{

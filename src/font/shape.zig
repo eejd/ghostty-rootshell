@@ -30,3 +30,20 @@ pub const Cell = struct {
     /// the runs.
     glyph_index: u32,
 };
+
+/// Options for shapers.
+pub const Options = struct {
+    /// The cell_buf argument is the buffer to use for storing shaped results.
+    /// This should be at least the number of columns in the terminal.
+    cell_buf: []Cell,
+
+    /// Font features to use when shaping. These can be in the following
+    /// formats: "-feat" "+feat" "feat". A "-"-prefix is used to disable
+    /// a feature and the others are used to enable a feature. If a feature
+    /// isn't supported or is invalid, it will be ignored.
+    ///
+    /// Note: eventually, this will move to font.Face probably as we may
+    /// want to support per-face feature configuration. For now, we only
+    /// support applying features globally.
+    features: []const []const u8 = &.{},
+};
