@@ -80,12 +80,22 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         echo -en "\e]133;D;$status\a"
     end
 
+    # Report pwd. This is actually built-in to fish but only for terminals
+    # that match an allowlist and that isn't us.
+   function __update_cwd_osc --on-variable PWD -d 'Notify capable terminals when $PWD changes'
+        if status --is-command-substitution || set -q INSIDE_EMACS
+            return
+        end
+        printf \e\]7\;file://%s%s\a $hostname (string escape --style=url $PWD)
+    end
+
     # Enable fish to handle reflow because Ghostty clears the prompt on resize.
     set --global fish_handle_reflow 1
 
     # Initial calls for first prompt
     __ghostty_set_cursor_beam
     __ghostty_mark_prompt_start
+    __update_cwd_osc
 end
 
 ghostty_exit
