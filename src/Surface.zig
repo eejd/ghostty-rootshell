@@ -1106,6 +1106,13 @@ pub fn keyCallback(
                     try self.io_thread.wakeup.notify();
                 },
 
+                .jump_to_prompt => |delta| {
+                    _ = self.io_thread.mailbox.push(.{
+                        .jump_to_prompt = @intCast(delta),
+                    }, .{ .forever = {} });
+                    try self.io_thread.wakeup.notify();
+                },
+
                 .toggle_dev_mode => if (DevMode.enabled) {
                     DevMode.instance.visible = !DevMode.instance.visible;
                     try self.queueRender();

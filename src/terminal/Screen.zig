@@ -1682,6 +1682,8 @@ fn jumpPrompt(self: *Screen, delta: isize) bool {
         }
     }
 
+    //log.warn("delta={} delta_rem={} start_y={} y={}", .{ delta, delta_rem, start_y, y });
+
     // If we didn't find any, do nothing.
     if (delta_rem == delta_start) return false;
 
@@ -1690,6 +1692,7 @@ fn jumpPrompt(self: *Screen, delta: isize) bool {
     const new_y: usize = @intCast(start_y + y_delta);
     const old_viewport = self.viewport;
     self.scroll(.{ .row = .{ .screen = new_y } }) catch unreachable;
+    //log.warn("delta={} y_delta={} start_y={} new_y={}", .{ delta, y_delta, start_y, new_y });
     return self.viewport != old_viewport;
 }
 

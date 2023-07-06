@@ -169,6 +169,11 @@ pub const Action = union(enum) {
     /// Clear the screen. This also clears all scrollback.
     clear_screen: void,
 
+    /// Jump the viewport forward or back by prompt. Positive
+    /// number is the number of prompts to jump forward, negative
+    /// is backwards.
+    jump_to_prompt: i16,
+
     /// Dev mode
     toggle_dev_mode: void,
 

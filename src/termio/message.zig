@@ -45,6 +45,9 @@ pub const Message = union(enum) {
         history: bool,
     },
 
+    /// Jump forward/backward n prompts.
+    jump_to_prompt: isize,
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 

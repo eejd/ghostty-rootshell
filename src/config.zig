@@ -491,6 +491,18 @@ pub const Config = struct {
                 .{ .clear_screen = {} },
             );
 
+            // Semantic prompts
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .up, .mods = .{ .super = true, .shift = true } },
+                .{ .jump_to_prompt = -1 },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .down, .mods = .{ .super = true, .shift = true } },
+                .{ .jump_to_prompt = 1 },
+            );
+
             // Mac windowing
             try result.keybind.set.put(
                 alloc,
