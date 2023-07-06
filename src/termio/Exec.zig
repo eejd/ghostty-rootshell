@@ -526,13 +526,17 @@ const Subprocess = struct {
         };
         errdefer env.deinit();
 
+        // Get our bundled resources directory, if it exists. We use this
+        // for terminfo, shell-integration, etc.
+        const resources_dir = try resourcesDir(alloc);
+
         // Set our TERM var. This is a bit complicated because we want to use
         // the ghostty TERM value but we want to only do that if we have
         // ghostty in the TERMINFO database.
         //
         // For now, we just look up a bundled dir but in the future we should
         // also load the terminfo database and look for it.
-        if (try terminfoDir(alloc)) |dir| {
+        if (try terminfoDir(alloc, resources_dir)) |dir| {
             try env.put("TERM", "xterm-ghostty");
             try env.put("COLORTERM", "truecolor");
             try env.put("TERMINFO", dir);
@@ -802,7 +806,17 @@ const Subprocess = struct {
     /// Gets the directory to the terminfo database, if it can be detected.
     /// The memory returned can't be easily freed so the alloc should be
     /// an arena or something similar.
-    fn terminfoDir(alloc: Allocator) !?[]const u8 {
+    fn terminfoDir(alloc: Allocator, base: ?[]const u8) !?[]const u8 {
+        const dir = base orelse return null;
+        return try tryDir(alloc, dir, "terminfo");
+    }
+
+    /// Gets the directory to the bundled resources directory, if it
+    /// exists (not all platforms or packages have it).
+    ///
+    /// The memory returned can't be easily freed so the alloc should be
+    /// an arena or something similar.
+    fn resourcesDir(alloc: Allocator) !?[]const u8 {
         // We only support Mac lookups right now because the terminfo
         // DB can be embedded directly in the App bundle.
         if (comptime !builtin.target.isDarwin()) return null;
@@ -815,20 +829,29 @@ const Subprocess = struct {
         // bundle as we expect it.
         while (std.fs.path.dirname(exe)) |dir| {
             exe = dir;
-
-            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const path = try std.fmt.bufPrint(
-                &buf,
-                "{s}/Contents/Resources/terminfo",
-                .{dir},
-            );
-
-            if (std.fs.accessAbsolute(path, .{})) {
-                return try alloc.dupe(u8, path);
-            } else |_| {
-                // Folder doesn't exist. If a different error happens its okay
-                // we just ignore it and move on.
+            if (try tryDir(alloc, dir, "Contents/Resources")) |v| {
+                return v;
             }
+        }
+
+        return null;
+    }
+
+    /// Little helper to check if the "base/sub" directory exists and
+    /// if so, duplicate the path and return it.
+    fn tryDir(
+        alloc: Allocator,
+        base: []const u8,
+        sub: []const u8,
+    ) !?[]const u8 {
+        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        const path = try std.fmt.bufPrint(&buf, "{s}/{s}", .{ base, sub });
+
+        if (std.fs.accessAbsolute(path, .{})) {
+            return try alloc.dupe(u8, path);
+        } else |_| {
+            // Folder doesn't exist. If a different error happens its okay
+            // we just ignore it and move on.
         }
 
         return null;
