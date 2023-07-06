@@ -21,6 +21,7 @@ const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
 const internal_os = @import("../os/main.zig");
 const configpkg = @import("../config.zig");
+const shell_integration = @import("shell_integration.zig");
 
 const log = std.log.scoped(.io_exec);
 
@@ -594,11 +595,32 @@ const Subprocess = struct {
         else
             null;
 
+        // The execution path
+        const final_path = if (internal_os.isFlatpak()) args[0] else path;
+
+        // Setup our shell integration, if we can.
+        const shell_integrated: ?shell_integration.Shell = shell: {
+            const dir = resources_dir orelse break :shell null;
+            break :shell try shell_integration.setup(
+                dir,
+                final_path,
+                &env,
+            );
+        };
+        if (shell_integrated) |shell| {
+            log.info(
+                "shell integration automatically injected shell={}",
+                .{shell},
+            );
+        } else {
+            log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
+        }
+
         return .{
             .arena = arena,
             .env = env,
             .cwd = cwd,
-            .path = if (internal_os.isFlatpak()) args[0] else path,
+            .path = final_path,
             .args = args,
             .grid_size = opts.grid_size,
             .screen_size = opts.screen_size,
