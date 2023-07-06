@@ -530,6 +530,9 @@ const Subprocess = struct {
         // Get our bundled resources directory, if it exists. We use this
         // for terminfo, shell-integration, etc.
         const resources_dir = try resourcesDir(alloc);
+        if (resources_dir) |dir| {
+            try env.put("GHOSTTY_RESOURCES_DIR", dir);
+        }
 
         // Set our TERM var. This is a bit complicated because we want to use
         // the ghostty TERM value but we want to only do that if we have

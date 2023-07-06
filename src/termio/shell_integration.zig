@@ -46,7 +46,7 @@ fn setupFish(
     // Set an env var so we can remove this from XDG_DATA_DIRS later.
     // This happens in the shell integration config itself. We do this
     // so that our modifications don't interfere with other commands.
-    try env.put("GHOSTTY_FISH_DIR", integ_dir);
+    try env.put("GHOSTTY_FISH_XDG_DIR", integ_dir);
 
     if (env.get("XDG_DATA_DIRS")) |old| {
         // We have an old value, We need to prepend our value to it.
@@ -62,6 +62,7 @@ fn setupFish(
             "{s}{c}{s}",
             .{ integ_dir, std.fs.path.delimiter, old },
         );
+
         try env.put("XDG_DATA_DIRS", prepended);
     } else {
         // No XDG_DATA_DIRS set, we just set it our desired value.
