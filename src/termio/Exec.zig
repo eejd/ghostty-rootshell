@@ -288,6 +288,21 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
     try self.queueWrite(&[_]u8{0x0C});
 }
 
+/// Jump the viewport to the prompt.
+pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
+    const wakeup: bool = wakeup: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        break :wakeup self.terminal.screen.jump(.{
+            .prompt_delta = delta,
+        });
+    };
+
+    if (wakeup) {
+        try self.renderer_wakeup.notify();
+    }
+}
+
 pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
     const ev = self.data.?;
 

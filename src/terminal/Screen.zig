@@ -1476,6 +1476,11 @@ pub const Scroll = union(enum) {
     /// Scrolling down at the bottom will do nothing (similar to how
     /// delta at the top does nothing).
     delta_no_grow: isize,
+
+    /// Scroll so the given row is in view. If the row is in the viewport,
+    /// this will change nothing. If the row is outside the viewport, the
+    /// viewport will change so that this row is at the top of the viewport.
+    row: RowIndex,
 };
 
 /// Scroll the screen by the given behavior. Note that this will always
@@ -1495,12 +1500,30 @@ pub fn scroll(self: *Screen, behavior: Scroll) !void {
         // TODO: deltas greater than the entire scrollback
         .delta => |delta| try self.scrollDelta(delta, true),
         .delta_no_grow => |delta| try self.scrollDelta(delta, false),
+
+        // Scroll to a specific row
+        .row => |idx| self.scrollRow(idx),
     }
+}
+
+fn scrollRow(self: *Screen, idx: RowIndex) void {
+    // Convert the given row to a screen point.
+    const screen_idx = idx.toScreen(self);
+    const screen_pt: point.ScreenPoint = .{ .y = screen_idx.screen };
+
+    // Move the viewport so that the screen point is in view. We do the
+    // @min here so that we don't scroll down below where our "bottom"
+    // viewport is.
+    self.viewport = @min(self.history, screen_pt.y);
+    assert(screen_pt.inViewport(self));
 }
 
 fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    // Just in case, to avoid a bunch of stuff below.
+    if (delta == 0) return;
 
     // If we're scrolling up, then we just subtract and we're done.
     // We just clamp at 0 which blocks us from scrolling off the top.
@@ -1609,6 +1632,65 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         (rows_written_final - 1) * (self.cols + 1),
         self.cols + 1,
     );
+}
+
+/// The options for where you can jump to on the screen.
+pub const JumpTarget = union(enum) {
+    /// Jump forwards (positive) or backwards (negative) a set number of
+    /// prompts. If the absolute value is greater than the number of prompts
+    /// in either direction, jump to the furthest prompt.
+    prompt_delta: isize,
+};
+
+/// Jump the viewport to specific location.
+pub fn jump(self: *Screen, target: JumpTarget) bool {
+    return switch (target) {
+        .prompt_delta => |delta| self.jumpPrompt(delta),
+    };
+}
+
+/// Jump the viewport forwards (positive) or backwards (negative) a set number of
+/// prompts (delta). Returns true if the viewport changed and false if no jump
+/// occurred.
+fn jumpPrompt(self: *Screen, delta: isize) bool {
+    // If we aren't jumping any prompts then we don't need to do anything.
+    if (delta == 0) return false;
+
+    // The screen y value we start at
+    const start_y: isize = start_y: {
+        const idx: RowIndex = .{ .viewport = 0 };
+        const screen = idx.toScreen(self);
+        break :start_y @intCast(screen.screen);
+    };
+
+    // The maximum y in the positive direction. Negative is always 0.
+    const max_y: isize = @intCast(self.rowsWritten() - 1);
+
+    // Go line-by-line counting the number of prompts we see.
+    var step: isize = if (delta > 0) 1 else -1;
+    var y: isize = start_y + step;
+    const delta_start: usize = @intCast(if (delta > 0) delta else -delta);
+    var delta_rem: usize = delta_start;
+    while (y >= 0 and y <= max_y and delta_rem > 0) : (y += step) {
+        const row = self.getRow(.{ .screen = @intCast(y) });
+        switch (row.getSemanticPrompt()) {
+            .prompt, .input => delta_rem -= 1,
+            .command, .unknown => {},
+        }
+    }
+
+    //log.warn("delta={} delta_rem={} start_y={} y={}", .{ delta, delta_rem, start_y, y });
+
+    // If we didn't find any, do nothing.
+    if (delta_rem == delta_start) return false;
+
+    // Done! We count the number of lines we changed and scroll.
+    const y_delta = (y - step) - start_y;
+    const new_y: usize = @intCast(start_y + y_delta);
+    const old_viewport = self.viewport;
+    self.scroll(.{ .row = .{ .screen = new_y } }) catch unreachable;
+    //log.warn("delta={} y_delta={} start_y={} new_y={}", .{ delta, y_delta, start_y, new_y });
+    return self.viewport != old_viewport;
 }
 
 /// Returns the raw text associated with a selection. This will unwrap
@@ -5450,4 +5532,65 @@ test "Screen: resize more rows then shrink again" {
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
+}
+
+test "Screen: jump zero" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n");
+    try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Set semantic prompts
+    {
+        const row = s.getRow(.{ .screen = 1 });
+        row.setSemanticPrompt(.prompt);
+    }
+    {
+        const row = s.getRow(.{ .screen = 5 });
+        row.setSemanticPrompt(.prompt);
+    }
+
+    try testing.expect(!s.jump(.{ .prompt_delta = 0 }));
+    try testing.expectEqual(@as(usize, 3), s.viewport);
+}
+
+test "Screen: jump to prompt" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n");
+    try s.testWriteString("4ABCD\n5EFGH\n6IJKL");
+    try testing.expect(s.viewportIsBottom());
+
+    // Set semantic prompts
+    {
+        const row = s.getRow(.{ .screen = 1 });
+        row.setSemanticPrompt(.prompt);
+    }
+    {
+        const row = s.getRow(.{ .screen = 5 });
+        row.setSemanticPrompt(.prompt);
+    }
+
+    // Jump back
+    try testing.expect(s.jump(.{ .prompt_delta = -1 }));
+    try testing.expectEqual(@as(usize, 1), s.viewport);
+
+    // Jump back
+    try testing.expect(!s.jump(.{ .prompt_delta = -1 }));
+    try testing.expectEqual(@as(usize, 1), s.viewport);
+
+    // Jump forward
+    try testing.expect(s.jump(.{ .prompt_delta = 1 }));
+    try testing.expectEqual(@as(usize, 3), s.viewport);
+
+    // Jump forward
+    try testing.expect(!s.jump(.{ .prompt_delta = 1 }));
+    try testing.expectEqual(@as(usize, 3), s.viewport);
 }
