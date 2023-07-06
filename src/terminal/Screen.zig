@@ -1511,9 +1511,6 @@ fn scrollRow(self: *Screen, idx: RowIndex) void {
     const screen_idx = idx.toScreen(self);
     const screen_pt: point.ScreenPoint = .{ .y = screen_idx.screen };
 
-    // If the point is already in our viewport, we do nothing.
-    if (screen_pt.inViewport(self)) return;
-
     // Move the viewport so that the screen point is in view. We do the
     // @min here so that we don't scroll down below where our "bottom"
     // viewport is.
