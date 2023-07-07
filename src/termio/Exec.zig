@@ -603,11 +603,19 @@ const Subprocess = struct {
 
         // Setup our shell integration, if we can.
         const shell_integrated: ?shell_integration.Shell = shell: {
+            const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
+                .none => break :shell null,
+                .auto => null,
+                .fish => .fish,
+                .zsh => .zsh,
+            };
+
             const dir = resources_dir orelse break :shell null;
             break :shell try shell_integration.setup(
                 dir,
                 final_path,
                 &env,
+                force,
             );
         };
         if (shell_integrated) |shell| {
@@ -615,7 +623,7 @@ const Subprocess = struct {
                 "shell integration automatically injected shell={}",
                 .{shell},
             );
-        } else {
+        } else if (opts.full_config.@"shell-integration" != .none) {
             log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
         }
 

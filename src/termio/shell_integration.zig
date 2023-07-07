@@ -17,8 +17,13 @@ pub fn setup(
     resource_dir: []const u8,
     command_path: []const u8,
     env: *EnvMap,
+    force_shell: ?Shell,
 ) !?Shell {
-    const exe = std.fs.path.basename(command_path);
+    const exe = if (force_shell) |shell| switch (shell) {
+        .fish => "/fish",
+        .zsh => "/zsh",
+    } else std.fs.path.basename(command_path);
+
     if (std.mem.eql(u8, "fish", exe)) {
         try setupFish(resource_dir, env);
         return .fish;
