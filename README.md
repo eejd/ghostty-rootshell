@@ -121,15 +121,18 @@ Ghostty supports some features that require shell integration. I am aiming
 to support many of the features that
 [Kitty supports for shell integration](https://sw.kovidgoyal.net/kitty/shell-integration/).
 
-To enable this functionality, I recommend sourcing Kitty's shell integration
-files directly for your shell configuration when running Ghostty. For
-example, for fish, [source this file](https://github.com/kovidgoyal/kitty/blob/master/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish).
+Ghostty will automatically inject the shell integration code for `zsh` and
+`fish`. Other shells are not supported. You can also manually load them
+in many cases (see `src/shell-integration`). **If you want to disable this feature,**
+set `shell-integration = none` in your configuration file.
 
 The currently support shell integration features in Ghostty:
 
   * We do not confirm close for windows where the cursor is at a prompt.
   * New terminals start in the working directory of the previously focused terminal.
   * The cursor at the prompt is turned into a bar.
+  * The `scroll_to_prompt` keybinding can be used to scroll the terminal window
+    forward and back through prompts.
 
 ## Roadmap and Status
 
