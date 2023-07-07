@@ -269,6 +269,28 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
+    // Shell-integration
+    {
+        const install = b.addInstallDirectory(.{
+            .source_dir = .{ .path = "src/shell-integration" },
+            .install_dir = .{ .custom = "share" },
+            .install_subdir = "shell-integration",
+            .exclude_extensions = &.{".md"},
+        });
+        b.getInstallStep().dependOn(&install.step);
+
+        if (target.isDarwin()) {
+            const mac_install = b.addInstallDirectory(options: {
+                var copy = install.options;
+                copy.install_dir = .{
+                    .custom = "Ghostty.app/Contents/Resources",
+                };
+                break :options copy;
+            });
+            b.getInstallStep().dependOn(&mac_install.step);
+        }
+    }
+
     // Terminfo
     {
         // Encode our terminfo

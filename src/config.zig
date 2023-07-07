@@ -197,9 +197,31 @@ pub const Config = struct {
     /// Additional configuration files to read.
     @"config-file": RepeatableString = .{},
 
-    // Confirms that a surface should be closed before closing it. This defaults
-    // to true. If set to false, surfaces will close without any confirmation.
+    /// Confirms that a surface should be closed before closing it. This defaults
+    /// to true. If set to false, surfaces will close without any confirmation.
     @"confirm-close-surface": bool = true,
+
+    /// Whether to enable shell integration auto-injection or not. Shell
+    /// integration greatly enhances the terminal experience by enabling
+    /// a number of features:
+    ///
+    ///   * Working directory reporting so new tabs, splits inherit the
+    ///     previous terminal's working directory.
+    ///   * Prompt marking that enables the "scroll_to_prompt" keybinding.
+    ///   * If you're sitting at a prompt, closing a terminal will not ask
+    ///     for confirmation.
+    ///   * Resizing the window with a complex prompt usually paints much
+    ///     better.
+    ///
+    /// Allowable values are:
+    ///
+    ///   * "none" - Do not do any automatic injection. You can still manually
+    ///     configure your shell to enable the integration.
+    ///   * "detect" - Detect the shell based on the filename.
+    ///   * "fish", "zsh" - Use this specific shell injection scheme.
+    ///
+    /// The default value is "detect".
+    @"shell-integration": ShellIntegration = .detect,
 
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
@@ -796,6 +818,7 @@ pub const Config = struct {
             inline .Bool,
             .Int,
             .Float,
+            .Enum,
             => return src,
 
             .Optional => |info| return try cloneValue(
@@ -1207,6 +1230,13 @@ pub const Keybinds = struct {
         try set.parseCLI(alloc, "shift+a=copy_to_clipboard");
         try set.parseCLI(alloc, "shift+a=csi:hello");
     }
+};
+
+pub const ShellIntegration = enum {
+    none,
+    detect,
+    fish,
+    zsh,
 };
 
 // Wasm API.

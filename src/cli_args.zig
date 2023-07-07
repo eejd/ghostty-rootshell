@@ -91,26 +91,37 @@ fn parseIntoField(
                 .Optional => |opt| opt.child,
                 else => field.type,
             };
-            const fieldInfo = @typeInfo(Field);
 
             // If we are a struct and have parseCLI, we call that and use
             // that to set the value.
-            if (fieldInfo == .Struct and @hasDecl(Field, "parseCLI")) {
-                const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
-                switch (fnInfo.params.len) {
-                    // 1 arg = (input) => output
-                    1 => @field(dst, field.name) = try Field.parseCLI(value),
+            switch (@typeInfo(Field)) {
+                .Struct => if (@hasDecl(Field, "parseCLI")) {
+                    const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
+                    switch (fnInfo.params.len) {
+                        // 1 arg = (input) => output
+                        1 => @field(dst, field.name) = try Field.parseCLI(value),
 
-                    // 2 arg = (self, input) => void
-                    2 => try @field(dst, field.name).parseCLI(value),
+                        // 2 arg = (self, input) => void
+                        2 => try @field(dst, field.name).parseCLI(value),
 
-                    // 3 arg = (self, alloc, input) => void
-                    3 => try @field(dst, field.name).parseCLI(alloc, value),
+                        // 3 arg = (self, alloc, input) => void
+                        3 => try @field(dst, field.name).parseCLI(alloc, value),
 
-                    else => @compileError("parseCLI invalid argument count"),
-                }
+                        else => @compileError("parseCLI invalid argument count"),
+                    }
 
-                return;
+                    return;
+                },
+
+                .Enum => {
+                    @field(dst, field.name) = std.meta.stringToEnum(
+                        Field,
+                        value orelse return error.ValueRequired,
+                    ) orelse return error.InvalidValue;
+                    return;
+                },
+
+                else => {},
             }
 
             // No parseCLI, magic the value based on the type
@@ -315,6 +326,21 @@ test "parseIntoField: floats" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "f64", "1");
     try testing.expectEqual(@as(f64, 1.0), data.f64);
+}
+
+test "parseIntoField: enums" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Enum = enum { one, two, three };
+    var data: struct {
+        v: Enum,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "v", "two");
+    try testing.expectEqual(Enum.two, data.v);
 }
 
 test "parseIntoField: optional field" {
