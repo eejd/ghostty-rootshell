@@ -226,7 +226,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     options.font_group.group.sprite = font.sprite.Face{
         .width = metrics.cell_width,
         .height = metrics.cell_height,
-        .thickness = 2,
+        .thickness = 2 * @as(u32, if (options.config.font_thicken) 2 else 1),
         .underline_position = metrics.underline_position,
     };
 
@@ -496,7 +496,7 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     self.font_group.group.sprite = font.sprite.Face{
         .width = self.cell_size.width,
         .height = self.cell_size.height,
-        .thickness = 2,
+        .thickness = 2 * @as(u32, if (self.config.font_thicken) 2 else 1),
         .underline_position = metrics.underline_position,
     };
 

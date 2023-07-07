@@ -302,7 +302,11 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     );
 
     // Setup our font metrics uniform
-    const metrics = try resetFontMetrics(alloc, options.font_group);
+    const metrics = try resetFontMetrics(
+        alloc,
+        options.font_group,
+        options.config.font_thicken,
+    );
 
     // Set our cell dimensions
     const pbind = try program.use();
@@ -639,7 +643,11 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     self.resetCellsLRU();
 
     // Reset our GPU uniforms
-    const metrics = try resetFontMetrics(self.alloc, self.font_group);
+    const metrics = try resetFontMetrics(
+        self.alloc,
+        self.font_group,
+        self.config.font_thicken,
+    );
 
     // Defer our GPU updates
     self.deferred_font_size = .{ .metrics = metrics };
@@ -670,6 +678,7 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
 fn resetFontMetrics(
     alloc: Allocator,
     font_group: *font.GroupCache,
+    font_thicken: bool,
 ) !font.face.Metrics {
     // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
     // Doesn't matter, any normal ASCII will do we're just trying to make
@@ -685,7 +694,7 @@ fn resetFontMetrics(
     font_group.group.sprite = font.sprite.Face{
         .width = metrics.cell_width,
         .height = metrics.cell_height,
-        .thickness = 2,
+        .thickness = 2 * @as(u32, if (font_thicken) 2 else 1),
         .underline_position = metrics.underline_position,
     };
 
