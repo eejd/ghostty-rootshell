@@ -6,6 +6,7 @@ const log = std.log.scoped(.shell_integration);
 /// Shell types we support
 pub const Shell = enum {
     fish,
+    zsh,
 };
 
 /// Setup the command execution environment for automatic
@@ -21,6 +22,11 @@ pub fn setup(
     if (std.mem.eql(u8, "fish", exe)) {
         try setupFish(resource_dir, env);
         return .fish;
+    }
+
+    if (std.mem.eql(u8, "zsh", exe)) {
+        try setupZsh(resource_dir, env);
+        return .zsh;
     }
 
     return null;
@@ -68,4 +74,26 @@ fn setupFish(
         // No XDG_DATA_DIRS set, we just set it our desired value.
         try env.put("XDG_DATA_DIRS", integ_dir);
     }
+}
+
+/// Setup the zsh automatic shell integration. This works by setting
+/// ZDOTDIR to our resources dir so that zsh will load our config. This
+/// config then loads the true user config.
+fn setupZsh(
+    resource_dir: []const u8,
+    env: *EnvMap,
+) !void {
+    // Preserve the old zdotdir value so we can recover it.
+    if (env.get("ZDOTDIR")) |old| {
+        try env.put("GHOSTTY_ZSH_ZDOTDIR", old);
+    }
+
+    // Set our new ZDOTDIR
+    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const integ_dir = try std.fmt.bufPrint(
+        &path_buf,
+        "{s}/shell-integration/zsh",
+        .{resource_dir},
+    );
+    try env.put("ZDOTDIR", integ_dir);
 }

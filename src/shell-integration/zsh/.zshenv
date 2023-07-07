@@ -19,12 +19,10 @@
 # we quote everything that can be quoted. Some aliases will still break us
 # though.
 
-# Don't use [[ -v ... ]] because it doesn't work in zsh < 5.4.
-if [[ -n "${GHOSTTY_ORIG_ZDOTDIR+X}" ]]; then
-    # Normally ZDOTDIR shouldn't be exported but it was in the environment
-    # of Ghostty, so we export it.
-    'builtin' 'export' ZDOTDIR="$GHOSTTY_ORIG_ZDOTDIR"
-    'builtin' 'unset' 'GHOSTTY_ORIG_ZDOTDIR'
+# Restore the original ZDOTDIR value.
+if [[ -n "${GHOSTTY_ZSH_ZDOTDIR+X}" ]]; then
+    'builtin' 'export' ZDOTDIR="$GHOSTTY_ZSH_ZDOTDIR"
+    'builtin' 'unset' 'GHOSTTY_ZSH_ZDOTDIR'
 else
     'builtin' 'unset' 'ZDOTDIR'
 fi
