@@ -217,11 +217,11 @@ pub const Config = struct {
     ///
     ///   * "none" - Do not do any automatic injection. You can still manually
     ///     configure your shell to enable the integration.
-    ///   * "auto" - Detect the shell based on the filename.
+    ///   * "detect" - Detect the shell based on the filename.
     ///   * "fish", "zsh" - Use this specific shell injection scheme.
     ///
-    /// The default value is "auto".
-    @"shell-integration": ShellIntegration = .auto,
+    /// The default value is "detect".
+    @"shell-integration": ShellIntegration = .detect,
 
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
@@ -1233,7 +1233,7 @@ pub const Keybinds = struct {
 
 pub const ShellIntegration = enum {
     none,
-    auto,
+    detect,
     fish,
     zsh,
 };

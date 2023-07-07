@@ -605,7 +605,7 @@ const Subprocess = struct {
         const shell_integrated: ?shell_integration.Shell = shell: {
             const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
                 .none => break :shell null,
-                .auto => null,
+                .detect => null,
                 .fish => .fish,
                 .zsh => .zsh,
             };
