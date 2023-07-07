@@ -818,6 +818,7 @@ pub const Config = struct {
             inline .Bool,
             .Int,
             .Float,
+            .Enum,
             => return src,
 
             .Optional => |info| return try cloneValue(
