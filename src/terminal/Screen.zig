@@ -1545,14 +1545,15 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // Add our delta to our viewport. If we're less than the max currently
     // allowed to scroll to the bottom (the end of the history), then we
     // have space and we just return.
-    self.viewport += @as(usize, @intCast(delta));
-    if (self.viewport <= self.history) return;
+    const start_viewport_bottom = self.viewportIsBottom();
+    const viewport = self.history + @as(usize, @intCast(delta));
+    if (viewport <= self.history) return;
 
     // If our viewport is past the top of our history then we potentially need
     // to write more blank rows. If our viewport is more than our rows written
     // then we expand out to there.
     const rows_written = self.rowsWritten();
-    const viewport_bottom = self.viewport + self.rows;
+    const viewport_bottom = viewport + self.rows;
     if (viewport_bottom <= rows_written) return;
 
     // The number of new rows we need is the number of rows off our
@@ -1598,7 +1599,6 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
             }
         }
 
-        self.viewport -= rows_to_delete;
         self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
         break :deleted rows_to_delete;
     } else 0;
@@ -1632,6 +1632,18 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         (rows_written_final - 1) * (self.cols + 1),
         self.cols + 1,
     );
+
+    if (start_viewport_bottom) {
+        // If our viewport is on the bottom, we always update the viewport
+        // to the latest so that it remains in view.
+        self.viewport = self.history;
+    } else if (rows_deleted > 0) {
+        // If our viewport is NOT on the bottom, we want to keep our viewport
+        // where it was so that we don't jump around. However, we need to
+        // subtract the final rows written if we had to delete rows since
+        // that changes the viewport offset.
+        self.viewport -|= rows_deleted;
+    }
 }
 
 /// The options for where you can jump to on the screen.
@@ -2969,6 +2981,54 @@ test "Screen: scrollback empty" {
     }
 }
 
+test "Screen: scrollback doesn't move viewport if not at bottom" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH");
+
+    // First test: we scroll up by 1, so we're not at the bottom anymore.
+    try s.scroll(.{ .delta = -1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL\n4ABCD", contents);
+    }
+
+    // Next, we scroll back down by 1, this grows the scrollback but we
+    // shouldn't move.
+    try s.scroll(.{ .delta = 1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL\n4ABCD", contents);
+    }
+
+    // Scroll again, this clears scrollback so we should move viewports
+    // but still see the same thing since our original view fits.
+    try s.scroll(.{ .delta = 1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL\n4ABCD", contents);
+    }
+
+    // Scroll again, this again goes into scrollback but is now deleting
+    // what we were looking at. We should see changes.
+    try s.scroll(.{ .delta = 1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("3IJKL\n4ABCD\n5EFGH", contents);
+    }
+}
+
 test "Screen: scrolling moves selection" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -3075,13 +3135,9 @@ test "Screen: scrolling with scrollback available doesn't move selection" {
 
     // Scroll down, this sends us off the scrollback
     try s.scroll(.{ .delta = 2 });
-    try testing.expect(s.viewportIsBottom());
 
-    // Selection should move since we went down 2
-    try testing.expectEqual(Selection{
-        .start = .{ .x = 0, .y = 0 },
-        .end = .{ .x = s.cols - 1, .y = 0 },
-    }, s.selection.?);
+    // Selection should be gone since we selected a line that went off.
+    try testing.expect(s.selection == null);
 
     {
         // Test our contents rotated
