@@ -1469,13 +1469,15 @@ pub const Scroll = union(enum) {
     /// Scroll up (negative) or down (positive) some fixed amount.
     /// Scrolling direction (up/down) describes the direction the viewport
     /// moves, not the direction text moves. This is the colloquial way that
-    /// scrolling is described: "scroll the page down".
-    delta: isize,
+    /// scrolling is described: "scroll the page down". This scrolls the
+    /// screen (potentially in addition to the viewport) and may therefore
+    /// create more rows if necessary.
+    screen: isize,
 
-    /// Same as delta but scrolling down will not grow the scrollback.
-    /// Scrolling down at the bottom will do nothing (similar to how
-    /// delta at the top does nothing).
-    delta_no_grow: isize,
+    /// This is the same as "screen" but only scrolls the viewport. The
+    /// delta will be clamped at the current size of the screen and will
+    /// never create new scrollback.
+    viewport: isize,
 
     /// Scroll so the given row is in view. If the row is in the viewport,
     /// this will change nothing. If the row is outside the viewport, the
@@ -1498,8 +1500,8 @@ pub fn scroll(self: *Screen, behavior: Scroll) !void {
         .bottom => self.viewport = self.history,
 
         // TODO: deltas greater than the entire scrollback
-        .delta => |delta| try self.scrollDelta(delta, true),
-        .delta_no_grow => |delta| try self.scrollDelta(delta, false),
+        .screen => |delta| try self.scrollDelta(delta, false),
+        .viewport => |delta| try self.scrollDelta(delta, true),
 
         // Scroll to a specific row
         .row => |idx| self.scrollRow(idx),
@@ -1518,7 +1520,7 @@ fn scrollRow(self: *Screen, idx: RowIndex) void {
     assert(screen_pt.inViewport(self));
 }
 
-fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
+fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1532,9 +1534,8 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         return;
     }
 
-    // If we're scrolling down and not growing, then we just
-    // add to the viewport and clamp at the bottom.
-    if (!grow) {
+    // If we're scrolling only the viewport, then we just add to the viewport.
+    if (viewport_only) {
         self.viewport = @min(
             self.history,
             self.viewport + @as(usize, @intCast(delta)),
@@ -1545,14 +1546,15 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
     // Add our delta to our viewport. If we're less than the max currently
     // allowed to scroll to the bottom (the end of the history), then we
     // have space and we just return.
-    self.viewport += @as(usize, @intCast(delta));
-    if (self.viewport <= self.history) return;
+    const start_viewport_bottom = self.viewportIsBottom();
+    const viewport = self.history + @as(usize, @intCast(delta));
+    if (viewport <= self.history) return;
 
     // If our viewport is past the top of our history then we potentially need
     // to write more blank rows. If our viewport is more than our rows written
     // then we expand out to there.
     const rows_written = self.rowsWritten();
-    const viewport_bottom = self.viewport + self.rows;
+    const viewport_bottom = viewport + self.rows;
     if (viewport_bottom <= rows_written) return;
 
     // The number of new rows we need is the number of rows off our
@@ -1598,7 +1600,6 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
             }
         }
 
-        self.viewport -= rows_to_delete;
         self.storage.deleteOldest(rows_to_delete * (self.cols + 1));
         break :deleted rows_to_delete;
     } else 0;
@@ -1632,6 +1633,18 @@ fn scrollDelta(self: *Screen, delta: isize, grow: bool) !void {
         (rows_written_final - 1) * (self.cols + 1),
         self.cols + 1,
     );
+
+    if (start_viewport_bottom) {
+        // If our viewport is on the bottom, we always update the viewport
+        // to the latest so that it remains in view.
+        self.viewport = self.history;
+    } else if (rows_deleted > 0) {
+        // If our viewport is NOT on the bottom, we want to keep our viewport
+        // where it was so that we don't jump around. However, we need to
+        // subtract the final rows written if we had to delete rows since
+        // that changes the viewport offset.
+        self.viewport -|= rows_deleted;
+    }
 }
 
 /// The options for where you can jump to on the screen.
@@ -1970,7 +1983,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
             }
 
             y -= 1;
-            try self.scroll(.{ .delta = 1 });
+            try self.scroll(.{ .screen = 1 });
         }
 
         // Get this row
@@ -2053,7 +2066,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         while (iter.next()) |old_row| {
             // If we're past the end, scroll
             if (y >= self.rows) {
-                try self.scroll(.{ .delta = 1 });
+                try self.scroll(.{ .screen = 1 });
                 y -= 1;
             }
 
@@ -2158,7 +2171,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     // If we're past the end, scroll
                     if (y >= self.rows) {
                         y -= 1;
-                        try self.scroll(.{ .delta = 1 });
+                        try self.scroll(.{ .screen = 1 });
                     }
                     new_row = self.getRow(.{ .active = y });
                     new_row.setSemanticPrompt(old_row.getSemanticPrompt());
@@ -2232,7 +2245,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
             // If our y is more than our rows, we need to scroll
             if (y >= self.rows) {
-                try self.scroll(.{ .delta = 1 });
+                try self.scroll(.{ .screen = 1 });
                 y -= 1;
             }
 
@@ -2278,7 +2291,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         // Wrapping can cause us to overflow our visible area.
                         // If so, scroll.
                         if (y >= self.rows) {
-                            try self.scroll(.{ .delta = 1 });
+                            try self.scroll(.{ .screen = 1 });
                             y -= 1;
                         }
 
@@ -2405,7 +2418,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         // If we're writing past the end of the active area, scroll.
         if (y >= self.rows) {
             y -= 1;
-            try self.scroll(.{ .delta = 1 });
+            try self.scroll(.{ .screen = 1 });
         }
 
         // Get our row
@@ -2462,7 +2475,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
             x = 0;
             if (y >= self.rows) {
                 y -= 1;
-                try self.scroll(.{ .delta = 1 });
+                try self.scroll(.{ .screen = 1 });
             }
             row = self.getRow(.{ .active = y });
         }
@@ -2490,7 +2503,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     x = 0;
                     if (y >= self.rows) {
                         y -= 1;
-                        try self.scroll(.{ .delta = 1 });
+                        try self.scroll(.{ .screen = 1 });
                     }
                     row = self.getRow(.{ .active = y });
                 }
@@ -2784,7 +2797,7 @@ test "Screen: scrolling" {
     try testing.expect(s.viewportIsBottom());
 
     // Scroll down, should still be bottom
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     try testing.expect(s.viewportIsBottom());
 
     {
@@ -2814,7 +2827,7 @@ test "Screen: scroll down from 0" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     // Scrolling up does nothing, but allows it
-    try s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .screen = -1 });
     try testing.expect(s.viewportIsBottom());
 
     {
@@ -2832,7 +2845,7 @@ test "Screen: scrollback" {
     var s = try init(alloc, 3, 5, 1);
     defer s.deinit();
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
 
     {
         // Test our contents rotated
@@ -2853,7 +2866,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling back should make it visible again
-    try s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .screen = -1 });
     try testing.expect(!s.viewportIsBottom());
 
     {
@@ -2864,7 +2877,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling back again should do nothing
-    try s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .screen = -1 });
 
     {
         // Test our contents rotated
@@ -2884,7 +2897,7 @@ test "Screen: scrollback" {
     }
 
     // Scrolling forward with no grow should do nothing
-    try s.scroll(.{ .delta_no_grow = 1 });
+    try s.scroll(.{ .viewport = 1 });
 
     {
         // Test our contents rotated
@@ -2942,7 +2955,7 @@ test "Screen: scrollback with large delta" {
     }
 
     // Scroll down a ton
-    try s.scroll(.{ .delta_no_grow = 5 });
+    try s.scroll(.{ .viewport = 5 });
     try testing.expect(s.viewportIsBottom());
     {
         // Test our contents rotated
@@ -2959,13 +2972,61 @@ test "Screen: scrollback empty" {
     var s = try init(alloc, 3, 5, 50);
     defer s.deinit();
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-    try s.scroll(.{ .delta_no_grow = 1 });
+    try s.scroll(.{ .viewport = 1 });
 
     {
         // Test our contents
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scrollback doesn't move viewport if not at bottom" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 3);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH");
+
+    // First test: we scroll up by 1, so we're not at the bottom anymore.
+    try s.scroll(.{ .screen = -1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL\n4ABCD", contents);
+    }
+
+    // Next, we scroll back down by 1, this grows the scrollback but we
+    // shouldn't move.
+    try s.scroll(.{ .screen = 1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL\n4ABCD", contents);
+    }
+
+    // Scroll again, this clears scrollback so we should move viewports
+    // but still see the same thing since our original view fits.
+    try s.scroll(.{ .screen = 1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2EFGH\n3IJKL\n4ABCD", contents);
+    }
+
+    // Scroll again, this again goes into scrollback but is now deleting
+    // what we were looking at. We should see changes.
+    try s.scroll(.{ .screen = 1 });
+    try testing.expect(!s.viewportIsBottom());
+    {
+        var contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("3IJKL\n4ABCD\n5EFGH", contents);
     }
 }
 
@@ -2985,7 +3046,7 @@ test "Screen: scrolling moves selection" {
     };
 
     // Scroll down, should still be bottom
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     try testing.expect(s.viewportIsBottom());
 
     // Our selection should've moved up
@@ -3018,7 +3079,7 @@ test "Screen: scrolling moves selection" {
     }
 
     // Scroll up again
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
 
     // Our selection should be null because it left the screen.
     try testing.expect(s.selection == null);
@@ -3040,7 +3101,7 @@ test "Screen: scrolling with scrollback available doesn't move selection" {
     };
 
     // Scroll down, should still be bottom
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     try testing.expect(s.viewportIsBottom());
 
     // Our selection should NOT move since we have scrollback
@@ -3057,7 +3118,7 @@ test "Screen: scrolling with scrollback available doesn't move selection" {
     }
 
     // Scrolling back should make it visible again
-    try s.scroll(.{ .delta = -1 });
+    try s.scroll(.{ .screen = -1 });
     try testing.expect(!s.viewportIsBottom());
 
     // Our selection should NOT move since we have scrollback
@@ -3074,14 +3135,10 @@ test "Screen: scrolling with scrollback available doesn't move selection" {
     }
 
     // Scroll down, this sends us off the scrollback
-    try s.scroll(.{ .delta = 2 });
-    try testing.expect(s.viewportIsBottom());
+    try s.scroll(.{ .screen = 2 });
 
-    // Selection should move since we went down 2
-    try testing.expectEqual(Selection{
-        .start = .{ .x = 0, .y = 0 },
-        .end = .{ .x = s.cols - 1, .y = 0 },
-    }, s.selection.?);
+    // Selection should be gone since we selected a line that went off.
+    try testing.expect(s.selection == null);
 
     {
         // Test our contents rotated
@@ -3154,7 +3211,7 @@ test "Screen: row copy" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     // Copy
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     try s.copyRow(.{ .active = 2 }, .{ .active = 0 });
 
     // Test our contents
@@ -3705,7 +3762,7 @@ test "Screen: scrollRegionUp buffer wrap" {
 
     // Scroll down, should still be bottom, but should wrap because
     // we're out of space.
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     s.cursor.x = 0;
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
 
@@ -3731,7 +3788,7 @@ test "Screen: scrollRegionUp buffer wrap alternate" {
 
     // Scroll down, should still be bottom, but should wrap because
     // we're out of space.
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     s.cursor.x = 0;
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
 
@@ -3969,7 +4026,7 @@ test "Screen: selectionString wrap around" {
 
     // Scroll down, should still be bottom, but should wrap because
     // we're out of space.
-    try s.scroll(.{ .delta = 1 });
+    try s.scroll(.{ .screen = 1 });
     try testing.expect(s.viewportIsBottom());
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
