@@ -883,7 +883,7 @@ pub fn index(self: *Terminal) !void {
         if (self.scrolling_region.top == 0 and
             self.scrolling_region.bottom == self.rows - 1)
         {
-            try self.screen.scroll(.{ .delta = 1 });
+            try self.screen.scroll(.{ .screen = 1 });
         } else {
             self.screen.scrollRegionUp(
                 .{ .active = self.scrolling_region.top },
@@ -1465,7 +1465,7 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
     try self.screen.scroll(switch (behavior) {
         .top => .{ .top = {} },
         .bottom => .{ .bottom = {} },
-        .delta => |delta| .{ .delta_no_grow = delta },
+        .delta => |delta| .{ .viewport = delta },
     });
 }
 

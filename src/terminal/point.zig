@@ -41,14 +41,14 @@ pub const Viewport = struct {
         defer s.deinit();
 
         // At the bottom
-        try s.scroll(.{ .delta = 6 });
+        try s.scroll(.{ .screen = 6 });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
             .y = 3,
         }, (Viewport{ .x = 0, .y = 0 }).toScreen(&s));
 
         // Move the viewport a bit up
-        try s.scroll(.{ .delta = -1 });
+        try s.scroll(.{ .screen = -1 });
         try testing.expectEqual(ScreenPoint{
             .x = 0,
             .y = 2,
