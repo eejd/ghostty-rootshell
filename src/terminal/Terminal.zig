@@ -398,7 +398,7 @@ fn clearPromptForResize(self: *Terminal) void {
 /// encoded as "\n". This omits any formatting such as fg/bg.
 ///
 /// The caller must free the string.
-pub fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
+fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
     return try self.screen.testString(alloc, .viewport);
 }
 
