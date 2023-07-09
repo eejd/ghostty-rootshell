@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const testing = std.testing;
 const Dir = std.fs.Dir;
+const internal_os = @import("main.zig");
 
 const log = std.log.scoped(.tempdir);
 
@@ -28,8 +29,11 @@ pub fn init() !TempDir {
     var tmp_path_buf: [TMP_PATH_LEN:0]u8 = undefined;
     var rand_buf: [RANDOM_BYTES]u8 = undefined;
 
-    // TODO: use the real temp dir not cwd
-    const dir = std.fs.cwd();
+    const dir = dir: {
+        const cwd = std.fs.cwd();
+        const tmp_dir = internal_os.tmpDir() orelse break :dir cwd;
+        break :dir try cwd.openDir(tmp_dir, .{});
+    };
 
     // We now loop forever until we can find a directory that we can create.
     while (true) {
