@@ -1113,7 +1113,7 @@ pub fn keyCallback(
                     try self.io_thread.wakeup.notify();
                 },
 
-                .write_scrollback_file => {
+                .write_scrollback_file => write_scrollback_file: {
                     // Create a temporary directory to store our scrollback.
                     var tmp_dir = try internal_os.TempDir.init();
                     errdefer tmp_dir.deinit();
@@ -1126,6 +1126,13 @@ pub fn keyCallback(
                     {
                         self.renderer_state.mutex.lock();
                         defer self.renderer_state.mutex.unlock();
+
+                        // We do not support this for alternate screens
+                        // because they don't have scrollback anyways.
+                        if (self.io.terminal.active_screen == .alternate) {
+                            tmp_dir.deinit();
+                            break :write_scrollback_file;
+                        }
 
                         const history_max = terminal.Screen.RowIndexTag.history.maxLen(
                             &self.io.terminal.screen,
