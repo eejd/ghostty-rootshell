@@ -1113,6 +1113,42 @@ pub fn keyCallback(
                     try self.io_thread.wakeup.notify();
                 },
 
+                .write_scrollback_file => {
+                    // Create a temporary directory to store our scrollback.
+                    var tmp_dir = try internal_os.TempDir.init();
+                    errdefer tmp_dir.deinit();
+
+                    // Open our scrollback file
+                    var file = try tmp_dir.dir.createFile("scrollback", .{});
+                    defer file.close();
+
+                    // Write the scrollback contents. This requires a lock.
+                    {
+                        self.renderer_state.mutex.lock();
+                        defer self.renderer_state.mutex.unlock();
+
+                        const history_max = terminal.Screen.RowIndexTag.history.maxLen(
+                            &self.io.terminal.screen,
+                        );
+
+                        try self.io.terminal.screen.dumpString(file.writer(), .{
+                            .start = .{ .history = 0 },
+                            .end = .{ .history = history_max -| 1 },
+                            .unwrap = true,
+                        });
+                    }
+
+                    // Get the final path
+                    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                    const path = try tmp_dir.dir.realpath("scrollback", &path_buf);
+
+                    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                        self.alloc,
+                        path,
+                    ), .{ .forever = {} });
+                    try self.io_thread.wakeup.notify();
+                },
+
                 .toggle_dev_mode => if (DevMode.enabled) {
                     DevMode.instance.visible = !DevMode.instance.visible;
                     try self.queueRender();

@@ -174,6 +174,10 @@ pub const Action = union(enum) {
     /// is backwards.
     jump_to_prompt: i16,
 
+    /// Write the entire scrollback into a temporary file and write the
+    /// path to the file to the tty.
+    write_scrollback_file: void,
+
     /// Dev mode
     toggle_dev_mode: void,
 
