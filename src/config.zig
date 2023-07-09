@@ -393,6 +393,12 @@ pub const Config = struct {
             .{ .toggle_dev_mode = {} },
         );
 
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .j, .mods = ctrlOrSuper(.{ .shift = true }) },
+            .{ .write_scrollback_file = {} },
+        );
+
         // Windowing
         if (comptime !builtin.target.isDarwin()) {
             try result.keybind.set.put(
