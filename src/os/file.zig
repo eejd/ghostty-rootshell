@@ -50,3 +50,10 @@ pub fn fixMaxFiles() void {
 
     log.debug("file handle limit raised value={}", .{lim.cur});
 }
+
+/// Return the recommended path for temporary files.
+pub fn tmpDir() ?[]const u8 {
+    if (std.os.getenv("TMPDIR")) |v| return v;
+    if (std.os.getenv("TMP")) |v| return v;
+    return "/tmp";
+}
