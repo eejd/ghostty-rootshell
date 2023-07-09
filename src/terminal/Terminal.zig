@@ -1634,6 +1634,7 @@ test "Terminal: print writes to bottom if scrolled" {
 
     // Basic grid writing
     for ("hello") |c| try t.print(c);
+    t.setCursorPos(0, 0);
 
     // Make newlines so we create scrollback
     // 3 pushes hello off the screen
@@ -1704,7 +1705,7 @@ test "Terminal: print charset outside of ASCII" {
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("◆  ", str);
+        try testing.expectEqualStrings("◆ ", str);
     }
 }
 
@@ -2192,6 +2193,7 @@ test "Terminal: index from the bottom" {
 
     t.setCursorPos(5, 1);
     try t.print('A');
+    t.cursorLeft(1); // undo moving right from 'A'
     try t.index();
 
     try t.print('B');

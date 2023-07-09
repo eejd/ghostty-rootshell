@@ -2536,37 +2536,113 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
     self.cursor.y = y;
 }
 
+/// Options for dumping the screen to a string.
+pub const Dump = struct {
+    /// The start and end rows. These don't have to be in order, the dump
+    /// function will automatically sort them.
+    start: RowIndex,
+    end: RowIndex,
+
+    /// If true, this will unwrap soft-wrapped lines into a single line.
+    unwrap: bool = true,
+};
+
+/// Dump the screen to a string. The writer given should be buffered;
+/// this function does not attempt to efficiently write and generally writes
+/// one byte at a time.
+///
+/// TODO: look at selectionString implementation for more efficiency
+/// TODO: change selectionString to use this too after above todo
+pub fn dumpString(self: *Screen, writer: anytype, opts: Dump) !void {
+    const start_screen = opts.start.toScreen(self);
+    const end_screen = opts.end.toScreen(self);
+
+    // If we have no rows in our screen, do nothing.
+    const rows_written = self.rowsWritten();
+    if (rows_written == 0) return;
+
+    // Get the actual top and bottom y values. This handles situations
+    // where start/end are backwards.
+    const y_top = @min(start_screen.screen, end_screen.screen);
+    const y_bottom = @min(
+        @max(start_screen.screen, end_screen.screen),
+        rows_written - 1,
+    );
+
+    // This keeps track of the number of blank rows we see. We don't want
+    // to output blank rows unless they're followed by a non-blank row.
+    var blank_rows: usize = 0;
+
+    // Iterate through the rows
+    var y: usize = y_top;
+    while (y <= y_bottom) : (y += 1) {
+        const row = self.getRow(.{ .screen = y });
+
+        // Handle blank rows
+        if (row.isEmpty()) {
+            // Blank rows should never have wrap set. A blank row doesn't
+            // include explicit spaces so there should never be a scenario
+            // it's wrapped.
+            assert(!row.header().flags.wrap);
+            blank_rows += 1;
+            continue;
+        }
+        if (blank_rows > 0) {
+            for (0..blank_rows) |_| try writer.writeByte('\n');
+            blank_rows = 0;
+        }
+
+        if (!row.header().flags.wrap) {
+            // If we're not wrapped, we always add a newline.
+            blank_rows += 1;
+        } else if (!opts.unwrap) {
+            // If we are wrapped, we only add a new line if we're unwrapping
+            // soft-wrapped lines.
+            blank_rows += 1;
+        }
+
+        // Output each of the cells
+        var cells = row.cellIterator();
+        var spacers: usize = 0;
+        while (cells.next()) |cell| {
+            // Skip spacers
+            if (cell.attrs.wide_spacer_head or cell.attrs.wide_spacer_tail) continue;
+
+            // If we have a zero value, then we accumulate a counter. We
+            // only want to turn zero values into spaces if we have a non-zero
+            // char sometime later.
+            if (cell.char == 0) {
+                spacers += 1;
+                continue;
+            }
+            if (spacers > 0) {
+                for (0..spacers) |_| try writer.writeByte(' ');
+                spacers = 0;
+            }
+
+            const codepoint: u21 = @intCast(cell.char);
+            try writer.print("{u}", .{codepoint});
+        }
+    }
+}
+
 /// Turns the screen into a string. Different regions of the screen can
 /// be selected using the "tag", i.e. if you want to output the viewport,
 /// the scrollback, the full screen, etc.
 ///
 /// This is only useful for testing.
 pub fn testString(self: *Screen, alloc: Allocator, tag: RowIndexTag) ![]const u8 {
-    const buf = try alloc.alloc(u8, self.storage.len() * 4);
+    var builder = std.ArrayList(u8).init(alloc);
+    defer builder.deinit();
+    try self.dumpString(builder.writer(), .{
+        .start = tag.index(0),
+        .end = tag.index(tag.maxLen(self) - 1),
 
-    var i: usize = 0;
-    var y: usize = 0;
-    var rows = self.rowIterator(tag);
-    while (rows.next()) |row| {
-        defer y += 1;
-
-        if (y > 0) {
-            buf[i] = '\n';
-            i += 1;
-        }
-
-        var cells = row.cellIterator();
-        while (cells.next()) |cell| {
-            // TODO: handle character after null
-            if (cell.char > 0) {
-                i += try std.unicode.utf8Encode(@intCast(cell.char), buf[i..]);
-            }
-        }
-    }
-
-    // Never render the final newline
-    const str = std.mem.trimRight(u8, buf[0..i], "\n");
-    return try alloc.realloc(buf, str.len);
+        // historically our testString wants to view the screen as-is without
+        // unwrapping soft-wrapped lines so turn this off.
+        .unwrap = false,
+    });
+    return try builder.toOwnedSlice();
 }
 
 test "Row: isEmpty with no data" {
@@ -3280,7 +3356,7 @@ test "Screen: clone one line viewport" {
         var s2 = try s.clone(alloc, .{ .viewport = 0 }, .{ .viewport = 0 });
         defer s2.deinit();
 
-        // Test our contents rotated
+        // Test our contents
         var contents = try s2.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABC", contents);
