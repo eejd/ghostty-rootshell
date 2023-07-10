@@ -2542,9 +2542,7 @@ fn draw_dash_vertical(
 }
 
 fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.super_light.height(self.thickness);
-
-    self.rect(canvas, 0, 0, self.width - thick_px, self.height - thick_px);
+    self.rect(canvas, 0, 0, self.width, self.height);
 }
 
 fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
