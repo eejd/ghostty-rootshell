@@ -4,10 +4,8 @@ const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const inputpkg = @import("input.zig");
-const passwd = @import("passwd.zig");
 const terminal = @import("terminal/main.zig");
 const internal_os = @import("os/main.zig");
-const xdg = @import("xdg.zig");
 const cli_args = @import("cli_args.zig");
 
 const log = std.log.scoped(.config);
@@ -625,7 +623,7 @@ pub const Config = struct {
     /// Load the configuration from the default file locations. Currently,
     /// this loads from $XDG_CONFIG_HOME/ghostty/config.
     pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
-        const home_config_path = try xdg.config(alloc, .{ .subdir = "ghostty/config" });
+        const home_config_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
         defer alloc.free(home_config_path);
 
         const cwd = std.fs.cwd();
@@ -740,7 +738,7 @@ pub const Config = struct {
                 }
 
                 // We need the passwd entry for the remainder
-                const pw = try passwd.get(alloc);
+                const pw = try internal_os.passwd.get(alloc);
                 if (self.command == null) {
                     if (pw.shell) |sh| {
                         log.info("default shell src=passwd value={s}", .{sh});

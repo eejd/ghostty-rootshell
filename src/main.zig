@@ -10,7 +10,6 @@ const xev = @import("xev");
 const fontconfig = @import("fontconfig");
 const harfbuzz = @import("harfbuzz");
 const renderer = @import("renderer.zig");
-const xdg = @import("xdg.zig");
 const apprt = @import("apprt.zig");
 
 const App = @import("App.zig");
@@ -194,9 +193,6 @@ test {
     // TODO
     _ = @import("blocking_queue.zig");
     _ = @import("config.zig");
-    _ = @import("homedir.zig");
-    _ = @import("passwd.zig");
-    _ = @import("xdg.zig");
     _ = @import("cli_args.zig");
     _ = @import("lru.zig");
 }

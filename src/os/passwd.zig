@@ -1,9 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const build_config = @import("build_config.zig");
+const internal_os = @import("main.zig");
+const build_config = @import("../build_config.zig");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const internal_os = @import("os/main.zig");
 
 const log = std.log.scoped(.passwd);
 
@@ -61,7 +61,7 @@ pub fn get(alloc: Allocator) !Entry {
         // Note: we wrap our getent call in a /bin/sh login shell because
         // some operating systems (NixOS tested) don't set the PATH for various
         // utilities properly until we get a login shell.
-        const Pty = @import("Pty.zig");
+        const Pty = @import("../Pty.zig");
         var pty = try Pty.open(.{});
         defer pty.deinit();
         var cmd: internal_os.FlatpakHostCommand = .{
