@@ -303,7 +303,7 @@ const Window = struct {
         errdefer c.gtk_window_destroy(gtk_window);
         self.window = gtk_window;
         c.gtk_window_set_title(gtk_window, "Ghostty");
-        c.gtk_window_set_default_size(gtk_window, 200, 200);
+        c.gtk_window_set_default_size(gtk_window, 1000, 600);
 
         // Apply background opacity if we have it
         if (app.config.@"background-opacity" < 1) {
