@@ -48,8 +48,8 @@ pub const ScreenSize = struct {
     /// Subtract padding from the screen size.
     pub fn subPadding(self: ScreenSize, padding: Padding) ScreenSize {
         return .{
-            .width = self.width -| @as(u32, @intFromFloat(padding.left + padding.right)),
-            .height = self.height -| @as(u32, @intFromFloat(padding.top + padding.bottom)),
+            .width = self.width -| (padding.left + padding.right),
+            .height = self.height -| (padding.top + padding.bottom),
         };
     }
 };
@@ -84,10 +84,10 @@ pub const GridSize = struct {
 
 /// The padding to add to a screen.
 pub const Padding = struct {
-    top: f32 = 0,
-    bottom: f32 = 0,
-    right: f32 = 0,
-    left: f32 = 0,
+    top: u32 = 0,
+    bottom: u32 = 0,
+    right: u32 = 0,
+    left: u32 = 0,
 
     /// Returns padding that balances the whitespace around the screen
     /// for the given grid and cell sizes.
@@ -117,10 +117,10 @@ pub const Padding = struct {
 
         const zero = @as(f32, 0);
         return .{
-            .top = @max(zero, padding_top),
-            .bottom = @max(zero, padding_bot),
-            .right = @max(zero, padding_right),
-            .left = @max(zero, padding_left),
+            .top = @intFromFloat(@max(zero, padding_top)),
+            .bottom = @intFromFloat(@max(zero, padding_bot)),
+            .right = @intFromFloat(@max(zero, padding_right)),
+            .left = @intFromFloat(@max(zero, padding_left)),
         };
     }
 

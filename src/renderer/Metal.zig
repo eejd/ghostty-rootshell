@@ -821,10 +821,10 @@ pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
     const old = self.uniforms;
     self.uniforms = .{
         .projection_matrix = math.ortho2d(
-            -1 * padding.left,
-            @as(f32, @floatFromInt(padded_dim.width)) + padding.right,
-            @as(f32, @floatFromInt(padded_dim.height)) + padding.bottom,
-            -1 * padding.top,
+            -1 * @as(f32, @floatFromInt(padding.left)),
+            @floatFromInt(padded_dim.width + padding.right),
+            @floatFromInt(padded_dim.height + padding.bottom),
+            -1 * @as(f32, @floatFromInt(padding.top)),
         ),
         .cell_size = .{
             @floatFromInt(self.cell_size.width),
