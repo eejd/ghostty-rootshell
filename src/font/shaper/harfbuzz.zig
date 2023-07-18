@@ -702,6 +702,56 @@ test "shape cursor boundary" {
     }
 }
 
+test "shape cursor boundary and colored emoji" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("👍🏼");
+
+    // No cursor is full line
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+
+    // Cursor on emoji does not split it
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 0);
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+    {
+        // Get our run iterator
+        var shaper = testdata.shaper;
+        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 1);
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+            _ = try shaper.shape(run);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+}
+
 const TestShaper = struct {
     alloc: Allocator,
     shaper: Shaper,
