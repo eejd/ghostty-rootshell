@@ -871,15 +871,31 @@ fn rebuildCells(
     while (rowIter.next()) |row| {
         defer y += 1;
 
-        // If this is the row with our cursor, then we may have to modify
-        // the cell with the cursor.
-        const start_i: usize = self.cells.items.len;
-        defer if (draw_cursor and
+        // True if this is the row with our cursor. There are a lot of conditions
+        // here because the reasons we need to know this are primarily to invert.
+        //
+        //   - If we aren't drawing the cursor (draw_cursor), then we don't need
+        //     to change our rendering.
+        //   - If the cursor is not visible, then we don't need to change rendering.
+        //   - If the cursor style is not a box, then we don't need to change
+        //     rendering because it'll never fully overlap a glyph.
+        //   - If the viewport is not at the bottom, then we don't need to
+        //     change rendering because the cursor is not visible.
+        //     (NOTE: this may not be fully correct, we may be scrolled
+        //     slightly up and the cursor may be visible)
+        //   - If this y doesn't match our cursor y then we don't need to
+        //     change rendering.
+        //
+        const cursor_row = draw_cursor and
             self.cursor_visible and
             self.cursor_style == .box and
             screen.viewportIsBottom() and
-            y == screen.cursor.y)
-        {
+            y == screen.cursor.y;
+
+        // If this is the row with our cursor, then we may have to modify
+        // the cell with the cursor.
+        const start_i: usize = self.cells.items.len;
+        defer if (cursor_row) {
             for (self.cells.items[start_i..]) |cell| {
                 if (cell.grid_pos[0] == @as(f32, @floatFromInt(screen.cursor.x)) and
                     cell.mode == .fg)
@@ -907,7 +923,12 @@ fn rebuildCells(
         };
 
         // Split our row into runs and shape each one.
-        var iter = self.font_shaper.runIterator(self.font_group, row, row_selection);
+        var iter = self.font_shaper.runIterator(
+            self.font_group,
+            row,
+            row_selection,
+            if (cursor_row) screen.cursor.x else null,
+        );
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
                 if (self.updateCell(

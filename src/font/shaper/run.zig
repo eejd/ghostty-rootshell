@@ -29,6 +29,7 @@ pub const RunIterator = struct {
     group: *font.GroupCache,
     row: terminal.Screen.Row,
     selection: ?terminal.Selection = null,
+    cursor_x: ?usize = null,
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
@@ -94,6 +95,39 @@ pub const RunIterator = struct {
 
                 break :p null;
             } else null;
+
+            // If our cursor is on this line then we break the run around the
+            // cursor. This means that any row with a cursor has at least
+            // three breaks: before, exactly the cursor, and after.
+            //
+            // We do not break a cell that is exactly the grapheme. If there
+            // are cells following that contain joiners, we allow those to
+            // break. This creates an effect where hovering over an emoji
+            // such as a skin-tone emoji is fine, but hovering over the
+            // joiners will show the joiners allowing you to modify the
+            // emoji.
+            if (!cell.attrs.grapheme) {
+                if (self.cursor_x) |cursor_x| {
+                    // Exactly: self.i is the cursor and we iterated once. This
+                    // means that we started exactly at the cursor and did at
+                    // exactly one iteration. Why exactly one? Because we may
+                    // start at our cursor but do many if our cursor is exactly
+                    // on an emoji.
+                    if (self.i == cursor_x and j == self.i + 1) break;
+
+                    // Before: up to and not including the cursor. This means
+                    // that we started before the cursor (self.i < cursor_x)
+                    // and j is now at the cursor meaning we haven't yet processed
+                    // the cursor.
+                    if (self.i < cursor_x and j == cursor_x) {
+                        assert(j > 0);
+                        break;
+                    }
+
+                    // After: after the cursor. We don't need to do anything
+                    // special, we just let the run complete.
+                }
+            }
 
             // Determine the font for this cell. We'll use fallbacks
             // manually here to try replacement chars and then a space
