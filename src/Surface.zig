@@ -344,8 +344,14 @@ pub fn init(
     const cell_size = try renderer.CellSize.init(alloc, font_group);
 
     // Convert our padding from points to pixels
-    const padding_x = std.math.floor((@as(f32, @floatFromInt(config.@"window-padding-x")) * x_dpi) / 72);
-    const padding_y = std.math.floor((@as(f32, @floatFromInt(config.@"window-padding-y")) * y_dpi) / 72);
+    const padding_x: u32 = padding_x: {
+        const padding_x: f32 = @floatFromInt(config.@"window-padding-x");
+        break :padding_x @intFromFloat(@floor(padding_x * x_dpi / 72));
+    };
+    const padding_y: u32 = padding_y: {
+        const padding_y: f32 = @floatFromInt(config.@"window-padding-y");
+        break :padding_y @intFromFloat(@floor(padding_y * y_dpi / 72));
+    };
     const padding: renderer.Padding = .{
         .top = padding_y,
         .bottom = padding_y,
@@ -2102,8 +2108,8 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
     // amount from the renderer. This is a bug but realistically balanced
     // padding is so small it doesn't affect selection. This may not be true
     // at large font sizes...
-    const xpos_adjusted: f64 = xpos - @as(f64, @floatCast(self.padding.left));
-    const ypos_adjusted: f64 = ypos - @as(f64, @floatCast(self.padding.top));
+    const xpos_adjusted: f64 = xpos - @as(f64, @floatFromInt(self.padding.left));
+    const ypos_adjusted: f64 = ypos - @as(f64, @floatFromInt(self.padding.top));
 
     // xpos and ypos can be negative if while dragging, the user moves the
     // mouse off the surface. Likewise, they can be larger than our surface

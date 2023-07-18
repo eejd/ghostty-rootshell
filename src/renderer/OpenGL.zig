@@ -146,10 +146,10 @@ const SetScreenSize = struct {
 
             // 2D orthographic projection with the full w/h
             math.ortho2d(
-                -1 * padding.left,
-                @as(f32, @floatFromInt(padded_size.width)) + padding.right,
-                @as(f32, @floatFromInt(padded_size.height)) + padding.bottom,
-                -1 * padding.top,
+                -1 * @as(f32, @floatFromInt(padding.left)),
+                @floatFromInt(padded_size.width + padding.right),
+                @floatFromInt(padded_size.height + padding.bottom),
+                -1 * @as(f32, @floatFromInt(padding.top)),
             ),
         );
     }
