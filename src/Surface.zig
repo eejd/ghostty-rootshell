@@ -344,8 +344,8 @@ pub fn init(
     const cell_size = try renderer.CellSize.init(alloc, font_group);
 
     // Convert our padding from points to pixels
-    const padding_x = (@as(f32, @floatFromInt(config.@"window-padding-x")) * x_dpi) / 72;
-    const padding_y = (@as(f32, @floatFromInt(config.@"window-padding-y")) * y_dpi) / 72;
+    const padding_x = std.math.floor((@as(f32, @floatFromInt(config.@"window-padding-x")) * x_dpi) / 72);
+    const padding_y = std.math.floor((@as(f32, @floatFromInt(config.@"window-padding-y")) * y_dpi) / 72);
     const padding: renderer.Padding = .{
         .top = padding_y,
         .bottom = padding_y,
