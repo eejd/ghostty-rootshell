@@ -903,15 +903,17 @@ pub fn rebuildCells(
             break :sel null;
         };
 
-        // If this is the row with our cursor, then we may have to modify
-        // the cell with the cursor.
-        const start_i: usize = self.cells.items.len;
-        defer if (draw_cursor and
+        // See Metal.zig
+        const cursor_row = draw_cursor and
             self.cursor_visible and
             self.cursor_style == .box and
             screen.viewportIsBottom() and
-            y == screen.cursor.y)
-        {
+            y == screen.cursor.y;
+
+        // If this is the row with our cursor, then we may have to modify
+        // the cell with the cursor.
+        const start_i: usize = self.cells.items.len;
+        defer if (cursor_row) {
             for (self.cells.items[start_i..]) |cell| {
                 if (cell.grid_col == screen.cursor.x and
                     cell.mode == .fg)
@@ -942,7 +944,12 @@ pub fn rebuildCells(
         const start = self.cells.items.len;
 
         // Split our row into runs and shape each one.
-        var iter = self.font_shaper.runIterator(self.font_group, row, selection);
+        var iter = self.font_shaper.runIterator(
+            self.font_group,
+            row,
+            selection,
+            if (cursor_row) screen.cursor.x else null,
+        );
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
                 if (self.updateCell(

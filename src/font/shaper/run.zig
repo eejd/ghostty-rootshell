@@ -29,6 +29,7 @@ pub const RunIterator = struct {
     group: *font.GroupCache,
     row: terminal.Screen.Row,
     selection: ?terminal.Selection = null,
+    cursor_x: ?usize = null,
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
@@ -65,6 +66,32 @@ pub const RunIterator = struct {
                     if (sel.start.x > 0 and j == sel.start.x) break;
                     if (sel.end.x > 0 and j == sel.end.x + 1) break;
                 }
+            }
+
+            // If our cursor is on this line then we break the run around the
+            // cursor. This means that any row with a cursor has at least
+            // three breaks: before, exactly the cursor, and after.
+            if (self.cursor_x) |cursor_x| {
+                // Exactly: self.i is the cursor and we iterated once. This
+                // means that we started exactly at the cursor and did at
+                // least one (probably exactly one) iteration. That is
+                // exactly one character.
+                if (self.i == cursor_x and j > self.i) {
+                    assert(j == self.i + 1);
+                    break;
+                }
+
+                // Before: up to and not including the cursor. This means
+                // that we started before the cursor (self.i < cursor_x)
+                // and j is now at the cursor meaning we haven't yet processed
+                // the cursor.
+                if (self.i < cursor_x and j == cursor_x) {
+                    assert(j > 0);
+                    break;
+                }
+
+                // After: after the cursor. We don't need to do anything
+                // special, we just let the run complete.
             }
 
             // If we're a spacer, then we ignore it
