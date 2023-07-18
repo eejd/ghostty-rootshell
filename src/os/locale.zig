@@ -9,18 +9,17 @@ const log = std.log.scoped(.os);
 pub fn ensureLocale() void {
     assert(builtin.link_libc);
 
+    // Get our LANG env var. We use this many times but we also need
+    // the original value later.
+    const lang = std.os.getenv("LANG") orelse "";
+
     // On macOS, pre-populate the LANG env var with system preferences.
     // When launching the .app, LANG is not set so we must query it from the
     // OS. When launching from the CLI, LANG is usually set by the parent
     // process.
     if (comptime builtin.target.isDarwin()) {
         // Set the lang if it is not set or if its empty.
-        const set_lang = if (std.os.getenv("LANG")) |lang|
-            lang.len == 0
-        else
-            true;
-
-        if (set_lang) {
+        if (lang.len == 0) {
             setLangFromCocoa();
         }
     }
@@ -31,10 +30,18 @@ pub fn ensureLocale() void {
     // though.
     const locale: []const u8 = locale: {
         // If we don't have lang set, we use "" and let the default happen.
-        const lang = std.os.getenv("LANG") orelse break :locale "";
+        const new_lang = std.os.getenv("LANG") orelse break :locale "";
 
         // If the locale is valid, we also use "" because LANG is already set.
-        if (localeIsValid(lang)) break :locale "";
+        if (localeIsValid(new_lang)) break :locale "";
+
+        // If the locale is not valid, and our lang changed, then we reset
+        // to the old value.
+        if (!std.mem.eql(u8, lang, new_lang)) {
+            if (setenv("LANG", lang.ptr, 1) < 0) {
+                log.err("error resetting locale env var", .{});
+            }
+        }
 
         log.info("LANG is not valid according to libc, will use en_US.UTF-8", .{});
         break :locale "en_US.UTF-8";
