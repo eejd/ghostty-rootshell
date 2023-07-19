@@ -35,16 +35,17 @@ pub fn ensureLocale() void {
         // If the locale is valid, we also use "" because LANG is already set.
         if (localeIsValid(new_lang)) break :locale "";
 
-        // If the locale is not valid, and our lang changed, then we reset
-        // to the old value.
-        if (!std.mem.eql(u8, lang, new_lang)) {
-            if (setenv("LANG", lang.ptr, 1) < 0) {
-                log.err("error resetting locale env var", .{});
-            }
+        // If the locale is not valid we fall back to en_US.UTF-8 and need to
+        // set LANG to this value too.
+        const default_locale = "en_US.UTF-8";
+        log.info("LANG is not valid according to libc, will use en_US.UTF-8", .{});
+
+        if (setenv("LANG", default_locale.ptr, 1) < 0) {
+            log.err("error setting LANG env var to {s}", .{default_locale});
         }
 
-        log.info("LANG is not valid according to libc, will use en_US.UTF-8", .{});
-        break :locale "en_US.UTF-8";
+        // Use it as locale
+        break :locale default_locale;
     };
 
     // Set the locale
@@ -64,20 +65,6 @@ fn localeIsValid(locale: []const u8) bool {
 /// This sets the LANG environment variable based on the macOS system
 /// preferences selected locale settings.
 fn setLangFromCocoa() void {
-    // Unknown Zig bug where in debug mode we can't pull the cocoa
-    // value without crashing so we just force it to en_US.UTF-8.
-    // Debug mode is only used for testing so to avoid this, devs can
-    // just set LANG manually!
-    if (builtin.mode == .Debug) {
-        log.warn("in debug mode, we always set LANG to en_US.UTF-8 if not set", .{});
-        if (setenv("LANG", "en_US.UTF-8", 1) < 0) {
-            log.err("error setting locale env var", .{});
-            return;
-        }
-
-        return;
-    }
-
     const pool = objc.AutoreleasePool.init();
     defer pool.deinit();
 
