@@ -65,20 +65,6 @@ fn localeIsValid(locale: []const u8) bool {
 /// This sets the LANG environment variable based on the macOS system
 /// preferences selected locale settings.
 fn setLangFromCocoa() void {
-    // Unknown Zig bug where in debug mode we can't pull the cocoa
-    // value without crashing so we just force it to en_US.UTF-8.
-    // Debug mode is only used for testing so to avoid this, devs can
-    // just set LANG manually!
-    if (builtin.mode == .Debug) {
-        log.warn("in debug mode, we always set LANG to en_US.UTF-8 if not set", .{});
-        if (setenv("LANG", "en_US.UTF-8", 1) < 0) {
-            log.err("error setting locale env var", .{});
-            return;
-        }
-
-        return;
-    }
-
     const pool = objc.AutoreleasePool.init();
     defer pool.deinit();
 
