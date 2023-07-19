@@ -35,16 +35,17 @@ pub fn ensureLocale() void {
         // If the locale is valid, we also use "" because LANG is already set.
         if (localeIsValid(new_lang)) break :locale "";
 
-        // If the locale is not valid, and our lang changed, then we reset
-        // to the old value.
-        if (!std.mem.eql(u8, lang, new_lang)) {
-            if (setenv("LANG", lang.ptr, 1) < 0) {
-                log.err("error resetting locale env var", .{});
-            }
+        // If the locale is not valid we fall back to en_US.UTF-8 and need to
+        // set LANG to this value too.
+        const default_locale = "en_US.UTF-8";
+        log.info("LANG is not valid according to libc, will use en_US.UTF-8", .{});
+
+        if (setenv("LANG", default_locale.ptr, 1) < 0) {
+            log.err("error setting LANG env var to {s}", .{default_locale});
         }
 
-        log.info("LANG is not valid according to libc, will use en_US.UTF-8", .{});
-        break :locale "en_US.UTF-8";
+        // Use it as locale
+        break :locale default_locale;
     };
 
     // Set the locale
