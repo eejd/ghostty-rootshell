@@ -437,13 +437,22 @@ pub fn Stream(comptime Handler: type) type {
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // SGR - Select Graphic Rendition
-                'm' => if (@hasDecl(T, "setAttribute")) {
-                    var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
-                    while (p.next()) |attr| {
-                        // log.info("SGR attribute: {}", .{attr});
-                        try self.handler.setAttribute(attr);
-                    }
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                'm' => if (action.intermediates.len == 0) {
+                    if (@hasDecl(T, "setAttribute")) {
+                        var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
+                        while (p.next()) |attr| {
+                            // log.info("SGR attribute: {}", .{attr});
+                            try self.handler.setAttribute(attr);
+                        }
+                    } else log.warn("unimplemented CSI callback: {}", .{action});
+                } else {
+                    // Nothing, but I wanted a place to put this comment:
+                    // there are others forms of CSI m that have intermediates.
+                    // `vim --clean` uses `CSI ? 4 m` and I don't know what
+                    // that means. And there is also `CSI > m` which is used
+                    // to control modifier key reporting formats that we don't
+                    // support yet.
+                },
 
                 // CPR - Request Cursor Postion Report
                 // TODO: test
