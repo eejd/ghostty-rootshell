@@ -446,12 +446,12 @@ pub const Config = struct {
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left_bracket, .mods = .{ .ctrl = true } },
+                .{ .key = .left_bracket, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .previous },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right_bracket, .mods = .{ .ctrl = true } },
+                .{ .key = .right_bracket, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .next },
             );
             try result.keybind.set.put(
