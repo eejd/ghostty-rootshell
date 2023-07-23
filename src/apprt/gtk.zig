@@ -336,6 +336,7 @@ const Window = struct {
         c.gtk_notebook_set_tab_pos(notebook, c.GTK_POS_TOP);
         c.gtk_notebook_set_scrollable(notebook, 1);
         c.gtk_notebook_set_show_tabs(notebook, 0);
+        c.gtk_notebook_set_show_border(notebook, 0);
 
         // Create our add button for new tabs
         const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
