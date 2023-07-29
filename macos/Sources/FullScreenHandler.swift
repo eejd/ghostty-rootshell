@@ -7,12 +7,27 @@ class FullScreenHandler {
     var previousStyleMask: NSWindow.StyleMask?
     var isInFullscreen: Bool = false
     
-    func toggleFullscreen(window: NSWindow) {
+    // We keep track of whether we entered non-native fullscreen in case
+    // a user goes to fullscreen, changes the config to disable non-native fullscreen
+    // and then wants to toggle it off
+    var isInNonNativeFullscreen: Bool = false
+    
+    func toggleFullscreen(window: NSWindow, nonNativeFullscreen: Bool) {
         if isInFullscreen {
-            leaveFullscreen(window: window)
+            if nonNativeFullscreen || isInNonNativeFullscreen {
+                leaveFullscreen(window: window)
+                isInNonNativeFullscreen = false
+            } else {
+                window.toggleFullScreen(nil)
+            }
             isInFullscreen = false
         } else {
-            enterFullscreen(window: window)
+            if nonNativeFullscreen {
+                enterFullscreen(window: window)
+                isInNonNativeFullscreen = true
+            } else {
+                window.toggleFullScreen(nil)
+            }
             isInFullscreen = true
         }
     }

@@ -110,8 +110,12 @@ struct ContentView: View {
         // currently focused window.
         guard let window = self.window else { return }
         guard window.isKeyWindow else { return }
-        
-        self.fsHandler.toggleFullscreen(window: window)
+
+        // Check whether we use non-native fullscreen
+        guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }
+        guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? Bool else { return }
+
+        self.fsHandler.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
         // After toggling fullscreen we need to focus the terminal again.
         self.focused = true
     }

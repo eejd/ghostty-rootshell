@@ -63,7 +63,7 @@ extension Ghostty {
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
-                toggle_fullscreen_cb: { userdata in AppState.toggleFullscreen(userdata) }
+                toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, useNonNativeFullscreen: nonNativeFullscreen) }
             )
 
             // Create the ghostty app.
@@ -219,12 +219,15 @@ extension Ghostty {
             }
         }
 
-        static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?) {
+        static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?, useNonNativeFullscreen: Bool) {
+            // togo: use non-native fullscreen
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
             NotificationCenter.default.post(
                 name: Notification.ghosttyToggleFullscreen,
                 object: surface,
-                userInfo: [:]
+                userInfo: [
+                    Notification.NonNativeFullscreenKey: useNonNativeFullscreen,
+                ]
             )
         }
         

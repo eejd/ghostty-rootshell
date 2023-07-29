@@ -66,7 +66,7 @@ pub const App = struct {
         goto_tab: ?*const fn (SurfaceUD, usize) callconv(.C) void = null,
 
         /// Toggle fullscreen for current window.
-        toggle_fullscreen: ?*const fn (SurfaceUD) callconv(.C) void = null,
+        toggle_fullscreen: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -374,13 +374,13 @@ pub const Surface = struct {
         func(self.opts.userdata, n);
     }
 
-    pub fn toggleFullscreen(self: *Surface) void {
+    pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: bool) void {
         const func = self.app.opts.toggle_fullscreen orelse {
             log.info("runtime embedder does not toggle_fullscreen", .{});
             return;
         };
 
-        func(self.opts.userdata);
+        func(self.opts.userdata, nonNativeFullscreen);
     }
 
     /// The cursor position from the host directly is in screen coordinates but
