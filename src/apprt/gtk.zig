@@ -806,7 +806,7 @@ pub const Surface = struct {
             @ptrCast(alert),
             "There is still a running process in the terminal. " ++
                 "Closing the terminal will kill this process. " ++
-                "Are you sure you want to close the terminal?" ++
+                "Are you sure you want to close the terminal?\n\n" ++
                 "Click 'No' to cancel and return to your terminal.",
         );
 
