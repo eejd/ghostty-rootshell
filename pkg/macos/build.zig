@@ -27,8 +27,14 @@ pub fn link(
         .target = step.target,
         .optimize = step.optimize,
     });
-    step.addCSourceFile(comptime thisDir() ++ "/os/log.c", flags.items);
-    step.addCSourceFile(comptime thisDir() ++ "/text/ext.c", flags.items);
+    step.addCSourceFile(.{
+        .file = .{ .path = comptime thisDir() ++ "/os/log.c" },
+        .flags = flags.items,
+    });
+    step.addCSourceFile(.{
+        .file = .{ .path = comptime thisDir() ++ "/text/ext.c" },
+        .flags = flags.items,
+    });
     step.linkFramework("CoreFoundation");
     step.linkFramework("CoreText");
     return lib;

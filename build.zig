@@ -684,11 +684,11 @@ fn addDeps(
 
     // stb_image_resize
     const stb_image_resize_step = try stb_image_resize.link(b, step, .{});
-    try static_libs.append(.{ .generated = &stb_image_resize_step.output_path_source });
+    try static_libs.append(stb_image_resize_step.getEmittedBin());
 
     // utf8proc
     const utf8proc_step = try utf8proc.link(b, step);
-    try static_libs.append(.{ .generated = &utf8proc_step.output_path_source });
+    try static_libs.append(utf8proc_step.getEmittedBin());
 
     // Imgui, we have to do this later since we need some information
     const imgui_backends = if (step.target.isDarwin())
@@ -702,7 +702,7 @@ fn addDeps(
 
     // Dynamic link
     if (!static) {
-        step.addIncludePath(freetype.include_path_self);
+        step.addIncludePath(.{ .path = freetype.include_path_self });
         step.linkSystemLibrary("bzip2");
         step.linkSystemLibrary("freetype2");
         step.linkSystemLibrary("harfbuzz");
@@ -716,7 +716,7 @@ fn addDeps(
     // Other dependencies, we may dynamically link
     if (static) {
         const zlib_step = try zlib.link(b, step);
-        try static_libs.append(.{ .generated = &zlib_step.output_path_source });
+        try static_libs.append(zlib_step.getEmittedBin());
 
         const libpng_step = try libpng.link(b, step, .{
             .zlib = .{
@@ -724,7 +724,7 @@ fn addDeps(
                 .include = &zlib.include_paths,
             },
         });
-        try static_libs.append(.{ .generated = &libpng_step.output_path_source });
+        try static_libs.append(libpng_step.getEmittedBin());
 
         // Freetype
         const freetype_step = try freetype.link(b, step, .{
@@ -740,7 +740,7 @@ fn addDeps(
                 .include = &zlib.include_paths,
             },
         });
-        try static_libs.append(.{ .generated = &freetype_step.output_path_source });
+        try static_libs.append(freetype_step.getEmittedBin());
 
         // Harfbuzz
         const harfbuzz_step = try harfbuzz.link(b, step, .{
@@ -755,11 +755,11 @@ fn addDeps(
             },
         });
         system_sdk.include(b, harfbuzz_step, .{});
-        try static_libs.append(.{ .generated = &harfbuzz_step.output_path_source });
+        try static_libs.append(harfbuzz_step.getEmittedBin());
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
-        try static_libs.append(.{ .generated = &pixman_step.output_path_source });
+        try static_libs.append(pixman_step.getEmittedBin());
 
         // Only Linux gets fontconfig
         if (font_backend.hasFontconfig()) {
@@ -874,8 +874,8 @@ fn benchSteps(
             .root_source_file = .{ .path = path },
             .target = target,
             .optimize = optimize,
+            .main_pkg_path = .{ .path = "./src" },
         });
-        c_exe.setMainPkgPath("./src");
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, true);
     }

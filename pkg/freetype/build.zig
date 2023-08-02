@@ -41,8 +41,8 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildFreetype(b, step, opt);
     step.linkLibrary(lib);
-    step.addIncludePath(include_path);
-    step.addIncludePath(include_path_self);
+    step.addIncludePath(.{ .path = include_path });
+    step.addIncludePath(.{ .path = include_path_self });
     return lib;
 }
 
@@ -59,7 +59,7 @@ pub fn buildFreetype(
     });
 
     // Include
-    lib.addIncludePath(include_path);
+    lib.addIncludePath(.{ .path = include_path });
 
     // Link
     lib.linkLibC();
@@ -70,7 +70,7 @@ pub fn buildFreetype(
             lib.linkSystemLibrary("libpng");
 
         if (opt.libpng.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(dir);
+            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
     }
     if (opt.zlib.enabled) {
         if (opt.zlib.step) |zlib|
@@ -79,7 +79,7 @@ pub fn buildFreetype(
             lib.linkSystemLibrary("z");
 
         if (opt.zlib.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(dir);
+            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
     }
 
     // Compile
@@ -100,16 +100,30 @@ pub fn buildFreetype(
     // C files
     lib.addCSourceFiles(srcs, flags.items);
     switch (target.getOsTag()) {
-        .linux => lib.addCSourceFile(root ++ "builds/unix/ftsystem.c", flags.items),
-        .windows => lib.addCSourceFile(root ++ "builds/windows/ftsystem.c", flags.items),
-        else => lib.addCSourceFile(root ++ "src/base/ftsystem.c", flags.items),
+        .linux => lib.addCSourceFile(.{
+            .file = .{ .path = root ++ "builds/unix/ftsystem.c" },
+            .flags = flags.items,
+        }),
+        .windows => lib.addCSourceFile(.{
+            .file = .{ .path = root ++ "builds/windows/ftsystem.c" },
+            .flags = flags.items,
+        }),
+        else => lib.addCSourceFile(.{
+            .file = .{ .path = root ++ "src/base/ftsystem.c" },
+            .flags = flags.items,
+        }),
     }
     switch (target.getOsTag()) {
         .windows => {
-            lib.addCSourceFile(root ++ "builds/windows/ftdebug.c", flags.items);
-            lib.addCSourceFile(root ++ "src/base/ftver.c", flags.items);
+            lib.addCSourceFiles(&.{
+                root ++ "builds/windows/ftdebug.c",
+                root ++ "src/base/ftver.c",
+            }, flags.items);
         },
-        else => lib.addCSourceFile(root ++ "src/base/ftdebug.c", flags.items),
+        else => lib.addCSourceFile(.{
+            .file = .{ .path = root ++ "src/base/ftdebug.c" },
+            .flags = flags.items,
+        }),
     }
 
     return lib;

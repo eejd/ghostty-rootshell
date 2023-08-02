@@ -42,8 +42,8 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildPixman(b, step, opt);
     step.linkLibrary(lib);
-    step.addIncludePath(include_path);
-    step.addIncludePath(include_path_self);
+    step.addIncludePath(.{ .path = include_path });
+    step.addIncludePath(.{ .path = include_path_self });
     return lib;
 }
 
@@ -62,8 +62,8 @@ pub fn buildPixman(
     });
 
     // Include
-    lib.addIncludePath(include_path);
-    lib.addIncludePath(include_path_self);
+    lib.addIncludePath(.{ .path = include_path });
+    lib.addIncludePath(.{ .path = include_path_self });
 
     // Link
     lib.linkLibC();
