@@ -36,7 +36,7 @@ const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.11.0-dev.4282+0f21d3d4d";
+    const required_zig = "0.11.0-dev.4404+4f6013bf5";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
