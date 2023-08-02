@@ -250,7 +250,7 @@ pub fn build(b: *std.Build) !void {
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
         const install_step = if (app_runtime != .none) step: {
-            const step = b.addInstallArtifact(exe);
+            const step = b.addInstallArtifact(exe, .{});
             b.getInstallStep().dependOn(&step.step);
             break :step step;
         } else null;
@@ -392,7 +392,7 @@ pub fn build(b: *std.Build) !void {
     // App (Mac)
     if (target.isDarwin()) {
         const bin_install = b.addInstallFile(
-            .{ .generated = &exe.output_path_source },
+            exe.getEmittedBin(),
             "Ghostty.app/Contents/MacOS/ghostty",
         );
         b.getInstallStep().dependOn(&bin_install.step);
@@ -419,7 +419,7 @@ pub fn build(b: *std.Build) !void {
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
-            try lib_list.append(.{ .generated = &lib.output_path_source });
+            try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
                 .out_name = "libghostty-aarch64-fat.a",
@@ -448,7 +448,7 @@ pub fn build(b: *std.Build) !void {
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
-            try lib_list.append(.{ .generated = &lib.output_path_source });
+            try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
                 .out_name = "libghostty-x86_64-fat.a",
@@ -530,7 +530,7 @@ pub fn build(b: *std.Build) !void {
         _ = try addDeps(b, wasm, true);
 
         // Install
-        const wasm_install = b.addInstallArtifact(wasm);
+        const wasm_install = b.addInstallArtifact(wasm, .{});
         wasm_install.dest_dir = .{ .prefix = {} };
 
         const step = b.step("wasm", "Build the wasm library");
@@ -792,16 +792,19 @@ fn addDeps(
 
     if (!lib) {
         // We always statically compile glad
-        step.addIncludePath("vendor/glad/include/");
-        step.addCSourceFile("vendor/glad/src/gl.c", &.{});
+        step.addIncludePath(.{ .path = "vendor/glad/include/" });
+        step.addCSourceFile(.{
+            .file = .{ .path = "vendor/glad/src/gl.c" },
+            .flags = &.{},
+        });
 
         // When we're targeting flatpak we ALWAYS link GTK so we
         // get access to glib for dbus.
         if (flatpak) {
             step.linkSystemLibrary("gtk4");
             switch (step.target.getCpuArch()) {
-                .aarch64 => step.addLibraryPath("/usr/lib/aarch64-linux-gnu"),
-                .x86_64 => step.addLibraryPath("/usr/lib/x86_64-linux-gnu"),
+                .aarch64 => step.addLibraryPath(.{ .path = "/usr/lib/aarch64-linux-gnu" }),
+                .x86_64 => step.addLibraryPath(.{ .path = "/usr/lib/x86_64-linux-gnu" }),
                 else => @panic("unsupported flatpak target"),
             }
         }
@@ -915,7 +918,7 @@ fn conformanceSteps(
             .optimize = optimize,
         });
 
-        const install = b.addInstallArtifact(c_exe);
+        const install = b.addInstallArtifact(c_exe, .{});
         install.dest_sub_path = "conformance";
         b.getInstallStep().dependOn(&install.step);
 

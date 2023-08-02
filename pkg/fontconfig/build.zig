@@ -44,8 +44,8 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildFontconfig(b, step, opt);
     step.linkLibrary(lib);
-    step.addIncludePath(include_path);
-    step.addIncludePath(include_path_self);
+    step.addIncludePath(.{ .path = include_path });
+    step.addIncludePath(.{ .path = include_path_self });
     return lib;
 }
 
@@ -62,8 +62,8 @@ pub fn buildFontconfig(
     });
 
     // Include
-    lib.addIncludePath(include_path);
-    lib.addIncludePath(include_path_self);
+    lib.addIncludePath(.{ .path = include_path });
+    lib.addIncludePath(.{ .path = include_path_self });
 
     // Link
     lib.linkLibC();
@@ -74,7 +74,7 @@ pub fn buildFontconfig(
             lib.linkSystemLibrary("expat");
 
         if (opt.expat.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(dir);
+            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
     }
     if (opt.freetype.enabled) {
         if (opt.freetype.step) |freetype|
@@ -83,7 +83,7 @@ pub fn buildFontconfig(
             lib.linkSystemLibrary("freetype2");
 
         if (opt.freetype.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(dir);
+            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
     }
     if (!target.isWindows()) {
         lib.linkSystemLibrary("pthread");
