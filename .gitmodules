@@ -42,4 +42,4 @@
 	url = https://github.com/hexops/sdk-linux-x86_64.git
 [submodule "vendor/mach-glfw"]
 	path = vendor/mach-glfw
-	url = https://github.com/hexops/mach-glfw.git
+	url = https://github.com/mitchellh/mach-glfw.git
