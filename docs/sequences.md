@@ -1,5 +1,9 @@
 # Control and Escape Sequences
 
+⚠️  **This is super out of date. Ghostty's support is much better
+than this document seems. TODO to update this.** ⚠️
+
+
 This is the list of control and escape sequences known in the ecosystem
 of terminal emulators and their implementation status in ghostty. Note that
 some control sequences may never be implemented in ghostty. In these scenarios,

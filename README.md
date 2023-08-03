@@ -14,7 +14,11 @@
     <a href="#roadmap-and-status">Roadmap</a>
     ·
     <a href="#developing-ghostty">Developing</a>
-    </p>
+  </p>
+  <br>
+  <p align="center">
+    <a href="https://github.com/mitchellh/ghostty/blob/main/README_TESTERS.md"><b>Testers! Read This Too!</b></a>
+  </p>
 </p>
 
 ## About
@@ -35,10 +39,9 @@ terminal emulator that aims to remain compatible with all existing shells
 and software. You can use this as a drop-in replacement for your existing
 terminal emulator.
 
-**Project Status:** Alpha. It is a minimal terminal emulator that can be used
-for day-to-day work. It is missing many nice to have features but as a minimal
-terminal emulator it is ready to go. I've been using it full time since
-April 2022.
+**Project Status:** Beta. Ghostty implements most of the baseline features
+you'd expect for a terminal you can work in every day. We're still missing
+things, but I've been using it full time since April 2022.
 
 ## Download
 
