@@ -25,7 +25,7 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildStbImageResize(b, step, opt);
     step.linkLibrary(lib);
-    inline for (include_paths) |path| step.addIncludePath(path);
+    inline for (include_paths) |path| step.addIncludePath(.{ .path = path });
     return lib;
 }
 
@@ -43,7 +43,7 @@ pub fn buildStbImageResize(
     });
 
     // Include
-    inline for (include_paths) |path| lib.addIncludePath(path);
+    inline for (include_paths) |path| lib.addIncludePath(.{ .path = path });
 
     // Link
     lib.linkLibC();
@@ -56,7 +56,10 @@ pub fn buildStbImageResize(
     });
 
     // C files
-    lib.addCSourceFile(root ++ "/stb_image_resize.c", flags.items);
+    lib.addCSourceFile(.{
+        .file = .{ .path = root ++ "/stb_image_resize.c" },
+        .flags = flags.items,
+    });
 
     return lib;
 }

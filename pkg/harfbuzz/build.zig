@@ -45,7 +45,7 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildHarfbuzz(b, step, opt);
     step.linkLibrary(lib);
-    step.addIncludePath(include_path);
+    step.addIncludePath(.{ .path = include_path });
     return lib;
 }
 
@@ -61,7 +61,7 @@ pub fn buildHarfbuzz(
     });
 
     // Include
-    lib.addIncludePath(include_path);
+    lib.addIncludePath(.{ .path = include_path });
 
     // Link
     lib.linkLibC();
@@ -73,7 +73,7 @@ pub fn buildHarfbuzz(
             lib.linkSystemLibrary("freetype2");
 
         if (opt.freetype.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(dir);
+            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
     }
 
     // Compile

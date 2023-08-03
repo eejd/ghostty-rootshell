@@ -36,7 +36,7 @@ const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.11.0-dev.4282+0f21d3d4d";
+    const required_zig = "0.11.0-dev.4404+4f6013bf5";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -250,7 +250,7 @@ pub fn build(b: *std.Build) !void {
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
         const install_step = if (app_runtime != .none) step: {
-            const step = b.addInstallArtifact(exe);
+            const step = b.addInstallArtifact(exe, .{});
             b.getInstallStep().dependOn(&step.step);
             break :step step;
         } else null;
@@ -392,7 +392,7 @@ pub fn build(b: *std.Build) !void {
     // App (Mac)
     if (target.isDarwin()) {
         const bin_install = b.addInstallFile(
-            .{ .generated = &exe.output_path_source },
+            exe.getEmittedBin(),
             "Ghostty.app/Contents/MacOS/ghostty",
         );
         b.getInstallStep().dependOn(&bin_install.step);
@@ -419,7 +419,7 @@ pub fn build(b: *std.Build) !void {
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
-            try lib_list.append(.{ .generated = &lib.output_path_source });
+            try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
                 .out_name = "libghostty-aarch64-fat.a",
@@ -448,7 +448,7 @@ pub fn build(b: *std.Build) !void {
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
-            try lib_list.append(.{ .generated = &lib.output_path_source });
+            try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
                 .out_name = "libghostty-x86_64-fat.a",
@@ -530,7 +530,7 @@ pub fn build(b: *std.Build) !void {
         _ = try addDeps(b, wasm, true);
 
         // Install
-        const wasm_install = b.addInstallArtifact(wasm);
+        const wasm_install = b.addInstallArtifact(wasm, .{});
         wasm_install.dest_dir = .{ .prefix = {} };
 
         const step = b.step("wasm", "Build the wasm library");
@@ -684,11 +684,11 @@ fn addDeps(
 
     // stb_image_resize
     const stb_image_resize_step = try stb_image_resize.link(b, step, .{});
-    try static_libs.append(.{ .generated = &stb_image_resize_step.output_path_source });
+    try static_libs.append(stb_image_resize_step.getEmittedBin());
 
     // utf8proc
     const utf8proc_step = try utf8proc.link(b, step);
-    try static_libs.append(.{ .generated = &utf8proc_step.output_path_source });
+    try static_libs.append(utf8proc_step.getEmittedBin());
 
     // Imgui, we have to do this later since we need some information
     const imgui_backends = if (step.target.isDarwin())
@@ -702,7 +702,7 @@ fn addDeps(
 
     // Dynamic link
     if (!static) {
-        step.addIncludePath(freetype.include_path_self);
+        step.addIncludePath(.{ .path = freetype.include_path_self });
         step.linkSystemLibrary("bzip2");
         step.linkSystemLibrary("freetype2");
         step.linkSystemLibrary("harfbuzz");
@@ -716,7 +716,7 @@ fn addDeps(
     // Other dependencies, we may dynamically link
     if (static) {
         const zlib_step = try zlib.link(b, step);
-        try static_libs.append(.{ .generated = &zlib_step.output_path_source });
+        try static_libs.append(zlib_step.getEmittedBin());
 
         const libpng_step = try libpng.link(b, step, .{
             .zlib = .{
@@ -724,7 +724,7 @@ fn addDeps(
                 .include = &zlib.include_paths,
             },
         });
-        try static_libs.append(.{ .generated = &libpng_step.output_path_source });
+        try static_libs.append(libpng_step.getEmittedBin());
 
         // Freetype
         const freetype_step = try freetype.link(b, step, .{
@@ -740,7 +740,7 @@ fn addDeps(
                 .include = &zlib.include_paths,
             },
         });
-        try static_libs.append(.{ .generated = &freetype_step.output_path_source });
+        try static_libs.append(freetype_step.getEmittedBin());
 
         // Harfbuzz
         const harfbuzz_step = try harfbuzz.link(b, step, .{
@@ -755,11 +755,11 @@ fn addDeps(
             },
         });
         system_sdk.include(b, harfbuzz_step, .{});
-        try static_libs.append(.{ .generated = &harfbuzz_step.output_path_source });
+        try static_libs.append(harfbuzz_step.getEmittedBin());
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
-        try static_libs.append(.{ .generated = &pixman_step.output_path_source });
+        try static_libs.append(pixman_step.getEmittedBin());
 
         // Only Linux gets fontconfig
         if (font_backend.hasFontconfig()) {
@@ -792,16 +792,19 @@ fn addDeps(
 
     if (!lib) {
         // We always statically compile glad
-        step.addIncludePath("vendor/glad/include/");
-        step.addCSourceFile("vendor/glad/src/gl.c", &.{});
+        step.addIncludePath(.{ .path = "vendor/glad/include/" });
+        step.addCSourceFile(.{
+            .file = .{ .path = "vendor/glad/src/gl.c" },
+            .flags = &.{},
+        });
 
         // When we're targeting flatpak we ALWAYS link GTK so we
         // get access to glib for dbus.
         if (flatpak) {
             step.linkSystemLibrary("gtk4");
             switch (step.target.getCpuArch()) {
-                .aarch64 => step.addLibraryPath("/usr/lib/aarch64-linux-gnu"),
-                .x86_64 => step.addLibraryPath("/usr/lib/x86_64-linux-gnu"),
+                .aarch64 => step.addLibraryPath(.{ .path = "/usr/lib/aarch64-linux-gnu" }),
+                .x86_64 => step.addLibraryPath(.{ .path = "/usr/lib/x86_64-linux-gnu" }),
                 else => @panic("unsupported flatpak target"),
             }
         }
@@ -874,8 +877,8 @@ fn benchSteps(
             .root_source_file = .{ .path = path },
             .target = target,
             .optimize = optimize,
+            .main_pkg_path = .{ .path = "./src" },
         });
-        c_exe.setMainPkgPath("./src");
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, true);
     }
@@ -915,7 +918,7 @@ fn conformanceSteps(
             .optimize = optimize,
         });
 
-        const install = b.addInstallArtifact(c_exe);
+        const install = b.addInstallArtifact(c_exe, .{});
         install.dest_sub_path = "conformance";
         b.getInstallStep().dependOn(&install.step);
 

@@ -37,7 +37,7 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildImgui(b, step, opt);
     step.linkLibrary(lib);
-    inline for (include_paths) |path| step.addIncludePath(path);
+    inline for (include_paths) |path| step.addIncludePath(.{ .path = path });
     return lib;
 }
 
@@ -54,7 +54,7 @@ pub fn buildImgui(
     });
 
     // Include
-    inline for (include_paths) |path| lib.addIncludePath(path);
+    inline for (include_paths) |path| lib.addIncludePath(.{ .path = path });
 
     // Link
     lib.linkLibC();
@@ -88,7 +88,7 @@ pub fn buildImgui(
             lib.linkSystemLibrary("freetype2");
 
         if (opt.freetype.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(dir);
+            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
 
         // Enable in defines
         try flags.appendSlice(&.{
@@ -97,7 +97,10 @@ pub fn buildImgui(
         });
 
         // Add necessary C file
-        lib.addCSourceFile(root ++ "imgui/misc/freetype/imgui_freetype.cpp", flags.items);
+        lib.addCSourceFile(.{
+            .file = .{ .path = root ++ "imgui/misc/freetype/imgui_freetype.cpp" },
+            .flags = flags.items,
+        });
     }
 
     // C files
@@ -117,7 +120,10 @@ pub fn buildImgui(
                 .{ root, backend, ext },
             );
 
-            lib.addCSourceFile(path, flags.items);
+            lib.addCSourceFile(.{
+                .file = .{ .path = path },
+                .flags = flags.items,
+            });
         }
     }
 

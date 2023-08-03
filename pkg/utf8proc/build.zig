@@ -19,7 +19,7 @@ fn thisDir() []const u8 {
 pub fn link(b: *std.Build, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const lib = try buildLib(b, step);
     step.linkLibrary(lib);
-    step.addIncludePath(include_path);
+    step.addIncludePath(.{ .path = include_path });
     return lib;
 }
 
@@ -34,7 +34,7 @@ pub fn buildLib(
     });
 
     // Include
-    lib.addIncludePath(include_path);
+    lib.addIncludePath(.{ .path = include_path });
 
     // Link
     lib.linkLibC();

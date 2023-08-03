@@ -16,7 +16,7 @@ fn thisDir() []const u8 {
 pub fn link(b: *std.Build, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
     const tracy = try buildTracy(b, step);
     step.linkLibrary(tracy);
-    step.addIncludePath(root);
+    step.addIncludePath(.{ .path = root });
     return tracy;
 }
 
@@ -45,11 +45,14 @@ pub fn buildTracy(
         });
     }
 
-    lib.addIncludePath(root);
-    lib.addCSourceFile(try std.fs.path.join(
-        b.allocator,
-        &.{ root, "TracyClient.cpp" },
-    ), flags.items);
+    lib.addIncludePath(.{ .path = root });
+    lib.addCSourceFile(.{
+        .file = .{ .path = try std.fs.path.join(
+            b.allocator,
+            &.{ root, "TracyClient.cpp" },
+        ) },
+        .flags = flags.items,
+    });
 
     lib.linkLibC();
     lib.linkSystemLibrary("c++");

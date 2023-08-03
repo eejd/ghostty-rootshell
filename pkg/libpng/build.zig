@@ -32,7 +32,7 @@ pub fn link(
 ) !*std.build.LibExeObjStep {
     const lib = try buildLib(b, step, opt);
     step.linkLibrary(lib);
-    step.addIncludePath(include_path);
+    step.addIncludePath(.{ .path = include_path });
     return lib;
 }
 
@@ -49,8 +49,8 @@ pub fn buildLib(
     });
 
     // Include
-    lib.addIncludePath(include_path);
-    lib.addIncludePath(include_path_pnglibconf);
+    lib.addIncludePath(.{ .path = include_path });
+    lib.addIncludePath(.{ .path = include_path_pnglibconf });
 
     // Link
     lib.linkLibC();
@@ -64,7 +64,7 @@ pub fn buildLib(
         lib.linkSystemLibrary("z");
 
     if (opt.zlib.include) |dirs|
-        for (dirs) |dir| lib.addIncludePath(dir);
+        for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
 
     // Compile
     var flags = std.ArrayList([]const u8).init(b.allocator);
