@@ -15,7 +15,6 @@
     ·
     <a href="#developing-ghostty">Developing</a>
   </p>
-  <br>
   <p align="center">
     <a href="https://github.com/mitchellh/ghostty/blob/main/README_TESTERS.md"><b>Testers! Read This Too!</b></a>
   </p>
