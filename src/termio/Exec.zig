@@ -400,6 +400,10 @@ const EventData = struct {
     /// flooding with cursor resets.
     last_cursor_reset: i64 = 0,
 
+    /// This is set to true when we've seen a title escape sequence. We use
+    /// this to determine if we need to default the window title.
+    seen_title: bool = false,
+
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         // Clear our write pools. We know we aren't ever going to do
         // any more IO since we stop our data stream below so we can just
@@ -1377,6 +1381,9 @@ const StreamHandler = struct {
         std.mem.copy(u8, &buf, title);
         buf[title.len] = 0;
 
+        // Mark that we've seen a title
+        self.ev.seen_title = true;
+
         _ = self.ev.surface_mailbox.push(.{
             .set_title = buf,
         }, .{ .forever = {} });
@@ -1458,5 +1465,11 @@ const StreamHandler = struct {
 
         log.debug("terminal pwd: {s}", .{uri.path});
         try self.terminal.setPwd(uri.path);
+
+        // If we haven't seen a title, use our pwd as the title.
+        if (!self.ev.seen_title) {
+            try self.changeWindowTitle(uri.path);
+            self.ev.seen_title = false;
+        }
     }
 };
