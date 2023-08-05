@@ -94,6 +94,10 @@
                         </items>
                     </menu>
                 </menuItem>
+                <menuItem title="Edit" id="l1C-ez-1tg">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                    <menu key="submenu" title="Edit" id="yo0-cI-6cQ"/>
+                </menuItem>
                 <menuItem title="Window" id="aUF-d1-5bR">
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="Window" systemMenu="window" id="Td7-aD-5lo">
