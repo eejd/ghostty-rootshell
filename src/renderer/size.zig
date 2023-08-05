@@ -52,6 +52,11 @@ pub const ScreenSize = struct {
             .height = self.height -| (padding.top + padding.bottom),
         };
     }
+
+    /// Returns true if two sizes are equal.
+    pub fn equals(self: ScreenSize, other: ScreenSize) bool {
+        return self.width == other.width and self.height == other.height;
+    }
 };
 
 /// The dimensions of the grid itself, in rows/columns units.
@@ -79,6 +84,11 @@ pub const GridSize = struct {
         const calc_rows: Unit = @intFromFloat(screen_height / cell_height);
         self.columns = @max(1, calc_cols);
         self.rows = @max(1, calc_rows);
+    }
+
+    /// Returns true if two sizes are equal.
+    pub fn equals(self: GridSize, other: GridSize) bool {
+        return self.columns == other.columns and self.rows == other.rows;
     }
 };
 
