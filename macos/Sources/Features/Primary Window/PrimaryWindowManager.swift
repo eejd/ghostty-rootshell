@@ -48,9 +48,13 @@ class PrimaryWindowManager {
     
     func addNewTab() {
         guard let existingWindow = mainWindow() else { return }
+        addNewTab(to: existingWindow)
+    }
+    
+    func addNewTab(to window: NSWindow) {
         guard let controller = createWindowController() else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
-        existingWindow.addTabbedWindow(newWindow, ordered: .above)
+        window.addTabbedWindow(newWindow, ordered: .above)
         newWindow.makeKeyAndOrderFront(nil)
     }
     
