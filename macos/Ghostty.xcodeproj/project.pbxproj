@@ -27,7 +27,7 @@
 		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
 		A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */; };
 		A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
-		A5FECBD729D1FC3900022361 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FECBD629D1FC3900022361 /* ContentView.swift */; };
+		A5FECBD729D1FC3900022361 /* PrimaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FECBD629D1FC3900022361 /* PrimaryView.swift */; };
 		A5FECBD929D2010400022361 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FECBD829D2010400022361 /* WindowAccessor.swift */; };
 /* End PBXBuildFile section */
 
@@ -55,7 +55,7 @@
 		A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Divider.swift; sourceTree = "<group>"; };
 		A5CEAFFE29C2410700646FDA /* Backport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backport.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
-		A5FECBD629D1FC3900022361 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A5FECBD629D1FC3900022361 /* PrimaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryView.swift; sourceTree = "<group>"; };
 		A5FECBD829D2010400022361 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -75,6 +75,7 @@
 			isa = PBXGroup;
 			children = (
 				A53426372A7DC53A00EBB7A2 /* Primary Window */,
+				A534263E2A7DCC5800EBB7A2 /* Settings */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -85,33 +86,39 @@
 				A53426382A7DC55C00EBB7A2 /* PrimaryWindowManager.swift */,
 				85102A1B2A6E32890084AB3E /* PrimaryWindowController.swift */,
 				85DE1C912A6A3DCA00493853 /* PrimaryWindow.swift */,
+				A5FECBD629D1FC3900022361 /* PrimaryView.swift */,
+				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
 			);
 			path = "Primary Window";
 			sourceTree = "<group>";
 		};
-		A534263A2A7DC61B00EBB7A2 /* Core */ = {
+		A534263D2A7DCBB000EBB7A2 /* Helpers */ = {
 			isa = PBXGroup;
 			children = (
-				A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */,
+				A5CEAFFE29C2410700646FDA /* Backport.swift */,
+				8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */,
+				A5FECBD829D2010400022361 /* WindowAccessor.swift */,
+				A5CEAFDA29B8005900646FDA /* SplitView */,
 			);
-			path = Core;
+			path = Helpers;
+			sourceTree = "<group>";
+		};
+		A534263E2A7DCC5800EBB7A2 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				A59444F629A2ED5200725BBA /* SettingsView.swift */,
+			);
+			path = Settings;
 			sourceTree = "<group>";
 		};
 		A54CD6ED299BEB14008C95BB /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				A534263A2A7DC61B00EBB7A2 /* Core */,
-				A53426362A7DC53000EBB7A2 /* Features */,
-				A5CEAFDA29B8005900646FDA /* SplitView */,
-				A55B7BB429B6F4410055DE60 /* Ghostty */,
+				A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */,
 				857F63802A5E64F200CA4815 /* MainMenu.xib */,
-				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
-				A55685DF29A03A9F004303CE /* AppError.swift */,
-				A59444F629A2ED5200725BBA /* SettingsView.swift */,
-				A5CEAFFE29C2410700646FDA /* Backport.swift */,
-				A5FECBD629D1FC3900022361 /* ContentView.swift */,
-				A5FECBD829D2010400022361 /* WindowAccessor.swift */,
-				8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */,
+				A53426362A7DC53000EBB7A2 /* Features */,
+				A534263D2A7DCBB000EBB7A2 /* Helpers */,
+				A55B7BB429B6F4410055DE60 /* Ghostty */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -123,6 +130,7 @@
 				A55B7BB529B6F47F0055DE60 /* AppState.swift */,
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
 				A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */,
+				A55685DF29A03A9F004303CE /* AppError.swift */,
 			);
 			path = Ghostty;
 			sourceTree = "<group>";
@@ -251,7 +259,7 @@
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
-				A5FECBD729D1FC3900022361 /* ContentView.swift in Sources */,
+				A5FECBD729D1FC3900022361 /* PrimaryView.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
 				A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */,
 				A55B7BB629B6F47F0055DE60 /* AppState.swift in Sources */,

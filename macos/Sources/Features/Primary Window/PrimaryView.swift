@@ -1,7 +1,7 @@
 import SwiftUI
 import GhosttyKit
 
-struct ContentView: View {
+struct PrimaryView: View {
     let ghostty: Ghostty.AppState
     
     // We need access to our app delegate to know if we're quitting or not.

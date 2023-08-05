@@ -23,7 +23,7 @@ class PrimaryWindow: NSWindow {
             backing: .buffered,
             defer: false)
         window.center()
-        window.contentView = NSHostingView(rootView: ContentView(
+        window.contentView = NSHostingView(rootView: PrimaryView(
             ghostty: ghostty,
             appDelegate: appDelegate,
             focusedSurfaceWrapper: window.focusedSurfaceWrapper))
