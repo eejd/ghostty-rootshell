@@ -94,9 +94,29 @@
                         </items>
                     </menu>
                 </menuItem>
-                <menuItem title="Edit" id="l1C-ez-1tg">
+                <menuItem title="Edit" id="ZUG-Nx-Wkj">
                     <modifierMask key="keyEquivalentModifierMask"/>
-                    <menu key="submenu" title="Edit" id="yo0-cI-6cQ"/>
+                    <menu key="submenu" title="Edit" id="iU4-OB-ccf">
+                        <items>
+                            <menuItem title="Copy" keyEquivalent="c" id="Jqf-pv-Zcu">
+                                <connections>
+                                    <action selector="copy:" target="-1" id="B4F-hg-R4T"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Paste" keyEquivalent="v" id="i27-pK-umN">
+                                <connections>
+                                    <action selector="paste:" target="-1" id="ZKe-2B-mel"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Paste and Match Style" keyEquivalent="V" id="FFo-bM-GXj">
+                                <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                                <connections>
+                                    <action selector="pasteAsPlainText:" target="-1" id="Sfp-aT-ZgM"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="VYS-RG-uZD"/>
+                        </items>
+                    </menu>
                 </menuItem>
                 <menuItem title="Window" id="aUF-d1-5bR">
                     <modifierMask key="keyEquivalentModifierMask"/>

@@ -221,6 +221,11 @@ typedef enum {
     GHOSTTY_KEY_RIGHT_SUPER,
 } ghostty_input_key_e;
 
+typedef enum {
+    GHOSTTY_BINDING_COPY_TO_CLIPBOARD,
+    GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD,
+} ghostty_binding_action_e;
+
 // Fully defined types. This MUST be kept in sync with equivalent Zig
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
@@ -290,6 +295,7 @@ void ghostty_surface_ime_point(ghostty_surface_t, double *, double *);
 void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
+void ghostty_surface_binding_action(ghostty_surface_t, ghostty_binding_action_e, void *);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.
