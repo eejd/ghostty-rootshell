@@ -23,12 +23,18 @@ class PrimaryWindow: NSWindow {
             backing: .buffered,
             defer: false)
         window.center()
+        
         window.contentView = NSHostingView(rootView: PrimaryView(
             ghostty: ghostty,
             appDelegate: appDelegate,
             focusedSurfaceWrapper: window.focusedSurfaceWrapper))
+        
+        // We do want to cascade when new windows are created
         window.windowController?.shouldCascadeWindows = true
+        
+        // A default title. This should be overwritten quickly by the Ghostty core.
         window.title = "Ghostty 👻"
+        
         return window
     }
     

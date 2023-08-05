@@ -6,9 +6,16 @@ class PrimaryWindowController: NSWindowController {
     // of each other.
     static var lastCascadePoint = NSPoint(x: 0, y: 0)
     
-    static func create(ghosttyApp: Ghostty.AppState, appDelegate: AppDelegate) -> PrimaryWindowController {
-        let window = PrimaryWindow.create(ghostty: ghosttyApp, appDelegate: appDelegate)
-        lastCascadePoint = window.cascadeTopLeft(from: lastCascadePoint)
-        return PrimaryWindowController(window: window)
+    // This is used to programmatically control tabs.
+    weak var windowManager: PrimaryWindowManager?
+    
+    // This is required for the "+" button to show up in the tab bar to add a
+    // new tab.
+    override func newWindowForTab(_ sender: Any?) {
+        // TODO: specify our window so the tab is created in the proper window
+        // guard let window = self.window else { preconditionFailure("Expected window to be loaded") }
+
+        guard let manager = self.windowManager else { return }
+        manager.addNewTab()
     }
 }

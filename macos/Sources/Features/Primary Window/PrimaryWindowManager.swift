@@ -17,6 +17,11 @@ class PrimaryWindowManager {
         let window: NSWindow
         let closePublisher: AnyCancellable
     }
+    
+    // Keep track of the last point that our window was launched at so that new
+    // windows "cascade" over each other and don't just launch directly on top
+    // of each other.
+    static var lastCascadePoint = NSPoint(x: 0, y: 0)
 
     private var ghostty: Ghostty.AppState
     private var managedWindows: [ManagedWindow] = []
@@ -58,7 +63,11 @@ class PrimaryWindowManager {
 
     private func createWindowController() -> PrimaryWindowController? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
-        return PrimaryWindowController.create(ghosttyApp: self.ghostty, appDelegate: appDelegate)
+        let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate)
+        Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+        let controller = PrimaryWindowController(window: window)
+        controller.windowManager = self
+        return controller
     }
 
     private func addManagedWindow(windowController: PrimaryWindowController) -> ManagedWindow? {
