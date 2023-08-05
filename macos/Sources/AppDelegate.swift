@@ -145,4 +145,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         guard let surface = focusedSurface() else { return }
         ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
+    
+    @IBAction func showHelp(_ sender: Any) {
+        guard let url = URL(string: "https://github.com/mitchellh/ghostty") else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
