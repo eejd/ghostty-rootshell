@@ -48,8 +48,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if (windows.allSatisfy { !$0.isVisible }) { return .terminateNow }
         
         // If the user is shutting down, restarting, or logging out, we don't confirm quit.
-        if let event = NSAppleEventManager.shared().currentAppleEvent {
-            if let why = event.attributeDescriptor(forKeyword: AEKeyword("why?")!) {
+        why: if let event = NSAppleEventManager.shared().currentAppleEvent {
+            // If all Ghostty windows are in the background (i.e. you Cmd-Q from the Cmd-Tab
+            // view), then this is null. I don't know why (pun intended) but we have to
+            // guard against it.
+            guard let keyword = AEKeyword("why?") else { break why }
+            
+            if let why = event.attributeDescriptor(forKeyword: keyword) {
                 switch (why.typeCodeValue) {
                 case kAEShutDown:
                     fallthrough
