@@ -22,6 +22,21 @@ class PrimaryWindowManager {
     // windows "cascade" over each other and don't just launch directly on top
     // of each other.
     static var lastCascadePoint = NSPoint(x: 0, y: 0)
+    
+    /// Returns the main window of the managed window stack.
+    /// Falls back the first element if no window is main. Note that this would
+    /// likely be an internal inconsistency we gracefully handle here.
+    var mainWindow: NSWindow? {
+        let mainManagedWindow = managedWindows
+            .first { $0.window.isMainWindow }
+
+        // In case we run into the inconsistency, let it crash in debug mode so we
+        // can fix our window management setup to prevent this from happening.
+        assert(mainManagedWindow != nil || managedWindows.isEmpty)
+
+        return (mainManagedWindow ?? managedWindows.first)
+            .map { $0.window }
+    }
 
     private var ghostty: Ghostty.AppState
     private var managedWindows: [ManagedWindow] = []
@@ -46,23 +61,11 @@ class PrimaryWindowManager {
         newWindow.makeKeyAndOrderFront(nil)
     }
     
-    func addNewTab() {
-        guard let existingWindow = mainWindow() else { return }
-        addNewTab(to: existingWindow)
-    }
-    
     func addNewTab(to window: NSWindow) {
         guard let controller = createWindowController() else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)
         newWindow.makeKeyAndOrderFront(nil)
-    }
-    
-    /// Returns the main window of the managed window stack.
-    /// Falls back the first element if no window is main.
-    private func mainWindow() -> NSWindow? {
-        let mainManagedWindow = managedWindows.first { $0.window.isMainWindow }
-        return (mainManagedWindow ?? managedWindows.first).map { $0.window }
     }
 
     private func createWindowController() -> PrimaryWindowController? {

@@ -76,9 +76,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     @IBAction func newTab(_ sender: Any?) {
-        windowManager.addNewTab()
+        if let existingWindow = windowManager.mainWindow {
+            windowManager.addNewTab(to: existingWindow)
+        } else {
+            windowManager.addNewWindow()
+        }
     }
-
+    
     @IBAction func closeWindow(_ sender: Any) {
         guard let currentWindow = NSApp.keyWindow else { return }
         currentWindow.close()
