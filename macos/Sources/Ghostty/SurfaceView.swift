@@ -381,6 +381,23 @@ extension Ghostty {
             ghostty_surface_key(surface, action, key, unmapped_key, mods)
         }
         
+        // MARK: Menu Handlers
+        
+        @IBAction func copy(_ sender: Any?) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_COPY_TO_CLIPBOARD, nil)
+        }
+        
+        @IBAction func paste(_ sender: Any?) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD, nil)
+        }
+        
+        @IBAction func pasteAsPlainText(_ sender: Any?) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD, nil)
+        }
+        
         // MARK: NSTextInputClient
         
         func hasMarkedText() -> Bool {
