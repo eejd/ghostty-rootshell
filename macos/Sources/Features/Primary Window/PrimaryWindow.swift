@@ -28,6 +28,7 @@ class PrimaryWindow: NSWindow {
             appDelegate: appDelegate,
             focusedSurfaceWrapper: window.focusedSurfaceWrapper))
         window.windowController?.shouldCascadeWindows = true
+        window.title = "Ghostty 👻"
         return window
     }
     

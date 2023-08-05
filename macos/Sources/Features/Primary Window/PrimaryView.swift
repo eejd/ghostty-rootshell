@@ -16,12 +16,13 @@ struct PrimaryView: View {
     @State private var window: NSWindow?
     
     // This handles non-native fullscreen
-    @State private var fsHandler = FullScreenHandler()
+    @State private var fullScreen = FullScreenHandler()
     
     // This seems like a crutch after switchign from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
     
     @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
+    @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle
     
     var body: some View {
         switch ghostty.readiness {
@@ -57,6 +58,13 @@ struct PrimaryView: View {
                 .onAppear { self.focused = true }
                 .onChange(of: focusedSurface) { newValue in
                     self.focusedSurfaceWrapper.surface = newValue?.surface
+                }
+                .onChange(of: surfaceTitle) { newValue in
+                    // We need to handle this manually because we are using AppKit lifecycle
+                    // so navigationTitle no longer works.
+                    guard let window = self.window else { return }
+                    guard let title = newValue else { return }
+                    window.title = title
                 }
                 .confirmationDialog(
                     "Quit Ghostty?",
@@ -115,7 +123,7 @@ struct PrimaryView: View {
         guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }
         guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? Bool else { return }
 
-        self.fsHandler.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
+        self.fullScreen.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
         // After toggling fullscreen we need to focus the terminal again.
         self.focused = true
     }
