@@ -8,18 +8,20 @@ class FocusedSurfaceWrapper {
     var surface: ghostty_surface_t?
 }
 
-// CustomWindow exists purely so we can override canBecomeKey and canBecomeMain.
-// We need that for the non-native fullscreen.
-// If we don't use `CustomWindow` we'll get warning messages in the output to say that
-// `makeKeyWindow` was called and returned NO.
-class CustomWindow: NSWindow {
+// PrimaryWindow is the primary window you'd associate with a terminal: the window
+// that contains one or more terminals (splits, and such).
+//
+// We need to subclass NSWindow so that we can override some methods for features
+// such as non-native fullscreen.
+class PrimaryWindow: NSWindow {
     var focusedSurfaceWrapper: FocusedSurfaceWrapper = FocusedSurfaceWrapper()
 
-    static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate) -> CustomWindow {
-        let window = CustomWindow(
+    static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate) -> PrimaryWindow {
+        let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false)
+            backing: .buffered,
+            defer: false)
         window.center()
         window.contentView = NSHostingView(rootView: ContentView(
             ghostty: ghostty,

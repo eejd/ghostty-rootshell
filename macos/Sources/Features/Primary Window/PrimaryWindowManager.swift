@@ -1,17 +1,20 @@
 import Cocoa
 import Combine
 
-// WindowService manages the windows and tabs in the application.
-// It keeps references to windows and cleans them up when they're cloned.
+// PrimaryWindowManager manages the windows and tabs in the primary window
+// of the application. It keeps references to windows and cleans them up when
+// they're cloned.
+//
+// If we ever have multiple tabbed window types we can make this generic but
+// right now only our primary window is ever duplicated or tabbed so we're not
+// doing that.
 //
 // It is based on the patterns presented in this blog post:
 // https://christiantietze.de/posts/2019/07/nswindow-tabbing-multiple-nswindowcontroller/
-class WindowService {
+class PrimaryWindowManager {
     struct ManagedWindow {
         let windowController: NSWindowController
-        
         let window: NSWindow
-        
         let closePublisher: AnyCancellable
     }
 
@@ -20,11 +23,10 @@ class WindowService {
     
     init(ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
-        
-        addInitialWindow()
     }
     
-    private func addInitialWindow() {
+    /// Add the initial window for the application. This should only be called once from the AppDelegate.
+    func addInitialWindow() {
         guard let controller = createWindowController() else { return }
         controller.showWindow(self)
         let result = addManagedWindow(windowController: controller)
@@ -54,12 +56,12 @@ class WindowService {
         return (mainManagedWindow ?? managedWindows.first).map { $0.window }
     }
 
-    private func createWindowController() -> WindowController? {
+    private func createWindowController() -> PrimaryWindowController? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
-        return WindowController.create(ghosttyApp: self.ghostty, appDelegate: appDelegate)
+        return PrimaryWindowController.create(ghosttyApp: self.ghostty, appDelegate: appDelegate)
     }
 
-    private func addManagedWindow(windowController: WindowController) -> ManagedWindow? {
+    private func addManagedWindow(windowController: PrimaryWindowController) -> ManagedWindow? {
         guard let window = windowController.window else { return nil }
 
         let pubClose = NotificationCenter.default.publisher(for: NSWindow.willCloseNotification, object: window)

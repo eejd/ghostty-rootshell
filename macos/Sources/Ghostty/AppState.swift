@@ -38,7 +38,7 @@ extension Ghostty {
         init() {
             // Initialize ghostty global state. This happens once per process.
             guard ghostty_init() == GHOSTTY_SUCCESS else {
-                GhosttyAppController.logger.critical("ghostty_init failed")
+                AppDelegate.logger.critical("ghostty_init failed")
                 readiness = .error
                 return
             }
@@ -68,7 +68,7 @@ extension Ghostty {
 
             // Create the ghostty app.
             guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
-                GhosttyAppController.logger.critical("ghostty_app_new failed")
+                AppDelegate.logger.critical("ghostty_app_new failed")
                 readiness = .error
                 return
             }
@@ -87,7 +87,7 @@ extension Ghostty {
         static func reloadConfig() -> ghostty_config_t? {
             // Initialize the global configuration.
             guard let cfg = ghostty_config_new() else {
-                GhosttyAppController.logger.critical("ghostty_config_new failed")
+                AppDelegate.logger.critical("ghostty_config_new failed")
                 return nil
             }
             
@@ -189,7 +189,7 @@ extension Ghostty {
         
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
             guard let newConfig = AppState.reloadConfig() else {
-                GhosttyAppController.logger.warning("failed to reload configuration")
+                AppDelegate.logger.warning("failed to reload configuration")
                 return nil
             }
             
