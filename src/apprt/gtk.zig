@@ -828,8 +828,8 @@ pub const Surface = struct {
         c.gtk_widget_show(alert);
     }
 
-    pub fn toggleFullscreen(self: *Surface) void {
-        self.window.toggleFullscreen();
+    pub fn toggleFullscreen(self: *Surface, mac_non_native: bool) void {
+        self.window.toggleFullscreen(mac_non_native);
     }
 
     pub fn newTab(self: *Surface) !void {
