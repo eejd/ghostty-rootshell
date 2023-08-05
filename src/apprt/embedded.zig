@@ -571,6 +571,25 @@ pub const CAPI = struct {
         ptr.gotoSplit(direction);
     }
 
+    /// Invoke an action on the surface.
+    export fn ghostty_surface_binding_action(
+        ptr: *Surface,
+        key: input.Binding.Key,
+        unused: *anyopaque,
+    ) void {
+        // For future arguments
+        _ = unused;
+
+        const action: input.Binding.Action = switch (key) {
+            .copy_to_clipboard => .{ .copy_to_clipboard = {} },
+            .paste_from_clipboard => .{ .paste_from_clipboard = {} },
+        };
+
+        ptr.core_surface.performBindingAction(action) catch |err| {
+            log.err("error performing binding action action={} err={}", .{ action, err });
+        };
+    }
+
     /// Sets the window background blur on macOS to the desired value.
     /// I do this in Zig as an extern function because I don't know how to
     /// call these functions in Swift.

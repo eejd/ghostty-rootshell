@@ -248,6 +248,13 @@ pub const Action = union(enum) {
     };
 };
 
+// A key for the C API to execute an action. This must be kept in sync
+// with include/ghostty.h.
+pub const Key = enum(c_int) {
+    copy_to_clipboard,
+    paste_from_clipboard,
+};
+
 /// Trigger is the associated key state that can trigger an action.
 pub const Trigger = struct {
     /// The key that has to be pressed for a binding to take action.

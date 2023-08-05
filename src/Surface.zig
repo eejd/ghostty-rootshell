@@ -970,276 +970,7 @@ pub fn keyCallback(
 
         if (binding_action_) |binding_action| {
             //log.warn("BINDING ACTION={}", .{binding_action});
-
-            switch (binding_action) {
-                .unbind => unreachable,
-                .ignore => {},
-
-                .reload_config => {
-                    _ = self.app_mailbox.push(.{
-                        .reload_config = {},
-                    }, .{ .instant = {} });
-                },
-
-                .csi => |data| {
-                    _ = self.io_thread.mailbox.push(.{
-                        .write_stable = "\x1B[",
-                    }, .{ .forever = {} });
-                    _ = self.io_thread.mailbox.push(.{
-                        .write_stable = data,
-                    }, .{ .forever = {} });
-                    try self.io_thread.wakeup.notify();
-
-                    // CSI triggers a scroll.
-                    {
-                        self.renderer_state.mutex.lock();
-                        defer self.renderer_state.mutex.unlock();
-                        self.scrollToBottom() catch |err| {
-                            log.warn("error scrolling to bottom err={}", .{err});
-                        };
-                    }
-                },
-
-                .cursor_key => |ck| {
-                    // We send a different sequence depending on if we're
-                    // in cursor keys mode. We're in "normal" mode if cursor
-                    // keys mdoe is NOT set.
-                    const normal = normal: {
-                        self.renderer_state.mutex.lock();
-                        defer self.renderer_state.mutex.unlock();
-
-                        // With the lock held, we must scroll to the bottom.
-                        // We always scroll to the bottom for these inputs.
-                        self.scrollToBottom() catch |err| {
-                            log.warn("error scrolling to bottom err={}", .{err});
-                        };
-
-                        break :normal !self.io.terminal.modes.cursor_keys;
-                    };
-
-                    if (normal) {
-                        _ = self.io_thread.mailbox.push(.{
-                            .write_stable = ck.normal,
-                        }, .{ .forever = {} });
-                    } else {
-                        _ = self.io_thread.mailbox.push(.{
-                            .write_stable = ck.application,
-                        }, .{ .forever = {} });
-                    }
-
-                    try self.io_thread.wakeup.notify();
-                },
-
-                .copy_to_clipboard => {
-                    // We can read from the renderer state without holding
-                    // the lock because only we will write to this field.
-                    if (self.io.terminal.screen.selection) |sel| {
-                        var buf = self.io.terminal.screen.selectionString(
-                            self.alloc,
-                            sel,
-                            self.config.clipboard_trim_trailing_spaces,
-                        ) catch |err| {
-                            log.err("error reading selection string err={}", .{err});
-                            return;
-                        };
-                        defer self.alloc.free(buf);
-
-                        self.rt_surface.setClipboardString(buf) catch |err| {
-                            log.err("error setting clipboard string err={}", .{err});
-                            return;
-                        };
-                    }
-                },
-
-                .paste_from_clipboard => {
-                    const data = self.rt_surface.getClipboardString() catch |err| {
-                        log.warn("error reading clipboard: {}", .{err});
-                        return;
-                    };
-
-                    if (data.len > 0) {
-                        const bracketed = bracketed: {
-                            self.renderer_state.mutex.lock();
-                            defer self.renderer_state.mutex.unlock();
-
-                            // With the lock held, we must scroll to the bottom.
-                            // We always scroll to the bottom for these inputs.
-                            self.scrollToBottom() catch |err| {
-                                log.warn("error scrolling to bottom err={}", .{err});
-                            };
-
-                            break :bracketed self.io.terminal.modes.bracketed_paste;
-                        };
-
-                        if (bracketed) {
-                            _ = self.io_thread.mailbox.push(.{
-                                .write_stable = "\x1B[200~",
-                            }, .{ .forever = {} });
-                        }
-
-                        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
-                            self.alloc,
-                            data,
-                        ), .{ .forever = {} });
-
-                        if (bracketed) {
-                            _ = self.io_thread.mailbox.push(.{
-                                .write_stable = "\x1B[201~",
-                            }, .{ .forever = {} });
-                        }
-
-                        try self.io_thread.wakeup.notify();
-                    }
-                },
-
-                .increase_font_size => |delta| {
-                    log.debug("increase font size={}", .{delta});
-
-                    var size = self.font_size;
-                    size.points +|= delta;
-                    self.setFontSize(size);
-                },
-
-                .decrease_font_size => |delta| {
-                    log.debug("decrease font size={}", .{delta});
-
-                    var size = self.font_size;
-                    size.points = @max(1, size.points -| delta);
-                    self.setFontSize(size);
-                },
-
-                .reset_font_size => {
-                    log.debug("reset font size", .{});
-
-                    var size = self.font_size;
-                    size.points = self.config.original_font_size;
-                    self.setFontSize(size);
-                },
-
-                .clear_screen => {
-                    _ = self.io_thread.mailbox.push(.{
-                        .clear_screen = .{ .history = true },
-                    }, .{ .forever = {} });
-                    try self.io_thread.wakeup.notify();
-                },
-
-                .jump_to_prompt => |delta| {
-                    _ = self.io_thread.mailbox.push(.{
-                        .jump_to_prompt = @intCast(delta),
-                    }, .{ .forever = {} });
-                    try self.io_thread.wakeup.notify();
-                },
-
-                .write_scrollback_file => write_scrollback_file: {
-                    // Create a temporary directory to store our scrollback.
-                    var tmp_dir = try internal_os.TempDir.init();
-                    errdefer tmp_dir.deinit();
-
-                    // Open our scrollback file
-                    var file = try tmp_dir.dir.createFile("scrollback", .{});
-                    defer file.close();
-
-                    // Write the scrollback contents. This requires a lock.
-                    {
-                        self.renderer_state.mutex.lock();
-                        defer self.renderer_state.mutex.unlock();
-
-                        // We do not support this for alternate screens
-                        // because they don't have scrollback anyways.
-                        if (self.io.terminal.active_screen == .alternate) {
-                            tmp_dir.deinit();
-                            break :write_scrollback_file;
-                        }
-
-                        const history_max = terminal.Screen.RowIndexTag.history.maxLen(
-                            &self.io.terminal.screen,
-                        );
-
-                        try self.io.terminal.screen.dumpString(file.writer(), .{
-                            .start = .{ .history = 0 },
-                            .end = .{ .history = history_max -| 1 },
-                            .unwrap = true,
-                        });
-                    }
-
-                    // Get the final path
-                    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-                    const path = try tmp_dir.dir.realpath("scrollback", &path_buf);
-
-                    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
-                        self.alloc,
-                        path,
-                    ), .{ .forever = {} });
-                    try self.io_thread.wakeup.notify();
-                },
-
-                .toggle_dev_mode => if (DevMode.enabled) {
-                    DevMode.instance.visible = !DevMode.instance.visible;
-                    try self.queueRender();
-                } else log.warn("dev mode was not compiled into this binary", .{}),
-
-                .new_window => {
-                    _ = self.app_mailbox.push(.{
-                        .new_window = .{
-                            .parent = self,
-                        },
-                    }, .{ .instant = {} });
-                },
-
-                .new_tab => {
-                    if (@hasDecl(apprt.Surface, "newTab")) {
-                        try self.rt_surface.newTab();
-                    } else log.warn("runtime doesn't implement newTab", .{});
-                },
-
-                .previous_tab => {
-                    if (@hasDecl(apprt.Surface, "gotoPreviousTab")) {
-                        self.rt_surface.gotoPreviousTab();
-                    } else log.warn("runtime doesn't implement gotoPreviousTab", .{});
-                },
-
-                .next_tab => {
-                    if (@hasDecl(apprt.Surface, "gotoNextTab")) {
-                        self.rt_surface.gotoNextTab();
-                    } else log.warn("runtime doesn't implement gotoNextTab", .{});
-                },
-
-                .goto_tab => |n| {
-                    if (@hasDecl(apprt.Surface, "gotoTab")) {
-                        self.rt_surface.gotoTab(n);
-                    } else log.warn("runtime doesn't implement gotoTab", .{});
-                },
-
-                .new_split => |direction| {
-                    if (@hasDecl(apprt.Surface, "newSplit")) {
-                        try self.rt_surface.newSplit(direction);
-                    } else log.warn("runtime doesn't implement newSplit", .{});
-                },
-
-                .goto_split => |direction| {
-                    if (@hasDecl(apprt.Surface, "gotoSplit")) {
-                        self.rt_surface.gotoSplit(direction);
-                    } else log.warn("runtime doesn't implement gotoSplit", .{});
-                },
-
-                .toggle_fullscreen => {
-                    if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
-                        self.rt_surface.toggleFullscreen(self.config.macos_non_native_fullscreen);
-                    } else log.warn("runtime doesn't implement toggleFullscreen", .{});
-                },
-
-                .close_surface => self.close(),
-
-                .close_window => {
-                    _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
-                },
-
-                .quit => {
-                    _ = self.app_mailbox.push(.{
-                        .quit = {},
-                    }, .{ .instant = {} });
-                },
-            }
+            try self.performBindingAction(binding_action);
 
             // Bindings always result in us ignoring the char if printable
             self.ignore_char = true;
@@ -2150,6 +1881,280 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
 fn scrollToBottom(self: *Surface) !void {
     try self.io.terminal.scrollViewport(.{ .bottom = {} });
     try self.queueRender();
+}
+
+/// Perform a binding action. A binding is a keybinding. This function
+/// must be called from the GUI thread.
+pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void {
+    switch (action) {
+        .unbind => unreachable,
+        .ignore => {},
+
+        .reload_config => {
+            _ = self.app_mailbox.push(.{
+                .reload_config = {},
+            }, .{ .instant = {} });
+        },
+
+        .csi => |data| {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = "\x1B[",
+            }, .{ .forever = {} });
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = data,
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+
+            // CSI triggers a scroll.
+            {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                self.scrollToBottom() catch |err| {
+                    log.warn("error scrolling to bottom err={}", .{err});
+                };
+            }
+        },
+
+        .cursor_key => |ck| {
+            // We send a different sequence depending on if we're
+            // in cursor keys mode. We're in "normal" mode if cursor
+            // keys mdoe is NOT set.
+            const normal = normal: {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+
+                // With the lock held, we must scroll to the bottom.
+                // We always scroll to the bottom for these inputs.
+                self.scrollToBottom() catch |err| {
+                    log.warn("error scrolling to bottom err={}", .{err});
+                };
+
+                break :normal !self.io.terminal.modes.cursor_keys;
+            };
+
+            if (normal) {
+                _ = self.io_thread.mailbox.push(.{
+                    .write_stable = ck.normal,
+                }, .{ .forever = {} });
+            } else {
+                _ = self.io_thread.mailbox.push(.{
+                    .write_stable = ck.application,
+                }, .{ .forever = {} });
+            }
+
+            try self.io_thread.wakeup.notify();
+        },
+
+        .copy_to_clipboard => {
+            // We can read from the renderer state without holding
+            // the lock because only we will write to this field.
+            if (self.io.terminal.screen.selection) |sel| {
+                var buf = self.io.terminal.screen.selectionString(
+                    self.alloc,
+                    sel,
+                    self.config.clipboard_trim_trailing_spaces,
+                ) catch |err| {
+                    log.err("error reading selection string err={}", .{err});
+                    return;
+                };
+                defer self.alloc.free(buf);
+
+                self.rt_surface.setClipboardString(buf) catch |err| {
+                    log.err("error setting clipboard string err={}", .{err});
+                    return;
+                };
+            }
+        },
+
+        .paste_from_clipboard => {
+            const data = self.rt_surface.getClipboardString() catch |err| {
+                log.warn("error reading clipboard: {}", .{err});
+                return;
+            };
+
+            if (data.len > 0) {
+                const bracketed = bracketed: {
+                    self.renderer_state.mutex.lock();
+                    defer self.renderer_state.mutex.unlock();
+
+                    // With the lock held, we must scroll to the bottom.
+                    // We always scroll to the bottom for these inputs.
+                    self.scrollToBottom() catch |err| {
+                        log.warn("error scrolling to bottom err={}", .{err});
+                    };
+
+                    break :bracketed self.io.terminal.modes.bracketed_paste;
+                };
+
+                if (bracketed) {
+                    _ = self.io_thread.mailbox.push(.{
+                        .write_stable = "\x1B[200~",
+                    }, .{ .forever = {} });
+                }
+
+                _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                    self.alloc,
+                    data,
+                ), .{ .forever = {} });
+
+                if (bracketed) {
+                    _ = self.io_thread.mailbox.push(.{
+                        .write_stable = "\x1B[201~",
+                    }, .{ .forever = {} });
+                }
+
+                try self.io_thread.wakeup.notify();
+            }
+        },
+
+        .increase_font_size => |delta| {
+            log.debug("increase font size={}", .{delta});
+
+            var size = self.font_size;
+            size.points +|= delta;
+            self.setFontSize(size);
+        },
+
+        .decrease_font_size => |delta| {
+            log.debug("decrease font size={}", .{delta});
+
+            var size = self.font_size;
+            size.points = @max(1, size.points -| delta);
+            self.setFontSize(size);
+        },
+
+        .reset_font_size => {
+            log.debug("reset font size", .{});
+
+            var size = self.font_size;
+            size.points = self.config.original_font_size;
+            self.setFontSize(size);
+        },
+
+        .clear_screen => {
+            _ = self.io_thread.mailbox.push(.{
+                .clear_screen = .{ .history = true },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .jump_to_prompt => |delta| {
+            _ = self.io_thread.mailbox.push(.{
+                .jump_to_prompt = @intCast(delta),
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .write_scrollback_file => write_scrollback_file: {
+            // Create a temporary directory to store our scrollback.
+            var tmp_dir = try internal_os.TempDir.init();
+            errdefer tmp_dir.deinit();
+
+            // Open our scrollback file
+            var file = try tmp_dir.dir.createFile("scrollback", .{});
+            defer file.close();
+
+            // Write the scrollback contents. This requires a lock.
+            {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+
+                // We do not support this for alternate screens
+                // because they don't have scrollback anyways.
+                if (self.io.terminal.active_screen == .alternate) {
+                    tmp_dir.deinit();
+                    break :write_scrollback_file;
+                }
+
+                const history_max = terminal.Screen.RowIndexTag.history.maxLen(
+                    &self.io.terminal.screen,
+                );
+
+                try self.io.terminal.screen.dumpString(file.writer(), .{
+                    .start = .{ .history = 0 },
+                    .end = .{ .history = history_max -| 1 },
+                    .unwrap = true,
+                });
+            }
+
+            // Get the final path
+            var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const path = try tmp_dir.dir.realpath("scrollback", &path_buf);
+
+            _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                self.alloc,
+                path,
+            ), .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .toggle_dev_mode => if (DevMode.enabled) {
+            DevMode.instance.visible = !DevMode.instance.visible;
+            try self.queueRender();
+        } else log.warn("dev mode was not compiled into this binary", .{}),
+
+        .new_window => {
+            _ = self.app_mailbox.push(.{
+                .new_window = .{
+                    .parent = self,
+                },
+            }, .{ .instant = {} });
+        },
+
+        .new_tab => {
+            if (@hasDecl(apprt.Surface, "newTab")) {
+                try self.rt_surface.newTab();
+            } else log.warn("runtime doesn't implement newTab", .{});
+        },
+
+        .previous_tab => {
+            if (@hasDecl(apprt.Surface, "gotoPreviousTab")) {
+                self.rt_surface.gotoPreviousTab();
+            } else log.warn("runtime doesn't implement gotoPreviousTab", .{});
+        },
+
+        .next_tab => {
+            if (@hasDecl(apprt.Surface, "gotoNextTab")) {
+                self.rt_surface.gotoNextTab();
+            } else log.warn("runtime doesn't implement gotoNextTab", .{});
+        },
+
+        .goto_tab => |n| {
+            if (@hasDecl(apprt.Surface, "gotoTab")) {
+                self.rt_surface.gotoTab(n);
+            } else log.warn("runtime doesn't implement gotoTab", .{});
+        },
+
+        .new_split => |direction| {
+            if (@hasDecl(apprt.Surface, "newSplit")) {
+                try self.rt_surface.newSplit(direction);
+            } else log.warn("runtime doesn't implement newSplit", .{});
+        },
+
+        .goto_split => |direction| {
+            if (@hasDecl(apprt.Surface, "gotoSplit")) {
+                self.rt_surface.gotoSplit(direction);
+            } else log.warn("runtime doesn't implement gotoSplit", .{});
+        },
+
+        .toggle_fullscreen => {
+            if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
+                self.rt_surface.toggleFullscreen(self.config.macos_non_native_fullscreen);
+            } else log.warn("runtime doesn't implement toggleFullscreen", .{});
+        },
+
+        .close_surface => self.close(),
+
+        .close_window => {
+            _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
+        },
+
+        .quit => {
+            _ = self.app_mailbox.push(.{
+                .quit = {},
+            }, .{ .instant = {} });
+        },
+    }
 }
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
