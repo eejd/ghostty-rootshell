@@ -81,6 +81,7 @@ extension Ghostty.Notification {
 
     /// Toggle fullscreen of current window
     static let ghosttyToggleFullscreen = Notification.Name("com.mitchellh.ghostty.toggleFullscreen")
+    static let NonNativeFullscreenKey = ghosttyToggleFullscreen.rawValue
 }
 
 // Make the input enum hashable.

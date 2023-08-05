@@ -239,7 +239,7 @@ typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
-typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *);
+typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, bool);
 
 typedef struct {
     void *userdata;

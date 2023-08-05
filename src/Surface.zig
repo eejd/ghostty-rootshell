@@ -146,6 +146,7 @@ const DerivedConfig = struct {
     clipboard_trim_trailing_spaces: bool,
     confirm_close_surface: bool,
     mouse_interval: u64,
+    macos_non_native_fullscreen: bool,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -160,6 +161,7 @@ const DerivedConfig = struct {
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
+            .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -1213,7 +1215,7 @@ pub fn keyCallback(
 
                 .toggle_fullscreen => {
                     if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
-                        self.rt_surface.toggleFullscreen();
+                        self.rt_surface.toggleFullscreen(self.config.macos_non_native_fullscreen);
                     } else log.warn("runtime doesn't implement toggleFullscreen", .{});
                 },
 

@@ -221,6 +221,12 @@ pub const Config = struct {
     /// The default value is "detect".
     @"shell-integration": ShellIntegration = .detect,
 
+    /// If true, fullscreen mode on macOS will not use the native fullscreen,
+    /// but make the window fullscreen without animations and using a new space.
+    /// That's faster than the native fullscreen mode since it doesn't use
+    /// animations.
+    @"macos-non-native-fullscreen": bool = false,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
