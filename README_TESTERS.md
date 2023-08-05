@@ -59,3 +59,36 @@ an expiring invite link.
 
 **The Discord community is private, for now.** Please don't invite friends,
 yet! I want to keep it limited to testers.
+
+## Other FAQ
+
+### Can I Invite a Friend?
+
+Please bring it up in Discord so I (@mitchellh) can personally invite them.
+But generally, yes! We'd rather have friends or people we know involved
+in testing early on rather than strangers (although, happy to meet you!).
+So if you have a friend that is interested and you think would be a great
+addition, please let me know.
+
+### I want to help, what can I work on?
+
+I'd really love that, I want to foster a healthy contributing community
+with Ghostty over time, and I really appreciate the help.
+
+Take a look at the issues list. Feel free to suggest new things. If you
+have a favorite feature from some other terminal emulator, let's build it!
+My only ask is that for big features, please ask the Discord first to gauge
+interest/acceptance for it before opening up some huge PR.
+
+There are also non-core help we can use: docs, website work, Discord bots,
+etc. etc. For example, a web UI to generate a configuration file would be
+cool. Or a web UI to preview your color settings.
+
+### Is Ghostty Open Source?
+
+Right now technically not (no license file). But yes, it will be full
+open source (by the OSI definition). I'm not sure what license to choose
+yet, leaning towards going with GPL for this project but open to ideas.
+
+We will add a license prior to opening up the repository. During the private
+beta period, I'll continue with a no license project.
