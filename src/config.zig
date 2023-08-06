@@ -480,6 +480,18 @@ pub const Config = struct {
                 .{ .key = .right, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .right },
             );
+
+            // Semantic prompts
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .page_up, .mods = .{ .shift = true } },
+                .{ .jump_to_prompt = -1 },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .page_down, .mods = .{ .shift = true } },
+                .{ .jump_to_prompt = 1 },
+            );
         }
         {
             // Cmd+N for goto tab N
