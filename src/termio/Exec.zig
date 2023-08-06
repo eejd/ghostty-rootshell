@@ -1173,6 +1173,10 @@ const StreamHandler = struct {
     }
 
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
+        // Note: this function doesn't need to grab the render state or
+        // terminal locks because it is only called from process() which
+        // grabs the lock.
+
         switch (mode) {
             .cursor_keys => {
                 self.terminal.modes.cursor_keys = enabled;
