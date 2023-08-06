@@ -67,7 +67,8 @@ foreground= ffffff
 
 # Blank lines are ignored!
 
-keybind =ctrl+z:close
+keybind = ctrl+z=close_surface
+keybind = ctrl+d=new_split:right
 
 # Colors can be changed by setting the 16 colors of `palette`, which each color
 # being defined as regular and bold.
