@@ -731,11 +731,15 @@ pub fn render(
         // Setup our cursor state
         if (self.focused) {
             self.cursor_visible = visible: {
+                // If the cursor is explicitly not visible in the state,
+                // then it is not visible.
+                if (!state.cursor.visible) break :visible false;
+
                 // If the cursor isn't a blinking style, then never blink.
                 if (!state.cursor.style.blinking()) break :visible true;
 
                 // Otherwise, adhere to our current state.
-                break :visible self.cursor_visible and state.cursor.visible;
+                break :visible self.cursor_visible;
             };
             self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
         } else {
