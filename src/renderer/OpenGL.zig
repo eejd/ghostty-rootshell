@@ -532,6 +532,12 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
 pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
     _ = surface;
+
+    // For GLFW, we grabbed the OpenGL context in surfaceInit and we
+    // need to release it before we start the renderer thread.
+    if (apprt.runtime == apprt.glfw) {
+        glfw.makeContextCurrent(null);
+    }
 }
 
 /// This is called if this renderer runs DevMode.
