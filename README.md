@@ -123,11 +123,6 @@ Ghostty supports some features that require shell integration. I am aiming
 to support many of the features that
 [Kitty supports for shell integration](https://sw.kovidgoyal.net/kitty/shell-integration/).
 
-Ghostty will automatically inject the shell integration code for `zsh` and
-`fish`. Other shells are not supported. You can also manually load them
-in many cases (see `src/shell-integration`). **If you want to disable this feature,**
-set `shell-integration = none` in your configuration file.
-
 The currently support shell integration features in Ghostty:
 
   * We do not confirm close for windows where the cursor is at a prompt.
@@ -135,6 +130,38 @@ The currently support shell integration features in Ghostty:
   * The cursor at the prompt is turned into a bar.
   * The `scroll_to_prompt` keybinding can be used to scroll the terminal window
     forward and back through prompts.
+
+#### Shell Integration Installation and Verification
+
+**On macOS,** Ghostty will automatically inject the shell integration code for `zsh` and
+`fish`. Other shells are not supported. You can also manually load them
+in many cases (see `src/shell-integration`). **If you want to disable this feature,**
+set `shell-integration = none` in your configuration file.
+
+**On Linux,** automatic shell integration requires that you set the
+`GHOSTTY_RESOURCES_DIR` environment variable to point to the
+`zig-out/share` directory after building Ghostty from source.
+To validate this directory the file `$GHOSTTY_RESOURCES_DIR/terminfo/ghostty.terminfo`
+should exist.
+
+To verify shell integration is working, look for the following log lines:
+
+```
+info(io_exec): using Ghostty resources dir from env var: /Applications/Ghostty.app/Contents/Resources
+info(io_exec): shell integration automatically injected shell=termio.shell_integration.Shell.fish
+```
+
+If you see any of the following, something is not working correctly.
+The main culprit is usually that `GHOSTTY_RESOURCES_DIR` is not pointing
+to the right place.
+
+```
+ghostty terminfo not found, using xterm-256color
+
+or
+
+shell could not be detected, no automatic shell integration will be injected
+```
 
 ## Roadmap and Status
 
