@@ -124,6 +124,14 @@ pub fn parse(input: []const u8) !Binding {
                             break :action @unionInit(Action, field.name, value);
                         },
 
+                        .Int => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = actionRaw[idx + 1 ..];
+                            const value = std.fmt.parseInt(field.type, param, 10) catch
+                                return Error.InvalidFormat;
+                            break :action @unionInit(Action, field.name, value);
+                        },
+
                         else => unreachable,
                     },
                 }
@@ -416,5 +424,21 @@ test "parse: action with enum" {
         const binding = try parse("a=new_split:right");
         try testing.expect(binding.action == .new_split);
         try testing.expectEqual(Action.SplitDirection.right, binding.action.new_split);
+    }
+}
+
+test "parse: action with int" {
+    const testing = std.testing;
+
+    // parameter
+    {
+        const binding = try parse("a=jump_to_prompt:-1");
+        try testing.expect(binding.action == .jump_to_prompt);
+        try testing.expectEqual(@as(i16, -1), binding.action.jump_to_prompt);
+    }
+    {
+        const binding = try parse("a=jump_to_prompt:10");
+        try testing.expect(binding.action == .jump_to_prompt);
+        try testing.expectEqual(@as(i16, 10), binding.action.jump_to_prompt);
     }
 }
