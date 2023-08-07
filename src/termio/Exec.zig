@@ -1182,6 +1182,10 @@ const StreamHandler = struct {
                 self.terminal.modes.cursor_keys = enabled;
             },
 
+            .insert => {
+                self.terminal.modes.insert = enabled;
+            },
+
             .reverse_colors => {
                 self.terminal.modes.reverse_colors = enabled;
 
