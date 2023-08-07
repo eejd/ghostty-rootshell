@@ -1230,10 +1230,10 @@ fn translateMouseButton(button: c.guint) input.MouseButton {
 
 fn translateMods(state: c.GdkModifierType) input.Mods {
     var mods: input.Mods = .{};
-    if (state & c.GDK_SHIFT_MASK != 0) mods.shift = true;
-    if (state & c.GDK_CONTROL_MASK != 0) mods.ctrl = true;
-    if (state & c.GDK_ALT_MASK != 0) mods.alt = true;
-    if (state & c.GDK_SUPER_MASK != 0) mods.super = true;
+    if (state & c.GDK_SHIFT_MASK != 0) mods.shift = .both;
+    if (state & c.GDK_CONTROL_MASK != 0) mods.ctrl = .both;
+    if (state & c.GDK_ALT_MASK != 0) mods.alt = .both;
+    if (state & c.GDK_SUPER_MASK != 0) mods.super = .both;
 
     // Lock is dependent on the X settings but we just assume caps lock.
     if (state & c.GDK_LOCK_MASK != 0) mods.caps_lock = true;

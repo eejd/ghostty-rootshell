@@ -5,22 +5,54 @@ const Allocator = std.mem.Allocator;
 /// GLFW representation, but we use this generically.
 ///
 /// IMPORTANT: Any changes here update include/ghostty.h
-pub const Mods = packed struct(u8) {
-    shift: bool = false,
-    ctrl: bool = false,
-    alt: bool = false,
-    super: bool = false,
+pub const Mods = packed struct(Mods.Int) {
+    pub const Int = u10;
+
+    shift: Side = .none,
+    ctrl: Side = .none,
+    alt: Side = .none,
+    super: Side = .none,
     caps_lock: bool = false,
     num_lock: bool = false,
-    _padding: u2 = 0,
+
+    /// Keeps track of left/right press. A packed struct makes it easy
+    /// to set as a bitmask and then check the individual values.
+    pub const Side = enum(u2) {
+        none = 0,
+        left = 1,
+        right = 2,
+
+        /// Note that while this should only be set for BOTH being set,
+        /// this is semantically used to mean "any" for the purposes of
+        /// keybindings. We do not allow keybindings to map to "both".
+        both = 3,
+
+        /// Returns true if the key is pressed at all.
+        pub fn pressed(self: Side) bool {
+            return @intFromEnum(self) != 0;
+        }
+    };
+
+    /// Return the identical mods but with all directional configuration
+    /// removed and all of it set to "both".
+    pub fn removeDirection(self: Mods) Mods {
+        return Mods{
+            .shift = if (self.shift.pressed()) .both else .none,
+            .ctrl = if (self.ctrl.pressed()) .both else .none,
+            .alt = if (self.alt.pressed()) .both else .none,
+            .super = if (self.super.pressed()) .both else .none,
+            .caps_lock = self.caps_lock,
+            .num_lock = self.num_lock,
+        };
+    }
 
     // For our own understanding
     test {
         const testing = std.testing;
-        try testing.expectEqual(@as(u8, @bitCast(Mods{})), @as(u8, 0b0));
+        try testing.expectEqual(@as(Int, @bitCast(Mods{})), @as(Int, 0b0));
         try testing.expectEqual(
-            @as(u8, @bitCast(Mods{ .shift = true })),
-            @as(u8, 0b0000_0001),
+            @as(Int, @bitCast(Mods{ .shift = .left })),
+            @as(Int, 0b0000_0001),
         );
     }
 };
@@ -99,7 +131,7 @@ pub const Key = enum(c_int) {
     equal,
     left_bracket, // [
     right_bracket, // ]
-    backslash, // /
+    backslash, // \
 
     // control
     up,

@@ -3,6 +3,7 @@
 const Binding = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const key = @import("key.zig");
@@ -42,12 +43,44 @@ pub fn parse(input: []const u8) !Binding {
             // Check if its a modifier
             const modsInfo = @typeInfo(key.Mods).Struct;
             inline for (modsInfo.fields) |field| {
-                if (field.type == bool) {
-                    if (std.mem.eql(u8, part, field.name)) {
-                        // Repeat not allowed
-                        if (@field(result.mods, field.name)) return Error.InvalidFormat;
+                if (field.name[0] != '_') {
+                    if (std.mem.endsWith(u8, part, field.name)) {
+                        // Parse the directional modifier if it exists
+                        const side: key.Mods.Side = side: {
+                            if (std.mem.eql(u8, part, field.name))
+                                break :side .both;
+                            if (std.mem.eql(u8, part, "left_" ++ field.name))
+                                break :side .left;
+                            if (std.mem.eql(u8, part, "right_" ++ field.name))
+                                break :side .right;
 
-                        @field(result.mods, field.name) = true;
+                            return Error.InvalidFormat;
+                        };
+
+                        switch (field.type) {
+                            bool => {
+                                // Can only be set once
+                                if (@field(result.mods, field.name))
+                                    return Error.InvalidFormat;
+
+                                // Can not be directional
+                                if (side != .both)
+                                    return Error.InvalidFormat;
+
+                                @field(result.mods, field.name) = true;
+                            },
+
+                            key.Mods.Side => {
+                                // Can only be set once
+                                if (@field(result.mods, field.name).pressed())
+                                    return Error.InvalidFormat;
+
+                                @field(result.mods, field.name) = side;
+                            },
+
+                            else => @compileError("invalid type"),
+                        }
+
                         continue :loop;
                     }
                 }
@@ -336,23 +369,32 @@ test "parse: triggers" {
     // single modifier
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true },
+            .mods = .{ .shift = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
     }, try parse("shift+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .ctrl = true },
+            .mods = .{ .ctrl = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
     }, try parse("ctrl+a=ignore"));
 
+    // directional modifier
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = .left },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("left_shift+a=ignore"));
+
     // multiple modifier
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true, .ctrl = true },
+            .mods = .{ .shift = .both, .ctrl = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
@@ -361,7 +403,7 @@ test "parse: triggers" {
     // key can come before modifier
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true },
+            .mods = .{ .shift = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
@@ -370,7 +412,7 @@ test "parse: triggers" {
     // unmapped keys
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true },
+            .mods = .{ .shift = .both },
             .key = .a,
             .unmapped = true,
         },
@@ -382,6 +424,9 @@ test "parse: triggers" {
 
     // repeated control
     try testing.expectError(Error.InvalidFormat, parse("shift+shift+a=ignore"));
+
+    // conflicting sides
+    try testing.expectError(Error.InvalidFormat, parse("left_shift+right_shift+a=ignore"));
 
     // multiple character
     try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
