@@ -718,7 +718,14 @@ fn addDeps(
         step.linkSystemLibrary("pixman-1");
         step.linkSystemLibrary("zlib");
 
-        if (font_backend.hasFontconfig()) step.linkSystemLibrary("fontconfig");
+        if (font_backend.hasFontconfig()) {
+            step.linkSystemLibrary("fontconfig");
+
+            // Required on some systems, and pkg-config for fontconfig
+            // doesn't include it
+            step.linkSystemLibrary("libxml-2.0");
+            step.linkSystemLibrary("uuid");
+        }
     }
 
     // Other dependencies, we may dynamically link
