@@ -42,12 +42,24 @@ pub fn parse(input: []const u8) !Binding {
             // Check if its a modifier
             const modsInfo = @typeInfo(key.Mods).Struct;
             inline for (modsInfo.fields) |field| {
-                if (field.type == bool) {
+                if (field.name[0] != '_') {
                     if (std.mem.eql(u8, part, field.name)) {
-                        // Repeat not allowed
-                        if (@field(result.mods, field.name)) return Error.InvalidFormat;
+                        switch (field.type) {
+                            bool => {
+                                if (@field(result.mods, field.name))
+                                    return Error.InvalidFormat;
+                                @field(result.mods, field.name) = true;
+                            },
 
-                        @field(result.mods, field.name) = true;
+                            key.Mods.Side => {
+                                if (@field(result.mods, field.name).pressed())
+                                    return Error.InvalidFormat;
+                                @field(result.mods, field.name) = .both;
+                            },
+
+                            else => @compileError("invalid type"),
+                        }
+
                         continue :loop;
                     }
                 }
@@ -336,14 +348,14 @@ test "parse: triggers" {
     // single modifier
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true },
+            .mods = .{ .shift = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
     }, try parse("shift+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .ctrl = true },
+            .mods = .{ .ctrl = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
@@ -352,7 +364,7 @@ test "parse: triggers" {
     // multiple modifier
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true, .ctrl = true },
+            .mods = .{ .shift = .both, .ctrl = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
@@ -361,7 +373,7 @@ test "parse: triggers" {
     // key can come before modifier
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true },
+            .mods = .{ .shift = .both },
             .key = .a,
         },
         .action = .{ .ignore = {} },
@@ -370,7 +382,7 @@ test "parse: triggers" {
     // unmapped keys
     try testing.expectEqual(Binding{
         .trigger = .{
-            .mods = .{ .shift = true },
+            .mods = .{ .shift = .both },
             .key = .a,
             .unmapped = true,
         },
