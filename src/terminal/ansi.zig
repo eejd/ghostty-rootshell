@@ -62,6 +62,10 @@ pub const Mode = enum(u16) {
     /// wide. When unset, resizes to 80 columns.
     @"132_column" = 3,
 
+    /// Insert mode. This mode writes a character and pushes all existing
+    /// characters to the right. The existing contents are never wrapped.
+    insert = 4,
+
     /// Reverses the foreground and background colors of all cells.
     reverse_colors = 5,
 

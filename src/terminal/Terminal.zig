@@ -83,6 +83,7 @@ modes: packed struct {
     const Self = @This();
 
     cursor_keys: bool = false, // 1
+    insert: bool = false, // 4
     reverse_colors: bool = false, // 5,
     origin: bool = false, // 6
     autowrap: bool = true, // 7
@@ -107,7 +108,7 @@ modes: packed struct {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
         // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(2, @sizeOf(Self));
+        try std.testing.expectEqual(4, @sizeOf(Self));
     }
 } = .{},
 
@@ -688,6 +689,11 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're soft-wrapping, then handle that first.
     if (self.screen.cursor.pending_wrap and self.modes.autowrap)
         try self.printWrap();
+
+    // If we have insert mode enabled then we need to handle that. We
+    // only do insert mode if we're not at the end of the line.
+    if (self.modes.insert and self.screen.cursor.x + width < self.cols)
+        self.insertBlanks(width);
 
     switch (width) {
         // Single cell is very easy: just write in the cell
