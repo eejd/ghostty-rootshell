@@ -3,6 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const apprt = @import("apprt.zig");
 const inputpkg = @import("input.zig");
 const terminal = @import("terminal/main.zig");
 const internal_os = @import("os/main.zig");
@@ -1206,7 +1207,18 @@ pub const Keybinds = struct {
         };
         errdefer if (copy) |v| alloc.free(v);
 
-        const binding = try inputpkg.Binding.parse(value);
+        const binding = binding: {
+            var binding = try inputpkg.Binding.parse(value);
+
+            // Unless we're on native macOS, we don't allow directional
+            // keys, so we just remap them to "both".
+            if (comptime !(builtin.target.isDarwin() and apprt.runtime == apprt.embedded)) {
+                binding.trigger.mods = binding.trigger.mods.removeDirection();
+            }
+
+            break :binding binding;
+        };
+
         switch (binding.action) {
             .unbind => self.set.remove(binding.trigger),
             else => try self.set.put(alloc, binding.trigger, binding.action),

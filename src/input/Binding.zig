@@ -3,6 +3,7 @@
 const Binding = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const key = @import("key.zig");

@@ -33,6 +33,19 @@ pub const Mods = packed struct(Mods.Int) {
         }
     };
 
+    /// Return the identical mods but with all directional configuration
+    /// removed and all of it set to "both".
+    pub fn removeDirection(self: Mods) Mods {
+        return Mods{
+            .shift = if (self.shift.pressed()) .both else .none,
+            .ctrl = if (self.ctrl.pressed()) .both else .none,
+            .alt = if (self.alt.pressed()) .both else .none,
+            .super = if (self.super.pressed()) .both else .none,
+            .caps_lock = self.caps_lock,
+            .num_lock = self.num_lock,
+        };
+    }
+
     // For our own understanding
     test {
         const testing = std.testing;
