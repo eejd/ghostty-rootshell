@@ -644,6 +644,14 @@ fn addDeps(
         return static_libs;
     }
 
+    // On Linux, we need to add a couple common library paths that aren't
+    // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
+    // on x86_64.
+    if (step.target.isLinux()) {
+        const triple = try step.target.linuxTriple(b.allocator);
+        step.addLibraryPath(.{ .path = b.fmt("/usr/lib/{s}", .{triple}) });
+    }
+
     // If we're building a lib we have some different deps
     const lib = step.kind == .lib;
 
@@ -800,14 +808,7 @@ fn addDeps(
 
         // When we're targeting flatpak we ALWAYS link GTK so we
         // get access to glib for dbus.
-        if (flatpak) {
-            step.linkSystemLibrary("gtk4");
-            switch (step.target.getCpuArch()) {
-                .aarch64 => step.addLibraryPath(.{ .path = "/usr/lib/aarch64-linux-gnu" }),
-                .x86_64 => step.addLibraryPath(.{ .path = "/usr/lib/x86_64-linux-gnu" }),
-                else => @panic("unsupported flatpak target"),
-            }
-        }
+        if (flatpak) step.linkSystemLibrary("gtk4");
 
         switch (app_runtime) {
             .none => {},
