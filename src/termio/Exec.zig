@@ -870,7 +870,7 @@ const Subprocess = struct {
     fn resourcesDir(alloc: Allocator) !?[]const u8 {
         // This is the sentinel value we look for in the path to know
         // we've found the resources directory.
-        const sentinel = "terminfo/67/ghostty";
+        const sentinel = "terminfo/ghostty.termcap";
 
         // Get the path to our running binary
         var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
