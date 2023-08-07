@@ -2322,6 +2322,89 @@ test "Terminal: insertBlanks more than size" {
     }
 }
 
+test "Terminal: insert mode with space" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 2);
+    defer t.deinit(alloc);
+
+    for ("hello") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.modes.insert = true;
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("hXello", str);
+    }
+}
+
+test "Terminal: insert mode doesn't wrap pushed characters" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 2);
+    defer t.deinit(alloc);
+
+    for ("hello") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.modes.insert = true;
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("hXell", str);
+    }
+}
+
+test "Terminal: insert mode does nothing at the end of the line" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 2);
+    defer t.deinit(alloc);
+
+    for ("hello") |c| try t.print(c);
+    t.modes.insert = true;
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("hello\nX", str);
+    }
+}
+
+test "Terminal: insert mode with wide characters" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 2);
+    defer t.deinit(alloc);
+
+    for ("hello") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.modes.insert = true;
+    try t.print('😀'); // 0x1F600
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("h😀el", str);
+    }
+}
+
+test "Terminal: insert mode with wide characters at end" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 2);
+    defer t.deinit(alloc);
+
+    for ("well") |c| try t.print(c);
+    t.modes.insert = true;
+    try t.print('😀'); // 0x1F600
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("well\n😀", str);
+    }
+}
+
 test "Terminal: cursorIsAtPrompt" {
     const alloc = testing.allocator;
     var t = try init(alloc, 3, 2);
