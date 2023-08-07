@@ -452,6 +452,10 @@ pub fn Stream(comptime Handler: type) type {
                     // that means. And there is also `CSI > m` which is used
                     // to control modifier key reporting formats that we don't
                     // support yet.
+                    log.debug(
+                        "ignoring unimplemented CSI m with intermediates: {s}",
+                        .{action.intermediates},
+                    );
                 },
 
                 // CPR - Request Cursor Postion Report
@@ -481,12 +485,19 @@ pub fn Stream(comptime Handler: type) type {
 
                 // DECSTBM - Set Top and Bottom Margins
                 // TODO: test
-                'r' => if (@hasDecl(T, "setTopAndBottomMargin")) switch (action.params.len) {
-                    0 => try self.handler.setTopAndBottomMargin(0, 0),
-                    1 => try self.handler.setTopAndBottomMargin(action.params[0], 0),
-                    2 => try self.handler.setTopAndBottomMargin(action.params[0], action.params[1]),
-                    else => log.warn("invalid DECSTBM command: {}", .{action}),
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                'r' => if (action.intermediates.len == 0) {
+                    if (@hasDecl(T, "setTopAndBottomMargin")) switch (action.params.len) {
+                        0 => try self.handler.setTopAndBottomMargin(0, 0),
+                        1 => try self.handler.setTopAndBottomMargin(action.params[0], 0),
+                        2 => try self.handler.setTopAndBottomMargin(action.params[0], action.params[1]),
+                        else => log.warn("invalid DECSTBM command: {}", .{action}),
+                    } else log.warn("unimplemented CSI callback: {}", .{action});
+                } else {
+                    log.debug(
+                        "ignoring unimplemented CSI r with intermediates: {s}",
+                        .{action.intermediates},
+                    );
+                },
 
                 // ICH - Insert Blanks
                 // TODO: test
@@ -814,4 +825,21 @@ test "stream: set mode (SM) and reset mode (RM)" {
 
     try s.nextSlice("\x1B[?6l");
     try testing.expectEqual(@as(ansi.Mode, @enumFromInt(0)), s.handler.mode);
+}
+
+test "stream: restore mode" {
+    const H = struct {
+        const Self = @This();
+        called: bool = false,
+
+        pub fn setTopAndBottomMargin(self: *Self, t: u16, b: u16) !void {
+            _ = t;
+            _ = b;
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    for ("\x1B[?42r") |c| try s.next(c);
+    try testing.expect(!s.handler.called);
 }
