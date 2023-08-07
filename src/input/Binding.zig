@@ -43,18 +43,38 @@ pub fn parse(input: []const u8) !Binding {
             const modsInfo = @typeInfo(key.Mods).Struct;
             inline for (modsInfo.fields) |field| {
                 if (field.name[0] != '_') {
-                    if (std.mem.eql(u8, part, field.name)) {
+                    if (std.mem.endsWith(u8, part, field.name)) {
+                        // Parse the directional modifier if it exists
+                        const side: key.Mods.Side = side: {
+                            if (std.mem.eql(u8, part, field.name))
+                                break :side .both;
+                            if (std.mem.eql(u8, part, "left_" ++ field.name))
+                                break :side .left;
+                            if (std.mem.eql(u8, part, "right_" ++ field.name))
+                                break :side .right;
+
+                            return Error.InvalidFormat;
+                        };
+
                         switch (field.type) {
                             bool => {
+                                // Can only be set once
                                 if (@field(result.mods, field.name))
                                     return Error.InvalidFormat;
+
+                                // Can not be directional
+                                if (side != .both)
+                                    return Error.InvalidFormat;
+
                                 @field(result.mods, field.name) = true;
                             },
 
                             key.Mods.Side => {
+                                // Can only be set once
                                 if (@field(result.mods, field.name).pressed())
                                     return Error.InvalidFormat;
-                                @field(result.mods, field.name) = .both;
+
+                                @field(result.mods, field.name) = side;
                             },
 
                             else => @compileError("invalid type"),
@@ -361,6 +381,15 @@ test "parse: triggers" {
         .action = .{ .ignore = {} },
     }, try parse("ctrl+a=ignore"));
 
+    // directional modifier
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = .left },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("left_shift+a=ignore"));
+
     // multiple modifier
     try testing.expectEqual(Binding{
         .trigger = .{
@@ -394,6 +423,9 @@ test "parse: triggers" {
 
     // repeated control
     try testing.expectError(Error.InvalidFormat, parse("shift+shift+a=ignore"));
+
+    // conflicting sides
+    try testing.expectError(Error.InvalidFormat, parse("left_shift+right_shift+a=ignore"));
 
     // multiple character
     try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
