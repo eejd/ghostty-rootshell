@@ -644,6 +644,22 @@ fn addDeps(
         return static_libs;
     }
 
+    // For dynamic linking, we prefer dynamic linking and to search by
+    // mode first. Mode first will search all paths for a dynamic library
+    // before falling back to static.
+    const dynamic_link_opts: std.build.Step.Compile.LinkSystemLibraryOptions = .{
+        .preferred_link_mode = .Dynamic,
+        .search_strategy = .mode_first,
+    };
+
+    // On Linux, we need to add a couple common library paths that aren't
+    // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
+    // on x86_64.
+    if (step.target.isLinux()) {
+        const triple = try step.target.linuxTriple(b.allocator);
+        step.addLibraryPath(.{ .path = b.fmt("/usr/lib/{s}", .{triple}) });
+    }
+
     // If we're building a lib we have some different deps
     const lib = step.kind == .lib;
 
@@ -703,14 +719,16 @@ fn addDeps(
     // Dynamic link
     if (!static) {
         step.addIncludePath(.{ .path = freetype.include_path_self });
-        step.linkSystemLibrary("bzip2");
-        step.linkSystemLibrary("freetype2");
-        step.linkSystemLibrary("harfbuzz");
-        step.linkSystemLibrary("libpng");
-        step.linkSystemLibrary("pixman-1");
-        step.linkSystemLibrary("zlib");
+        step.linkSystemLibrary2("bzip2", dynamic_link_opts);
+        step.linkSystemLibrary2("freetype2", dynamic_link_opts);
+        step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
+        step.linkSystemLibrary2("libpng", dynamic_link_opts);
+        step.linkSystemLibrary2("pixman-1", dynamic_link_opts);
+        step.linkSystemLibrary2("zlib", dynamic_link_opts);
 
-        if (font_backend.hasFontconfig()) step.linkSystemLibrary("fontconfig");
+        if (font_backend.hasFontconfig()) {
+            step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
+        }
     }
 
     // Other dependencies, we may dynamically link
@@ -800,14 +818,7 @@ fn addDeps(
 
         // When we're targeting flatpak we ALWAYS link GTK so we
         // get access to glib for dbus.
-        if (flatpak) {
-            step.linkSystemLibrary("gtk4");
-            switch (step.target.getCpuArch()) {
-                .aarch64 => step.addLibraryPath(.{ .path = "/usr/lib/aarch64-linux-gnu" }),
-                .x86_64 => step.addLibraryPath(.{ .path = "/usr/lib/x86_64-linux-gnu" }),
-                else => @panic("unsupported flatpak target"),
-            }
-        }
+        if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
         switch (app_runtime) {
             .none => {},
@@ -834,7 +845,7 @@ fn addDeps(
                 };
                 try glfw.link(b, step, glfw_opts);
 
-                step.linkSystemLibrary("gtk4");
+                step.linkSystemLibrary2("gtk4", dynamic_link_opts);
             },
         }
     }

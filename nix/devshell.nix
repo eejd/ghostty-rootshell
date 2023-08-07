@@ -30,7 +30,6 @@
 , harfbuzz
 , libpng
 , libGL
-, libuv
 , libX11
 , libXcursor
 , libXext
@@ -51,7 +50,6 @@ let
     freetype
     harfbuzz
     libpng
-    libuv
     zlib
 
     libX11
@@ -105,7 +103,6 @@ in mkShell rec {
     freetype
     harfbuzz
     libpng
-    libuv
     pixman
     zlib
 

@@ -126,11 +126,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1690978078,
-        "narHash": "sha256-+S9s6sjOGuGCtA9njTdduJ7KjZm2tskxKhwGRKBK/xM=",
+        "lastModified": 1691410097,
+        "narHash": "sha256-HoZ/JwddeysSKNYr7h3AqReCMXPcqgqW/eBVOekxhFM=",
         "owner": "mitchellh",
         "repo": "zig-overlay",
-        "rev": "c9f51464f2c2c9c75f3d7fdc58c157d252545dec",
+        "rev": "9eda53e9001c54c810e24efe256c28d57a75d20d",
         "type": "github"
       },
       "original": {
