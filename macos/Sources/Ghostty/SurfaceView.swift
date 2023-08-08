@@ -360,6 +360,8 @@ extension Ghostty {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
             let unmapped_key = Self.keycodes[event.keyCode] ?? GHOSTTY_KEY_INVALID
+            
+            ghostty_surface_key2(surface, action, UInt32(event.keyCode), mods)
 
             // We translate the key to the localized keyboard layout. However, we only support
             // ASCII characters to make our translation easier across platforms. This is something

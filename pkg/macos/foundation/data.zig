@@ -19,6 +19,10 @@ pub const Data = opaque {
     pub fn release(self: *Data) void {
         foundation.CFRelease(self);
     }
+
+    pub fn getPointer(self: *Data) *const anyopaque {
+        return @ptrCast(c.CFDataGetBytePtr(@ptrCast(self)));
+    }
 };
 
 test {

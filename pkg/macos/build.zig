@@ -35,6 +35,7 @@ pub fn link(
         .file = .{ .path = comptime thisDir() ++ "/text/ext.c" },
         .flags = flags.items,
     });
+    step.linkFramework("Carbon");
     step.linkFramework("CoreFoundation");
     step.linkFramework("CoreText");
     return lib;

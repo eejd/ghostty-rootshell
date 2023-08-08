@@ -75,17 +75,21 @@ pub const App = struct {
     core_app: *CoreApp,
     config: *const Config,
     opts: Options,
+    keymap: input.Keymap,
+    keymap_state: input.Keymap.State,
 
     pub fn init(core_app: *CoreApp, config: *const Config, opts: Options) !App {
         return .{
             .core_app = core_app,
             .config = config,
             .opts = opts,
+            .keymap = try input.Keymap.init(),
+            .keymap_state = .{},
         };
     }
 
     pub fn terminate(self: App) void {
-        _ = self;
+        self.keymap.deinit();
     }
 
     pub fn reloadConfig(self: *App) !?*const Config {
@@ -538,6 +542,36 @@ pub const CAPI = struct {
             unmapped_key,
             @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
         );
+    }
+
+    /// TODO: new key processing
+    export fn ghostty_surface_key2(
+        surface: *Surface,
+        action: input.Action,
+        keycode: u32,
+        c_mods: c_int,
+    ) void {
+        if (action != .press) return;
+
+        var buf: [128]u8 = undefined;
+        const mods: input.Mods = @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods)))));
+        const result = surface.app.keymap.translate(
+            &buf,
+            &surface.app.keymap_state,
+            @intCast(keycode),
+            mods,
+        ) catch |err| {
+            log.err("TRANSLATE error translating key err={}", .{err});
+            return;
+        };
+
+        log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s}", .{
+            action,
+            keycode,
+            result.composing,
+            result.text,
+            result.text,
+        });
     }
 
     /// Tell the surface that it needs to schedule a render

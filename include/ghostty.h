@@ -307,6 +307,9 @@ void ghostty_surface_binding_action(ghostty_surface_t, ghostty_binding_action_e,
 // Don't use these unless you know what you're doing.
 void ghostty_set_window_background_blur(ghostty_surface_t, void *);
 
+// TODO new key processing API
+void ghostty_surface_key2(ghostty_surface_t, ghostty_input_action_e, uint32_t, ghostty_input_mods_e);
+
 #ifdef __cplusplus
 }
 #endif
