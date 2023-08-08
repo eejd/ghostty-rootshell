@@ -217,15 +217,16 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     // Clear out our data since we're not active anymore.
     self.data = null;
 
-    // Quit our read thread first so that we aren't simultaneously
-    // performing a read/close on the pty fd.
-    _ = std.os.write(data.read_thread_pipe, "x") catch |err|
-        log.warn("error writing to read thread quit pipe err={}", .{err});
-    data.read_thread.join();
-
     // Stop our subprocess
     if (data.ev.process_exited) self.subprocess.externalExit();
     self.subprocess.stop();
+
+    // Quit our read thread after exiting the subprocess so that
+    // we don't get stuck waiting for data to stop flowing if it is
+    // a particularly noisy process.
+    _ = std.os.write(data.read_thread_pipe, "x") catch |err|
+        log.warn("error writing to read thread quit pipe err={}", .{err});
+    data.read_thread.join();
 }
 
 /// Update the configuration.
@@ -671,6 +672,7 @@ const Subprocess = struct {
     /// Clean up the subprocess. This will stop the subprocess if it is started.
     pub fn deinit(self: *Subprocess) void {
         self.stop();
+        if (self.pty) |*pty| pty.deinit();
         self.arena.deinit();
         self.* = undefined;
     }
@@ -779,7 +781,8 @@ const Subprocess = struct {
     }
 
     /// Stop the subprocess. This is safe to call anytime. This will wait
-    /// for the subprocess to end so it will block.
+    /// for the subprocess to end so it will block. This does not close
+    /// the pty.
     pub fn stop(self: *Subprocess) void {
         // Kill our command
         if (self.command) |*cmd| {
@@ -799,14 +802,6 @@ const Subprocess = struct {
                     log.err("error waiting for command to exit: {}", .{err});
                 self.flatpak_command = null;
             }
-        }
-
-        // Close our PTY. We do this after killing our command because on
-        // macOS, close will block until all blocking operations read/write
-        // are done with it and our reader thread is probably still alive.
-        if (self.pty) |*pty| {
-            pty.deinit();
-            self.pty = null;
         }
     }
 
