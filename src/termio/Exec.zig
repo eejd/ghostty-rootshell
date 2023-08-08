@@ -964,7 +964,10 @@ const ReadThread = struct {
                 log.warn("read thread failed to set flags err={}", .{err});
                 log.warn("this isn't a fatal error, but may cause performance issues", .{});
             };
-        } else |_| {}
+        } else |err| {
+            log.warn("read thread failed to get flags err={}", .{err});
+            log.warn("this isn't a fatal error, but may cause performance issues", .{});
+        }
 
         // Build up the list of fds we're going to poll. We are looking
         // for data on the pty and our quit notification.
@@ -1002,6 +1005,11 @@ const ReadThread = struct {
                         },
                     }
                 };
+
+                // This happens on macOS instead of WouldBlock when the
+                // child process dies. To be safe, we just break the loop
+                // and let our poll happen.
+                if (n == 0) break;
 
                 // log.info("DATA: {d}", .{n});
                 @call(.always_inline, process, .{ ev, buf[0..n] });
