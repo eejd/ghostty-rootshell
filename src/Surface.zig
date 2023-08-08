@@ -182,6 +182,7 @@ pub fn init(
     alloc: Allocator,
     config: *const configpkg.Config,
     app_mailbox: App.Mailbox,
+    app_resources_dir: ?[]const u8,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
     // Initialize our renderer with our initialized surface.
@@ -405,6 +406,7 @@ pub fn init(
         .screen_size = screen_size,
         .full_config = config,
         .config = try termio.Impl.DerivedConfig.init(alloc, config),
+        .resources_dir = app_resources_dir,
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,

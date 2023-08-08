@@ -544,26 +544,12 @@ const Subprocess = struct {
         };
         errdefer env.deinit();
 
-        // Get our bundled resources directory, if it exists. We use this
-        // for terminfo, shell-integration, etc.
+        // If we have a resources dir then set our env var
         const resources_key = "GHOSTTY_RESOURCES_DIR";
-        const resources_dir = dir: {
-            if (env.get(resources_key)) |dir| {
-                if (dir.len > 0) {
-                    log.info("using Ghostty resources dir from env var: {s}", .{dir});
-                    break :dir dir;
-                }
-            }
-
-            if (try resourcesDir(alloc)) |dir| {
-                log.info("found Ghostty resources dir: {s}", .{dir});
-                try env.put(resources_key, dir);
-                break :dir dir;
-            }
-
-            log.warn("Ghostty resources dir not found, some features disabled", .{});
-            break :dir null;
-        };
+        if (opts.resources_dir) |dir| {
+            log.info("found Ghostty resources dir: {s}", .{dir});
+            try env.put(resources_key, dir);
+        }
 
         // Set our TERM var. This is a bit complicated because we want to use
         // the ghostty TERM value but we want to only do that if we have
@@ -571,7 +557,9 @@ const Subprocess = struct {
         //
         // For now, we just look up a bundled dir but in the future we should
         // also load the terminfo database and look for it.
-        if (try terminfoDir(alloc, resources_dir)) |dir| {
+        if (opts.resources_dir) |base| {
+            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const dir = try std.fmt.bufPrint(&buf, "{s}/terminfo", .{base});
             try env.put("TERM", "xterm-ghostty");
             try env.put("COLORTERM", "truecolor");
             try env.put("TERMINFO", dir);
@@ -641,7 +629,7 @@ const Subprocess = struct {
                 .zsh => .zsh,
             };
 
-            const dir = resources_dir orelse break :shell null;
+            const dir = opts.resources_dir orelse break :shell null;
             break :shell try shell_integration.setup(
                 dir,
                 final_path,
@@ -859,73 +847,6 @@ const Subprocess = struct {
     /// This sends a signal via the Flatpak API.
     fn killCommandFlatpak(command: *FlatpakHostCommand) !void {
         try command.signal(c.SIGHUP, true);
-    }
-
-    /// Gets the directory to the terminfo database, if it can be detected.
-    /// The memory returned can't be easily freed so the alloc should be
-    /// an arena or something similar.
-    fn terminfoDir(alloc: Allocator, base: ?[]const u8) !?[]const u8 {
-        const dir = base orelse return null;
-        return try tryDir(alloc, dir, "terminfo", "");
-    }
-
-    /// Gets the directory to the bundled resources directory, if it
-    /// exists (not all platforms or packages have it).
-    ///
-    /// The memory returned can't be easily freed so the alloc should be
-    /// an arena or something similar.
-    fn resourcesDir(alloc: Allocator) !?[]const u8 {
-        // This is the sentinel value we look for in the path to know
-        // we've found the resources directory.
-        const sentinel = "terminfo/ghostty.termcap";
-
-        // Get the path to our running binary
-        var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        var exe: []const u8 = std.fs.selfExePath(&exe_buf) catch return null;
-
-        // We have an exe path! Climb the tree looking for the terminfo
-        // bundle as we expect it.
-        while (std.fs.path.dirname(exe)) |dir| {
-            exe = dir;
-
-            // On MacOS, we look for the app bundle path.
-            if (comptime builtin.target.isDarwin()) {
-                if (try tryDir(alloc, dir, "Contents/Resources", sentinel)) |v| {
-                    return v;
-                }
-            }
-
-            // On all platforms, we look for a /usr/share style path. This
-            // is valid even on Mac since there is nothing that requires
-            // Ghostty to be in an app bundle.
-            if (try tryDir(alloc, dir, "share", sentinel)) |v| {
-                return v;
-            }
-        }
-
-        return null;
-    }
-
-    /// Little helper to check if the "base/sub/suffix" directory exists and
-    /// if so, duplicate the "base/sub" path and return it.
-    fn tryDir(
-        alloc: Allocator,
-        base: []const u8,
-        sub: []const u8,
-        suffix: []const u8,
-    ) !?[]const u8 {
-        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        const path = try std.fmt.bufPrint(&buf, "{s}/{s}/{s}", .{ base, sub, suffix });
-
-        if (std.fs.accessAbsolute(path, .{})) {
-            const len = path.len - suffix.len - 1;
-            return try alloc.dupe(u8, path[0..len]);
-        } else |_| {
-            // Folder doesn't exist. If a different error happens its okay
-            // we just ignore it and move on.
-        }
-
-        return null;
     }
 };
 

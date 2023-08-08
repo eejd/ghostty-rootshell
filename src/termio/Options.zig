@@ -20,6 +20,9 @@ full_config: *const Config,
 /// The derived configuration for this termio implementation.
 config: termio.Impl.DerivedConfig,
 
+/// The application resources directory.
+resources_dir: ?[]const u8,
+
 /// The render state. The IO implementation can modify anything here. The
 /// surface thread will setup the initial "terminal" pointer but the IO impl
 /// is free to change that if that is useful (i.e. doing some sort of dual

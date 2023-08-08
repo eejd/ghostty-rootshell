@@ -765,6 +765,7 @@ pub const Surface = struct {
             self.app.core_app.alloc,
             &config,
             .{ .rt_app = self.app, .mailbox = &self.app.core_app.mailbox },
+            self.app.core_app.resources_dir,
             self,
         );
         errdefer self.core_surface.deinit();
