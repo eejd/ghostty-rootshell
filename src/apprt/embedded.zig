@@ -275,7 +275,7 @@ pub const Surface = struct {
     }
 
     pub fn updateSize(self: *Surface, width: u32, height: u32) void {
-        // Runtimes sometimes generate superflous resize events even
+        // Runtimes sometimes generate superfluous resize events even
         // if the size did not actually change (SwiftUI). We check
         // that the size actually changed from what we last recorded
         // since resizes are expensive.
@@ -470,7 +470,7 @@ pub const CAPI = struct {
         return surface.app;
     }
 
-    /// Returns ture if the surface has transparency set.
+    /// Returns true if the surface has transparency set.
     export fn ghostty_surface_transparent(surface: *Surface) bool {
         return surface.app.config.@"background-opacity" < 1.0;
     }

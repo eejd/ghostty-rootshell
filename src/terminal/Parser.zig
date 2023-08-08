@@ -212,8 +212,8 @@ pub fn init() Parser {
     return .{};
 }
 
-/// Next consums the next character c and returns the actions to execute.
-/// Up to 3 actions may need to be exected -- in order -- representing
+/// Next consumes the next character c and returns the actions to execute.
+/// Up to 3 actions may need to be executed -- in order -- representing
 /// the state exit, transition, and entry actions.
 pub fn next(self: *Parser, c: u8) [3]?Action {
     const tracy = trace(@src());

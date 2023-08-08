@@ -207,7 +207,7 @@ pub const Cell = struct {
         /// two cells. The following cell ALWAYS is a space.
         wide: bool = false,
 
-        /// Notes that this only exists to be blank for a preceeding
+        /// Notes that this only exists to be blank for a preceding
         /// wide character (tail) or following (head).
         wide_spacer_tail: bool = false,
         wide_spacer_head: bool = false,
@@ -863,7 +863,7 @@ pub fn clone(self: *Screen, alloc: Allocator, top: RowIndex, bottom: RowIndex) !
 
     // We also figure out the "max y" we can have based on the number
     // of rows written. This is used to prevent from reading out of the
-    // circular buffer where we might ahve no initialized data yet.
+    // circular buffer where we might have no initialized data yet.
     const max_y = max_y: {
         const rows_written = self.rowsWritten();
         const index = RowIndex{ .active = @min(rows_written -| 1, self.rows - 1) };
@@ -1033,7 +1033,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
     // The total amount we're going to copy
     const total_copy = (height - count) * (self.cols + 1);
 
-    // Fast-path is that we have a contigous buffer in our circular buffer.
+    // Fast-path is that we have a contiguous buffer in our circular buffer.
     // In this case we can do some memmoves.
     if (slices[1].len == 0) {
         const buf = slices[0];
@@ -1996,7 +1996,7 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
 
     // Convert our cursor to screen coordinates so we can preserve it.
     // The cursor is normally in active coordinates, but by converting to
-    // screen we can accomodate keeping it on the same place if we retain
+    // screen we can accommodate keeping it on the same place if we retain
     // the same scrollback.
     const old_cursor_y_screen = RowIndexTag.active.index(old.cursor.y).toScreen(&old).screen;
     self.cursor.x = @min(old.cursor.x, self.cols - 1);

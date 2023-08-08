@@ -73,7 +73,7 @@ pub const Pattern = opaque {
 
         /// Move to the next object, returns true if there is another
         /// object and false otherwise. If this is the first call, this
-        /// will be teh first object.
+        /// will be the first object.
         pub fn next(self: *ObjectIterator) bool {
             // Null means our first iterator
             if (self.iter == null) {

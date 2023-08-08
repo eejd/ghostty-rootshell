@@ -134,7 +134,7 @@ pub const Padding = struct {
         };
     }
 
-    /// Add another padding to ths one
+    /// Add another padding to this one
     pub fn add(self: Padding, other: Padding) Padding {
         return .{
             .top = self.top + other.top,

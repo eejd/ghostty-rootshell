@@ -377,7 +377,7 @@ pub const Face = struct {
         // represent the amount under the baseline. We add this to our real
         // baseline to get the actual value from the bottom (+y is up).
         // The final underline position is +y from the TOP (confusing)
-        // so we have to substract from the cell height.
+        // so we have to subtract from the cell height.
         const underline_position = cell_height -
             (cell_baseline + @ceil(@as(f32, @floatCast(ct_font.getUnderlinePosition())))) +
             1;

@@ -12,7 +12,7 @@ TODO: Details about how this interacts with soft wrapping.
 ## Implementation Details
 
   * ghostty implements this naively as `cursor.x -|= 1` (`-|=` being a
-    saturating substraction).
+    saturating subtraction).
 
 ## TODO
 

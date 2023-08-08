@@ -37,7 +37,7 @@ pub const Action = enum(c_int) {
 
 /// The set of keys that can map to keybindings. These have no fixed enum
 /// values because we map platform-specific keys to this set. Note that
-/// this only needs to accomodate what maps to a key. If a key is not bound
+/// this only needs to accommodate what maps to a key. If a key is not bound
 /// to anything and the key can be mapped to a printable character, then that
 /// unicode character is sent directly to the pty.
 ///

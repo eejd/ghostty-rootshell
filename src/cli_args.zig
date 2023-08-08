@@ -381,7 +381,7 @@ test "parseIntoField: struct with parse func" {
     try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
 }
 
-/// Returns an interator (implements "next") that reads CLI args by line.
+/// Returns an iterator (implements "next") that reads CLI args by line.
 /// Each CLI arg is expected to be a single line. This is used to implement
 /// configuration files.
 pub fn LineIterator(comptime ReaderType: type) type {

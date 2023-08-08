@@ -50,7 +50,7 @@ pub const MouseButton = enum(c_int) {
 
 /// The "momentum" of a mouse scroll event. This matches the macOS events
 /// because it is the only reliable source right now of momentum events.
-/// This is used to handle "intertial scrolling" (i.e. flicking).
+/// This is used to handle "inertial scrolling" (i.e. flicking).
 ///
 /// https://developer.apple.com/documentation/appkit/nseventphase
 pub const MouseMomentum = enum(u3) {
@@ -71,7 +71,7 @@ pub const ScrollMods = packed struct(u8) {
     precision: bool = false,
 
     /// The momentum phase (if available, supported) of the scroll event.
-    /// This is used to handle "intertial scrolling" (i.e. flicking).
+    /// This is used to handle "inertial scrolling" (i.e. flicking).
     momentum: MouseMomentum = .none,
 
     _padding: u4 = 0,

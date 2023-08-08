@@ -69,7 +69,7 @@ pub const Message = union(enum) {
     }
 };
 
-/// Creates a union that can be used to accomodate data that fit within an array,
+/// Creates a union that can be used to accommodate data that fit within an array,
 /// are a stable pointer, or require deallocation. This is helpful for thread
 /// messaging utilities.
 pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type {

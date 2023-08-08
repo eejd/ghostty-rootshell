@@ -948,7 +948,7 @@ pub const Surface = struct {
         };
     }
 
-    /// render singal
+    /// render signal
     fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) c.gboolean {
         _ = area;
         _ = ctx;
@@ -962,7 +962,7 @@ pub const Surface = struct {
         return 1;
     }
 
-    /// render singal
+    /// render signal
     fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque) callconv(.C) void {
         const self = userdataSelf(ud.?);
 

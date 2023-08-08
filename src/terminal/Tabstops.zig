@@ -19,7 +19,7 @@ const fastmem = @import("../fastmem.zig");
 const Unit = u8;
 const unit_bits = @bitSizeOf(Unit);
 
-/// The number of columsn we preallocate for. This is kind of high which
+/// The number of columns we preallocate for. This is kind of high which
 /// costs us some memory, but this is more columns than my 6k monitor at
 /// 12-point font size, so this should prevent allocation in almost all
 /// real world scenarios for the price of wasting at most

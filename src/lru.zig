@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-/// Create a HashMap for a key type that can be autoamtically hashed.
+/// Create a HashMap for a key type that can be automatically hashed.
 /// If you want finer-grained control, use HashMap directly.
 pub fn AutoHashMap(comptime K: type, comptime V: type) type {
     return HashMap(

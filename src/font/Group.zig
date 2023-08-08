@@ -1,6 +1,6 @@
 //! A font group is a a set of multiple font faces of potentially different
 //! styles that are used together to find glyphs. They usually share sizing
-//! properties so that they can be used interchangably with each other in cases
+//! properties so that they can be used interchangeably with each other in cases
 //! a codepoint doesn't map cleanly. For example, if a user requests a bold
 //! char and it doesn't exist we can fallback to a regular non-bold char so
 //! we show SOMETHING.

@@ -1,6 +1,6 @@
 //! OpenGL bindings.
 //!
-//! These are pupose-built for usage within this program. While they closely
+//! These are purpose-built for usage within this program. While they closely
 //! align with the OpenGL C APIs, they aren't meant to be general purpose,
 //! they aren't meant to have 100% API coverage, and they aren't meant to
 //! be hyper-performant.

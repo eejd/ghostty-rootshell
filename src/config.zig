@@ -29,7 +29,7 @@ pub const Config = struct {
     /// a single value (yet).
     ///
     /// The font feature will apply to all fonts rendered by Ghostty. A
-    /// future enhancement will allow targetting specific faces.
+    /// future enhancement will allow targeting specific faces.
     ///
     /// A valid value is the name of a feature. Prefix the feature with a
     /// "-" to explicitly disable it. Example: "ss20" or "-ss20".
@@ -120,7 +120,7 @@ pub const Config = struct {
     /// "ctrl+a", "ctrl+shift+b", "up". Some notes:
     ///
     ///   - modifiers cannot repeat, "ctrl+ctrl+a" is invalid.
-    ///   - modifers and key scan be in any order, "shift+a+ctrl" is weird,
+    ///   - modifiers and key scan be in any order, "shift+a+ctrl" is weird,
     ///     but valid.
     ///   - only a single key input is allowed, "ctrl+a+b" is invalid.
     ///

@@ -18,7 +18,7 @@ struct PrimaryView: View {
     // This handles non-native fullscreen
     @State private var fullScreen = FullScreenHandler()
     
-    // This seems like a crutch after switchign from SwiftUI to AppKit lifecycle.
+    // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
     
     @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
