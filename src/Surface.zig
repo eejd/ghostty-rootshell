@@ -953,12 +953,19 @@ pub fn keyCallback(
     self.ignore_char = false;
 
     if (action == .press or action == .repeat) {
+        // Mods for bindings never include caps/num lock.
+        const binding_mods = mods: {
+            var binding_mods = mods;
+            binding_mods.caps_lock = false;
+            binding_mods.num_lock = false;
+            break :mods binding_mods;
+        };
+
         const binding_action_: ?input.Binding.Action = action: {
             var trigger: input.Binding.Trigger = .{
-                .mods = mods,
+                .mods = binding_mods,
                 .key = key,
             };
-            //log.warn("BINDING TRIGGER={}", .{trigger});
 
             const set = self.config.keybind.set;
             if (set.get(trigger)) |v| break :action v;
@@ -983,7 +990,7 @@ pub fn keyCallback(
 
         // Handle non-printables
         const char: u8 = char: {
-            const mods_int: u8 = @bitCast(mods);
+            const mods_int: u8 = @bitCast(binding_mods);
             const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
 
             // If we're only pressing control, check if this is a character
