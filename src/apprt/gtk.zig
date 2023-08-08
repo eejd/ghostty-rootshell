@@ -283,7 +283,7 @@ pub const App = struct {
         // Queue a new window
         _ = core_app.mailbox.push(.{
             .new_window = .{},
-        }, .{ .instant = {} });
+        }, .{ .forever = {} });
     }
 };
 
