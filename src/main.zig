@@ -34,9 +34,6 @@ pub fn main() !void {
     var app_runtime = try apprt.App.init(app, .{});
     defer app_runtime.terminate();
 
-    // Create an initial window
-    try app_runtime.newWindow(null);
-
     // Run the GUI event loop
     try app_runtime.run();
 }

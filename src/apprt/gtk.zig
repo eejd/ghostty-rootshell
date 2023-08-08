@@ -31,11 +31,7 @@ const log = std.log.scoped(.gtk);
 /// application frameworks also have this restriction so it simplifies
 /// the assumptions.
 pub const App = struct {
-    pub const Options = struct {
-        /// GTK app ID. This is currently unused but should remain populated
-        /// for the future.
-        id: [:0]const u8 = "com.mitchellh.ghostty",
-    };
+    pub const Options = struct {};
 
     core_app: *CoreApp,
     config: Config,
@@ -62,9 +58,14 @@ pub const App = struct {
         var config = try Config.load(core_app.alloc);
         errdefer config.deinit();
 
+        // Our uniqueness ID is based on whether we're in a debug mode or not.
+        // In debug mode we want to be separate so we can develop Ghostty in
+        // Ghostty.
+        const uniqueness_id = "com.mitchellh.ghostty" ++ if (builtin.mode == .Debug) "-debug" else "";
+
         // Create our GTK Application which encapsulates our process.
         const app = @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-            null,
+            uniqueness_id,
 
             // GTK >= 2.74
             if (@hasDecl(c, "G_APPLICATION_DEFAULT_FLAGS"))
@@ -77,7 +78,7 @@ pub const App = struct {
             app,
             "activate",
             c.G_CALLBACK(&activate),
-            null,
+            core_app,
             null,
             G_CONNECT_DEFAULT,
         );
@@ -121,6 +122,11 @@ pub const App = struct {
             .ctx = ctx,
             .cursor_default = cursor_default,
             .cursor_ibeam = cursor_ibeam,
+
+            // If we are NOT the primary instance, then we never want to run.
+            // This means that another instance of the GTK app is running and
+            // our "activate" call above will open a window.
+            .running = c.g_application_get_is_remote(gapp) == 0,
         };
     }
 
@@ -261,15 +267,18 @@ pub const App = struct {
         }.callback, null);
     }
 
+    /// This is called by the "activate" signal. This is sent on program
+    /// startup and also when a secondary instance launches and requests
+    /// a new window.
     fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
         _ = app;
-        _ = ud;
 
-        // We purposely don't do anything on activation right now. We have
-        // this callback because if we don't then GTK emits a warning to
-        // stderr that we don't want. We emit a debug log just so that we know
-        // we reached this point.
-        log.debug("application activated", .{});
+        const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
+
+        // Queue a new window
+        _ = core_app.mailbox.push(.{
+            .new_window = .{},
+        }, .{ .forever = {} });
     }
 };
 

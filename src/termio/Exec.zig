@@ -139,6 +139,12 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         break :pid command.pid orelse return error.ProcessNoPid;
     };
 
+    // Create our pipe that we'll use to kill our read thread.
+    // pipe[0] is the read end, pipe[1] is the write end.
+    const pipe = try std.os.pipe();
+    errdefer std.os.close(pipe[0]);
+    errdefer std.os.close(pipe[1]);
+
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
     errdefer alloc.destroy(ev_data_ptr);
@@ -194,7 +200,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     const read_thread = try std.Thread.spawn(
         .{},
         ReadThread.threadMain,
-        .{ master_fd, ev_data_ptr },
+        .{ master_fd, ev_data_ptr, pipe[0] },
     );
     read_thread.setName("io-reader") catch {};
 
@@ -203,6 +209,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .alloc = alloc,
         .ev = ev_data_ptr,
         .read_thread = read_thread,
+        .read_thread_pipe = pipe[1],
     };
 }
 
@@ -214,7 +221,11 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     if (data.ev.process_exited) self.subprocess.externalExit();
     self.subprocess.stop();
 
-    // Wait for our reader thread to end
+    // Quit our read thread after exiting the subprocess so that
+    // we don't get stuck waiting for data to stop flowing if it is
+    // a particularly noisy process.
+    _ = std.os.write(data.read_thread_pipe, "x") catch |err|
+        log.warn("error writing to read thread quit pipe err={}", .{err});
     data.read_thread.join();
 }
 
@@ -338,8 +349,10 @@ const ThreadData = struct {
 
     /// Our read thread
     read_thread: std.Thread,
+    read_thread_pipe: std.os.fd_t,
 
     pub fn deinit(self: *ThreadData) void {
+        std.os.close(self.read_thread_pipe);
         self.ev.deinit(self.alloc);
         self.alloc.destroy(self.ev);
         self.* = undefined;
@@ -659,6 +672,7 @@ const Subprocess = struct {
     /// Clean up the subprocess. This will stop the subprocess if it is started.
     pub fn deinit(self: *Subprocess) void {
         self.stop();
+        if (self.pty) |*pty| pty.deinit();
         self.arena.deinit();
         self.* = undefined;
     }
@@ -767,7 +781,8 @@ const Subprocess = struct {
     }
 
     /// Stop the subprocess. This is safe to call anytime. This will wait
-    /// for the subprocess to end so it will block.
+    /// for the subprocess to end so it will block. This does not close
+    /// the pty.
     pub fn stop(self: *Subprocess) void {
         // Kill our command
         if (self.command) |*cmd| {
@@ -787,14 +802,6 @@ const Subprocess = struct {
                     log.err("error waiting for command to exit: {}", .{err});
                 self.flatpak_command = null;
             }
-        }
-
-        // Close our PTY. We do this after killing our command because on
-        // macOS, close will block until all blocking operations read/write
-        // are done with it and our reader thread is probably still alive.
-        if (self.pty) |*pty| {
-            pty.deinit();
-            self.pty = null;
         }
     }
 
@@ -934,29 +941,86 @@ const Subprocess = struct {
 /// This is also empirically fast compared to putting the read into
 /// an async mechanism like io_uring/epoll because the reads are generally
 /// small.
+///
+/// We use a basic poll syscall here because we are only monitoring two
+/// fds and this is still much faster and lower overhead than any async
+/// mechanism.
 const ReadThread = struct {
     /// The main entrypoint for the thread.
-    fn threadMain(fd: std.os.fd_t, ev: *EventData) void {
+    fn threadMain(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
+        // Always close our end of the pipe when we exit.
+        defer std.os.close(quit);
+
+        // First thing, we want to set the fd to non-blocking. We do this
+        // so that we can try to read from the fd in a tight loop and only
+        // check the quit fd occasionally.
+        if (std.os.fcntl(fd, std.os.F.GETFL, 0)) |flags| {
+            _ = std.os.fcntl(fd, std.os.F.SETFL, flags | std.os.O.NONBLOCK) catch |err| {
+                log.warn("read thread failed to set flags err={}", .{err});
+                log.warn("this isn't a fatal error, but may cause performance issues", .{});
+            };
+        } else |err| {
+            log.warn("read thread failed to get flags err={}", .{err});
+            log.warn("this isn't a fatal error, but may cause performance issues", .{});
+        }
+
+        // Build up the list of fds we're going to poll. We are looking
+        // for data on the pty and our quit notification.
+        var pollfds: [2]std.os.pollfd = .{
+            .{ .fd = fd, .events = std.os.POLL.IN, .revents = undefined },
+            .{ .fd = quit, .events = std.os.POLL.IN, .revents = undefined },
+        };
+
         var buf: [1024]u8 = undefined;
         while (true) {
-            const n = std.os.read(fd, &buf) catch |err| {
-                switch (err) {
-                    // This means our pty is closed. We're probably
-                    // gracefully shutting down.
-                    error.NotOpenForReading,
-                    error.InputOutput,
-                    => log.info("io reader exiting", .{}),
+            // We try to read from the file descriptor as long as possible
+            // to maximize performance. We only check the quit fd if the
+            // main fd blocks. This optimizes for the realistic scenario that
+            // the data will eventually stop while we're trying to quit. This
+            // is always true because we kill the process.
+            while (true) {
+                const n = std.os.read(fd, &buf) catch |err| {
+                    switch (err) {
+                        // This means our pty is closed. We're probably
+                        // gracefully shutting down.
+                        error.NotOpenForReading,
+                        error.InputOutput,
+                        => {
+                            log.info("io reader exiting", .{});
+                            return;
+                        },
 
-                    else => {
-                        log.err("io reader error err={}", .{err});
-                        unreachable;
-                    },
-                }
+                        // No more data, fall back to poll and check for
+                        // exit conditions.
+                        error.WouldBlock => break,
+
+                        else => {
+                            log.err("io reader error err={}", .{err});
+                            unreachable;
+                        },
+                    }
+                };
+
+                // This happens on macOS instead of WouldBlock when the
+                // child process dies. To be safe, we just break the loop
+                // and let our poll happen.
+                if (n == 0) break;
+
+                // log.info("DATA: {d}", .{n});
+                @call(.always_inline, process, .{ ev, buf[0..n] });
+            }
+
+            // Wait for data.
+            _ = std.os.poll(&pollfds, 0) catch |err| {
+                log.warn("poll failed on read thread, exiting early err={}", .{err});
                 return;
             };
 
-            // log.info("DATA: {d}", .{n});
-            @call(.always_inline, process, .{ ev, buf[0..n] });
+            // If our quit fd is set, we're done.
+            if (pollfds[1].revents & std.os.POLL.IN != 0) {
+                log.info("read thread got quit signal", .{});
+                return;
+            }
         }
     }
 

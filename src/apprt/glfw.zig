@@ -65,6 +65,14 @@ pub const App = struct {
         // up when we take a pass at cleaning up the dev mode.
         if (DevMode.enabled) DevMode.instance.config = config;
 
+        // Queue a single new window that starts on launch
+        _ = core_app.mailbox.push(.{
+            .new_window = .{},
+        }, .{ .forever = {} });
+
+        // We want the event loop to wake up instantly so we can process our tick.
+        glfw.postEmptyEvent();
+
         return .{
             .app = core_app,
             .config = config,
