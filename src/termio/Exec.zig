@@ -1011,7 +1011,7 @@ const ReadThread = struct {
             }
 
             // Wait for data.
-            _ = std.os.poll(&pollfds, 0) catch |err| {
+            _ = std.os.poll(&pollfds, -1) catch |err| {
                 log.warn("poll failed on read thread, exiting early err={}", .{err});
                 return;
             };
