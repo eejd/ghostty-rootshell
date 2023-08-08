@@ -1906,12 +1906,15 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         },
 
         .csi => |data| {
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = "\x1B[",
-            }, .{ .forever = {} });
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = data,
-            }, .{ .forever = {} });
+            // We need to send the CSI sequence as a single write request.
+            // If you split it across two then the shell can interpret it
+            // as two literals.
+            var buf: [128]u8 = undefined;
+            const full_data = try std.fmt.bufPrint(&buf, "\x1b[{s}", .{data});
+            _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                self.alloc,
+                full_data,
+            ), .{ .forever = {} });
             try self.io_thread.wakeup.notify();
 
             // CSI triggers a scroll.
