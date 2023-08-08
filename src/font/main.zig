@@ -34,7 +34,7 @@ pub const options: struct {
 } = .{
     // TODO: we need to modify the build config for wasm builds. the issue
     // is we're sharing the build config options between all exes in build.zig.
-    // We need to construt it per target.
+    // We need to construct it per target.
     .backend = if (builtin.target.isWasm()) .web_canvas else build_config.font_backend,
 };
 

@@ -6,7 +6,7 @@
 //! But has some modifications:
 //!
 //!   * utf8 state introduced to detect UTF8-encoded sequences. The
-//!     actual handling back OUT of the utf8 state is done manualy in the
+//!     actual handling back OUT of the utf8 state is done manually in the
 //!     parser.
 //!
 //!   * csi_param accepts the colon character (':') since the SGR command

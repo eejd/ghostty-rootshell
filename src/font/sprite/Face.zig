@@ -31,7 +31,7 @@ height: u32,
 /// want to do any DPI scaling, it is expected to be done earlier.
 thickness: u32,
 
-/// The position fo the underline.
+/// The position of the underline.
 underline_position: u32 = 0,
 
 /// Returns true if the codepoint exists in our sprite font.

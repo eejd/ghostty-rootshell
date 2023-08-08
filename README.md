@@ -116,7 +116,7 @@ it may have encountered. Ghostty currently ignores errors and treats it
 as if the configuration had not been set, so this is the best place to look
 if something isn't working.
 
-Eventually, we'll have a better mecanism for showing errors to the user.
+Eventually, we'll have a better mechanism for showing errors to the user.
 
 ### Shell Integration
 
@@ -205,7 +205,7 @@ uses a CPU renderer if ligatures are enabled). We can maintain roughly
 usually rendering much lower due to little screen changes.
 
 For IO, we have a dedicated IO thread that maintains very little jitter
-under heavy IO load (i.e. `cat <big file>.txt`). On bechmarks for IO,
+under heavy IO load (i.e. `cat <big file>.txt`). On benchmarks for IO,
 we're usually top of the class by a large margin over popular terminal
 emulators. For example, reading a dump of plain text is 4x faster compared
 to iTerm and Kitty, and 2x faster than Terminal.app. Alacritty is very

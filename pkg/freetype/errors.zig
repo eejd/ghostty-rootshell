@@ -286,7 +286,7 @@ pub fn errorToInt(err: Error) c_int {
     };
 }
 
-test "error convertion" {
+test "error conversion" {
     const expectError = @import("std").testing.expectError;
 
     try intToError(c.FT_Err_Ok);

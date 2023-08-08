@@ -46,7 +46,7 @@ pub const RunIterator = struct {
         // We're over at the max
         if (self.i >= max) return null;
 
-        // Track the font for our curent run
+        // Track the font for our current run
         var current_font: font.Group.FontIndex = .{};
 
         // Allow the hook to prepare

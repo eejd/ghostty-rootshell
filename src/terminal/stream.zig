@@ -458,7 +458,7 @@ pub fn Stream(comptime Handler: type) type {
                     );
                 },
 
-                // CPR - Request Cursor Postion Report
+                // CPR - Request Cursor Position Report
                 // TODO: test
                 'n' => if (@hasDecl(T, "deviceStatusReport")) try self.handler.deviceStatusReport(
                     switch (action.params.len) {

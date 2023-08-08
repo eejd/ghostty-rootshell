@@ -43,7 +43,7 @@ pub const Artifact = enum {
     /// Embeddable library
     lib,
 
-    /// The WASM-targetted module.
+    /// The WASM-targeted module.
     wasm_module,
 
     pub fn detect() Artifact {

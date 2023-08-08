@@ -122,7 +122,7 @@ pub const Face = struct {
         const p: font.Presentation = if (cp <= 255) .text else p: {
             break :p self.glyphPresentation(cp) catch {
                 // In this case, we assume we are unable to render
-                // this glyph and therefore jus say we don't support it.
+                // this glyph and therefore just say we don't support it.
                 return null;
             };
         };

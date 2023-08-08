@@ -228,7 +228,7 @@ pub fn build(b: *std.Build) !void {
             try exe.step.addError(
                 "\x1b[" ++ color_map.get("yellow").? ++
                     "\x1b[" ++ color_map.get("d").? ++
-                    \\Detected building on and for NixOS outside of the Nix shell enviornment.
+                    \\Detected building on and for NixOS outside of the Nix shell environment.
                     \\
                     \\The resulting ghostty binary will likely fail on launch because it is
                     \\unable to dynamically load the windowing libs (X11, Wayland, etc.).
@@ -633,7 +633,7 @@ fn addDeps(
     // Wasm we do manually since it is such a different build.
     if (step.target.getCpuArch() == .wasm32) {
         // We link this package but its a no-op since Tracy
-        // never actualy WORKS with wasm.
+        // never actually WORKS with wasm.
         step.addModule("tracy", tracylib.module(b));
         step.addModule("utf8proc", utf8proc.module(b));
         step.addModule("zig-js", js.module(b));

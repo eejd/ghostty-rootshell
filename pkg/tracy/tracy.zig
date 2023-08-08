@@ -188,7 +188,7 @@ const Impl = struct {
     }
 
     /// Mark the boundary of a frame. Good for continuous frames. For
-    /// discontinous frames, use frame() and defer end().
+    /// discontinuous frames, use frame() and defer end().
     pub inline fn frameMark() void {
         c.___tracy_emit_frame_mark(null);
     }

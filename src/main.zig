@@ -129,7 +129,7 @@ pub const GlobalState = struct {
         errdefer self.deinit();
 
         self.gpa = gpa: {
-            // Use the libc allocator if it is available beacuse it is WAY
+            // Use the libc allocator if it is available because it is WAY
             // faster than GPA. We only do this in release modes so that we
             // can get easy memory leak detection in debug modes.
             if (builtin.link_libc) {

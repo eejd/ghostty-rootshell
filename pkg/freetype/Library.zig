@@ -63,7 +63,7 @@ pub const Version = struct {
     patch: i32,
 
     /// Convert the version to a string. The buffer should be able to
-    /// accomodate the size, recommended to be at least 8 chars wide.
+    /// accommodate the size, recommended to be at least 8 chars wide.
     /// The returned slice will be a slice of buf that contains the full
     /// version string.
     pub fn toString(self: Version, buf: []u8) ![]const u8 {

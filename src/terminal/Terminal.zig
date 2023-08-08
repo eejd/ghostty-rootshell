@@ -1520,7 +1520,7 @@ pub fn markSemanticPrompt(self: *Terminal, p: SemanticPrompt) void {
 }
 
 /// Returns true if the cursor is currently at a prompt. Another way to look
-/// at this is it returns false if the shell is currently outputing something.
+/// at this is it returns false if the shell is currently outputting something.
 /// This requires shell integration (semantic prompt integration).
 ///
 /// If the shell integration doesn't exist, this will always return false.

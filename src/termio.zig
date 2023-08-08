@@ -1,6 +1,6 @@
 //! IO implementation and utilities. The IO implementation is responsible
 //! for taking the config, spinning up a child process, and handling IO
-//! with the termianl.
+//! with the terminal.
 
 pub usingnamespace @import("termio/message.zig");
 pub const Exec = @import("termio/Exec.zig");

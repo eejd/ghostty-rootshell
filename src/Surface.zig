@@ -901,7 +901,7 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        // Clear the selction if we have one.
+        // Clear the selection if we have one.
         if (self.io.terminal.screen.selection != null) {
             self.io.terminal.screen.selection = null;
             try self.queueRender();
@@ -1141,7 +1141,7 @@ pub fn scrollCallback(
         // Add our previously saved pending amount to the offset to get the
         // new offset value.
         //
-        // NOTE: we currently mutiply by -1 because macOS sends the opposite
+        // NOTE: we currently multiply by -1 because macOS sends the opposite
         // of what we expect. This is jank we should audit our sign usage and
         // carefully document what we expect so this can work cross platform.
         // Right now this isn't important because macOS is the only high-precision
@@ -1653,7 +1653,7 @@ pub fn cursorPosCallback(
     // If the cursor isn't clicked currently, it doesn't matter
     if (self.mouse.click_state[@intFromEnum(input.MouseButton.left)] != .press) return;
 
-    // All roads lead to requiring a re-render at this pont.
+    // All roads lead to requiring a re-render at this point.
     try self.queueRender();
 
     // If our y is negative, we're above the window. In this case, we scroll
@@ -1756,7 +1756,7 @@ fn dragLeftClickSingle(
         if (reset) self.io.terminal.screen.selection = null;
     }
 
-    // Our logic for determing if the starting cell is selected:
+    // Our logic for determining if the starting cell is selected:
     //
     //   - The "xboundary" is 60% the width of a cell from the left. We choose
     //     60% somewhat arbitrarily based on feeling.
@@ -1918,7 +1918,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         .cursor_key => |ck| {
             // We send a different sequence depending on if we're
             // in cursor keys mode. We're in "normal" mode if cursor
-            // keys mdoe is NOT set.
+            // keys mode is NOT set.
             const normal = normal: {
                 self.renderer_state.mutex.lock();
                 defer self.renderer_state.mutex.unlock();
