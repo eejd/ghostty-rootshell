@@ -133,8 +133,6 @@ pub const App = struct {
     // Terminate the application. The application will not be restarted after
     // this so all global state can be cleaned up.
     pub fn terminate(self: *App) void {
-        c.g_signal_emit(self.app, c.g_signal_lookup("shutdown", c.g_application_get_type()), 0);
-
         c.g_settings_sync();
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
@@ -190,9 +188,6 @@ pub const App = struct {
     pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
         _ = parent_;
         const alloc = self.core_app.alloc;
-
-        // If we're trying to quit, then do not open any new windows.
-        if (!self.running) return;
 
         // Allocate a fixed pointer for our window. We try to minimize
         // allocations but windows and other GUI requirements are so minimal
