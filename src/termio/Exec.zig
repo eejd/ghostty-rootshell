@@ -956,6 +956,16 @@ const ReadThread = struct {
         // Always close our end of the pipe when we exit.
         defer std.os.close(quit);
 
+        // First thing, we want to set the fd to non-blocking. We do this
+        // so that we can try to read from the fd in a tight loop and only
+        // check the quit fd occasionally.
+        if (std.os.fcntl(fd, std.os.F.GETFL, 0)) |flags| {
+            _ = std.os.fcntl(fd, std.os.F.SETFL, flags | std.os.O.NONBLOCK) catch |err| {
+                log.warn("read thread failed to set flags err={}", .{err});
+                log.warn("this isn't a fatal error, but may cause performance issues", .{});
+            };
+        } else |_| {}
+
         // Build up the list of fds we're going to poll. We are looking
         // for data on the pty and our quit notification.
         var pollfds: [2]std.os.pollfd = .{
@@ -965,6 +975,38 @@ const ReadThread = struct {
 
         var buf: [1024]u8 = undefined;
         while (true) {
+            // We try to read from the file descriptor as long as possible
+            // to maximize performance. We only check the quit fd if the
+            // main fd blocks. This optimizes for the realistic scenario that
+            // the data will eventually stop while we're trying to quit. This
+            // is always true because we kill the process.
+            while (true) {
+                const n = std.os.read(fd, &buf) catch |err| {
+                    switch (err) {
+                        // This means our pty is closed. We're probably
+                        // gracefully shutting down.
+                        error.NotOpenForReading,
+                        error.InputOutput,
+                        => {
+                            log.info("io reader exiting", .{});
+                            return;
+                        },
+
+                        // No more data, fall back to poll and check for
+                        // exit conditions.
+                        error.WouldBlock => break,
+
+                        else => {
+                            log.err("io reader error err={}", .{err});
+                            unreachable;
+                        },
+                    }
+                };
+
+                // log.info("DATA: {d}", .{n});
+                @call(.always_inline, process, .{ ev, buf[0..n] });
+            }
+
             // Wait for data.
             _ = std.os.poll(&pollfds, 0) catch |err| {
                 log.warn("poll failed on read thread, exiting early err={}", .{err});
@@ -976,27 +1018,6 @@ const ReadThread = struct {
                 log.info("read thread got quit signal", .{});
                 return;
             }
-
-            // Ensure our pty has data.
-            if (pollfds[0].revents & std.os.POLL.IN == 0) continue;
-            const n = std.os.read(fd, &buf) catch |err| {
-                switch (err) {
-                    // This means our pty is closed. We're probably
-                    // gracefully shutting down.
-                    error.NotOpenForReading,
-                    error.InputOutput,
-                    => log.info("io reader exiting", .{}),
-
-                    else => {
-                        log.err("io reader error err={}", .{err});
-                        unreachable;
-                    },
-                }
-                return;
-            };
-
-            // log.info("DATA: {d}", .{n});
-            @call(.always_inline, process, .{ ev, buf[0..n] });
         }
     }
 
