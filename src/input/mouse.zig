@@ -64,9 +64,7 @@ pub const MouseMomentum = enum(u3) {
 };
 
 /// The bitmask for mods for scroll events.
-pub const ScrollMods = packed struct(ScrollMods.Int) {
-    pub const Int = u8;
-
+pub const ScrollMods = packed struct(u8) {
     /// True if this is a high-precision scroll event. For example, Apple
     /// devices such as Magic Mouse, trackpads, etc. are high-precision
     /// and send very detailed scroll events.
@@ -81,10 +79,10 @@ pub const ScrollMods = packed struct(ScrollMods.Int) {
     // For our own understanding
     test {
         const testing = std.testing;
-        try testing.expectEqual(@as(Int, @bitCast(ScrollMods{})), @as(Int, 0b0));
+        try testing.expectEqual(@as(u8, @bitCast(ScrollMods{})), @as(u8, 0b0));
         try testing.expectEqual(
-            @as(Int, @bitCast(ScrollMods{ .precision = true })),
-            @as(Int, 0b0000_0001),
+            @as(u8, @bitCast(ScrollMods{ .precision = true })),
+            @as(u8, 0b0000_0001),
         );
     }
 };

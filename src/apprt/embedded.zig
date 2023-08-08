@@ -508,7 +508,7 @@ pub const CAPI = struct {
             action,
             key,
             unmapped_key,
-            @bitCast(@as(input.Mods.Int, @truncate(@as(c_uint, @bitCast(mods))))),
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
         );
     }
 
@@ -527,7 +527,7 @@ pub const CAPI = struct {
         surface.mouseButtonCallback(
             action,
             button,
-            @bitCast(@as(input.Mods.Int, @truncate(@as(c_uint, @bitCast(mods))))),
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
         );
     }
 
@@ -545,7 +545,7 @@ pub const CAPI = struct {
         surface.scrollCallback(
             x,
             y,
-            @bitCast(@as(input.ScrollMods.Int, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
         );
     }
 

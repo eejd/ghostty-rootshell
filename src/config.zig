@@ -3,7 +3,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const apprt = @import("apprt.zig");
 const inputpkg = @import("input.zig");
 const terminal = @import("terminal/main.zig");
 const internal_os = @import("os/main.zig");
@@ -301,7 +300,7 @@ pub const Config = struct {
         // Add our default keybindings
         try result.keybind.set.put(
             alloc,
-            .{ .key = .space, .mods = .{ .super = .both, .alt = .both, .ctrl = .both } },
+            .{ .key = .space, .mods = .{ .super = true, .alt = true, .ctrl = true } },
             .{ .reload_config = {} },
         );
 
@@ -309,9 +308,9 @@ pub const Config = struct {
             // On macOS we default to super but Linux ctrl+shift since
             // ctrl+c is to kill the process.
             const mods: inputpkg.Mods = if (builtin.target.isDarwin())
-                .{ .super = .both }
+                .{ .super = true }
             else
-                .{ .ctrl = .both, .shift = .both };
+                .{ .ctrl = true, .shift = true };
 
             try result.keybind.set.put(
                 alloc,
@@ -394,13 +393,13 @@ pub const Config = struct {
         // Dev Mode
         try result.keybind.set.put(
             alloc,
-            .{ .key = .down, .mods = .{ .shift = .both, .super = .both } },
+            .{ .key = .down, .mods = .{ .shift = true, .super = true } },
             .{ .toggle_dev_mode = {} },
         );
 
         try result.keybind.set.put(
             alloc,
-            .{ .key = .j, .mods = ctrlOrSuper(.{ .shift = .both }) },
+            .{ .key = .j, .mods = ctrlOrSuper(.{ .shift = true }) },
             .{ .write_scrollback_file = {} },
         );
 
@@ -408,89 +407,89 @@ pub const Config = struct {
         if (comptime !builtin.target.isDarwin()) {
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .n, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .n, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_window = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .w, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .w, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .close_surface = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .q, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .q, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .quit = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .f4, .mods = .{ .alt = .both } },
+                .{ .key = .f4, .mods = .{ .alt = true } },
                 .{ .close_window = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .t, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .t, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_tab = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .left, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .previous_tab = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .right, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .next_tab = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .o, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .o, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .right },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .e, .mods = .{ .ctrl = .both, .shift = .both } },
+                .{ .key = .e, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .down },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left_bracket, .mods = .{ .ctrl = .both, .super = .both } },
+                .{ .key = .left_bracket, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .previous },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right_bracket, .mods = .{ .ctrl = .both, .super = .both } },
+                .{ .key = .right_bracket, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .next },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .up, .mods = .{ .ctrl = .both, .alt = .both } },
+                .{ .key = .up, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .top },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .down, .mods = .{ .ctrl = .both, .alt = .both } },
+                .{ .key = .down, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .bottom },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left, .mods = .{ .ctrl = .both, .alt = .both } },
+                .{ .key = .left, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .left },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right, .mods = .{ .ctrl = .both, .alt = .both } },
+                .{ .key = .right, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .right },
             );
 
             // Semantic prompts
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .page_up, .mods = .{ .shift = .both } },
+                .{ .key = .page_up, .mods = .{ .shift = true } },
                 .{ .jump_to_prompt = -1 },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .page_down, .mods = .{ .shift = .both } },
+                .{ .key = .page_down, .mods = .{ .shift = true } },
                 .{ .jump_to_prompt = 1 },
             );
         }
@@ -503,9 +502,9 @@ pub const Config = struct {
                 // On macOS we default to super but everywhere else
                 // is alt.
                 const mods: inputpkg.Mods = if (builtin.target.isDarwin())
-                    .{ .super = .both }
+                    .{ .super = true }
                 else
-                    .{ .alt = .both };
+                    .{ .alt = true };
 
                 try result.keybind.set.put(
                     alloc,
@@ -526,97 +525,97 @@ pub const Config = struct {
         if (comptime builtin.target.isDarwin()) {
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .q, .mods = .{ .super = .both } },
+                .{ .key = .q, .mods = .{ .super = true } },
                 .{ .quit = {} },
             );
 
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .k, .mods = .{ .super = .both } },
+                .{ .key = .k, .mods = .{ .super = true } },
                 .{ .clear_screen = {} },
             );
 
             // Semantic prompts
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .up, .mods = .{ .super = .both, .shift = .both } },
+                .{ .key = .up, .mods = .{ .super = true, .shift = true } },
                 .{ .jump_to_prompt = -1 },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .down, .mods = .{ .super = .both, .shift = .both } },
+                .{ .key = .down, .mods = .{ .super = true, .shift = true } },
                 .{ .jump_to_prompt = 1 },
             );
 
             // Mac windowing
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .n, .mods = .{ .super = .both } },
+                .{ .key = .n, .mods = .{ .super = true } },
                 .{ .new_window = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .w, .mods = .{ .super = .both } },
+                .{ .key = .w, .mods = .{ .super = true } },
                 .{ .close_surface = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .w, .mods = .{ .super = .both, .shift = .both } },
+                .{ .key = .w, .mods = .{ .super = true, .shift = true } },
                 .{ .close_window = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .t, .mods = .{ .super = .both } },
+                .{ .key = .t, .mods = .{ .super = true } },
                 .{ .new_tab = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left_bracket, .mods = .{ .super = .both, .shift = .both } },
+                .{ .key = .left_bracket, .mods = .{ .super = true, .shift = true } },
                 .{ .previous_tab = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right_bracket, .mods = .{ .super = .both, .shift = .both } },
+                .{ .key = .right_bracket, .mods = .{ .super = true, .shift = true } },
                 .{ .next_tab = {} },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .d, .mods = .{ .super = .both } },
+                .{ .key = .d, .mods = .{ .super = true } },
                 .{ .new_split = .right },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .d, .mods = .{ .super = .both, .shift = .both } },
+                .{ .key = .d, .mods = .{ .super = true, .shift = true } },
                 .{ .new_split = .down },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left_bracket, .mods = .{ .super = .both } },
+                .{ .key = .left_bracket, .mods = .{ .super = true } },
                 .{ .goto_split = .previous },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right_bracket, .mods = .{ .super = .both } },
+                .{ .key = .right_bracket, .mods = .{ .super = true } },
                 .{ .goto_split = .next },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .up, .mods = .{ .super = .both, .alt = .both } },
+                .{ .key = .up, .mods = .{ .super = true, .alt = true } },
                 .{ .goto_split = .top },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .down, .mods = .{ .super = .both, .alt = .both } },
+                .{ .key = .down, .mods = .{ .super = true, .alt = true } },
                 .{ .goto_split = .bottom },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .left, .mods = .{ .super = .both, .alt = .both } },
+                .{ .key = .left, .mods = .{ .super = true, .alt = true } },
                 .{ .goto_split = .left },
             );
             try result.keybind.set.put(
                 alloc,
-                .{ .key = .right, .mods = .{ .super = .both, .alt = .both } },
+                .{ .key = .right, .mods = .{ .super = true, .alt = true } },
                 .{ .goto_split = .right },
             );
         }
@@ -631,9 +630,9 @@ pub const Config = struct {
     fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
         var copy = mods;
         if (comptime builtin.target.isDarwin()) {
-            copy.super = .both;
+            copy.super = true;
         } else {
-            copy.ctrl = .both;
+            copy.ctrl = true;
         }
 
         return copy;
@@ -1207,18 +1206,7 @@ pub const Keybinds = struct {
         };
         errdefer if (copy) |v| alloc.free(v);
 
-        const binding = binding: {
-            var binding = try inputpkg.Binding.parse(value);
-
-            // Unless we're on native macOS, we don't allow directional
-            // keys, so we just remap them to "both".
-            if (comptime !(builtin.target.isDarwin() and apprt.runtime == apprt.embedded)) {
-                binding.trigger.mods = binding.trigger.mods.removeDirection();
-            }
-
-            break :binding binding;
-        };
-
+        const binding = try inputpkg.Binding.parse(value);
         switch (binding.action) {
             .unbind => self.set.remove(binding.trigger),
             else => try self.set.put(alloc, binding.trigger, binding.action),

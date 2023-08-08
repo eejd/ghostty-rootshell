@@ -981,12 +981,12 @@ pub fn keyCallback(
 
         // Handle non-printables
         const char: u8 = char: {
-            const mods_int: input.Mods.Int = @bitCast(mods);
-            const ctrl_only: input.Mods.Int = @bitCast(input.Mods{ .ctrl = .both });
+            const mods_int: u8 = @bitCast(mods);
+            const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
 
             // If we're only pressing control, check if this is a character
             // we convert to a non-printable.
-            if (mods_int & ctrl_only > 0) {
+            if (mods_int == ctrl_only) {
                 const val: u8 = switch (key) {
                     .left_bracket => 0x1B,
                     .backslash => 0x1C,
@@ -1324,9 +1324,9 @@ fn mouseReport(
 
         // X10 doesn't have modifiers
         if (self.io.terminal.modes.mouse_event != .x10) {
-            if (mods.shift.pressed()) acc += 4;
-            if (mods.super.pressed()) acc += 8;
-            if (mods.ctrl.pressed()) acc += 16;
+            if (mods.shift) acc += 4;
+            if (mods.super) acc += 8;
+            if (mods.ctrl) acc += 16;
         }
 
         // Motion adds another bit
@@ -1478,13 +1478,13 @@ pub fn mouseButtonCallback(
 
     // Always record our latest mouse state
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
-    self.mouse.mods = mods;
+    self.mouse.mods = @bitCast(mods);
 
     // Shift-click continues the previous mouse state if we have a selection.
     // cursorPosCallback will also do a mouse report so we don't need to do any
     // of the logic below.
     if (button == .left and action == .press) {
-        if (mods.shift.pressed() and self.mouse.left_click_count > 0) {
+        if (mods.shift and self.mouse.left_click_count > 0) {
             // Checking for selection requires the renderer state mutex which
             // sucks but this should be pretty rare of an event so it won't
             // cause a ton of contention.
@@ -1508,7 +1508,7 @@ pub fn mouseButtonCallback(
     // Report mouse events if enabled
     if (self.io.terminal.modes.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-        if (mods.shift.pressed()) break :report;
+        if (mods.shift) break :report;
 
         // In any other mouse button scenario without shift pressed we
         // clear the selection since the underlying application can handle
@@ -1634,7 +1634,7 @@ pub fn cursorPosCallback(
     // Do a mouse report
     if (self.io.terminal.modes.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-        if (self.mouse.mods.shift.pressed()) break :report;
+        if (self.mouse.mods.shift) break :report;
 
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
