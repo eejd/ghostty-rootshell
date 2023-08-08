@@ -16,6 +16,7 @@ const Config = @import("config.zig").Config;
 const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
+const internal_os = @import("os/main.zig");
 const macos = @import("macos");
 const objc = @import("objc");
 
@@ -40,6 +41,10 @@ mailbox: Mailbox.Queue,
 /// Set to true once we're quitting. This never goes false again.
 quit: bool,
 
+/// The app resources directory, equivalent to zig-out/share when we build
+/// from source. This is null if we can't detect it.
+resources_dir: ?[]const u8 = null,
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -48,11 +53,21 @@ pub fn create(
 ) !*App {
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
+
+    // Find our resources directory once for the app so every launch
+    // hereafter can use this cached value.
+    var resources_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const resources_dir = if (try internal_os.resourcesDir(&resources_buf)) |dir|
+        try alloc.dupe(u8, dir)
+    else
+        null;
+
     app.* = .{
         .alloc = alloc,
         .surfaces = .{},
         .mailbox = .{},
         .quit = false,
+        .resources_dir = resources_dir,
     };
     errdefer app.surfaces.deinit(alloc);
 
@@ -64,6 +79,7 @@ pub fn destroy(self: *App) void {
     for (self.surfaces.items) |surface| surface.deinit();
     self.surfaces.deinit(self.alloc);
 
+    if (self.resources_dir) |dir| self.alloc.free(dir);
     self.alloc.destroy(self);
 }
 

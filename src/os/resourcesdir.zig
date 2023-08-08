@@ -8,6 +8,9 @@ const Allocator = std.mem.Allocator;
 /// the output is not ALWAYS written to the buffer and may refer to
 /// static memory.
 ///
+/// This is highly Ghostty-specific and can likely be generalized at
+/// some point but we can cross that bridge if we ever need to.
+///
 /// This returns error.OutOfMemory is buffer is not big enough.
 pub fn resourcesDir(buf: []u8) !?[]const u8 {
     // If we have an environment variable set, we always use that.
@@ -60,7 +63,7 @@ pub fn maybeDir(
     sub: []const u8,
     suffix: []const u8,
 ) !?[]const u8 {
-    const path = try std.fmt.bufPrint(&buf, "{s}/{s}/{s}", .{ base, sub, suffix });
+    const path = try std.fmt.bufPrint(buf, "{s}/{s}/{s}", .{ base, sub, suffix });
 
     if (std.fs.accessAbsolute(path, .{})) {
         const len = path.len - suffix.len - 1;
