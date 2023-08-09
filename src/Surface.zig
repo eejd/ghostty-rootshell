@@ -144,6 +144,7 @@ const DerivedConfig = struct {
     clipboard_read: bool,
     clipboard_write: bool,
     clipboard_trim_trailing_spaces: bool,
+    copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
     mouse_interval: u64,
     macos_non_native_fullscreen: bool,
@@ -159,6 +160,7 @@ const DerivedConfig = struct {
             .clipboard_read = config.@"clipboard-read",
             .clipboard_write = config.@"clipboard-write",
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+            .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
@@ -833,6 +835,13 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) void {
     const prev_ = self.io.terminal.screen.selection;
     self.io.terminal.screen.selection = sel_;
 
+    // Determine the clipboard we want to copy selection to, if it is enabled.
+    const clipboard: apprt.Clipboard = switch (self.config.copy_on_select) {
+        .false => return,
+        .true => .selection,
+        .clipboard => .standard,
+    };
+
     // Set our selection clipboard. If the selection is cleared we do not
     // clear the clipboard. If the selection is set, we only set the clipboard
     // again if it changed, since setting the clipboard can be an expensive
@@ -850,7 +859,7 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) void {
     };
     defer self.alloc.free(buf);
 
-    self.rt_surface.setClipboardString(buf, .selection) catch |err| {
+    self.rt_surface.setClipboardString(buf, clipboard) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -1697,7 +1706,14 @@ pub fn mouseButtonCallback(
 
     // Middle-click pastes from our selection clipboard
     if (button == .middle and action == .press) {
-        try self.clipboardPaste(.selection, false);
+        if (self.config.copy_on_select != .false) {
+            const clipboard: apprt.Clipboard = switch (self.config.copy_on_select) {
+                .true => .selection,
+                .clipboard => .standard,
+                .false => unreachable,
+            };
+            try self.clipboardPaste(clipboard, false);
+        }
     }
 }
 
