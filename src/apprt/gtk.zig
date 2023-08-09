@@ -15,6 +15,9 @@ pub const c = @cImport({
     @cInclude("gtk/gtk.h");
 });
 
+// We need native X11 access to access the primary clipboard.
+const glfw_native = glfw.Native(.{ .x11 = true });
+
 /// Compatibility with gobject < 2.74
 const G_CONNECT_DEFAULT = if (@hasDecl(c, "G_CONNECT_DEFAULT"))
     c.G_CONNECT_DEFAULT
@@ -920,9 +923,18 @@ pub const Surface = struct {
         const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
         const content = c.gdk_clipboard_get_content(clipboard) orelse {
             // On my machine, this NEVER works, so we fallback to glfw's
-            // implementation...
+            // implementation... I believe this never works because we need to
+            // use the async mechanism with GTK but that doesn't play nice
+            // with what our core expects.
             log.debug("no GTK clipboard contents, falling back to glfw", .{});
-            return glfw.getClipboardString() orelse return glfw.mustGetErrorCode();
+            return switch (clipboard_type) {
+                .standard => glfw.getClipboardString() orelse glfw.mustGetErrorCode(),
+                .selection => value: {
+                    const raw = glfw_native.getX11SelectionString() orelse
+                        return glfw.mustGetErrorCode();
+                    break :value std.mem.span(raw);
+                },
+            };
         };
 
         c.g_value_unset(&self.clipboard);
@@ -940,7 +952,6 @@ pub const Surface = struct {
         val: [:0]const u8,
         clipboard_type: apprt.Clipboard,
     ) !void {
-        log.warn("SETTING CLIPBOARD: {s}", .{val});
         const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
         c.gdk_clipboard_set_text(clipboard, val.ptr);
     }
