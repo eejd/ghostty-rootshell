@@ -489,6 +489,28 @@ pub const Config = struct {
                 .{ .clear_screen = {} },
             );
 
+            // Viewport scrolling
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .home, .mods = .{ .super = true } },
+                .{ .scroll_to_top = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .end, .mods = .{ .super = true } },
+                .{ .scroll_to_bottom = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .page_up, .mods = .{ .super = true } },
+                .{ .scroll_page_up = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .page_down, .mods = .{ .super = true } },
+                .{ .scroll_page_down = {} },
+            );
+
             // Semantic prompts
             try result.keybind.set.put(
                 alloc,

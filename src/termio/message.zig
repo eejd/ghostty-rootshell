@@ -45,6 +45,9 @@ pub const Message = union(enum) {
         history: bool,
     },
 
+    /// Scroll the viewport
+    scroll_viewport: terminal.Terminal.ScrollViewport,
+
     /// Jump forward/backward n prompts.
     jump_to_prompt: isize,
 
