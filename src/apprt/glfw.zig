@@ -25,6 +25,7 @@ const DevMode = @import("../DevMode.zig");
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
     .cocoa = builtin.target.isDarwin(),
+    .x11 = builtin.os.tag == .linux,
 });
 
 const log = std.log.scoped(.glfw);
@@ -496,15 +497,39 @@ pub const Surface = struct {
     /// Read the clipboard. The windowing system is responsible for allocating
     /// a buffer as necessary. This should be a stable pointer until the next
     /// time getClipboardString is called.
-    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
+    pub fn getClipboardString(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) ![:0]const u8 {
         _ = self;
-        return glfw.getClipboardString() orelse return glfw.mustGetErrorCode();
+        return switch (clipboard_type) {
+            .standard => glfw.getClipboardString() orelse glfw.mustGetErrorCode(),
+            .selection => selection: {
+                // Not supported except on Linux
+                if (comptime builtin.os.tag != .linux) return "";
+
+                const raw = glfwNative.getX11SelectionString() orelse
+                    return glfw.mustGetErrorCode();
+                break :selection std.mem.span(raw);
+            },
+        };
     }
 
     /// Set the clipboard.
-    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
+    pub fn setClipboardString(
+        self: *const Surface,
+        val: [:0]const u8,
+        clipboard_type: apprt.Clipboard,
+    ) !void {
         _ = self;
-        glfw.setClipboardString(val);
+        switch (clipboard_type) {
+            .standard => glfw.setClipboardString(val),
+            .selection => {
+                // Not supported except on Linux
+                if (comptime builtin.os.tag != .linux) return "";
+                glfwNative.setX11SelectionString(val.ptr);
+            },
+        }
     }
 
     /// The cursor position from glfw directly is in screen coordinates but
