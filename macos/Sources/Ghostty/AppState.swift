@@ -54,6 +54,7 @@ extension Ghostty {
             // uses to interface with the application runtime environment.
             var runtime_cfg = ghostty_runtime_config_s(
                 userdata: Unmanaged.passUnretained(self).toOpaque(),
+                supports_selection_clipboard: false,
                 wakeup_cb: { userdata in AppState.wakeup(userdata) },
                 reload_config_cb: { userdata in AppState.reloadConfig(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },

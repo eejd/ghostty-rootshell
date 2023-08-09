@@ -253,6 +253,7 @@ typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, bool);
 
 typedef struct {
     void *userdata;
+    bool supports_selection_clipboard;
     ghostty_runtime_wakeup_cb wakeup_cb;
     ghostty_runtime_reload_config_cb reload_config_cb;
     ghostty_runtime_set_title_cb set_title_cb;

@@ -32,6 +32,9 @@ pub const App = struct {
         /// Userdata that is passed to all the callbacks.
         userdata: AppUD = null,
 
+        /// True if the selection clipboard is supported.
+        supports_selection_clipboard: bool = false,
+
         /// Callback called to wakeup the event loop. This should trigger
         /// a full tick of the app loop.
         wakeup: *const fn (AppUD) callconv(.C) void,
@@ -237,6 +240,16 @@ pub const Surface = struct {
             self.opts.userdata,
             slice.ptr,
         );
+    }
+
+    pub fn supportsClipboard(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) bool {
+        return switch (clipboard_type) {
+            .standard => true,
+            .selection => self.app.opts.supports_selection_clipboard,
+        };
     }
 
     pub fn getClipboardString(

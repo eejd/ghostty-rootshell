@@ -849,6 +849,14 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) void {
     const sel = sel_ orelse return;
     if (prev_) |prev| if (std.meta.eql(sel, prev)) return;
 
+    // Check if our runtime supports the selection clipboard at all.
+    // We can save a lot of work if it doesn't.
+    if (@hasDecl(apprt.runtime.Surface, "supportsClipboard")) {
+        if (!self.rt_surface.supportsClipboard(clipboard)) {
+            return;
+        }
+    }
+
     var buf = self.io.terminal.screen.selectionString(
         self.alloc,
         sel,
