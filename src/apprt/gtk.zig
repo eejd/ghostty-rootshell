@@ -940,6 +940,7 @@ pub const Surface = struct {
         val: [:0]const u8,
         clipboard_type: apprt.Clipboard,
     ) !void {
+        log.warn("SETTING CLIPBOARD: {s}", .{val});
         const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
         c.gdk_clipboard_set_text(clipboard, val.ptr);
     }

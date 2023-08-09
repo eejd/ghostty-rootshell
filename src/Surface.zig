@@ -719,6 +719,53 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     return .{ .x = x, .y = y };
 }
 
+/// Paste from the clipboard
+fn clipboardPaste(
+    self: *Surface,
+    loc: apprt.Clipboard,
+    lock: bool,
+) !void {
+    const data = self.rt_surface.getClipboardString(loc) catch |err| {
+        log.warn("error reading clipboard: {}", .{err});
+        return;
+    };
+
+    if (data.len > 0) {
+        const bracketed = bracketed: {
+            if (lock) self.renderer_state.mutex.lock();
+            defer if (lock) self.renderer_state.mutex.unlock();
+
+            // With the lock held, we must scroll to the bottom.
+            // We always scroll to the bottom for these inputs.
+            self.scrollToBottom() catch |err| {
+                log.warn("error scrolling to bottom err={}", .{err});
+            };
+
+            break :bracketed self.io.terminal.modes.bracketed_paste;
+        };
+
+        if (bracketed) {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = "\x1B[200~",
+            }, .{ .forever = {} });
+        }
+
+        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+            self.alloc,
+            data,
+        ), .{ .forever = {} });
+
+        if (bracketed) {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = "\x1B[201~",
+            }, .{ .forever = {} });
+        }
+
+        try self.io_thread.wakeup.notify();
+    }
+}
+
+/// This is similar to clipboardPaste but is used specifically for OSC 52
 fn clipboardRead(self: *const Surface, kind: u8) !void {
     if (!self.config.clipboard_read) {
         log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
@@ -774,6 +821,36 @@ fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) 
     assert(buf[buf.len] == 0);
 
     self.rt_surface.setClipboardString(buf, loc) catch |err| {
+        log.err("error setting clipboard string err={}", .{err});
+        return;
+    };
+}
+
+/// Set the selection contents.
+///
+/// This must be called with the renderer mutex held.
+fn setSelection(self: *Surface, sel_: ?terminal.Selection) void {
+    const prev_ = self.io.terminal.screen.selection;
+    self.io.terminal.screen.selection = sel_;
+
+    // Set our selection clipboard. If the selection is cleared we do not
+    // clear the clipboard. If the selection is set, we only set the clipboard
+    // again if it changed, since setting the clipboard can be an expensive
+    // operation.
+    const sel = sel_ orelse return;
+    if (prev_) |prev| if (std.meta.eql(sel, prev)) return;
+
+    var buf = self.io.terminal.screen.selectionString(
+        self.alloc,
+        sel,
+        self.config.clipboard_trim_trailing_spaces,
+    ) catch |err| {
+        log.err("error reading selection string err={}", .{err});
+        return;
+    };
+    defer self.alloc.free(buf);
+
+    self.rt_surface.setClipboardString(buf, .selection) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -905,7 +982,7 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
 
         // Clear the selection if we have one.
         if (self.io.terminal.screen.selection != null) {
-            self.io.terminal.screen.selection = null;
+            self.setSelection(null);
             try self.queueRender();
         }
 
@@ -1212,7 +1289,7 @@ pub fn scrollCallback(
         // The selection can occur if the user uses the shift mod key to
         // override mouse grabbing from the window.
         if (self.io.terminal.modes.mouse_event != .none) {
-            self.io.terminal.screen.selection = null;
+            self.setSelection(null);
         }
 
         // If we're in alternate screen with alternate scroll enabled, then
@@ -1523,7 +1600,7 @@ pub fn mouseButtonCallback(
         // In any other mouse button scenario without shift pressed we
         // clear the selection since the underlying application can handle
         // that in any way (i.e. "scrolling").
-        self.io.terminal.screen.selection = null;
+        self.setSelection(null);
 
         const pos = try self.rt_surface.getCursorPos();
 
@@ -1591,7 +1668,7 @@ pub fn mouseButtonCallback(
         switch (self.mouse.left_click_count) {
             // First mouse click, clear selection
             1 => if (self.io.terminal.screen.selection != null) {
-                self.io.terminal.screen.selection = null;
+                self.setSelection(null);
                 try self.queueRender();
             },
 
@@ -1599,7 +1676,7 @@ pub fn mouseButtonCallback(
             2 => {
                 const sel_ = self.io.terminal.screen.selectWord(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    self.io.terminal.screen.selection = sel;
+                    self.setSelection(sel);
                     try self.queueRender();
                 }
             },
@@ -1608,7 +1685,7 @@ pub fn mouseButtonCallback(
             3 => {
                 const sel_ = self.io.terminal.screen.selectLine(self.mouse.left_click_point);
                 if (sel_) |sel| {
-                    self.io.terminal.screen.selection = sel;
+                    self.setSelection(sel);
                     try self.queueRender();
                 }
             },
@@ -1616,6 +1693,11 @@ pub fn mouseButtonCallback(
             // We should be bounded by 1 to 3
             else => unreachable,
         }
+    }
+
+    // Middle-click pastes from our selection clipboard
+    if (button == .middle and action == .press) {
+        try self.clipboardPaste(.selection, false);
     }
 }
 
@@ -1705,7 +1787,7 @@ fn dragLeftClickDouble(
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectWord(self.mouse.left_click_point) orelse {
-        self.io.terminal.screen.selection = word;
+        self.setSelection(word);
         return;
     };
 
@@ -1715,7 +1797,7 @@ fn dragLeftClickDouble(
     } else {
         sel.end = word.end;
     }
-    self.io.terminal.screen.selection = sel;
+    self.setSelection(sel);
 }
 
 /// Triple-click dragging moves the selection one "line" at a time.
@@ -1730,7 +1812,7 @@ fn dragLeftClickTriple(
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectLine(self.mouse.left_click_point) orelse {
-        self.io.terminal.screen.selection = word;
+        self.setSelection(word);
         return;
     };
 
@@ -1740,7 +1822,7 @@ fn dragLeftClickTriple(
     } else {
         sel.end = word.end;
     }
-    self.io.terminal.screen.selection = sel;
+    self.setSelection(sel);
 }
 
 fn dragLeftClickSingle(
@@ -1763,7 +1845,7 @@ fn dragLeftClickSingle(
         else
             screen_point.before(sel.start);
 
-        if (reset) self.io.terminal.screen.selection = null;
+        if (reset) self.setSelection(null);
     }
 
     // Our logic for determining if the starting cell is selected:
@@ -1798,10 +1880,10 @@ fn dragLeftClickSingle(
         else
             cell_xpos < cell_xboundary;
 
-        self.io.terminal.screen.selection = if (selected) .{
+        self.setSelection(if (selected) .{
             .start = screen_point,
             .end = screen_point,
-        } else null;
+        } else null);
 
         return;
     }
@@ -1840,7 +1922,7 @@ fn dragLeftClickSingle(
             }
         };
 
-        self.io.terminal.screen.selection = .{ .start = start, .end = screen_point };
+        self.setSelection(.{ .start = start, .end = screen_point });
         return;
     }
 
@@ -1850,7 +1932,9 @@ fn dragLeftClickSingle(
     // We moved! Set the selection end point. The start point should be
     // set earlier.
     assert(self.io.terminal.screen.selection != null);
-    self.io.terminal.screen.selection.?.end = screen_point;
+    var sel = self.io.terminal.screen.selection.?;
+    sel.end = screen_point;
+    self.setSelection(sel);
 }
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
@@ -1979,46 +2063,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             }
         },
 
-        .paste_from_clipboard => {
-            const data = self.rt_surface.getClipboardString(.standard) catch |err| {
-                log.warn("error reading clipboard: {}", .{err});
-                return;
-            };
-
-            if (data.len > 0) {
-                const bracketed = bracketed: {
-                    self.renderer_state.mutex.lock();
-                    defer self.renderer_state.mutex.unlock();
-
-                    // With the lock held, we must scroll to the bottom.
-                    // We always scroll to the bottom for these inputs.
-                    self.scrollToBottom() catch |err| {
-                        log.warn("error scrolling to bottom err={}", .{err});
-                    };
-
-                    break :bracketed self.io.terminal.modes.bracketed_paste;
-                };
-
-                if (bracketed) {
-                    _ = self.io_thread.mailbox.push(.{
-                        .write_stable = "\x1B[200~",
-                    }, .{ .forever = {} });
-                }
-
-                _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
-                    self.alloc,
-                    data,
-                ), .{ .forever = {} });
-
-                if (bracketed) {
-                    _ = self.io_thread.mailbox.push(.{
-                        .write_stable = "\x1B[201~",
-                    }, .{ .forever = {} });
-                }
-
-                try self.io_thread.wakeup.notify();
-            }
-        },
+        .paste_from_clipboard => try self.clipboardPaste(.standard, true),
 
         .increase_font_size => |delta| {
             log.debug("increase font size={}", .{delta});
