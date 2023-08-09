@@ -2050,6 +2050,45 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             try self.io_thread.wakeup.notify();
         },
 
+        .scroll_to_top => {
+            _ = self.io_thread.mailbox.push(.{
+                .scroll_viewport = .{ .top = {} },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .scroll_to_bottom => {
+            _ = self.io_thread.mailbox.push(.{
+                .scroll_viewport = .{ .bottom = {} },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .scroll_page_up => {
+            const rows: isize = @intCast(self.grid_size.rows);
+            _ = self.io_thread.mailbox.push(.{
+                .scroll_viewport = .{ .delta = -1 * rows },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .scroll_page_down => {
+            const rows: isize = @intCast(self.grid_size.rows);
+            _ = self.io_thread.mailbox.push(.{
+                .scroll_viewport = .{ .delta = rows },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
+        .scroll_page_fractional => |fraction| {
+            const rows: f32 = @floatFromInt(self.grid_size.rows);
+            const delta: isize = @intFromFloat(@floor(fraction * rows));
+            _ = self.io_thread.mailbox.push(.{
+                .scroll_viewport = .{ .delta = delta },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
         .jump_to_prompt => |delta| {
             _ = self.io_thread.mailbox.push(.{
                 .jump_to_prompt = @intCast(delta),

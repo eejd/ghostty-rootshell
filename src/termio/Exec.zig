@@ -300,6 +300,13 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
     try self.queueWrite(&[_]u8{0x0C});
 }
 
+/// Scroll the viewport
+pub fn scrollViewport(self: *Exec, scroll: terminal.Terminal.ScrollViewport) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    try self.terminal.scrollViewport(scroll);
+}
+
 /// Jump the viewport to the prompt.
 pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
     const wakeup: bool = wakeup: {

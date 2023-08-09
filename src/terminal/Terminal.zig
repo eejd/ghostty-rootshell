@@ -1460,6 +1460,7 @@ pub const ScrollViewport = union(enum) {
     /// Scroll to the bottom, i.e. the top of the active area
     bottom: void,
 
+    /// Scroll by some delta amount, up is negative.
     delta: isize,
 };
 

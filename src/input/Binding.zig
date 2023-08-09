@@ -132,6 +132,14 @@ pub fn parse(input: []const u8) !Binding {
                             break :action @unionInit(Action, field.name, value);
                         },
 
+                        .Float => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = actionRaw[idx + 1 ..];
+                            const value = std.fmt.parseFloat(field.type, param) catch
+                                return Error.InvalidFormat;
+                            break :action @unionInit(Action, field.name, value);
+                        },
+
                         else => unreachable,
                     },
                 }
@@ -176,6 +184,13 @@ pub const Action = union(enum) {
 
     /// Clear the screen. This also clears all scrollback.
     clear_screen: void,
+
+    /// Scroll the screen varying amounts.
+    scroll_to_top: void,
+    scroll_to_bottom: void,
+    scroll_page_up: void,
+    scroll_page_down: void,
+    scroll_page_fractional: f32,
 
     /// Jump the viewport forward or back by prompt. Positive
     /// number is the number of prompts to jump forward, negative
@@ -440,5 +455,21 @@ test "parse: action with int" {
         const binding = try parse("a=jump_to_prompt:10");
         try testing.expect(binding.action == .jump_to_prompt);
         try testing.expectEqual(@as(i16, 10), binding.action.jump_to_prompt);
+    }
+}
+
+test "parse: action with float" {
+    const testing = std.testing;
+
+    // parameter
+    {
+        const binding = try parse("a=scroll_page_fractional:-0.5");
+        try testing.expect(binding.action == .scroll_page_fractional);
+        try testing.expectEqual(@as(f32, -0.5), binding.action.scroll_page_fractional);
+    }
+    {
+        const binding = try parse("a=scroll_page_fractional:+0.5");
+        try testing.expect(binding.action == .scroll_page_fractional);
+        try testing.expectEqual(@as(f32, 0.5), binding.action.scroll_page_fractional);
     }
 }

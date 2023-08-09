@@ -156,6 +156,7 @@ fn drainMailbox(self: *Thread) !void {
             },
             .resize => |v| self.handleResize(v),
             .clear_screen => |v| try self.impl.clearScreen(v.history),
+            .scroll_viewport => |v| try self.impl.scrollViewport(v),
             .jump_to_prompt => |v| try self.impl.jumpToPrompt(v),
             .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
             .write_stable => |v| try self.impl.queueWrite(v),
