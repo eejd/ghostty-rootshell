@@ -369,12 +369,19 @@ fn cursorCancelCallback(
     _: *xev.Completion,
     r: xev.Timer.CancelError!void,
 ) xev.CallbackAction {
-    _ = r catch |err| switch (err) {
+    // This makes it easier to work across platforms where different platforms
+    // support different sets of errors, so we just unify it.
+    const CancelError = xev.Timer.CancelError || error{
+        Canceled,
+        Unexpected,
+    };
+
+    _ = r catch |err| switch (@as(CancelError, @errSetCast(err))) {
         error.Canceled => {},
-        // else => {
-        //     log.warn("error in cursor cancel callback err={}", .{err});
-        //     unreachable;
-        // },
+        else => {
+            log.warn("error in cursor cancel callback err={}", .{err});
+            unreachable;
+        },
     };
 
     return .disarm;
