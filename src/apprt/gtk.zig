@@ -913,9 +913,11 @@ pub const Surface = struct {
         // ));
     }
 
-    pub fn getClipboardString(self: *Surface) ![:0]const u8 {
-        const clipboard = c.gtk_widget_get_clipboard(@ptrCast(self.gl_area));
-
+    pub fn getClipboardString(
+        self: *Surface,
+        clipboard_type: apprt.Clipboard,
+    ) ![:0]const u8 {
+        const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
         const content = c.gdk_clipboard_get_content(clipboard) orelse {
             // On my machine, this NEVER works, so we fallback to glfw's
             // implementation...
@@ -933,10 +935,20 @@ pub const Surface = struct {
         return std.mem.sliceTo(ptr, 0);
     }
 
-    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
-        const clipboard = c.gtk_widget_get_clipboard(@ptrCast(self.gl_area));
-
+    pub fn setClipboardString(
+        self: *const Surface,
+        val: [:0]const u8,
+        clipboard_type: apprt.Clipboard,
+    ) !void {
+        const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
         c.gdk_clipboard_set_text(clipboard, val.ptr);
+    }
+
+    fn getClipboard(widget: *c.GtkWidget, clipboard: apprt.Clipboard) ?*c.GdkClipboard {
+        return switch (clipboard) {
+            .standard => c.gtk_widget_get_clipboard(widget),
+            .selection => c.gtk_widget_get_primary_clipboard(widget),
+        };
     }
 
     pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {

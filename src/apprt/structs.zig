@@ -23,3 +23,11 @@ pub const IMEPos = struct {
     x: f64,
     y: f64,
 };
+
+/// The clipboard type.
+///
+/// If this is changed, you must also update ghostty.h
+pub const Clipboard = enum(u1) {
+    standard = 0, // ctrl+c/v
+    selection = 1, // also known as the "primary" clipboard
+};

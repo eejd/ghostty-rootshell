@@ -601,11 +601,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .clipboard_read => |kind| try self.clipboardRead(kind),
 
         .clipboard_write => |req| switch (req) {
-            .small => |v| try self.clipboardWrite(v.data[0..v.len]),
-            .stable => |v| try self.clipboardWrite(v),
+            .small => |v| try self.clipboardWrite(v.data[0..v.len], .standard),
+            .stable => |v| try self.clipboardWrite(v, .standard),
             .alloc => |v| {
                 defer v.alloc.free(v.data);
-                try self.clipboardWrite(v.data);
+                try self.clipboardWrite(v.data, .standard);
             },
         },
 
@@ -725,7 +725,7 @@ fn clipboardRead(self: *const Surface, kind: u8) !void {
         return;
     }
 
-    const data = self.rt_surface.getClipboardString() catch |err| {
+    const data = self.rt_surface.getClipboardString(.standard) catch |err| {
         log.warn("error reading clipboard: {}", .{err});
         return;
     };
@@ -755,7 +755,7 @@ fn clipboardRead(self: *const Surface, kind: u8) !void {
     self.io_thread.wakeup.notify() catch {};
 }
 
-fn clipboardWrite(self: *const Surface, data: []const u8) !void {
+fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) !void {
     if (!self.config.clipboard_write) {
         log.info("application attempted to write clipboard, but 'clipboard-write' setting is off", .{});
         return;
@@ -773,7 +773,7 @@ fn clipboardWrite(self: *const Surface, data: []const u8) !void {
     try dec.decode(buf, data);
     assert(buf[buf.len] == 0);
 
-    self.rt_surface.setClipboardString(buf) catch |err| {
+    self.rt_surface.setClipboardString(buf, loc) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -1972,7 +1972,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
                 };
                 defer self.alloc.free(buf);
 
-                self.rt_surface.setClipboardString(buf) catch |err| {
+                self.rt_surface.setClipboardString(buf, .standard) catch |err| {
                     log.err("error setting clipboard string err={}", .{err});
                     return;
                 };
@@ -1980,7 +1980,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         },
 
         .paste_from_clipboard => {
-            const data = self.rt_surface.getClipboardString() catch |err| {
+            const data = self.rt_surface.getClipboardString(.standard) catch |err| {
                 log.warn("error reading clipboard: {}", .{err});
                 return;
             };
