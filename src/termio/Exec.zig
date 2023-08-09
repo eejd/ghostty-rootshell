@@ -1417,7 +1417,7 @@ const StreamHandler = struct {
     }
 
     pub fn clipboardContents(self: *StreamHandler, kind: u8, data: []const u8) !void {
-        // Note: we ignore the "kind" field and always use the primary clipboard.
+        // Note: we ignore the "kind" field and always use the standard clipboard.
         // iTerm also appears to do this but other terminals seem to only allow
         // certain. Let's investigate more.
 

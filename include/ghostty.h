@@ -30,6 +30,11 @@ typedef void *ghostty_surface_t;
 
 // Enums are up top so we can reference them later.
 typedef enum {
+    GHOSTTY_CLIPBOARD_STANDARD,
+    GHOSTTY_CLIPBOARD_SELECTION,
+} ghostty_clipboard_e;
+
+typedef enum {
     GHOSTTY_SPLIT_RIGHT,
     GHOSTTY_SPLIT_DOWN
 } ghostty_split_direction_e;
@@ -238,8 +243,8 @@ typedef struct {
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
 typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
-typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *);
-typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *);
+typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *, ghostty_clipboard_e);
+typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty_clipboard_e);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
@@ -248,6 +253,7 @@ typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, bool);
 
 typedef struct {
     void *userdata;
+    bool supports_selection_clipboard;
     ghostty_runtime_wakeup_cb wakeup_cb;
     ghostty_runtime_reload_config_cb reload_config_cb;
     ghostty_runtime_set_title_cb set_title_cb;

@@ -32,6 +32,9 @@ pub const App = struct {
         /// Userdata that is passed to all the callbacks.
         userdata: AppUD = null,
 
+        /// True if the selection clipboard is supported.
+        supports_selection_clipboard: bool = false,
+
         /// Callback called to wakeup the event loop. This should trigger
         /// a full tick of the app loop.
         wakeup: *const fn (AppUD) callconv(.C) void,
@@ -47,10 +50,10 @@ pub const App = struct {
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
         /// value then this should return null.
-        read_clipboard: *const fn (SurfaceUD) callconv(.C) ?[*:0]const u8,
+        read_clipboard: *const fn (SurfaceUD, c_int) callconv(.C) ?[*:0]const u8,
 
         /// Write the clipboard value.
-        write_clipboard: *const fn (SurfaceUD, [*:0]const u8) callconv(.C) void,
+        write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int) callconv(.C) void,
 
         /// Create a new split view. If the embedder doesn't support split
         /// views then this can be null.
@@ -239,13 +242,37 @@ pub const Surface = struct {
         );
     }
 
-    pub fn getClipboardString(self: *const Surface) ![:0]const u8 {
-        const ptr = self.app.opts.read_clipboard(self.opts.userdata) orelse return "";
+    pub fn supportsClipboard(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) bool {
+        return switch (clipboard_type) {
+            .standard => true,
+            .selection => self.app.opts.supports_selection_clipboard,
+        };
+    }
+
+    pub fn getClipboardString(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) ![:0]const u8 {
+        const ptr = self.app.opts.read_clipboard(
+            self.opts.userdata,
+            @intCast(@intFromEnum(clipboard_type)),
+        ) orelse return "";
         return std.mem.sliceTo(ptr, 0);
     }
 
-    pub fn setClipboardString(self: *const Surface, val: [:0]const u8) !void {
-        self.app.opts.write_clipboard(self.opts.userdata, val.ptr);
+    pub fn setClipboardString(
+        self: *const Surface,
+        val: [:0]const u8,
+        clipboard_type: apprt.Clipboard,
+    ) !void {
+        self.app.opts.write_clipboard(
+            self.opts.userdata,
+            val.ptr,
+            @intCast(@intFromEnum(clipboard_type)),
+        );
     }
 
     pub fn setShouldClose(self: *Surface) void {

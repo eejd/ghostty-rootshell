@@ -186,6 +186,17 @@ pub const Config = struct {
     /// This does not affect data sent to the clipboard via "clipboard-write".
     @"clipboard-trim-trailing-spaces": bool = true,
 
+    /// Whether to automatically copy selected text to the clipboard. "true"
+    /// will only copy on systems that support a selection clipboard.
+    ///
+    /// The value "clipboard" will copy to the system clipboard, making this
+    /// work on macOS. Note that middle-click will also paste from the system
+    /// clipboard in this case.
+    ///
+    /// Note that if this is disabled, middle-click paste will also be
+    /// disabled.
+    @"copy-on-select": CopyOnSelect = .true,
+
     /// The time in milliseconds between clicks to consider a click a repeat
     /// (double, triple, etc.) or an entirely new single click. A value of
     /// zero will use a platform-specific default. The default on macOS
@@ -1375,6 +1386,20 @@ pub const Keybinds = struct {
     }
 };
 
+/// Options for copy on select behavior.
+pub const CopyOnSelect = enum {
+    /// Disables copy on select entirely.
+    false,
+
+    /// Copy on select is enabled, but goes to the selection clipboard.
+    /// This is not supported on platforms such as macOS. This is the default.
+    true,
+
+    /// Copy on select is enabled and goes to the system clipboard.
+    clipboard,
+};
+
+/// Shell integration values
 pub const ShellIntegration = enum {
     none,
     detect,
