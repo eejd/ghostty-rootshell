@@ -22,6 +22,12 @@ const Ghostty = @import("main_c.zig").Ghostty;
 pub var state: GlobalState = undefined;
 
 pub fn main() !void {
+    if (comptime builtin.mode == .Debug) {
+        std.log.warn("This is a debug build. Performance will be very poor.", .{});
+        std.log.warn("You should only use a debug build for developing Ghostty.", .{});
+        std.log.warn("Otherwise, please rebuild in a release mode.", .{});
+    }
+
     state.init();
     defer state.deinit();
     const alloc = state.alloc;
