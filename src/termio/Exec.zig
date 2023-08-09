@@ -483,7 +483,7 @@ fn ttyWrite(
         return .disarm;
     };
     _ = d;
-    //log.info("WROTE: {d}", .{status});
+    //log.info("WROTE: {d}", .{d});
 
     return .disarm;
 }

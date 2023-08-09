@@ -370,11 +370,11 @@ fn cursorCancelCallback(
     r: xev.Timer.CancelError!void,
 ) xev.CallbackAction {
     _ = r catch |err| switch (err) {
-        error.NotFound => {},
-        else => {
-            log.warn("error in cursor cancel callback err={}", .{err});
-            unreachable;
-        },
+        error.Canceled => {},
+        // else => {
+        //     log.warn("error in cursor cancel callback err={}", .{err});
+        //     unreachable;
+        // },
     };
 
     return .disarm;
