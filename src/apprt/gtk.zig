@@ -344,22 +344,7 @@ const Window = struct {
 
         // Apply background opacity if we have it
         if (app.config.@"background-opacity" < 1) {
-            var css = try std.fmt.allocPrint(
-                app.core_app.alloc,
-                ".window-transparent {{ background-color: rgba(0, 0, 0, {d}); }}",
-                .{app.config.@"background-opacity"},
-            );
-            self.css_window_background = css;
-
-            const display = c.gtk_widget_get_display(@ptrCast(window));
-            const provider = c.gtk_css_provider_new();
-            c.gtk_css_provider_load_from_data(provider, css.ptr, @intCast(css.len));
-            c.gtk_style_context_add_provider_for_display(
-                display,
-                @ptrCast(provider),
-                c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION,
-            );
-            c.gtk_widget_add_css_class(@ptrCast(window), "window-transparent");
+            c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
         }
 
         c.gtk_widget_show(window);
