@@ -39,6 +39,13 @@ pub const App = struct {
     pub const Options = struct {};
 
     pub fn init(core_app: *CoreApp, _: Options) !App {
+        if (comptime builtin.target.isDarwin()) {
+            log.warn("WARNING WARNING WARNING: GLFW ON MAC HAS BUGS.", .{});
+            log.warn("You should use the AppKit-based app instead. The official download", .{});
+            log.warn("is properly built and available from GitHub. If you're building from", .{});
+            log.warn("source, see the README for details on how to build the AppKit app.", .{});
+        }
+
         if (!glfw.init(.{})) {
             if (glfw.getError()) |err| {
                 log.err("error initializing GLFW err={} msg={s}", .{
