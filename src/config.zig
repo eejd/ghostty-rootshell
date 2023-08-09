@@ -435,15 +435,37 @@ pub const Config = struct {
                 .{ .goto_split = .right },
             );
 
-            // Semantic prompts
+            // Viewport scrolling
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .home, .mods = .{ .shift = true } },
+                .{ .scroll_to_top = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .end, .mods = .{ .shift = true } },
+                .{ .scroll_to_bottom = {} },
+            );
             try result.keybind.set.put(
                 alloc,
                 .{ .key = .page_up, .mods = .{ .shift = true } },
-                .{ .jump_to_prompt = -1 },
+                .{ .scroll_page_up = {} },
             );
             try result.keybind.set.put(
                 alloc,
                 .{ .key = .page_down, .mods = .{ .shift = true } },
+                .{ .scroll_page_down = {} },
+            );
+
+            // Semantic prompts
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .page_up, .mods = .{ .shift = true, .ctrl = true } },
+                .{ .jump_to_prompt = -1 },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .page_down, .mods = .{ .shift = true, .ctrl = true } },
                 .{ .jump_to_prompt = 1 },
             );
         }
