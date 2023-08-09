@@ -1000,6 +1000,7 @@ pub fn keyCallback(
                     .left_bracket => 0x1B,
                     .backslash => 0x1C,
                     .right_bracket => 0x1D,
+                    .backspace => 0x08,
                     .a => 0x01,
                     .b => 0x02,
                     .c => 0x03,
