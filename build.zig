@@ -673,13 +673,16 @@ fn addDeps(
     if (font_backend.hasFontconfig()) step.addModule("fontconfig", fontconfig.module(b));
     const mod_freetype = freetype.module(b);
     const mod_macos = macos.module(b);
+    const mod_libxev = b.createModule(.{
+        .source_file = .{ .path = "vendor/libxev/src/main.zig" },
+    });
     step.addModule("freetype", mod_freetype);
     step.addModule("harfbuzz", harfbuzz.module(b, .{
         .freetype = mod_freetype,
         .macos = mod_macos,
     }));
     step.addModule("imgui", imgui.module(b));
-    step.addModule("xev", libxev.module(b));
+    step.addModule("xev", mod_libxev);
     step.addModule("pixman", pixman.module(b));
     step.addModule("stb_image_resize", stb_image_resize.module(b));
     step.addModule("utf8proc", utf8proc.module(b));
