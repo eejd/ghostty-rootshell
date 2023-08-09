@@ -1171,6 +1171,9 @@ pub const Surface = struct {
             // If the key is tab, we say we handled it because we don't want
             // tab to move focus from our surface.
             c.GDK_KEY_Tab => 1,
+            // We do the same for up, because that steals focus from the surface,
+            // in case we have multiple tabs open.
+            c.GDK_KEY_Up => 1,
 
             else => 0,
         };
