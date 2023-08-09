@@ -57,8 +57,8 @@ extension Ghostty {
                 wakeup_cb: { userdata in AppState.wakeup(userdata) },
                 reload_config_cb: { userdata in AppState.reloadConfig(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
-                read_clipboard_cb: { userdata in AppState.readClipboard(userdata) },
-                write_clipboard_cb: { userdata, str in AppState.writeClipboard(userdata, string: str) },
+                read_clipboard_cb: { userdata, loc in AppState.readClipboard(userdata, location: loc) },
+                write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: direction) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
@@ -170,7 +170,10 @@ extension Ghostty {
             )
         }
         
-        static func readClipboard(_ userdata: UnsafeMutableRawPointer?) -> UnsafePointer<CChar>? {
+        static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e) -> UnsafePointer<CChar>? {
+            // We only support the standard clipboard
+            if (location != GHOSTTY_CLIPBOARD_STANDARD) { return nil }
+            
             guard let appState = self.appState(fromSurface: userdata) else { return nil }
             guard let str = NSPasteboard.general.string(forType: .string) else { return nil }
             
@@ -180,7 +183,10 @@ extension Ghostty {
             return (str as NSString).utf8String
         }
         
-        static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?) {
+        static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e) {
+            // We only support the standard clipboard
+            if (location != GHOSTTY_CLIPBOARD_STANDARD) { return }
+            
             guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
             let pb = NSPasteboard.general
             pb.declareTypes([.string], owner: nil)

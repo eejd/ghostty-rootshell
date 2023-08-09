@@ -526,7 +526,7 @@ pub const Surface = struct {
             .standard => glfw.setClipboardString(val),
             .selection => {
                 // Not supported except on Linux
-                if (comptime builtin.os.tag != .linux) return "";
+                if (comptime builtin.os.tag != .linux) return;
                 glfwNative.setX11SelectionString(val.ptr);
             },
         }
