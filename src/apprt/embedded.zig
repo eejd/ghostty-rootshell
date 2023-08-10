@@ -76,7 +76,6 @@ pub const App = struct {
     config: *const Config,
     opts: Options,
     keymap: input.Keymap,
-    keymap_state: input.Keymap.State,
 
     pub fn init(core_app: *CoreApp, config: *const Config, opts: Options) !App {
         return .{
@@ -84,7 +83,6 @@ pub const App = struct {
             .config = config,
             .opts = opts,
             .keymap = try input.Keymap.init(),
-            .keymap_state = .{},
         };
     }
 
@@ -100,7 +98,9 @@ pub const App = struct {
         // Clear the dead key state since we changed the keymap, any
         // dead key state is just forgotten. i.e. if you type ' on us-intl
         // and then switch to us and type a, you'll get a rather than á.
-        self.keymap_state = .{};
+        for (self.core_app.surfaces.items) |surface| {
+            surface.keymap_state = .{};
+        }
     }
 
     pub fn reloadConfig(self: *App) !?*const Config {
@@ -155,6 +155,7 @@ pub const Surface = struct {
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
     opts: Options,
+    keymap_state: input.Keymap.State,
 
     pub const Options = extern struct {
         /// Userdata passed to some of the callbacks.
@@ -179,6 +180,7 @@ pub const Surface = struct {
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
             .opts = opts,
+            .keymap_state = .{},
         };
 
         // Add ourselves to the list of surfaces on the app.
@@ -577,7 +579,7 @@ pub const CAPI = struct {
         const mods: input.Mods = @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods)))));
         const result = surface.app.keymap.translate(
             &buf,
-            &surface.app.keymap_state,
+            &surface.keymap_state,
             @intCast(keycode),
             mods,
         ) catch |err| {
