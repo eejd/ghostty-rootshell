@@ -16,6 +16,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const macos = @import("macos");
 const codes = @import("keycodes.zig").entries;
+const Key = @import("key.zig").Key;
 const Mods = @import("key.zig").Mods;
 
 /// The current input source that is selected for the keyboard. This can
@@ -105,20 +106,20 @@ pub fn translate(
     } else @compileError("space code not found");
 
     // Convert our mods from our format to the Carbon API format
-    const modifier_state: u32 = modifier: {
-        const mac_mods: u32 = @bitCast(MacMods{
-            .alt = if (mods.alt) true else false,
-            .ctrl = if (mods.ctrl) true else false,
-            .meta = if (mods.super) true else false,
-            .shift = if (mods.shift) true else false,
-        });
-
-        break :modifier (mac_mods >> 8) & 0xFF;
-    };
+    const modifier_state: u32 = (MacMods{
+        .alt = if (mods.alt) true else false,
+        .ctrl = if (mods.ctrl) true else false,
+        .meta = if (mods.super) true else false,
+        .shift = if (mods.shift) true else false,
+    }).ucKeyTranslate();
 
     // We use 4 here because the Chromium source code uses 4 and Chrome
     // works pretty well. They have a todo to look into longer sequences
     // but given how mature that software is I think this is fine.
+    //
+    // From Chromium:
+    // Per Apple docs, the buffer length can be up to 255 but is rarely more than 4.
+    // https://developer.apple.com/documentation/coreservices/1390584-uckeytranslate
     var char: [4]u16 = undefined;
     var char_count: c_ulong = 0;
     if (UCKeyTranslate(
@@ -158,25 +159,32 @@ pub fn translate(
     const len = try std.unicode.utf16leToUtf8(out, char[0..char_count]);
     return .{ .text = out[0..len], .composing = composing };
 }
-/// Get the full keyboard mapping. This is very slow, very expensive and
-/// not recommended. It's only here for debugging purposes. You should use
-/// translate instead as needed per key.
-pub fn fullMap(self: *const Keymap) void {
-    _ = self;
-    _ = codes;
-}
 
 /// Map to the modifiers format used by the UCKeyTranslate function.
 /// We use a u32 here because our bit arithmetic is all u32 anyways.
 const MacMods = packed struct(u32) {
-    alt: bool = false,
-    ctrl: bool = false,
-    meta: bool = false,
+    _padding_start: u16 = 0,
+    caps_lock: bool = false,
     shift: bool = false,
+    ctrl: bool = false,
+    alt: bool = false,
+    meta: bool = false,
     num_lock: bool = false,
-    level3: bool = false,
-    level5: bool = false,
-    _padding: u25 = 0,
+    help: bool = false,
+    function: bool = false,
+    _padding_end: u8 = 0,
+
+    /// Translate NSEventModifierFlags into the format used by UCKeyTranslate.
+    fn ucKeyTranslate(self: MacMods) u32 {
+        const int: u32 = @bitCast(self);
+        return (int >> 16) & 0xFF;
+    }
+
+    comptime {
+        // Just to be super sure
+        const v: u32 = @bitCast(MacMods{ .shift = true });
+        std.debug.assert(v == 1 << 17);
+    }
 };
 
 // The documentation for all of these types and functions is in the macOS SDK:
@@ -215,6 +223,12 @@ test {
     // Then type "a" which should combine with the dead key to make á
     {
         const result = try keymap.translate(&buf, &state, 0x00, .{});
+        std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
+    }
+
+    // Shift+1 = ! on US
+    {
+        const result = try keymap.translate(&buf, &state, 0x12, .{ .shift = true });
         std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
     }
 }
