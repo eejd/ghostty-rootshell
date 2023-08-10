@@ -384,20 +384,6 @@ pub const Surface = struct {
     pub fn keyCallback(
         self: *Surface,
         action: input.Action,
-        key: input.Key,
-        unmapped_key: input.Key,
-        mods: input.Mods,
-    ) void {
-        // log.warn("key action={} key={} mods={}", .{ action, key, mods });
-        self.core_surface.keyCallback(action, key, unmapped_key, mods) catch |err| {
-            log.err("error in key callback err={}", .{err});
-            return;
-        };
-    }
-
-    pub fn key2Callback(
-        self: *Surface,
-        action: input.Action,
         keycode: u32,
         mods: input.Mods,
     ) !void {
@@ -412,14 +398,14 @@ pub const Surface = struct {
             mods,
         );
 
-        log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s} mods={}", .{
-            action,
-            keycode,
-            result.composing,
-            result.text,
-            result.text,
-            mods,
-        });
+        // log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s} mods={}", .{
+        //     action,
+        //     keycode,
+        //     result.composing,
+        //     result.text,
+        //     result.text,
+        //     mods,
+        // });
 
         // If this is a dead key, then we're composing a character and
         // we end processing here. We don't process keybinds for dead keys.
@@ -625,30 +611,20 @@ pub const CAPI = struct {
         surface.focusCallback(focused);
     }
 
-    /// Tell the surface that it needs to schedule a render
+    /// Send this for raw keypresses (i.e. the keyDown event on macOS).
+    /// This will handle the keymap translation and send the appropriate
+    /// key and char events.
+    ///
+    /// You do NOT need to also send "ghostty_surface_char" unless
+    /// you want to send a unicode character that is not associated
+    /// with a keypress, i.e. IME keyboard.
     export fn ghostty_surface_key(
-        surface: *Surface,
-        action: input.Action,
-        key: input.Key,
-        unmapped_key: input.Key,
-        mods: c_int,
-    ) void {
-        surface.keyCallback(
-            action,
-            key,
-            unmapped_key,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
-        );
-    }
-
-    /// TODO: new key processing
-    export fn ghostty_surface_key2(
         surface: *Surface,
         action: input.Action,
         keycode: u32,
         c_mods: c_int,
     ) void {
-        surface.key2Callback(
+        surface.keyCallback(
             action,
             keycode,
             @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods))))),
@@ -658,7 +634,9 @@ pub const CAPI = struct {
         };
     }
 
-    /// Tell the surface that it needs to schedule a render
+    /// Send for a unicode character. This is used for IME input. This
+    /// should only be sent for characters that are not the result of
+    /// key events.
     export fn ghostty_surface_char(surface: *Surface, codepoint: u32) void {
         surface.charCallback(codepoint);
     }
