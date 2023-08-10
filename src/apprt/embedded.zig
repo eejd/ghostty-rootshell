@@ -387,7 +387,8 @@ pub const Surface = struct {
         keycode: u32,
         mods: input.Mods,
     ) !void {
-        if (action != .press) return;
+        // We don't handle release events because we don't use them yet.
+        if (action != .press and action != .repeat) return;
 
         // Translate our key using the keymap for our localized keyboard layout.
         var buf: [128]u8 = undefined;

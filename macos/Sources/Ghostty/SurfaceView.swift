@@ -367,7 +367,7 @@ extension Ghostty {
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
-            ghostty_surface_key2(surface, action, UInt32(event.keyCode), mods)
+            ghostty_surface_key(surface, action, UInt32(event.keyCode), mods)
         }
         
         // MARK: Menu Handlers
