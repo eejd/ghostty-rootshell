@@ -395,6 +395,81 @@ pub const Surface = struct {
         };
     }
 
+    pub fn key2Callback(
+        self: *Surface,
+        action: input.Action,
+        keycode: u32,
+        mods: input.Mods,
+    ) !void {
+        if (action != .press) return;
+
+        // Translate our key using the keymap for our localized keyboard layout.
+        var buf: [128]u8 = undefined;
+        const result = try self.app.keymap.translate(
+            &buf,
+            &self.keymap_state,
+            @intCast(keycode),
+            mods,
+        );
+
+        log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s} mods={}", .{
+            action,
+            keycode,
+            result.composing,
+            result.text,
+            result.text,
+            mods,
+        });
+
+        // If this is a dead key, then we're composing a character and
+        // we end processing here. We don't process keybinds for dead keys.
+        if (result.composing) {
+            // TODO: we ultimately want to update some surface state so that
+            // we can show the user that we're in dead key mode and the
+            // precomposed character. For now, we can just ignore and that
+            // is not incorrect behavior.
+            log.warn("dead key mode, currently composing", .{});
+            return;
+        }
+
+        // We want to get the physical unmapped key to process keybinds.
+        const physical_key = keycode: for (input.keycodes.entries) |entry| {
+            if (entry.native == keycode) break :keycode entry.key;
+        } else .invalid;
+
+        // If the resulting text has length 1 then we can take its key
+        // and attempt to translate it to a key enum and call the key callback.
+        // If the length is greater than 1 then we're going to call the
+        // charCallback.
+        const key = if (result.text.len == 1) key: {
+            // A completed key. If the length of the key is one then we can
+            // attempt to translate it to a key enum and call the key callback.
+            break :key input.Key.fromASCII(result.text[0]) orelse physical_key;
+        } else .invalid;
+
+        // If both keys are invalid then we won't call the key callback. But
+        // if either one is valid, we want to give it a chance.
+        if (key != .invalid or physical_key != .invalid) {
+            self.core_surface.keyCallback(action, key, physical_key, mods) catch |err| {
+                log.err("error in key callback err={}", .{err});
+                return;
+            };
+        }
+
+        // Next, we want to call the char callback with each codepoint.
+        const view = std.unicode.Utf8View.init(result.text) catch |err| {
+            log.warn("cannot build utf8 view over input: {}", .{err});
+            return;
+        };
+        var it = view.iterator();
+        while (it.nextCodepoint()) |cp| {
+            self.core_surface.charCallback(cp) catch |err| {
+                log.err("error in char callback err={}", .{err});
+                return;
+            };
+        }
+    }
+
     pub fn charCallback(self: *Surface, cp_: u32) void {
         const cp = std.math.cast(u21, cp_) orelse return;
         self.core_surface.charCallback(cp) catch |err| {
@@ -573,27 +648,14 @@ pub const CAPI = struct {
         keycode: u32,
         c_mods: c_int,
     ) void {
-        if (action != .press) return;
-
-        var buf: [128]u8 = undefined;
-        const mods: input.Mods = @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods)))));
-        const result = surface.app.keymap.translate(
-            &buf,
-            &surface.keymap_state,
-            @intCast(keycode),
-            mods,
-        ) catch |err| {
-            log.err("TRANSLATE error translating key err={}", .{err});
-            return;
-        };
-
-        log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s}", .{
+        surface.key2Callback(
             action,
             keycode,
-            result.composing,
-            result.text,
-            result.text,
-        });
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods))))),
+        ) catch |err| {
+            log.err("error processing key event err={}", .{err});
+            return;
+        };
     }
 
     /// Tell the surface that it needs to schedule a render

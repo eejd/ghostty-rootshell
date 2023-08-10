@@ -180,4 +180,67 @@ pub const Key = enum(c_int) {
 
     // To support more keys (there are obviously more!) add them here
     // and ensure the mapping is up to date in the Window key handler.
+
+    /// Converts an ASCII character to a key, if possible. This returns
+    /// null if the character is unknown.
+    ///
+    /// Note that this can't distinguish between physical keys, i.e. '0'
+    /// may be from the number row or the keypad, but it always maps
+    /// to '.zero'.
+    ///
+    /// This is what we want, we awnt people to create keybindings that
+    /// are independent of the physical key.
+    pub fn fromASCII(ch: u8) ?Key {
+        return switch (ch) {
+            'a' => .a,
+            'b' => .b,
+            'c' => .c,
+            'd' => .d,
+            'e' => .e,
+            'f' => .f,
+            'g' => .g,
+            'h' => .h,
+            'i' => .i,
+            'j' => .j,
+            'k' => .k,
+            'l' => .l,
+            'm' => .m,
+            'n' => .n,
+            'o' => .o,
+            'p' => .p,
+            'q' => .q,
+            'r' => .r,
+            's' => .s,
+            't' => .t,
+            'u' => .u,
+            'v' => .v,
+            'w' => .w,
+            'x' => .x,
+            'y' => .y,
+            'z' => .z,
+            '0' => .zero,
+            '1' => .one,
+            '2' => .two,
+            '3' => .three,
+            '4' => .four,
+            '5' => .five,
+            '6' => .six,
+            '7' => .seven,
+            '8' => .eight,
+            '9' => .nine,
+            ';' => .semicolon,
+            ' ' => .space,
+            '\'' => .apostrophe,
+            ',' => .comma,
+            '`' => .grave_accent,
+            '.' => .period,
+            '/' => .slash,
+            '-' => .minus,
+            '=' => .equal,
+            '[' => .left_bracket,
+            ']' => .right_bracket,
+            '\\' => .backslash,
+            else => null,
+        };
+    }
 };
