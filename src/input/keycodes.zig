@@ -2,7 +2,9 @@
 // BSD-style license that can be found in the LICENSE file.
 // https://source.chromium.org/chromium/chromium/src/+/main:ui/events/keycodes/dom/dom_code_data.inc
 
+const std = @import("std");
 const builtin = @import("builtin");
+const Key = @import("key.zig").Key;
 
 /// The full list of entries for the current platform.
 pub const entries: []const Entry = entries: {
@@ -17,7 +19,9 @@ pub const entries: []const Entry = entries: {
 
     var result: [raw_entries.len]Entry = undefined;
     for (raw_entries, 0..) |raw, i| {
+        @setEvalBranchQuota(10000);
         result[i] = .{
+            .key = code_to_key.get(raw[5]) orelse .invalid,
             .usb = raw[0],
             .code = raw[5],
             .native = raw[native_idx],
@@ -29,9 +33,135 @@ pub const entries: []const Entry = entries: {
 /// Entry contains the USB code, native keycode, and W3C dom code for
 /// the current platform.
 pub const Entry = struct {
+    key: Key, // input key enum
     usb: u32, // USB HID usage code
     native: u32, // Native keycode
     code: []const u8, // W3C DOM code, static memory
+};
+
+/// A map from code to key. This isn't meant to be used at runtime
+/// (though it could), so it isn't exported. It it used to build the
+/// key value for Entry.
+const code_to_key = code_to_key: {
+    @setEvalBranchQuota(5000);
+    break :code_to_key std.ComptimeStringMap(Key, .{
+        .{ "KeyA", .a },
+        .{ "KeyB", .b },
+        .{ "KeyC", .c },
+        .{ "KeyD", .d },
+        .{ "KeyE", .e },
+        .{ "KeyF", .f },
+        .{ "KeyG", .g },
+        .{ "KeyH", .h },
+        .{ "KeyI", .i },
+        .{ "KeyJ", .j },
+        .{ "KeyK", .k },
+        .{ "KeyL", .l },
+        .{ "KeyM", .m },
+        .{ "KeyN", .n },
+        .{ "KeyO", .o },
+        .{ "KeyP", .p },
+        .{ "KeyQ", .q },
+        .{ "KeyR", .r },
+        .{ "KeyS", .s },
+        .{ "KeyT", .t },
+        .{ "KeyU", .u },
+        .{ "KeyV", .v },
+        .{ "KeyW", .w },
+        .{ "KeyX", .x },
+        .{ "KeyY", .y },
+        .{ "KeyZ", .z },
+        .{ "Digit1", .one },
+        .{ "Digit2", .two },
+        .{ "Digit3", .three },
+        .{ "Digit4", .four },
+        .{ "Digit5", .five },
+        .{ "Digit6", .six },
+        .{ "Digit7", .seven },
+        .{ "Digit8", .eight },
+        .{ "Digit9", .nine },
+        .{ "Digit0", .zero },
+        .{ "Enter", .enter },
+        .{ "Escape", .escape },
+        .{ "Backspace", .backspace },
+        .{ "Tab", .tab },
+        .{ "Space", .space },
+        .{ "Minus", .minus },
+        .{ "Equal", .equal },
+        .{ "BracketLeft", .left_bracket },
+        .{ "BracketRight", .right_bracket },
+        .{ "Backslash", .backslash },
+        .{ "Semicolon", .semicolon },
+        .{ "Quote", .apostrophe },
+        .{ "Backquote", .grave_accent },
+        .{ "Comma", .comma },
+        .{ "Period", .period },
+        .{ "Slash", .slash },
+        .{ "CapsLock", .caps_lock },
+        .{ "F1", .f1 },
+        .{ "F2", .f2 },
+        .{ "F3", .f3 },
+        .{ "F4", .f4 },
+        .{ "F5", .f5 },
+        .{ "F6", .f6 },
+        .{ "F7", .f7 },
+        .{ "F8", .f8 },
+        .{ "F9", .f9 },
+        .{ "F10", .f10 },
+        .{ "F11", .f11 },
+        .{ "F12", .f12 },
+        .{ "F13", .f13 },
+        .{ "F14", .f14 },
+        .{ "F15", .f15 },
+        .{ "F16", .f16 },
+        .{ "F17", .f17 },
+        .{ "F18", .f18 },
+        .{ "F19", .f19 },
+        .{ "F20", .f20 },
+        .{ "F21", .f21 },
+        .{ "F22", .f22 },
+        .{ "F23", .f23 },
+        .{ "F24", .f24 },
+        .{ "PrintScreen", .print_screen },
+        .{ "ScrollLock", .scroll_lock },
+        .{ "Pause", .pause },
+        .{ "Insert", .insert },
+        .{ "Home", .home },
+        .{ "PageUp", .page_up },
+        .{ "Delete", .delete },
+        .{ "End", .end },
+        .{ "PageDown", .page_down },
+        .{ "ArrowRight", .right },
+        .{ "ArrowLeft", .left },
+        .{ "ArrowDown", .down },
+        .{ "ArrowUp", .up },
+        .{ "NumLock", .num_lock },
+        .{ "NumpadDivide", .kp_divide },
+        .{ "NumpadMultiply", .kp_multiply },
+        .{ "NumpadSubtract", .kp_subtract },
+        .{ "NumpadAdd", .kp_add },
+        .{ "NumpadEnter", .kp_enter },
+        .{ "Numpad1", .kp_1 },
+        .{ "Numpad2", .kp_2 },
+        .{ "Numpad3", .kp_3 },
+        .{ "Numpad4", .kp_4 },
+        .{ "Numpad5", .kp_5 },
+        .{ "Numpad6", .kp_6 },
+        .{ "Numpad7", .kp_7 },
+        .{ "Numpad8", .kp_8 },
+        .{ "Numpad9", .kp_9 },
+        .{ "Numpad0", .kp_0 },
+        .{ "NumpadDecimal", .kp_decimal },
+        .{ "NumpadEqual", .kp_equal },
+        .{ "ControlLeft", .left_control },
+        .{ "ShiftLeft", .left_shift },
+        .{ "AltLeft", .left_alt },
+        .{ "MetaLeft", .left_super },
+        .{ "ControlRight", .right_control },
+        .{ "ShiftRight", .right_shift },
+        .{ "AltRight", .right_alt },
+        .{ "MetaRight", .right_super },
+    });
 };
 
 /// The codes for the table from the Chromium data set. These are ALL the
@@ -536,3 +666,5 @@ pub const raw_entries: []const RawEntry = &.{
     .{ 0x0c02a2, 0x00cc, 0x00d4, 0x0000, 0xffff, "" },
     .{ 0x0c02d0, 0x0279, 0x0281, 0x0000, 0xffff, "" },
 };
+
+test {}
