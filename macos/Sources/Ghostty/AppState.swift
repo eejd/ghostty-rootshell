@@ -74,6 +74,13 @@ extension Ghostty {
                 return
             }
             self.app = app
+            
+            // Subscribe to notifications for keyboard layout change so that we can update Ghostty.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(self.keyboardSelectionDidChange(notification:)),
+                name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+                object: nil)
 
             self.readiness = .ready
         }
@@ -82,6 +89,12 @@ extension Ghostty {
             // This will force the didSet callbacks to run which free.
             self.app = nil
             self.config = nil
+            
+            // Remove our observer
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+                object: nil)
         }
         
         /// Initializes a new configuration and loads all the values.
@@ -130,6 +143,13 @@ extension Ghostty {
         
         func splitMoveFocus(surface: ghostty_surface_t, direction: SplitFocusDirection) {
             ghostty_surface_split_focus(surface, direction.toNative())
+        }
+        
+        // Called when the selected keyboard changes. We have to notify Ghostty so that
+        // it can reload the keyboard mapping for input.
+        @objc private func keyboardSelectionDidChange(notification: NSNotification) {
+            guard let app = self.app else { return }
+            ghostty_app_keyboard_changed(app)
         }
         
         // MARK: Ghostty Callbacks

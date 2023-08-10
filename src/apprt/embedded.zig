@@ -92,6 +92,17 @@ pub const App = struct {
         self.keymap.deinit();
     }
 
+    /// This should be called whenever the keyboard layout was changed.
+    pub fn reloadKeymap(self: *App) !void {
+        // Reload the keymap
+        try self.keymap.reload();
+
+        // Clear the dead key state since we changed the keymap, any
+        // dead key state is just forgotten. i.e. if you type ' on us-intl
+        // and then switch to us and type a, you'll get a rather than á.
+        self.keymap_state = .{};
+    }
+
     pub fn reloadConfig(self: *App) !?*const Config {
         // Reload
         if (self.opts.reload_config(self.opts.userdata)) |new| {
@@ -473,6 +484,15 @@ pub const CAPI = struct {
         v.terminate();
         global.alloc.destroy(v);
         core_app.destroy();
+    }
+
+    /// Notify the app that the keyboard was changed. This causes the
+    /// keyboard layout to be reloaded from the OS.
+    export fn ghostty_app_keyboard_changed(v: *App) void {
+        v.reloadKeymap() catch |err| {
+            log.err("error reloading keyboard map err={}", .{err});
+            return;
+        };
     }
 
     /// Create a new surface as part of an app.
