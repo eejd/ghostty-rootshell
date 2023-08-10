@@ -740,7 +740,7 @@ pub const Surface = struct {
         // TODO: we need to do mapped keybindings
 
         const core_win = window.getUserPointer(CoreSurface) orelse return;
-        core_win.keyCallback(action, key, key, mods) catch |err| {
+        _ = core_win.keyCallback(action, key, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };

@@ -408,17 +408,6 @@ pub const Surface = struct {
         //     mods,
         // });
 
-        // If this is a dead key, then we're composing a character and
-        // we end processing here. We don't process keybinds for dead keys.
-        if (result.composing) {
-            // TODO: we ultimately want to update some surface state so that
-            // we can show the user that we're in dead key mode and the
-            // precomposed character. For now, we can just ignore and that
-            // is not incorrect behavior.
-            log.warn("dead key mode, currently composing", .{});
-            return;
-        }
-
         // We want to get the physical unmapped key to process keybinds.
         const physical_key = keycode: for (input.keycodes.entries) |entry| {
             if (entry.native == keycode) break :keycode entry.key;
@@ -428,7 +417,9 @@ pub const Surface = struct {
         // and attempt to translate it to a key enum and call the key callback.
         // If the length is greater than 1 then we're going to call the
         // charCallback.
-        const key = if (result.text.len == 1) key: {
+        //
+        // We also only do key translation if this is not a dead key.
+        const key = if (!result.composing and result.text.len == 1) key: {
             // A completed key. If the length of the key is one then we can
             // attempt to translate it to a key enum and call the key callback.
             break :key input.Key.fromASCII(result.text[0]) orelse physical_key;
@@ -437,10 +428,32 @@ pub const Surface = struct {
         // If both keys are invalid then we won't call the key callback. But
         // if either one is valid, we want to give it a chance.
         if (key != .invalid or physical_key != .invalid) {
-            self.core_surface.keyCallback(action, key, physical_key, mods) catch |err| {
+            const consumed = self.core_surface.keyCallback(
+                action,
+                key,
+                physical_key,
+                mods,
+            ) catch |err| {
                 log.err("error in key callback err={}", .{err});
                 return;
             };
+
+            // If we consume the key then we want to reset the dead key state.
+            if (consumed) {
+                self.keymap_state = .{};
+                return;
+            }
+        }
+
+        // If this is a dead key, then we're composing a character and
+        // we end processing here. We don't process keybinds for dead keys.
+        if (result.composing) {
+            // TODO: we ultimately want to update some surface state so that
+            // we can show the user that we're in dead key mode and the
+            // precomposed character. For now, we can just ignore and that
+            // is not incorrect behavior.
+            log.warn("dead key mode, currently composing", .{});
+            return;
         }
 
         // Next, we want to call the char callback with each codepoint.

@@ -1022,13 +1022,19 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
     try self.io_thread.wakeup.notify();
 }
 
+/// Called for a single key event.
+///
+/// This will return true if the key was handled/consumed. In that case,
+/// the caller doesn't need to call a subsequent `charCallback` for the
+/// same event. However, the caller can call `charCallback` if they want,
+/// the surface will retain state to ensure the event is ignored.
 pub fn keyCallback(
     self: *Surface,
     action: input.Action,
     key: input.Key,
     unmapped_key: input.Key,
     mods: input.Mods,
-) !void {
+) !bool {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1079,7 +1085,7 @@ pub fn keyCallback(
             self.ignore_char = true;
 
             // No matter what, if there is a binding then we are done.
-            return;
+            return self.ignore_char;
         }
 
         // Handle non-printables
@@ -1172,6 +1178,8 @@ pub fn keyCallback(
             }
         }
     }
+
+    return self.ignore_char;
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {
