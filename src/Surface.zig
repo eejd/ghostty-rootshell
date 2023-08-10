@@ -1137,6 +1137,18 @@ pub fn keyCallback(
             };
         };
         if (char > 0) {
+            // We are handling this char so don't allow charCallback to do
+            // anything. Normally it shouldn't because charCallback should not
+            // be called for control characters. But, we found a scenario where
+            // it does: https://github.com/mitchellh/ghostty/issues/267
+            //
+            // In case that URL goes away: on macOS, after typing a dead
+            // key sequence, macOS would call `insertText` with control
+            // characters. Prior to calling a dead key sequence, it would
+            // not. I don't know. It doesn't matter, this is more correct
+            // anyways.
+            self.ignore_char = true;
+
             // Ask our IO thread to write the data
             var data: termio.Message.WriteReq.Small.Array = undefined;
             data[0] = @intCast(char);
