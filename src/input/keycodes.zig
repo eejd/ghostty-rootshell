@@ -8,14 +8,12 @@ const Key = @import("key.zig").Key;
 
 /// The full list of entries for the current platform.
 pub const entries: []const Entry = entries: {
-    const native_idx = if (builtin.target.isDarwin())
-        4
-    else if (builtin.target.isWindows())
-        3
-    else if (builtin.target.isLinux())
-        2
-    else
-        @compileError("unsupported platform");
+    const native_idx = switch (builtin.os.tag) {
+        .macos => 4, // mac
+        .windows => 3, // win
+        .linux => 2, // xkb
+        else => @compileError("unsupported platform"),
+    };
 
     var result: [raw_entries.len]Entry = undefined;
     for (raw_entries, 0..) |raw, i| {
