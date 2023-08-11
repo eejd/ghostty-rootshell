@@ -1020,7 +1020,7 @@ pub fn keyCallback(
     self: *Surface,
     action: input.Action,
     key: input.Key,
-    unmapped_key: input.Key,
+    physical_key: input.Key,
     mods: input.Mods,
 ) !bool {
     const tracy = trace(@src());
@@ -1054,8 +1054,8 @@ pub fn keyCallback(
             const set = self.config.keybind.set;
             if (set.get(trigger)) |v| break :action v;
 
-            trigger.key = unmapped_key;
-            trigger.unmapped = true;
+            trigger.key = physical_key;
+            trigger.physical = true;
             if (set.get(trigger)) |v| break :action v;
 
             break :action null;

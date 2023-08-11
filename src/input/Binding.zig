@@ -53,11 +53,11 @@ pub fn parse(input: []const u8) !Binding {
                 }
             }
 
-            // If the key starts with "unmapped" then this is an unmapped key.
-            const unmapped_prefix = "unmapped:";
-            const key_part = if (std.mem.startsWith(u8, part, unmapped_prefix)) key_part: {
-                result.unmapped = true;
-                break :key_part part[unmapped_prefix.len..];
+            // If the key starts with "physical" then this is an physical key.
+            const physical = "physical:";
+            const key_part = if (std.mem.startsWith(u8, part, physical)) key_part: {
+                result.physical = true;
+                break :key_part part[physical.len..];
             } else part;
 
             // Check if its a key
@@ -286,18 +286,18 @@ pub const Trigger = struct {
     /// The key modifiers that must be active for this to match.
     mods: key.Mods = .{},
 
-    /// key is the "unmapped" version. This is the same as mapped for
+    /// key is the "physical" version. This is the same as mapped for
     /// standard US keyboard layouts. For non-US keyboard layouts, this
     /// is used to bind to a physical key location rather than a translated
     /// key.
-    unmapped: bool = false,
+    physical: bool = false,
 
     /// Returns a hash code that can be used to uniquely identify this trigger.
     pub fn hash(self: Binding) u64 {
         var hasher = std.hash.Wyhash.init(0);
         std.hash.autoHash(&hasher, self.key);
         std.hash.autoHash(&hasher, self.mods);
-        std.hash.autoHash(&hasher, self.unmapped);
+        std.hash.autoHash(&hasher, self.physical);
         return hasher.final();
     }
 };
@@ -382,15 +382,15 @@ test "parse: triggers" {
         .action = .{ .ignore = {} },
     }, try parse("a+shift=ignore"));
 
-    // unmapped keys
+    // physical keys
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
             .key = .a,
-            .unmapped = true,
+            .physical = true,
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+unmapped:a=ignore"));
+    }, try parse("shift+physical:a=ignore"));
 
     // invalid key
     try testing.expectError(Error.InvalidFormat, parse("foo=ignore"));
