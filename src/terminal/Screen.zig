@@ -2297,6 +2297,9 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             var cur_trimmed_row = trimmed_row;
             while (true) {
                 for (cur_trimmed_row, 0..) |cell, old_x| {
+                    // Set to true to write an empty cell
+                    var clear_cell: bool = false;
+
                     // Soft wrap if we have to.
                     if (x == self.cols) {
                         row.setWrapped(true);
@@ -2308,6 +2311,9 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         if (y >= self.rows) {
                             try self.scroll(.{ .screen = 1 });
                             y -= 1;
+
+                            // Clear if our current cell is a wide spacer tail
+                            clear_cell = cell.cell.attrs.wide_spacer_tail;
                         }
 
                         row = self.getRow(.{ .active = y });
@@ -2322,7 +2328,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
                     // Write the cell
                     var new_cell = row.getCellPtr(x);
-                    new_cell.* = cell.cell;
+                    new_cell.* = if (clear_cell) .{} else cell.cell;
                     x += 1;
                 }
 
@@ -2396,8 +2402,12 @@ fn trimRowForResizeLessCols(self: *Screen, old: *Screen, row: Row) []StorageCell
         if (!cell.empty()) {
             // If we are beyond our new width and this is just
             // an empty-character stylized cell, then we trim it.
+            // We also have to ignore wide spacers because they form
+            // a critical part of a wide character.
             if (i > self.cols) {
-                if (cell.char == 0 or cell.char == ' ') continue;
+                if ((cell.char == 0 or cell.char == ' ') and
+                    !cell.attrs.wide_spacer_tail and
+                    !cell.attrs.wide_spacer_head) continue;
             }
 
             break;
@@ -5720,6 +5730,40 @@ test "Screen: resize more rows then shrink again" {
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
+}
+
+test "Screen: resize less cols to eliminate wide char" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 2, 0);
+    defer s.deinit();
+    const str = "😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 0);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+    }
+
+    // Resize to 1 column can't fit a wide char. So it should be deleted.
+    try s.resize(1, 1);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+
+    const cell = s.getCell(.screen, 0, 0);
+    try testing.expectEqual(@as(u32, 0), cell.char);
+    try testing.expect(!cell.attrs.wide);
+    try testing.expect(!cell.attrs.wide_spacer_tail);
+    try testing.expect(!cell.attrs.wide_spacer_head);
 }
 
 test "Screen: jump zero" {
