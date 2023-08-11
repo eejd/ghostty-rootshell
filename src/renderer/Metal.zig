@@ -1275,7 +1275,6 @@ fn updateCellChar(self: *Metal, cell: *GPUCell, cp: u21) bool {
     cell.glyph_pos = .{ glyph.atlas_x, glyph.atlas_y };
     cell.glyph_size = .{ glyph.width, glyph.height };
     cell.glyph_offset = .{ glyph.offset_x, glyph.offset_y };
-    cell.cell_width = 1;
     return true;
 }
 

@@ -1191,6 +1191,11 @@ pub const Surface = struct {
         const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
         _ = c.gtk_im_context_filter_keypress(self.im_context, event) != 0;
 
+        // If we aren't composing, then we set our preedit to empty no matter what.
+        if (!self.im_composing) {
+            self.core_surface.preeditCallback(null) catch {};
+        }
+
         // If we're not in a dead key state, we want to translate our text
         // to some input.Key.
         const key = if (!self.im_composing) key: {
@@ -1214,6 +1219,7 @@ pub const Surface = struct {
             // If we consume the key then we want to reset the dead key state.
             if (consumed) {
                 c.gtk_im_context_reset(self.im_context);
+                self.core_surface.preeditCallback(null) catch {};
                 return 1;
             }
         }
@@ -1221,10 +1227,19 @@ pub const Surface = struct {
         // If this is a dead key, then we're composing a character and
         // we end processing here. We don't process keybinds for dead keys.
         if (self.im_composing) {
-            // TODO: we ultimately want to update some surface state so that
-            // we can show the user that we're in dead key mode and the
-            // precomposed character. For now, we can just ignore and that
-            // is not incorrect behavior.
+            const text = self.im_buf[0..self.im_len];
+            const view = std.unicode.Utf8View.init(text) catch |err| {
+                log.warn("cannot build utf8 view over input: {}", .{err});
+                return 0;
+            };
+            var it = view.iterator();
+
+            const cp: u21 = it.nextCodepoint() orelse 0;
+            self.core_surface.preeditCallback(cp) catch |err| {
+                log.err("error in preedit callback err={}", .{err});
+                return 0;
+            };
+
             return 0;
         }
 
@@ -1294,9 +1309,11 @@ pub const Surface = struct {
         _ = c.gtk_im_context_get_preedit_string(ctx, &buf, null, null);
         defer c.g_free(buf);
         const str = std.mem.sliceTo(buf, 0);
-        log.debug("preedit str={s}", .{str});
 
-        // TODO: actually use this string.
+        // Copy the preedit string into the im_buf. This is safe because
+        // commit will always overwrite this.
+        self.im_len = @intCast(@min(self.im_buf.len, str.len));
+        @memcpy(self.im_buf[0..self.im_len], str);
     }
 
     fn gtkInputPreeditEnd(
@@ -1307,6 +1324,7 @@ pub const Surface = struct {
         const self = userdataSelf(ud.?);
         if (!self.in_keypress) return;
         self.im_composing = false;
+        self.im_len = 0;
     }
 
     fn gtkInputCommit(
