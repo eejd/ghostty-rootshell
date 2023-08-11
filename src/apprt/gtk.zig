@@ -675,6 +675,13 @@ pub const Surface = struct {
     cursor_pos: apprt.CursorPos,
     clipboard: c.GValue,
 
+    /// Key input states. See gtkKeyPressed for detailed descriptions.
+    in_keypress: bool = false,
+    im_context: *c.GtkIMContext,
+    im_composing: bool = false,
+    im_buf: [128]u8 = undefined,
+    im_len: u7 = 0,
+
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         const widget = @as(*c.GtkWidget, @ptrCast(opts.gl_area));
         c.gtk_gl_area_set_required_version(opts.gl_area, 3, 3);
@@ -693,15 +700,6 @@ pub const Surface = struct {
         errdefer c.g_object_unref(ec_focus);
         c.gtk_widget_add_controller(widget, ec_focus);
         errdefer c.gtk_widget_remove_controller(widget, ec_focus);
-
-        // Tell the key controller that we're interested in getting a full
-        // input method so raw characters/strings are given too.
-        const im_context = c.gtk_im_multicontext_new();
-        errdefer c.g_object_unref(im_context);
-        c.gtk_event_controller_key_set_im_context(
-            @ptrCast(ec_key),
-            im_context,
-        );
 
         // Create a second key controller so we can receive the raw
         // key-press events BEFORE the input method gets them.
@@ -729,6 +727,12 @@ pub const Surface = struct {
         errdefer c.g_object_unref(ec_scroll);
         c.gtk_widget_add_controller(widget, ec_scroll);
 
+        // The input method context that we use to translate key events into
+        // characters. This doesn't have an event key controller attached because
+        // we call it manually from our own key controller.
+        const im_context = c.gtk_im_multicontext_new();
+        errdefer c.g_object_unref(im_context);
+
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
         c.gtk_widget_set_focus_on_click(widget, 1);
@@ -748,6 +752,7 @@ pub const Surface = struct {
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
             .clipboard = std.mem.zeroes(c.GValue),
+            .im_context = im_context,
         };
         errdefer self.* = undefined;
 
@@ -761,11 +766,14 @@ pub const Surface = struct {
         _ = c.g_signal_connect_data(ec_key_press, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "enter", c.G_CALLBACK(&gtkFocusEnter), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_focus, "leave", c.G_CALLBACK(&gtkFocusLeave), self, null, G_CONNECT_DEFAULT);
-        _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(gesture_click, "released", c.G_CALLBACK(&gtkMouseUp), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_motion, "motion", c.G_CALLBACK(&gtkMouseMotion), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(ec_scroll, "scroll", c.G_CALLBACK(&gtkMouseScroll), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(im_context, "preedit-start", c.G_CALLBACK(&gtkInputPreeditStart), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(im_context, "preedit-changed", c.G_CALLBACK(&gtkInputPreeditChanged), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(im_context, "preedit-end", c.G_CALLBACK(&gtkInputPreeditEnd), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(im_context, "commit", c.G_CALLBACK(&gtkInputCommit), self, null, G_CONNECT_DEFAULT);
     }
 
     fn realize(self: *Surface) !void {
@@ -792,8 +800,6 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
-        c.g_value_unset(&self.clipboard);
-
         // We don't allocate anything if we aren't realized.
         if (!self.realized) return;
 
@@ -803,6 +809,10 @@ pub const Surface = struct {
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
         self.core_surface = undefined;
+
+        // Free all our GTK stuff
+        c.g_object_unref(self.im_context);
+        c.g_value_unset(&self.clipboard);
     }
 
     fn render(self: *Surface) !void {
@@ -1123,69 +1133,135 @@ pub const Surface = struct {
         };
     }
 
+    /// Key press event. This is where we do ALL of our key handling,
+    /// translation to keyboard layouts, dead key handling, etc. Key handling
+    /// is complicated so this comment will explain what's going on.
+    ///
+    /// At a high level, we want to do the following:
+    ///
+    ///   1. Emit a keyCallback for the key press with the right keys.
+    ///   2. Emit a charCallback if a unicode char was generated from the
+    ///      keypresses, but only if keyCallback didn't consume the input.
+    ///
+    /// This callback will first set the "in_keypress" flag to true. This
+    /// lets our IM callbacks know that we're in a keypress event so they don't
+    /// emit a charCallback since this function will do it after the keyCallback
+    /// (remember, the order matters!).
+    ///
+    /// Next, we run the keypress through the input method context in order
+    /// to determine if we're in a dead key state, completed unicode char, etc.
+    /// This all happens through various callbacks: preedit, commit, etc.
+    /// These inspect "in_keypress" if they have to and set some instance
+    /// state.
+    ///
+    /// Finally, we map our keys to input.Keys, emit the keyCallback, then
+    /// emit the charCallback if we have to.
+    ///
+    /// Note we ALSO have an IMContext attached directly to the widget
+    /// which can emit preedit and commit callbacks. But, if we're not
+    /// in a keypress, we let those automatically work.
     fn gtkKeyPressed(
-        _: *c.GtkEventControllerKey,
-        keyval_event: c.guint,
+        ec_key: *c.GtkEventControllerKey,
+        _: c.guint,
         keycode: c.guint,
-        state: c.GdkModifierType,
+        gtk_mods: c.GdkModifierType,
         ud: ?*anyopaque,
     ) callconv(.C) c.gboolean {
         const self = userdataSelf(ud.?);
-        const display = c.gtk_widget_get_display(@ptrCast(self.gl_area)).?;
+        const mods = translateMods(gtk_mods);
 
-        // We want to use only the key that corresponds to the hardware key.
-        // I suspect this logic is actually wrong for customized keyboards,
-        // maybe international keyboards, but I don't have an easy way to
-        // test that that I know of... sorry!
-        var keys: [*c]c.GdkKeymapKey = undefined;
-        var keyvals: [*c]c.guint = undefined;
-        var keys_len: c_int = undefined;
-        const found = c.gdk_display_map_keycode(display, keycode, &keys, &keyvals, &keys_len);
-        defer if (found > 0) {
-            c.g_free(keys);
-            c.g_free(keyvals);
-        };
+        // We mark that we're in a keypress event. We use this in our
+        // IM commit callback to determine if we need to send a char callback
+        // to the core surface or not.
+        self.in_keypress = true;
+        defer self.in_keypress = false;
 
-        // We look for the keyval corresponding to this key pressed with
-        // zero modifiers. We're assuming this always exist but unsure if
-        // that assumption is true.
-        const keyval = keyval: {
-            if (found > 0) {
-                for (keys[0..@intCast(keys_len)], 0..) |key, i| {
-                    if (key.group == 0 and key.level == 0)
-                        break :keyval keyvals[i];
-                }
+        // We always reset our committed text when ending a keypress so that
+        // future keypresses don't think we have a commit event.
+        defer self.im_len = 0;
+
+        // We want to get the physical unmapped key to process physical keybinds.
+        // (These are keybinds explicitly marked as requesting physical mapping).
+        const physical_key = keycode: for (input.keycodes.entries) |entry| {
+            if (entry.native == keycode) break :keycode entry.key;
+        } else .invalid;
+
+        // Pass the event through the IM controller to handle dead key states.
+        // Filter is true if the event was handled by the IM controller.
+        const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
+        _ = c.gtk_im_context_filter_keypress(self.im_context, event) != 0;
+
+        // If we aren't composing, then we set our preedit to empty no matter what.
+        if (!self.im_composing) {
+            self.core_surface.preeditCallback(null) catch {};
+        }
+
+        // If we're not in a dead key state, we want to translate our text
+        // to some input.Key.
+        const key = if (!self.im_composing) key: {
+            if (self.im_len != 1) break :key physical_key;
+            break :key input.Key.fromASCII(self.im_buf[0]) orelse physical_key;
+        } else .invalid;
+
+        // If both keys are invalid then we won't call the key callback. But
+        // if either one is valid, we want to give it a chance.
+        if (key != .invalid or physical_key != .invalid) {
+            const consumed = self.core_surface.keyCallback(
+                .press,
+                key,
+                physical_key,
+                mods,
+            ) catch |err| {
+                log.err("error in key callback err={}", .{err});
+                return 0;
+            };
+
+            // If we consume the key then we want to reset the dead key state.
+            if (consumed) {
+                c.gtk_im_context_reset(self.im_context);
+                self.core_surface.preeditCallback(null) catch {};
+                return 1;
+            }
+        }
+
+        // If this is a dead key, then we're composing a character and
+        // we end processing here. We don't process keybinds for dead keys.
+        if (self.im_composing) {
+            const text = self.im_buf[0..self.im_len];
+            const view = std.unicode.Utf8View.init(text) catch |err| {
+                log.warn("cannot build utf8 view over input: {}", .{err});
+                return 0;
+            };
+            var it = view.iterator();
+
+            const cp: u21 = it.nextCodepoint() orelse 0;
+            self.core_surface.preeditCallback(cp) catch |err| {
+                log.err("error in preedit callback err={}", .{err});
+                return 0;
+            };
+
+            return 0;
+        }
+
+        // Next, we want to call the char callback with each codepoint.
+        if (self.im_len > 0) {
+            const text = self.im_buf[0..self.im_len];
+            const view = std.unicode.Utf8View.init(text) catch |err| {
+                log.warn("cannot build utf8 view over input: {}", .{err});
+                return 0;
+            };
+            var it = view.iterator();
+            while (it.nextCodepoint()) |cp| {
+                self.core_surface.charCallback(cp) catch |err| {
+                    log.err("error in char callback err={}", .{err});
+                    return 0;
+                };
             }
 
-            log.warn("key-press with unknown key keyval={} keycode={}", .{
-                keyval_event,
-                keycode,
-            });
-            return 0;
-        };
+            return 1;
+        }
 
-        const key = translateKey(keyval);
-        const mods = translateMods(state);
-        log.debug("key-press code={} key={} mods={}", .{ keycode, key, mods });
-        self.core_surface.keyCallback(.press, key, key, mods) catch |err| {
-            log.err("error in key callback err={}", .{err});
-            return 0;
-        };
-
-        // We generally just say we didn't handle it. We control our
-        // GTK environment so for any keys that matter we'll grab them.
-        // One of the reasons we say we didn't handle it is so that the
-        // IME can still work.
-        return switch (keyval) {
-            // If the key is tab, we say we handled it because we don't want
-            // tab to move focus from our surface.
-            c.GDK_KEY_Tab => 1,
-            // We do the same for up, because that steals focus from the surface,
-            // in case we have multiple tabs open.
-            c.GDK_KEY_Up => 1,
-
-            else => 0,
-        };
+        return 0;
     }
 
     fn gtkKeyReleased(
@@ -1200,12 +1276,55 @@ pub const Surface = struct {
         const key = translateKey(keyval);
         const mods = translateMods(state);
         const self = userdataSelf(ud.?);
-        self.core_surface.keyCallback(.release, key, key, mods) catch |err| {
+        const consumed = self.core_surface.keyCallback(.release, key, key, mods) catch |err| {
             log.err("error in key callback err={}", .{err});
             return 0;
         };
 
-        return 0;
+        return if (consumed) 1 else 0;
+    }
+
+    fn gtkInputPreeditStart(
+        _: *c.GtkIMContext,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        //log.debug("preedit start", .{});
+        const self = userdataSelf(ud.?);
+        if (!self.in_keypress) return;
+
+        // Mark that we are now composing a string with a dead key state.
+        // We'll record the string in the preedit-changed callback.
+        self.im_composing = true;
+    }
+
+    fn gtkInputPreeditChanged(
+        ctx: *c.GtkIMContext,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        if (!self.in_keypress) return;
+
+        // Get our pre-edit string that we'll use to show the user.
+        var buf: [*c]u8 = undefined;
+        _ = c.gtk_im_context_get_preedit_string(ctx, &buf, null, null);
+        defer c.g_free(buf);
+        const str = std.mem.sliceTo(buf, 0);
+
+        // Copy the preedit string into the im_buf. This is safe because
+        // commit will always overwrite this.
+        self.im_len = @intCast(@min(self.im_buf.len, str.len));
+        @memcpy(self.im_buf[0..self.im_len], str);
+    }
+
+    fn gtkInputPreeditEnd(
+        _: *c.GtkIMContext,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        //log.debug("preedit end", .{});
+        const self = userdataSelf(ud.?);
+        if (!self.in_keypress) return;
+        self.im_composing = false;
+        self.im_len = 0;
     }
 
     fn gtkInputCommit(
@@ -1213,13 +1332,30 @@ pub const Surface = struct {
         bytes: [*:0]u8,
         ud: ?*anyopaque,
     ) callconv(.C) void {
+        const self = userdataSelf(ud.?);
         const str = std.mem.sliceTo(bytes, 0);
+
+        // If we're in a key event, then we want to buffer the commit so
+        // that we can send the proper keycallback followed by the char
+        // callback.
+        if (self.in_keypress) {
+            if (str.len <= self.im_buf.len) {
+                @memcpy(self.im_buf[0..str.len], str);
+                self.im_len = @intCast(str.len);
+            } else {
+                log.warn("not enough buffer space for input method commit", .{});
+            }
+
+            return;
+        }
+
+        // We're not in a keypress, so this was sent from an on-screen emoji
+        // keyboard or someting like that. Send the characters directly to
+        // the surface.
         const view = std.unicode.Utf8View.init(str) catch |err| {
             log.warn("cannot build utf8 view over input: {}", .{err});
             return;
         };
-
-        const self = userdataSelf(ud.?);
         var it = view.iterator();
         while (it.nextCodepoint()) |cp| {
             self.core_surface.charCallback(cp) catch |err| {

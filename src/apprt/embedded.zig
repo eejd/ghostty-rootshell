@@ -75,17 +75,32 @@ pub const App = struct {
     core_app: *CoreApp,
     config: *const Config,
     opts: Options,
+    keymap: input.Keymap,
 
     pub fn init(core_app: *CoreApp, config: *const Config, opts: Options) !App {
         return .{
             .core_app = core_app,
             .config = config,
             .opts = opts,
+            .keymap = try input.Keymap.init(),
         };
     }
 
     pub fn terminate(self: App) void {
-        _ = self;
+        self.keymap.deinit();
+    }
+
+    /// This should be called whenever the keyboard layout was changed.
+    pub fn reloadKeymap(self: *App) !void {
+        // Reload the keymap
+        try self.keymap.reload();
+
+        // Clear the dead key state since we changed the keymap, any
+        // dead key state is just forgotten. i.e. if you type ' on us-intl
+        // and then switch to us and type a, you'll get a rather than á.
+        for (self.core_app.surfaces.items) |surface| {
+            surface.keymap_state = .{};
+        }
     }
 
     pub fn reloadConfig(self: *App) !?*const Config {
@@ -140,6 +155,7 @@ pub const Surface = struct {
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
     opts: Options,
+    keymap_state: input.Keymap.State,
 
     pub const Options = extern struct {
         /// Userdata passed to some of the callbacks.
@@ -164,6 +180,7 @@ pub const Surface = struct {
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
             .opts = opts,
+            .keymap_state = .{},
         };
 
         // Add ourselves to the list of surfaces on the app.
@@ -367,15 +384,99 @@ pub const Surface = struct {
     pub fn keyCallback(
         self: *Surface,
         action: input.Action,
-        key: input.Key,
-        unmapped_key: input.Key,
+        keycode: u32,
         mods: input.Mods,
-    ) void {
-        // log.warn("key action={} key={} mods={}", .{ action, key, mods });
-        self.core_surface.keyCallback(action, key, unmapped_key, mods) catch |err| {
-            log.err("error in key callback err={}", .{err});
+    ) !void {
+        // We don't handle release events because we don't use them yet.
+        if (action != .press and action != .repeat) return;
+
+        // Translate our key using the keymap for our localized keyboard layout.
+        var buf: [128]u8 = undefined;
+        const result = try self.app.keymap.translate(
+            &buf,
+            &self.keymap_state,
+            @intCast(keycode),
+            mods,
+        );
+
+        // If we aren't composing, then we set our preedit to empty no matter what.
+        if (!result.composing) {
+            self.core_surface.preeditCallback(null) catch {};
+        }
+
+        // log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s} mods={}", .{
+        //     action,
+        //     keycode,
+        //     result.composing,
+        //     result.text,
+        //     result.text,
+        //     mods,
+        // });
+
+        // We want to get the physical unmapped key to process keybinds.
+        const physical_key = keycode: for (input.keycodes.entries) |entry| {
+            if (entry.native == keycode) break :keycode entry.key;
+        } else .invalid;
+
+        // If the resulting text has length 1 then we can take its key
+        // and attempt to translate it to a key enum and call the key callback.
+        // If the length is greater than 1 then we're going to call the
+        // charCallback.
+        //
+        // We also only do key translation if this is not a dead key.
+        const key = if (!result.composing and result.text.len == 1) key: {
+            // A completed key. If the length of the key is one then we can
+            // attempt to translate it to a key enum and call the key callback.
+            break :key input.Key.fromASCII(result.text[0]) orelse physical_key;
+        } else .invalid;
+
+        // If both keys are invalid then we won't call the key callback. But
+        // if either one is valid, we want to give it a chance.
+        if (key != .invalid or physical_key != .invalid) {
+            const consumed = self.core_surface.keyCallback(
+                action,
+                key,
+                physical_key,
+                mods,
+            ) catch |err| {
+                log.err("error in key callback err={}", .{err});
+                return;
+            };
+
+            // If we consume the key then we want to reset the dead key state.
+            if (consumed) {
+                self.keymap_state = .{};
+                self.core_surface.preeditCallback(null) catch {};
+                return;
+            }
+        }
+
+        // No matter what happens next we'll want a utf8 view.
+        const view = std.unicode.Utf8View.init(result.text) catch |err| {
+            log.warn("cannot build utf8 view over input: {}", .{err});
             return;
         };
+        var it = view.iterator();
+
+        // If this is a dead key, then we're composing a character and
+        // we end processing here. We don't process keybinds for dead keys.
+        if (result.composing) {
+            const cp: u21 = it.nextCodepoint() orelse 0;
+            self.core_surface.preeditCallback(cp) catch |err| {
+                log.err("error in preedit callback err={}", .{err});
+                return;
+            };
+
+            return;
+        }
+
+        // Next, we want to call the char callback with each codepoint.
+        while (it.nextCodepoint()) |cp| {
+            self.core_surface.charCallback(cp) catch |err| {
+                log.err("error in char callback err={}", .{err});
+                return;
+            };
+        }
     }
 
     pub fn charCallback(self: *Surface, cp_: u32) void {
@@ -471,6 +572,15 @@ pub const CAPI = struct {
         core_app.destroy();
     }
 
+    /// Notify the app that the keyboard was changed. This causes the
+    /// keyboard layout to be reloaded from the OS.
+    export fn ghostty_app_keyboard_changed(v: *App) void {
+        v.reloadKeymap() catch |err| {
+            log.err("error reloading keyboard map err={}", .{err});
+            return;
+        };
+    }
+
     /// Create a new surface as part of an app.
     export fn ghostty_surface_new(
         app: *App,
@@ -524,23 +634,32 @@ pub const CAPI = struct {
         surface.focusCallback(focused);
     }
 
-    /// Tell the surface that it needs to schedule a render
+    /// Send this for raw keypresses (i.e. the keyDown event on macOS).
+    /// This will handle the keymap translation and send the appropriate
+    /// key and char events.
+    ///
+    /// You do NOT need to also send "ghostty_surface_char" unless
+    /// you want to send a unicode character that is not associated
+    /// with a keypress, i.e. IME keyboard.
     export fn ghostty_surface_key(
         surface: *Surface,
         action: input.Action,
-        key: input.Key,
-        unmapped_key: input.Key,
-        mods: c_int,
+        keycode: u32,
+        c_mods: c_int,
     ) void {
         surface.keyCallback(
             action,
-            key,
-            unmapped_key,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
-        );
+            keycode,
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods))))),
+        ) catch |err| {
+            log.err("error processing key event err={}", .{err});
+            return;
+        };
     }
 
-    /// Tell the surface that it needs to schedule a render
+    /// Send for a unicode character. This is used for IME input. This
+    /// should only be sent for characters that are not the result of
+    /// key events.
     export fn ghostty_surface_char(surface: *Surface, codepoint: u32) void {
         surface.charCallback(codepoint);
     }

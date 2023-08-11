@@ -90,12 +90,6 @@ padding: renderer.Padding,
 /// the lifetime of. This makes updating config at runtime easier.
 config: DerivedConfig,
 
-/// Set to true for a single GLFW key/char callback cycle to cause the
-/// char callback to ignore. GLFW seems to always do key followed by char
-/// callbacks so we abuse that here. This is to solve an issue where commands
-/// like such as "control-v" will write a "v" even if they're intercepted.
-ignore_char: bool = false,
-
 /// This is set to true if our IO thread notifies us our child exited.
 /// This is used to determine if we need to confirm, hold open, etc.
 child_exited: bool = false,
@@ -972,6 +966,22 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     try self.io_thread.wakeup.notify();
 }
 
+/// Called to set the preedit state for character input. Preedit is used
+/// with dead key states, for example, when typing an accent character.
+/// This should be called with null to reset the preedit state.
+///
+/// The core surface will NOT reset the preedit state on charCallback or
+/// keyCallback and we rely completely on the apprt implementation to track
+/// the preedit state correctly.
+pub fn preeditCallback(self: *Surface, preedit: ?u21) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    self.renderer_state.preedit = if (preedit) |v| .{
+        .codepoint = v,
+    } else null;
+    try self.queueRender();
+}
+
 pub fn charCallback(self: *Surface, codepoint: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -984,12 +994,6 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
                 try self.queueRender();
             }
         } else |_| {}
-    }
-
-    // Ignore if requested. See field docs for more information.
-    if (self.ignore_char) {
-        self.ignore_char = false;
-        return;
     }
 
     // Critical area
@@ -1022,13 +1026,19 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
     try self.io_thread.wakeup.notify();
 }
 
+/// Called for a single key event.
+///
+/// This will return true if the key was handled/consumed. In that case,
+/// the caller doesn't need to call a subsequent `charCallback` for the
+/// same event. However, the caller can call `charCallback` if they want,
+/// the surface will retain state to ensure the event is ignored.
 pub fn keyCallback(
     self: *Surface,
     action: input.Action,
     key: input.Key,
-    unmapped_key: input.Key,
+    physical_key: input.Key,
     mods: input.Mods,
-) !void {
+) !bool {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1041,10 +1051,6 @@ pub fn keyCallback(
             }
         } else |_| {}
     }
-
-    // Reset the ignore char setting. If we didn't handle the char
-    // by here, we aren't going to get it so we just reset this.
-    self.ignore_char = false;
 
     if (action == .press or action == .repeat) {
         // Mods for bindings never include caps/num lock.
@@ -1064,8 +1070,8 @@ pub fn keyCallback(
             const set = self.config.keybind.set;
             if (set.get(trigger)) |v| break :action v;
 
-            trigger.key = unmapped_key;
-            trigger.unmapped = true;
+            trigger.key = physical_key;
+            trigger.physical = true;
             if (set.get(trigger)) |v| break :action v;
 
             break :action null;
@@ -1074,12 +1080,7 @@ pub fn keyCallback(
         if (binding_action_) |binding_action| {
             //log.warn("BINDING ACTION={}", .{binding_action});
             try self.performBindingAction(binding_action);
-
-            // Bindings always result in us ignoring the char if printable
-            self.ignore_char = true;
-
-            // No matter what, if there is a binding then we are done.
-            return;
+            return true;
         }
 
         // Handle non-printables
@@ -1137,18 +1138,6 @@ pub fn keyCallback(
             };
         };
         if (char > 0) {
-            // We are handling this char so don't allow charCallback to do
-            // anything. Normally it shouldn't because charCallback should not
-            // be called for control characters. But, we found a scenario where
-            // it does: https://github.com/mitchellh/ghostty/issues/267
-            //
-            // In case that URL goes away: on macOS, after typing a dead
-            // key sequence, macOS would call `insertText` with control
-            // characters. Prior to calling a dead key sequence, it would
-            // not. I don't know. It doesn't matter, this is more correct
-            // anyways.
-            self.ignore_char = true;
-
             // Ask our IO thread to write the data
             var data: termio.Message.WriteReq.Small.Array = undefined;
             data[0] = @intCast(char);
@@ -1170,8 +1159,12 @@ pub fn keyCallback(
                     log.warn("error scrolling to bottom err={}", .{err});
                 };
             }
+
+            return true;
         }
     }
+
+    return false;
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {

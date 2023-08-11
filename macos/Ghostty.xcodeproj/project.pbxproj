@@ -20,6 +20,7 @@
 		A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
 		A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */; };
 		A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */; };
+		A56B880B2A840447007A0E29 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A56B880A2A840447007A0E29 /* Carbon.framework */; };
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
@@ -45,6 +46,7 @@
 		A55B7BB729B6F53A0055DE60 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView.swift; sourceTree = "<group>"; };
 		A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.SplitView.swift; sourceTree = "<group>"; };
+		A56B880A2A840447007A0E29 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = System/Library/Frameworks/Carbon.framework; sourceTree = SDKROOT; };
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A5A1F8842A489D6800D1E8BC /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "../zig-out/share/terminfo"; sourceTree = "<group>"; };
@@ -64,6 +66,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A56B880B2A840447007A0E29 /* Carbon.framework in Frameworks */,
 				A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -177,6 +180,7 @@
 		A5D495A3299BECBA00DD1313 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A56B880A2A840447007A0E29 /* Carbon.framework */,
 				A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */,
 			);
 			name = Frameworks;

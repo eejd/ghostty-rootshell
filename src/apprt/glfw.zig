@@ -282,6 +282,10 @@ pub const Surface = struct {
     /// A core surface
     core_surface: CoreSurface,
 
+    /// This is set to true when keyCallback consumes the input, suppressing
+    /// the charCallback from being fired.
+    key_consumed: bool = false,
+
     pub const Options = struct {};
 
     /// Initialize the surface into the given self pointer. This gives a
@@ -586,6 +590,13 @@ pub const Surface = struct {
         defer tracy.end();
 
         const core_win = window.getUserPointer(CoreSurface) orelse return;
+
+        // If our keyCallback consumed the key input, don't emit a char.
+        if (core_win.rt_surface.key_consumed) {
+            core_win.rt_surface.key_consumed = false;
+            return;
+        }
+
         core_win.charCallback(codepoint) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
@@ -600,6 +611,11 @@ pub const Surface = struct {
         glfw_mods: glfw.Mods,
     ) void {
         _ = scancode;
+
+        const core_win = window.getUserPointer(CoreSurface) orelse return;
+
+        // Reset our consumption state
+        core_win.rt_surface.key_consumed = false;
 
         const tracy = trace(@src());
         defer tracy.end();
@@ -739,8 +755,12 @@ pub const Surface = struct {
 
         // TODO: we need to do mapped keybindings
 
-        const core_win = window.getUserPointer(CoreSurface) orelse return;
-        core_win.keyCallback(action, key, key, mods) catch |err| {
+        core_win.rt_surface.key_consumed = core_win.keyCallback(
+            action,
+            key,
+            key,
+            mods,
+        ) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };

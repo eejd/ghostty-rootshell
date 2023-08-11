@@ -521,6 +521,7 @@ pub fn render(
         selection: ?terminal.Selection,
         screen: terminal.Screen,
         draw_cursor: bool,
+        preedit: ?renderer.State.Preedit,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -533,6 +534,9 @@ pub fn render(
             // then it is not visible.
             if (!state.cursor.visible) break :visible false;
 
+            // If we are in preedit, then we always show the cursor
+            if (state.preedit != null) break :visible true;
+
             // If the cursor isn't a blinking style, then never blink.
             if (!state.cursor.style.blinking()) break :visible true;
 
@@ -540,10 +544,17 @@ pub fn render(
             break :visible self.cursor_visible;
         };
 
-        if (self.focused) {
-            self.cursor_style = renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
-        } else {
-            self.cursor_style = .box_hollow;
+        // The cursor style only needs to be set if its visible.
+        if (self.cursor_visible) {
+            self.cursor_style = cursor_style: {
+                // If we have a dead key preedit then we always use a box style
+                if (state.preedit != null) break :cursor_style .box;
+
+                // If we aren't focused, we use a hollow box
+                if (!self.focused) break :cursor_style .box_hollow;
+
+                break :cursor_style renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+            };
         }
 
         // Swap bg/fg if the terminal is reversed
@@ -580,12 +591,16 @@ pub fn render(
         else
             null;
 
+        // Whether to draw our cursor or not.
+        const draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom();
+
         break :critical .{
             .bg = self.config.background,
             .devmode = if (state.devmode) |dm| dm.visible else false,
             .selection = selection,
             .screen = screen_copy,
-            .draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom(),
+            .draw_cursor = draw_cursor,
+            .preedit = if (draw_cursor) state.preedit else null,
         };
     };
     defer critical.screen.deinit();
@@ -599,6 +614,7 @@ pub fn render(
         critical.selection,
         &critical.screen,
         critical.draw_cursor,
+        critical.preedit,
     );
 
     // Get our drawable (CAMetalDrawable)
@@ -848,6 +864,7 @@ fn rebuildCells(
     term_selection: ?terminal.Selection,
     screen: *terminal.Screen,
     draw_cursor: bool,
+    preedit: ?renderer.State.Preedit,
 ) !void {
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
@@ -962,8 +979,30 @@ fn rebuildCells(
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
     if (draw_cursor) {
-        self.addCursor(screen);
+        const real_cursor_cell = self.addCursor(screen);
+
+        // If we have a preedit, we try to render the preedit text on top
+        // of the cursor.
+        if (preedit) |preedit_v| preedit: {
+            if (preedit_v.codepoint > 0) {
+                // We try to base on the cursor cell but if its not there
+                // we use the actual cursor and if thats not there we give
+                // up on preedit rendering.
+                var cell: GPUCell = cursor_cell orelse
+                    (real_cursor_cell orelse break :preedit).*;
+                cell.color = .{ 0, 0, 0, 255 };
+
+                // If preedit rendering succeeded then we don't want to
+                // re-render the underlying cell fg
+                if (self.updateCellChar(&cell, preedit_v.codepoint)) {
+                    cursor_cell = null;
+                    self.cells.appendAssumeCapacity(cell);
+                }
+            }
+        }
+
         if (cursor_cell) |*cell| {
+            // We always invert the cell color under the cursor.
             cell.color = .{ 0, 0, 0, 255 };
             self.cells.appendAssumeCapacity(cell.*);
         }
@@ -1155,7 +1194,7 @@ pub fn updateCell(
     return true;
 }
 
-fn addCursor(self: *Metal, screen: *terminal.Screen) void {
+fn addCursor(self: *Metal, screen: *terminal.Screen) ?*const GPUCell {
     // Add the cursor
     const cell = screen.getCell(
         .active,
@@ -1182,7 +1221,7 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         .{},
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
-        return;
+        return null;
     };
 
     self.cells.appendAssumeCapacity(.{
@@ -1197,6 +1236,46 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) void {
         .glyph_size = .{ glyph.width, glyph.height },
         .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
     });
+
+    return &self.cells.items[self.cells.items.len - 1];
+}
+
+/// Updates cell with the the given character. This returns true if the
+/// cell was successfully updated.
+fn updateCellChar(self: *Metal, cell: *GPUCell, cp: u21) bool {
+    // Get the font index for this codepoint
+    const font_index = if (self.font_group.indexForCodepoint(
+        self.alloc,
+        @intCast(cp),
+        .regular,
+        .text,
+    )) |index| index orelse return false else |_| return false;
+
+    // Get the font face so we can get the glyph
+    const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
+        log.warn("error getting face for font_index={} err={}", .{ font_index, err });
+        return false;
+    };
+
+    // Use the face to now get the glyph index
+    const glyph_index = face.glyphIndex(@intCast(cp)) orelse return false;
+
+    // Render the glyph for our preedit text
+    const glyph = self.font_group.renderGlyph(
+        self.alloc,
+        font_index,
+        glyph_index,
+        .{},
+    ) catch |err| {
+        log.warn("error rendering preedit glyph err={}", .{err});
+        return false;
+    };
+
+    // Update the cell glyph
+    cell.glyph_pos = .{ glyph.atlas_x, glyph.atlas_y };
+    cell.glyph_size = .{ glyph.width, glyph.height };
+    cell.glyph_offset = .{ glyph.offset_x, glyph.offset_y };
+    return true;
 }
 
 /// Sync the vertex buffer inputs to the GPU. This will attempt to reuse
