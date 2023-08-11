@@ -441,6 +441,15 @@ pub const Surface = struct {
             // If we consume the key then we want to reset the dead key state.
             if (consumed) {
                 self.keymap_state = .{};
+
+                // This is kloodge right now to reset the surface ignore_char
+                // state. We should refactor the API contract with the surface
+                // to be that if we consume a key then we don't call the char
+                // callback.
+                //
+                // If you don't do this, then after a consumed char a pure
+                // char event will be ignored. i.e. an emoji keyboard entry.
+                self.core_surface.charCallback(0) catch {};
                 return;
             }
         }
@@ -452,7 +461,6 @@ pub const Surface = struct {
             // we can show the user that we're in dead key mode and the
             // precomposed character. For now, we can just ignore and that
             // is not incorrect behavior.
-            log.warn("dead key mode, currently composing", .{});
             return;
         }
 
