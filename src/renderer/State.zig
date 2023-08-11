@@ -18,6 +18,12 @@ cursor: Cursor,
 /// The terminal data.
 terminal: *terminal.Terminal,
 
+/// Dead key state. This will render the current dead key preedit text
+/// over the cursor. This currently only ever renders a single codepoint.
+/// Preedit can in theory be multiple codepoints long but that is left as
+/// a future exercise.
+preedit: ?Preedit = null,
+
 /// The devmode data.
 devmode: ?*const DevMode = null,
 
@@ -30,4 +36,15 @@ pub const Cursor = struct {
     /// "blink" settings, see "blink" for that. This is used to turn the
     /// cursor ON or OFF.
     visible: bool = true,
+};
+
+/// The pre-edit state. See Surface.preeditCallback for more information.
+pub const Preedit = struct {
+    /// The codepoint to render as preedit text. We only support single
+    /// codepoint for now. In theory this can be multiple codepoints but
+    /// that is left as a future exercise.
+    ///
+    /// This can also be "0" in which case we can know we're in a preedit
+    /// mode but we don't have any preedit text to render.
+    codepoint: u21 = 0,
 };

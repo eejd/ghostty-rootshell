@@ -399,6 +399,11 @@ pub const Surface = struct {
             mods,
         );
 
+        // If we aren't composing, then we set our preedit to empty no matter what.
+        if (!result.composing) {
+            self.core_surface.preeditCallback(null) catch {};
+        }
+
         // log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s} mods={}", .{
         //     action,
         //     keycode,
@@ -441,26 +446,31 @@ pub const Surface = struct {
             // If we consume the key then we want to reset the dead key state.
             if (consumed) {
                 self.keymap_state = .{};
+                self.core_surface.preeditCallback(null) catch {};
                 return;
             }
         }
 
-        // If this is a dead key, then we're composing a character and
-        // we end processing here. We don't process keybinds for dead keys.
-        if (result.composing) {
-            // TODO: we ultimately want to update some surface state so that
-            // we can show the user that we're in dead key mode and the
-            // precomposed character. For now, we can just ignore and that
-            // is not incorrect behavior.
-            return;
-        }
-
-        // Next, we want to call the char callback with each codepoint.
+        // No matter what happens next we'll want a utf8 view.
         const view = std.unicode.Utf8View.init(result.text) catch |err| {
             log.warn("cannot build utf8 view over input: {}", .{err});
             return;
         };
         var it = view.iterator();
+
+        // If this is a dead key, then we're composing a character and
+        // we end processing here. We don't process keybinds for dead keys.
+        if (result.composing) {
+            const cp: u21 = it.nextCodepoint() orelse 0;
+            self.core_surface.preeditCallback(cp) catch |err| {
+                log.err("error in preedit callback err={}", .{err});
+                return;
+            };
+
+            return;
+        }
+
+        // Next, we want to call the char callback with each codepoint.
         while (it.nextCodepoint()) |cp| {
             self.core_surface.charCallback(cp) catch |err| {
                 log.err("error in char callback err={}", .{err});

@@ -966,6 +966,22 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     try self.io_thread.wakeup.notify();
 }
 
+/// Called to set the preedit state for character input. Preedit is used
+/// with dead key states, for example, when typing an accent character.
+/// This should be called with null to reset the preedit state.
+///
+/// The core surface will NOT reset the preedit state on charCallback or
+/// keyCallback and we rely completely on the apprt implementation to track
+/// the preedit state correctly.
+pub fn preeditCallback(self: *Surface, preedit: ?u21) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    self.renderer_state.preedit = if (preedit) |v| .{
+        .codepoint = v,
+    } else null;
+    try self.queueRender();
+}
+
 pub fn charCallback(self: *Surface, codepoint: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
