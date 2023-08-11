@@ -8,9 +8,10 @@ pub const Binding = @import("input/Binding.zig");
 pub const SplitDirection = Binding.Action.SplitDirection;
 pub const SplitFocusDirection = Binding.Action.SplitFocusDirection;
 
-// Keymap is only available on macOS right now
+// Keymap is only available on macOS right now. We could implement it
+// in theory for XKB too on Linux but we don't need it right now.
 pub const Keymap = switch (builtin.os.tag) {
-    .macos => @import("input/Keymap.zig"),
+    .macos => @import("input/KeymapDarwin.zig"),
     else => struct {},
 };
 

@@ -212,23 +212,26 @@ test {
     var keymap = try init();
     defer keymap.deinit();
 
-    // Single quote ' which is fine on US, but dead on US-International
-    var buf: [4]u8 = undefined;
-    var state: State = .{};
-    {
-        const result = try keymap.translate(&buf, &state, 0x27, .{});
-        std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
-    }
-
-    // Then type "a" which should combine with the dead key to make á
-    {
-        const result = try keymap.translate(&buf, &state, 0x00, .{});
-        std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
-    }
-
-    // Shift+1 = ! on US
-    {
-        const result = try keymap.translate(&buf, &state, 0x12, .{ .shift = true });
-        std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
-    }
+    // These tests are all commented because they depend on the user-selected
+    // keyboard layout...
+    //
+    // // Single quote ' which is fine on US, but dead on US-International
+    // var buf: [4]u8 = undefined;
+    // var state: State = .{};
+    // {
+    //     const result = try keymap.translate(&buf, &state, 0x27, .{});
+    //     std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
+    // }
+    //
+    // // Then type "a" which should combine with the dead key to make á
+    // {
+    //     const result = try keymap.translate(&buf, &state, 0x00, .{});
+    //     std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
+    // }
+    //
+    // // Shift+1 = ! on US
+    // {
+    //     const result = try keymap.translate(&buf, &state, 0x12, .{ .shift = true });
+    //     std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
+    // }
 }
