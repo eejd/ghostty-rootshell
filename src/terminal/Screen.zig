@@ -1760,6 +1760,12 @@ pub fn selectionString(
     const buf = try alloc.alloc(u8, chars + 1);
     errdefer alloc.free(buf);
 
+    // Special case the empty case
+    if (chars == 0) {
+        buf[0] = 0;
+        return buf[0..0 :0];
+    }
+
     // Connect the text from the two slices
     const arr = [_][]StorageCell{ slices.top, slices.bot };
     var buf_i: usize = 0;
@@ -1849,13 +1855,22 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
 } {
     // Note: this function is tested via selectionString
 
-    assert(sel_raw.start.y < self.rowsWritten());
-    assert(sel_raw.end.y < self.rowsWritten());
-    assert(sel_raw.start.x < self.cols);
-    assert(sel_raw.end.x < self.cols);
+    // If the selection starts beyond the end of the screen, then we return empty
+    if (sel_raw.start.y >= self.rowsWritten()) return .{
+        .rows = 0,
+        .top_offset = 0,
+        .top = self.storage.storage[0..0],
+        .bot = self.storage.storage[0..0],
+    };
 
     const sel = sel: {
         var sel = sel_raw;
+
+        // Clamp the selection to the screen
+        if (sel.end.y >= self.rowsWritten()) {
+            sel.end.y = self.rowsWritten() - 1;
+            sel.end.x = self.cols - 1;
+        }
 
         // If the end of our selection is a wide char leader, include the
         // first part of the next line.
@@ -4005,6 +4020,46 @@ test "Screen: selectionString basic" {
         }, true);
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJ";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString start outside of written area" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 5 },
+            .end = .{ .x = 2, .y = 6 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString end outside of written area" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 2 },
+            .end = .{ .x = 2, .y = 6 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "3IJKL";
         try testing.expectEqualStrings(expected, contents);
     }
 }
