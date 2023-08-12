@@ -2119,8 +2119,14 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             // Mark the last element as not wrapped
             new_row.setWrapped(false);
 
-            // We maintain an x coord so that we can set cursors properly
+            // x is the offset where we start copying into new_row. Its also
+            // used for cursor tracking.
             var x: usize = old.cols;
+
+            // Edge case: if the end of our old row is a wide spacer head,
+            // we want to overwrite it.
+            if (old_row.getCellPtr(x - 1).attrs.wide_spacer_head) x -= 1;
+
             wrapping: while (iter.next()) |wrapped_row| {
                 // Trim the row from the right so that we ignore all trailing
                 // empty chars and don't wrap them. We only do this if the
@@ -5764,6 +5770,47 @@ test "Screen: resize less cols to eliminate wide char" {
     try testing.expect(!cell.attrs.wide);
     try testing.expect(!cell.attrs.wide_spacer_tail);
     try testing.expect(!cell.attrs.wide_spacer_head);
+}
+
+test "Screen: resize more cols with wide spacer head" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 3, 0);
+    defer s.deinit();
+    const str = "  😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("  \n😀", contents);
+    }
+
+    // So this is the key point: we end up with a wide spacer head at
+    // the end of row 1, then the emoji, then a wide spacer tail on row 2.
+    // We should expect that if we resize to more cols, the wide spacer
+    // head is replaced with the emoji.
+    {
+        const cell = s.getCell(.screen, 0, 2);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_head);
+        try testing.expect(s.getCell(.screen, 1, 0).attrs.wide);
+        try testing.expect(s.getCell(.screen, 1, 1).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(2, 4);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 2);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(!cell.attrs.wide_spacer_head);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 3).attrs.wide_spacer_tail);
+    }
 }
 
 test "Screen: jump zero" {
