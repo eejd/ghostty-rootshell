@@ -703,7 +703,7 @@ pub fn print(self: *Terminal, c: u21) !void {
         // using two cells: the first is flagged "wide" and has the
         // wide char. The second is guaranteed to be a spacer if
         // we're not at the end of the line.
-        2 => {
+        2 => if (self.cols > 1) {
             // If we don't have space for the wide char, we need
             // to insert spacers and wrap. Then we just print the wide
             // char as normal.
@@ -720,6 +720,10 @@ pub fn print(self: *Terminal, c: u21) !void {
             self.screen.cursor.x += 1;
             const spacer = self.printCell(' ');
             spacer.attrs.wide_spacer_tail = true;
+        } else {
+            // This is pretty broken, terminals should never be only 1-wide.
+            // We sould prevent this downstream.
+            _ = self.printCell(' ');
         },
 
         else => unreachable,
@@ -2450,4 +2454,27 @@ test "Terminal: cursorIsAtPrompt alternate screen" {
     try testing.expect(!t.cursorIsAtPrompt());
     t.markSemanticPrompt(.prompt);
     try testing.expect(!t.cursorIsAtPrompt());
+}
+
+test "Terminal: print wide char with 1-column width" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 1, 2);
+    defer t.deinit(alloc);
+
+    try t.print('😀'); // 0x1F600
+}
+
+// https://github.com/mitchellh/ghostty/issues/272
+// This is also tested in depth in screen resize tests but I want to keep
+// this test around to ensure we don't regress at multiple layers.
+test "Terminal: resize less cols with wide char then print" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    try t.print('x');
+    try t.print('😀'); // 0x1F600
+    try t.resize(alloc, 2, 3);
+    t.setCursorPos(1, 2);
+    try t.print('😀'); // 0x1F600
 }
