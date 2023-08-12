@@ -1092,11 +1092,25 @@ pub fn keyCallback(
             const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
 
             // If we're only pressing control, check if this is a character
-            // we convert to a non-printable.
+            // we convert to a non-printable. The best table I've found for
+            // this is:
+            // https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys
             if (mods_int == ctrl_only) {
                 const val: u8 = switch (key) {
-                    .left_bracket => 0x1B,
+                    .space => 0,
+                    .slash => 0x1F,
+                    .zero => 0x30,
+                    .one => 0x31,
+                    .two => 0x00,
+                    .three => 0x1B,
+                    .four => 0x1C,
+                    .five => 0x1D,
+                    .six => 0x1E,
+                    .seven => 0x1F,
+                    .eight => 0x7F,
+                    .nine => 0x39,
                     .backslash => 0x1C,
+                    .left_bracket => 0x1B,
                     .right_bracket => 0x1D,
                     .backspace => 0x08,
                     .a => 0x01,
