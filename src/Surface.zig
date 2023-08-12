@@ -1086,15 +1086,29 @@ pub fn keyCallback(
             return true;
         }
 
+        // If we have alt pressed, we're going to prefix any of the
+        // translations below with ESC (0x1B).
+        const alt = binding_mods.alt;
+        const unalt_mods = unalt_mods: {
+            var unalt_mods = binding_mods;
+            unalt_mods.alt = false;
+            break :unalt_mods unalt_mods;
+        };
+
         // Handle non-printables
         const char: u8 = char: {
-            const mods_int: u8 = @bitCast(binding_mods);
+            const mods_int: u8 = @bitCast(unalt_mods);
             const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
 
             // If we're only pressing control, check if this is a character
             // we convert to a non-printable. The best table I've found for
             // this is:
             // https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys
+            //
+            // Note that depending on the apprt, these might be handled as
+            // composed characters. But not all app runtimes will do this;
+            // some only compose printable characters. So we manually handle
+            // this here.
             if (mods_int == ctrl_only) {
                 const val: u8 = switch (key) {
                     .space => 0,
@@ -1157,11 +1171,20 @@ pub fn keyCallback(
         if (char > 0) {
             // Ask our IO thread to write the data
             var data: termio.Message.WriteReq.Small.Array = undefined;
-            data[0] = @intCast(char);
+
+            // Write our data. If we need to alt-prefix we add that first.
+            var i: u8 = 0;
+            if (alt) {
+                data[i] = 0x1B;
+                i += 1;
+            }
+            data[i] = @intCast(char);
+            i += 1;
+
             _ = self.io_thread.mailbox.push(.{
                 .write_small = .{
                     .data = data,
-                    .len = 1,
+                    .len = i,
                 },
             }, .{ .forever = {} });
 
