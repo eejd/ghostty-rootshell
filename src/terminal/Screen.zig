@@ -2170,7 +2170,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         // If the end of our copy is wide, we copy one less and
                         // set the wide spacer header now since we're not going
                         // to write over it anyways.
-                        if (wrapped_cells[wrapped_i + proposed - 1].cell.attrs.wide) {
+                        if (proposed > 0 and wrapped_cells[wrapped_i + proposed - 1].cell.attrs.wide) {
                             proposed -= 1;
                             new_row.getCellPtr(x + proposed).* = .{
                                 .char = ' ',
@@ -4840,6 +4840,18 @@ test "Screen: resize more cols no reflow" {
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
     }
+}
+
+// https://github.com/mitchellh/ghostty/issues/272#issuecomment-1676038963
+test "Screen: resize more cols perfect split" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH3IJKL";
+    try s.testWriteString(str);
+    try s.resize(3, 10);
 }
 
 test "Screen: resize more cols trailing background colors" {
