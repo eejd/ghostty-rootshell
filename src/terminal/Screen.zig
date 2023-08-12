@@ -2332,9 +2332,19 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             var cur_old_row_wrapped = old_row_wrapped;
             var cur_trimmed_row = trimmed_row;
             while (true) {
-                for (cur_trimmed_row, 0..) |cell, old_x| {
-                    // Set to true to write an empty cell
-                    var clear_cell: bool = false;
+                for (cur_trimmed_row, 0..) |old_cell, old_x| {
+                    var cell: StorageCell = old_cell;
+
+                    // This is a really wild edge case if we're resizing down
+                    // to 1 column. In reality this is pretty broken for end
+                    // users so downstream should prevent this.
+                    if (self.cols == 1 and
+                        (cell.cell.attrs.wide or
+                        cell.cell.attrs.wide_spacer_head or
+                        cell.cell.attrs.wide_spacer_tail))
+                    {
+                        cell = .{ .cell = .{ .char = ' ' } };
+                    }
 
                     // We need to wrap wide chars with a spacer head.
                     if (cell.cell.attrs.wide and x == self.cols - 1) {
@@ -2358,7 +2368,9 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                             y -= 1;
 
                             // Clear if our current cell is a wide spacer tail
-                            clear_cell = cell.cell.attrs.wide_spacer_tail;
+                            if (cell.cell.attrs.wide_spacer_tail) {
+                                cell = .{ .cell = .{} };
+                            }
                         }
 
                         row = self.getRow(.{ .active = y });
@@ -2373,7 +2385,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
                     // Write the cell
                     var new_cell = row.getCellPtr(x);
-                    new_cell.* = if (clear_cell) .{} else cell.cell;
+                    new_cell.* = cell.cell;
                     x += 1;
                 }
 
@@ -5801,11 +5813,11 @@ test "Screen: resize less cols to eliminate wide char" {
     {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("", contents);
+        try testing.expectEqualStrings(" ", contents);
     }
 
     const cell = s.getCell(.screen, 0, 0);
-    try testing.expectEqual(@as(u32, 0), cell.char);
+    try testing.expectEqual(@as(u32, ' '), cell.char);
     try testing.expect(!cell.attrs.wide);
     try testing.expect(!cell.attrs.wide_spacer_tail);
     try testing.expect(!cell.attrs.wide_spacer_head);
@@ -5843,6 +5855,41 @@ test "Screen: resize less cols to wrap wide char" {
         try testing.expect(!cell.attrs.wide);
         try testing.expect(!cell.attrs.wide_spacer_tail);
         try testing.expect(cell.attrs.wide_spacer_head);
+    }
+}
+
+test "Screen: resize less cols to eliminate wide char with row space" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 2, 0);
+    defer s.deinit();
+    const str = "😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 0);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 1).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(2, 1);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(" \n ", contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 0);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expect(!cell.attrs.wide_spacer_tail);
+        try testing.expect(!cell.attrs.wide_spacer_head);
     }
 }
 
