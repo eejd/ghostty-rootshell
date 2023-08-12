@@ -106,7 +106,7 @@ pub fn translate(
     } else @compileError("space code not found");
 
     // Convert our mods from our format to the Carbon API format
-    const modifier_state: u32 = (MacMods{
+    const modifier_state: u32 = (CarbonMods{
         .alt = if (mods.alt) true else false,
         .ctrl = if (mods.ctrl) true else false,
         .meta = if (mods.super) true else false,
@@ -162,28 +162,31 @@ pub fn translate(
 
 /// Map to the modifiers format used by the UCKeyTranslate function.
 /// We use a u32 here because our bit arithmetic is all u32 anyways.
-const MacMods = packed struct(u32) {
-    _padding_start: u16 = 0,
-    caps_lock: bool = false,
-    shift: bool = false,
-    ctrl: bool = false,
-    alt: bool = false,
+const CarbonMods = packed struct(u32) {
+    _padding_start: u8 = 0,
     meta: bool = false,
-    num_lock: bool = false,
-    help: bool = false,
-    function: bool = false,
-    _padding_end: u8 = 0,
+    shift: bool = false,
+    caps_lock: bool = false,
+    alt: bool = false,
+    ctrl: bool = false,
+    _padding_end: u19 = 0,
 
     /// Translate NSEventModifierFlags into the format used by UCKeyTranslate.
-    fn ucKeyTranslate(self: MacMods) u32 {
+    fn ucKeyTranslate(self: CarbonMods) u32 {
         const int: u32 = @bitCast(self);
-        return (int >> 16) & 0xFF;
+        return (int >> 8) & 0xFF;
     }
 
-    comptime {
-        // Just to be super sure
-        const v: u32 = @bitCast(MacMods{ .shift = true });
-        std.debug.assert(v == 1 << 17);
+    // We got this from dumping the values out of another program since
+    // I can't find the header for this anywhere. I find various modifier
+    // headers but they do not match this! 🥺
+    test "expected values" {
+        const testing = std.testing;
+        try testing.expectEqual(@as(u32, 0x100), @as(u32, @bitCast(CarbonMods{ .meta = true })));
+        try testing.expectEqual(@as(u32, 0x200), @as(u32, @bitCast(CarbonMods{ .shift = true })));
+        try testing.expectEqual(@as(u32, 0x400), @as(u32, @bitCast(CarbonMods{ .caps_lock = true })));
+        try testing.expectEqual(@as(u32, 0x800), @as(u32, @bitCast(CarbonMods{ .alt = true })));
+        try testing.expectEqual(@as(u32, 0x1000), @as(u32, @bitCast(CarbonMods{ .ctrl = true })));
     }
 };
 
@@ -232,6 +235,12 @@ test {
     // // Shift+1 = ! on US
     // {
     //     const result = try keymap.translate(&buf, &state, 0x12, .{ .shift = true });
+    //     std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
+    // }
+    //
+    // // Scratch space
+    // {
+    //     const result = try keymap.translate(&buf, &state, 0x00, .{ .ctrl = true });
     //     std.log.warn("map: text={s} dead={}", .{ result.text, result.composing });
     // }
 }
