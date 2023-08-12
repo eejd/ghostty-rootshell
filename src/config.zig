@@ -238,6 +238,19 @@ pub const Config = struct {
     /// animations.
     @"macos-non-native-fullscreen": bool = false,
 
+    /// If true, the Option key will be treated as Alt. This makes terminal
+    /// sequences expecting Alt to work properly, but will break Unicode
+    /// input sequences on macOS if you use them via the alt key. You may
+    /// set this to false to restore the macOS alt-key unicode sequences
+    /// but this will break terminal sequences expecting Alt to work.
+    ///
+    /// Note that if an Option-sequence doesn't produce a printable
+    /// character, it will be treated as Alt regardless of this setting.
+    /// (i.e. alt+ctrl+a).
+    ///
+    /// This does not work with GLFW builds.
+    @"macos-option-as-alt": bool = false,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 

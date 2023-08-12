@@ -1282,7 +1282,7 @@ pub const Surface = struct {
             };
             var it = view.iterator();
             while (it.nextCodepoint()) |cp| {
-                self.core_surface.charCallback(cp) catch |err| {
+                self.core_surface.charCallback(cp, mods) catch |err| {
                     log.err("error in char callback err={}", .{err});
                     return 0;
                 };
@@ -1390,7 +1390,7 @@ pub const Surface = struct {
         };
         var it = view.iterator();
         while (it.nextCodepoint()) |cp| {
-            self.core_surface.charCallback(cp) catch |err| {
+            self.core_surface.charCallback(cp, .{}) catch |err| {
                 log.err("error in char callback err={}", .{err});
                 return;
             };

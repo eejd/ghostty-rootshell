@@ -142,6 +142,7 @@ const DerivedConfig = struct {
     confirm_close_surface: bool,
     mouse_interval: u64,
     macos_non_native_fullscreen: bool,
+    macos_option_as_alt: bool,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -158,6 +159,7 @@ const DerivedConfig = struct {
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
+            .macos_option_as_alt = config.@"macos-option-as-alt",
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -985,7 +987,11 @@ pub fn preeditCallback(self: *Surface, preedit: ?u21) !void {
     try self.queueRender();
 }
 
-pub fn charCallback(self: *Surface, codepoint: u21) !void {
+pub fn charCallback(
+    self: *Surface,
+    codepoint: u21,
+    mods: input.Mods,
+) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1015,13 +1021,26 @@ pub fn charCallback(self: *Surface, codepoint: u21) !void {
         try self.io.terminal.scrollViewport(.{ .bottom = {} });
     }
 
-    // Ask our IO thread to write the data
     var data: termio.Message.WriteReq.Small.Array = undefined;
-    const len = try std.unicode.utf8Encode(codepoint, &data);
+
+    // Prefix our data with ESC if we have alt pressed.
+    var i: u8 = 0;
+    if (mods.alt) alt: {
+        // On macOS, we have to opt-in to using alt because option
+        // by default is a unicode character sequence.
+        if (comptime builtin.target.isDarwin()) {
+            if (!self.config.macos_option_as_alt) break :alt;
+        }
+
+        data[i] = 0x1b;
+        i += 1;
+    }
+
+    const len = try std.unicode.utf8Encode(codepoint, data[i..]);
     _ = self.io_thread.mailbox.push(.{
         .write_small = .{
             .data = data,
-            .len = len,
+            .len = len + i,
         },
     }, .{ .forever = {} });
 

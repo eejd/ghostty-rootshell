@@ -597,7 +597,8 @@ pub const Surface = struct {
             return;
         }
 
-        core_win.charCallback(codepoint) catch |err| {
+        // TODO: mods
+        core_win.charCallback(codepoint, .{}) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
         };
