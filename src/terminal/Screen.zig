@@ -2336,6 +2336,15 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     // Set to true to write an empty cell
                     var clear_cell: bool = false;
 
+                    // We need to wrap wide chars with a spacer head.
+                    if (cell.cell.attrs.wide and x == self.cols - 1) {
+                        row.getCellPtr(x).* = .{
+                            .char = ' ',
+                            .attrs = .{ .wide_spacer_head = true },
+                        };
+                        x += 1;
+                    }
+
                     // Soft wrap if we have to.
                     if (x == self.cols) {
                         row.setWrapped(true);
@@ -5800,6 +5809,41 @@ test "Screen: resize less cols to eliminate wide char" {
     try testing.expect(!cell.attrs.wide);
     try testing.expect(!cell.attrs.wide_spacer_tail);
     try testing.expect(!cell.attrs.wide_spacer_head);
+}
+
+test "Screen: resize less cols to wrap wide char" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 3, 0);
+    defer s.deinit();
+    const str = "x😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 1);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 2).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(3, 2);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("x\n😀", contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 1);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expect(!cell.attrs.wide_spacer_tail);
+        try testing.expect(cell.attrs.wide_spacer_head);
+    }
 }
 
 test "Screen: resize more cols with wide spacer head" {
