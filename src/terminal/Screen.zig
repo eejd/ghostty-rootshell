@@ -2119,18 +2119,35 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             // Mark the last element as not wrapped
             new_row.setWrapped(false);
 
-            // We maintain an x coord so that we can set cursors properly
+            // x is the offset where we start copying into new_row. Its also
+            // used for cursor tracking.
             var x: usize = old.cols;
+
+            // Edge case: if the end of our old row is a wide spacer head,
+            // we want to overwrite it.
+            if (old_row.getCellPtr(x - 1).attrs.wide_spacer_head) x -= 1;
+
             wrapping: while (iter.next()) |wrapped_row| {
-                // Trim the row from the right so that we ignore all trailing
-                // empty chars and don't wrap them. We only do this if the
-                // row is NOT wrapped again because the whitespace would be
-                // meaningful.
                 const wrapped_cells = trim: {
                     var i: usize = old.cols;
+
+                    // Trim the row from the right so that we ignore all trailing
+                    // empty chars and don't wrap them. We only do this if the
+                    // row is NOT wrapped again because the whitespace would be
+                    // meaningful.
                     if (!wrapped_row.header().flags.wrap) {
-                        while (i > 0) : (i -= 1) if (!wrapped_row.getCell(i - 1).empty()) break;
+                        while (i > 0) : (i -= 1) {
+                            if (!wrapped_row.getCell(i - 1).empty()) break;
+                        }
+                    } else {
+                        // If we are wrapped, then similar to above "edge case"
+                        // we want to overwrite the wide spacer head if we end
+                        // in one.
+                        if (wrapped_row.getCellPtr(i - 1).attrs.wide_spacer_head) {
+                            i -= 1;
+                        }
                     }
+
                     break :trim wrapped_row.storage[1 .. i + 1];
                 };
 
@@ -2143,7 +2160,26 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     const wrapped_cells_rem = wrapped_cells.len - wrapped_i;
 
                     // We copy as much as we can into our new row
-                    const copy_len = @min(new_row_rem, wrapped_cells_rem);
+                    const copy_len = if (new_row_rem <= wrapped_cells_rem) copy_len: {
+                        // We are going to end up filling our new row. We need
+                        // to check if the end of the row is a wide char and
+                        // if so, we need to insert a wide char header and wrap
+                        // there.
+                        var proposed: usize = new_row_rem;
+
+                        // If the end of our copy is wide, we copy one less and
+                        // set the wide spacer header now since we're not going
+                        // to write over it anyways.
+                        if (wrapped_cells[wrapped_i + proposed - 1].cell.attrs.wide) {
+                            proposed -= 1;
+                            new_row.getCellPtr(x + proposed).* = .{
+                                .char = ' ',
+                                .attrs = .{ .wide_spacer_head = true },
+                            };
+                        }
+
+                        break :copy_len proposed;
+                    } else wrapped_cells_rem;
 
                     // The row doesn't fit, meaning we have to soft-wrap the
                     // new row but probably at a diff boundary.
@@ -2296,7 +2332,29 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             var cur_old_row_wrapped = old_row_wrapped;
             var cur_trimmed_row = trimmed_row;
             while (true) {
-                for (cur_trimmed_row, 0..) |cell, old_x| {
+                for (cur_trimmed_row, 0..) |old_cell, old_x| {
+                    var cell: StorageCell = old_cell;
+
+                    // This is a really wild edge case if we're resizing down
+                    // to 1 column. In reality this is pretty broken for end
+                    // users so downstream should prevent this.
+                    if (self.cols == 1 and
+                        (cell.cell.attrs.wide or
+                        cell.cell.attrs.wide_spacer_head or
+                        cell.cell.attrs.wide_spacer_tail))
+                    {
+                        cell = .{ .cell = .{ .char = ' ' } };
+                    }
+
+                    // We need to wrap wide chars with a spacer head.
+                    if (cell.cell.attrs.wide and x == self.cols - 1) {
+                        row.getCellPtr(x).* = .{
+                            .char = ' ',
+                            .attrs = .{ .wide_spacer_head = true },
+                        };
+                        x += 1;
+                    }
+
                     // Soft wrap if we have to.
                     if (x == self.cols) {
                         row.setWrapped(true);
@@ -2308,6 +2366,11 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                         if (y >= self.rows) {
                             try self.scroll(.{ .screen = 1 });
                             y -= 1;
+
+                            // Clear if our current cell is a wide spacer tail
+                            if (cell.cell.attrs.wide_spacer_tail) {
+                                cell = .{ .cell = .{} };
+                            }
                         }
 
                         row = self.getRow(.{ .active = y });
@@ -2396,8 +2459,12 @@ fn trimRowForResizeLessCols(self: *Screen, old: *Screen, row: Row) []StorageCell
         if (!cell.empty()) {
             // If we are beyond our new width and this is just
             // an empty-character stylized cell, then we trim it.
+            // We also have to ignore wide spacers because they form
+            // a critical part of a wide character.
             if (i > self.cols) {
-                if (cell.char == 0 or cell.char == ' ') continue;
+                if ((cell.char == 0 or cell.char == ' ') and
+                    !cell.attrs.wide_spacer_tail and
+                    !cell.attrs.wide_spacer_head) continue;
             }
 
             break;
@@ -5719,6 +5786,232 @@ test "Screen: resize more rows then shrink again" {
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
         try testing.expectEqualStrings(str, contents);
+    }
+}
+
+test "Screen: resize less cols to eliminate wide char" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 2, 0);
+    defer s.deinit();
+    const str = "😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 0);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+    }
+
+    // Resize to 1 column can't fit a wide char. So it should be deleted.
+    try s.resize(1, 1);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(" ", contents);
+    }
+
+    const cell = s.getCell(.screen, 0, 0);
+    try testing.expectEqual(@as(u32, ' '), cell.char);
+    try testing.expect(!cell.attrs.wide);
+    try testing.expect(!cell.attrs.wide_spacer_tail);
+    try testing.expect(!cell.attrs.wide_spacer_head);
+}
+
+test "Screen: resize less cols to wrap wide char" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 3, 0);
+    defer s.deinit();
+    const str = "x😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 1);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 2).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(3, 2);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("x\n😀", contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 1);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expect(!cell.attrs.wide_spacer_tail);
+        try testing.expect(cell.attrs.wide_spacer_head);
+    }
+}
+
+test "Screen: resize less cols to eliminate wide char with row space" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 2, 0);
+    defer s.deinit();
+    const str = "😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 0);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 1).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(2, 1);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(" \n ", contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 0);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expect(!cell.attrs.wide_spacer_tail);
+        try testing.expect(!cell.attrs.wide_spacer_head);
+    }
+}
+
+test "Screen: resize more cols with wide spacer head" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 3, 0);
+    defer s.deinit();
+    const str = "  😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("  \n😀", contents);
+    }
+
+    // So this is the key point: we end up with a wide spacer head at
+    // the end of row 1, then the emoji, then a wide spacer tail on row 2.
+    // We should expect that if we resize to more cols, the wide spacer
+    // head is replaced with the emoji.
+    {
+        const cell = s.getCell(.screen, 0, 2);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_head);
+        try testing.expect(s.getCell(.screen, 1, 0).attrs.wide);
+        try testing.expect(s.getCell(.screen, 1, 1).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(2, 4);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 2);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(!cell.attrs.wide_spacer_head);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 3).attrs.wide_spacer_tail);
+    }
+}
+
+test "Screen: resize more cols with wide spacer head multiple lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 3, 0);
+    defer s.deinit();
+    const str = "xxxyy😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("xxx\nyy\n😀", contents);
+    }
+
+    // Similar to the "wide spacer head" test, but this time we'er going
+    // to increase our columns such that multiple rows are unwrapped.
+    {
+        const cell = s.getCell(.screen, 1, 2);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_head);
+        try testing.expect(s.getCell(.screen, 2, 0).attrs.wide);
+        try testing.expect(s.getCell(.screen, 2, 1).attrs.wide_spacer_tail);
+    }
+
+    try s.resize(2, 8);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 5);
+        try testing.expect(!cell.attrs.wide_spacer_head);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 0, 6).attrs.wide_spacer_tail);
+    }
+}
+
+test "Screen: resize more cols requiring a wide spacer head" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 2, 0);
+    defer s.deinit();
+    const str = "xx😀";
+    try s.testWriteString(str);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("xx\n😀", contents);
+    }
+    {
+        try testing.expect(s.getCell(.screen, 1, 0).attrs.wide);
+        try testing.expect(s.getCell(.screen, 1, 1).attrs.wide_spacer_tail);
+    }
+
+    // This resizes to 3 columns, which isn't enough space for our wide
+    // char to enter row 1. But we need to mark the wide spacer head on the
+    // end of the first row since we're wrapping to the next row.
+    try s.resize(2, 3);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("xx\n😀", contents);
+    }
+    {
+        const cell = s.getCell(.screen, 0, 2);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_head);
+        try testing.expect(s.getCell(.screen, 1, 0).attrs.wide);
+        try testing.expect(s.getCell(.screen, 1, 1).attrs.wide_spacer_tail);
+    }
+    {
+        const cell = s.getCell(.screen, 1, 0);
+        try testing.expectEqual(@as(u32, '😀'), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expect(s.getCell(.screen, 1, 1).attrs.wide_spacer_tail);
     }
 }
 
