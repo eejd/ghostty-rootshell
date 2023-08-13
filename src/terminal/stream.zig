@@ -850,6 +850,10 @@ pub fn Stream(comptime Handler: type) type {
                     try self.handler.escUnimplemented(action)
                 else
                     log.warn("unimplemented ESC action: {}", .{action}),
+
+                // Sets ST (string terminator). We don't have to do anything
+                // because our parser always accepts ST.
+                '\\' => {},
             }
         }
     };
