@@ -238,6 +238,19 @@ pub const Config = struct {
     /// animations.
     @"macos-non-native-fullscreen": bool = false,
 
+    /// If true, the Option key will be treated as Alt. This makes terminal
+    /// sequences expecting Alt to work properly, but will break Unicode
+    /// input sequences on macOS if you use them via the alt key. You may
+    /// set this to false to restore the macOS alt-key unicode sequences
+    /// but this will break terminal sequences expecting Alt to work.
+    ///
+    /// Note that if an Option-sequence doesn't produce a printable
+    /// character, it will be treated as Alt regardless of this setting.
+    /// (i.e. alt+ctrl+a).
+    ///
+    /// This does not work with GLFW builds.
+    @"macos-option-as-alt": bool = false,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
@@ -307,9 +320,6 @@ pub const Config = struct {
         };
         errdefer result.deinit();
         const alloc = result._arena.?.allocator();
-
-        // Add the PC style function keys first so that we can override any later.
-        try result.defaultPCStyleFunctionKeys(alloc);
 
         // Add our default keybindings
         try result.keybind.set.put(
@@ -630,129 +640,6 @@ pub const Config = struct {
         }
 
         return result;
-    }
-
-    fn defaultPCStyleFunctionKeys(result: *Config, alloc: Allocator) !void {
-        // Some control keys
-        try result.keybind.set.put(alloc, .{ .key = .up }, .{ .cursor_key = .{
-            .normal = "\x1b[A",
-            .application = "\x1bOA",
-        } });
-        try result.keybind.set.put(alloc, .{ .key = .down }, .{ .cursor_key = .{
-            .normal = "\x1b[B",
-            .application = "\x1bOB",
-        } });
-        try result.keybind.set.put(alloc, .{ .key = .right }, .{ .cursor_key = .{
-            .normal = "\x1b[C",
-            .application = "\x1bOC",
-        } });
-        try result.keybind.set.put(alloc, .{ .key = .left }, .{ .cursor_key = .{
-            .normal = "\x1b[D",
-            .application = "\x1bOD",
-        } });
-        try result.keybind.set.put(alloc, .{ .key = .home }, .{ .cursor_key = .{
-            .normal = "\x1b[H",
-            .application = "\x1bOH",
-        } });
-        try result.keybind.set.put(alloc, .{ .key = .end }, .{ .cursor_key = .{
-            .normal = "\x1b[F",
-            .application = "\x1bOF",
-        } });
-
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .tab, .mods = .{ .shift = true } },
-            .{ .csi = "Z" },
-        );
-
-        try result.keybind.set.put(alloc, .{ .key = .insert }, .{ .csi = "2~" });
-        try result.keybind.set.put(alloc, .{ .key = .delete }, .{ .csi = "3~" });
-        try result.keybind.set.put(alloc, .{ .key = .page_up }, .{ .csi = "5~" });
-        try result.keybind.set.put(alloc, .{ .key = .page_down }, .{ .csi = "6~" });
-
-        // From xterm:
-        // Note that F1 through F4 are prefixed with SS3 , while the other keys are
-        // prefixed with CSI .  Older versions of xterm implement different escape
-        // sequences for F1 through F4, with a CSI  prefix.  These can be activated
-        // by setting the oldXtermFKeys resource.  However, since they do not
-        // correspond to any hardware terminal, they have been deprecated.  (The
-        // DEC VT220 reserves F1 through F5 for local functions such as Setup).
-        try result.keybind.set.put(alloc, .{ .key = .f1 }, .{ .csi = "11~" });
-        try result.keybind.set.put(alloc, .{ .key = .f2 }, .{ .csi = "12~" });
-        try result.keybind.set.put(alloc, .{ .key = .f3 }, .{ .csi = "13~" });
-        try result.keybind.set.put(alloc, .{ .key = .f4 }, .{ .csi = "14~" });
-        try result.keybind.set.put(alloc, .{ .key = .f5 }, .{ .csi = "15~" });
-        try result.keybind.set.put(alloc, .{ .key = .f6 }, .{ .csi = "17~" });
-        try result.keybind.set.put(alloc, .{ .key = .f7 }, .{ .csi = "18~" });
-        try result.keybind.set.put(alloc, .{ .key = .f8 }, .{ .csi = "19~" });
-        try result.keybind.set.put(alloc, .{ .key = .f9 }, .{ .csi = "20~" });
-        try result.keybind.set.put(alloc, .{ .key = .f10 }, .{ .csi = "21~" });
-        try result.keybind.set.put(alloc, .{ .key = .f11 }, .{ .csi = "23~" });
-        try result.keybind.set.put(alloc, .{ .key = .f12 }, .{ .csi = "24~" });
-
-        // From: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
-        //
-        // In normal mode, i.e., a Sun/PC keyboard when the sunKeyboard resource is
-        // false (and none of the other keyboard resources such as oldXtermFKeys
-        // resource is set), xterm encodes function key modifiers as parameters
-        // appended before the final character of the control sequence.  As a
-        // special case, the SS3  sent before F1 through F4 is altered to CSI  when
-        // sending a function key modifier as a parameter.
-        //
-        //      Code     Modifiers
-        //    ---------+---------------------------
-        //       2     | Shift
-        //       3     | Alt
-        //       4     | Shift + Alt
-        //       5     | Control
-        //       6     | Shift + Control
-        //       7     | Alt + Control
-        //       8     | Shift + Alt + Control
-        //       9     | Meta
-        //       10    | Meta + Shift
-        //       11    | Meta + Alt
-        //       12    | Meta + Alt + Shift
-        //       13    | Meta + Ctrl
-        //       14    | Meta + Ctrl + Shift
-        //       15    | Meta + Ctrl + Alt
-        //       16    | Meta + Ctrl + Alt + Shift
-        //    ---------+---------------------------
-        const modifiers: []const inputpkg.Mods = &.{
-            .{ .shift = true },
-            .{ .alt = true },
-            .{ .shift = true, .alt = true },
-            .{ .ctrl = true },
-            .{ .shift = true, .ctrl = true },
-            .{ .alt = true, .ctrl = true },
-            .{ .shift = true, .alt = true, .ctrl = true },
-            // todo: do we do meta or not?
-        };
-        inline for (modifiers, 2..) |mods, code| {
-            const m: []const u8 = &.{code + 48};
-            const set = &result.keybind.set;
-            try set.put(alloc, .{ .key = .end, .mods = mods }, .{ .csi = "1;" ++ m ++ "F" });
-            try set.put(alloc, .{ .key = .home, .mods = mods }, .{ .csi = "1;" ++ m ++ "H" });
-            try set.put(alloc, .{ .key = .insert, .mods = mods }, .{ .csi = "2;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .delete, .mods = mods }, .{ .csi = "3;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .page_up, .mods = mods }, .{ .csi = "5;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .page_down, .mods = mods }, .{ .csi = "6;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .up, .mods = mods }, .{ .csi = "1;" ++ m ++ "A" });
-            try set.put(alloc, .{ .key = .down, .mods = mods }, .{ .csi = "1;" ++ m ++ "B" });
-            try set.put(alloc, .{ .key = .right, .mods = mods }, .{ .csi = "1;" ++ m ++ "C" });
-            try set.put(alloc, .{ .key = .left, .mods = mods }, .{ .csi = "1;" ++ m ++ "D" });
-            try set.put(alloc, .{ .key = .f1, .mods = mods }, .{ .csi = "11;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f2, .mods = mods }, .{ .csi = "12;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f3, .mods = mods }, .{ .csi = "13;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f4, .mods = mods }, .{ .csi = "14;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f5, .mods = mods }, .{ .csi = "15;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f6, .mods = mods }, .{ .csi = "17;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f7, .mods = mods }, .{ .csi = "18;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f8, .mods = mods }, .{ .csi = "19;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f9, .mods = mods }, .{ .csi = "20;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f10, .mods = mods }, .{ .csi = "21;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f11, .mods = mods }, .{ .csi = "23;" ++ m ++ "~" });
-            try set.put(alloc, .{ .key = .f12, .mods = mods }, .{ .csi = "24;" ++ m ++ "~" });
-        }
     }
 
     /// This sets either "ctrl" or "super" to true (but not both)

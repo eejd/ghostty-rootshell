@@ -390,13 +390,23 @@ pub const Surface = struct {
         // We don't handle release events because we don't use them yet.
         if (action != .press and action != .repeat) return;
 
+        // If we're on macOS and we have macos-option-as-alt enabled,
+        // then we strip the alt modifier from the mods for translation.
+        const translate_mods = translate_mods: {
+            var translate_mods = mods;
+            if (self.app.config.@"macos-option-as-alt")
+                translate_mods.alt = false;
+
+            break :translate_mods translate_mods;
+        };
+
         // Translate our key using the keymap for our localized keyboard layout.
         var buf: [128]u8 = undefined;
         const result = try self.app.keymap.translate(
             &buf,
             &self.keymap_state,
             @intCast(keycode),
-            mods,
+            translate_mods,
         );
 
         // If we aren't composing, then we set our preedit to empty no matter what.
@@ -472,7 +482,7 @@ pub const Surface = struct {
 
         // Next, we want to call the char callback with each codepoint.
         while (it.nextCodepoint()) |cp| {
-            self.core_surface.charCallback(cp) catch |err| {
+            self.core_surface.charCallback(cp, mods) catch |err| {
                 log.err("error in char callback err={}", .{err});
                 return;
             };
@@ -481,7 +491,7 @@ pub const Surface = struct {
 
     pub fn charCallback(self: *Surface, cp_: u32) void {
         const cp = std.math.cast(u21, cp_) orelse return;
-        self.core_surface.charCallback(cp) catch |err| {
+        self.core_surface.charCallback(cp, .{}) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
         };

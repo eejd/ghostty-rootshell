@@ -21,6 +21,7 @@ pub const CursorStyle = ansi.CursorStyle;
 pub const DeviceAttributeReq = ansi.DeviceAttributeReq;
 pub const DeviceStatusReq = ansi.DeviceStatusReq;
 pub const Mode = ansi.Mode;
+pub const ModifyKeyFormat = ansi.ModifyKeyFormat;
 pub const StatusLineType = ansi.StatusLineType;
 pub const StatusDisplay = ansi.StatusDisplay;
 pub const EraseDisplay = csi.EraseDisplay;

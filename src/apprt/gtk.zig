@@ -1184,7 +1184,7 @@ pub const Surface = struct {
     /// in a keypress, we let those automatically work.
     fn gtkKeyPressed(
         ec_key: *c.GtkEventControllerKey,
-        _: c.guint,
+        keyval: c.guint,
         keycode: c.guint,
         gtk_mods: c.GdkModifierType,
         ud: ?*anyopaque,
@@ -1225,8 +1225,9 @@ pub const Surface = struct {
             break :key input.Key.fromASCII(self.im_buf[0]) orelse physical_key;
         } else .invalid;
 
-        // log.debug("key pressed key={} physical_key={} composing={} text_len={} mods={}", .{
+        // log.debug("key pressed key={} keyval={x} physical_key={} composing={} text_len={} mods={}", .{
         //     key,
+        //     keyval,
         //     physical_key,
         //     self.im_composing,
         //     self.im_len,
@@ -1273,6 +1274,21 @@ pub const Surface = struct {
             return 0;
         }
 
+        // If we aren't composing and have no text, we try to convert the keyval
+        // to a text value. We have to do this because GTK will not process
+        // "Ctrl+Shift+1" (on US keyboards) as "Ctrl+!" but instead as "".
+        // But the keyval is set correctly so we can at least extract that.
+        if (self.im_len == 0) {
+            const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
+            if (keyval_unicode != 0) {
+                if (std.math.cast(u21, keyval_unicode)) |cp| {
+                    if (std.unicode.utf8Encode(cp, &self.im_buf)) |len| {
+                        self.im_len = len;
+                    } else |_| {}
+                }
+            }
+        }
+
         // Next, we want to call the char callback with each codepoint.
         if (self.im_len > 0) {
             const text = self.im_buf[0..self.im_len];
@@ -1282,7 +1298,7 @@ pub const Surface = struct {
             };
             var it = view.iterator();
             while (it.nextCodepoint()) |cp| {
-                self.core_surface.charCallback(cp) catch |err| {
+                self.core_surface.charCallback(cp, mods) catch |err| {
                     log.err("error in char callback err={}", .{err});
                     return 0;
                 };
@@ -1390,7 +1406,7 @@ pub const Surface = struct {
         };
         var it = view.iterator();
         while (it.nextCodepoint()) |cp| {
-            self.core_surface.charCallback(cp) catch |err| {
+            self.core_surface.charCallback(cp, .{}) catch |err| {
                 log.err("error in char callback err={}", .{err});
                 return;
             };

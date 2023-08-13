@@ -90,6 +90,8 @@ modes: packed struct {
 
     deccolm: bool = false, // 3,
     deccolm_supported: bool = false, // 40
+    keypad_keys: bool = false, // 66
+    alt_esc_prefix: bool = true, // 1036
 
     focus_event: bool = false, // 1004
     mouse_alternate_scroll: bool = true, // 1007
@@ -97,6 +99,10 @@ modes: packed struct {
     mouse_format: MouseFormat = .x10,
 
     bracketed_paste: bool = false, // 2004
+
+    // This is set via ESC[4;2m. Any other modify key mode just sets
+    // this to false.
+    modify_other_keys: bool = false,
 
     // This isn't a mode, this is set by OSC 133 using the "A" event.
     // If this is true, it tells us that the shell supports redrawing

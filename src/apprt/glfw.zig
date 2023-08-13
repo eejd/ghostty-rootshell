@@ -285,6 +285,7 @@ pub const Surface = struct {
     /// This is set to true when keyCallback consumes the input, suppressing
     /// the charCallback from being fired.
     key_consumed: bool = false,
+    key_mods: input.Mods = .{},
 
     pub const Options = struct {};
 
@@ -597,7 +598,7 @@ pub const Surface = struct {
             return;
         }
 
-        core_win.charCallback(codepoint) catch |err| {
+        core_win.charCallback(codepoint, core_win.rt_surface.key_mods) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
         };
@@ -610,15 +611,11 @@ pub const Surface = struct {
         glfw_action: glfw.Action,
         glfw_mods: glfw.Mods,
     ) void {
+        const tracy = trace(@src());
+        defer tracy.end();
         _ = scancode;
 
         const core_win = window.getUserPointer(CoreSurface) orelse return;
-
-        // Reset our consumption state
-        core_win.rt_surface.key_consumed = false;
-
-        const tracy = trace(@src());
-        defer tracy.end();
 
         // Convert our glfw types into our input types
         const mods: input.Mods = @bitCast(glfw_mods);
@@ -755,6 +752,7 @@ pub const Surface = struct {
 
         // TODO: we need to do mapped keybindings
 
+        core_win.rt_surface.key_mods = mods;
         core_win.rt_surface.key_consumed = core_win.keyCallback(
             action,
             key,

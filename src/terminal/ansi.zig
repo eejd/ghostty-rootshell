@@ -88,6 +88,9 @@ pub const Mode = enum(u16) {
     /// mode ?3 is set or unset.
     enable_mode_3 = 40,
 
+    /// DECNKM. Sets application keypad mode if enabled.
+    keypad_keys = 66,
+
     /// "Normal" mouse events: click/release, scroll
     mouse_event_normal = 1000,
 
@@ -117,6 +120,12 @@ pub const Mode = enum(u16) {
 
     /// Report mouse position in the SGR format as pixels, instead of cells.
     mouse_format_sgr_pixels = 1016,
+
+    /// The alt key sends esc as a prefix before any character. On by default.
+    alt_esc_prefix = 1036,
+
+    /// altSendsEscape xterm (https://invisible-island.net/xterm/manpage/xterm.html)
+    alt_sends_escape = 1039,
 
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
@@ -188,4 +197,13 @@ pub const StatusDisplay = enum(u16) {
 
     // Non-exhaustive so that @intToEnum never fails for unsupported values.
     _,
+};
+
+/// The possible modify key formats to ESC[>{a};{b}m
+/// Note: this is not complete, we should add more as we support more
+pub const ModifyKeyFormat = union(enum) {
+    legacy: void,
+    cursor_keys: void,
+    function_keys: void,
+    other_keys: enum { none, numeric_except, numeric },
 };

@@ -1183,6 +1183,17 @@ const StreamHandler = struct {
         self.terminal.setScrollingRegion(top, bot);
     }
 
+    pub fn setModifyKeyFormat(self: *StreamHandler, format: terminal.ModifyKeyFormat) !void {
+        self.terminal.modes.modify_other_keys = false;
+        switch (format) {
+            .other_keys => |v| switch (v) {
+                .numeric => self.terminal.modes.modify_other_keys = true,
+                else => {},
+            },
+            else => {},
+        }
+    }
+
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
         // Note: this function doesn't need to grab the render state or
         // terminal locks because it is only called from process() which
@@ -1191,6 +1202,10 @@ const StreamHandler = struct {
         switch (mode) {
             .cursor_keys => {
                 self.terminal.modes.cursor_keys = enabled;
+            },
+
+            .keypad_keys => {
+                self.terminal.modes.keypad_keys = enabled;
             },
 
             .insert => {
@@ -1259,8 +1274,8 @@ const StreamHandler = struct {
             .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
 
             .mouse_alternate_scroll => self.terminal.modes.mouse_alternate_scroll = enabled,
-
             .focus_event => self.terminal.modes.focus_event = enabled,
+            .alt_esc_prefix => self.terminal.modes.alt_esc_prefix = enabled,
 
             else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
         }
