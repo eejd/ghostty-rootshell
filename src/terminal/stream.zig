@@ -508,17 +508,38 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 },
 
-                // CPR - Request Cursor Position Report
                 // TODO: test
-                'n' => if (@hasDecl(T, "deviceStatusReport")) try self.handler.deviceStatusReport(
-                    switch (action.params.len) {
-                        1 => @enumFromInt(action.params[0]),
-                        else => {
-                            log.warn("invalid erase characters command: {}", .{action});
-                            return;
+                'n' => switch (action.intermediates.len) {
+                    0 => if (@hasDecl(T, "deviceStatusReport")) try self.handler.deviceStatusReport(
+                        switch (action.params.len) {
+                            1 => @enumFromInt(action.params[0]),
+                            else => {
+                                log.warn("invalid erase characters command: {}", .{action});
+                                return;
+                            },
                         },
+                    ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                    1 => switch (action.intermediates[0]) {
+                        '>' => if (@hasDecl(T, "setModifyKeyFormat")) {
+                            // This isn't strictly correct. CSI > n has parameters that
+                            // control what exactly is being disabled. However, we
+                            // only support reverting back to modify other keys in
+                            // numeric except format.
+                            try self.handler.setModifyKeyFormat(.{ .other_keys = .numeric_except });
+                        } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
+
+                        else => log.warn(
+                            "unknown CSI m with intermediate: {}",
+                            .{action.intermediates[0]},
+                        ),
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI n with intermediates: {s}",
+                        .{action.intermediates},
+                    ),
+                },
 
                 // DECSCUSR - Select Cursor Style
                 // TODO: test
