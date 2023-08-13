@@ -99,6 +99,10 @@ modes: packed struct {
 
     bracketed_paste: bool = false, // 2004
 
+    // This is set via ESC[4;2m. Any other modify key mode just sets
+    // this to false.
+    modify_other_keys: bool = false,
+
     // This isn't a mode, this is set by OSC 133 using the "A" event.
     // If this is true, it tells us that the shell supports redrawing
     // the prompt and that when we resize, if the cursor is at a prompt,

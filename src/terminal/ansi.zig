@@ -192,3 +192,12 @@ pub const StatusDisplay = enum(u16) {
     // Non-exhaustive so that @intToEnum never fails for unsupported values.
     _,
 };
+
+/// The possible modify key formats to ESC[>{a};{b}m
+/// Note: this is not complete, we should add more as we support more
+pub const ModifyKeyFormat = union(enum) {
+    legacy: void,
+    cursor_keys: void,
+    function_keys: void,
+    other_keys: enum { none, numeric_except, numeric },
+};

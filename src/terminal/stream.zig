@@ -437,25 +437,75 @@ pub fn Stream(comptime Handler: type) type {
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // SGR - Select Graphic Rendition
-                'm' => if (action.intermediates.len == 0) {
-                    if (@hasDecl(T, "setAttribute")) {
+                'm' => switch (action.intermediates.len) {
+                    0 => if (@hasDecl(T, "setAttribute")) {
                         var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
                         while (p.next()) |attr| {
                             // log.info("SGR attribute: {}", .{attr});
                             try self.handler.setAttribute(attr);
                         }
-                    } else log.warn("unimplemented CSI callback: {}", .{action});
-                } else {
-                    // Nothing, but I wanted a place to put this comment:
-                    // there are others forms of CSI m that have intermediates.
-                    // `vim --clean` uses `CSI ? 4 m` and I don't know what
-                    // that means. And there is also `CSI > m` which is used
-                    // to control modifier key reporting formats that we don't
-                    // support yet.
-                    log.debug(
-                        "ignoring unimplemented CSI m with intermediates: {s}",
-                        .{action.intermediates},
-                    );
+                    } else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                    1 => switch (action.intermediates[0]) {
+                        '>' => if (@hasDecl(T, "setModifyKeyFormat")) blk: {
+                            if (action.params.len == 0) {
+                                // Reset
+                                try self.handler.setModifyKeyFormat(.{ .legacy = {} });
+                                break :blk;
+                            }
+
+                            var format: ansi.ModifyKeyFormat = switch (action.params[0]) {
+                                0 => .{ .legacy = {} },
+                                1 => .{ .cursor_keys = {} },
+                                2 => .{ .function_keys = {} },
+                                4 => .{ .other_keys = .none },
+                                else => {
+                                    log.warn("invalid setModifyKeyFormat: {}", .{action});
+                                    break :blk;
+                                },
+                            };
+
+                            if (action.params.len > 2) {
+                                log.warn("invalid setModifyKeyFormat: {}", .{action});
+                                break :blk;
+                            }
+
+                            if (action.params.len == 2) {
+                                switch (format) {
+                                    // We don't support any of the subparams yet for these.
+                                    .legacy => {},
+                                    .cursor_keys => {},
+                                    .function_keys => {},
+
+                                    // We only support the numeric form.
+                                    .other_keys => |*v| switch (action.params[1]) {
+                                        2 => v.* = .numeric,
+                                        else => v.* = .none,
+                                    },
+                                }
+                            }
+
+                            try self.handler.setModifyKeyFormat(format);
+                        } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
+
+                        else => log.warn(
+                            "unknown CSI m with intermediate: {}",
+                            .{action.intermediates[0]},
+                        ),
+                    },
+
+                    else => {
+                        // Nothing, but I wanted a place to put this comment:
+                        // there are others forms of CSI m that have intermediates.
+                        // `vim --clean` uses `CSI ? 4 m` and I don't know what
+                        // that means. And there is also `CSI > m` which is used
+                        // to control modifier key reporting formats that we don't
+                        // support yet.
+                        log.warn(
+                            "ignoring unimplemented CSI m with intermediates: {s}",
+                            .{action.intermediates},
+                        );
+                    },
                 },
 
                 // CPR - Request Cursor Position Report

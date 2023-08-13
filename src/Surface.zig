@@ -1115,6 +1115,7 @@ pub fn keyCallback(
     self.renderer_state.mutex.lock();
     const cursor_key_application = self.io.terminal.modes.cursor_keys;
     const keypad_key_application = self.io.terminal.modes.keypad_keys;
+    const modify_other_keys = self.io.terminal.modes.modify_other_keys;
     self.renderer_state.mutex.unlock();
 
     // Check if we're processing a function key.
@@ -1133,10 +1134,8 @@ pub fn keyCallback(
 
         switch (entry.modify_other_keys) {
             .any => {},
-
-            // TODO
-            .set => {},
-            .set_other => continue,
+            .set => if (modify_other_keys) continue,
+            .set_other => if (!modify_other_keys) continue,
         }
 
         const mods_int: u8 = @bitCast(binding_mods);

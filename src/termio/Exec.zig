@@ -1183,6 +1183,17 @@ const StreamHandler = struct {
         self.terminal.setScrollingRegion(top, bot);
     }
 
+    pub fn setModifyKeyFormat(self: *StreamHandler, format: terminal.ModifyKeyFormat) !void {
+        self.terminal.modes.modify_other_keys = false;
+        switch (format) {
+            .other_keys => |v| switch (v) {
+                .numeric => self.terminal.modes.modify_other_keys = true,
+                else => {},
+            },
+            else => {},
+        }
+    }
+
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
         // Note: this function doesn't need to grab the render state or
         // terminal locks because it is only called from process() which
