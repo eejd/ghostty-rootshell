@@ -161,15 +161,15 @@ pub fn focusedSurface(self: *const App) ?*Surface {
 /// Initialize once and return the font discovery mechanism. This remains
 /// initialized throughout the lifetime of the application because some
 /// font discovery mechanisms (i.e. fontconfig) are unsafe to reinit.
-pub fn fontDiscover(self: *App) !?font.Discover {
+pub fn fontDiscover(self: *App) !?*font.Discover {
     // If we're built without a font discovery mechanism, return null
     if (comptime font.Discover == void) return null;
 
     // If we initialized, use it
-    if (self.font_discover) |v| return v;
+    if (self.font_discover) |*v| return v;
 
     self.font_discover = font.Discover.init();
-    return self.font_discover.?;
+    return &self.font_discover.?;
 }
 
 /// Drain the mailbox.
