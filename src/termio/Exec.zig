@@ -1193,6 +1193,10 @@ const StreamHandler = struct {
                 self.terminal.modes.cursor_keys = enabled;
             },
 
+            .keypad_keys => {
+                self.terminal.modes.keypad_keys = enabled;
+            },
+
             .insert => {
                 self.terminal.modes.insert = enabled;
             },

@@ -1114,6 +1114,7 @@ pub fn keyCallback(
     // We'll need to know these values here on.
     self.renderer_state.mutex.lock();
     const cursor_key_application = self.io.terminal.modes.cursor_keys;
+    const keypad_key_application = self.io.terminal.modes.keypad_keys;
     self.renderer_state.mutex.unlock();
 
     // Check if we're processing a function key.
@@ -1126,7 +1127,8 @@ pub fn keyCallback(
 
         switch (entry.keypad) {
             .any => {},
-            else => {}, // TODO
+            .normal => if (keypad_key_application) continue,
+            .application => if (!keypad_key_application) continue,
         }
 
         switch (entry.modify_other_keys) {

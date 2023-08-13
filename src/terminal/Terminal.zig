@@ -90,6 +90,7 @@ modes: packed struct {
 
     deccolm: bool = false, // 3,
     deccolm_supported: bool = false, // 40
+    keypad_keys: bool = false, // 66
 
     focus_event: bool = false, // 1004
     mouse_alternate_scroll: bool = true, // 1007

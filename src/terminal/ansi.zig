@@ -88,6 +88,9 @@ pub const Mode = enum(u16) {
     /// mode ?3 is set or unset.
     enable_mode_3 = 40,
 
+    /// DECNKM. Sets application keypad mode if enabled.
+    keypad_keys = 66,
+
     /// "Normal" mouse events: click/release, scroll
     mouse_event_normal = 1000,
 

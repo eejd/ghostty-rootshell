@@ -765,6 +765,16 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 } else log.warn("unimplemented invokeCharset: {}", .{action}),
 
+                // Set application keypad mode
+                '=' => if (@hasDecl(T, "setMode")) {
+                    try self.handler.setMode(.keypad_keys, true);
+                } else log.warn("unimplemented setMode: {}", .{action}),
+
+                // Reset application keypad mode
+                '>' => if (@hasDecl(T, "setMode")) {
+                    try self.handler.setMode(.keypad_keys, false);
+                } else log.warn("unimplemented setMode: {}", .{action}),
+
                 else => if (@hasDecl(T, "escUnimplemented"))
                     try self.handler.escUnimplemented(action)
                 else
