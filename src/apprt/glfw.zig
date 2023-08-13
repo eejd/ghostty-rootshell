@@ -611,15 +611,11 @@ pub const Surface = struct {
         glfw_action: glfw.Action,
         glfw_mods: glfw.Mods,
     ) void {
+        const tracy = trace(@src());
+        defer tracy.end();
         _ = scancode;
 
         const core_win = window.getUserPointer(CoreSurface) orelse return;
-
-        // Reset our consumption state
-        core_win.rt_surface.key_consumed = false;
-
-        const tracy = trace(@src());
-        defer tracy.end();
 
         // Convert our glfw types into our input types
         const mods: input.Mods = @bitCast(glfw_mods);
@@ -756,6 +752,7 @@ pub const Surface = struct {
 
         // TODO: we need to do mapped keybindings
 
+        core_win.rt_surface.key_mods = mods;
         core_win.rt_surface.key_consumed = core_win.keyCallback(
             action,
             key,

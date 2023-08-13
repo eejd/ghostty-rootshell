@@ -121,6 +121,9 @@ pub const Mode = enum(u16) {
     /// Report mouse position in the SGR format as pixels, instead of cells.
     mouse_format_sgr_pixels = 1016,
 
+    /// The alt key sends esc as a prefix before any character. On by default.
+    alt_esc_prefix = 1036,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 

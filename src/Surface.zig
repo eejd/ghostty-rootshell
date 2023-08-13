@@ -1006,7 +1006,9 @@ pub fn charCallback(
     }
 
     // Critical area
-    {
+    const critical: struct {
+        alt_esc_prefix: bool,
+    } = critical: {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
@@ -1019,17 +1021,31 @@ pub fn charCallback(
         // We want to scroll to the bottom
         // TODO: detect if we're at the bottom to avoid the render call here.
         try self.io.terminal.scrollViewport(.{ .bottom = {} });
-    }
+
+        break :critical .{
+            .alt_esc_prefix = self.io.terminal.modes.alt_esc_prefix,
+        };
+    };
 
     var data: termio.Message.WriteReq.Small.Array = undefined;
 
     // Prefix our data with ESC if we have alt pressed.
     var i: u8 = 0;
     if (mods.alt) alt: {
+        // If the terminal explicitly disabled this feature using mode 1036,
+        // then we don't send the prefix.
+        if (!critical.alt_esc_prefix) {
+            log.debug("alt_esc_prefix disabled with mode, not sending esc prefix", .{});
+            break :alt;
+        }
+
         // On macOS, we have to opt-in to using alt because option
         // by default is a unicode character sequence.
         if (comptime builtin.target.isDarwin()) {
-            if (!self.config.macos_option_as_alt) break :alt;
+            if (!self.config.macos_option_as_alt) {
+                log.debug("macos_option_as_alt disabled, not sending esc prefix", .{});
+                break :alt;
+            }
         }
 
         data[i] = 0x1b;
