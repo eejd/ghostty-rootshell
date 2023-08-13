@@ -45,6 +45,26 @@ pub const Entry = struct {
     sequence: []const u8,
 };
 
+/// The list of modifier combinations for modify other key sequences.
+/// The mode value is index + 2.
+pub const modifiers: []const key.Mods = &.{
+    .{ .shift = true },
+    .{ .alt = true },
+    .{ .shift = true, .alt = true },
+    .{ .ctrl = true },
+    .{ .shift = true, .ctrl = true },
+    .{ .alt = true, .ctrl = true },
+    .{ .shift = true, .alt = true, .ctrl = true },
+    .{ .super = true },
+    .{ .shift = true, .super = true },
+    .{ .alt = true, .super = true },
+    .{ .shift = true, .alt = true, .super = true },
+    .{ .ctrl = true, .super = true },
+    .{ .shift = true, .ctrl = true, .super = true },
+    .{ .alt = true, .ctrl = true, .super = true },
+    .{ .shift = true, .alt = true, .ctrl = true, .super = true },
+};
+
 /// This is the array of entries for the PC style function keys as mapped to
 /// our set of possible key codes. Not every key has any entries.
 pub const KeyEntryArray = std.EnumArray(key.Key, []const Entry);
@@ -239,24 +259,6 @@ fn pcStyle(comptime fmt: []const u8) []const Entry {
     // The comptime {} wrapper is superflous but it prevents us from
     // accidentally running this function at runtime.
     comptime {
-        const modifiers: []const key.Mods = &.{
-            .{ .shift = true },
-            .{ .alt = true },
-            .{ .shift = true, .alt = true },
-            .{ .ctrl = true },
-            .{ .shift = true, .ctrl = true },
-            .{ .alt = true, .ctrl = true },
-            .{ .shift = true, .alt = true, .ctrl = true },
-            .{ .super = true },
-            .{ .shift = true, .super = true },
-            .{ .alt = true, .super = true },
-            .{ .shift = true, .alt = true, .super = true },
-            .{ .ctrl = true, .super = true },
-            .{ .shift = true, .ctrl = true, .super = true },
-            .{ .alt = true, .ctrl = true, .super = true },
-            .{ .shift = true, .alt = true, .ctrl = true, .super = true },
-        };
-
         var entries: [modifiers.len]Entry = undefined;
         for (modifiers, 2.., 0..) |mods, code, i| {
             entries[i] = .{

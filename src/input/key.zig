@@ -14,6 +14,24 @@ pub const Mods = packed struct(u8) {
     num_lock: bool = false,
     _padding: u2 = 0,
 
+    /// Returns true if no modifiers are set.
+    pub fn empty(self: Mods) bool {
+        return @as(u8, @bitCast(self)) == 0;
+    }
+
+    /// Returns true if two mods are equal.
+    pub fn equal(self: Mods, other: Mods) bool {
+        return @as(u8, @bitCast(self)) == @as(u8, @bitCast(other));
+    }
+
+    /// Returns the mods without locks set.
+    pub fn withoutLocks(self: Mods) Mods {
+        var copy = self;
+        copy.caps_lock = false;
+        copy.num_lock = false;
+        return copy;
+    }
+
     // For our own understanding
     test {
         const testing = std.testing;
