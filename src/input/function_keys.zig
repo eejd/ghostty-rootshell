@@ -270,6 +270,16 @@ fn pcStyle(comptime fmt: []const u8) []const Entry {
 }
 
 test "keys" {
+    const testing = std.testing;
+
     // Force resolution for comptime evaluation.
     _ = keys;
+
+    // All key sequences must fit into a termio array.
+    const max = @import("../termio.zig").Message.WriteReq.Small.Max;
+    for (keys.values) |entries| {
+        for (entries) |entry| {
+            try testing.expect(entry.sequence.len <= max);
+        }
+    }
 }

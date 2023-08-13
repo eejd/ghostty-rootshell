@@ -1074,15 +1074,20 @@ pub fn keyCallback(
         } else |_| {}
     }
 
-    if (action == .press or action == .repeat) {
-        // Mods for bindings never include caps/num lock.
-        const binding_mods = mods: {
-            var binding_mods = mods;
-            binding_mods.caps_lock = false;
-            binding_mods.num_lock = false;
-            break :mods binding_mods;
-        };
+    // We only handle press events
+    if (action != .press and action != .repeat) return false;
 
+    // Mods for bindings never include caps/num lock.
+    const binding_mods = mods: {
+        var binding_mods = mods;
+        binding_mods.caps_lock = false;
+        binding_mods.num_lock = false;
+        break :mods binding_mods;
+    };
+
+    // Check if we're processing a binding first. If so, that negates
+    // any further key processing.
+    {
         const binding_action_: ?input.Binding.Action = action: {
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
@@ -1104,123 +1109,162 @@ pub fn keyCallback(
             try self.performBindingAction(binding_action);
             return true;
         }
+    }
 
-        // If we have alt pressed, we're going to prefix any of the
-        // translations below with ESC (0x1B).
-        const alt = binding_mods.alt;
-        const unalt_mods = unalt_mods: {
-            var unalt_mods = binding_mods;
-            unalt_mods.alt = false;
-            break :unalt_mods unalt_mods;
-        };
+    // We'll need to know these values here on.
+    self.renderer_state.mutex.lock();
+    const cursor_key_application = self.io.terminal.modes.cursor_keys;
+    self.renderer_state.mutex.unlock();
 
-        // Handle non-printables
-        const char: u8 = char: {
-            const mods_int: u8 = @bitCast(unalt_mods);
-            const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
-
-            // If we're only pressing control, check if this is a character
-            // we convert to a non-printable. The best table I've found for
-            // this is:
-            // https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys
-            //
-            // Note that depending on the apprt, these might be handled as
-            // composed characters. But not all app runtimes will do this;
-            // some only compose printable characters. So we manually handle
-            // this here.
-            if (mods_int == ctrl_only) {
-                const val: u8 = switch (key) {
-                    .space => 0,
-                    .slash => 0x1F,
-                    .zero => 0x30,
-                    .one => 0x31,
-                    .two => 0x00,
-                    .three => 0x1B,
-                    .four => 0x1C,
-                    .five => 0x1D,
-                    .six => 0x1E,
-                    .seven => 0x1F,
-                    .eight => 0x7F,
-                    .nine => 0x39,
-                    .backslash => 0x1C,
-                    .left_bracket => 0x1B,
-                    .right_bracket => 0x1D,
-                    .backspace => 0x08,
-                    .a => 0x01,
-                    .b => 0x02,
-                    .c => 0x03,
-                    .d => 0x04,
-                    .e => 0x05,
-                    .f => 0x06,
-                    .g => 0x07,
-                    .h => 0x08,
-                    .i => 0x09,
-                    .j => 0x0A,
-                    .k => 0x0B,
-                    .l => 0x0C,
-                    .m => 0x0D,
-                    .n => 0x0E,
-                    .o => 0x0F,
-                    .p => 0x10,
-                    .q => 0x11,
-                    .r => 0x12,
-                    .s => 0x13,
-                    .t => 0x14,
-                    .u => 0x15,
-                    .v => 0x16,
-                    .w => 0x17,
-                    .x => 0x18,
-                    .y => 0x19,
-                    .z => 0x1A,
-                    else => 0,
-                };
-
-                if (val > 0) break :char val;
-            }
-
-            // Otherwise, we don't care what modifiers we press we do this.
-            break :char switch (key) {
-                .backspace => 0x7F,
-                .enter => '\r',
-                .tab => '\t',
-                .escape => 0x1B,
-                else => 0,
-            };
-        };
-        if (char > 0) {
-            // Ask our IO thread to write the data
-            var data: termio.Message.WriteReq.Small.Array = undefined;
-
-            // Write our data. If we need to alt-prefix we add that first.
-            var i: u8 = 0;
-            if (alt) {
-                data[i] = 0x1B;
-                i += 1;
-            }
-            data[i] = @intCast(char);
-            i += 1;
-
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = i,
-                },
-            }, .{ .forever = {} });
-
-            // After sending all our messages we have to notify our IO thread
-            try self.io_thread.wakeup.notify();
-
-            // Control charactesr trigger a scroll
-            {
-                self.renderer_state.mutex.lock();
-                defer self.renderer_state.mutex.unlock();
-                self.scrollToBottom() catch |err| {
-                    log.warn("error scrolling to bottom err={}", .{err});
-                };
-            }
-
-            return true;
+    // Check if we're processing a function key.
+    for (input.function_keys.keys.get(key)) |entry| {
+        switch (entry.cursor) {
+            .any => {},
+            .normal => if (cursor_key_application) continue,
+            .application => if (!cursor_key_application) continue,
         }
+
+        switch (entry.keypad) {
+            .any => {},
+            else => {}, // TODO
+        }
+
+        switch (entry.modify_other_keys) {
+            .any => {},
+
+            // TODO
+            .set => {},
+            .set_other => continue,
+        }
+
+        const mods_int: u8 = @bitCast(binding_mods);
+        const entry_mods_int: u8 = @bitCast(entry.mods);
+        if (entry_mods_int == 0) {
+            if (mods_int != 0 and !entry.mods_empty_is_any) continue;
+            // mods are either empty, or empty means any so we allow it.
+        } else if (entry_mods_int != mods_int) {
+            // any set mods require an exact match
+            continue;
+        }
+
+        // log.debug("function key match: {}", .{entry});
+
+        // We found a match, send the sequence and return we as handled.
+        var data: termio.Message.WriteReq.Small.Array = undefined;
+        @memcpy(data[0..entry.sequence.len], entry.sequence);
+        _ = self.io_thread.mailbox.push(.{
+            .write_small = .{
+                .data = data,
+                .len = @intCast(entry.sequence.len),
+            },
+        }, .{ .forever = {} });
+        try self.io_thread.wakeup.notify();
+
+        return true;
+    }
+
+    // If we have alt pressed, we're going to prefix any of the
+    // translations below with ESC (0x1B).
+    const alt = binding_mods.alt;
+    const unalt_mods = unalt_mods: {
+        var unalt_mods = binding_mods;
+        unalt_mods.alt = false;
+        break :unalt_mods unalt_mods;
+    };
+
+    // Handle non-printables
+    const char: u8 = char: {
+        const mods_int: u8 = @bitCast(unalt_mods);
+        const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
+
+        // If we're only pressing control, check if this is a character
+        // we convert to a non-printable. The best table I've found for
+        // this is:
+        // https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys
+        //
+        // Note that depending on the apprt, these might be handled as
+        // composed characters. But not all app runtimes will do this;
+        // some only compose printable characters. So we manually handle
+        // this here.
+        if (mods_int != ctrl_only) break :char 0;
+        break :char switch (key) {
+            .space => 0,
+            .slash => 0x1F,
+            .zero => 0x30,
+            .one => 0x31,
+            .two => 0x00,
+            .three => 0x1B,
+            .four => 0x1C,
+            .five => 0x1D,
+            .six => 0x1E,
+            .seven => 0x1F,
+            .eight => 0x7F,
+            .nine => 0x39,
+            .backslash => 0x1C,
+            .left_bracket => 0x1B,
+            .right_bracket => 0x1D,
+            .a => 0x01,
+            .b => 0x02,
+            .c => 0x03,
+            .d => 0x04,
+            .e => 0x05,
+            .f => 0x06,
+            .g => 0x07,
+            .h => 0x08,
+            .i => 0x09,
+            .j => 0x0A,
+            .k => 0x0B,
+            .l => 0x0C,
+            .m => 0x0D,
+            .n => 0x0E,
+            .o => 0x0F,
+            .p => 0x10,
+            .q => 0x11,
+            .r => 0x12,
+            .s => 0x13,
+            .t => 0x14,
+            .u => 0x15,
+            .v => 0x16,
+            .w => 0x17,
+            .x => 0x18,
+            .y => 0x19,
+            .z => 0x1A,
+            else => 0,
+        };
+    };
+    if (char > 0) {
+        // Ask our IO thread to write the data
+        var data: termio.Message.WriteReq.Small.Array = undefined;
+
+        // Write our data. If we need to alt-prefix we add that first.
+        var i: u8 = 0;
+        if (alt) {
+            data[i] = 0x1B;
+            i += 1;
+        }
+        data[i] = @intCast(char);
+        i += 1;
+
+        _ = self.io_thread.mailbox.push(.{
+            .write_small = .{
+                .data = data,
+                .len = i,
+            },
+        }, .{ .forever = {} });
+
+        // After sending all our messages we have to notify our IO thread
+        try self.io_thread.wakeup.notify();
+
+        // Control charactesr trigger a scroll
+        {
+            self.renderer_state.mutex.lock();
+            defer self.renderer_state.mutex.unlock();
+            self.scrollToBottom() catch |err| {
+                log.warn("error scrolling to bottom err={}", .{err});
+            };
+        }
+
+        return true;
     }
 
     return false;
