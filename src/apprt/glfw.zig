@@ -285,6 +285,7 @@ pub const Surface = struct {
     /// This is set to true when keyCallback consumes the input, suppressing
     /// the charCallback from being fired.
     key_consumed: bool = false,
+    key_mods: input.Mods = .{},
 
     pub const Options = struct {};
 
@@ -597,8 +598,7 @@ pub const Surface = struct {
             return;
         }
 
-        // TODO: mods
-        core_win.charCallback(codepoint, .{}) catch |err| {
+        core_win.charCallback(codepoint, core_win.rt_surface.key_mods) catch |err| {
             log.err("error in char callback err={}", .{err});
             return;
         };
