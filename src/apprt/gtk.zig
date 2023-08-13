@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const glfw = @import("glfw");
 const apprt = @import("../apprt.zig");
+const font = @import("../font/main.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
@@ -189,7 +190,6 @@ pub const App = struct {
     }
 
     pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
-        _ = parent_;
         const alloc = self.core_app.alloc;
 
         // Allocate a fixed pointer for our window. We try to minimize
@@ -202,6 +202,9 @@ pub const App = struct {
         var window = try alloc.create(Window);
         errdefer alloc.destroy(window);
         try window.init(self);
+
+        // Add our initial tab
+        try window.newTab(parent_);
     }
 
     fn quit(self: *App) void {
@@ -370,9 +373,6 @@ const Window = struct {
 
         // The notebook is our main child
         c.gtk_window_set_child(gtk_window, notebook_widget);
-
-        // Add our tab
-        try self.newTab();
     }
 
     pub fn deinit(self: *Window) void {
@@ -381,10 +381,17 @@ const Window = struct {
     }
 
     /// Add a new tab to this window.
-    pub fn newTab(self: *Window) !void {
+    pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
         // Grab a surface allocation we'll need it later.
         var surface = try self.app.core_app.alloc.create(Surface);
         errdefer self.app.core_app.alloc.destroy(surface);
+
+        // Inherit the parent's font size if we are configured to.
+        const font_size: ?font.face.DesiredSize = font_size: {
+            if (!self.app.config.@"window-inherit-font-size") break :font_size null;
+            const parent = parent_ orelse break :font_size null;
+            break :font_size parent.font_size;
+        };
 
         // Build our tab label
         const label_box_widget = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
@@ -407,6 +414,7 @@ const Window = struct {
             .window = self,
             .gl_area = @ptrCast(gl_area),
             .title_label = @ptrCast(label_text),
+            .font_size = font_size,
         });
         errdefer surface.deinit();
         const page_idx = c.gtk_notebook_append_page(self.notebook, gl_area, label_box_widget);
@@ -527,7 +535,8 @@ const Window = struct {
 
     fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
         const self = userdataSelf(ud.?);
-        self.newTab() catch |err| {
+        const parent = self.app.core_app.focusedSurface();
+        self.newTab(parent) catch |err| {
             log.warn("error adding new tab: {}", .{err});
             return;
         };
@@ -637,11 +646,15 @@ pub const Surface = struct {
         /// The window that this surface is attached to.
         window: *Window,
 
+        /// The GL area that this surface should draw to.
         gl_area: *c.GtkGLArea,
 
         /// The label to use as the title of this surface. This will be
         /// modified with setTitle.
         title_label: ?*c.GtkLabel = null,
+
+        /// A font size to set on the surface once it is initialized.
+        font_size: ?font.face.DesiredSize = null,
     };
 
     /// Where the title of this surface will go.
@@ -669,6 +682,9 @@ pub const Surface = struct {
 
     /// The core surface backing this surface
     core_surface: CoreSurface,
+
+    /// The font size to use for this surface once realized.
+    font_size: ?font.face.DesiredSize = null,
 
     /// Cached metrics about the surface from GTK callbacks.
     size: apprt.SurfaceSize,
@@ -749,6 +765,7 @@ pub const Surface = struct {
                 .label = label,
             } else .{ .none = {} },
             .core_surface = undefined,
+            .font_size = opts.font_size,
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
             .clipboard = std.mem.zeroes(c.GValue),
@@ -794,6 +811,11 @@ pub const Surface = struct {
             self,
         );
         errdefer self.core_surface.deinit();
+
+        // If we have a font size we want, set that now
+        if (self.font_size) |size| {
+            self.core_surface.setFontSize(size);
+        }
 
         // Note we're realized
         self.realized = true;
@@ -870,7 +892,7 @@ pub const Surface = struct {
     }
 
     pub fn newTab(self: *Surface) !void {
-        try self.window.newTab();
+        try self.window.newTab(&self.core_surface);
     }
 
     pub fn gotoPreviousTab(self: *Surface) void {
