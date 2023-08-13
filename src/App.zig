@@ -45,6 +45,11 @@ quit: bool,
 /// from source. This is null if we can't detect it.
 resources_dir: ?[]const u8 = null,
 
+/// Font discovery mechanism. This is only safe to use from the main thread.
+/// This is lazily initialized on the first call to fontDiscover so do
+/// not access this directly.
+font_discover: ?font.Discover = null,
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -80,6 +85,8 @@ pub fn destroy(self: *App) void {
     self.surfaces.deinit(self.alloc);
 
     if (self.resources_dir) |dir| self.alloc.free(dir);
+    if (self.font_discover) |*v| v.deinit();
+
     self.alloc.destroy(self);
 }
 
@@ -149,6 +156,20 @@ pub fn focusedSurface(self: *const App) ?*Surface {
     const surface = self.focused_surface orelse return null;
     if (!self.hasSurface(surface)) return null;
     return surface;
+}
+
+/// Initialize once and return the font discovery mechanism. This remains
+/// initialized throughout the lifetime of the application because some
+/// font discovery mechanisms (i.e. fontconfig) are unsafe to reinit.
+pub fn fontDiscover(self: *App) !?font.Discover {
+    // If we're built without a font discovery mechanism, return null
+    if (comptime font.Discover == void) return null;
+
+    // If we initialized, use it
+    if (self.font_discover) |v| return v;
+
+    self.font_discover = font.Discover.init();
+    return self.font_discover.?;
 }
 
 /// Drain the mailbox.

@@ -789,8 +789,8 @@ pub const Surface = struct {
         try self.core_surface.init(
             self.app.core_app.alloc,
             &config,
+            self.app.core_app,
             .{ .rt_app = self.app, .mailbox = &self.app.core_app.mailbox },
-            self.app.core_app.resources_dir,
             self,
         );
         errdefer self.core_surface.deinit();
@@ -1203,6 +1203,14 @@ pub const Surface = struct {
             break :key input.Key.fromASCII(self.im_buf[0]) orelse physical_key;
         } else .invalid;
 
+        // log.debug("key pressed key={} physical_key={} composing={} text_len={} mods={}", .{
+        //     key,
+        //     physical_key,
+        //     self.im_composing,
+        //     self.im_len,
+        //     mods,
+        // });
+
         // If both keys are invalid then we won't call the key callback. But
         // if either one is valid, we want to give it a chance.
         if (key != .invalid or physical_key != .invalid) {
@@ -1342,6 +1350,8 @@ pub const Surface = struct {
             if (str.len <= self.im_buf.len) {
                 @memcpy(self.im_buf[0..str.len], str);
                 self.im_len = @intCast(str.len);
+
+                // log.debug("input commit: {x}", .{self.im_buf[0]});
             } else {
                 log.warn("not enough buffer space for input method commit", .{});
             }

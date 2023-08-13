@@ -177,8 +177,8 @@ pub fn init(
     self: *Surface,
     alloc: Allocator,
     config: *const configpkg.Config,
+    app: *App,
     app_mailbox: App.Mailbox,
-    app_resources_dir: ?[]const u8,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
     // Initialize our renderer with our initialized surface.
@@ -217,8 +217,11 @@ pub fn init(
         errdefer group.deinit();
 
         // Search for fonts
-        if (font.Discover != void) {
-            var disco = font.Discover.init();
+        if (font.Discover != void) discover: {
+            const disco = try app.fontDiscover() orelse {
+                log.warn("font discovery not available, cannot search for fonts", .{});
+                break :discover;
+            };
             group.discover = disco;
 
             if (config.@"font-family") |family| {
@@ -320,16 +323,16 @@ pub fn init(
 
         // If we're on Mac, then we try to use the Apple Emoji font for Emoji.
         if (builtin.os.tag == .macos and font.Discover != void) {
-            var disco = font.Discover.init();
-            defer disco.deinit();
-            var disco_it = try disco.discover(.{
-                .family = "Apple Color Emoji",
-                .size = font_size.points,
-            });
-            defer disco_it.deinit();
-            if (try disco_it.next()) |face| {
-                log.info("font emoji: {s}", .{try face.name()});
-                try group.addFace(alloc, .regular, face);
+            if (try app.fontDiscover()) |disco| {
+                var disco_it = try disco.discover(.{
+                    .family = "Apple Color Emoji",
+                    .size = font_size.points,
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.info("font emoji: {s}", .{try face.name()});
+                    try group.addFace(alloc, .regular, face);
+                }
             }
         }
 
@@ -402,7 +405,7 @@ pub fn init(
         .screen_size = screen_size,
         .full_config = config,
         .config = try termio.Impl.DerivedConfig.init(alloc, config),
-        .resources_dir = app_resources_dir,
+        .resources_dir = app.resources_dir,
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
