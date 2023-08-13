@@ -61,11 +61,6 @@ pub fn build(b: *std.Build) !void {
     const target = target: {
         var result = b.standardTargetOptions(.{});
 
-        if (result.isLinux() and result.isGnuLibC()) {
-            // https://github.com/ziglang/zig/issues/9485
-            result.glibc_version = .{ .major = 2, .minor = 28, .patch = 0 };
-        }
-
         if (result.isDarwin()) {
             if (result.os_version_min == null) {
                 result.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };

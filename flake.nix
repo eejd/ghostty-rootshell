@@ -9,7 +9,7 @@
     # We want to stay as up to date as possible but need to be careful
     # that the glibc versions used by our dependencies from Nix are compatible
     # with the system glibc that the user is building for.
-    nixpkgs.url = "github:nixos/nixpkgs/release-22.11";
+    nixpkgs.url = "github:nixos/nixpkgs/release-23.05";
 
     # Used for shell.nix
     flake-compat = { url = github:edolstra/flake-compat; flake = false; };
