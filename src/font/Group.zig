@@ -47,7 +47,7 @@ faces: StyleArray,
 
 /// If discovery is available, we'll look up fonts where we can't find
 /// the codepoint. This can be set after initialization.
-discover: ?font.Discover = null,
+discover: ?*font.Discover = null,
 
 /// Set this to a non-null value to enable sprite glyph drawing. If this
 /// isn't enabled we'll just fall through to trying to use regular fonts
@@ -77,10 +77,6 @@ pub fn deinit(self: *Group) void {
     while (it.next()) |entry| {
         for (entry.value.items) |*item| item.deinit();
         entry.value.deinit(self.alloc);
-    }
-
-    if (font.Discover != void) {
-        if (self.discover) |*discover| discover.deinit();
     }
 }
 
@@ -207,7 +203,7 @@ pub fn indexForCodepoint(
 
     // If we are regular, try looking for a fallback using discovery.
     if (style == .regular and font.Discover != void) {
-        if (self.discover) |*disco| discover: {
+        if (self.discover) |disco| discover: {
             var disco_it = disco.discover(.{
                 .codepoint = cp,
                 .size = self.size.points,
