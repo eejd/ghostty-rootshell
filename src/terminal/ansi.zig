@@ -124,6 +124,9 @@ pub const Mode = enum(u16) {
     /// The alt key sends esc as a prefix before any character. On by default.
     alt_esc_prefix = 1036,
 
+    /// altSendsEscape xterm (https://invisible-island.net/xterm/manpage/xterm.html)
+    alt_sends_escape = 1039,
+
     /// Alternate screen mode with save cursor and clear on enter.
     alt_screen_save_cursor_clear_enter = 1049,
 
