@@ -83,6 +83,10 @@ typedef enum {
     GHOSTTY_MODS_SUPER = 1 << 3,
     GHOSTTY_MODS_CAPS  = 1 << 4,
     GHOSTTY_MODS_NUM   = 1 << 5,
+    GHOSTTY_MODS_SHIFT_RIGHT = 1 << 6,
+    GHOSTTY_MODS_CTRL_RIGHT  = 1 << 7,
+    GHOSTTY_MODS_ALT_RIGHT   = 1 << 8,
+    GHOSTTY_MODS_SUPER_RIGHT = 1 << 9,
 } ghostty_input_mods_e;
 
 typedef enum {
