@@ -394,8 +394,16 @@ pub const Surface = struct {
         // then we strip the alt modifier from the mods for translation.
         const translate_mods = translate_mods: {
             var translate_mods = mods;
-            if (self.app.config.@"macos-option-as-alt")
-                translate_mods.alt = false;
+            switch (self.app.config.@"macos-option-as-alt") {
+                .false => {},
+                .true => translate_mods.alt = false,
+                .left => if (mods.sides.alt == .left) {
+                    translate_mods.alt = false;
+                },
+                .right => if (mods.sides.alt == .right) {
+                    translate_mods.alt = false;
+                },
+            }
 
             break :translate_mods translate_mods;
         };
@@ -660,7 +668,10 @@ pub const CAPI = struct {
         surface.keyCallback(
             action,
             keycode,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods))))),
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(c_mods))),
+            )),
         ) catch |err| {
             log.err("error processing key event err={}", .{err});
             return;
@@ -684,7 +695,10 @@ pub const CAPI = struct {
         surface.mouseButtonCallback(
             action,
             button,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
         );
     }
 

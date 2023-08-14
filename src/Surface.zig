@@ -142,7 +142,7 @@ const DerivedConfig = struct {
     confirm_close_surface: bool,
     mouse_interval: u64,
     macos_non_native_fullscreen: bool,
-    macos_option_as_alt: bool,
+    macos_option_as_alt: configpkg.OptionAsAlt,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -1042,9 +1042,11 @@ pub fn charCallback(
         // On macOS, we have to opt-in to using alt because option
         // by default is a unicode character sequence.
         if (comptime builtin.target.isDarwin()) {
-            if (!self.config.macos_option_as_alt) {
-                log.debug("macos_option_as_alt disabled, not sending esc prefix", .{});
-                break :alt;
+            switch (self.config.macos_option_as_alt) {
+                .false => break :alt,
+                .true => {},
+                .left => if (mods.sides.alt != .left) break :alt,
+                .right => if (mods.sides.alt != .right) break :alt,
             }
         }
 
@@ -1094,12 +1096,7 @@ pub fn keyCallback(
     if (action != .press and action != .repeat) return false;
 
     // Mods for bindings never include caps/num lock.
-    const binding_mods = mods: {
-        var binding_mods = mods;
-        binding_mods.caps_lock = false;
-        binding_mods.num_lock = false;
-        break :mods binding_mods;
-    };
+    const binding_mods = mods.binding();
 
     // Check if we're processing a binding first. If so, that negates
     // any further key processing.
@@ -1154,8 +1151,8 @@ pub fn keyCallback(
             .set_other => if (!modify_other_keys) continue,
         }
 
-        const mods_int: u8 = @bitCast(binding_mods);
-        const entry_mods_int: u8 = @bitCast(entry.mods);
+        const mods_int = binding_mods.int();
+        const entry_mods_int = entry.mods.int();
         if (entry_mods_int == 0) {
             if (mods_int != 0 and !entry.mods_empty_is_any) continue;
             // mods are either empty, or empty means any so we allow it.
@@ -1191,8 +1188,8 @@ pub fn keyCallback(
 
     // Handle non-printables
     const char: u8 = char: {
-        const mods_int: u8 = @bitCast(unalt_mods);
-        const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
+        const mods_int = unalt_mods.int();
+        const ctrl_only = (input.Mods{ .ctrl = true }).int();
 
         // If we're only pressing control, check if this is a character
         // we convert to a non-printable. The best table I've found for

@@ -618,7 +618,12 @@ pub const Surface = struct {
         const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // Convert our glfw types into our input types
-        const mods: input.Mods = @bitCast(glfw_mods);
+        const mods: input.Mods = .{
+            .shift = glfw_mods.shift,
+            .ctrl = glfw_mods.control,
+            .alt = glfw_mods.alt,
+            .super = glfw_mods.super,
+        };
         const action: input.Action = switch (glfw_action) {
             .release => .release,
             .press => .press,
@@ -843,7 +848,12 @@ pub const Surface = struct {
         const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // Convert glfw button to input button
-        const mods: input.Mods = @bitCast(glfw_mods);
+        const mods: input.Mods = .{
+            .shift = glfw_mods.shift,
+            .ctrl = glfw_mods.control,
+            .alt = glfw_mods.alt,
+            .super = glfw_mods.super,
+        };
         const button: input.MouseButton = switch (glfw_button) {
             .left => .left,
             .right => .right,

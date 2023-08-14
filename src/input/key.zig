@@ -5,23 +5,55 @@ const Allocator = std.mem.Allocator;
 /// GLFW representation, but we use this generically.
 ///
 /// IMPORTANT: Any changes here update include/ghostty.h
-pub const Mods = packed struct(u8) {
+pub const Mods = packed struct(Mods.Backing) {
+    pub const Backing = u16;
+
     shift: bool = false,
     ctrl: bool = false,
     alt: bool = false,
     super: bool = false,
     caps_lock: bool = false,
     num_lock: bool = false,
-    _padding: u2 = 0,
+    sides: side = .{},
+    _padding: u6 = 0,
+
+    /// Tracks the side that is active for any given modifier. Note
+    /// that this doesn't confirm a modifier is pressed; you must check
+    /// the bool for that in addition to this.
+    ///
+    /// Not all platforms support this, check apprt for more info.
+    pub const side = packed struct(u4) {
+        shift: Side = .left,
+        ctrl: Side = .left,
+        alt: Side = .left,
+        super: Side = .left,
+    };
+
+    pub const Side = enum { left, right };
+
+    /// Integer value of this struct.
+    pub fn int(self: Mods) Backing {
+        return @bitCast(self);
+    }
 
     /// Returns true if no modifiers are set.
     pub fn empty(self: Mods) bool {
-        return @as(u8, @bitCast(self)) == 0;
+        return self.int() == 0;
     }
 
     /// Returns true if two mods are equal.
     pub fn equal(self: Mods, other: Mods) bool {
-        return @as(u8, @bitCast(self)) == @as(u8, @bitCast(other));
+        return self.int() == other.int();
+    }
+
+    /// Return mods that are only relevant for bindings.
+    pub fn binding(self: Mods) Mods {
+        return .{
+            .shift = self.shift,
+            .ctrl = self.ctrl,
+            .alt = self.alt,
+            .super = self.super,
+        };
     }
 
     /// Returns the mods without locks set.
@@ -35,10 +67,10 @@ pub const Mods = packed struct(u8) {
     // For our own understanding
     test {
         const testing = std.testing;
-        try testing.expectEqual(@as(u8, @bitCast(Mods{})), @as(u8, 0b0));
+        try testing.expectEqual(@as(Backing, @bitCast(Mods{})), @as(Backing, 0b0));
         try testing.expectEqual(
-            @as(u8, @bitCast(Mods{ .shift = true })),
-            @as(u8, 0b0000_0001),
+            @as(Backing, @bitCast(Mods{ .shift = true })),
+            @as(Backing, 0b0000_0001),
         );
     }
 };
