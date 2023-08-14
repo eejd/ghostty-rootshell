@@ -24,6 +24,16 @@ pub const Mods = packed struct(u8) {
         return @as(u8, @bitCast(self)) == @as(u8, @bitCast(other));
     }
 
+    /// Return mods that are only relevant for bindings.
+    pub fn binding(self: Mods) Mods {
+        return .{
+            .shift = self.shift,
+            .ctrl = self.ctrl,
+            .alt = self.alt,
+            .super = self.super,
+        };
+    }
+
     /// Returns the mods without locks set.
     pub fn withoutLocks(self: Mods) Mods {
         var copy = self;

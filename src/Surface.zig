@@ -1094,12 +1094,7 @@ pub fn keyCallback(
     if (action != .press and action != .repeat) return false;
 
     // Mods for bindings never include caps/num lock.
-    const binding_mods = mods: {
-        var binding_mods = mods;
-        binding_mods.caps_lock = false;
-        binding_mods.num_lock = false;
-        break :mods binding_mods;
-    };
+    const binding_mods = mods.binding();
 
     // Check if we're processing a binding first. If so, that negates
     // any further key processing.

@@ -293,10 +293,10 @@ pub const Trigger = struct {
     physical: bool = false,
 
     /// Returns a hash code that can be used to uniquely identify this trigger.
-    pub fn hash(self: Binding) u64 {
+    pub fn hash(self: Trigger) u64 {
         var hasher = std.hash.Wyhash.init(0);
         std.hash.autoHash(&hasher, self.key);
-        std.hash.autoHash(&hasher, self.mods);
+        std.hash.autoHash(&hasher, self.mods.binding());
         std.hash.autoHash(&hasher, self.physical);
         return hasher.final();
     }
@@ -306,7 +306,12 @@ pub const Trigger = struct {
 /// The use case is that this will be called on EVERY key input to look
 /// for an associated action so it must be fast.
 pub const Set = struct {
-    const HashMap = std.AutoHashMapUnmanaged(Trigger, Action);
+    const HashMap = std.HashMapUnmanaged(
+        Trigger,
+        Action,
+        Context,
+        std.hash_map.default_max_load_percentage,
+    );
 
     /// The set of bindings.
     bindings: HashMap = .{},
@@ -318,10 +323,14 @@ pub const Set = struct {
 
     /// Add a binding to the set. If the binding already exists then
     /// this will overwrite it.
-    pub fn put(self: *Set, alloc: Allocator, t: Trigger, action: Action) !void {
+    pub fn put(
+        self: *Set,
+        alloc: Allocator,
+        t: Trigger,
+        action: Action,
+    ) !void {
         // unbind should never go into the set, it should be handled prior
         assert(action != .unbind);
-
         try self.bindings.put(alloc, t, action);
     }
 
@@ -334,6 +343,19 @@ pub const Set = struct {
     pub fn remove(self: *Set, t: Trigger) void {
         _ = self.bindings.remove(t);
     }
+
+    /// The hash map context for the set. This defines how the hash map
+    /// gets the hash key and checks for equality.
+    const Context = struct {
+        pub fn hash(ctx: Context, k: Trigger) u64 {
+            _ = ctx;
+            return k.hash();
+        }
+
+        pub fn eql(ctx: Context, a: Trigger, b: Trigger) bool {
+            return ctx.hash(a) == ctx.hash(b);
+        }
+    };
 };
 
 test "parse: triggers" {
