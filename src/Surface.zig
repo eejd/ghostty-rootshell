@@ -1149,8 +1149,8 @@ pub fn keyCallback(
             .set_other => if (!modify_other_keys) continue,
         }
 
-        const mods_int: u8 = @bitCast(binding_mods);
-        const entry_mods_int: u8 = @bitCast(entry.mods);
+        const mods_int = binding_mods.int();
+        const entry_mods_int = entry.mods.int();
         if (entry_mods_int == 0) {
             if (mods_int != 0 and !entry.mods_empty_is_any) continue;
             // mods are either empty, or empty means any so we allow it.
@@ -1186,8 +1186,8 @@ pub fn keyCallback(
 
     // Handle non-printables
     const char: u8 = char: {
-        const mods_int: u8 = @bitCast(unalt_mods);
-        const ctrl_only: u8 = @bitCast(input.Mods{ .ctrl = true });
+        const mods_int = unalt_mods.int();
+        const ctrl_only = (input.Mods{ .ctrl = true }).int();
 
         // If we're only pressing control, check if this is a character
         // we convert to a non-printable. The best table I've found for

@@ -660,7 +660,10 @@ pub const CAPI = struct {
         surface.keyCallback(
             action,
             keycode,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(c_mods))))),
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(c_mods))),
+            )),
         ) catch |err| {
             log.err("error processing key event err={}", .{err});
             return;
@@ -684,7 +687,10 @@ pub const CAPI = struct {
         surface.mouseButtonCallback(
             action,
             button,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(mods))))),
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
         );
     }
 
