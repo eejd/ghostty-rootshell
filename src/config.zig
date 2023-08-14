@@ -249,7 +249,7 @@ pub const Config = struct {
     /// (i.e. alt+ctrl+a).
     ///
     /// This does not work with GLFW builds.
-    @"macos-option-as-alt": bool = false,
+    @"macos-option-as-alt": OptionAsAlt = .false,
 
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
@@ -1035,6 +1035,14 @@ fn equal(comptime T: type, old: T, new: T) bool {
         },
     }
 }
+
+/// Valid values for macos-option-as-alt.
+pub const OptionAsAlt = enum {
+    false,
+    true,
+    left,
+    right,
+};
 
 /// Color represents a color using RGB.
 pub const Color = struct {

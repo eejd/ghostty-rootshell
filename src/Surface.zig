@@ -142,7 +142,7 @@ const DerivedConfig = struct {
     confirm_close_surface: bool,
     mouse_interval: u64,
     macos_non_native_fullscreen: bool,
-    macos_option_as_alt: bool,
+    macos_option_as_alt: configpkg.OptionAsAlt,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -1042,9 +1042,11 @@ pub fn charCallback(
         // On macOS, we have to opt-in to using alt because option
         // by default is a unicode character sequence.
         if (comptime builtin.target.isDarwin()) {
-            if (!self.config.macos_option_as_alt) {
-                log.debug("macos_option_as_alt disabled, not sending esc prefix", .{});
-                break :alt;
+            switch (self.config.macos_option_as_alt) {
+                .false => break :alt,
+                .true => {},
+                .left => if (mods.sides.alt != .left) break :alt,
+                .right => if (mods.sides.alt != .right) break :alt,
             }
         }
 
