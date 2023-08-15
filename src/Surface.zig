@@ -1037,23 +1037,47 @@ pub fn charCallback(
     // for any char with a modifier. Ctrl sequences like Ctrl+A
     // are handled in keyCallback and should never have reached this
     // point.
-    if (critical.modify_other_keys and !mods.empty()) {
-        for (input.function_keys.modifiers, 2..) |modset, code| {
-            if (!mods.equal(modset)) continue;
+    if (critical.modify_other_keys) {
+        // This copies xterm's `ModifyOtherKeys` function that returns
+        // whether modify other keys should be encoded for the given
+        // input.
+        const should_modify = should_modify: {
+            // xterm IsControlInput
+            if (codepoint >= 0x40 and codepoint <= 0x7F)
+                break :should_modify true;
 
-            const resp = try std.fmt.bufPrint(
-                &data,
-                "\x1B[27;{};{}~",
-                .{ code, codepoint },
-            );
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = @intCast(resp.len),
-                },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
-            return;
+            // If we have anything other than shift pressed, encode.
+            var mods_no_shift = mods;
+            mods_no_shift.shift = false;
+            if (!mods_no_shift.empty()) break :should_modify true;
+
+            // We only have shift pressed. We only allow space.
+            if (codepoint == ' ') break :should_modify true;
+
+            // This logic isn't complete but I don't fully understand
+            // the rest so I'm going to wait until we can have a
+            // reasonable test scenario.
+            break :should_modify false;
+        };
+
+        if (should_modify) {
+            for (input.function_keys.modifiers, 2..) |modset, code| {
+                if (!mods.equal(modset)) continue;
+
+                const resp = try std.fmt.bufPrint(
+                    &data,
+                    "\x1B[27;{};{}~",
+                    .{ code, codepoint },
+                );
+                _ = self.io_thread.mailbox.push(.{
+                    .write_small = .{
+                        .data = data,
+                        .len = @intCast(resp.len),
+                    },
+                }, .{ .forever = {} });
+                try self.io_thread.wakeup.notify();
+                return;
+            }
         }
     }
 
