@@ -513,6 +513,31 @@ pub const Row = struct {
         };
         return .{ .data = data };
     }
+
+    /// Returns true if this cell is the end of a grapheme cluster.
+    ///
+    /// NOTE: If/when "real" grapheme cluster support is in then
+    /// this will be removed because every cell will represent exactly
+    /// one grapheme cluster.
+    pub fn graphemeBreak(self: Row, x: usize) bool {
+        const cell = &self.storage[x + 1].cell;
+
+        // Right now, if we are a grapheme, we only store ZWJs on
+        // the grapheme data so that means we can't be a break.
+        if (cell.attrs.grapheme) return false;
+
+        // If we are a tail then we check our prior cell.
+        if (cell.attrs.wide_spacer_tail and x > 0) {
+            return self.graphemeBreak(x - 1);
+        }
+
+        // If we are a wide char, then we have to check our prior cell.
+        if (cell.attrs.wide and x > 0) {
+            return self.graphemeBreak(x - 1);
+        }
+
+        return true;
+    }
 };
 
 /// Used to iterate through the rows of a specific region.
@@ -1927,7 +1952,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
             const row = self.getRow(.{ .screen = sel.start.y });
             const cell = row.getCell(sel.start.x);
             if (cell.attrs.wide_spacer_tail) {
-                sel.end.x -= 1;
+                sel.start.x -= 1;
             }
         }
 
@@ -4362,7 +4387,7 @@ test "Screen: selectionString empty with soft wrap" {
             .end = .{ .x = 2, .y = 0 },
         }, true);
         defer alloc.free(contents);
-        const expected = "";
+        const expected = "👨";
         try testing.expectEqualStrings(expected, contents);
     }
 }
@@ -6189,4 +6214,22 @@ test "Screen: jump to prompt" {
     // Jump forward
     try testing.expect(!s.jump(.{ .prompt_delta = 1 }));
     try testing.expectEqual(@as(usize, 3), s.viewport);
+}
+
+test "Screen: row graphemeBreak" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 10, 0);
+    defer s.deinit();
+    try s.testWriteString("x");
+    try s.testWriteString("👨‍A");
+
+    const row = s.getRow(.{ .screen = 0 });
+
+    // Normal char is a break
+    try testing.expect(row.graphemeBreak(0));
+
+    // Emoji with ZWJ is not
+    try testing.expect(!row.graphemeBreak(1));
 }
