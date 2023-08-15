@@ -1832,7 +1832,7 @@ pub fn selectionString(
     }
 
     // Remove our trailing newline, its never correct.
-    if (buf[buf_i - 1] == '\n') buf_i -= 1;
+    if (buf_i > 0 and buf[buf_i - 1] == '\n') buf_i -= 1;
 
     // Remove any trailing spaces on lines. We could do optimize this by
     // doing this in the loop above but this isn't very hot path code and
@@ -4318,6 +4318,35 @@ test "Screen: selectionString wide char with header" {
     }
 }
 
+// https://github.com/mitchellh/ghostty/issues/289
+test "Screen: selectionString empty with soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 5, 0);
+    defer s.deinit();
+
+    // Let me describe the situation that caused this because this
+    // test is not obvious. By writing an emoji below, we introduce
+    // one cell with the emoji and one cell as a "wide char spacer".
+    // We then soft wrap the line by writing spaces.
+    //
+    // By selecting only the tail, we'd select nothing and we had
+    // a logic error that would cause a crash.
+    try s.testWriteString("👨");
+    try s.testWriteString("      ");
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 1, .y = 0 },
+            .end = .{ .x = 2, .y = 0 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
 test "Screen: dirty with getCellPtr" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -5176,7 +5205,6 @@ test "Screen: resize more cols with populated scrollback" {
     try s.resize(3, 10);
 
     // Cursor should still be on the "5"
-    log.warn("cursor={}", .{s.cursor});
     try testing.expectEqual(@as(u32, '5'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     {
