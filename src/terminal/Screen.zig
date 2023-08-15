@@ -1743,6 +1743,12 @@ pub fn selectionString(
     // single line is soft-wrapped.
     const chars = chars: {
         var count: usize = 0;
+
+        // We need to keep track of our x/y so that we can get graphemes.
+        var y: usize = slices.sel.start.y;
+        var x: usize = 0;
+        var row: Row = undefined;
+
         const arr = [_][]StorageCell{ slices.top, slices.bot };
         for (arr) |slice| {
             for (slice, 0..) |cell, i| {
@@ -1752,25 +1758,24 @@ pub fn selectionString(
                     // a new row, and therefore count a possible newline.
                     count += 1;
 
-                    // If we have runtime safety, then we can have invalidly
-                    // tagged cells because all cells are headers by default.
-                    // This isn't an issue in prod builds because the zero values
-                    // we use are correct by default.
-                    if (std.debug.runtime_safety) {
-                        if (cell.header.id == 0) {
-                            @memset(
-                                slice[i + 1 .. i + 1 + self.cols],
-                                .{ .cell = .{} },
-                            );
-                        }
-                    }
-
+                    // Increase our row count and get our next row
+                    y += 1;
+                    x = 0;
+                    row = self.getRow(.{ .screen = y - 1 });
                     continue;
                 }
 
                 var buf: [4]u8 = undefined;
                 const char = if (cell.cell.char > 0) cell.cell.char else ' ';
                 count += try std.unicode.utf8Encode(@intCast(char), &buf);
+
+                // We need to also count any grapheme chars
+                var it = row.codepointIterator(x);
+                while (it.next()) |cp| {
+                    count += try std.unicode.utf8Encode(cp, &buf);
+                }
+
+                x += 1;
             }
         }
 
@@ -1809,7 +1814,10 @@ pub fn selectionString(
 
             const row: Row = .{ .screen = self, .storage = slice[start_idx..end_idx] };
             var it = row.cellIterator();
+            var x: usize = 0;
             while (it.next()) |cell| {
+                defer x += 1;
+
                 if (skip > 0) {
                     skip -= 1;
                     continue;
@@ -1821,6 +1829,11 @@ pub fn selectionString(
 
                 const char = if (cell.char > 0) cell.char else ' ';
                 buf_i += try std.unicode.utf8Encode(@intCast(char), buf[buf_i..]);
+
+                var cp_it = row.codepointIterator(x);
+                while (cp_it.next()) |cp| {
+                    buf_i += try std.unicode.utf8Encode(cp, buf[buf_i..]);
+                }
             }
 
             // If this row is not soft-wrapped, add a newline
@@ -1866,6 +1879,11 @@ pub fn selectionString(
 fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     rows: usize,
 
+    // The selection that the slices below represent. This may not
+    // be the same as the input selection since some normalization
+    // occurs.
+    sel: Selection,
+
     // Top offset can be used to determine if a newline is required by
     // seeing if the cell index plus the offset cleanly divides by screen cols.
     top_offset: usize,
@@ -1877,6 +1895,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     // If the selection starts beyond the end of the screen, then we return empty
     if (sel_raw.start.y >= self.rowsWritten()) return .{
         .rows = 0,
+        .sel = sel_raw,
         .top_offset = 0,
         .top = self.storage.storage[0..0],
         .bot = self.storage.storage[0..0],
@@ -1931,6 +1950,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     // bottom of the storage, then from the top.
     return .{
         .rows = sel_bot.y - sel_top.y + 1,
+        .sel = .{ .start = sel_top, .end = sel_bot },
         .top_offset = sel_top.x,
         .top = slices[0],
         .bot = slices[1],
@@ -4343,6 +4363,42 @@ test "Screen: selectionString empty with soft wrap" {
         }, true);
         defer alloc.free(contents);
         const expected = "";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString with zero width joiner" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 10, 0);
+    defer s.deinit();
+    const str = "👨‍"; // this has a ZWJ
+    try s.testWriteString(str);
+
+    // Integrity check
+    const row = s.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x1F468), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_tail);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+
+    // The real test
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 1, .y = 0 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "👨‍";
         try testing.expectEqualStrings(expected, contents);
     }
 }
