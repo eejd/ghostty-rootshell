@@ -489,12 +489,19 @@ pub const Row = struct {
         return .{ .row = self };
     }
 
+    /// Returns the number of codepoints in the cell at column x,
+    /// including the primary codepoint.
+    pub fn codepointLen(self: Row, x: usize) usize {
+        var it = self.codepointIterator(x);
+        return it.len() + 1;
+    }
+
     /// Read-only iterator for the grapheme codepoints in a cell. This only
     /// iterates over the EXTRA GRAPHEME codepoints and not the primary
     /// codepoint in cell.char.
     pub fn codepointIterator(self: Row, x: usize) CodepointIterator {
         const cell = &self.storage[x + 1].cell;
-        assert(cell.attrs.grapheme);
+        if (!cell.attrs.grapheme) return .{ .data = .{ .zero = {} } };
 
         const key = self.getId() + x + 1;
         const data: GraphemeData = self.screen.graphemes.get(key) orelse data: {
@@ -542,6 +549,18 @@ pub const CellIterator = struct {
 pub const CodepointIterator = struct {
     data: GraphemeData,
     i: usize = 0,
+
+    /// Returns the number of codepoints in the iterator.
+    pub fn len(self: CodepointIterator) usize {
+        switch (self.data) {
+            .zero => return 0,
+            .one => return 1,
+            .two => return 2,
+            .three => return 3,
+            .four => return 4,
+            .many => |v| return v.len,
+        }
+    }
 
     pub fn next(self: *CodepointIterator) ?u21 {
         switch (self.data) {
