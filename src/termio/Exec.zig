@@ -1205,7 +1205,7 @@ const StreamHandler = struct {
         // side effects and we want to make sure we process those.
         const v = self.terminal.modes.restore(mode);
         // log.debug("restore mode={} v={}", .{ mode, v });
-        if (v) try self.setMode(mode, true);
+        try self.setMode(mode, v);
     }
 
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
