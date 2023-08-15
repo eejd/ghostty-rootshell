@@ -63,8 +63,14 @@ pub const RunIterator = struct {
             if (self.selection) |unordered_sel| {
                 if (j > self.i) {
                     const sel = unordered_sel.ordered(.forward);
-                    if (sel.start.x > 0 and j == sel.start.x) break;
-                    if (sel.end.x > 0 and j == sel.end.x + 1) break;
+
+                    if (sel.start.x > 0 and
+                        j == sel.start.x and
+                        self.row.graphemeBreak(sel.start.x)) break;
+
+                    if (sel.end.x > 0 and
+                        j == sel.end.x + 1 and
+                        self.row.graphemeBreak(sel.end.x)) break;
                 }
             }
 

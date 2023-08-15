@@ -489,12 +489,19 @@ pub const Row = struct {
         return .{ .row = self };
     }
 
+    /// Returns the number of codepoints in the cell at column x,
+    /// including the primary codepoint.
+    pub fn codepointLen(self: Row, x: usize) usize {
+        var it = self.codepointIterator(x);
+        return it.len() + 1;
+    }
+
     /// Read-only iterator for the grapheme codepoints in a cell. This only
     /// iterates over the EXTRA GRAPHEME codepoints and not the primary
     /// codepoint in cell.char.
     pub fn codepointIterator(self: Row, x: usize) CodepointIterator {
         const cell = &self.storage[x + 1].cell;
-        assert(cell.attrs.grapheme);
+        if (!cell.attrs.grapheme) return .{ .data = .{ .zero = {} } };
 
         const key = self.getId() + x + 1;
         const data: GraphemeData = self.screen.graphemes.get(key) orelse data: {
@@ -505,6 +512,31 @@ pub const Row = struct {
             break :data .{ .zero = {} };
         };
         return .{ .data = data };
+    }
+
+    /// Returns true if this cell is the end of a grapheme cluster.
+    ///
+    /// NOTE: If/when "real" grapheme cluster support is in then
+    /// this will be removed because every cell will represent exactly
+    /// one grapheme cluster.
+    pub fn graphemeBreak(self: Row, x: usize) bool {
+        const cell = &self.storage[x + 1].cell;
+
+        // Right now, if we are a grapheme, we only store ZWJs on
+        // the grapheme data so that means we can't be a break.
+        if (cell.attrs.grapheme) return false;
+
+        // If we are a tail then we check our prior cell.
+        if (cell.attrs.wide_spacer_tail and x > 0) {
+            return self.graphemeBreak(x - 1);
+        }
+
+        // If we are a wide char, then we have to check our prior cell.
+        if (cell.attrs.wide and x > 0) {
+            return self.graphemeBreak(x - 1);
+        }
+
+        return true;
     }
 };
 
@@ -542,6 +574,18 @@ pub const CellIterator = struct {
 pub const CodepointIterator = struct {
     data: GraphemeData,
     i: usize = 0,
+
+    /// Returns the number of codepoints in the iterator.
+    pub fn len(self: CodepointIterator) usize {
+        switch (self.data) {
+            .zero => return 0,
+            .one => return 1,
+            .two => return 2,
+            .three => return 3,
+            .four => return 4,
+            .many => |v| return v.len,
+        }
+    }
 
     pub fn next(self: *CodepointIterator) ?u21 {
         switch (self.data) {
@@ -1724,6 +1768,12 @@ pub fn selectionString(
     // single line is soft-wrapped.
     const chars = chars: {
         var count: usize = 0;
+
+        // We need to keep track of our x/y so that we can get graphemes.
+        var y: usize = slices.sel.start.y;
+        var x: usize = 0;
+        var row: Row = undefined;
+
         const arr = [_][]StorageCell{ slices.top, slices.bot };
         for (arr) |slice| {
             for (slice, 0..) |cell, i| {
@@ -1733,25 +1783,24 @@ pub fn selectionString(
                     // a new row, and therefore count a possible newline.
                     count += 1;
 
-                    // If we have runtime safety, then we can have invalidly
-                    // tagged cells because all cells are headers by default.
-                    // This isn't an issue in prod builds because the zero values
-                    // we use are correct by default.
-                    if (std.debug.runtime_safety) {
-                        if (cell.header.id == 0) {
-                            @memset(
-                                slice[i + 1 .. i + 1 + self.cols],
-                                .{ .cell = .{} },
-                            );
-                        }
-                    }
-
+                    // Increase our row count and get our next row
+                    y += 1;
+                    x = 0;
+                    row = self.getRow(.{ .screen = y - 1 });
                     continue;
                 }
 
                 var buf: [4]u8 = undefined;
                 const char = if (cell.cell.char > 0) cell.cell.char else ' ';
                 count += try std.unicode.utf8Encode(@intCast(char), &buf);
+
+                // We need to also count any grapheme chars
+                var it = row.codepointIterator(x);
+                while (it.next()) |cp| {
+                    count += try std.unicode.utf8Encode(cp, &buf);
+                }
+
+                x += 1;
             }
         }
 
@@ -1790,7 +1839,10 @@ pub fn selectionString(
 
             const row: Row = .{ .screen = self, .storage = slice[start_idx..end_idx] };
             var it = row.cellIterator();
+            var x: usize = 0;
             while (it.next()) |cell| {
+                defer x += 1;
+
                 if (skip > 0) {
                     skip -= 1;
                     continue;
@@ -1802,6 +1854,11 @@ pub fn selectionString(
 
                 const char = if (cell.char > 0) cell.char else ' ';
                 buf_i += try std.unicode.utf8Encode(@intCast(char), buf[buf_i..]);
+
+                var cp_it = row.codepointIterator(x);
+                while (cp_it.next()) |cp| {
+                    buf_i += try std.unicode.utf8Encode(cp, buf[buf_i..]);
+                }
             }
 
             // If this row is not soft-wrapped, add a newline
@@ -1813,7 +1870,7 @@ pub fn selectionString(
     }
 
     // Remove our trailing newline, its never correct.
-    if (buf[buf_i - 1] == '\n') buf_i -= 1;
+    if (buf_i > 0 and buf[buf_i - 1] == '\n') buf_i -= 1;
 
     // Remove any trailing spaces on lines. We could do optimize this by
     // doing this in the loop above but this isn't very hot path code and
@@ -1847,6 +1904,11 @@ pub fn selectionString(
 fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     rows: usize,
 
+    // The selection that the slices below represent. This may not
+    // be the same as the input selection since some normalization
+    // occurs.
+    sel: Selection,
+
     // Top offset can be used to determine if a newline is required by
     // seeing if the cell index plus the offset cleanly divides by screen cols.
     top_offset: usize,
@@ -1858,6 +1920,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     // If the selection starts beyond the end of the screen, then we return empty
     if (sel_raw.start.y >= self.rowsWritten()) return .{
         .rows = 0,
+        .sel = sel_raw,
         .top_offset = 0,
         .top = self.storage.storage[0..0],
         .bot = self.storage.storage[0..0],
@@ -1889,7 +1952,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
             const row = self.getRow(.{ .screen = sel.start.y });
             const cell = row.getCell(sel.start.x);
             if (cell.attrs.wide_spacer_tail) {
-                sel.end.x -= 1;
+                sel.start.x -= 1;
             }
         }
 
@@ -1912,6 +1975,7 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     // bottom of the storage, then from the top.
     return .{
         .rows = sel_bot.y - sel_top.y + 1,
+        .sel = .{ .start = sel_top, .end = sel_bot },
         .top_offset = sel_top.x,
         .top = slices[0],
         .bot = slices[1],
@@ -4299,6 +4363,71 @@ test "Screen: selectionString wide char with header" {
     }
 }
 
+// https://github.com/mitchellh/ghostty/issues/289
+test "Screen: selectionString empty with soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 5, 0);
+    defer s.deinit();
+
+    // Let me describe the situation that caused this because this
+    // test is not obvious. By writing an emoji below, we introduce
+    // one cell with the emoji and one cell as a "wide char spacer".
+    // We then soft wrap the line by writing spaces.
+    //
+    // By selecting only the tail, we'd select nothing and we had
+    // a logic error that would cause a crash.
+    try s.testWriteString("👨");
+    try s.testWriteString("      ");
+
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 1, .y = 0 },
+            .end = .{ .x = 2, .y = 0 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "👨";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+test "Screen: selectionString with zero width joiner" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 10, 0);
+    defer s.deinit();
+    const str = "👨‍"; // this has a ZWJ
+    try s.testWriteString(str);
+
+    // Integrity check
+    const row = s.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x1F468), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_tail);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+
+    // The real test
+    {
+        var contents = try s.selectionString(alloc, .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 1, .y = 0 },
+        }, true);
+        defer alloc.free(contents);
+        const expected = "👨‍";
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
 test "Screen: dirty with getCellPtr" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -5157,7 +5286,6 @@ test "Screen: resize more cols with populated scrollback" {
     try s.resize(3, 10);
 
     // Cursor should still be on the "5"
-    log.warn("cursor={}", .{s.cursor});
     try testing.expectEqual(@as(u32, '5'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
 
     {
@@ -6086,4 +6214,22 @@ test "Screen: jump to prompt" {
     // Jump forward
     try testing.expect(!s.jump(.{ .prompt_delta = 1 }));
     try testing.expectEqual(@as(usize, 3), s.viewport);
+}
+
+test "Screen: row graphemeBreak" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 10, 0);
+    defer s.deinit();
+    try s.testWriteString("x");
+    try s.testWriteString("👨‍A");
+
+    const row = s.getRow(.{ .screen = 0 });
+
+    // Normal char is a break
+    try testing.expect(row.graphemeBreak(0));
+
+    // Emoji with ZWJ is not
+    try testing.expect(!row.graphemeBreak(1));
 }

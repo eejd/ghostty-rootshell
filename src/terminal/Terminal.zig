@@ -1609,6 +1609,61 @@ test "Terminal: print over wide char at 0,0" {
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
 }
 
+test "Terminal: print multicodepoint grapheme" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // https://github.com/mitchellh/ghostty/issues/289
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    try t.print(0x1F468);
+    try t.print(0x200D);
+    try t.print(0x1F469);
+    try t.print(0x200D);
+    try t.print(0x1F467);
+
+    // We should have 6 cells taken up
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 6), t.screen.cursor.x);
+
+    // Assert various properties about our screen to verify
+    // we have all expected cells.
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x1F468), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_tail);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+    {
+        const cell = row.getCell(2);
+        try testing.expectEqual(@as(u32, 0x1F469), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(2));
+    }
+    {
+        const cell = row.getCell(3);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_tail);
+    }
+    {
+        const cell = row.getCell(4);
+        try testing.expectEqual(@as(u32, 0x1F467), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(4));
+    }
+    {
+        const cell = row.getCell(5);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_tail);
+    }
+}
+
 test "Terminal: soft wrap" {
     var t = try init(testing.allocator, 3, 80);
     defer t.deinit(testing.allocator);
