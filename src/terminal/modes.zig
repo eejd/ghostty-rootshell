@@ -15,6 +15,12 @@ pub const ModeState = struct {
     /// The values of the current modes.
     values: ModePacked = .{},
 
+    /// The saved values. We only allow saving each mode once.
+    /// This is in line with other terminals that implement XTSAVE
+    /// and XTRESTORE. We can improve this in the future if it becomes
+    /// a real-world issue but we need to be aware of a DoS vector.
+    saved: ModePacked = .{},
+
     /// Set a mode to a value.
     pub fn set(self: *ModeState, mode: Mode, value: bool) void {
         switch (mode) {
@@ -35,11 +41,35 @@ pub const ModeState = struct {
         }
     }
 
+    /// Save the state of the given mode. This can then be restored
+    /// with restore. This will only be accurate if the previous
+    /// mode was saved exactly once and not restored. Otherwise this
+    /// will just keep restoring the last stored value in memory.
+    pub fn save(self: *ModeState, mode: Mode) void {
+        switch (mode) {
+            inline else => |mode_comptime| {
+                const entry = comptime entryForMode(mode_comptime);
+                @field(self.saved, entry.name) = @field(self.values, entry.name);
+            },
+        }
+    }
+
+    /// See save. This will return the restored value.
+    pub fn restore(self: *ModeState, mode: Mode) bool {
+        switch (mode) {
+            inline else => |mode_comptime| {
+                const entry = comptime entryForMode(mode_comptime);
+                @field(self.values, entry.name) = @field(self.saved, entry.name);
+                return @field(self.values, entry.name);
+            },
+        }
+    }
+
     test {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
         // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(4, @sizeOf(ModeState));
+        try std.testing.expectEqual(4, @sizeOf(ModePacked));
     }
 };
 
@@ -155,7 +185,16 @@ test hasSupport {
 
 test ModeState {
     var state: ModeState = .{};
+
+    // Normal set/get
     try testing.expect(!state.get(.cursor_keys));
     state.set(.cursor_keys, true);
+    try testing.expect(state.get(.cursor_keys));
+
+    // Save/restore
+    state.save(.cursor_keys);
+    state.set(.cursor_keys, false);
+    try testing.expect(!state.get(.cursor_keys));
+    try testing.expect(state.restore(.cursor_keys));
     try testing.expect(state.get(.cursor_keys));
 }
