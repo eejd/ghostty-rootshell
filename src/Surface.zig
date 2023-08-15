@@ -1008,6 +1008,7 @@ pub fn charCallback(
     // Critical area
     const critical: struct {
         alt_esc_prefix: bool,
+        modify_other_keys: bool,
     } = critical: {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
@@ -1024,10 +1025,37 @@ pub fn charCallback(
 
         break :critical .{
             .alt_esc_prefix = self.io.terminal.modes.alt_esc_prefix,
+            .modify_other_keys = self.io.terminal.modes.modify_other_keys,
         };
     };
 
+    // Where we're going to write any data. Any data we write has to
+    // fit into the fixed size array so we just define it up front.
     var data: termio.Message.WriteReq.Small.Array = undefined;
+
+    // In modify other keys state 2, we send the CSI 27 sequence
+    // for any char with a modifier. Ctrl sequences like Ctrl+A
+    // are handled in keyCallback and should never have reached this
+    // point.
+    if (critical.modify_other_keys and !mods.empty()) {
+        for (input.function_keys.modifiers, 2..) |modset, code| {
+            if (!mods.equal(modset)) continue;
+
+            const resp = try std.fmt.bufPrint(
+                &data,
+                "\x1B[27;{};{}~",
+                .{ code, codepoint },
+            );
+            _ = self.io_thread.mailbox.push(.{
+                .write_small = .{
+                    .data = data,
+                    .len = @intCast(resp.len),
+                },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+            return;
+        }
+    }
 
     // Prefix our data with ESC if we have alt pressed.
     var i: u8 = 0;
