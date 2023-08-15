@@ -1134,6 +1134,13 @@ pub fn keyCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
+    // log.warn("KEY CALLBACK action={} key={} physical_key={} mods={}", .{
+    //     action,
+    //     key,
+    //     physical_key,
+    //     mods,
+    // });
+
     // Dev Mode
     if (DevMode.enabled and DevMode.instance.visible) {
         // If the event was handled by imgui, ignore it.

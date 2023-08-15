@@ -422,10 +422,11 @@ pub const Surface = struct {
             self.core_surface.preeditCallback(null) catch {};
         }
 
-        // log.warn("TRANSLATE: action={} keycode={x} dead={} key={any} key_str={s} mods={}", .{
+        // log.warn("TRANSLATE: action={} keycode={x} dead={} key_len={} key={any} key_str={s} mods={}", .{
         //     action,
         //     keycode,
         //     result.composing,
+        //     result.text.len,
         //     result.text,
         //     result.text,
         //     mods,
@@ -444,8 +445,29 @@ pub const Surface = struct {
         // We also only do key translation if this is not a dead key.
         const key = if (!result.composing and result.text.len == 1) key: {
             // A completed key. If the length of the key is one then we can
-            // attempt to translate it to a key enum and call the key callback.
-            break :key input.Key.fromASCII(result.text[0]) orelse physical_key;
+            // attempt to translate it to a key enum and call the key
+            // callback. First try plain ASCII.
+            if (input.Key.fromASCII(result.text[0])) |key| {
+                break :key key;
+            }
+
+            // If that doesn't work then we try to translate without
+            // any modifiers and convert that.
+            var nomod_buf: [128]u8 = undefined;
+            var nomod_state: input.Keymap.State = undefined;
+            const nomod = try self.app.keymap.translate(
+                &nomod_buf,
+                &nomod_state,
+                @intCast(keycode),
+                .{},
+            );
+            if (nomod.text.len == 1) {
+                if (input.Key.fromASCII(nomod.text[0])) |key| {
+                    break :key key;
+                }
+            }
+
+            break :key physical_key;
         } else .invalid;
 
         // If both keys are invalid then we won't call the key callback. But
