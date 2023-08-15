@@ -1194,6 +1194,20 @@ const StreamHandler = struct {
         }
     }
 
+    pub fn saveMode(self: *StreamHandler, mode: terminal.Mode) !void {
+        // log.debug("save mode={}", .{mode});
+        self.terminal.modes.save(mode);
+    }
+
+    pub fn restoreMode(self: *StreamHandler, mode: terminal.Mode) !void {
+        // For restore mode we have to restore but if we set it, we
+        // always have to call setMode because setting some modes have
+        // side effects and we want to make sure we process those.
+        const v = self.terminal.modes.restore(mode);
+        // log.debug("restore mode={} v={}", .{ mode, v });
+        if (v) try self.setMode(mode, true);
+    }
+
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
         // Note: this function doesn't need to grab the render state or
         // terminal locks because it is only called from process() which

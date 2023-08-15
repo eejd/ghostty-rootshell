@@ -571,20 +571,77 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
-                // DECSTBM - Set Top and Bottom Margins
-                // TODO: test
-                'r' => if (action.intermediates.len == 0) {
-                    if (@hasDecl(T, "setTopAndBottomMargin")) switch (action.params.len) {
-                        0 => try self.handler.setTopAndBottomMargin(0, 0),
-                        1 => try self.handler.setTopAndBottomMargin(action.params[0], 0),
-                        2 => try self.handler.setTopAndBottomMargin(action.params[0], action.params[1]),
-                        else => log.warn("invalid DECSTBM command: {}", .{action}),
-                    } else log.warn("unimplemented CSI callback: {}", .{action});
-                } else {
-                    log.debug(
-                        "ignoring unimplemented CSI r with intermediates: {s}",
-                        .{action.intermediates},
-                    );
+                'r' => switch (action.intermediates.len) {
+                    // DECSTBM - Set Top and Bottom Margins
+                    0 => if (@hasDecl(T, "setTopAndBottomMargin")) {
+                        switch (action.params.len) {
+                            0 => try self.handler.setTopAndBottomMargin(0, 0),
+                            1 => try self.handler.setTopAndBottomMargin(action.params[0], 0),
+                            2 => try self.handler.setTopAndBottomMargin(action.params[0], action.params[1]),
+                            else => log.warn("invalid DECSTBM command: {}", .{action}),
+                        }
+                    } else log.warn(
+                        "unimplemented CSI callback: {}",
+                        .{action},
+                    ),
+
+                    1 => switch (action.intermediates[0]) {
+                        // Restore Mode
+                        '?' => if (@hasDecl(T, "restoreMode")) {
+                            for (action.params) |mode| {
+                                if (modes.hasSupport(mode)) {
+                                    try self.handler.restoreMode(
+                                        @enumFromInt(mode),
+                                    );
+                                } else {
+                                    log.warn(
+                                        "unimplemented restore mode: {}",
+                                        .{mode},
+                                    );
+                                }
+                            }
+                        },
+
+                        else => log.warn(
+                            "unknown CSI s with intermediate: {}",
+                            .{action},
+                        ),
+                    },
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI s with intermediates: {s}",
+                        .{action},
+                    ),
+                },
+
+                // Save Mode
+                's' => switch (action.intermediates.len) {
+                    1 => switch (action.intermediates[0]) {
+                        '?' => if (@hasDecl(T, "saveMode")) {
+                            for (action.params) |mode| {
+                                if (modes.hasSupport(mode)) {
+                                    try self.handler.saveMode(
+                                        @enumFromInt(mode),
+                                    );
+                                } else {
+                                    log.warn(
+                                        "unimplemented save mode: {}",
+                                        .{mode},
+                                    );
+                                }
+                            }
+                        },
+
+                        else => log.warn(
+                            "unknown CSI s with intermediate: {}",
+                            .{action},
+                        ),
+                    },
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI s with intermediates: {s}",
+                        .{action},
+                    ),
                 },
 
                 // ICH - Insert Blanks
