@@ -564,7 +564,7 @@ pub fn render(
             self.config.background = bg;
             self.config.foreground = fg;
         }
-        if (state.terminal.modes.reverse_colors) {
+        if (state.terminal.modes.get(.reverse_colors)) {
             self.config.background = fg;
             self.config.foreground = bg;
         }

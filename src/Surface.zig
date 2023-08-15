@@ -742,7 +742,7 @@ fn clipboardPaste(
                 log.warn("error scrolling to bottom err={}", .{err});
             };
 
-            break :bracketed self.io.terminal.modes.bracketed_paste;
+            break :bracketed self.io.terminal.modes.get(.bracketed_paste);
         };
 
         if (bracketed) {
@@ -1024,8 +1024,8 @@ pub fn charCallback(
         try self.io.terminal.scrollViewport(.{ .bottom = {} });
 
         break :critical .{
-            .alt_esc_prefix = self.io.terminal.modes.alt_esc_prefix,
-            .modify_other_keys = self.io.terminal.modes.modify_other_keys,
+            .alt_esc_prefix = self.io.terminal.modes.get(.alt_esc_prefix),
+            .modify_other_keys = self.io.terminal.flags.modify_other_keys_2,
         };
     };
 
@@ -1178,9 +1178,9 @@ pub fn keyCallback(
 
     // We'll need to know these values here on.
     self.renderer_state.mutex.lock();
-    const cursor_key_application = self.io.terminal.modes.cursor_keys;
-    const keypad_key_application = self.io.terminal.modes.keypad_keys;
-    const modify_other_keys = self.io.terminal.modes.modify_other_keys;
+    const cursor_key_application = self.io.terminal.modes.get(.cursor_keys);
+    const keypad_key_application = self.io.terminal.modes.get(.keypad_keys);
+    const modify_other_keys = self.io.terminal.flags.modify_other_keys_2;
     self.renderer_state.mutex.unlock();
 
     // Check if we're processing a function key.
@@ -1355,7 +1355,7 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
     // Notify the app about focus in/out if it is requesting it
     {
         self.renderer_state.mutex.lock();
-        const focus_event = self.io.terminal.modes.focus_event;
+        const focus_event = self.io.terminal.modes.get(.focus_event);
         self.renderer_state.mutex.unlock();
 
         if (focus_event) {
@@ -1479,7 +1479,7 @@ pub fn scrollCallback(
         // If we have an active mouse reporting mode, clear the selection.
         // The selection can occur if the user uses the shift mod key to
         // override mouse grabbing from the window.
-        if (self.io.terminal.modes.mouse_event != .none) {
+        if (self.io.terminal.flags.mouse_event != .none) {
             self.setSelection(null);
         }
 
@@ -1488,8 +1488,8 @@ pub fn scrollCallback(
         // (1) alt screen (2) no explicit mouse reporting and (3) alt
         // scroll mode enabled.
         if (self.io.terminal.active_screen == .alternate and
-            self.io.terminal.modes.mouse_event == .none and
-            self.io.terminal.modes.mouse_alternate_scroll)
+            self.io.terminal.flags.mouse_event == .none and
+            self.io.terminal.modes.get(.mouse_alternate_scroll))
         {
             if (y.delta_unsigned > 0) {
                 const seq = if (y.delta < 0) "\x1bOA" else "\x1bOB";
@@ -1550,7 +1550,7 @@ fn mouseReport(
     // do we want to not report mouse events at all outside the surface?
 
     // Depending on the event, we may do nothing at all.
-    switch (self.io.terminal.modes.mouse_event) {
+    switch (self.io.terminal.flags.mouse_event) {
         .none => return,
 
         // X10 only reports clicks with mouse button 1, 2, 3. We verify
@@ -1585,7 +1585,7 @@ fn mouseReport(
         if (button == null) {
             // Null button means motion without a button pressed
             acc = 3;
-        } else if (action == .release and self.io.terminal.modes.mouse_format != .sgr) {
+        } else if (action == .release and self.io.terminal.flags.mouse_format != .sgr) {
             // Release is 3. It is NOT 3 in SGR mode because SGR can tell
             // the application what button was released.
             acc = 3;
@@ -1601,7 +1601,7 @@ fn mouseReport(
         }
 
         // X10 doesn't have modifiers
-        if (self.io.terminal.modes.mouse_event != .x10) {
+        if (self.io.terminal.flags.mouse_event != .x10) {
             if (mods.shift) acc += 4;
             if (mods.super) acc += 8;
             if (mods.ctrl) acc += 16;
@@ -1613,7 +1613,7 @@ fn mouseReport(
         break :code acc;
     };
 
-    switch (self.io.terminal.modes.mouse_format) {
+    switch (self.io.terminal.flags.mouse_format) {
         .x10 => {
             if (viewport_point.x > 222 or viewport_point.y > 222) {
                 log.info("X10 mouse format can only encode X/Y up to 223", .{});
@@ -1784,7 +1784,7 @@ pub fn mouseButtonCallback(
     defer self.renderer_state.mutex.unlock();
 
     // Report mouse events if enabled
-    if (self.io.terminal.modes.mouse_event != .none) report: {
+    if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
         if (mods.shift) break :report;
 
@@ -1922,7 +1922,7 @@ pub fn cursorPosCallback(
     defer self.renderer_state.mutex.unlock();
 
     // Do a mouse report
-    if (self.io.terminal.modes.mouse_event != .none) report: {
+    if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
         if (self.mouse.mods.shift) break :report;
 
@@ -2224,7 +2224,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
                     log.warn("error scrolling to bottom err={}", .{err});
                 };
 
-                break :normal !self.io.terminal.modes.cursor_keys;
+                break :normal !self.io.terminal.modes.get(.cursor_keys);
             };
 
             if (normal) {

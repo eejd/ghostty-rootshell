@@ -4,6 +4,7 @@ const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
 const trace = @import("tracy").trace;
@@ -426,14 +427,30 @@ pub fn Stream(comptime Handler: type) type {
 
                 // SM - Set Mode
                 'h' => if (@hasDecl(T, "setMode")) {
-                    for (action.params) |mode|
-                        try self.handler.setMode(@enumFromInt(mode), true);
+                    for (action.params) |mode| {
+                        if (modes.hasSupport(mode)) {
+                            try self.handler.setMode(
+                                @enumFromInt(mode),
+                                true,
+                            );
+                        } else {
+                            log.warn("unimplemented mode: {}", .{mode});
+                        }
+                    }
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // RM - Reset Mode
                 'l' => if (@hasDecl(T, "setMode")) {
-                    for (action.params) |mode|
-                        try self.handler.setMode(@enumFromInt(mode), false);
+                    for (action.params) |mode| {
+                        if (modes.hasSupport(mode)) {
+                            try self.handler.setMode(
+                                @enumFromInt(mode),
+                                false,
+                            );
+                        } else {
+                            log.warn("unimplemented mode: {}", .{mode});
+                        }
+                    }
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // SGR - Select Graphic Rendition
@@ -896,20 +913,19 @@ test "stream: cursor right (CUF)" {
 
 test "stream: set mode (SM) and reset mode (RM)" {
     const H = struct {
-        mode: ansi.Mode = @as(ansi.Mode, @enumFromInt(0)),
-
-        pub fn setMode(self: *@This(), mode: ansi.Mode, v: bool) !void {
-            self.mode = @as(ansi.Mode, @enumFromInt(0));
+        mode: modes.Mode = @as(modes.Mode, @enumFromInt(1)),
+        pub fn setMode(self: *@This(), mode: modes.Mode, v: bool) !void {
+            self.mode = @as(modes.Mode, @enumFromInt(1));
             if (v) self.mode = mode;
         }
     };
 
     var s: Stream(H) = .{ .handler = .{} };
     try s.nextSlice("\x1B[?6h");
-    try testing.expectEqual(@as(ansi.Mode, .origin), s.handler.mode);
+    try testing.expectEqual(@as(modes.Mode, .origin), s.handler.mode);
 
     try s.nextSlice("\x1B[?6l");
-    try testing.expectEqual(@as(ansi.Mode, @enumFromInt(0)), s.handler.mode);
+    try testing.expectEqual(@as(modes.Mode, @enumFromInt(1)), s.handler.mode);
 }
 
 test "stream: restore mode" {

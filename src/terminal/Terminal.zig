@@ -12,6 +12,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const ansi = @import("ansi.zig");
+const modes = @import("modes.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
@@ -77,45 +78,27 @@ color_palette: color.Palette = color.default,
 /// char CSI (ESC [ <n> b).
 previous_char: ?u21 = null,
 
-/// Modes - This isn't exhaustive, since some modes (i.e. cursor origin)
-/// are applied to the cursor and others aren't boolean yes/no.
-modes: packed struct {
-    const Self = @This();
+/// The modes that this terminal currently has active.
+modes: modes.ModeState = .{},
 
-    cursor_keys: bool = false, // 1
-    insert: bool = false, // 4
-    reverse_colors: bool = false, // 5,
-    origin: bool = false, // 6
-    autowrap: bool = true, // 7
-
-    deccolm: bool = false, // 3,
-    deccolm_supported: bool = false, // 40
-    keypad_keys: bool = false, // 66
-    alt_esc_prefix: bool = true, // 1036
-
-    focus_event: bool = false, // 1004
-    mouse_alternate_scroll: bool = true, // 1007
-    mouse_event: MouseEvents = .none,
-    mouse_format: MouseFormat = .x10,
-
-    bracketed_paste: bool = false, // 2004
-
-    // This is set via ESC[4;2m. Any other modify key mode just sets
-    // this to false.
-    modify_other_keys: bool = false,
-
+/// These are just a packed set of flags we may set on the terminal.
+flags: packed struct {
     // This isn't a mode, this is set by OSC 133 using the "A" event.
     // If this is true, it tells us that the shell supports redrawing
     // the prompt and that when we resize, if the cursor is at a prompt,
     // then we should clear the screen below and allow the shell to redraw.
     shell_redraws_prompt: bool = false,
 
-    test {
-        // We have this here so that we explicitly fail when we change the
-        // size of modes. The size of modes is NOT particularly important,
-        // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(4, @sizeOf(Self));
-    }
+    // This is set via ESC[4;2m. Any other modify key mode just sets
+    // this to false and we act in mode 1 by default.
+    modify_other_keys_2: bool = false,
+
+    /// The mouse event mode and format. These are set to the last
+    /// set mode in modes. You can't get the right event/format to use
+    /// based on modes alone because modes don't show you what order
+    /// this was called so we have to track it separately.
+    mouse_event: MouseEvents = .none,
+    mouse_format: MouseFormat = .x10,
 } = .{},
 
 /// State required for all charset operations.
@@ -285,10 +268,10 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     // bit. If the mode "?40" is set, then "?3" (DECCOLM) is supported. This
     // doesn't exactly match VT100 semantics but modern terminals no longer
     // blindly accept mode 3 since its so weird in modern practice.
-    if (!self.modes.deccolm_supported) return;
+    if (!self.modes.get(.enable_mode_3)) return;
 
     // Enable it
-    self.modes.deccolm = mode == .@"132_cols";
+    self.modes.set(.@"132_column", mode == .@"132_cols");
 
     // Resize -- we can set cols to 0 because deccolm will force it
     try self.resize(alloc, 0, self.rows);
@@ -300,14 +283,6 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     // TODO: left/right margins
 }
 
-/// Allows or disallows deccolm.
-pub fn setDeccolmSupported(self: *Terminal, v: bool) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    self.modes.deccolm_supported = v;
-}
-
 /// Resize the underlying terminal.
 pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !void {
     const tracy = trace(@src());
@@ -316,8 +291,8 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
     // If we have deccolm supported then we are fixed at either 80 or 132
     // columns depending on if mode 3 is set or not.
     // TODO: test
-    const cols: usize = if (self.modes.deccolm_supported)
-        if (self.modes.deccolm) 132 else 80
+    const cols: usize = if (self.modes.get(.enable_mode_3))
+        if (self.modes.get(.@"132_column")) 132 else 80
     else
         cols_req;
 
@@ -349,13 +324,13 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
     };
 }
 
-/// If modes.shell_redraws_prompt is true and we're on the primary screen,
+/// If shell_redraws_prompt is true and we're on the primary screen,
 /// then this will clear the screen from the cursor down if the cursor is
 /// on a prompt in order to allow the shell to redraw the prompt.
 fn clearPromptForResize(self: *Terminal) void {
     assert(self.active_screen == .primary);
 
-    if (!self.modes.shell_redraws_prompt) return;
+    if (!self.flags.shell_redraws_prompt) return;
 
     // We need to find the first y that is a prompt. If we find any line
     // that is NOT a prompt (or input -- which is part of a prompt) then
@@ -693,13 +668,16 @@ pub fn print(self: *Terminal, c: u21) !void {
     self.previous_char = c;
 
     // If we're soft-wrapping, then handle that first.
-    if (self.screen.cursor.pending_wrap and self.modes.autowrap)
+    if (self.screen.cursor.pending_wrap and self.modes.get(.autowrap))
         try self.printWrap();
 
     // If we have insert mode enabled then we need to handle that. We
     // only do insert mode if we're not at the end of the line.
-    if (self.modes.insert and self.screen.cursor.x + width < self.cols)
+    if (self.modes.get(.insert) and
+        self.screen.cursor.x + width < self.cols)
+    {
         self.insertBlanks(width);
+    }
 
     switch (width) {
         // Single cell is very easy: just write in the cell
@@ -962,7 +940,7 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
         y_offset: usize = 0,
         x_max: usize,
         y_max: usize,
-    } = if (self.modes.origin) .{
+    } = if (self.modes.get(.origin)) .{
         .x_offset = 0, // TODO: left/right margins
         .y_offset = self.scrolling_region.top,
         .x_max = self.cols, // TODO: left/right margins
@@ -994,7 +972,7 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 
     // TODO: test
 
-    assert(!self.modes.origin); // TODO
+    assert(!self.modes.get(.origin)); // TODO
 
     if (self.status_display != .main) return; // TODO
 
@@ -1582,6 +1560,7 @@ pub fn fullReset(self: *Terminal) void {
     self.eraseDisplay(.scrollback);
     self.eraseDisplay(.complete);
     self.modes = .{};
+    self.flags = .{};
     self.tabstops.reset(0);
     self.screen.cursor = .{};
     self.screen.saved_cursor = .{};
@@ -1890,7 +1869,7 @@ test "Terminal: setCursorPosition" {
     try testing.expect(!t.screen.cursor.pending_wrap);
 
     // Origin mode
-    t.modes.origin = true;
+    t.modes.set(.origin, true);
 
     // No change without a scroll region
     t.setCursorPos(81, 81);
@@ -2340,7 +2319,7 @@ test "Terminal: insert mode with space" {
 
     for ("hello") |c| try t.print(c);
     t.setCursorPos(1, 2);
-    t.modes.insert = true;
+    t.modes.set(.insert, true);
     try t.print('X');
 
     {
@@ -2357,7 +2336,7 @@ test "Terminal: insert mode doesn't wrap pushed characters" {
 
     for ("hello") |c| try t.print(c);
     t.setCursorPos(1, 2);
-    t.modes.insert = true;
+    t.modes.set(.insert, true);
     try t.print('X');
 
     {
@@ -2373,7 +2352,7 @@ test "Terminal: insert mode does nothing at the end of the line" {
     defer t.deinit(alloc);
 
     for ("hello") |c| try t.print(c);
-    t.modes.insert = true;
+    t.modes.set(.insert, true);
     try t.print('X');
 
     {
@@ -2390,7 +2369,7 @@ test "Terminal: insert mode with wide characters" {
 
     for ("hello") |c| try t.print(c);
     t.setCursorPos(1, 2);
-    t.modes.insert = true;
+    t.modes.set(.insert, true);
     try t.print('😀'); // 0x1F600
 
     {
@@ -2406,7 +2385,7 @@ test "Terminal: insert mode with wide characters at end" {
     defer t.deinit(alloc);
 
     for ("well") |c| try t.print(c);
-    t.modes.insert = true;
+    t.modes.set(.insert, true);
     try t.print('😀'); // 0x1F600
 
     {
