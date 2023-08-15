@@ -36,4 +36,5 @@ pub usingnamespace if (builtin.target.isWasm()) struct {
 
 test {
     @import("std").testing.refAllDecls(@This());
+    _ = @import("modes.zig");
 }
