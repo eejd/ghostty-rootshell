@@ -514,7 +514,7 @@ pub fn Stream(comptime Handler: type) type {
                         switch (action.params.len) {
                             1 => @enumFromInt(action.params[0]),
                             else => {
-                                log.warn("invalid erase characters command: {}", .{action});
+                                log.warn("invalid device status report command: {}", .{action});
                                 return;
                             },
                         },

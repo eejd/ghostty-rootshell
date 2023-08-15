@@ -1297,9 +1297,17 @@ const StreamHandler = struct {
     ) !void {
         _ = params;
 
+        // For the below, we quack as a VT220. We don't quack as
+        // a 420 because we don't support DCS sequences.
         switch (req) {
-            // VT220
-            .primary => self.messageWriter(.{ .write_stable = "\x1B[?62;c" }),
+            .primary => self.messageWriter(.{
+                .write_stable = "\x1B[?62;22c",
+            }),
+
+            .secondary => self.messageWriter(.{
+                .write_stable = "\x1B[>1;10;0c",
+            }),
+
             else => log.warn("unimplemented device attributes req: {}", .{req}),
         }
     }
