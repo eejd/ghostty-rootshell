@@ -7,6 +7,7 @@ const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
+pub const modes = @import("modes.zig");
 pub const parse_table = @import("parse_table.zig");
 
 pub const Charset = charsets.Charset;
@@ -20,7 +21,7 @@ pub const Stream = stream.Stream;
 pub const CursorStyle = ansi.CursorStyle;
 pub const DeviceAttributeReq = ansi.DeviceAttributeReq;
 pub const DeviceStatusReq = ansi.DeviceStatusReq;
-pub const Mode = ansi.Mode;
+pub const Mode = modes.Mode;
 pub const ModifyKeyFormat = ansi.ModifyKeyFormat;
 pub const StatusLineType = ansi.StatusLineType;
 pub const StatusDisplay = ansi.StatusDisplay;

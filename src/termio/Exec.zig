@@ -1119,7 +1119,7 @@ const StreamHandler = struct {
     }
 
     pub fn setCursorRow(self: *StreamHandler, row: u16) !void {
-        if (self.terminal.modes.origin) {
+        if (self.terminal.modes.get(.origin)) {
             // TODO
             log.err("setCursorRow: implement origin mode", .{});
             unreachable;
@@ -1184,14 +1184,28 @@ const StreamHandler = struct {
     }
 
     pub fn setModifyKeyFormat(self: *StreamHandler, format: terminal.ModifyKeyFormat) !void {
-        self.terminal.modes.modify_other_keys = false;
+        self.terminal.flags.modify_other_keys_2 = false;
         switch (format) {
             .other_keys => |v| switch (v) {
-                .numeric => self.terminal.modes.modify_other_keys = true,
+                .numeric => self.terminal.flags.modify_other_keys_2 = true,
                 else => {},
             },
             else => {},
         }
+    }
+
+    pub fn saveMode(self: *StreamHandler, mode: terminal.Mode) !void {
+        // log.debug("save mode={}", .{mode});
+        self.terminal.modes.save(mode);
+    }
+
+    pub fn restoreMode(self: *StreamHandler, mode: terminal.Mode) !void {
+        // For restore mode we have to restore but if we set it, we
+        // always have to call setMode because setting some modes have
+        // side effects and we want to make sure we process those.
+        const v = self.terminal.modes.restore(mode);
+        // log.debug("restore mode={} v={}", .{ mode, v });
+        try self.setMode(mode, v);
     }
 
     pub fn setMode(self: *StreamHandler, mode: terminal.Mode, enabled: bool) !void {
@@ -1199,38 +1213,19 @@ const StreamHandler = struct {
         // terminal locks because it is only called from process() which
         // grabs the lock.
 
+        // We first always set the raw mode on our mode state.
+        self.terminal.modes.set(mode, enabled);
+
+        // And then some modes require additional processing.
         switch (mode) {
-            .cursor_keys => {
-                self.terminal.modes.cursor_keys = enabled;
-            },
+            // Schedule a render since we changed colors
+            .reverse_colors => try self.queueRender(),
 
-            .keypad_keys => {
-                self.terminal.modes.keypad_keys = enabled;
-            },
+            // Origin resets cursor pos
+            .origin => self.terminal.setCursorPos(1, 1),
 
-            .insert => {
-                self.terminal.modes.insert = enabled;
-            },
-
-            .reverse_colors => {
-                self.terminal.modes.reverse_colors = enabled;
-
-                // Schedule a render since we changed colors
-                try self.queueRender();
-            },
-
-            .origin => {
-                self.terminal.modes.origin = enabled;
-                self.terminal.setCursorPos(1, 1);
-            },
-
-            .autowrap => {
-                self.terminal.modes.autowrap = enabled;
-            },
-
-            .cursor_visible => {
-                self.ev.renderer_state.cursor.visible = enabled;
-            },
+            // We need to update our renderer state for this mode
+            .cursor_visible => self.ev.renderer_state.cursor.visible = enabled,
 
             .alt_screen_save_cursor_clear_enter => {
                 const opts: terminal.Terminal.AlternateScreenOptions = .{
@@ -1247,15 +1242,13 @@ const StreamHandler = struct {
                 try self.queueRender();
             },
 
-            .bracketed_paste => self.terminal.modes.bracketed_paste = enabled,
-
-            .enable_mode_3 => {
-                // Disable deccolm
-                self.terminal.setDeccolmSupported(enabled);
-
-                // Force resize back to the window size
-                self.terminal.resize(self.alloc, self.grid_size.columns, self.grid_size.rows) catch |err|
-                    log.err("error updating terminal size: {}", .{err});
+            // Force resize back to the window size
+            .enable_mode_3 => self.terminal.resize(
+                self.alloc,
+                self.grid_size.columns,
+                self.grid_size.rows,
+            ) catch |err| {
+                log.err("error updating terminal size: {}", .{err});
             },
 
             .@"132_column" => try self.terminal.deccolm(
@@ -1263,21 +1256,17 @@ const StreamHandler = struct {
                 if (enabled) .@"132_cols" else .@"80_cols",
             ),
 
-            .mouse_event_x10 => self.terminal.modes.mouse_event = if (enabled) .x10 else .none,
-            .mouse_event_normal => self.terminal.modes.mouse_event = if (enabled) .normal else .none,
-            .mouse_event_button => self.terminal.modes.mouse_event = if (enabled) .button else .none,
-            .mouse_event_any => self.terminal.modes.mouse_event = if (enabled) .any else .none,
+            .mouse_event_x10 => self.terminal.flags.mouse_event = if (enabled) .x10 else .none,
+            .mouse_event_normal => self.terminal.flags.mouse_event = if (enabled) .normal else .none,
+            .mouse_event_button => self.terminal.flags.mouse_event = if (enabled) .button else .none,
+            .mouse_event_any => self.terminal.flags.mouse_event = if (enabled) .any else .none,
 
-            .mouse_format_utf8 => self.terminal.modes.mouse_format = if (enabled) .utf8 else .x10,
-            .mouse_format_sgr => self.terminal.modes.mouse_format = if (enabled) .sgr else .x10,
-            .mouse_format_urxvt => self.terminal.modes.mouse_format = if (enabled) .urxvt else .x10,
-            .mouse_format_sgr_pixels => self.terminal.modes.mouse_format = if (enabled) .sgr_pixels else .x10,
+            .mouse_format_utf8 => self.terminal.flags.mouse_format = if (enabled) .utf8 else .x10,
+            .mouse_format_sgr => self.terminal.flags.mouse_format = if (enabled) .sgr else .x10,
+            .mouse_format_urxvt => self.terminal.flags.mouse_format = if (enabled) .urxvt else .x10,
+            .mouse_format_sgr_pixels => self.terminal.flags.mouse_format = if (enabled) .sgr_pixels else .x10,
 
-            .mouse_alternate_scroll => self.terminal.modes.mouse_alternate_scroll = enabled,
-            .focus_event => self.terminal.modes.focus_event = enabled,
-            .alt_esc_prefix => self.terminal.modes.alt_esc_prefix = enabled,
-
-            else => if (enabled) log.warn("unimplemented mode: {}", .{mode}),
+            else => {},
         }
     }
 
@@ -1323,7 +1312,7 @@ const StreamHandler = struct {
                 const pos: struct {
                     x: usize,
                     y: usize,
-                } = if (self.terminal.modes.origin) .{
+                } = if (self.terminal.modes.get(.origin)) .{
                     // TODO: what do we do if cursor is outside scrolling region?
                     .x = self.terminal.screen.cursor.x,
                     .y = self.terminal.screen.cursor.y -| self.terminal.scrolling_region.top,
@@ -1464,7 +1453,7 @@ const StreamHandler = struct {
     pub fn promptStart(self: *StreamHandler, aid: ?[]const u8, redraw: bool) !void {
         _ = aid;
         self.terminal.markSemanticPrompt(.prompt);
-        self.terminal.modes.shell_redraws_prompt = redraw;
+        self.terminal.flags.shell_redraws_prompt = redraw;
     }
 
     pub fn promptEnd(self: *StreamHandler) !void {
