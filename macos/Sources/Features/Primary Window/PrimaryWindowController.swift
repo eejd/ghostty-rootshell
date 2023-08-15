@@ -14,6 +14,7 @@ class PrimaryWindowController: NSWindowController {
     override func newWindowForTab(_ sender: Any?) {
         guard let window = self.window else { preconditionFailure("Expected window to be loaded") }
         guard let manager = self.windowManager else { return }
+        // TODO: We need to call to Zig code here so we can get the surface
         manager.addNewTab(to: window)
     }
 }

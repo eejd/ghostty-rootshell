@@ -70,6 +70,10 @@ pub const App = struct {
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
+
+        /// New tab with desired font size in points
+        /// TODO: u8 should be something that's nullable
+        new_tab: ?*const fn (SurfaceUD, u8) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -166,6 +170,9 @@ pub const Surface = struct {
 
         /// The scale factor of the screen.
         scale_factor: f64 = 1,
+
+        /// The font size to inherit. If 0, default font size will be used.
+        font_size: u8 = 0,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -190,6 +197,13 @@ pub const Surface = struct {
         // Shallow copy the config so that we can modify it.
         var config = try apprt.surface.newConfig(app.core_app, app.config);
         defer config.deinit();
+
+        // Overwrite the config for this new surface if we need to set a font
+        // size based on parent.
+        // TODO: Is this super hacky?
+        if (opts.font_size != 0) {
+            config.@"font-size" = opts.font_size;
+        }
 
         // Initialize our surface right away. We're given a view that is
         // ready to use.
@@ -580,6 +594,22 @@ pub const Surface = struct {
         func(self.opts.userdata, nonNativeFullscreen);
     }
 
+    pub fn newTab(self: *const Surface) !void {
+        const func = self.app.opts.new_tab orelse {
+            log.info("runtime embedder does not support new_tab", .{});
+            return;
+        };
+
+        // TODO: Do we check this here? Or do we check this in embedder?
+        //
+        const font_size: u8 = font_size: {
+            if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
+            break :font_size @intCast(self.core_surface.font_size.points);
+        };
+
+        func(self.opts.userdata, font_size);
+    }
+
     /// The cursor position from the host directly is in screen coordinates but
     /// all our interface works in pixels.
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
@@ -804,6 +834,7 @@ pub const CAPI = struct {
         const action: input.Binding.Action = switch (key) {
             .copy_to_clipboard => .{ .copy_to_clipboard = {} },
             .paste_from_clipboard => .{ .paste_from_clipboard = {} },
+            .new_tab => .{ .new_tab = {} },
         };
 
         ptr.core_surface.performBindingAction(action) catch |err| {

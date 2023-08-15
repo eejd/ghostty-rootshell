@@ -233,6 +233,7 @@ typedef enum {
 typedef enum {
     GHOSTTY_BINDING_COPY_TO_CLIPBOARD,
     GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD,
+    GHOSTTY_BINDING_NEW_TAB,
 } ghostty_binding_action_e;
 
 // Fully defined types. This MUST be kept in sync with equivalent Zig
@@ -242,6 +243,7 @@ typedef struct {
     void *userdata;
     void *nsview;
     double scale_factor;
+    uint8_t font_size;
 } ghostty_surface_config_s;
 
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
@@ -254,6 +256,7 @@ typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, bool);
+typedef void (*ghostty_runtime_new_tab_cb)(void *, uint8_t);
 
 typedef struct {
     void *userdata;
@@ -268,6 +271,7 @@ typedef struct {
     ghostty_runtime_focus_split_cb focus_split_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
+    ghostty_runtime_new_tab_cb new_tab_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------

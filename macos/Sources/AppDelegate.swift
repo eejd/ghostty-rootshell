@@ -1,6 +1,7 @@
 import AppKit
 import OSLog
 import GhosttyKit
+import SwiftUI
 
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
@@ -24,6 +25,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         super.init()
         
         windowManager = PrimaryWindowManager(ghostty: self.ghostty)
+        
+        // Register self as observer for the NewTab notification that
+        // is triggered via callback from Zig code.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onNewTab),
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
+    }
+    
+    deinit {
+        // Clean up the observer.
+        NotificationCenter.default.removeObserver(
+            self,
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -81,10 +98,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     @IBAction func newTab(_ sender: Any?) {
-        if let existingWindow = windowManager.mainWindow {
-            windowManager.addNewTab(to: existingWindow)
+        if windowManager.mainWindow != nil {
+            guard let surface = focusedSurface() else { return }
+            ghostty.newTab(surface: surface)
         } else {
             windowManager.addNewWindow()
+        }
+    }
+    
+    @objc private func onNewTab(notification: SwiftUI.Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let window = surfaceView.window else { return }
+        
+        let fontSizeAny = notification.userInfo?[Ghostty.Notification.NewTabKey]
+        let fontSize = fontSizeAny as? UInt8
+        
+        if fontSize != nil {
+            // Add the new tab to the window with the given font size.
+            windowManager.addNewTab(to: window, withFontSize: fontSize)
+        } else {
+            // No font size specified, just add new tab.
+            windowManager.addNewTab(to: window)
         }
     }
     

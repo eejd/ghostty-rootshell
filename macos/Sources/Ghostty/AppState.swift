@@ -64,7 +64,8 @@ extension Ghostty {
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
-                toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, useNonNativeFullscreen: nonNativeFullscreen) }
+                toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, useNonNativeFullscreen: nonNativeFullscreen) },
+                new_tab_cb: { userdata, fontSize in AppState.newTab(userdata, fontSize: fontSize) }
             )
 
             // Create the ghostty app.
@@ -135,6 +136,10 @@ extension Ghostty {
         /// cycle which will call our close surface callback.
         func requestClose(surface: ghostty_surface_t) {
             ghostty_surface_request_close(surface)
+        }
+        
+        func newTab(surface: ghostty_surface_t) {
+            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_NEW_TAB, nil)
         }
         
         func split(surface: ghostty_surface_t, direction: ghostty_split_direction_e) {
@@ -254,6 +259,17 @@ extension Ghostty {
                 object: surface,
                 userInfo: [
                     Notification.NonNativeFullscreenKey: useNonNativeFullscreen,
+                ]
+            )
+        }
+        
+        static func newTab(_ userdata: UnsafeMutableRawPointer?, fontSize: UInt8) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(
+                name: Notification.ghosttyNewTab,
+                object: surface,
+                userInfo: [
+                    Notification.NewTabKey: fontSize,
                 ]
             )
         }

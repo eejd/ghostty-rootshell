@@ -61,16 +61,16 @@ class PrimaryWindowManager {
         newWindow.makeKeyAndOrderFront(nil)
     }
     
-    func addNewTab(to window: NSWindow) {
-        guard let controller = createWindowController() else { return }
+    func addNewTab(to window: NSWindow, withFontSize fontSize: UInt8? = nil) {
+        guard let controller = createWindowController(withFontSize: fontSize) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)
         newWindow.makeKeyAndOrderFront(nil)
     }
 
-    private func createWindowController() -> PrimaryWindowController? {
+    private func createWindowController(withFontSize fontSize: UInt8? = nil) -> PrimaryWindowController? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
-        let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate)
+        let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate, fontSize: fontSize)
         Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
         let controller = PrimaryWindowController(window: window)
         controller.windowManager = self
