@@ -110,7 +110,46 @@ fn legacy(
         }
     }
 
-    // TODO: alt-prefix utf8
+    // // Let's see if we should apply fixterms to this codepoint.
+    // // At this stage of key processing, we only need to apply fixterms
+    // // to unicode codepoints (the point of charCallback) if we have
+    // // ctrl set.
+    // if (mods.ctrl) {
+    //     const csi_u_mods = terminal.csi_u.Mods.fromInput(mods);
+    //     const resp = try std.fmt.bufPrint(
+    //         &data,
+    //         "\x1B[{};{}u",
+    //         .{ codepoint, csi_u_mods.seqInt() },
+    //     );
+    //     _ = self.io_thread.mailbox.push(.{
+    //         .write_small = .{
+    //             .data = data,
+    //             .len = @intCast(resp.len),
+    //         },
+    //     }, .{ .forever = {} });
+    //     try self.io_thread.wakeup.notify();
+    //     return;
+    // }
+
+    // If we have alt-pressed and alt-esc-prefix is enabled, then
+    // we need to prefix the utf8 sequence with an esc.
+    if (binding_mods.alt and self.alt_esc_prefix) {
+        // TODO: port this, I think we can just use effective mods
+        // without any OS special case
+        //
+        // On macOS, we have to opt-in to using alt because option
+        // by default is a unicode character sequence.
+        // if (comptime builtin.target.isDarwin()) {
+        //     switch (self.config.macos_option_as_alt) {
+        //         .false => break :alt,
+        //         .true => {},
+        //         .left => if (mods.sides.alt != .left) break :alt,
+        //         .right => if (mods.sides.alt != .right) break :alt,
+        //     }
+        // }
+
+        return try std.fmt.bufPrint(buf, "\x1B{s}", .{utf8});
+    }
 
     return utf8;
 }
