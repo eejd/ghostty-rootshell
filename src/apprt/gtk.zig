@@ -1402,17 +1402,18 @@ pub const Surface = struct {
         // We're not in a keypress, so this was sent from an on-screen emoji
         // keyboard or someting like that. Send the characters directly to
         // the surface.
-        const view = std.unicode.Utf8View.init(str) catch |err| {
-            log.warn("cannot build utf8 view over input: {}", .{err});
+        _ = self.core_surface.key2Callback(.{
+            .action = .press,
+            .key = .invalid,
+            .physical_key = .invalid,
+            .mods = .{},
+            .consumed_mods = .{},
+            .composing = false,
+            .utf8 = str,
+        }) catch |err| {
+            log.err("error in key callback err={}", .{err});
             return;
         };
-        var it = view.iterator();
-        while (it.nextCodepoint()) |cp| {
-            self.core_surface.charCallback(cp, .{}) catch |err| {
-                log.err("error in char callback err={}", .{err});
-                return;
-            };
-        }
     }
 
     fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {

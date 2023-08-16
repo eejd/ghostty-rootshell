@@ -532,8 +532,25 @@ pub const Surface = struct {
 
     pub fn charCallback(self: *Surface, cp_: u32) void {
         const cp = std.math.cast(u21, cp_) orelse return;
-        self.core_surface.charCallback(cp, .{}) catch |err| {
-            log.err("error in char callback err={}", .{err});
+        var buf: [4]u8 = undefined;
+        const len = std.unicode.utf8Encode(cp, &buf) catch |err| {
+            log.err("error encoding codepoint={} err={}", .{ cp, err });
+            return;
+        };
+
+        // For a char callback we just construct a key event with invalid
+        // keys but with text. This should result in the text being sent
+        // as-is.
+        _ = self.core_surface.key2Callback(.{
+            .action = .press,
+            .key = .invalid,
+            .physical_key = .invalid,
+            .mods = .{},
+            .consumed_mods = .{},
+            .composing = false,
+            .utf8 = buf[0..len],
+        }) catch |err| {
+            log.err("error in key callback err={}", .{err});
             return;
         };
     }
