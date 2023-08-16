@@ -11,7 +11,7 @@ const testing = std.testing;
 const key = @import("key.zig");
 const function_keys = @import("function_keys.zig");
 
-event: key.Event,
+event: key.KeyEvent,
 
 /// The state of various modes of a terminal that impact encoding.
 alt_esc_prefix: bool = false,
@@ -46,7 +46,7 @@ pub fn legacy(
         self.cursor_key_application,
         self.keypad_key_application,
         self.modify_other_keys_state_2,
-    )) |sequence| return sequence;
+    )) |sequence| return copyToBuf(buf, sequence);
 
     // If we match a control sequence, we output that directly.
     if (ctrlSeq(self.event.key, binding_mods)) |char| {
@@ -154,7 +154,15 @@ pub fn legacy(
         return try std.fmt.bufPrint(buf, "\x1B{s}", .{utf8});
     }
 
-    return utf8;
+    return try copyToBuf(buf, utf8);
+}
+
+/// A helper to memcpy a src value to a buffer and return the result.
+fn copyToBuf(buf: []u8, src: []const u8) ![]const u8 {
+    if (src.len > buf.len) return error.OutOfMemory;
+    const result = buf[0..src.len];
+    @memcpy(result, src);
+    return result;
 }
 
 /// Determines whether the key should be encoded in the xterm

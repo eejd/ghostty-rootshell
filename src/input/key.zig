@@ -9,7 +9,7 @@ const Allocator = std.mem.Allocator;
 /// as GLFW. In this case, the apprt should provide as much information
 /// as it can and it should be expected that the terminal behavior
 /// will not be totally correct.
-pub const Event = struct {
+pub const KeyEvent = struct {
     /// The action: press, release, etc.
     action: Action = .press,
 
@@ -43,7 +43,7 @@ pub const Event = struct {
 
     /// Returns the effective modifiers for this event. The effective
     /// modifiers are the mods that should be considered for keybindings.
-    pub fn effectiveMods(self: Event) Mods {
+    pub fn effectiveMods(self: KeyEvent) Mods {
         if (self.utf8.len == 0) return self.mods;
         return self.mods.unset(self.consumed_mods);
     }
