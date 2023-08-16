@@ -36,6 +36,9 @@ pub fn legacy(
     if (self.event.action != .press and
         self.event.action != .repeat) return "";
 
+    // If we're in a dead key state then we never emit a sequence.
+    if (self.event.composing) return "";
+
     // If we match a PC style function key then that is our result.
     if (pcStyleFunctionKey(
         self.event.key,
