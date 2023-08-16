@@ -1221,8 +1221,26 @@ pub const Surface = struct {
         // If we're not in a dead key state, we want to translate our text
         // to some input.Key.
         const key = if (!self.im_composing) key: {
-            if (self.im_len != 1) break :key physical_key;
-            break :key input.Key.fromASCII(self.im_buf[0]) orelse physical_key;
+            // A completed key. If the length of the key is one then we can
+            // attempt to translate it to a key enum and call the key
+            // callback. First try plain ASCII.
+            if (self.im_len > 0) {
+                if (input.Key.fromASCII(self.im_buf[0])) |key| {
+                    break :key key;
+                }
+            }
+
+            // If that doesn't work then we try to translate they kevval..
+            const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
+            if (keyval_unicode != 0) {
+                if (std.math.cast(u8, keyval_unicode)) |byte| {
+                    if (input.Key.fromASCII(byte)) |key| {
+                        break :key key;
+                    }
+                }
+            }
+
+            break :key physical_key;
         } else .invalid;
 
         // log.debug("key pressed key={} keyval={x} physical_key={} composing={} text_len={} mods={}", .{
