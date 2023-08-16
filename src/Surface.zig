@@ -1081,6 +1081,27 @@ pub fn charCallback(
         }
     }
 
+    // Let's see if we should apply fixterms to this codepoint.
+    // At this stage of key processing, we only need to apply fixterms
+    // to unicode codepoints (the point of charCallback) if we have
+    // ctrl set.
+    if (mods.ctrl) {
+        const csi_u_mods = terminal.csi_u.Mods.fromInput(mods);
+        const resp = try std.fmt.bufPrint(
+            &data,
+            "\x1B[{};{}u",
+            .{ codepoint, csi_u_mods.seqInt() },
+        );
+        _ = self.io_thread.mailbox.push(.{
+            .write_small = .{
+                .data = data,
+                .len = @intCast(resp.len),
+            },
+        }, .{ .forever = {} });
+        try self.io_thread.wakeup.notify();
+        return;
+    }
+
     // Prefix our data with ESC if we have alt pressed.
     var i: u8 = 0;
     if (mods.alt) alt: {

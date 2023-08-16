@@ -7,6 +7,7 @@ const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
+pub const csi_u = @import("csi_u.zig");
 pub const modes = @import("modes.zig");
 pub const parse_table = @import("parse_table.zig");
 
