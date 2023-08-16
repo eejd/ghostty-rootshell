@@ -29,6 +29,7 @@ pub fn legacy(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {
+    const all_mods = self.event.mods;
     const effective_mods = self.event.effectiveMods();
     const binding_mods = effective_mods.binding();
 
@@ -48,8 +49,10 @@ pub fn legacy(
         self.modify_other_keys_state_2,
     )) |sequence| return copyToBuf(buf, sequence);
 
-    // If we match a control sequence, we output that directly.
-    if (ctrlSeq(self.event.key, binding_mods)) |char| {
+    // If we match a control sequence, we output that directly. For
+    // ctrlSeq we have to use all mods because we want it to only
+    // match ctrl+<char>.
+    if (ctrlSeq(self.event.key, all_mods)) |char| {
         // C0 sequences support alt-as-esc prefixing.
         if (binding_mods.alt) {
             if (buf.len < 2) return error.OutOfMemory;
@@ -113,26 +116,22 @@ pub fn legacy(
         }
     }
 
-    // // Let's see if we should apply fixterms to this codepoint.
-    // // At this stage of key processing, we only need to apply fixterms
-    // // to unicode codepoints (the point of charCallback) if we have
-    // // ctrl set.
-    // if (mods.ctrl) {
-    //     const csi_u_mods = terminal.csi_u.Mods.fromInput(mods);
-    //     const resp = try std.fmt.bufPrint(
-    //         &data,
-    //         "\x1B[{};{}u",
-    //         .{ codepoint, csi_u_mods.seqInt() },
-    //     );
-    //     _ = self.io_thread.mailbox.push(.{
-    //         .write_small = .{
-    //             .data = data,
-    //             .len = @intCast(resp.len),
-    //         },
-    //     }, .{ .forever = {} });
-    //     try self.io_thread.wakeup.notify();
-    //     return;
-    // }
+    // Let's see if we should apply fixterms to this codepoint.
+    // At this stage of key processing, we only need to apply fixterms
+    // to unicode codepoints if we have ctrl set.
+    if (self.event.mods.ctrl) {
+        // Important: we want to use the original
+        const csi_u_mods = CsiUMods.fromInput(binding_mods);
+        const result = try std.fmt.bufPrint(
+            buf,
+            "\x1B[{};{}u",
+            .{ utf8[0], csi_u_mods.seqInt() },
+        );
+
+        std.log.warn("CSI_U: {s}", .{result});
+
+        return result;
+    }
 
     // If we have alt-pressed and alt-esc-prefix is enabled, then
     // we need to prefix the utf8 sequence with an esc.
@@ -223,7 +222,7 @@ fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
     const unalt_mods = unalt_mods: {
         var unalt_mods = mods;
         unalt_mods.alt = false;
-        break :unalt_mods unalt_mods;
+        break :unalt_mods unalt_mods.binding();
     };
 
     // If we have any other modifier key set, then we do not generate
@@ -279,6 +278,62 @@ fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
         .z => 0x1A,
         else => null,
     };
+}
+
+/// This is the bitmask for fixterm CSI u modifiers.
+const CsiUMods = packed struct(u3) {
+    shift: bool = false,
+    alt: bool = false,
+    ctrl: bool = false,
+
+    /// Convert an input mods value into the CSI u mods value.
+    pub fn fromInput(mods: key.Mods) CsiUMods {
+        return .{
+            .shift = mods.shift,
+            .alt = mods.alt,
+            .ctrl = mods.ctrl,
+        };
+    }
+
+    /// Returns the raw int value of this packed struct.
+    pub fn int(self: CsiUMods) u3 {
+        return @bitCast(self);
+    }
+
+    /// Returns the integer value sent as part of the CSI u sequence.
+    /// This adds 1 to the bitmask value as described in the spec.
+    pub fn seqInt(self: CsiUMods) u4 {
+        const raw: u4 = @intCast(self.int());
+        return raw + 1;
+    }
+};
+
+test "modifer sequence values" {
+    // This is all sort of trivially seen by looking at the code but
+    // we want to make sure we never regress this.
+    var mods: CsiUMods = .{};
+    try testing.expectEqual(@as(u4, 1), mods.seqInt());
+
+    mods = .{ .shift = true };
+    try testing.expectEqual(@as(u4, 2), mods.seqInt());
+
+    mods = .{ .alt = true };
+    try testing.expectEqual(@as(u4, 3), mods.seqInt());
+
+    mods = .{ .ctrl = true };
+    try testing.expectEqual(@as(u4, 5), mods.seqInt());
+
+    mods = .{ .alt = true, .shift = true };
+    try testing.expectEqual(@as(u4, 4), mods.seqInt());
+
+    mods = .{ .ctrl = true, .shift = true };
+    try testing.expectEqual(@as(u4, 6), mods.seqInt());
+
+    mods = .{ .alt = true, .ctrl = true };
+    try testing.expectEqual(@as(u4, 7), mods.seqInt());
+
+    mods = .{ .alt = true, .ctrl = true, .shift = true };
+    try testing.expectEqual(@as(u4, 8), mods.seqInt());
 }
 
 test "legacy: ctrl+alt+c" {
