@@ -120,16 +120,17 @@ pub fn legacy(
     // At this stage of key processing, we only need to apply fixterms
     // to unicode codepoints if we have ctrl set.
     if (self.event.mods.ctrl) {
-        // Important: we want to use the original
-        const csi_u_mods = CsiUMods.fromInput(binding_mods);
+        // Important: we want to use the original mods here, not the
+        // effective mods. The fixterms spec states the shifted chars
+        // should be sent uppercase but Kitty changes that behavior
+        // so we'll send all the mods.
+        const csi_u_mods = CsiUMods.fromInput(self.event.mods);
         const result = try std.fmt.bufPrint(
             buf,
             "\x1B[{};{}u",
             .{ utf8[0], csi_u_mods.seqInt() },
         );
-
-        std.log.warn("CSI_U: {s}", .{result});
-
+        // std.log.warn("CSI_U: {s}", .{result});
         return result;
     }
 
