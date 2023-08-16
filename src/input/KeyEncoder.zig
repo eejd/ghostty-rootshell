@@ -25,7 +25,7 @@ modify_other_keys_state_2: bool = false,
 /// These together combine the legacy protocol because they're all
 /// meant to be extensions that do not change any existing behavior
 /// and therefore safe to combine.
-fn legacy(
+pub fn legacy(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {
