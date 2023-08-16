@@ -249,7 +249,6 @@ fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
         .eight => 0x7F,
         .nine => 0x39,
         .backslash => 0x1C,
-        .left_bracket => 0x1B,
         .right_bracket => 0x1D,
         .a => 0x01,
         .b => 0x02,
@@ -259,11 +258,9 @@ fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
         .f => 0x06,
         .g => 0x07,
         .h => 0x08,
-        .i => 0x09,
         .j => 0x0A,
         .k => 0x0B,
         .l => 0x0C,
-        .m => 0x0D,
         .n => 0x0E,
         .o => 0x0F,
         .p => 0x10,
@@ -277,6 +274,14 @@ fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
         .x => 0x18,
         .y => 0x19,
         .z => 0x1A,
+
+        // These are purposely NOT handled here because of the fixterms
+        // specification: https://www.leonerd.org.uk/hacks/fixterms/
+        // These are processed as CSI u.
+        // .i => 0x09,
+        // .m => 0x0D,
+        // .left_bracket => 0x1B,
+
         else => null,
     };
 }
@@ -402,6 +407,48 @@ test "legacy: ctrl+shift+char with modify other state 2" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("\x1b[27;6;72~", actual);
+}
+
+test "legacy: fixterm awkward letters" {
+    var buf: [128]u8 = undefined;
+    {
+        var enc: KeyEncoder = .{ .event = .{
+            .key = .i,
+            .mods = .{ .ctrl = true },
+            .utf8 = "i",
+        } };
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[105;5u", actual);
+    }
+    {
+        var enc: KeyEncoder = .{ .event = .{
+            .key = .m,
+            .mods = .{ .ctrl = true },
+            .utf8 = "m",
+        } };
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[109;5u", actual);
+    }
+    {
+        var enc: KeyEncoder = .{ .event = .{
+            .key = .left_bracket,
+            .mods = .{ .ctrl = true },
+            .utf8 = "[",
+        } };
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[91;5u", actual);
+    }
+    {
+        // This doesn't exactly match the fixterm spec but matches the
+        // behavior of Kitty.
+        var enc: KeyEncoder = .{ .event = .{
+            .key = .two,
+            .mods = .{ .ctrl = true, .shift = true },
+            .utf8 = "@",
+        } };
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[64;6u", actual);
+    }
 }
 
 test "ctrlseq: normal ctrl c" {
