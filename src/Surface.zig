@@ -1143,10 +1143,12 @@ pub fn key2Callback(
     self: *Surface,
     event: input.KeyEvent,
 ) !bool {
+    // log.debug("keyCallback event={}", .{event});
+
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     if (event.action == .press or event.action == .repeat) {
-        const binding_mods = event.mods.effectiveMods().binding();
+        const binding_mods = event.effectiveMods().binding();
         const binding_action_: ?input.Binding.Action = action: {
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
@@ -1194,7 +1196,7 @@ pub fn key2Callback(
     _ = self.io_thread.mailbox.push(.{
         .write_small = .{
             .data = data,
-            .len = seq.len,
+            .len = @intCast(seq.len),
         },
     }, .{ .forever = {} });
     try self.io_thread.wakeup.notify();

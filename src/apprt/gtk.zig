@@ -1213,10 +1213,12 @@ pub const Surface = struct {
         const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
         _ = c.gtk_im_context_filter_keypress(self.im_context, event) != 0;
 
-        // If we aren't composing, then we set our preedit to empty no matter what.
-        if (!self.im_composing) {
-            self.core_surface.preeditCallback(null) catch {};
-        }
+        // Get our consumed modifiers
+        const consumed_mods: input.Mods = consumed: {
+            const raw = c.gdk_key_event_get_consumed_modifiers(event);
+            const masked = raw & c.GDK_MODIFIER_MASK;
+            break :consumed translateMods(masked);
+        };
 
         // If we're not in a dead key state, we want to translate our text
         // to some input.Key.
@@ -1252,48 +1254,29 @@ pub const Surface = struct {
         //     mods,
         // });
 
-        // If both keys are invalid then we won't call the key callback. But
-        // if either one is valid, we want to give it a chance.
-        if (key != .invalid or physical_key != .invalid) {
-            const consumed = self.core_surface.keyCallback(
-                .press,
-                key,
-                physical_key,
-                mods,
-            ) catch |err| {
-                log.err("error in key callback err={}", .{err});
-                return 0;
-            };
-
-            // If we consume the key then we want to reset the dead key state.
-            if (consumed) {
-                c.gtk_im_context_reset(self.im_context);
-                self.core_surface.preeditCallback(null) catch {};
-                return 1;
-            }
-        }
-
         // If this is a dead key, then we're composing a character and
-        // we end processing here. We don't process keybinds for dead keys.
-        if (self.im_composing) {
+        // we need to set our proper preedit state.
+        if (self.im_composing) preedit: {
             const text = self.im_buf[0..self.im_len];
             const view = std.unicode.Utf8View.init(text) catch |err| {
                 log.warn("cannot build utf8 view over input: {}", .{err});
-                return 0;
+                break :preedit;
             };
             var it = view.iterator();
 
             const cp: u21 = it.nextCodepoint() orelse 0;
             self.core_surface.preeditCallback(cp) catch |err| {
                 log.err("error in preedit callback err={}", .{err});
-                return 0;
+                break :preedit;
             };
-
-            return 0;
+        } else {
+            // If we aren't composing, then we set our preedit to
+            // empty no matter what.
+            self.core_surface.preeditCallback(null) catch {};
         }
 
-        // If we aren't composing and have no text, we try to convert the keyval
-        // to a text value. We have to do this because GTK will not process
+        // If we have no UTF-8 text, we try to convert our keyval to
+        // a text value. We have to do this because GTK will not process
         // "Ctrl+Shift+1" (on US keyboards) as "Ctrl+!" but instead as "".
         // But the keyval is set correctly so we can at least extract that.
         if (self.im_len == 0) {
@@ -1307,21 +1290,24 @@ pub const Surface = struct {
             }
         }
 
-        // Next, we want to call the char callback with each codepoint.
-        if (self.im_len > 0) {
-            const text = self.im_buf[0..self.im_len];
-            const view = std.unicode.Utf8View.init(text) catch |err| {
-                log.warn("cannot build utf8 view over input: {}", .{err});
-                return 0;
-            };
-            var it = view.iterator();
-            while (it.nextCodepoint()) |cp| {
-                self.core_surface.charCallback(cp, mods) catch |err| {
-                    log.err("error in char callback err={}", .{err});
-                    return 0;
-                };
-            }
+        // Invoke the core Ghostty logic to handle this input.
+        const consumed = self.core_surface.key2Callback(.{
+            .action = .press,
+            .key = key,
+            .physical_key = physical_key,
+            .mods = mods,
+            .consumed_mods = consumed_mods,
+            .composing = self.im_composing,
+            .utf8 = self.im_buf[0..self.im_len],
+        }) catch |err| {
+            log.err("error in key callback err={}", .{err});
+            return 0;
+        };
 
+        // If we consume the key then we want to reset the dead key state.
+        if (consumed) {
+            c.gtk_im_context_reset(self.im_context);
+            self.core_surface.preeditCallback(null) catch {};
             return 1;
         }
 
