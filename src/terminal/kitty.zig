@@ -19,6 +19,24 @@ pub const KeyFlagStack = struct {
         return self.flags[self.idx];
     }
 
+    /// Perform the "set" operation as described in the spec for
+    /// the CSI = u sequence.
+    pub fn set(
+        self: *KeyFlagStack,
+        mode: KeySetMode,
+        v: KeyFlags,
+    ) void {
+        switch (mode) {
+            .set => self.flags[self.idx] = v,
+            .@"or" => self.flags[self.idx] = @bitCast(
+                self.flags[self.idx].int() | v.int(),
+            ),
+            .not => self.flags[self.idx] = @bitCast(
+                self.flags[self.idx].int() & ~v.int(),
+            ),
+        }
+    }
+
     /// Push a new set of flags onto the stack. If the stack is full
     /// then the oldest entry is evicted.
     pub fn push(self: *KeyFlagStack, flags: KeyFlags) void {
@@ -87,6 +105,9 @@ pub const KeyFlags = packed struct(u5) {
     }
 };
 
+/// The possible modes for setting the key flags.
+pub const KeySetMode = enum { set, @"or", not };
+
 test "KeyFlagStack: push pop" {
     const testing = std.testing;
     var stack: KeyFlagStack = .{};
@@ -105,4 +126,29 @@ test "KeyFlagStack: pop big number" {
     var stack: KeyFlagStack = .{};
     stack.pop(100);
     try testing.expectEqual(KeyFlags{}, stack.current());
+}
+
+test "KeyFlagStack: set" {
+    const testing = std.testing;
+    var stack: KeyFlagStack = .{};
+    stack.set(.set, .{ .disambiguate = true });
+    try testing.expectEqual(
+        KeyFlags{ .disambiguate = true },
+        stack.current(),
+    );
+
+    stack.set(.@"or", .{ .report_events = true });
+    try testing.expectEqual(
+        KeyFlags{
+            .disambiguate = true,
+            .report_events = true,
+        },
+        stack.current(),
+    );
+
+    stack.set(.not, .{ .report_events = true });
+    try testing.expectEqual(
+        KeyFlags{ .disambiguate = true },
+        stack.current(),
+    );
 }

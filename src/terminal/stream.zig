@@ -673,7 +673,35 @@ pub fn Stream(comptime Handler: type) type {
                             try self.handler.popKittyKeyboard(number);
                         },
 
-                        '=' => @panic("TODO! DO NOT MERGE"),
+                        '=' => if (@hasDecl(T, "setKittyKeyboard")) set: {
+                            const flags: u5 = if (action.params.len >= 1)
+                                std.math.cast(u5, action.params[0]) orelse {
+                                    log.warn("invalid setKittyKeyboard command: {}", .{action});
+                                    break :set;
+                                }
+                            else
+                                0;
+
+                            const number: u16 = if (action.params.len >= 2)
+                                action.params[1]
+                            else
+                                1;
+
+                            const mode: kitty.KeySetMode = switch (number) {
+                                0 => .set,
+                                1 => .@"or",
+                                2 => .not,
+                                else => {
+                                    log.warn("invalid setKittyKeyboard command: {}", .{action});
+                                    break :set;
+                                },
+                            };
+
+                            try self.handler.setKittyKeyboard(
+                                mode,
+                                @bitCast(flags),
+                            );
+                        },
 
                         else => log.warn(
                             "unknown CSI s with intermediate: {}",

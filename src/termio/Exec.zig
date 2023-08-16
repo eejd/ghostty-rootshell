@@ -1435,6 +1435,15 @@ const StreamHandler = struct {
         self.terminal.screen.kitty_keyboard.pop(@intCast(n));
     }
 
+    pub fn setKittyKeyboard(
+        self: *StreamHandler,
+        mode: terminal.kitty.KeySetMode,
+        flags: terminal.kitty.KeyFlags,
+    ) !void {
+        // log.debug("setting kitty keyboard mode: {} {}", .{mode, flags});
+        self.terminal.screen.kitty_keyboard.set(mode, flags);
+    }
+
     //-------------------------------------------------------------------------
     // OSC
 
