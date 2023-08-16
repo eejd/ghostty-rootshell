@@ -387,8 +387,8 @@ pub const Surface = struct {
         keycode: u32,
         mods: input.Mods,
     ) !void {
-        // We don't handle release events because we don't use them yet.
-        if (action != .press and action != .repeat) return;
+        // True if this is a key down event
+        const is_down = action == .press or action == .repeat;
 
         // If we're on macOS and we have macos-option-as-alt enabled,
         // then we strip the alt modifier from the mods for translation.
@@ -420,18 +420,43 @@ pub const Surface = struct {
         };
 
         // Translate our key using the keymap for our localized keyboard layout.
+        // We only translate for keydown events. Otherwise, we only care about
+        // the raw keycode.
         var buf: [128]u8 = undefined;
-        const result = try self.app.keymap.translate(
-            &buf,
-            &self.keymap_state,
-            @intCast(keycode),
-            translate_mods,
-        );
+        const result: input.Keymap.Translation = if (is_down) translate: {
+            const result = try self.app.keymap.translate(
+                &buf,
+                &self.keymap_state,
+                @intCast(keycode),
+                translate_mods,
+            );
 
-        // If we aren't composing, then we set our preedit to empty no matter what.
-        if (!result.composing) {
-            self.core_surface.preeditCallback(null) catch {};
-        }
+            // If this is a dead key, then we're composing a character and
+            // we need to set our proper preedit state.
+            if (result.composing) {
+                const view = std.unicode.Utf8View.init(result.text) catch |err| {
+                    log.warn("cannot build utf8 view over input: {}", .{err});
+                    return;
+                };
+                var it = view.iterator();
+
+                const cp: u21 = it.nextCodepoint() orelse 0;
+                self.core_surface.preeditCallback(cp) catch |err| {
+                    log.err("error in preedit callback err={}", .{err});
+                    return;
+                };
+            } else {
+                // If we aren't composing, then we set our preedit to
+                // empty no matter what.
+                self.core_surface.preeditCallback(null) catch {};
+            }
+
+            break :translate result;
+        } else .{ .composing = false, .text = "" };
+
+        // UCKeyTranslate always consumes all mods, so if we have any output
+        // then we've consumed our translate mods.
+        const consumed_mods: input.Mods = if (result.text.len > 0) translate_mods else .{};
 
         // log.warn("TRANSLATE: action={} keycode={x} dead={} key_len={} key={any} key_str={s} mods={}", .{
         //     action,
@@ -454,12 +479,14 @@ pub const Surface = struct {
         // charCallback.
         //
         // We also only do key translation if this is not a dead key.
-        const key = if (!result.composing and result.text.len == 1) key: {
+        const key = if (!result.composing) key: {
             // A completed key. If the length of the key is one then we can
             // attempt to translate it to a key enum and call the key
             // callback. First try plain ASCII.
-            if (input.Key.fromASCII(result.text[0])) |key| {
-                break :key key;
+            if (result.text.len > 0) {
+                if (input.Key.fromASCII(result.text[0])) |key| {
+                    break :key key;
+                }
             }
 
             // If that doesn't work then we try to translate without
@@ -481,52 +508,25 @@ pub const Surface = struct {
             break :key physical_key;
         } else .invalid;
 
-        // If both keys are invalid then we won't call the key callback. But
-        // if either one is valid, we want to give it a chance.
-        if (key != .invalid or physical_key != .invalid) {
-            const consumed = self.core_surface.keyCallback(
-                action,
-                key,
-                physical_key,
-                mods,
-            ) catch |err| {
-                log.err("error in key callback err={}", .{err});
-                return;
-            };
-
-            // If we consume the key then we want to reset the dead key state.
-            if (consumed) {
-                self.keymap_state = .{};
-                self.core_surface.preeditCallback(null) catch {};
-                return;
-            }
-        }
-
-        // No matter what happens next we'll want a utf8 view.
-        const view = std.unicode.Utf8View.init(result.text) catch |err| {
-            log.warn("cannot build utf8 view over input: {}", .{err});
+        // Invoke the core Ghostty logic to handle this input.
+        const consumed = self.core_surface.key2Callback(.{
+            .action = action,
+            .key = key,
+            .physical_key = physical_key,
+            .mods = mods,
+            .consumed_mods = consumed_mods,
+            .composing = result.composing,
+            .utf8 = result.text,
+        }) catch |err| {
+            log.err("error in key callback err={}", .{err});
             return;
         };
-        var it = view.iterator();
 
-        // If this is a dead key, then we're composing a character and
-        // we end processing here. We don't process keybinds for dead keys.
-        if (result.composing) {
-            const cp: u21 = it.nextCodepoint() orelse 0;
-            self.core_surface.preeditCallback(cp) catch |err| {
-                log.err("error in preedit callback err={}", .{err});
-                return;
-            };
-
+        // If we consume the key then we want to reset the dead key state.
+        if (consumed and is_down) {
+            self.keymap_state = .{};
+            self.core_surface.preeditCallback(null) catch {};
             return;
-        }
-
-        // Next, we want to call the char callback with each codepoint.
-        while (it.nextCodepoint()) |cp| {
-            self.core_surface.charCallback(cp, mods) catch |err| {
-                log.err("error in char callback err={}", .{err});
-                return;
-            };
         }
     }
 
