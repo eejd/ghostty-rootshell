@@ -6,6 +6,7 @@ pub usingnamespace @import("input/key.zig");
 pub const function_keys = @import("input/function_keys.zig");
 pub const keycodes = @import("input/keycodes.zig");
 pub const Binding = @import("input/Binding.zig");
+pub const KeyEncoder = @import("input/KeyEncoder.zig");
 pub const SplitDirection = Binding.Action.SplitDirection;
 pub const SplitFocusDirection = Binding.Action.SplitFocusDirection;
 
