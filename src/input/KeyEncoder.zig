@@ -14,6 +14,7 @@ const function_keys = @import("function_keys.zig");
 event: key.Event,
 
 /// The state of various modes of a terminal that impact encoding.
+alt_esc_prefix: bool = false,
 cursor_key_application: bool = false,
 keypad_key_application: bool = false,
 modify_other_keys_state_2: bool = false,
@@ -59,7 +60,59 @@ fn legacy(
         return buf[0..1];
     }
 
-    return "";
+    // If we have no UTF8 text then at this point there is nothing to do.
+    const utf8 = self.event.utf8;
+    if (utf8.len == 0) return "";
+
+    // In modify other keys state 2, we send the CSI 27 sequence
+    // for any char with a modifier. Ctrl sequences like Ctrl+a
+    // are already handled above.
+    if (self.modify_other_keys_state_2) modify_other: {
+        const view = try std.unicode.Utf8View.init(utf8);
+        var it = view.iterator();
+        const codepoint = it.nextCodepoint() orelse break :modify_other;
+
+        // We only do this if we have a single codepoint. There shouldn't
+        // ever be a multi-codepoint sequence that triggers this.
+        if (it.nextCodepoint() != null) break :modify_other;
+
+        // This copies xterm's `ModifyOtherKeys` function that returns
+        // whether modify other keys should be encoded for the given
+        // input.
+        const should_modify = should_modify: {
+            // xterm IsControlInput
+            if (codepoint >= 0x40 and codepoint <= 0x7F)
+                break :should_modify true;
+
+            // If we have anything other than shift pressed, encode.
+            var mods_no_shift = binding_mods;
+            mods_no_shift.shift = false;
+            if (!mods_no_shift.empty()) break :should_modify true;
+
+            // We only have shift pressed. We only allow space.
+            if (codepoint == ' ') break :should_modify true;
+
+            // This logic isn't complete but I don't fully understand
+            // the rest so I'm going to wait until we can have a
+            // reasonable test scenario.
+            break :should_modify false;
+        };
+
+        if (should_modify) {
+            for (function_keys.modifiers, 2..) |modset, code| {
+                if (!binding_mods.equal(modset)) continue;
+                return try std.fmt.bufPrint(
+                    buf,
+                    "\x1B[27;{};{}~",
+                    .{ code, codepoint },
+                );
+            }
+        }
+    }
+
+    // TODO: alt-prefix utf8
+
+    return utf8;
 }
 
 /// Determines whether the key should be encoded in the xterm
@@ -228,6 +281,21 @@ test "legacy: ctrl+shift+backspace" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("\x08", actual);
+}
+
+test "legacy: ctrl+shift+char with modify other state 2" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .h,
+            .mods = .{ .ctrl = true, .shift = true },
+            .utf8 = "H",
+        },
+        .modify_other_keys_state_2 = true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1b[27;6;72~", actual);
 }
 
 test "ctrlseq: normal ctrl c" {
