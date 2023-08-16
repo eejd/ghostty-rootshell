@@ -1191,6 +1191,7 @@ pub const Surface = struct {
     ) callconv(.C) c.gboolean {
         const self = userdataSelf(ud.?);
         const mods = translateMods(gtk_mods);
+        const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
 
         // We mark that we're in a keypress event. We use this in our
         // IM commit callback to determine if we need to send a char callback
@@ -1233,7 +1234,6 @@ pub const Surface = struct {
             }
 
             // If that doesn't work then we try to translate they kevval..
-            const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
             if (keyval_unicode != 0) {
                 if (std.math.cast(u8, keyval_unicode)) |byte| {
                     if (input.Key.fromASCII(byte)) |key| {
@@ -1279,14 +1279,11 @@ pub const Surface = struct {
         // a text value. We have to do this because GTK will not process
         // "Ctrl+Shift+1" (on US keyboards) as "Ctrl+!" but instead as "".
         // But the keyval is set correctly so we can at least extract that.
-        if (self.im_len == 0) {
-            const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
-            if (keyval_unicode != 0) {
-                if (std.math.cast(u21, keyval_unicode)) |cp| {
-                    if (std.unicode.utf8Encode(cp, &self.im_buf)) |len| {
-                        self.im_len = len;
-                    } else |_| {}
-                }
+        if (self.im_len == 0 and keyval_unicode > 0) {
+            if (std.math.cast(u21, keyval_unicode)) |cp| {
+                if (std.unicode.utf8Encode(cp, &self.im_buf)) |len| {
+                    self.im_len = len;
+                } else |_| {}
             }
         }
 
