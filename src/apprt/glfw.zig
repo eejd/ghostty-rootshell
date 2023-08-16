@@ -282,10 +282,11 @@ pub const Surface = struct {
     /// A core surface
     core_surface: CoreSurface,
 
-    /// This is set to true when keyCallback consumes the input, suppressing
-    /// the charCallback from being fired.
-    key_consumed: bool = false,
-    key_mods: input.Mods = .{},
+    /// This is the key event that was processed in keyCallback. This is only
+    /// non-null if the event was NOT consumed in keyCallback. This lets us
+    /// know in charCallback whether we should populate it and call it again.
+    /// (GLFW guarantees that charCallback is called after keyCallback).
+    key_event: ?input.KeyEvent = null,
 
     pub const Options = struct {};
 
@@ -592,14 +593,21 @@ pub const Surface = struct {
 
         const core_win = window.getUserPointer(CoreSurface) orelse return;
 
-        // If our keyCallback consumed the key input, don't emit a char.
-        if (core_win.rt_surface.key_consumed) {
-            core_win.rt_surface.key_consumed = false;
-            return;
-        }
+        // We need a key event in order to process the charcallback. If it
+        // isn't set then the key event was consumed.
+        var key_event = core_win.rt_surface.key_event orelse return;
+        core_win.rt_surface.key_event = null;
 
-        core_win.charCallback(codepoint, core_win.rt_surface.key_mods) catch |err| {
-            log.err("error in char callback err={}", .{err});
+        // Populate the utf8 value for the event
+        var buf: [4]u8 = undefined;
+        const len = std.unicode.utf8Encode(codepoint, &buf) catch |err| {
+            log.err("error encoding codepoint={} err={}", .{ codepoint, err });
+            return;
+        };
+        key_event.utf8 = buf[0..len];
+
+        _ = core_win.keyCallback(key_event) catch |err| {
+            log.err("error in key callback err={}", .{err});
             return;
         };
     }
@@ -755,18 +763,28 @@ pub const Surface = struct {
             => .invalid,
         };
 
-        // TODO: we need to do mapped keybindings
+        const key_event: input.KeyEvent = .{
+            .action = action,
+            .key = key,
+            .physical_key = key,
+            .mods = mods,
+            .consumed_mods = .{},
+            .composing = false,
+            .utf8 = "",
+        };
 
-        core_win.rt_surface.key_mods = mods;
-        core_win.rt_surface.key_consumed = core_win.keyCallback(
-            action,
-            key,
-            key,
-            mods,
-        ) catch |err| {
+        const consumed = core_win.keyCallback(key_event) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
+
+        // If it wasn't consumed, we set it on our self so that charcallback
+        // can make another attempt. Otherwise, we set null so the charcallback
+        // is ignored.
+        core_win.rt_surface.key_event = null;
+        if (!consumed and (action == .press or action == .repeat)) {
+            core_win.rt_surface.key_event = key_event;
+        }
     }
 
     fn focusCallback(window: glfw.Window, focused: bool) void {

@@ -987,189 +987,29 @@ pub fn preeditCallback(self: *Surface, preedit: ?u21) !void {
     try self.queueRender();
 }
 
-pub fn charCallback(
-    self: *Surface,
-    codepoint: u21,
-    mods: input.Mods,
-) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    // Dev Mode
-    if (DevMode.enabled and DevMode.instance.visible) {
-        // If the event was handled by imgui, ignore it.
-        if (imgui.IO.get()) |io| {
-            if (io.cval().WantCaptureKeyboard) {
-                try self.queueRender();
-            }
-        } else |_| {}
-    }
-
-    // Critical area
-    const critical: struct {
-        alt_esc_prefix: bool,
-        modify_other_keys: bool,
-    } = critical: {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-
-        // Clear the selection if we have one.
-        if (self.io.terminal.screen.selection != null) {
-            self.setSelection(null);
-            try self.queueRender();
-        }
-
-        // We want to scroll to the bottom
-        // TODO: detect if we're at the bottom to avoid the render call here.
-        try self.io.terminal.scrollViewport(.{ .bottom = {} });
-
-        break :critical .{
-            .alt_esc_prefix = self.io.terminal.modes.get(.alt_esc_prefix),
-            .modify_other_keys = self.io.terminal.flags.modify_other_keys_2,
-        };
-    };
-
-    // Where we're going to write any data. Any data we write has to
-    // fit into the fixed size array so we just define it up front.
-    var data: termio.Message.WriteReq.Small.Array = undefined;
-
-    // In modify other keys state 2, we send the CSI 27 sequence
-    // for any char with a modifier. Ctrl sequences like Ctrl+A
-    // are handled in keyCallback and should never have reached this
-    // point.
-    if (critical.modify_other_keys) {
-        // This copies xterm's `ModifyOtherKeys` function that returns
-        // whether modify other keys should be encoded for the given
-        // input.
-        const should_modify = should_modify: {
-            // xterm IsControlInput
-            if (codepoint >= 0x40 and codepoint <= 0x7F)
-                break :should_modify true;
-
-            // If we have anything other than shift pressed, encode.
-            var mods_no_shift = mods;
-            mods_no_shift.shift = false;
-            if (!mods_no_shift.empty()) break :should_modify true;
-
-            // We only have shift pressed. We only allow space.
-            if (codepoint == ' ') break :should_modify true;
-
-            // This logic isn't complete but I don't fully understand
-            // the rest so I'm going to wait until we can have a
-            // reasonable test scenario.
-            break :should_modify false;
-        };
-
-        if (should_modify) {
-            for (input.function_keys.modifiers, 2..) |modset, code| {
-                if (!mods.equal(modset)) continue;
-
-                const resp = try std.fmt.bufPrint(
-                    &data,
-                    "\x1B[27;{};{}~",
-                    .{ code, codepoint },
-                );
-                _ = self.io_thread.mailbox.push(.{
-                    .write_small = .{
-                        .data = data,
-                        .len = @intCast(resp.len),
-                    },
-                }, .{ .forever = {} });
-                try self.io_thread.wakeup.notify();
-                return;
-            }
-        }
-    }
-
-    // Prefix our data with ESC if we have alt pressed.
-    var i: u8 = 0;
-    if (mods.alt) alt: {
-        // If the terminal explicitly disabled this feature using mode 1036,
-        // then we don't send the prefix.
-        if (!critical.alt_esc_prefix) {
-            log.debug("alt_esc_prefix disabled with mode, not sending esc prefix", .{});
-            break :alt;
-        }
-
-        // On macOS, we have to opt-in to using alt because option
-        // by default is a unicode character sequence.
-        if (comptime builtin.target.isDarwin()) {
-            switch (self.config.macos_option_as_alt) {
-                .false => break :alt,
-                .true => {},
-                .left => if (mods.sides.alt != .left) break :alt,
-                .right => if (mods.sides.alt != .right) break :alt,
-            }
-        }
-
-        data[i] = 0x1b;
-        i += 1;
-    }
-
-    const len = try std.unicode.utf8Encode(codepoint, data[i..]);
-    _ = self.io_thread.mailbox.push(.{
-        .write_small = .{
-            .data = data,
-            .len = len + i,
-        },
-    }, .{ .forever = {} });
-
-    // After sending all our messages we have to notify our IO thread
-    try self.io_thread.wakeup.notify();
-}
-
-/// Called for a single key event.
-///
-/// This will return true if the key was handled/consumed. In that case,
-/// the caller doesn't need to call a subsequent `charCallback` for the
-/// same event. However, the caller can call `charCallback` if they want,
-/// the surface will retain state to ensure the event is ignored.
+/// Called for any key events. This handles keybindings, encoding and
+/// sending to the termianl, etc. The return value is true if the key
+/// was handled and false if it was not.
 pub fn keyCallback(
     self: *Surface,
-    action: input.Action,
-    key: input.Key,
-    physical_key: input.Key,
-    mods: input.Mods,
+    event: input.KeyEvent,
 ) !bool {
-    const tracy = trace(@src());
-    defer tracy.end();
+    // log.debug("keyCallback event={}", .{event});
 
-    // log.warn("KEY CALLBACK action={} key={} physical_key={} mods={}", .{
-    //     action,
-    //     key,
-    //     physical_key,
-    //     mods,
-    // });
-
-    // Dev Mode
-    if (DevMode.enabled and DevMode.instance.visible) {
-        // If the event was handled by imgui, ignore it.
-        if (imgui.IO.get()) |io| {
-            if (io.cval().WantCaptureKeyboard) {
-                try self.queueRender();
-            }
-        } else |_| {}
-    }
-
-    // We only handle press events
-    if (action != .press and action != .repeat) return false;
-
-    // Mods for bindings never include caps/num lock.
-    const binding_mods = mods.binding();
-
-    // Check if we're processing a binding first. If so, that negates
-    // any further key processing.
-    {
+    // Before encoding, we see if we have any keybindings for this
+    // key. Those always intercept before any encoding tasks.
+    if (event.action == .press or event.action == .repeat) {
+        const binding_mods = event.effectiveMods().binding();
         const binding_action_: ?input.Binding.Action = action: {
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
-                .key = key,
+                .key = event.key,
             };
 
             const set = self.config.keybind.set;
             if (set.get(trigger)) |v| break :action v;
 
-            trigger.key = physical_key;
+            trigger.key = event.physical_key;
             trigger.physical = true;
             if (set.get(trigger)) |v| break :action v;
 
@@ -1183,164 +1023,46 @@ pub fn keyCallback(
         }
     }
 
-    // We'll need to know these values here on.
-    self.renderer_state.mutex.lock();
-    const cursor_key_application = self.io.terminal.modes.get(.cursor_keys);
-    const keypad_key_application = self.io.terminal.modes.get(.keypad_keys);
-    const modify_other_keys = self.io.terminal.flags.modify_other_keys_2;
-    self.renderer_state.mutex.unlock();
-
-    // Check if we're processing a function key.
-    for (input.function_keys.keys.get(key)) |entry| {
-        switch (entry.cursor) {
-            .any => {},
-            .normal => if (cursor_key_application) continue,
-            .application => if (!cursor_key_application) continue,
-        }
-
-        switch (entry.keypad) {
-            .any => {},
-            .normal => if (keypad_key_application) continue,
-            .application => if (!keypad_key_application) continue,
-        }
-
-        switch (entry.modify_other_keys) {
-            .any => {},
-            .set => if (modify_other_keys) continue,
-            .set_other => if (!modify_other_keys) continue,
-        }
-
-        const mods_int = binding_mods.int();
-        const entry_mods_int = entry.mods.int();
-        if (entry_mods_int == 0) {
-            if (mods_int != 0 and !entry.mods_empty_is_any) continue;
-            // mods are either empty, or empty means any so we allow it.
-        } else if (entry_mods_int != mods_int) {
-            // any set mods require an exact match
-            continue;
-        }
-
-        // log.debug("function key match: {}", .{entry});
-
-        // We found a match, send the sequence and return we as handled.
-        var data: termio.Message.WriteReq.Small.Array = undefined;
-        @memcpy(data[0..entry.sequence.len], entry.sequence);
-        _ = self.io_thread.mailbox.push(.{
-            .write_small = .{
-                .data = data,
-                .len = @intCast(entry.sequence.len),
-            },
-        }, .{ .forever = {} });
-        try self.io_thread.wakeup.notify();
-
-        return true;
-    }
-
-    // If we have alt pressed, we're going to prefix any of the
-    // translations below with ESC (0x1B).
-    const alt = binding_mods.alt;
-    const unalt_mods = unalt_mods: {
-        var unalt_mods = binding_mods;
-        unalt_mods.alt = false;
-        break :unalt_mods unalt_mods;
-    };
-
-    // Handle non-printables
-    const char: u8 = char: {
-        const mods_int = unalt_mods.int();
-        const ctrl_only = (input.Mods{ .ctrl = true }).int();
-
-        // If we're only pressing control, check if this is a character
-        // we convert to a non-printable. The best table I've found for
-        // this is:
-        // https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys
-        //
-        // Note that depending on the apprt, these might be handled as
-        // composed characters. But not all app runtimes will do this;
-        // some only compose printable characters. So we manually handle
-        // this here.
-        if (mods_int != ctrl_only) break :char 0;
-        break :char switch (key) {
-            .space => 0,
-            .slash => 0x1F,
-            .zero => 0x30,
-            .one => 0x31,
-            .two => 0x00,
-            .three => 0x1B,
-            .four => 0x1C,
-            .five => 0x1D,
-            .six => 0x1E,
-            .seven => 0x1F,
-            .eight => 0x7F,
-            .nine => 0x39,
-            .backslash => 0x1C,
-            .left_bracket => 0x1B,
-            .right_bracket => 0x1D,
-            .a => 0x01,
-            .b => 0x02,
-            .c => 0x03,
-            .d => 0x04,
-            .e => 0x05,
-            .f => 0x06,
-            .g => 0x07,
-            .h => 0x08,
-            .i => 0x09,
-            .j => 0x0A,
-            .k => 0x0B,
-            .l => 0x0C,
-            .m => 0x0D,
-            .n => 0x0E,
-            .o => 0x0F,
-            .p => 0x10,
-            .q => 0x11,
-            .r => 0x12,
-            .s => 0x13,
-            .t => 0x14,
-            .u => 0x15,
-            .v => 0x16,
-            .w => 0x17,
-            .x => 0x18,
-            .y => 0x19,
-            .z => 0x1A,
-            else => 0,
+    // No binding, so we have to perform an encoding task. This
+    // may still result in no encoding. Under different modes and
+    // inputs there are many keybindings that result in no encoding
+    // whatsoever.
+    const enc: input.KeyEncoder = enc: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        const t = &self.io.terminal;
+        break :enc .{
+            .event = event,
+            .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
+            .cursor_key_application = t.modes.get(.cursor_keys),
+            .keypad_key_application = t.modes.get(.keypad_keys),
+            .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
         };
     };
-    if (char > 0) {
-        // Ask our IO thread to write the data
-        var data: termio.Message.WriteReq.Small.Array = undefined;
 
-        // Write our data. If we need to alt-prefix we add that first.
-        var i: u8 = 0;
-        if (alt) {
-            data[i] = 0x1B;
-            i += 1;
-        }
-        data[i] = @intCast(char);
-        i += 1;
+    var data: termio.Message.WriteReq.Small.Array = undefined;
+    const seq = try enc.legacy(&data);
+    if (seq.len == 0) return false;
 
-        _ = self.io_thread.mailbox.push(.{
-            .write_small = .{
-                .data = data,
-                .len = i,
-            },
-        }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{
+        .write_small = .{
+            .data = data,
+            .len = @intCast(seq.len),
+        },
+    }, .{ .forever = {} });
+    try self.io_thread.wakeup.notify();
 
-        // After sending all our messages we have to notify our IO thread
-        try self.io_thread.wakeup.notify();
-
-        // Control charactesr trigger a scroll
-        {
-            self.renderer_state.mutex.lock();
-            defer self.renderer_state.mutex.unlock();
-            self.scrollToBottom() catch |err| {
-                log.warn("error scrolling to bottom err={}", .{err});
-            };
-        }
-
-        return true;
+    // If we have a sequence to emit then we always want to clear the
+    // selection and scroll to the bottom.
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        self.setSelection(null);
+        try self.io.terminal.scrollViewport(.{ .bottom = {} });
+        try self.queueRender();
     }
 
-    return false;
+    return true;
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {
