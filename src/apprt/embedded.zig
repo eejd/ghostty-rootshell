@@ -405,6 +405,17 @@ pub const Surface = struct {
                 },
             }
 
+            // On macOS we strip ctrl because UCKeyTranslate
+            // converts to the masked values (i.e. ctrl+c becomes 3)
+            // and we don't want that behavior.
+            //
+            // We also strip super because its not used for translation
+            // on macos and it results in a bad translation.
+            if (comptime builtin.target.isDarwin()) {
+                translate_mods.ctrl = false;
+                translate_mods.super = false;
+            }
+
             break :translate_mods translate_mods;
         };
 
