@@ -1407,6 +1407,34 @@ const StreamHandler = struct {
         self.terminal.fullReset();
     }
 
+    pub fn queryKittyKeyboard(self: *StreamHandler) !void {
+        // log.debug("querying kitty keyboard mode", .{});
+        var data: termio.Message.WriteReq.Small.Array = undefined;
+        const resp = try std.fmt.bufPrint(&data, "\x1b[?{}u", .{
+            self.terminal.screen.kitty_keyboard.current().int(),
+        });
+
+        self.messageWriter(.{
+            .write_small = .{
+                .data = data,
+                .len = @intCast(resp.len),
+            },
+        });
+    }
+
+    pub fn pushKittyKeyboard(
+        self: *StreamHandler,
+        flags: terminal.kitty.KeyFlags,
+    ) !void {
+        // log.debug("pushing kitty keyboard mode: {}", .{flags});
+        self.terminal.screen.kitty_keyboard.push(flags);
+    }
+
+    pub fn popKittyKeyboard(self: *StreamHandler, n: u16) !void {
+        // log.debug("popping kitty keyboard mode", .{});
+        self.terminal.screen.kitty_keyboard.pop(@intCast(n));
+    }
+
     //-------------------------------------------------------------------------
     // OSC
 

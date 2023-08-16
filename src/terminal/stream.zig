@@ -4,6 +4,7 @@ const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const kitty = @import("kitty.zig");
 const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
@@ -640,6 +641,48 @@ pub fn Stream(comptime Handler: type) type {
 
                     else => log.warn(
                         "ignoring unimplemented CSI s with intermediates: {s}",
+                        .{action},
+                    ),
+                },
+
+                // Kitty keyboard protocol
+                'u' => switch (action.intermediates.len) {
+                    1 => switch (action.intermediates[0]) {
+                        '?' => if (@hasDecl(T, "queryKittyKeyboard")) {
+                            try self.handler.queryKittyKeyboard();
+                        },
+
+                        '>' => if (@hasDecl(T, "pushKittyKeyboard")) push: {
+                            const flags: u5 = if (action.params.len == 1)
+                                std.math.cast(u5, action.params[0]) orelse {
+                                    log.warn("invalid pushKittyKeyboard command: {}", .{action});
+                                    break :push;
+                                }
+                            else
+                                0;
+
+                            try self.handler.pushKittyKeyboard(@bitCast(flags));
+                        },
+
+                        '<' => if (@hasDecl(T, "popKittyKeyboard")) {
+                            const number: u16 = if (action.params.len == 1)
+                                action.params[0]
+                            else
+                                0;
+
+                            try self.handler.popKittyKeyboard(number);
+                        },
+
+                        '=' => @panic("TODO! DO NOT MERGE"),
+
+                        else => log.warn(
+                            "unknown CSI s with intermediate: {}",
+                            .{action},
+                        ),
+                    },
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI u: {}",
                         .{action},
                     ),
                 },
