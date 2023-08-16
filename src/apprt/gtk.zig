@@ -1309,7 +1309,7 @@ pub const Surface = struct {
         }
 
         // Invoke the core Ghostty logic to handle this input.
-        const consumed = self.core_surface.key2Callback(.{
+        const consumed = self.core_surface.keyCallback(.{
             .action = action,
             .key = key,
             .physical_key = physical_key,
@@ -1402,7 +1402,7 @@ pub const Surface = struct {
         // We're not in a keypress, so this was sent from an on-screen emoji
         // keyboard or someting like that. Send the characters directly to
         // the surface.
-        _ = self.core_surface.key2Callback(.{
+        _ = self.core_surface.keyCallback(.{
             .action = .press,
             .key = .invalid,
             .physical_key = .invalid,

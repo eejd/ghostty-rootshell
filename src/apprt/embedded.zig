@@ -509,7 +509,7 @@ pub const Surface = struct {
         } else .invalid;
 
         // Invoke the core Ghostty logic to handle this input.
-        const consumed = self.core_surface.key2Callback(.{
+        const consumed = self.core_surface.keyCallback(.{
             .action = action,
             .key = key,
             .physical_key = physical_key,
@@ -541,7 +541,7 @@ pub const Surface = struct {
         // For a char callback we just construct a key event with invalid
         // keys but with text. This should result in the text being sent
         // as-is.
-        _ = self.core_surface.key2Callback(.{
+        _ = self.core_surface.keyCallback(.{
             .action = .press,
             .key = .invalid,
             .physical_key = .invalid,

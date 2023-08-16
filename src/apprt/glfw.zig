@@ -606,7 +606,7 @@ pub const Surface = struct {
         };
         key_event.utf8 = buf[0..len];
 
-        _ = core_win.key2Callback(key_event) catch |err| {
+        _ = core_win.keyCallback(key_event) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
@@ -773,7 +773,7 @@ pub const Surface = struct {
             .utf8 = "",
         };
 
-        const consumed = core_win.key2Callback(key_event) catch |err| {
+        const consumed = core_win.keyCallback(key_event) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };

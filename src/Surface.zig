@@ -987,7 +987,10 @@ pub fn preeditCallback(self: *Surface, preedit: ?u21) !void {
     try self.queueRender();
 }
 
-pub fn key2Callback(
+/// Called for any key events. This handles keybindings, encoding and
+/// sending to the termianl, etc. The return value is true if the key
+/// was handled and false if it was not.
+pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !bool {
