@@ -24,8 +24,17 @@ keypad_key_application: bool = false,
 modify_other_keys_state_2: bool = false,
 kitty_flags: KittyFlags = .{},
 
+/// Perform the proper encoding depending on the terminal state.
+pub fn encode(
+    self: *const KeyEncoder,
+    buf: []u8,
+) ![]const u8 {
+    if (self.kitty_flags.int() != 0) return try self.kitty(buf);
+    return try self.legacy(buf);
+}
+
 /// Perform Kitty keyboard protocol encoding of the key event.
-pub fn kitty(
+fn kitty(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {
@@ -126,7 +135,7 @@ pub fn kitty(
 /// These together combine the legacy protocol because they're all
 /// meant to be extensions that do not change any existing behavior
 /// and therefore safe to combine.
-pub fn legacy(
+fn legacy(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {

@@ -1037,11 +1037,12 @@ pub fn keyCallback(
             .cursor_key_application = t.modes.get(.cursor_keys),
             .keypad_key_application = t.modes.get(.keypad_keys),
             .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
+            .kitty_flags = t.screen.kitty_keyboard.current(),
         };
     };
 
     var data: termio.Message.WriteReq.Small.Array = undefined;
-    const seq = try enc.legacy(&data);
+    const seq = try enc.encode(&data);
     if (seq.len == 0) return false;
 
     _ = self.io_thread.mailbox.push(.{
