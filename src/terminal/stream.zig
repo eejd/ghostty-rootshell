@@ -76,7 +76,8 @@ pub fn Stream(comptime Handler: type) type {
             defer tracy.end();
 
             switch (@as(ansi.C0, @enumFromInt(c))) {
-                .NUL => {},
+                // We ignore SOH/STX: https://github.com/microsoft/terminal/issues/10786
+                .NUL, .SOH, .STX => {},
 
                 .ENQ => if (@hasDecl(T, "enquiry"))
                     try self.handler.enquiry()

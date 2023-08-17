@@ -5,6 +5,10 @@
 pub const C0 = enum(u7) {
     /// Null
     NUL = 0x00,
+    /// Start of heading
+    SOH = 0x01,
+    /// Start of text
+    STX = 0x02,
     /// Enquiry
     ENQ = 0x05,
     /// Bell
