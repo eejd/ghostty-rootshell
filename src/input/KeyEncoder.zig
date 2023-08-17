@@ -42,7 +42,7 @@ fn kitty(
     if (self.kitty_flags.int() == 0) return try self.legacy(buf);
 
     // We only processed "press" events unless report events is active
-    if (self.event.action != .press and !self.kitty_flags.report_events)
+    if (self.event.action == .release and !self.kitty_flags.report_events)
         return "";
 
     const all_mods = self.event.mods;
@@ -735,6 +735,23 @@ test "kitty: plain text" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("abcd", actual);
+}
+
+test "kitty: repeat with just disambiguate" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .action = .repeat,
+            .mods = .{},
+            .utf8 = "a",
+        },
+
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("a", actual);
 }
 
 test "kitty: enter, backspace, tab" {
