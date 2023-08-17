@@ -41,7 +41,7 @@ pub fn kitty(
     const binding_mods = effective_mods.binding();
 
     // Find the entry for this key in the kitty table.
-    const entry: ?KittyEntry = entry: {
+    const entry_: ?KittyEntry = entry: {
         for (kitty_entries) |entry| {
             if (entry.key == self.event.key) break :entry entry;
         }
@@ -49,38 +49,75 @@ pub fn kitty(
         break :entry null;
     };
 
-    // Quote:
-    // The only exceptions are the Enter, Tab and Backspace keys which
-    // still generate the same bytes as in legacy mode this is to allow the
-    // user to type and execute commands in the shell such as reset after a
-    // program that sets this mode crashes without clearing it.
-    if (effective_mods.empty()) {
-        switch (self.event.key) {
-            .enter => return try copyToBuf(buf, "\r"),
-            .tab => return try copyToBuf(buf, "\t"),
-            .backspace => return try copyToBuf(buf, "\x7F"),
-            else => {},
+    preprocessing: {
+        // When composing, the only keys sent are plain modifiers.
+        if (self.event.composing) {
+            if (entry_) |entry| {
+                if (entry.modifier) break :preprocessing;
+            }
+
+            return "";
+        }
+
+        // If we're reporting all then we always send CSI sequences.
+        if (!self.kitty_flags.report_all) {
+            // Quote:
+            // The only exceptions are the Enter, Tab and Backspace keys which
+            // still generate the same bytes as in legacy mode this is to allow the
+            // user to type and execute commands in the shell such as reset after a
+            // program that sets this mode crashes without clearing it.
+            //
+            // Quote ("report all" mode):
+            // Note that all keys are reported as escape codes, including Enter,
+            // Tab, Backspace etc.
+            if (effective_mods.empty()) {
+                switch (self.event.key) {
+                    .enter => return try copyToBuf(buf, "\r"),
+                    .tab => return try copyToBuf(buf, "\t"),
+                    .backspace => return try copyToBuf(buf, "\x7F"),
+                    else => {},
+                }
+            }
+
+            // Send plain-text non-modified text directly to the terminal.
+            // We don't send release events because those are specially encoded.
+            if (self.event.utf8.len > 0 and
+                binding_mods.empty() and
+                self.event.action != .release)
+            {
+                return try copyToBuf(buf, self.event.utf8);
+            }
         }
     }
 
-    // Send plain-text non-modified text directly to the terminal.
-    // We don't send release events because those are specially encoded.
-    if (self.event.utf8.len > 0 and
-        binding_mods.empty() and
-        self.event.action != .release)
-    {
-        return try copyToBuf(buf, self.event.utf8);
-    }
-
-    const kitty_mods = KittyMods.fromInput(all_mods);
-    const final_entry = entry orelse {
+    const final_entry = entry_ orelse {
         // TODO: we need to look it up
         return "";
     };
-    _ = kitty_mods;
-    _ = final_entry;
 
-    return "X";
+    const seq: KittySequence = seq: {
+        var seq: KittySequence = .{
+            .key = final_entry.code,
+            .final = final_entry.final,
+            .mods = KittyMods.fromInput(all_mods),
+        };
+
+        if (self.kitty_flags.report_events) {
+            seq.event = switch (self.event.action) {
+                .press => .press,
+                .release => .release,
+                .repeat => .repeat,
+            };
+        }
+
+        if (self.kitty_flags.report_associated) {
+            seq.text = self.event.utf8;
+        }
+
+        break :seq seq;
+    };
+
+    return try seq.encode(buf);
 }
 
 /// Perform legacy encoding of the key event. "Legacy" in this case
@@ -477,9 +514,9 @@ const KittyMods = packed struct(u8) {
 const KittySequence = struct {
     key: u16,
     final: u8,
+    mods: KittyMods = .{},
     event: Event = .none,
     alternates: []const u16 = &.{},
-    mods: KittyMods = .{},
     text: []const u8 = "",
 
     /// Values for the event code (see "event-type" in above comment).
@@ -699,6 +736,36 @@ test "kitty: enter, backspace, tab" {
         const actual = try enc.kitty(&buf);
         try testing.expectEqualStrings("\t", actual);
     }
+}
+
+test "kitty: composing with no modifier" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{ .shift = true },
+            .composing = true,
+        },
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("", actual);
+}
+
+test "kitty: composing with modifier" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .left_shift,
+            .mods = .{ .shift = true },
+            .composing = true,
+        },
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[57441;2u", actual);
 }
 
 test "legacy: ctrl+alt+c" {
