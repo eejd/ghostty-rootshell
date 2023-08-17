@@ -476,7 +476,186 @@ const KittyMods = packed struct(u8) {
 /// CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
 const KittySequence = struct {
     key: u16,
+    final: u8,
+    event: Event = .none,
+    alternates: []const u16 = &.{},
+    mods: KittyMods = .{},
+    text: []const u8 = "",
+
+    /// Values for the event code (see "event-type" in above comment).
+    /// Note that Kitty omits the ":1" for the press event but other
+    /// terminals include it. We'll include it.
+    const Event = enum(u2) {
+        none = 0,
+        press = 1,
+        repeat = 2,
+        release = 3,
+    };
+
+    pub fn encode(self: KittySequence, buf: []u8) ![]const u8 {
+        if (self.final == 'u' or self.final == '~') return try self.encodeFull(buf);
+        return try self.encodeSpecial(buf);
+    }
+
+    fn encodeFull(self: KittySequence, buf: []u8) ![]const u8 {
+        // Boilerplate to basically create a string builder that writes
+        // over our buffer (but no more).
+        var fba = std.heap.FixedBufferAllocator.init(buf);
+        const alloc = fba.allocator();
+        var builder = try std.ArrayListUnmanaged(u8).initCapacity(alloc, buf.len);
+        const writer = builder.writer(alloc);
+
+        // Key section
+        try writer.print("\x1B[{d}", .{self.key});
+        for (self.alternates) |alt| try writer.print(":{d}", .{alt});
+
+        // Mods and events section
+        const mods = self.mods.seqInt();
+        var emit_prior = false;
+        if (self.event != .none) {
+            try writer.print(";{d}:{d}", .{ mods, @intFromEnum(self.event) });
+            emit_prior = true;
+        } else if (mods > 1) {
+            try writer.print(";{d}", .{mods});
+            emit_prior = true;
+        }
+
+        // Text section
+        if (self.text.len > 0) {
+            // We need to add our ";". We need to add two if we didn't emit
+            // the modifier section.
+            if (!emit_prior) try writer.writeByte(';');
+            try writer.writeByte(';');
+
+            // First one has no prefix
+            const view = try std.unicode.Utf8View.init(self.text);
+            var it = view.iterator();
+            if (it.nextCodepoint()) |cp| {
+                try writer.print("{d}", .{cp});
+            }
+            while (it.nextCodepoint()) |cp| {
+                try writer.print(":{d}", .{cp});
+            }
+        }
+
+        try writer.print("{c}", .{self.final});
+        return builder.items;
+    }
+
+    fn encodeSpecial(self: KittySequence, buf: []u8) ![]const u8 {
+        const mods = self.mods.seqInt();
+        if (self.event != .none) {
+            return try std.fmt.bufPrint(buf, "\x1B[1;{d}:{d}{c}", .{
+                mods,
+                @intFromEnum(self.event),
+                self.final,
+            });
+        }
+
+        if (mods > 1) {
+            return try std.fmt.bufPrint(buf, "\x1B[1;{d}{c}", .{
+                mods,
+                self.final,
+            });
+        }
+
+        return try std.fmt.bufPrint(buf, "\x1B[{c}", .{self.final});
+    }
 };
+
+test "KittySequence: backspace" {
+    var buf: [128]u8 = undefined;
+
+    // Plain
+    {
+        var seq: KittySequence = .{ .key = 127, .final = 'u' };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127u", actual);
+    }
+
+    // Release event
+    {
+        var seq: KittySequence = .{ .key = 127, .final = 'u', .event = .release };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;1:3u", actual);
+    }
+
+    // Shift
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .mods = .{ .shift = true },
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;2u", actual);
+    }
+}
+
+test "KittySequence: text" {
+    var buf: [128]u8 = undefined;
+
+    // Plain
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .text = "A",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;;65u", actual);
+    }
+
+    // Release
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .event = .release,
+            .text = "A",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;1:3;65u", actual);
+    }
+
+    // Shift
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .mods = .{ .shift = true },
+            .text = "A",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;2;65u", actual);
+    }
+}
+
+test "KittySequence: special no mods" {
+    var buf: [128]u8 = undefined;
+    var seq: KittySequence = .{ .key = 1, .final = 'A' };
+    const actual = try seq.encode(&buf);
+    try testing.expectEqualStrings("\x1B[A", actual);
+}
+
+test "KittySequence: special mods only" {
+    var buf: [128]u8 = undefined;
+    var seq: KittySequence = .{ .key = 1, .final = 'A', .mods = .{ .shift = true } };
+    const actual = try seq.encode(&buf);
+    try testing.expectEqualStrings("\x1B[1;2A", actual);
+}
+
+test "KittySequence: special mods and event" {
+    var buf: [128]u8 = undefined;
+    var seq: KittySequence = .{
+        .key = 1,
+        .final = 'A',
+        .event = .release,
+        .mods = .{ .shift = true },
+    };
+    const actual = try seq.encode(&buf);
+    try testing.expectEqualStrings("\x1B[1;2:3A", actual);
+}
 
 test "kitty: plain text" {
     var buf: [128]u8 = undefined;
