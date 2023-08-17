@@ -1,5 +1,6 @@
 import Cocoa
 import Combine
+import SwiftUI
 
 // PrimaryWindowManager manages the windows and tabs in the primary window
 // of the application. It keeps references to windows and cleans them up when
@@ -43,6 +44,22 @@ class PrimaryWindowManager {
     
     init(ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
+        
+        // Register self as observer for the NewTab notification that
+        // is triggered via callback from Zig code.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onNewTab),
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
+    }
+    
+    deinit {
+        // Clean up the observer.
+        NotificationCenter.default.removeObserver(
+            self,
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
     }
     
     /// Add the initial window for the application. This should only be called once from the AppDelegate.
@@ -61,7 +78,37 @@ class PrimaryWindowManager {
         newWindow.makeKeyAndOrderFront(nil)
     }
     
-    func addNewTab(to window: NSWindow, withFontSize fontSize: UInt8? = nil) {
+    func newTabForWindow(window: PrimaryWindow) {
+        guard let surface = window.focusedSurfaceWrapper.surface else { return }
+        ghostty.newTab(surface: surface)
+    }
+    
+    func newTab() {
+        if mainWindow != nil {
+            guard let window = mainWindow as? PrimaryWindow else { return }
+            self.newTabForWindow(window: window)
+        } else {
+            self.addNewWindow()
+        }
+    }
+
+    @objc private func onNewTab(notification: SwiftUI.Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let window = surfaceView.window else { return }
+        
+        let fontSizeAny = notification.userInfo?[Ghostty.Notification.NewTabKey]
+        let fontSize = fontSizeAny as? UInt8
+        
+        if fontSize != nil {
+            // Add the new tab to the window with the given font size.
+            self.addNewTab(to: window, withFontSize: fontSize)
+        } else {
+            // No font size specified, just add new tab.
+            self.addNewTab(to: window)
+        }
+    }
+    
+    private func addNewTab(to window: NSWindow, withFontSize fontSize: UInt8? = nil) {
         guard let controller = createWindowController(withFontSize: fontSize) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)

@@ -11,7 +11,7 @@ struct PrimaryView: View {
     // We need this to report back up the app controller which surface in this view is focused.
     let focusedSurfaceWrapper: FocusedSurfaceWrapper
     
-    // TODO: Document this
+    // If this is set, we inherit the fontSize from the parent tab or window.
     let fontSize: UInt8?
     
     // We need access to our window to know if we're the key window to determine
