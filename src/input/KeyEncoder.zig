@@ -111,15 +111,11 @@ fn kitty(
         }
     }
 
-    const final_entry = entry_ orelse {
-        // TODO: we need to look it up
-        return "";
-    };
-
+    const entry = entry_ orelse return "";
     const seq: KittySequence = seq: {
         var seq: KittySequence = .{
-            .key = final_entry.code,
-            .final = final_entry.final,
+            .key = entry.code,
+            .final = entry.final,
             .mods = KittyMods.fromInput(all_mods),
         };
 
