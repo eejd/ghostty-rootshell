@@ -606,6 +606,14 @@ pub const Surface = struct {
         };
         key_event.utf8 = buf[0..len];
 
+        // On macOS we need to also disable some modifiers because
+        // alt+key consumes the alt.
+        if (comptime builtin.target.isDarwin()) {
+            // For GLFW, we say we always consume alt because
+            // GLFW doesn't have a way to disable the alt key.
+            key_event.consumed_mods.alt = true;
+        }
+
         _ = core_win.keyCallback(key_event) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
