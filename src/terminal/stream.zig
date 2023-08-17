@@ -4,6 +4,7 @@ const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const kitty = @import("kitty.zig");
 const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
@@ -640,6 +641,76 @@ pub fn Stream(comptime Handler: type) type {
 
                     else => log.warn(
                         "ignoring unimplemented CSI s with intermediates: {s}",
+                        .{action},
+                    ),
+                },
+
+                // Kitty keyboard protocol
+                'u' => switch (action.intermediates.len) {
+                    1 => switch (action.intermediates[0]) {
+                        '?' => if (@hasDecl(T, "queryKittyKeyboard")) {
+                            try self.handler.queryKittyKeyboard();
+                        },
+
+                        '>' => if (@hasDecl(T, "pushKittyKeyboard")) push: {
+                            const flags: u5 = if (action.params.len == 1)
+                                std.math.cast(u5, action.params[0]) orelse {
+                                    log.warn("invalid pushKittyKeyboard command: {}", .{action});
+                                    break :push;
+                                }
+                            else
+                                0;
+
+                            try self.handler.pushKittyKeyboard(@bitCast(flags));
+                        },
+
+                        '<' => if (@hasDecl(T, "popKittyKeyboard")) {
+                            const number: u16 = if (action.params.len == 1)
+                                action.params[0]
+                            else
+                                0;
+
+                            try self.handler.popKittyKeyboard(number);
+                        },
+
+                        '=' => if (@hasDecl(T, "setKittyKeyboard")) set: {
+                            const flags: u5 = if (action.params.len >= 1)
+                                std.math.cast(u5, action.params[0]) orelse {
+                                    log.warn("invalid setKittyKeyboard command: {}", .{action});
+                                    break :set;
+                                }
+                            else
+                                0;
+
+                            const number: u16 = if (action.params.len >= 2)
+                                action.params[1]
+                            else
+                                1;
+
+                            const mode: kitty.KeySetMode = switch (number) {
+                                0 => .set,
+                                1 => .@"or",
+                                2 => .not,
+                                else => {
+                                    log.warn("invalid setKittyKeyboard command: {}", .{action});
+                                    break :set;
+                                },
+                            };
+
+                            try self.handler.setKittyKeyboard(
+                                mode,
+                                @bitCast(flags),
+                            );
+                        },
+
+                        else => log.warn(
+                            "unknown CSI s with intermediate: {}",
+                            .{action},
+                        ),
+                    },
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI u: {}",
                         .{action},
                     ),
                 },

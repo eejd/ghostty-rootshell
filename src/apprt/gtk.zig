@@ -1212,6 +1212,31 @@ pub const Surface = struct {
         const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
         const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
 
+        // Get the unshifted unicode value of the keyval. This is used
+        // by the Kitty keyboard protocol.
+        const keyval_unicode_unshifted: u21 = unshifted: {
+            var n: c_int = undefined;
+            var keys: [*c]c.GdkKeymapKey = undefined;
+            var keyvals: [*c]c.guint = undefined;
+            if (c.gdk_display_map_keycode(
+                c.gdk_event_get_display(event),
+                keycode,
+                &keys,
+                &keyvals,
+                &n,
+            ) == 0) break :unshifted 0;
+
+            defer c.g_free(keys);
+            defer c.g_free(keyvals);
+            for (keys[0..@intCast(n)], 0..) |key, i| {
+                if (key.group == 0 and key.level == 0) {
+                    break :unshifted @intCast(c.gdk_keyval_to_unicode(keyvals[i]));
+                }
+            }
+
+            break :unshifted 0;
+        };
+
         // We always reset our committed text when ending a keypress so that
         // future keypresses don't think we have a commit event.
         defer self.im_len = 0;
@@ -1317,6 +1342,7 @@ pub const Surface = struct {
             .consumed_mods = consumed_mods,
             .composing = self.im_composing,
             .utf8 = self.im_buf[0..self.im_len],
+            .unshifted_codepoint = keyval_unicode_unshifted,
         }) catch |err| {
             log.err("error in key callback err={}", .{err});
             return false;

@@ -58,6 +58,7 @@ const utf8proc = @import("utf8proc");
 const trace = @import("tracy").trace;
 const sgr = @import("sgr.zig");
 const color = @import("color.zig");
+const kitty = @import("kitty.zig");
 const point = @import("point.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
@@ -860,6 +861,9 @@ saved_cursor: Cursor = .{},
 
 /// The selection for this screen (if any).
 selection: ?Selection = null,
+
+/// The kitty keyboard settings.
+kitty_keyboard: kitty.KeyFlagStack = .{},
 
 /// Initialize a new screen.
 pub fn init(

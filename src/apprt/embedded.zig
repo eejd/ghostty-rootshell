@@ -458,6 +458,26 @@ pub const Surface = struct {
         // then we've consumed our translate mods.
         const consumed_mods: input.Mods = if (result.text.len > 0) translate_mods else .{};
 
+        // We need to always do a translation with no modifiers at all in
+        // order to get the "unshifted_codepoint" for the key event.
+        const unshifted_codepoint: u21 = unshifted: {
+            var nomod_buf: [128]u8 = undefined;
+            var nomod_state: input.Keymap.State = undefined;
+            const nomod = try self.app.keymap.translate(
+                &nomod_buf,
+                &nomod_state,
+                @intCast(keycode),
+                .{},
+            );
+
+            const view = std.unicode.Utf8View.init(nomod.text) catch |err| {
+                log.warn("cannot build utf8 view over text: {}", .{err});
+                break :unshifted 0;
+            };
+            var it = view.iterator();
+            break :unshifted it.nextCodepoint() orelse 0;
+        };
+
         // log.warn("TRANSLATE: action={} keycode={x} dead={} key_len={} key={any} key_str={s} mods={}", .{
         //     action,
         //     keycode,
@@ -489,18 +509,9 @@ pub const Surface = struct {
                 }
             }
 
-            // If that doesn't work then we try to translate without
-            // any modifiers and convert that.
-            var nomod_buf: [128]u8 = undefined;
-            var nomod_state: input.Keymap.State = undefined;
-            const nomod = try self.app.keymap.translate(
-                &nomod_buf,
-                &nomod_state,
-                @intCast(keycode),
-                .{},
-            );
-            if (nomod.text.len == 1) {
-                if (input.Key.fromASCII(nomod.text[0])) |key| {
+            // If the above doesn't work, we use the unmodified value.
+            if (std.math.cast(u8, unshifted_codepoint)) |ascii| {
+                if (input.Key.fromASCII(ascii)) |key| {
                     break :key key;
                 }
             }
@@ -517,6 +528,7 @@ pub const Surface = struct {
             .consumed_mods = consumed_mods,
             .composing = result.composing,
             .utf8 = result.text,
+            .unshifted_codepoint = unshifted_codepoint,
         }) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
@@ -549,6 +561,7 @@ pub const Surface = struct {
             .consumed_mods = .{},
             .composing = false,
             .utf8 = buf[0..len],
+            .unshifted_codepoint = 0,
         }) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;

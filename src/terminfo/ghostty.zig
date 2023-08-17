@@ -67,8 +67,7 @@ pub const ghostty: Source = .{
 
         // Full keyboard support using Kitty's keyboard protocol:
         // https://sw.kovidgoyal.net/kitty/keyboard-protocol/
-        // Commented out because we don't yet support this.
-        // .{ .name = "fullkbd", .value = .{ .boolean = {} } },
+        .{ .name = "fullkbd", .value = .{ .boolean = {} } },
 
         // Number of colors in the color palette.
         .{ .name = "colors", .value = .{ .numeric = 256 } },

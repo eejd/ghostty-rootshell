@@ -10,6 +10,10 @@ const testing = std.testing;
 
 const key = @import("key.zig");
 const function_keys = @import("function_keys.zig");
+const terminal = @import("../terminal/main.zig");
+const KittyEntry = @import("kitty.zig").Entry;
+const kitty_entries = @import("kitty.zig").entries;
+const KittyFlags = terminal.kitty.KeyFlags;
 
 event: key.KeyEvent,
 
@@ -18,6 +22,130 @@ alt_esc_prefix: bool = false,
 cursor_key_application: bool = false,
 keypad_key_application: bool = false,
 modify_other_keys_state_2: bool = false,
+kitty_flags: KittyFlags = .{},
+
+/// Perform the proper encoding depending on the terminal state.
+pub fn encode(
+    self: *const KeyEncoder,
+    buf: []u8,
+) ![]const u8 {
+    if (self.kitty_flags.int() != 0) return try self.kitty(buf);
+    return try self.legacy(buf);
+}
+
+/// Perform Kitty keyboard protocol encoding of the key event.
+fn kitty(
+    self: *const KeyEncoder,
+    buf: []u8,
+) ![]const u8 {
+    // This should never happen but we'll check anyway.
+    if (self.kitty_flags.int() == 0) return try self.legacy(buf);
+
+    // We only processed "press" events unless report events is active
+    if (self.event.action != .press and !self.kitty_flags.report_events)
+        return "";
+
+    const all_mods = self.event.mods;
+    const effective_mods = self.event.effectiveMods();
+    const binding_mods = effective_mods.binding();
+
+    // Find the entry for this key in the kitty table.
+    const entry_: ?KittyEntry = entry: {
+        // Functional or predefined keys
+        for (kitty_entries) |entry| {
+            if (entry.key == self.event.key) break :entry entry;
+        }
+
+        // Otherwise, we use our unicode codepoint from UTF8. We
+        // always use the unshifted value.
+        if (self.event.unshifted_codepoint > 0) {
+            break :entry .{
+                .key = self.event.key,
+                .code = self.event.unshifted_codepoint,
+                .final = 'u',
+                .modifier = false,
+            };
+        }
+
+        break :entry null;
+    };
+
+    preprocessing: {
+        // When composing, the only keys sent are plain modifiers.
+        if (self.event.composing) {
+            if (entry_) |entry| {
+                if (entry.modifier) break :preprocessing;
+            }
+
+            return "";
+        }
+
+        // If we're reporting all then we always send CSI sequences.
+        if (!self.kitty_flags.report_all) {
+            // Quote:
+            // The only exceptions are the Enter, Tab and Backspace keys which
+            // still generate the same bytes as in legacy mode this is to allow the
+            // user to type and execute commands in the shell such as reset after a
+            // program that sets this mode crashes without clearing it.
+            //
+            // Quote ("report all" mode):
+            // Note that all keys are reported as escape codes, including Enter,
+            // Tab, Backspace etc.
+            if (effective_mods.empty()) {
+                switch (self.event.key) {
+                    .enter => return try copyToBuf(buf, "\r"),
+                    .tab => return try copyToBuf(buf, "\t"),
+                    .backspace => return try copyToBuf(buf, "\x7F"),
+                    else => {},
+                }
+            }
+
+            // Send plain-text non-modified text directly to the terminal.
+            // We don't send release events because those are specially encoded.
+            if (self.event.utf8.len > 0 and
+                binding_mods.empty() and
+                self.event.action != .release)
+            {
+                return try copyToBuf(buf, self.event.utf8);
+            }
+        }
+    }
+
+    const entry = entry_ orelse return "";
+    const seq: KittySequence = seq: {
+        var seq: KittySequence = .{
+            .key = entry.code,
+            .final = entry.final,
+            .mods = KittyMods.fromInput(all_mods),
+        };
+
+        if (self.kitty_flags.report_events) {
+            seq.event = switch (self.event.action) {
+                .press => .press,
+                .release => .release,
+                .repeat => .repeat,
+            };
+        }
+
+        if (self.kitty_flags.report_alternates) alternates: {
+            const view = try std.unicode.Utf8View.init(self.event.utf8);
+            var it = view.iterator();
+            const cp = it.nextCodepoint() orelse break :alternates;
+            if (it.nextCodepoint() != null) break :alternates;
+            if (cp != seq.key) {
+                seq.alternates = &.{cp};
+            }
+        }
+
+        if (self.kitty_flags.report_associated) {
+            seq.text = self.event.utf8;
+        }
+
+        break :seq seq;
+    };
+
+    return try seq.encode(buf);
+}
 
 /// Perform legacy encoding of the key event. "Legacy" in this case
 /// is referring to the behavior of traditional terminals, plus
@@ -25,7 +153,7 @@ modify_other_keys_state_2: bool = false,
 /// These together combine the legacy protocol because they're all
 /// meant to be extensions that do not change any existing behavior
 /// and therefore safe to combine.
-pub fn legacy(
+fn legacy(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {
@@ -312,34 +440,400 @@ const CsiUMods = packed struct(u3) {
         const raw: u4 = @intCast(self.int());
         return raw + 1;
     }
+
+    test "modifer sequence values" {
+        // This is all sort of trivially seen by looking at the code but
+        // we want to make sure we never regress this.
+        var mods: CsiUMods = .{};
+        try testing.expectEqual(@as(u4, 1), mods.seqInt());
+
+        mods = .{ .shift = true };
+        try testing.expectEqual(@as(u4, 2), mods.seqInt());
+
+        mods = .{ .alt = true };
+        try testing.expectEqual(@as(u4, 3), mods.seqInt());
+
+        mods = .{ .ctrl = true };
+        try testing.expectEqual(@as(u4, 5), mods.seqInt());
+
+        mods = .{ .alt = true, .shift = true };
+        try testing.expectEqual(@as(u4, 4), mods.seqInt());
+
+        mods = .{ .ctrl = true, .shift = true };
+        try testing.expectEqual(@as(u4, 6), mods.seqInt());
+
+        mods = .{ .alt = true, .ctrl = true };
+        try testing.expectEqual(@as(u4, 7), mods.seqInt());
+
+        mods = .{ .alt = true, .ctrl = true, .shift = true };
+        try testing.expectEqual(@as(u4, 8), mods.seqInt());
+    }
 };
 
-test "modifer sequence values" {
-    // This is all sort of trivially seen by looking at the code but
-    // we want to make sure we never regress this.
-    var mods: CsiUMods = .{};
-    try testing.expectEqual(@as(u4, 1), mods.seqInt());
+/// This is the bitfields for Kitty modifiers.
+const KittyMods = packed struct(u8) {
+    shift: bool = false,
+    alt: bool = false,
+    ctrl: bool = false,
+    super: bool = false,
+    hyper: bool = false,
+    meta: bool = false,
+    caps_lock: bool = false,
+    num_lock: bool = false,
 
-    mods = .{ .shift = true };
-    try testing.expectEqual(@as(u4, 2), mods.seqInt());
+    /// Convert an input mods value into the CSI u mods value.
+    pub fn fromInput(mods: key.Mods) KittyMods {
+        return .{
+            .shift = mods.shift,
+            .alt = mods.alt,
+            .ctrl = mods.ctrl,
+            .super = mods.super,
+            .caps_lock = mods.caps_lock,
+            .num_lock = mods.num_lock,
+        };
+    }
 
-    mods = .{ .alt = true };
-    try testing.expectEqual(@as(u4, 3), mods.seqInt());
+    /// Returns the raw int value of this packed struct.
+    pub fn int(self: KittyMods) u8 {
+        return @bitCast(self);
+    }
 
-    mods = .{ .ctrl = true };
-    try testing.expectEqual(@as(u4, 5), mods.seqInt());
+    /// Returns the integer value sent as part of the Kitty sequence.
+    /// This adds 1 to the bitmask value as described in the spec.
+    pub fn seqInt(self: KittyMods) u9 {
+        const raw: u9 = @intCast(self.int());
+        return raw + 1;
+    }
 
-    mods = .{ .alt = true, .shift = true };
-    try testing.expectEqual(@as(u4, 4), mods.seqInt());
+    test "modifer sequence values" {
+        // This is all sort of trivially seen by looking at the code but
+        // we want to make sure we never regress this.
+        var mods: KittyMods = .{};
+        try testing.expectEqual(@as(u9, 1), mods.seqInt());
 
-    mods = .{ .ctrl = true, .shift = true };
-    try testing.expectEqual(@as(u4, 6), mods.seqInt());
+        mods = .{ .shift = true };
+        try testing.expectEqual(@as(u9, 2), mods.seqInt());
 
-    mods = .{ .alt = true, .ctrl = true };
-    try testing.expectEqual(@as(u4, 7), mods.seqInt());
+        mods = .{ .alt = true };
+        try testing.expectEqual(@as(u9, 3), mods.seqInt());
 
-    mods = .{ .alt = true, .ctrl = true, .shift = true };
-    try testing.expectEqual(@as(u4, 8), mods.seqInt());
+        mods = .{ .ctrl = true };
+        try testing.expectEqual(@as(u9, 5), mods.seqInt());
+
+        mods = .{ .alt = true, .shift = true };
+        try testing.expectEqual(@as(u9, 4), mods.seqInt());
+
+        mods = .{ .ctrl = true, .shift = true };
+        try testing.expectEqual(@as(u9, 6), mods.seqInt());
+
+        mods = .{ .alt = true, .ctrl = true };
+        try testing.expectEqual(@as(u9, 7), mods.seqInt());
+
+        mods = .{ .alt = true, .ctrl = true, .shift = true };
+        try testing.expectEqual(@as(u9, 8), mods.seqInt());
+    }
+};
+
+/// Represents a kitty key sequence and has helpers for encoding it.
+/// The sequence from the Kitty specification:
+///
+/// CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
+const KittySequence = struct {
+    key: u21,
+    final: u8,
+    mods: KittyMods = .{},
+    event: Event = .none,
+    alternates: []const u21 = &.{},
+    text: []const u8 = "",
+
+    /// Values for the event code (see "event-type" in above comment).
+    /// Note that Kitty omits the ":1" for the press event but other
+    /// terminals include it. We'll include it.
+    const Event = enum(u2) {
+        none = 0,
+        press = 1,
+        repeat = 2,
+        release = 3,
+    };
+
+    pub fn encode(self: KittySequence, buf: []u8) ![]const u8 {
+        if (self.final == 'u' or self.final == '~') return try self.encodeFull(buf);
+        return try self.encodeSpecial(buf);
+    }
+
+    fn encodeFull(self: KittySequence, buf: []u8) ![]const u8 {
+        // Boilerplate to basically create a string builder that writes
+        // over our buffer (but no more).
+        var fba = std.heap.FixedBufferAllocator.init(buf);
+        const alloc = fba.allocator();
+        var builder = try std.ArrayListUnmanaged(u8).initCapacity(alloc, buf.len);
+        const writer = builder.writer(alloc);
+
+        // Key section
+        try writer.print("\x1B[{d}", .{self.key});
+        for (self.alternates) |alt| try writer.print(":{d}", .{alt});
+
+        // Mods and events section
+        const mods = self.mods.seqInt();
+        var emit_prior = false;
+        if (self.event != .none) {
+            try writer.print(";{d}:{d}", .{ mods, @intFromEnum(self.event) });
+            emit_prior = true;
+        } else if (mods > 1) {
+            try writer.print(";{d}", .{mods});
+            emit_prior = true;
+        }
+
+        // Text section
+        if (self.text.len > 0) {
+            // We need to add our ";". We need to add two if we didn't emit
+            // the modifier section.
+            if (!emit_prior) try writer.writeByte(';');
+            try writer.writeByte(';');
+
+            // First one has no prefix
+            const view = try std.unicode.Utf8View.init(self.text);
+            var it = view.iterator();
+            if (it.nextCodepoint()) |cp| {
+                try writer.print("{d}", .{cp});
+            }
+            while (it.nextCodepoint()) |cp| {
+                try writer.print(":{d}", .{cp});
+            }
+        }
+
+        try writer.print("{c}", .{self.final});
+        return builder.items;
+    }
+
+    fn encodeSpecial(self: KittySequence, buf: []u8) ![]const u8 {
+        const mods = self.mods.seqInt();
+        if (self.event != .none) {
+            return try std.fmt.bufPrint(buf, "\x1B[1;{d}:{d}{c}", .{
+                mods,
+                @intFromEnum(self.event),
+                self.final,
+            });
+        }
+
+        if (mods > 1) {
+            return try std.fmt.bufPrint(buf, "\x1B[1;{d}{c}", .{
+                mods,
+                self.final,
+            });
+        }
+
+        return try std.fmt.bufPrint(buf, "\x1B[{c}", .{self.final});
+    }
+};
+
+test "KittySequence: backspace" {
+    var buf: [128]u8 = undefined;
+
+    // Plain
+    {
+        var seq: KittySequence = .{ .key = 127, .final = 'u' };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127u", actual);
+    }
+
+    // Release event
+    {
+        var seq: KittySequence = .{ .key = 127, .final = 'u', .event = .release };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;1:3u", actual);
+    }
+
+    // Shift
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .mods = .{ .shift = true },
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;2u", actual);
+    }
+}
+
+test "KittySequence: text" {
+    var buf: [128]u8 = undefined;
+
+    // Plain
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .text = "A",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;;65u", actual);
+    }
+
+    // Release
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .event = .release,
+            .text = "A",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;1:3;65u", actual);
+    }
+
+    // Shift
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .mods = .{ .shift = true },
+            .text = "A",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1B[127;2;65u", actual);
+    }
+}
+
+test "KittySequence: special no mods" {
+    var buf: [128]u8 = undefined;
+    var seq: KittySequence = .{ .key = 1, .final = 'A' };
+    const actual = try seq.encode(&buf);
+    try testing.expectEqualStrings("\x1B[A", actual);
+}
+
+test "KittySequence: special mods only" {
+    var buf: [128]u8 = undefined;
+    var seq: KittySequence = .{ .key = 1, .final = 'A', .mods = .{ .shift = true } };
+    const actual = try seq.encode(&buf);
+    try testing.expectEqualStrings("\x1B[1;2A", actual);
+}
+
+test "KittySequence: special mods and event" {
+    var buf: [128]u8 = undefined;
+    var seq: KittySequence = .{
+        .key = 1,
+        .final = 'A',
+        .event = .release,
+        .mods = .{ .shift = true },
+    };
+    const actual = try seq.encode(&buf);
+    try testing.expectEqualStrings("\x1B[1;2:3A", actual);
+}
+
+test "kitty: plain text" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{},
+            .utf8 = "abcd",
+        },
+
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("abcd", actual);
+}
+
+test "kitty: enter, backspace, tab" {
+    var buf: [128]u8 = undefined;
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .key = .enter, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{ .disambiguate = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\r", actual);
+    }
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .key = .backspace, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{ .disambiguate = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x7f", actual);
+    }
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .key = .tab, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{ .disambiguate = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\t", actual);
+    }
+}
+
+test "kitty: composing with no modifier" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{ .shift = true },
+            .composing = true,
+        },
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("", actual);
+}
+
+test "kitty: composing with modifier" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .left_shift,
+            .mods = .{ .shift = true },
+            .composing = true,
+        },
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[57441;2u", actual);
+}
+
+test "kitty: shift+a on US keyboard" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{ .shift = true },
+            .utf8 = "A",
+            .unshifted_codepoint = 97, // lowercase A
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_alternates = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[97:65;2u", actual);
+}
+
+test "kitty: matching unshifted codepoint" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{ .shift = true },
+            .utf8 = "A",
+            .unshifted_codepoint = 65,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_alternates = true,
+        },
+    };
+
+    // WARNING: This is not a valid encoding. This is a hypothetical encoding
+    // just to test that our logic is correct around matching unshifted
+    // codepoints.
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[65;2u", actual);
 }
 
 test "legacy: ctrl+alt+c" {
