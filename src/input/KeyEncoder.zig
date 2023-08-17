@@ -265,20 +265,6 @@ fn legacy(
     // If we have alt-pressed and alt-esc-prefix is enabled, then
     // we need to prefix the utf8 sequence with an esc.
     if (binding_mods.alt and self.alt_esc_prefix) {
-        // TODO: port this, I think we can just use effective mods
-        // without any OS special case
-        //
-        // On macOS, we have to opt-in to using alt because option
-        // by default is a unicode character sequence.
-        // if (comptime builtin.target.isDarwin()) {
-        //     switch (self.config.macos_option_as_alt) {
-        //         .false => break :alt,
-        //         .true => {},
-        //         .left => if (mods.sides.alt != .left) break :alt,
-        //         .right => if (mods.sides.alt != .right) break :alt,
-        //     }
-        // }
-
         return try std.fmt.bufPrint(buf, "\x1B{s}", .{utf8});
     }
 
