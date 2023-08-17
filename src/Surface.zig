@@ -999,7 +999,7 @@ pub fn keyCallback(
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     if (event.action == .press or event.action == .repeat) {
-        const binding_mods = event.effectiveMods().binding();
+        const binding_mods = event.mods.binding();
         const binding_action_: ?input.Binding.Action = action: {
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
