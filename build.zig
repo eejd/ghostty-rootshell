@@ -190,12 +190,14 @@ pub fn build(b: *std.Build) !void {
     // Add our benchmarks
     try benchSteps(b, target, optimize, emit_bench);
 
-    const exe = b.addExecutable(.{
+    // We only build an exe if we have a runtime set.
+    const exe_: ?*std.Build.Step.Compile = if (app_runtime != .none) b.addExecutable(.{
         .name = "ghostty",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
-    });
+    }) else null;
+
     const exe_options = b.addOptions();
     exe_options.addOption(std.SemanticVersion, "app_version", version);
     exe_options.addOption([]const u8, "app_version_string", b.fmt("{}", .{version}));
@@ -205,7 +207,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(font.Backend, "font_backend", font_backend);
 
     // Exe
-    {
+    if (exe_) |exe| {
         exe.addOptions("build_options", exe_options);
 
         // Add the shared dependencies
@@ -262,6 +264,17 @@ pub fn build(b: *std.Build) !void {
                 }
             }
         }
+
+        // App (Mac)
+        if (target.isDarwin()) {
+            const bin_install = b.addInstallFile(
+                exe.getEmittedBin(),
+                "Ghostty.app/Contents/MacOS/ghostty",
+            );
+            b.getInstallStep().dependOn(&bin_install.step);
+            b.installFile("dist/macos/Info.plist", "Ghostty.app/Contents/Info.plist");
+            b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
+        }
     }
 
     // Shell-integration
@@ -274,7 +287,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.isDarwin()) {
+        if (target.isDarwin() and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -298,7 +311,7 @@ pub fn build(b: *std.Build) !void {
         const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
         const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
         b.getInstallStep().dependOn(&src_install.step);
-        if (target.isDarwin()) {
+        if (target.isDarwin() and exe_ != null) {
             const mac_src_install = b.addInstallFile(
                 src_source,
                 "Ghostty.app/Contents/Resources/terminfo/ghostty.terminfo",
@@ -319,7 +332,7 @@ pub fn build(b: *std.Build) !void {
             const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
             b.getInstallStep().dependOn(&cap_install.step);
 
-            if (target.isDarwin()) {
+            if (target.isDarwin() and exe_ != null) {
                 const mac_cap_install = b.addInstallFile(
                     out_source,
                     "Ghostty.app/Contents/Resources/terminfo/ghostty.termcap",
@@ -348,7 +361,7 @@ pub fn build(b: *std.Build) !void {
                 b.getInstallStep().dependOn(&copy_step.step);
             }
 
-            if (target.isDarwin()) {
+            if (target.isDarwin() and exe_ != null) {
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
                 copy_step.addFileSourceArg(path);
@@ -382,17 +395,6 @@ pub fn build(b: *std.Build) !void {
         b.installFile("images/icons/icon_32x32@2x@2x.png", "share/icons/hicolor/32x32@2/apps/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_128x128@2x@2x.png", "share/icons/hicolor/128x128@2/apps/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_256x256@2x@2x.png", "share/icons/hicolor/256x256@2/apps/com.mitchellh.ghostty.png");
-    }
-
-    // App (Mac)
-    if (target.isDarwin()) {
-        const bin_install = b.addInstallFile(
-            exe.getEmittedBin(),
-            "Ghostty.app/Contents/MacOS/ghostty",
-        );
-        b.getInstallStep().dependOn(&bin_install.step);
-        b.installFile("dist/macos/Info.plist", "Ghostty.app/Contents/Info.plist");
-        b.installFile("dist/macos/Ghostty.icns", "Ghostty.app/Contents/Resources/Ghostty.icns");
     }
 
     // On Mac we can build the embedding library.
@@ -463,6 +465,20 @@ pub fn build(b: *std.Build) !void {
         });
         static_lib_universal.step.dependOn(static_lib_aarch64.step);
         static_lib_universal.step.dependOn(static_lib_x86_64.step);
+
+        // Add our library to zig-out
+        const lib_install = b.addInstallLibFile(
+            static_lib_universal.output,
+            "libghostty.a",
+        );
+        b.getInstallStep().dependOn(&lib_install.step);
+
+        // Copy our ghostty.h to include
+        const header_install = b.addInstallHeaderFile(
+            "include/ghostty.h",
+            "ghostty.h",
+        );
+        b.getInstallStep().dependOn(&header_install.step);
 
         // The xcframework wraps our ghostty library so that we can link
         // it to the final app built with Swift.
@@ -546,14 +562,14 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Run
-    {
+    run: {
         // Build our run step, which runs the main app by default, but will
         // run a conformance app if `-Dconformance` is set.
         const run_exe = if (conformance) |name| blk: {
             var conformance_exes = try conformanceSteps(b, target, optimize);
             defer conformance_exes.deinit();
             break :blk conformance_exes.get(name) orelse return error.InvalidConformance;
-        } else exe;
+        } else exe_ orelse break :run;
 
         const run_cmd = b.addRunArtifact(run_exe);
         if (b.args) |args| {
@@ -844,6 +860,12 @@ fn addDeps(
                 try glfw.link(b, step, glfw_opts);
 
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
+
+                // Must also link to imgui but only for tests.
+                if (step.kind == .@"test") {
+                    const imgui_step = try imgui.link(b, step, imgui_opts);
+                    try glfw.link(b, imgui_step, glfw_opts);
+                }
             },
         }
     }

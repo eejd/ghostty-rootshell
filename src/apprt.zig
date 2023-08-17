@@ -53,8 +53,13 @@ pub const Runtime = enum {
     gtk,
 
     pub fn default(target: std.zig.CrossTarget) Runtime {
-        _ = target;
-        return .glfw;
+        // The Linux default is GTK because it is full featured.
+        if (target.isLinux()) return .gtk;
+
+        // Otherwise, we do NONE so we don't create an exe. The GLFW
+        // build is opt-in because it is missing so many features compared
+        // to the other builds that are impossible due to the GLFW interface.
+        return .none;
     }
 };
 
