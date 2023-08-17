@@ -41,6 +41,10 @@ pub const KeyEvent = struct {
     /// text.
     utf8: []const u8 = "",
 
+    /// The codepoint for this key when it is unshifted. For example,
+    /// shift+a is "A" in UTF-8 but unshifted would provide 'a'.
+    unshifted_codepoint: u21 = 0,
+
     /// Returns the effective modifiers for this event. The effective
     /// modifiers are the mods that should be considered for keybindings.
     pub fn effectiveMods(self: KeyEvent) Mods {
