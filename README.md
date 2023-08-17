@@ -169,6 +169,32 @@ or
 shell could not be detected, no automatic shell integration will be injected
 ```
 
+#### Switching Shells with Shell Integration
+
+Automatic shell integration as described in the previous section only works
+for the _initially launched shell_ when Ghostty is started. If you switch
+shells within Ghostty, i.e. you manually run `bash` or you use a command
+like `nix-shell`, the shell integration _will be lost_ in that shell
+(it will keep working in the original shell process).
+
+To make shell integration work in these cases, you must manually source
+the Ghostty shell-specific code at the top of your shell configuration
+files. Ghostty will automatically set the `GHOSTTY_RESOURCES_DIR` environment
+variable when it starts, so you can use this to (1) detect your shell
+is launched within Ghostty and (2) to find the shell-integration.
+
+For example, for bash, you'd put this _at the top_ of your `~/.bashrc`:
+
+```bash
+# Ghostty shell integration
+if [ -n "$GHOSTTY_RESOURCES_DIR" ]; then
+    builtin source "${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash"
+fi
+```
+
+**This must be at the top of your bashrc, not the bottom.** The same
+goes for any other shell. 
+
 ## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
