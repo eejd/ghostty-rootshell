@@ -6,7 +6,7 @@ const key = @import("key.zig");
 /// for a given key.
 pub const Entry = struct {
     key: key.Key,
-    code: u16,
+    code: u21,
     final: u8,
     modifier: bool,
 };
@@ -28,7 +28,7 @@ pub const entries: []const Entry = entries: {
 /// Raw entry is the tuple form of an entry for easy human management.
 /// This should never be used in a real program so it is not pub. For
 /// real programs, use `entries` which has properly typed, structured data.
-const RawEntry = struct { key.Key, u16, u8, bool };
+const RawEntry = struct { key.Key, u21, u8, bool };
 
 /// The raw data for how to map keys to Kitty data. Based on the information:
 /// https://sw.kovidgoyal.net/kitty/keyboard-protocol/#functional-key-definitions

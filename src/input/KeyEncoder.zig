@@ -51,8 +51,20 @@ fn kitty(
 
     // Find the entry for this key in the kitty table.
     const entry_: ?KittyEntry = entry: {
+        // Functional or predefined keys
         for (kitty_entries) |entry| {
             if (entry.key == self.event.key) break :entry entry;
+        }
+
+        // Otherwise, we use our unicode codepoint from UTF8. We
+        // always use the unshifted value.
+        if (self.event.unshifted_codepoint > 0) {
+            break :entry .{
+                .key = self.event.key,
+                .code = self.event.unshifted_codepoint,
+                .final = 'u',
+                .modifier = false,
+            };
         }
 
         break :entry null;
@@ -117,6 +129,16 @@ fn kitty(
                 .release => .release,
                 .repeat => .repeat,
             };
+        }
+
+        if (self.kitty_flags.report_alternates) alternates: {
+            const view = try std.unicode.Utf8View.init(self.event.utf8);
+            var it = view.iterator();
+            const cp = it.nextCodepoint() orelse break :alternates;
+            if (it.nextCodepoint() != null) break :alternates;
+            if (cp != seq.key) {
+                seq.alternates = &.{cp};
+            }
         }
 
         if (self.kitty_flags.report_associated) {
@@ -521,11 +543,11 @@ const KittyMods = packed struct(u8) {
 ///
 /// CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
 const KittySequence = struct {
-    key: u16,
+    key: u21,
     final: u8,
     mods: KittyMods = .{},
     event: Event = .none,
-    alternates: []const u16 = &.{},
+    alternates: []const u21 = &.{},
     text: []const u8 = "",
 
     /// Values for the event code (see "event-type" in above comment).
@@ -775,6 +797,47 @@ test "kitty: composing with modifier" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[57441;2u", actual);
+}
+
+test "kitty: shift+a on US keyboard" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{ .shift = true },
+            .utf8 = "A",
+            .unshifted_codepoint = 97, // lowercase A
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_alternates = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[97:65;2u", actual);
+}
+
+test "kitty: matching unshifted codepoint" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .a,
+            .mods = .{ .shift = true },
+            .utf8 = "A",
+            .unshifted_codepoint = 65,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_alternates = true,
+        },
+    };
+
+    // WARNING: This is not a valid encoding. This is a hypothetical encoding
+    // just to test that our logic is correct around matching unshifted
+    // codepoints.
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[65;2u", actual);
 }
 
 test "legacy: ctrl+alt+c" {
