@@ -135,9 +135,10 @@ The currently support shell integration features in Ghostty:
 #### Shell Integration Installation and Verification
 
 Ghostty will automatically inject the shell integration code for `zsh` and
-`fish`. Other shells are not supported. You can also manually load them
-in many cases (see `src/shell-integration`). **If you want to disable this feature,**
-set `shell-integration = none` in your configuration file.
+`fish`. `bash` does not support automatic injection but you can manually
+`source` the `ghostty.bash` file in `src/shell-integration`. Other shells are
+not supported. **If you want to disable this feature,** set
+`shell-integration = none` in your configuration file.
 
 **For the automatic shell integration to work,** Ghostty must either be run
 from the macOS app bundle or be installed in a location where the contents of
