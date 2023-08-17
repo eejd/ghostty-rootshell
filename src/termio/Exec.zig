@@ -31,6 +31,11 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
+/// True if we should disable the kitty keyboard protocol. We have to
+/// disable this on GLFW because GLFW input events don't support the
+/// correct granularity of events.
+const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
+
 /// Allocator
 alloc: Allocator,
 
@@ -1408,6 +1413,8 @@ const StreamHandler = struct {
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
+        if (comptime disable_kitty_keyboard_protocol) return;
+
         // log.debug("querying kitty keyboard mode", .{});
         var data: termio.Message.WriteReq.Small.Array = undefined;
         const resp = try std.fmt.bufPrint(&data, "\x1b[?{}u", .{
@@ -1426,11 +1433,15 @@ const StreamHandler = struct {
         self: *StreamHandler,
         flags: terminal.kitty.KeyFlags,
     ) !void {
+        if (comptime disable_kitty_keyboard_protocol) return;
+
         // log.debug("pushing kitty keyboard mode: {}", .{flags});
         self.terminal.screen.kitty_keyboard.push(flags);
     }
 
     pub fn popKittyKeyboard(self: *StreamHandler, n: u16) !void {
+        if (comptime disable_kitty_keyboard_protocol) return;
+
         // log.debug("popping kitty keyboard mode", .{});
         self.terminal.screen.kitty_keyboard.pop(@intCast(n));
     }
@@ -1440,6 +1451,8 @@ const StreamHandler = struct {
         mode: terminal.kitty.KeySetMode,
         flags: terminal.kitty.KeyFlags,
     ) !void {
+        if (comptime disable_kitty_keyboard_protocol) return;
+
         // log.debug("setting kitty keyboard mode: {} {}", .{mode, flags});
         self.terminal.screen.kitty_keyboard.set(mode, flags);
     }
