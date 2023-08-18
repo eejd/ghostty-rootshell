@@ -125,10 +125,10 @@ fn genTable() Table {
         const source = State.sos_pm_apc_string;
 
         // events
-        single(&result, 0x19, source, source, .ignore);
-        range(&result, 0, 0x17, source, source, .ignore);
-        range(&result, 0x1C, 0x1F, source, source, .ignore);
-        range(&result, 0x20, 0x7F, source, source, .ignore);
+        single(&result, 0x19, source, source, .apc_put);
+        range(&result, 0, 0x17, source, source, .apc_put);
+        range(&result, 0x1C, 0x1F, source, source, .apc_put);
+        range(&result, 0x20, 0x7F, source, source, .apc_put);
     }
 
     // escape
