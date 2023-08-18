@@ -79,7 +79,7 @@ extension Ghostty.Notification {
     static let ghosttyGotoTab = Notification.Name("com.mitchellh.ghostty.gotoTab")
     static let GotoTabKey = ghosttyGotoTab.rawValue
     
-    /// New tab. Has font size of currently focused surface in the userinfo.
+    /// New tab. Has base surface config requestesd in userinfo.
     static let ghosttyNewTab = Notification.Name("com.mitchellh.ghostty.newTab")
     static let NewTabKey = ghosttyNewTab.rawValue
 

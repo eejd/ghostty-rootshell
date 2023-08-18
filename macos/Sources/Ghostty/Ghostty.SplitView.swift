@@ -8,11 +8,11 @@ extension Ghostty {
     struct TerminalSplit: View {
         @Environment(\.ghosttyApp) private var app
         let onClose: (() -> Void)?
-        let fontSize: UInt8?
+        let baseConfig: ghostty_surface_config_s?
         
         var body: some View {
             if let app = app {
-                TerminalSplitRoot(app: app, onClose: onClose, fontSize: fontSize)
+                TerminalSplitRoot(app: app, onClose: onClose, baseConfig: baseConfig)
             }
         }
     }
@@ -68,9 +68,9 @@ extension Ghostty {
             @Published var surface: SurfaceView
             
             /// Initialize a new leaf which creates a new terminal surface.
-            init(_ app: ghostty_app_t, _ fontSize: UInt8?) {
+            init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
                 self.app = app
-                self.surface = SurfaceView(app, fontSize)
+                self.surface = SurfaceView(app, baseConfig)
             }
         }
         
@@ -142,14 +142,14 @@ extension Ghostty {
         @State private var node: SplitNode
         @State private var requestClose: Bool = false
         let onClose: (() -> Void)?
-        let fontSize: UInt8?
+        let baseConfig: ghostty_surface_config_s?
         
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
         
-        init(app: ghostty_app_t, onClose: (() ->Void)? = nil, fontSize: UInt8? = nil) {
+        init(app: ghostty_app_t, onClose: (() ->Void)? = nil, baseConfig: ghostty_surface_config_s? = nil) {
             self.onClose = onClose
-            self.fontSize = fontSize
-            _node = State(wrappedValue: SplitNode.noSplit(.init(app, fontSize)))
+            self.baseConfig = baseConfig
+            _node = State(wrappedValue: SplitNode.noSplit(.init(app, baseConfig)))
         }
         
         var body: some View {

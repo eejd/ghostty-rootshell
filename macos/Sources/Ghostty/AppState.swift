@@ -61,11 +61,11 @@ extension Ghostty {
                 read_clipboard_cb: { userdata, loc in AppState.readClipboard(userdata, location: loc) },
                 write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: direction) },
+                new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
-                toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, useNonNativeFullscreen: nonNativeFullscreen) },
-                new_tab_cb: { userdata, newTabConfig in AppState.newTab(userdata, config: newTabConfig) }
+                toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, useNonNativeFullscreen: nonNativeFullscreen) }
             )
 
             // Create the ghostty app.
@@ -263,12 +263,12 @@ extension Ghostty {
             )
         }
         
-        static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_new_tab_config_s) {
+        static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
             
             var userInfo: [AnyHashable : Any] = [:];
             if config.font_size != 0 {
-                userInfo[Notification.NewTabKey] = config.font_size as UInt8;
+                userInfo[Notification.NewTabKey] = config;
             }
             
             NotificationCenter.default.post(

@@ -59,6 +59,9 @@ pub const App = struct {
         /// views then this can be null.
         new_split: ?*const fn (SurfaceUD, input.SplitDirection) callconv(.C) void = null,
 
+        /// New tab with options.
+        new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
+
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
@@ -70,14 +73,6 @@ pub const App = struct {
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
-
-        /// New tab with options.
-        new_tab: ?*const fn (SurfaceUD, apprt.App.NewTabOptions) callconv(.C) void = null,
-    };
-
-    pub const NewTabOptions = extern struct {
-        /// The font size to inherit. If 0, default font size will be used.
-        font_size: u8 = 0,
     };
 
     core_app: *CoreApp,
@@ -170,7 +165,7 @@ pub const Surface = struct {
         userdata: ?*anyopaque = null,
 
         /// The pointer to the backing NSView for the surface.
-        nsview: *anyopaque = undefined,
+        nsview: ?*anyopaque = null,
 
         /// The scale factor of the screen.
         scale_factor: f64 = 1,
@@ -180,10 +175,13 @@ pub const Surface = struct {
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
+        const nsview = objc.Object.fromId(opts.nsview orelse
+            return error.NSViewMustBeSet);
+
         self.* = .{
             .app = app,
             .core_surface = undefined,
-            .nsview = objc.Object.fromId(opts.nsview),
+            .nsview = nsview,
             .content_scale = .{
                 .x = @floatCast(opts.scale_factor),
                 .y = @floatCast(opts.scale_factor),
@@ -609,11 +607,9 @@ pub const Surface = struct {
             break :font_size @intCast(self.core_surface.font_size.points);
         };
 
-        const options = apprt.App.NewTabOptions{
+        func(self.opts.userdata, .{
             .font_size = font_size,
-        };
-
-        func(self.opts.userdata, options);
+        });
     }
 
     /// The cursor position from the host directly is in screen coordinates but
@@ -683,6 +679,11 @@ pub const CAPI = struct {
             log.err("error reloading keyboard map err={}", .{err});
             return;
         };
+    }
+
+    /// Returns initial surface options.
+    export fn ghostty_surface_config_new() apprt.Surface.Options {
+        return .{};
     }
 
     /// Create a new surface as part of an app.

@@ -252,16 +252,11 @@ typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *, ghostty_clipboard_e);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty_clipboard_e);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e);
+typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, bool);
-
-typedef struct {
-    uint8_t font_size;
-} ghostty_new_tab_config_s;
-
-typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_new_tab_config_s);
 
 typedef struct {
     void *userdata;
@@ -272,11 +267,11 @@ typedef struct {
     ghostty_runtime_read_clipboard_cb read_clipboard_cb;
     ghostty_runtime_write_clipboard_cb write_clipboard_cb;
     ghostty_runtime_new_split_cb new_split_cb;
+    ghostty_runtime_new_tab_cb new_tab_cb;
     ghostty_runtime_close_surface_cb close_surface_cb;
     ghostty_runtime_focus_split_cb focus_split_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
-    ghostty_runtime_new_tab_cb new_tab_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------
@@ -297,6 +292,8 @@ void ghostty_app_free(ghostty_app_t);
 bool ghostty_app_tick(ghostty_app_t);
 void *ghostty_app_userdata(ghostty_app_t);
 void ghostty_app_keyboard_changed(ghostty_app_t);
+
+ghostty_surface_config_s ghostty_surface_config_new();
 
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
