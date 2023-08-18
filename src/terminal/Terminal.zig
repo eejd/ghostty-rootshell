@@ -909,9 +909,11 @@ pub fn reverseIndex(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: scrolling region
-
-    if (self.screen.cursor.y == 0) {
+    // If the cursor is on the top-most line of the scroll region or
+    // its on the top of the screen we scroll down.
+    if (self.screen.cursor.y == self.scrolling_region.top or
+        self.screen.cursor.y == 0)
+    {
         try self.scrollDown(1);
     } else {
         self.screen.cursor.y -|= 1;
@@ -2219,6 +2221,39 @@ test "Terminal: reverseIndex from the top" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("E\nD\nA\nB", str);
+    }
+}
+
+test "Terminal: reverseIndex top of scrolling region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 2, 10);
+    defer t.deinit(alloc);
+
+    // Initial value
+    t.setCursorPos(2, 1);
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('B');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('C');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('D');
+    t.carriageReturn();
+    try t.linefeed();
+
+    // Set our scroll region
+    t.setScrollingRegion(2, 5);
+    t.setCursorPos(2, 1);
+    try t.reverseIndex();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nX\nA\nB\nC", str);
     }
 }
 
