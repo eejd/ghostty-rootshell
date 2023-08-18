@@ -193,7 +193,7 @@ fi
 ```
 
 **This must be at the top of your bashrc, not the bottom.** The same
-goes for any other shell. 
+goes for any other shell.
 
 ## Roadmap and Status
 
@@ -297,9 +297,15 @@ $ zig-out/bin/ghostty
 ```
 
 This will build a binary for the currently running system (if supported).
-You can cross compile by setting `-Dtarget=<target-triple>`. For example,
-`zig build -Dtarget=aarch64-macos` will build for Apple Silicon macOS. Note
-that not all targets supported by Zig are supported.
+**Note: macOS does not result in a runnable binary with this command.**
+macOS builds produce a library (`libghostty.a`) that is used by the Xcode
+project in the `macos` directory to produce the finally `Ghostty.app`.
+
+On macOS, you can use `zig build -Dapp-runtime=glfw run` for a quick
+GLFW-based app for a faster development cycle while developing core
+terminal features. Note that this app is missing many features and is also
+known to crash in certain scenarios, so it is only meant for development
+tasks.
 
 Other useful commands:
 
