@@ -256,9 +256,13 @@ pub fn resize(
     screen_size: renderer.ScreenSize,
     padding: renderer.Padding,
 ) !void {
-    // Update the size of our pty
+    // Update the size of our pty.
     const padded_size = screen_size.subPadding(padding);
     try self.subprocess.resize(grid_size, padded_size);
+
+    // If our grid size didn't change, then we don't need to change
+    // the underlying terminal.
+    if (grid_size.equals(self.grid_size)) return;
 
     // Update our cached grid size
     self.grid_size = grid_size;
