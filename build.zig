@@ -703,6 +703,9 @@ fn addDeps(
         step.addModule("objc", objc.module(b));
         step.addModule("macos", mod_macos);
         _ = try macos.link(b, step, .{});
+
+        // todo: do this is in zig-objc instead.
+        step.linkSystemLibraryName("objc");
     }
 
     // Tracy

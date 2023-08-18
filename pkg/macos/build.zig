@@ -37,6 +37,7 @@ pub fn link(
     });
     step.linkFramework("Carbon");
     step.linkFramework("CoreFoundation");
+    step.linkFramework("CoreGraphics");
     step.linkFramework("CoreText");
     return lib;
 }
