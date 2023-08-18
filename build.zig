@@ -865,10 +865,9 @@ fn addDeps(
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
                 // Must also link to imgui but only for tests.
-                if (step.kind == .@"test") {
-                    const imgui_step = try imgui.link(b, step, imgui_opts);
-                    try glfw.link(b, imgui_step, glfw_opts);
-                }
+                step.addModule("imgui", imgui.module(b));
+                const imgui_step = try imgui.link(b, step, imgui_opts);
+                try glfw.link(b, imgui_step, glfw_opts);
             },
         }
     }
