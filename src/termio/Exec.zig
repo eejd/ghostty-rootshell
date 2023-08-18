@@ -47,10 +47,6 @@ subprocess: Subprocess,
 /// just stores internal state about a grid.
 terminal: terminal.Terminal,
 
-/// The stream parser. This parses the stream of escape codes and so on
-/// from the child process and calls callbacks in the stream handler.
-terminal_stream: terminal.Stream(StreamHandler),
-
 /// The shared render state
 renderer_state: *renderer.State,
 
@@ -114,7 +110,6 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     return Exec{
         .alloc = alloc,
         .terminal = term,
-        .terminal_stream = undefined,
         .subprocess = subprocess,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
@@ -445,6 +440,9 @@ const EventData = struct {
 
         // Stop our process watcher
         self.process.deinit();
+
+        // Clear any StreamHandler state
+        self.terminal_stream.handler.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
@@ -1050,10 +1048,24 @@ const StreamHandler = struct {
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
 
+    /// The APC command data. This is always heap-allocated and freed on
+    /// apcEnd because APC commands are so very rare.
+    apc_data: std.ArrayListUnmanaged(u8) = .{},
+    apc_state: enum {
+        inactive,
+        ignore,
+        verify,
+        collect,
+    } = .inactive,
+
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
     /// to wake up the writer.
     writer_messaged: bool = false,
+
+    pub fn deinit(self: *StreamHandler) void {
+        self.apc_data.deinit(self.alloc);
+    }
 
     inline fn queueRender(self: *StreamHandler) !void {
         try self.ev.queueRender();
@@ -1062,6 +1074,44 @@ const StreamHandler = struct {
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
         self.writer_messaged = true;
+    }
+
+    pub fn apcStart(self: *StreamHandler) !void {
+        assert(self.apc_data.items.len == 0);
+        self.apc_state = .verify;
+    }
+
+    pub fn apcPut(self: *StreamHandler, byte: u8) !void {
+        switch (self.apc_state) {
+            .inactive => unreachable,
+
+            // We're ignoring this APC command, likely because we don't
+            // recognize it so there is no need to store the data in memory.
+            .ignore => return,
+
+            // Verify it is a command we expect
+            .verify => {
+                switch (byte) {
+                    'G' => {},
+                    else => {
+                        log.warn("unrecognized APC command, first byte: {x}", .{byte});
+                        self.apc_state = .ignore;
+                        return;
+                    },
+                }
+
+                self.apc_state = .collect;
+            },
+
+            .collect => {},
+        }
+
+        try self.apc_data.append(self.alloc, byte);
+    }
+
+    pub fn apcEnd(self: *StreamHandler) !void {
+        self.apc_state = .inactive;
+        self.apc_data.clearAndFree(self.alloc);
     }
 
     pub fn print(self: *StreamHandler, ch: u21) !void {
