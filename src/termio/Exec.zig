@@ -1107,6 +1107,14 @@ const StreamHandler = struct {
         }
 
         try self.apc_data.append(self.alloc, byte);
+
+        // Prevent DoS attack.
+        const limit = 100 * 1024 * 1024; // 100MB
+        if (self.apc_data.items.len > limit) {
+            log.warn("APC command too large, ignoring", .{});
+            self.apc_state = .ignore;
+            self.apc_data.clearAndFree(self.alloc);
+        }
     }
 
     pub fn apcEnd(self: *StreamHandler) !void {
