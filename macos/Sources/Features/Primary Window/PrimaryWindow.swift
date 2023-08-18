@@ -16,7 +16,7 @@ class FocusedSurfaceWrapper {
 class PrimaryWindow: NSWindow {
     var focusedSurfaceWrapper: FocusedSurfaceWrapper = FocusedSurfaceWrapper()
 
-    static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate) -> PrimaryWindow {
+    static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -27,7 +27,9 @@ class PrimaryWindow: NSWindow {
         window.contentView = NSHostingView(rootView: PrimaryView(
             ghostty: ghostty,
             appDelegate: appDelegate,
-            focusedSurfaceWrapper: window.focusedSurfaceWrapper))
+            focusedSurfaceWrapper: window.focusedSurfaceWrapper,
+            baseConfig: baseConfig
+        ))
         
         // We do want to cascade when new windows are created
         window.windowController?.shouldCascadeWindows = true

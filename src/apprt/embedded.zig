@@ -59,6 +59,9 @@ pub const App = struct {
         /// views then this can be null.
         new_split: ?*const fn (SurfaceUD, input.SplitDirection) callconv(.C) void = null,
 
+        /// New tab with options.
+        new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
+
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
@@ -162,17 +165,23 @@ pub const Surface = struct {
         userdata: ?*anyopaque = null,
 
         /// The pointer to the backing NSView for the surface.
-        nsview: *anyopaque = undefined,
+        nsview: ?*anyopaque = null,
 
         /// The scale factor of the screen.
         scale_factor: f64 = 1,
+
+        /// The font size to inherit. If 0, default font size will be used.
+        font_size: u16 = 0,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
+        const nsview = objc.Object.fromId(opts.nsview orelse
+            return error.NSViewMustBeSet);
+
         self.* = .{
             .app = app,
             .core_surface = undefined,
-            .nsview = objc.Object.fromId(opts.nsview),
+            .nsview = nsview,
             .content_scale = .{
                 .x = @floatCast(opts.scale_factor),
                 .y = @floatCast(opts.scale_factor),
@@ -201,6 +210,13 @@ pub const Surface = struct {
             self,
         );
         errdefer self.core_surface.deinit();
+
+        // If our options requested a specific font-size, set that.
+        if (opts.font_size != 0) {
+            var font_size = self.core_surface.font_size;
+            font_size.points = opts.font_size;
+            self.core_surface.setFontSize(font_size);
+        }
     }
 
     pub fn deinit(self: *Surface) void {
@@ -593,6 +609,22 @@ pub const Surface = struct {
         func(self.opts.userdata, nonNativeFullscreen);
     }
 
+    pub fn newTab(self: *const Surface) !void {
+        const func = self.app.opts.new_tab orelse {
+            log.info("runtime embedder does not support new_tab", .{});
+            return;
+        };
+
+        const font_size: u16 = font_size: {
+            if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
+            break :font_size self.core_surface.font_size.points;
+        };
+
+        func(self.opts.userdata, .{
+            .font_size = font_size,
+        });
+    }
+
     /// The cursor position from the host directly is in screen coordinates but
     /// all our interface works in pixels.
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
@@ -660,6 +692,11 @@ pub const CAPI = struct {
             log.err("error reloading keyboard map err={}", .{err});
             return;
         };
+    }
+
+    /// Returns initial surface options.
+    export fn ghostty_surface_config_new() apprt.Surface.Options {
+        return .{};
     }
 
     /// Create a new surface as part of an app.
@@ -817,6 +854,7 @@ pub const CAPI = struct {
         const action: input.Binding.Action = switch (key) {
             .copy_to_clipboard => .{ .copy_to_clipboard = {} },
             .paste_from_clipboard => .{ .paste_from_clipboard = {} },
+            .new_tab => .{ .new_tab = {} },
         };
 
         ptr.core_surface.performBindingAction(action) catch |err| {

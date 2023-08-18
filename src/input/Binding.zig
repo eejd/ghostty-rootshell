@@ -276,6 +276,7 @@ pub const Action = union(enum) {
 pub const Key = enum(c_int) {
     copy_to_clipboard,
     paste_from_clipboard,
+    new_tab,
 };
 
 /// Trigger is the associated key state that can trigger an action.

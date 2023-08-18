@@ -11,6 +11,9 @@ struct PrimaryView: View {
     // We need this to report back up the app controller which surface in this view is focused.
     let focusedSurfaceWrapper: FocusedSurfaceWrapper
     
+    // If this is set, this is the base configuration that we build our surface out of.
+    let baseConfig: ghostty_surface_config_s?
+    
     // We need access to our window to know if we're the key window to determine
     // if we show the quit confirmation or not.
     @State private var window: NSWindow?
@@ -71,7 +74,7 @@ struct PrimaryView: View {
                 self.appDelegate.confirmQuit = $0
             })
             
-            Ghostty.TerminalSplit(onClose: Self.closeWindow)
+            Ghostty.TerminalSplit(onClose: Self.closeWindow, baseConfig: self.baseConfig)
                 .ghosttyApp(ghostty.app!)
                 .background(WindowAccessor(window: $window))
                 .onReceive(gotoTab) { onGotoTab(notification: $0) }

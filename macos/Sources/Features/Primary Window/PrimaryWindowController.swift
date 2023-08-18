@@ -7,8 +7,8 @@ class PrimaryWindowController: NSWindowController {
     // This is required for the "+" button to show up in the tab bar to add a
     // new tab.
     override func newWindowForTab(_ sender: Any?) {
-        guard let window = self.window else { preconditionFailure("Expected window to be loaded") }
+        guard let window = self.window as? PrimaryWindow else { preconditionFailure("Expected window to be loaded") }
         guard let manager = self.windowManager else { return }
-        manager.addNewTab(to: window)
+        manager.triggerNewTab(for: window)
     }
 }

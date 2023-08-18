@@ -1,5 +1,7 @@
 import Cocoa
 import Combine
+import GhosttyKit
+import SwiftUI
 
 // PrimaryWindowManager manages the windows and tabs in the primary window
 // of the application. It keeps references to windows and cleans them up when
@@ -43,6 +45,22 @@ class PrimaryWindowManager {
     
     init(ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
+        
+        // Register self as observer for the NewTab notification that
+        // is triggered via callback from Zig code.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onNewTab),
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
+    }
+    
+    deinit {
+        // Clean up the observer.
+        NotificationCenter.default.removeObserver(
+            self,
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
     }
     
     /// Add the initial window for the application. This should only be called once from the AppDelegate.
@@ -61,16 +79,41 @@ class PrimaryWindowManager {
         newWindow.makeKeyAndOrderFront(nil)
     }
     
-    func addNewTab(to window: NSWindow) {
-        guard let controller = createWindowController() else { return }
+    // triggerNewTab tells the Zig core code to create a new tab, which then calls
+    // back into Swift code.
+    func triggerNewTab(for window: PrimaryWindow) {
+        guard let surface = window.focusedSurfaceWrapper.surface else { return }
+        ghostty.newTab(surface: surface)
+    }
+    
+    func newTab() {
+        if let window = mainWindow as? PrimaryWindow {
+            self.triggerNewTab(for: window)
+        } else {
+            self.addNewWindow()
+        }
+    }
+
+    @objc private func onNewTab(notification: SwiftUI.Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let window = surfaceView.window else { return }
+        
+        let configAny = notification.userInfo?[Ghostty.Notification.NewTabKey]
+        let config = configAny as? ghostty_surface_config_s
+        
+        self.addNewTab(to: window, withBaseConfig: config)
+    }
+    
+    private func addNewTab(to window: NSWindow, withBaseConfig config: ghostty_surface_config_s? = nil) {
+        guard let controller = createWindowController(withBaseConfig: config) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)
         newWindow.makeKeyAndOrderFront(nil)
     }
 
-    private func createWindowController() -> PrimaryWindowController? {
+    private func createWindowController(withBaseConfig config: ghostty_surface_config_s? = nil) -> PrimaryWindowController? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
-        let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate)
+        let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate, baseConfig: config)
         Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
         let controller = PrimaryWindowController(window: window)
         controller.windowManager = self

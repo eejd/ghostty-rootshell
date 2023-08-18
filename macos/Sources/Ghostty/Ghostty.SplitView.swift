@@ -8,10 +8,11 @@ extension Ghostty {
     struct TerminalSplit: View {
         @Environment(\.ghosttyApp) private var app
         let onClose: (() -> Void)?
+        let baseConfig: ghostty_surface_config_s?
         
         var body: some View {
             if let app = app {
-                TerminalSplitRoot(app: app, onClose: onClose)
+                TerminalSplitRoot(app: app, onClose: onClose, baseConfig: baseConfig)
             }
         }
     }
@@ -67,9 +68,9 @@ extension Ghostty {
             @Published var surface: SurfaceView
             
             /// Initialize a new leaf which creates a new terminal surface.
-            init(_ app: ghostty_app_t) {
+            init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
                 self.app = app
-                self.surface = SurfaceView(app)
+                self.surface = SurfaceView(app, baseConfig)
             }
         }
         
@@ -87,7 +88,7 @@ extension Ghostty {
                 // Initially, both topLeft and bottomRight are in the "nosplit"
                 // state since this is a new split.
                 self.topLeft = .noSplit(from)
-                self.bottomRight = .noSplit(.init(app))
+                self.bottomRight = .noSplit(.init(app, nil))
             }
         }
         
@@ -141,12 +142,14 @@ extension Ghostty {
         @State private var node: SplitNode
         @State private var requestClose: Bool = false
         let onClose: (() -> Void)?
+        let baseConfig: ghostty_surface_config_s?
         
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
         
-        init(app: ghostty_app_t, onClose: (() ->Void)? = nil) {
+        init(app: ghostty_app_t, onClose: (() ->Void)? = nil, baseConfig: ghostty_surface_config_s? = nil) {
             self.onClose = onClose
-            _node = State(wrappedValue: SplitNode.noSplit(.init(app)))
+            self.baseConfig = baseConfig
+            _node = State(wrappedValue: SplitNode.noSplit(.init(app, baseConfig)))
         }
         
         var body: some View {

@@ -24,7 +24,7 @@ extension Ghostty {
         @StateObject private var surfaceView: SurfaceView
         
         init(_ app: ghostty_app_t, @ViewBuilder content: @escaping ((SurfaceView) -> Content)) {
-            _surfaceView = StateObject(wrappedValue: SurfaceView(app))
+            _surfaceView = StateObject(wrappedValue: SurfaceView(app, nil))
             self.content = content
         }
         
@@ -137,7 +137,7 @@ extension Ghostty {
         // so we'll use that to tell ghostty to refresh.
         override var wantsUpdateLayer: Bool { return true }
         
-        init(_ app: ghostty_app_t) {
+        init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
             self.markedText = NSMutableAttributedString()
             
             // Initialize with some default frame size. The important thing is that this
@@ -146,10 +146,11 @@ extension Ghostty {
             super.init(frame: NSMakeRect(0, 0, 800, 600))
             
             // Setup our surface. This will also initialize all the terminal IO.
-            var surface_cfg = ghostty_surface_config_s(
-                userdata: Unmanaged.passUnretained(self).toOpaque(),
-                nsview: Unmanaged.passUnretained(self).toOpaque(),
-                scale_factor: NSScreen.main!.backingScaleFactor)
+            var surface_cfg = baseConfig ?? ghostty_surface_config_new()
+            surface_cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
+            surface_cfg.nsview = Unmanaged.passUnretained(self).toOpaque()
+            surface_cfg.scale_factor = NSScreen.main!.backingScaleFactor
+            
             guard let surface = ghostty_surface_new(app, &surface_cfg) else {
                 self.error = AppError.surfaceCreateError
                 return

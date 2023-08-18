@@ -61,6 +61,7 @@ extension Ghostty {
                 read_clipboard_cb: { userdata, loc in AppState.readClipboard(userdata, location: loc) },
                 write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction in AppState.newSplit(userdata, direction: direction) },
+                new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
@@ -135,6 +136,10 @@ extension Ghostty {
         /// cycle which will call our close surface callback.
         func requestClose(surface: ghostty_surface_t) {
             ghostty_surface_request_close(surface)
+        }
+        
+        func newTab(surface: ghostty_surface_t) {
+            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_NEW_TAB, nil)
         }
         
         func split(surface: ghostty_surface_t, direction: ghostty_split_direction_e) {
@@ -255,6 +260,19 @@ extension Ghostty {
                 userInfo: [
                     Notification.NonNativeFullscreenKey: useNonNativeFullscreen,
                 ]
+            )
+        }
+        
+        static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            
+            var userInfo: [AnyHashable : Any] = [:];
+            userInfo[Notification.NewTabKey] = config;
+            
+            NotificationCenter.default.post(
+                name: Notification.ghosttyNewTab,
+                object: surface,
+                userInfo: userInfo
             )
         }
         
