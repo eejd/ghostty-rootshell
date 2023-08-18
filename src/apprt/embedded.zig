@@ -171,7 +171,7 @@ pub const Surface = struct {
         scale_factor: f64 = 1,
 
         /// The font size to inherit. If 0, default font size will be used.
-        font_size: u8 = 0,
+        font_size: u16 = 0,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -200,13 +200,6 @@ pub const Surface = struct {
         var config = try apprt.surface.newConfig(app.core_app, app.config);
         defer config.deinit();
 
-        // Overwrite the config for this new surface if we need to set a font
-        // size based on parent.
-        // TODO: Is this super hacky?
-        if (opts.font_size != 0) {
-            config.@"font-size" = opts.font_size;
-        }
-
         // Initialize our surface right away. We're given a view that is
         // ready to use.
         try self.core_surface.init(
@@ -217,6 +210,13 @@ pub const Surface = struct {
             self,
         );
         errdefer self.core_surface.deinit();
+
+        // If our options requested a specific font-size, set that.
+        if (opts.font_size != 0) {
+            var font_size = self.core_surface.font_size;
+            font_size.points = opts.font_size;
+            self.core_surface.setFontSize(font_size);
+        }
     }
 
     pub fn deinit(self: *Surface) void {
@@ -602,9 +602,9 @@ pub const Surface = struct {
             return;
         };
 
-        const font_size: u8 = font_size: {
+        const font_size: u16 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
-            break :font_size @intCast(self.core_surface.font_size.points);
+            break :font_size self.core_surface.font_size.points;
         };
 
         func(self.opts.userdata, .{
