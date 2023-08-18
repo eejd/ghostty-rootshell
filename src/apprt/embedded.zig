@@ -71,9 +71,13 @@ pub const App = struct {
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
-        /// New tab with desired font size in points
-        /// TODO: u8 should be something that's nullable
-        new_tab: ?*const fn (SurfaceUD, u8) callconv(.C) void = null,
+        /// New tab with options.
+        new_tab: ?*const fn (SurfaceUD, apprt.App.NewTabOptions) callconv(.C) void = null,
+    };
+
+    pub const NewTabOptions = extern struct {
+        /// The font size to inherit. If 0, default font size will be used.
+        font_size: u8 = 0,
     };
 
     core_app: *CoreApp,
@@ -600,14 +604,16 @@ pub const Surface = struct {
             return;
         };
 
-        // TODO: Do we check this here? Or do we check this in embedder?
-        //
         const font_size: u8 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
             break :font_size @intCast(self.core_surface.font_size.points);
         };
 
-        func(self.opts.userdata, font_size);
+        const options = apprt.App.NewTabOptions{
+            .font_size = font_size,
+        };
+
+        func(self.opts.userdata, options);
     }
 
     /// The cursor position from the host directly is in screen coordinates but

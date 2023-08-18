@@ -65,7 +65,7 @@ extension Ghostty {
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, useNonNativeFullscreen: nonNativeFullscreen) },
-                new_tab_cb: { userdata, fontSize in AppState.newTab(userdata, fontSize: fontSize) }
+                new_tab_cb: { userdata, newTabConfig in AppState.newTab(userdata, config: newTabConfig) }
             )
 
             // Create the ghostty app.
@@ -263,14 +263,18 @@ extension Ghostty {
             )
         }
         
-        static func newTab(_ userdata: UnsafeMutableRawPointer?, fontSize: UInt8) {
+        static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_new_tab_config_s) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            
+            var userInfo: [AnyHashable : Any] = [:];
+            if config.font_size != 0 {
+                userInfo[Notification.NewTabKey] = config.font_size as UInt8;
+            }
+            
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewTab,
                 object: surface,
-                userInfo: [
-                    Notification.NewTabKey: fontSize,
-                ]
+                userInfo: userInfo
             )
         }
         
