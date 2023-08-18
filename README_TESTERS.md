@@ -53,22 +53,19 @@ This is the priority of bugs:
 
 ## Let's Talk!
 
-By being invited to the project, you also should've been invited to the
-Discord community. If you haven't, please open an issue and I'll post
-an expiring invite link.
-
-**The Discord community is private, for now.** Please don't invite friends,
-yet! I want to keep it limited to testers.
+You likely landed in the Discord community first, if for some reason you're not
+in there, join [here](https://discord.gg/ghostty). Discord is a great place to 
+share feedback, discuss issues, ask questions and talk to other testers.
 
 ## Other FAQ
 
 ### Can I Invite a Friend?
 
-Please bring it up in Discord so I (@mitchellh) can personally invite them.
-But generally, yes! We'd rather have friends or people we know involved
-in testing early on rather than strangers (although, happy to meet you!).
-So if you have a friend that is interested and you think would be a great
-addition, please let me know.
+To the Discord, go for it! [discord.gg/ghostty](https://discord.gg/ghostty). 
+Initially, they'll land in a public Discord channel. As mentioned, testers 
+are being added slowly as bugs are fixed. Discord is being used as a sort-of 
+waitlist, and people are added to the project as testers from there,
+so just send them the link and they will be added at some point.
 
 ### I want to help, what can I work on?
 
