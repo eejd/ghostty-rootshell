@@ -78,15 +78,16 @@ class PrimaryWindowManager {
         newWindow.makeKeyAndOrderFront(nil)
     }
     
-    func newTabForWindow(window: PrimaryWindow) {
+    // triggerNewTab tells the Zig core code to create a new tab, which then calls
+    // back into Swift code.
+    func triggerNewTab(for window: PrimaryWindow) {
         guard let surface = window.focusedSurfaceWrapper.surface else { return }
         ghostty.newTab(surface: surface)
     }
     
     func newTab() {
-        if mainWindow != nil {
-            guard let window = mainWindow as? PrimaryWindow else { return }
-            self.newTabForWindow(window: window)
+        if let window = mainWindow as? PrimaryWindow {
+            self.triggerNewTab(for: window)
         } else {
             self.addNewWindow()
         }
@@ -99,13 +100,7 @@ class PrimaryWindowManager {
         let fontSizeAny = notification.userInfo?[Ghostty.Notification.NewTabKey]
         let fontSize = fontSizeAny as? UInt8
         
-        if fontSize != nil {
-            // Add the new tab to the window with the given font size.
-            self.addNewTab(to: window, withFontSize: fontSize)
-        } else {
-            // No font size specified, just add new tab.
-            self.addNewTab(to: window)
-        }
+        self.addNewTab(to: window, withFontSize: fontSize)
     }
     
     private func addNewTab(to window: NSWindow, withFontSize fontSize: UInt8? = nil) {

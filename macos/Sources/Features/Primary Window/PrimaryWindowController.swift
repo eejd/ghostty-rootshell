@@ -14,6 +14,6 @@ class PrimaryWindowController: NSWindowController {
     override func newWindowForTab(_ sender: Any?) {
         guard let window = self.window as? PrimaryWindow else { preconditionFailure("Expected window to be loaded") }
         guard let manager = self.windowManager else { return }
-        manager.newTabForWindow(window: window)
+        manager.triggerNewTab(for: window)
     }
 }
