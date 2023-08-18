@@ -1255,7 +1255,7 @@ pub fn scrollCallback(
         // a lock since we read terminal state.
         if (y.delta != 0) {
             const pos = try self.rt_surface.getCursorPos();
-            try self.mouseReport(if (y.sign < 0) .five else .four, .press, self.mouse.mods, pos);
+            try self.mouseReport(if (y.delta < 0) .four else .five, .press, self.mouse.mods, pos);
         }
         if (x.delta != 0) {
             const pos = try self.rt_surface.getCursorPos();
