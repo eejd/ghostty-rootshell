@@ -267,9 +267,7 @@ extension Ghostty {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
             
             var userInfo: [AnyHashable : Any] = [:];
-            if config.font_size != 0 {
-                userInfo[Notification.NewTabKey] = config;
-            }
+            userInfo[Notification.NewTabKey] = config;
             
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewTab,
