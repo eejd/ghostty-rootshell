@@ -692,7 +692,6 @@ fn addDeps(
         .freetype = mod_freetype,
         .macos = mod_macos,
     }));
-    step.addModule("imgui", imgui.module(b));
     step.addModule("xev", mod_libxev);
     step.addModule("pixman", pixman.module(b));
     step.addModule("stb_image_resize", stb_image_resize.module(b));
@@ -849,6 +848,7 @@ fn addDeps(
                 try glfw.link(b, step, glfw_opts);
 
                 // Must also link to imgui
+                step.addModule("imgui", imgui.module(b));
                 const imgui_step = try imgui.link(b, step, imgui_opts);
                 try glfw.link(b, imgui_step, glfw_opts);
             },
