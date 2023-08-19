@@ -160,8 +160,12 @@ fragment float4 uber_fragment(
 
     // We premult the alpha to our whole color since our blend function
     // uses One/OneMinusSourceAlpha to avoid blurry edges.
+    // We first premult our given color.
+    float4 premult = float4(in.color.rgb * in.color.a, 1);
+    // Then premult the texture color
     float a = textureGreyscale.sample(textureSampler, coord).r;
-    return in.color * a;
+    premult = premult * a;
+    return premult;
   }
 
   case MODE_FG_COLOR: {
