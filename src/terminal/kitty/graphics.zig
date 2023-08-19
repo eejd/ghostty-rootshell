@@ -11,30 +11,40 @@ const KV = std.StringHashMapUnmanaged([]const u8);
 
 /// Command parser parses the Kitty graphics protocol escape sequence.
 pub const CommandParser = struct {
-    /// General purpose allocator used for long-lived allocations. The
-    /// data list is long-lived.
-    alloc: Allocator,
-
-    /// The arena is used for allocations that only exist for the lifetime
-    /// of the parser. This is used for the KV data at the time of writing.
+    /// The memory used by the parser is stored in an arena because it is
+    /// all freed at the end of the command.
     arena: ArenaAllocator,
 
+    /// This is the list of KV pairs that we're building up.
     kv: KV = .{},
+
+    /// This is the list of bytes that contains both KV data and final
+    /// data. You shouldn't access this directly.
     data: std.ArrayListUnmanaged(u8) = .{},
+
+    /// Internal state for parsing.
     data_i: usize = 0,
     value_ptr: *[]const u8 = undefined,
     state: State = .control_key,
 
     const State = enum {
+        /// We're parsing the key of a KV pair.
         control_key,
+
+        /// We're parsing the value of a KV pair.
         control_value,
+
+        /// We're parsing the data blob.
         data,
     };
 
+    /// Initialize the parser. The allocator given will be used only for
+    /// temporary state and nothing long-lived.
     pub fn init(alloc: Allocator) CommandParser {
+        var arena = ArenaAllocator.init(alloc);
+        errdefer arena.deinit();
         return .{
-            .alloc = alloc,
-            .arena = ArenaAllocator.init(alloc),
+            .arena = arena,
         };
     }
 
@@ -94,7 +104,10 @@ pub const CommandParser = struct {
 
     /// Complete the parsing. This must be called after all the
     /// bytes have been fed to the parser.
-    pub fn complete(self: *CommandParser) !Command {
+    ///
+    /// The allocator given will be used for the long-lived data
+    /// of the final command.
+    pub fn complete(self: *CommandParser, alloc: Allocator) !Command {
         switch (self.state) {
             // We can't ever end in the control key state and be valid.
             // This means the command looked something like "a=1,b"
@@ -146,7 +159,7 @@ pub const CommandParser = struct {
                 // This is not the most efficient thing to do but it's easy
                 // and we can always optimize this later. Images are not super
                 // common, especially large ones.
-                break :data try self.alloc.dupe(u8, self.data.items[self.data_i..]);
+                break :data try alloc.dupe(u8, self.data.items[self.data_i..]);
             },
         };
     }
@@ -719,7 +732,7 @@ test "transmission command" {
 
     const input = "f=24,s=10,v=20";
     for (input) |c| try p.feed(c);
-    const command = try p.complete();
+    const command = try p.complete(alloc);
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .transmit);
@@ -737,7 +750,7 @@ test "query command" {
 
     const input = "i=31,s=1,v=1,a=q,t=d,f=24;AAAA";
     for (input) |c| try p.feed(c);
-    const command = try p.complete();
+    const command = try p.complete(alloc);
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .query);
@@ -757,7 +770,7 @@ test "display command" {
 
     const input = "a=p,U=1,i=31,c=80,r=120";
     for (input) |c| try p.feed(c);
-    const command = try p.complete();
+    const command = try p.complete(alloc);
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .display);
@@ -775,7 +788,7 @@ test "delete command" {
 
     const input = "a=d,d=p,x=3,y=4";
     for (input) |c| try p.feed(c);
-    const command = try p.complete();
+    const command = try p.complete(alloc);
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .delete);
