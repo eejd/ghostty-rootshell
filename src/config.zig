@@ -1176,7 +1176,8 @@ pub const RepeatableString = struct {
 
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
-        try self.list.append(alloc, value);
+        const copy = try alloc.dupe(u8, value);
+        try self.list.append(alloc, copy);
     }
 
     /// Deep copy of the struct. Required by Config.
