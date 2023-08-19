@@ -277,6 +277,7 @@ pub const Key = enum(c_int) {
     copy_to_clipboard,
     paste_from_clipboard,
     new_tab,
+    new_window,
 };
 
 /// Trigger is the associated key state that can trigger an action.

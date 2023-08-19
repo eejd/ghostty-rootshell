@@ -46,20 +46,31 @@ class PrimaryWindowManager {
     init(ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
         
-        // Register self as observer for the NewTab notification that
-        // is triggered via callback from Zig code.
-        NotificationCenter.default.addObserver(
+        // Register self as observer for the NewTab/NewWindow notifications that
+        // are triggered via callback from Zig code.
+        let center = NotificationCenter.default;
+        center.addObserver(
             self,
             selector: #selector(onNewTab),
             name: Ghostty.Notification.ghosttyNewTab,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onNewWindow),
+            name: Ghostty.Notification.ghosttyNewWindow,
+            object: nil)
     }
     
     deinit {
-        // Clean up the observer.
-        NotificationCenter.default.removeObserver(
+        // Clean up the observers.
+        let center = NotificationCenter.default;
+        center.removeObserver(
             self,
             name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
+        center.removeObserver(
+            self,
+            name: Ghostty.Notification.ghosttyNewWindow,
             object: nil)
     }
     
@@ -73,10 +84,31 @@ class PrimaryWindowManager {
         }
     }
     
-    func addNewWindow() {
-        guard let controller = createWindowController() else { return }
+    func newWindow() {
+        if let window = mainWindow as? PrimaryWindow {
+            // If we already have a window, we go through Zig core code, which calls back into Swift.
+            self.triggerNewWindow(withParent: window)
+        } else {
+            self.addNewWindow()
+        }
+    }
+    
+    func triggerNewWindow(withParent window: PrimaryWindow) {
+        guard let surface = window.focusedSurfaceWrapper.surface else { return }
+        ghostty.newWindow(surface: surface)
+    }
+    
+    func addNewWindow(withBaseConfig config: ghostty_surface_config_s? = nil) {
+        guard let controller = createWindowController(withBaseConfig: config) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return }
         newWindow.makeKeyAndOrderFront(nil)
+    }
+    
+    @objc private func onNewWindow(notification: SwiftUI.Notification) {
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
+        let config = configAny as? ghostty_surface_config_s
+        
+        self.addNewWindow(withBaseConfig: config)
     }
     
     // triggerNewTab tells the Zig core code to create a new tab, which then calls
@@ -98,7 +130,7 @@ class PrimaryWindowManager {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
         guard let window = surfaceView.window else { return }
         
-        let configAny = notification.userInfo?[Ghostty.Notification.NewTabKey]
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
         let config = configAny as? ghostty_surface_config_s
         
         self.addNewTab(to: window, withBaseConfig: config)
