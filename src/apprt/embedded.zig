@@ -62,6 +62,9 @@ pub const App = struct {
         /// New tab with options.
         new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
+        /// New window with options.
+        new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
+
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
@@ -615,14 +618,29 @@ pub const Surface = struct {
             return;
         };
 
+        const options = self.newSurfaceOptions();
+        func(self.opts.userdata, options);
+    }
+
+    pub fn newWindow(self: *const Surface) !void {
+        const func = self.app.opts.new_window orelse {
+            log.info("runtime embedder does not support new_window", .{});
+            return;
+        };
+
+        const options = self.newSurfaceOptions();
+        func(self.opts.userdata, options);
+    }
+
+    fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
         const font_size: u16 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
             break :font_size self.core_surface.font_size.points;
         };
 
-        func(self.opts.userdata, .{
+        return .{
             .font_size = font_size,
-        });
+        };
     }
 
     /// The cursor position from the host directly is in screen coordinates but
@@ -855,6 +873,7 @@ pub const CAPI = struct {
             .copy_to_clipboard => .{ .copy_to_clipboard = {} },
             .paste_from_clipboard => .{ .paste_from_clipboard = {} },
             .new_tab => .{ .new_tab = {} },
+            .new_window => .{ .new_window = {} },
         };
 
         ptr.core_surface.performBindingAction(action) catch |err| {

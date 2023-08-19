@@ -79,9 +79,13 @@ extension Ghostty.Notification {
     static let ghosttyGotoTab = Notification.Name("com.mitchellh.ghostty.gotoTab")
     static let GotoTabKey = ghosttyGotoTab.rawValue
     
-    /// New tab. Has base surface config requestesd in userinfo.
+    /// New tab. Has base surface config requested in userinfo.
     static let ghosttyNewTab = Notification.Name("com.mitchellh.ghostty.newTab")
     static let NewTabKey = ghosttyNewTab.rawValue
+    
+    /// New window. Has base surface config requested in userinfo.
+    static let ghosttyNewWindow = Notification.Name("com.mitchellh.ghostty.newWindow")
+    static let NewWindowKey = ghosttyNewWindow.rawValue
 
     /// Toggle fullscreen of current window
     static let ghosttyToggleFullscreen = Notification.Name("com.mitchellh.ghostty.toggleFullscreen")

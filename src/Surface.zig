@@ -2119,11 +2119,15 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         } else log.warn("dev mode was not compiled into this binary", .{}),
 
         .new_window => {
-            _ = self.app_mailbox.push(.{
-                .new_window = .{
-                    .parent = self,
-                },
-            }, .{ .instant = {} });
+            if (@hasDecl(apprt.Surface, "newWindow")) {
+                try self.rt_surface.newWindow();
+            } else {
+                _ = self.app_mailbox.push(.{
+                    .new_window = .{
+                        .parent = self,
+                    },
+                }, .{ .instant = {} });
+            }
         },
 
         .new_tab => {

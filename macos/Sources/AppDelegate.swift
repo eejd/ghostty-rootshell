@@ -77,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     @IBAction func newWindow(_ sender: Any?) {
-        windowManager.addNewWindow()
+        windowManager.newWindow()
     }
     
     @IBAction func newTab(_ sender: Any?) {
