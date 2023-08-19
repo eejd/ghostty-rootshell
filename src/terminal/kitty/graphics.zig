@@ -112,9 +112,9 @@ pub const CommandParser = struct {
 
         // Determine our action, which is always a single character.
         const action: u8 = action: {
-            const action_idx = self.kv.get("a") orelse break :action 't';
-            if (action_idx[1] - action_idx[0] != 1) return error.InvalidFormat;
-            break :action self.data.items[action_idx[0]];
+            const str = self.kv.get("a") orelse break :action 't';
+            if (str.len != 1) return error.InvalidFormat;
+            break :action str[0];
         };
         const control: Command.Control = switch (action) {
             'q' => .{ .query = try Transmission.parse(self.kv) },
@@ -124,7 +124,7 @@ pub const CommandParser = struct {
                 .display = try Display.parse(self.kv),
             } },
             'p' => .{ .display = try Display.parse(self.kv) },
-            //'d' => .{ .delete = try Delete.parse(self.kv) },
+            'd' => .{ .delete = try Delete.parse(self.kv) },
             'f' => .{ .transmit_animation_frame = try AnimationFrameLoading.parse(self.kv) },
             'a' => .{ .control_animation = try AnimationControl.parse(self.kv) },
             'c' => .{ .compose_animation = try AnimationFrameComposition.parse(self.kv) },
@@ -595,6 +595,102 @@ pub const Delete = union(enum) {
         delete: bool = false, // uppercase
         z: u32 = 0, // z
     },
+
+    fn parse(kv: KV) !Delete {
+        const what: u8 = what: {
+            const str = kv.get("d") orelse break :what 'a';
+            if (str.len != 1) return error.InvalidFormat;
+            break :what str[0];
+        };
+
+        return switch (what) {
+            'a', 'A' => .{ .all = what == 'A' },
+
+            'i', 'I' => blk: {
+                var result: Delete = .{ .id = .{ .delete = what == 'I' } };
+                if (kv.get("i")) |str| {
+                    result.id.image_id = try std.fmt.parseInt(u32, str, 10);
+                }
+                if (kv.get("p")) |str| {
+                    result.id.placement_id = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            'n', 'N' => blk: {
+                var result: Delete = .{ .newest = .{ .delete = what == 'N' } };
+                if (kv.get("I")) |str| {
+                    result.newest.count = try std.fmt.parseInt(u32, str, 10);
+                }
+                if (kv.get("p")) |str| {
+                    result.newest.placement_id = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            'c', 'C' => .{ .intersect_cursor = what == 'C' },
+
+            'f', 'F' => .{ .animation_frames = what == 'F' },
+
+            'p', 'P' => blk: {
+                var result: Delete = .{ .intersect_cell = .{ .delete = what == 'P' } };
+                if (kv.get("x")) |str| {
+                    result.intersect_cell.x = try std.fmt.parseInt(u32, str, 10);
+                }
+                if (kv.get("y")) |str| {
+                    result.intersect_cell.y = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            'q', 'Q' => blk: {
+                var result: Delete = .{ .intersect_cell_z = .{ .delete = what == 'Q' } };
+                if (kv.get("x")) |str| {
+                    result.intersect_cell_z.x = try std.fmt.parseInt(u32, str, 10);
+                }
+                if (kv.get("y")) |str| {
+                    result.intersect_cell_z.y = try std.fmt.parseInt(u32, str, 10);
+                }
+                if (kv.get("z")) |str| {
+                    result.intersect_cell_z.z = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            'x', 'X' => blk: {
+                var result: Delete = .{ .column = .{ .delete = what == 'X' } };
+                if (kv.get("x")) |str| {
+                    result.column.x = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            'y', 'Y' => blk: {
+                var result: Delete = .{ .row = .{ .delete = what == 'Y' } };
+                if (kv.get("y")) |str| {
+                    result.row.y = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            'z', 'Z' => blk: {
+                var result: Delete = .{ .z = .{ .delete = what == 'Z' } };
+                if (kv.get("z")) |str| {
+                    result.z.z = try std.fmt.parseInt(u32, str, 10);
+                }
+
+                break :blk result;
+            },
+
+            else => return error.InvalidFormat,
+        };
+    }
 };
 
 pub const CompositionMode = enum {
