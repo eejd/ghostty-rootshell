@@ -137,16 +137,20 @@ class PrimaryWindowManager {
     }
     
     private func addNewTab(to window: NSWindow, withBaseConfig config: ghostty_surface_config_s? = nil) {
-        guard let controller = createWindowController(withBaseConfig: config) else { return }
+        guard let controller = createWindowController(withBaseConfig: config, cascade: false) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)
         newWindow.makeKeyAndOrderFront(nil)
     }
 
-    private func createWindowController(withBaseConfig config: ghostty_surface_config_s? = nil) -> PrimaryWindowController? {
+    private func createWindowController(withBaseConfig config: ghostty_surface_config_s? = nil, cascade: Bool = true) -> PrimaryWindowController? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
+        
         let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate, baseConfig: config)
-        Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+        if (cascade) {
+            Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+        }
+        
         let controller = PrimaryWindowController(window: window)
         controller.windowManager = self
         return controller
@@ -169,5 +173,12 @@ class PrimaryWindowManager {
     
     private func removeWindow(window: NSWindow) {
         self.managedWindows.removeAll(where: { $0.window === window })
+        
+        // If we remove a window, we reset the cascade point to the key window so that
+        // the next window cascade's from that one.
+        if let focusedWindow = NSApplication.shared.keyWindow {
+            let frame = focusedWindow.frame
+            Self.lastCascadePoint = NSPoint(x: frame.minX, y: frame.maxY)
+        }
     }
 }
