@@ -5,14 +5,24 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
+const KV = std.StringHashMapUnmanaged([]const u8);
 
 /// Command parser parses the Kitty graphics protocol escape sequence.
 pub const CommandParser = struct {
+    /// General purpose allocator used for long-lived allocations. The
+    /// data list is long-lived.
     alloc: Allocator,
-    kv: std.StringHashMapUnmanaged([2]usize) = .{},
+
+    /// The arena is used for allocations that only exist for the lifetime
+    /// of the parser. This is used for the KV data at the time of writing.
+    arena: ArenaAllocator,
+
+    kv: KV = .{},
     data: std.ArrayListUnmanaged(u8) = .{},
     data_i: usize = 0,
-    value_ptr: *[2]usize = undefined,
+    value_ptr: *[]const u8 = undefined,
     state: State = .control_key,
 
     const State = enum {
@@ -21,9 +31,18 @@ pub const CommandParser = struct {
         data,
     };
 
+    pub fn init(alloc: Allocator) CommandParser {
+        return .{
+            .alloc = alloc,
+            .arena = ArenaAllocator.init(alloc),
+        };
+    }
+
     pub fn deinit(self: *CommandParser) void {
-        self.kv.deinit(self.alloc);
+        // We don't free the hash map because its in the arena
+
         self.data.deinit(self.alloc);
+        self.arena.deinit();
     }
 
     /// Feed a single byte to the parser.
@@ -36,8 +55,14 @@ pub const CommandParser = struct {
             .control_key => switch (c) {
                 // '=' means the key is complete and we're moving to the value.
                 '=' => {
-                    const key = self.data.items[self.data_i..];
-                    const gop = try self.kv.getOrPut(self.alloc, key);
+                    // We need to copy the key into the arena so that the
+                    // pointer is stable.
+                    const alloc = self.arena.allocator();
+                    const gop = try self.kv.getOrPut(alloc, try alloc.dupe(
+                        u8,
+                        self.data.items[self.data_i..],
+                    ));
+
                     self.state = .control_value;
                     self.value_ptr = gop.value_ptr;
                     self.data_i = self.data.items.len;
@@ -49,13 +74,13 @@ pub const CommandParser = struct {
             .control_value => switch (c) {
                 // ',' means we're moving to another kv
                 ',' => {
-                    self.finishValue();
+                    try self.finishValue();
                     self.state = .control_key;
                 },
 
                 // ';' means we're moving to the data
                 ';' => {
-                    self.finishValue();
+                    try self.finishValue();
                     self.state = .data;
                 },
 
@@ -71,7 +96,7 @@ pub const CommandParser = struct {
 
     /// Complete the parsing. This must be called after all the
     /// bytes have been fed to the parser.
-    pub fn complete(self: *CommandParser) !void {
+    pub fn complete(self: *CommandParser) !Command {
         switch (self.state) {
             // We can't ever end in the control key state and be valid.
             // This means the command looked something like "a=1,b"
@@ -79,35 +104,63 @@ pub const CommandParser = struct {
 
             // Some commands (i.e. placements) end without extra data so
             // we end in the value state. i.e. "a=1,b=2"
-            .control_value => self.finishValue(),
+            .control_value => try self.finishValue(),
 
             // Most commands end in data, i.e. "a=1,b=2;1234"
             .data => {},
         }
+
+        // Determine our action, which is always a single character.
+        const action: u8 = action: {
+            const action_idx = self.kv.get("a") orelse break :action 't';
+            if (action_idx[1] - action_idx[0] != 1) return error.InvalidFormat;
+            break :action self.data.items[action_idx[0]];
+        };
+        const control: Command.Control = switch (action) {
+            'q' => .{ .query = try Transmission.parse(self.kv) },
+            't' => .{ .transmit = try Transmission.parse(self.kv) },
+            'T' => .{ .transmit_and_display = .{
+                .transmission = try Transmission.parse(self.kv),
+                .display = try Display.parse(self.kv),
+            } },
+            'p' => .{ .display = try Display.parse(self.kv) },
+            //'d' => .{ .delete = try Delete.parse(self.kv) },
+            'f' => .{ .transmit_animation_frame = try AnimationFrameLoading.parse(self.kv) },
+            'a' => .{ .control_animation = try AnimationControl.parse(self.kv) },
+            'c' => .{ .compose_animation = try AnimationFrameComposition.parse(self.kv) },
+            else => return error.InvalidFormat,
+        };
+
+        // Determine our quiet value
+        const quiet: Command.Quiet = if (self.kv.get("q")) |str| quiet: {
+            break :quiet switch (try std.fmt.parseInt(u32, str, 10)) {
+                0 => .no,
+                1 => .ok,
+                2 => .failures,
+                else => return error.InvalidFormat,
+            };
+        } else .no;
+
+        return .{
+            .control = control,
+            .quiet = quiet,
+            .data = if (self.data.items.len == 0) "" else try self.data.toOwnedSlice(self.alloc),
+        };
     }
 
-    fn finishValue(self: *CommandParser) void {
-        self.value_ptr.* = .{ self.data_i, self.data.items.len };
+    fn finishValue(self: *CommandParser) !void {
+        self.value_ptr.* = try self.arena.allocator().dupe(
+            u8,
+            self.data.items[self.data_i..self.data.items.len],
+        );
         self.data_i = self.data.items.len;
     }
 };
 
-test "parse" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-    var p: CommandParser = .{ .alloc = alloc };
-    defer p.deinit();
-
-    const input = "f=24,s=10,v=20";
-    for (input) |c| try p.feed(c);
-    try p.complete();
-
-    try testing.expectEqual(@as(u32, 3), p.kv.count());
-}
-
 pub const Command = struct {
     control: Control,
     quiet: Quiet = .no,
+    data: []const u8 = "",
 
     pub const Action = enum {
         query, // q
@@ -139,6 +192,10 @@ pub const Command = struct {
         control_animation: AnimationControl,
         compose_animation: AnimationFrameComposition,
     };
+
+    pub fn deinit(self: Command, alloc: Allocator) void {
+        if (self.data.len > 0) alloc.free(self.data);
+    }
 };
 
 pub const Transmission = struct {
@@ -171,6 +228,73 @@ pub const Transmission = struct {
         none,
         zlib_deflate, // z
     };
+
+    fn parse(kv: KV) !Transmission {
+        var result: Transmission = .{};
+        if (kv.get("f")) |str| {
+            const v = try std.fmt.parseInt(u32, str, 10);
+            result.format = switch (v) {
+                24 => .rgb,
+                32 => .rgba,
+                100 => .png,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("t")) |str| {
+            if (str.len != 1) return error.InvalidFormat;
+            result.medium = switch (str[0]) {
+                'd' => .direct,
+                'f' => .file,
+                't' => .temporary_file,
+                's' => .shared_memory,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("s")) |str| {
+            result.width = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("v")) |str| {
+            result.height = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("S")) |str| {
+            result.size = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("O")) |str| {
+            result.offset = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("i")) |str| {
+            result.image_id = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("I")) |str| {
+            result.image_number = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("p")) |str| {
+            result.placement_id = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("o")) |str| {
+            if (str.len != 1) return error.InvalidFormat;
+            result.compression = switch (str[0]) {
+                'z' => .zlib_deflate,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("m")) |str| {
+            const v = try std.fmt.parseInt(u32, str, 10);
+            result.more_chunks = v > 0;
+        }
+
+        return result;
+    }
 };
 
 pub const Display = struct {
@@ -190,6 +314,66 @@ pub const Display = struct {
         after, // 0
         none, // 1
     };
+
+    fn parse(kv: KV) !Display {
+        var result: Display = .{};
+
+        if (kv.get("x")) |str| {
+            result.x = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("y")) |str| {
+            result.y = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("w")) |str| {
+            result.width = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("h")) |str| {
+            result.height = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("X")) |str| {
+            result.x_offset = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("Y")) |str| {
+            result.y_offset = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("c")) |str| {
+            result.columns = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("r")) |str| {
+            result.rows = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("C")) |str| {
+            if (str.len != 1) return error.InvalidFormat;
+            result.cursor_movement = switch (str[0]) {
+                '0' => .after,
+                '1' => .none,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("U")) |str| {
+            if (str.len != 1) return error.InvalidFormat;
+            result.virtual_placement = switch (str[0]) {
+                '0' => false,
+                '1' => true,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("z")) |str| {
+            result.z = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        return result;
+    }
 };
 
 pub const AnimationFrameLoading = struct {
@@ -207,6 +391,45 @@ pub const AnimationFrameLoading = struct {
         b: u8 = 0,
         a: u8 = 0,
     };
+
+    fn parse(kv: KV) !AnimationFrameLoading {
+        var result: AnimationFrameLoading = .{};
+
+        if (kv.get("x")) |str| {
+            result.x = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("y")) |str| {
+            result.y = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("c")) |str| {
+            result.create_frame = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("r")) |str| {
+            result.edit_frame = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("z")) |str| {
+            result.gap_ms = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("X")) |str| {
+            const v = try std.fmt.parseInt(u32, str, 10);
+            result.composition_mode = switch (v) {
+                0 => .alpha_blend,
+                1 => .overwrite,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("Y")) |str| {
+            result.background = @bitCast(try std.fmt.parseInt(u32, str, 10));
+        }
+
+        return result;
+    }
 };
 
 pub const AnimationFrameComposition = struct {
@@ -219,6 +442,53 @@ pub const AnimationFrameComposition = struct {
     left_edge: u32 = 0, // X
     top_edge: u32 = 0, // Y
     composition_mode: CompositionMode = .alpha_blend, // C
+
+    fn parse(kv: KV) !AnimationFrameComposition {
+        var result: AnimationFrameComposition = .{};
+
+        if (kv.get("c")) |str| {
+            result.frame = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("r")) |str| {
+            result.edit_frame = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("x")) |str| {
+            result.x = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("y")) |str| {
+            result.y = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("w")) |str| {
+            result.width = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("h")) |str| {
+            result.height = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("X")) |str| {
+            result.left_edge = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("Y")) |str| {
+            result.top_edge = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("C")) |str| {
+            const v = try std.fmt.parseInt(u32, str, 10);
+            result.composition_mode = switch (v) {
+                0 => .alpha_blend,
+                1 => .overwrite,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        return result;
+    }
 };
 
 pub const AnimationControl = struct {
@@ -229,10 +499,44 @@ pub const AnimationControl = struct {
     loops: u32 = 0, // v
 
     pub const AnimationAction = enum {
+        invalid, // 0
         stop, // 1
         run_wait, // 2
         run, // 3
     };
+
+    fn parse(kv: KV) !AnimationControl {
+        var result: AnimationControl = .{};
+
+        if (kv.get("s")) |str| {
+            const v = try std.fmt.parseInt(u32, str, 10);
+            result.action = switch (v) {
+                0 => .invalid,
+                1 => .stop,
+                2 => .run_wait,
+                3 => .run,
+                else => return error.InvalidFormat,
+            };
+        }
+
+        if (kv.get("r")) |str| {
+            result.frame = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("z")) |str| {
+            result.gap_ms = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("c")) |str| {
+            result.current_frame = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("v")) |str| {
+            result.loops = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        return result;
+    }
 };
 
 pub const Delete = union(enum) {
@@ -297,3 +601,21 @@ pub const CompositionMode = enum {
     alpha_blend, // 0
     overwrite, // 1
 };
+
+test "transmission command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = CommandParser.init(alloc);
+    defer p.deinit();
+
+    const input = "f=24,s=10,v=20";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .transmit);
+    const v = command.control.transmit;
+    try testing.expectEqual(Transmission.Format.rgb, v.format);
+    try testing.expectEqual(@as(u32, 10), v.width);
+    try testing.expectEqual(@as(u32, 20), v.height);
+}
