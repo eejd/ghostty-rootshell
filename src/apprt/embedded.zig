@@ -57,7 +57,7 @@ pub const App = struct {
 
         /// Create a new split view. If the embedder doesn't support split
         /// views then this can be null.
-        new_split: ?*const fn (SurfaceUD, input.SplitDirection) callconv(.C) void = null,
+        new_split: ?*const fn (SurfaceUD, input.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
 
         /// New tab with options.
         new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
@@ -236,7 +236,8 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, direction);
+        const options = self.newSurfaceOptions();
+        func(self.opts.userdata, direction, options);
     }
 
     pub fn close(self: *const Surface, process_alive: bool) void {

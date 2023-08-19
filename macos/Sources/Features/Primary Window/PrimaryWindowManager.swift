@@ -105,7 +105,7 @@ class PrimaryWindowManager {
     }
     
     @objc private func onNewWindow(notification: SwiftUI.Notification) {
-        let configAny = notification.userInfo?[Ghostty.Notification.NewWindowKey]
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
         let config = configAny as? ghostty_surface_config_s
         
         self.addNewWindow(withBaseConfig: config)
@@ -130,7 +130,7 @@ class PrimaryWindowManager {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
         guard let window = surfaceView.window else { return }
         
-        let configAny = notification.userInfo?[Ghostty.Notification.NewTabKey]
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
         let config = configAny as? ghostty_surface_config_s
         
         self.addNewTab(to: window, withBaseConfig: config)

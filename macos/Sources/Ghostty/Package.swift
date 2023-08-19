@@ -64,6 +64,9 @@ extension Ghostty {
 }
 
 extension Ghostty.Notification {
+    /// Used to pass a configuration along when creating a new tab/window/split.
+    static let NewSurfaceConfigKey = "com.mitchellh.ghostty.newSurfaceConfig"
+    
     /// Posted when a new split is requested. The sending object will be the surface that had focus. The
     /// userdata has one key "direction" with the direction to split to.
     static let ghosttyNewSplit = Notification.Name("com.mitchellh.ghostty.newSplit")
@@ -81,11 +84,9 @@ extension Ghostty.Notification {
     
     /// New tab. Has base surface config requested in userinfo.
     static let ghosttyNewTab = Notification.Name("com.mitchellh.ghostty.newTab")
-    static let NewTabKey = ghosttyNewTab.rawValue
     
     /// New window. Has base surface config requested in userinfo.
     static let ghosttyNewWindow = Notification.Name("com.mitchellh.ghostty.newWindow")
-    static let NewWindowKey = ghosttyNewWindow.rawValue
 
     /// Toggle fullscreen of current window
     static let ghosttyToggleFullscreen = Notification.Name("com.mitchellh.ghostty.toggleFullscreen")

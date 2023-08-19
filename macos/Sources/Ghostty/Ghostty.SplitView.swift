@@ -82,13 +82,13 @@ extension Ghostty {
             /// A container is always initialized from some prior leaf because a split has to originate
             /// from a non-split value. When initializing, we inherit the leaf's surface and then
             /// initialize a new surface for the new pane.
-            init(from: Leaf) {
+            init(from: Leaf, baseConfig: ghostty_surface_config_s? = nil) {
                 self.app = from.app
                 
                 // Initially, both topLeft and bottomRight are in the "nosplit"
                 // state since this is a new split.
                 self.topLeft = .noSplit(from)
-                self.bottomRight = .noSplit(.init(app, nil))
+                self.bottomRight = .noSplit(.init(app, baseConfig))
             }
         }
         
@@ -254,6 +254,9 @@ extension Ghostty {
         }
         
         private func onNewSplit(notification: SwiftUI.Notification) {
+            let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
+            let config = configAny as? ghostty_surface_config_s
+
             // Determine our desired direction
             guard let directionAny = notification.userInfo?["direction"] else { return }
             guard let direction = directionAny as? ghostty_split_direction_e else { return }
@@ -270,7 +273,7 @@ extension Ghostty {
             }
             
             // Setup our new container since we are now split
-            let container = SplitNode.Container(from: leaf)
+            let container = SplitNode.Container(from: leaf, baseConfig: config)
             
             // Depending on the direction, change the parent node. This will trigger
             // the parent to relayout our views.
