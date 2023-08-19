@@ -39,9 +39,7 @@ pub const CommandParser = struct {
     }
 
     pub fn deinit(self: *CommandParser) void {
-        // We don't free the hash map because its in the arena
-
-        self.data.deinit(self.alloc);
+        // We don't free the hash map or array list because its in the arena
         self.arena.deinit();
     }
 
@@ -68,7 +66,7 @@ pub const CommandParser = struct {
                     self.data_i = self.data.items.len;
                 },
 
-                else => try self.data.append(self.alloc, c),
+                else => try self.data.append(self.arena.allocator(), c),
             },
 
             .control_value => switch (c) {
@@ -84,10 +82,10 @@ pub const CommandParser = struct {
                     self.state = .data;
                 },
 
-                else => try self.data.append(self.alloc, c),
+                else => try self.data.append(self.arena.allocator(), c),
             },
 
-            .data => try self.data.append(self.alloc, c),
+            .data => try self.data.append(self.arena.allocator(), c),
         }
 
         // We always add to our data list because this is our stable
@@ -144,7 +142,12 @@ pub const CommandParser = struct {
         return .{
             .control = control,
             .quiet = quiet,
-            .data = if (self.data.items.len == 0) "" else try self.data.toOwnedSlice(self.alloc),
+            .data = if (self.data.items.len == 0) "" else data: {
+                // This is not the most efficient thing to do but it's easy
+                // and we can always optimize this later. Images are not super
+                // common, especially large ones.
+                break :data try self.alloc.dupe(u8, self.data.items[self.data_i..]);
+            },
         };
     }
 
@@ -298,6 +301,8 @@ pub const Transmission = struct {
 };
 
 pub const Display = struct {
+    image_id: u32 = 0, // i
+    image_number: u32 = 0, // I
     x: u32 = 0, // x
     y: u32 = 0, // y
     width: u32 = 0, // w
@@ -317,6 +322,14 @@ pub const Display = struct {
 
     fn parse(kv: KV) !Display {
         var result: Display = .{};
+
+        if (kv.get("i")) |str| {
+            result.image_id = try std.fmt.parseInt(u32, str, 10);
+        }
+
+        if (kv.get("I")) |str| {
+            result.image_number = try std.fmt.parseInt(u32, str, 10);
+        }
 
         if (kv.get("x")) |str| {
             result.x = try std.fmt.parseInt(u32, str, 10);
@@ -714,4 +727,62 @@ test "transmission command" {
     try testing.expectEqual(Transmission.Format.rgb, v.format);
     try testing.expectEqual(@as(u32, 10), v.width);
     try testing.expectEqual(@as(u32, 20), v.height);
+}
+
+test "query command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = CommandParser.init(alloc);
+    defer p.deinit();
+
+    const input = "i=31,s=1,v=1,a=q,t=d,f=24;AAAA";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .query);
+    const v = command.control.query;
+    try testing.expectEqual(Transmission.Medium.direct, v.medium);
+    try testing.expectEqual(@as(u32, 1), v.width);
+    try testing.expectEqual(@as(u32, 1), v.height);
+    try testing.expectEqual(@as(u32, 31), v.image_id);
+    try testing.expectEqualStrings("AAAA", command.data);
+}
+
+test "display command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = CommandParser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=p,U=1,i=31,c=80,r=120";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .display);
+    const v = command.control.display;
+    try testing.expectEqual(@as(u32, 80), v.columns);
+    try testing.expectEqual(@as(u32, 120), v.rows);
+    try testing.expectEqual(@as(u32, 31), v.image_id);
+}
+
+test "delete command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = CommandParser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=d,d=p,x=3,y=4";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .delete);
+    const v = command.control.delete;
+    try testing.expect(v == .intersect_cell);
+    const dv = v.intersect_cell;
+    try testing.expect(!dv.delete);
+    try testing.expectEqual(@as(u32, 3), dv.x);
+    try testing.expectEqual(@as(u32, 4), dv.y);
 }
