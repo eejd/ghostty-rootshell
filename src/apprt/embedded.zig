@@ -151,6 +151,17 @@ pub const App = struct {
         _ = surface;
         // No-op, we use a threaded interface so we're constantly drawing.
     }
+
+    pub fn newWindow(self: *App, parent: ?*CoreSurface) !void {
+        _ = self;
+
+        // Right now we only support creating a new window with a parent
+        // through this code.
+        // The other case is handled by the embedding runtime.
+        if (parent) |surface| {
+            try surface.rt_surface.newWindow();
+        }
+    }
 };
 
 pub const Surface = struct {
