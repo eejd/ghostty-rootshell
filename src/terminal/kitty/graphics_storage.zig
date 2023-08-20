@@ -33,7 +33,22 @@ pub const ImageStorage = struct {
     /// Add an already-loaded image to the storage. This will automatically
     /// free any existing image with the same ID.
     pub fn addImage(self: *ImageStorage, alloc: Allocator, img: Image) Allocator.Error!void {
+        // Do the gop op first so if it fails we don't get a partial state
         const gop = try self.images.getOrPut(alloc, img.id);
+
+        // If the image has an image number, we need to invalidate the last
+        // image with that same number.
+        if (img.number > 0) {
+            var it = self.images.iterator();
+            while (it.next()) |kv| {
+                if (kv.value_ptr.number == img.number) {
+                    kv.value_ptr.number = 0;
+                    break;
+                }
+            }
+        }
+
+        // Write our new image
         if (gop.found_existing) gop.value_ptr.deinit(alloc);
         gop.value_ptr.* = img;
     }
@@ -57,6 +72,16 @@ pub const ImageStorage = struct {
     /// Get an image by its ID. If the image doesn't exist, null is returned.
     pub fn imageById(self: *ImageStorage, image_id: u32) ?Image {
         return self.images.get(image_id);
+    }
+
+    /// Get an image by its number. If the image doesn't exist, return null.
+    pub fn imageByNumber(self: *ImageStorage, image_number: u32) ?Image {
+        var it = self.images.iterator();
+        while (it.next()) |kv| {
+            if (kv.value_ptr.number == image_number) return kv.value_ptr.*;
+        }
+
+        return null;
     }
 
     /// Every placement is uniquely identified by the image ID and the

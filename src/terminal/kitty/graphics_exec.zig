@@ -2,12 +2,18 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const point = @import("../point.zig");
 const Terminal = @import("../Terminal.zig");
 const command = @import("graphics_command.zig");
 const image = @import("graphics_image.zig");
 const Command = command.Command;
 const Response = command.Response;
 const Image = image.Image;
+
+// TODO:
+// - image ids need to be assigned, can't just be zero
+// - delete
+// (not exhaustive, almost every op is ignoring additional config)
 
 /// Execute a Kitty graphics command against the given terminal. This
 /// will never fail, but the response may indicate an error and the
@@ -112,16 +118,47 @@ fn display(
     cmd: *Command,
 ) Response {
     const d = cmd.display().?;
+
+    // Display requires image ID or number.
+    if (d.image_id == 0 and d.image_number == 0) {
+        return .{ .message = "EINVAL: image ID or number required" };
+    }
+
+    // Build up our response
     var result: Response = .{
         .id = d.image_id,
         .image_number = d.image_number,
         .placement_id = d.placement_id,
     };
 
-    // TODO
+    // Verify the requested image exists if we have an ID
+    const storage = &terminal.screen.kitty_images;
+    const img_: ?Image = if (d.image_id != 0)
+        storage.imageById(d.image_id)
+    else
+        storage.imageByNumber(d.image_number);
+    const img = img_ orelse {
+        result.message = "EINVAL: image not found";
+        return result;
+    };
 
-    _ = alloc;
-    _ = terminal;
+    // Make sure our response has the image id in case we looked up by number
+    result.id = img.id;
+
+    // Determine the screen point for the placement.
+    const placement_point = (point.Viewport{
+        .x = terminal.screen.cursor.x,
+        .y = terminal.screen.cursor.y,
+    }).toScreen(&terminal.screen);
+
+    // Add the placement
+    storage.addPlacement(alloc, img.id, d.placement_id, .{
+        .point = placement_point,
+    }) catch |err| {
+        encodeError(&result, err);
+        return result;
+    };
+
     return result;
 }
 
