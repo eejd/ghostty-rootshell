@@ -111,10 +111,18 @@ fn display(
     terminal: *Terminal,
     cmd: *Command,
 ) Response {
+    const d = cmd.display().?;
+    var result: Response = .{
+        .id = d.image_id,
+        .image_number = d.image_number,
+        .placement_id = d.placement_id,
+    };
+
+    // TODO
+
     _ = alloc;
     _ = terminal;
-    _ = cmd;
-    return .{};
+    return result;
 }
 
 /// A combination of transmit and display. Nothing special.
@@ -138,7 +146,7 @@ fn loadAndAddImage(
     errdefer img.deinit(alloc);
 
     // Store our image
-    try terminal.screen.kitty_images.add(alloc, img);
+    try terminal.screen.kitty_images.addImage(alloc, img);
 
     return img;
 }

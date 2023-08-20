@@ -10,6 +10,7 @@ const max_dimension = 10000;
 
 pub const Image = struct {
     id: u32 = 0,
+    number: u32 = 0,
     data: []const u8,
 
     pub const Error = error{
@@ -58,6 +59,7 @@ pub const Image = struct {
 
         return Image{
             .id = t.image_id,
+            .number = t.image_number,
             .data = data,
         };
     }

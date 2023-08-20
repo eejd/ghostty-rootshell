@@ -294,6 +294,15 @@ pub const Command = struct {
         };
     }
 
+    /// Returns the display data if it has any.
+    pub fn display(self: Command) ?Display {
+        return switch (self.control) {
+            .display => |d| d,
+            .transmit_and_display => |t| t.display,
+            else => null,
+        };
+    }
+
     pub fn deinit(self: Command, alloc: Allocator) void {
         if (self.data.len > 0) alloc.free(self.data);
     }
@@ -399,6 +408,7 @@ pub const Transmission = struct {
 pub const Display = struct {
     image_id: u32 = 0, // i
     image_number: u32 = 0, // I
+    placement_id: u32 = 0, // p
     x: u32 = 0, // x
     y: u32 = 0, // y
     width: u32 = 0, // w
@@ -425,6 +435,10 @@ pub const Display = struct {
 
         if (kv.get('I')) |v| {
             result.image_number = v;
+        }
+
+        if (kv.get('p')) |v| {
+            result.placement_id = v;
         }
 
         if (kv.get('x')) |v| {
