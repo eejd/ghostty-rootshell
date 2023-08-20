@@ -108,6 +108,9 @@ fn transmit(
     };
     img.deinit(alloc);
 
+    // After the image is added, set the ID in case it changed
+    result.id = img.id;
+
     return result;
 }
 
@@ -182,8 +185,15 @@ fn loadAndAddImage(
     var img = try Image.load(alloc, cmd);
     errdefer img.deinit(alloc);
 
+    // If the image has no ID, we assign one
+    const storage = &terminal.screen.kitty_images;
+    if (img.id == 0) {
+        img.id = storage.next_id;
+        storage.next_id +%= 1;
+    }
+
     // Store our image
-    try terminal.screen.kitty_images.addImage(alloc, img);
+    try storage.addImage(alloc, img);
 
     return img;
 }

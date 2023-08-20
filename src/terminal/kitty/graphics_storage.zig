@@ -16,6 +16,10 @@ pub const ImageStorage = struct {
     const ImageMap = std.AutoHashMapUnmanaged(u32, Image);
     const PlacementMap = std.AutoHashMapUnmanaged(PlacementKey, Placement);
 
+    /// This is the next automatically assigned ID. We start mid-way
+    /// through the u32 range to avoid collisions with buggy programs.
+    next_id: u32 = 2147483647,
+
     /// The set of images that are currently known.
     images: ImageMap = .{},
 
