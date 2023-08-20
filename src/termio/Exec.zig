@@ -1048,15 +1048,11 @@ const StreamHandler = struct {
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
 
-    /// The APC command data. This is always heap-allocated and freed on
-    /// apcEnd because APC commands are so very rare.
-    apc_data: std.ArrayListUnmanaged(u8) = .{},
-    apc_state: enum {
-        inactive,
-        ignore,
-        verify,
-        collect,
-    } = .inactive,
+    /// The APC command handler maintains the APC state. APC is like
+    /// CSI or OSC, but it is a private escape sequence that is used
+    /// to send commands to the terminal emulator. This is used by
+    /// the kitty graphics protocol.
+    apc: terminal.apc.Handler = .{},
 
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
@@ -1064,7 +1060,7 @@ const StreamHandler = struct {
     writer_messaged: bool = false,
 
     pub fn deinit(self: *StreamHandler) void {
-        self.apc_data.deinit(self.alloc);
+        self.apc.deinit();
     }
 
     inline fn queueRender(self: *StreamHandler) !void {
@@ -1077,49 +1073,17 @@ const StreamHandler = struct {
     }
 
     pub fn apcStart(self: *StreamHandler) !void {
-        assert(self.apc_data.items.len == 0);
-        self.apc_state = .verify;
+        self.apc.start();
     }
 
     pub fn apcPut(self: *StreamHandler, byte: u8) !void {
-        switch (self.apc_state) {
-            .inactive => unreachable,
-
-            // We're ignoring this APC command, likely because we don't
-            // recognize it so there is no need to store the data in memory.
-            .ignore => return,
-
-            // Verify it is a command we expect
-            .verify => {
-                switch (byte) {
-                    'G' => {},
-                    else => {
-                        log.warn("unrecognized APC command, first byte: {x}", .{byte});
-                        self.apc_state = .ignore;
-                        return;
-                    },
-                }
-
-                self.apc_state = .collect;
-            },
-
-            .collect => {},
-        }
-
-        try self.apc_data.append(self.alloc, byte);
-
-        // Prevent DoS attack.
-        const limit = 100 * 1024 * 1024; // 100MB
-        if (self.apc_data.items.len > limit) {
-            log.warn("APC command too large, ignoring", .{});
-            self.apc_state = .ignore;
-            self.apc_data.clearAndFree(self.alloc);
-        }
+        self.apc.feed(self.alloc, byte);
     }
 
     pub fn apcEnd(self: *StreamHandler) !void {
-        self.apc_state = .inactive;
-        self.apc_data.clearAndFree(self.alloc);
+        var cmd = self.apc.end() orelse return;
+        defer cmd.deinit(self.alloc);
+        log.warn("APC command: {}", .{cmd});
     }
 
     pub fn print(self: *StreamHandler, ch: u21) !void {
