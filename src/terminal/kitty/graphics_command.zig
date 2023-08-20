@@ -284,6 +284,16 @@ pub const Command = struct {
         return result;
     }
 
+    /// Returns the transmission data if it has any.
+    pub fn transmission(self: Command) ?Transmission {
+        return switch (self.control) {
+            .query => |t| t,
+            .transmit => |t| t,
+            .transmit_and_display => |t| t.transmission,
+            else => null,
+        };
+    }
+
     pub fn deinit(self: Command, alloc: Allocator) void {
         if (self.data.len > 0) alloc.free(self.data);
     }

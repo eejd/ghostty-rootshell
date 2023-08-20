@@ -27,6 +27,7 @@ pub fn execute(
 
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),
+        .transmit => transmit(alloc, cmd),
         else => .{ .message = "ERROR: unimplemented action" },
     };
 
@@ -65,23 +66,46 @@ fn query(alloc: Allocator, cmd: *Command) Response {
     };
 
     // Attempt to load the image. If we cannot, then set an appropriate error.
-    if (Image.load(alloc, t, cmd.data)) |img| {
-        // Tell the command we've consumed the data.
-        _ = cmd.toOwnedData();
-        defer {
-            // We need a mutable reference to deinit the image.
-            var img_c = img;
-            img_c.deinit(alloc);
-        }
-
-        // If the image is greater than a predetermined max size, then we
-        // error. The max size here is taken directly from Kitty.
-    } else |err| switch (err) {
-        error.InvalidData => result.message = "EINVAL: invalid data",
-        error.UnsupportedFormat => result.message = "EINVAL: unsupported format",
-        error.DimensionsRequired => result.message = "EINVAL: dimensions required",
-        error.DimensionsTooLarge => result.message = "EINVAL: dimensions too large",
-    }
+    var img = Image.load(alloc, cmd) catch |err| {
+        encodeError(&result, err);
+        return result;
+    };
+    img.deinit(alloc);
 
     return result;
+}
+
+/// Transmit image data.
+fn transmit(alloc: Allocator, cmd: *Command) Response {
+    const t = cmd.control.transmit;
+    var result: Response = .{
+        .id = t.image_id,
+        .image_number = t.image_number,
+        .placement_id = t.placement_id,
+    };
+
+    // Load our image. This will also validate all the metadata.
+    var img = Image.load(alloc, cmd) catch |err| {
+        encodeError(&result, err);
+        return result;
+    };
+    errdefer img.deinit(alloc);
+
+    // Store our image
+    // TODO
+    img.deinit(alloc);
+
+    return result;
+}
+
+const EncodeableError = Image.Error;
+
+/// Encode an error code into a message for a response.
+fn encodeError(r: *Response, err: EncodeableError) void {
+    switch (err) {
+        error.InvalidData => r.message = "EINVAL: invalid data",
+        error.UnsupportedFormat => r.message = "EINVAL: unsupported format",
+        error.DimensionsRequired => r.message = "EINVAL: dimensions required",
+        error.DimensionsTooLarge => r.message = "EINVAL: dimensions too large",
+    }
 }
