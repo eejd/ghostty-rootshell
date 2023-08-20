@@ -7,7 +7,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
-const KV = std.StringHashMapUnmanaged([]const u8);
+/// The key-value pairs for the control information for a command. The
+/// keys are always single characters and the values are either single
+/// characters or 32-bit unsigned integers.
+///
+/// For the value of this: if the value is a single printable ASCII character
+/// it is the ASCII code. Otherwise, it is parsed as a 32-bit unsigned integer.
+const KV = std.AutoHashMapUnmanaged(u8, u32);
 
 /// Command parser parses the Kitty graphics protocol escape sequence.
 pub const CommandParser = struct {
@@ -18,13 +24,21 @@ pub const CommandParser = struct {
     /// This is the list of KV pairs that we're building up.
     kv: KV = .{},
 
+    /// This is used as a buffer to store the key/value of a KV pair.
+    /// The value of a KV pair is at most a 32-bit integer which at most
+    /// is 10 characters (4294967295).
+    kv_temp: [10]u8 = undefined,
+    kv_temp_len: u4 = 0,
+
+    /// Current kv key
+    kv_current: u8 = 0,
+
     /// This is the list of bytes that contains both KV data and final
     /// data. You shouldn't access this directly.
     data: std.ArrayListUnmanaged(u8) = .{},
 
     /// Internal state for parsing.
     data_i: usize = 0,
-    value_ptr: *[]const u8 = undefined,
     state: State = .control_key,
 
     const State = enum {
@@ -63,20 +77,14 @@ pub const CommandParser = struct {
             .control_key => switch (c) {
                 // '=' means the key is complete and we're moving to the value.
                 '=' => {
-                    // We need to copy the key into the arena so that the
-                    // pointer is stable.
-                    const alloc = self.arena.allocator();
-                    const gop = try self.kv.getOrPut(alloc, try alloc.dupe(
-                        u8,
-                        self.data.items[self.data_i..],
-                    ));
-
+                    // All keys at the time of writing this parser are one char
+                    if (self.kv_temp_len != 1) @panic("TODO");
+                    self.kv_current = self.kv_temp[0];
+                    self.kv_temp_len = 0;
                     self.state = .control_value;
-                    self.value_ptr = gop.value_ptr;
-                    self.data_i = self.data.items.len;
                 },
 
-                else => try self.data.append(self.arena.allocator(), c),
+                else => try self.accumulateValue(c),
             },
 
             .control_value => switch (c) {
@@ -92,7 +100,7 @@ pub const CommandParser = struct {
                     self.state = .data;
                 },
 
-                else => try self.data.append(self.arena.allocator(), c),
+                else => try self.accumulateValue(c),
             },
 
             .data => try self.data.append(self.arena.allocator(), c),
@@ -123,9 +131,9 @@ pub const CommandParser = struct {
 
         // Determine our action, which is always a single character.
         const action: u8 = action: {
-            const str = self.kv.get("a") orelse break :action 't';
-            if (str.len != 1) return error.InvalidFormat;
-            break :action str[0];
+            const value = self.kv.get('a') orelse break :action 't';
+            const c = std.math.cast(u8, value) orelse return error.InvalidFormat;
+            break :action c;
         };
         const control: Command.Control = switch (action) {
             'q' => .{ .query = try Transmission.parse(self.kv) },
@@ -143,8 +151,8 @@ pub const CommandParser = struct {
         };
 
         // Determine our quiet value
-        const quiet: Command.Quiet = if (self.kv.get("q")) |str| quiet: {
-            break :quiet switch (try std.fmt.parseInt(u32, str, 10)) {
+        const quiet: Command.Quiet = if (self.kv.get('q')) |v| quiet: {
+            break :quiet switch (v) {
                 0 => .no,
                 1 => .ok,
                 2 => .failures,
@@ -164,12 +172,31 @@ pub const CommandParser = struct {
         };
     }
 
+    fn accumulateValue(self: *CommandParser, c: u8) !void {
+        self.kv_temp[self.kv_temp_len] = c;
+        self.kv_temp_len += 1;
+        if (self.kv_temp_len > self.kv_temp.len) @panic("TODO");
+    }
+
     fn finishValue(self: *CommandParser) !void {
-        self.value_ptr.* = try self.arena.allocator().dupe(
-            u8,
-            self.data.items[self.data_i..self.data.items.len],
-        );
-        self.data_i = self.data.items.len;
+        const alloc = self.arena.allocator();
+
+        // Check for ASCII chars first
+        if (self.kv_temp_len == 1) {
+            const c = self.kv_temp[0];
+            if (c < '0' or c > '9') {
+                try self.kv.put(alloc, self.kv_current, @intCast(c));
+                self.kv_temp_len = 0;
+                return;
+            }
+        }
+
+        // Parse the value as a string
+        const v = try std.fmt.parseInt(u32, self.kv_temp[0..self.kv_temp_len], 10);
+        try self.kv.put(alloc, self.kv_current, v);
+
+        // Clear our temp buffer
+        self.kv_temp_len = 0;
     }
 };
 
@@ -247,8 +274,7 @@ pub const Transmission = struct {
 
     fn parse(kv: KV) !Transmission {
         var result: Transmission = .{};
-        if (kv.get("f")) |str| {
-            const v = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('f')) |v| {
             result.format = switch (v) {
                 24 => .rgb,
                 32 => .rgba,
@@ -257,9 +283,9 @@ pub const Transmission = struct {
             };
         }
 
-        if (kv.get("t")) |str| {
-            if (str.len != 1) return error.InvalidFormat;
-            result.medium = switch (str[0]) {
+        if (kv.get('t')) |v| {
+            const c = std.math.cast(u8, v) orelse return error.InvalidFormat;
+            result.medium = switch (c) {
                 'd' => .direct,
                 'f' => .file,
                 't' => .temporary_file,
@@ -268,44 +294,43 @@ pub const Transmission = struct {
             };
         }
 
-        if (kv.get("s")) |str| {
-            result.width = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('s')) |v| {
+            result.width = v;
         }
 
-        if (kv.get("v")) |str| {
-            result.height = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('v')) |v| {
+            result.height = v;
         }
 
-        if (kv.get("S")) |str| {
-            result.size = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('S')) |v| {
+            result.size = v;
         }
 
-        if (kv.get("O")) |str| {
-            result.offset = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('O')) |v| {
+            result.offset = v;
         }
 
-        if (kv.get("i")) |str| {
-            result.image_id = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('i')) |v| {
+            result.image_id = v;
         }
 
-        if (kv.get("I")) |str| {
-            result.image_number = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('I')) |v| {
+            result.image_number = v;
         }
 
-        if (kv.get("p")) |str| {
-            result.placement_id = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('p')) |v| {
+            result.placement_id = v;
         }
 
-        if (kv.get("o")) |str| {
-            if (str.len != 1) return error.InvalidFormat;
-            result.compression = switch (str[0]) {
+        if (kv.get('o')) |v| {
+            const c = std.math.cast(u8, v) orelse return error.InvalidFormat;
+            result.compression = switch (c) {
                 'z' => .zlib_deflate,
                 else => return error.InvalidFormat,
             };
         }
 
-        if (kv.get("m")) |str| {
-            const v = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('m')) |v| {
             result.more_chunks = v > 0;
         }
 
@@ -336,66 +361,64 @@ pub const Display = struct {
     fn parse(kv: KV) !Display {
         var result: Display = .{};
 
-        if (kv.get("i")) |str| {
-            result.image_id = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('i')) |v| {
+            result.image_id = v;
         }
 
-        if (kv.get("I")) |str| {
-            result.image_number = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('I')) |v| {
+            result.image_number = v;
         }
 
-        if (kv.get("x")) |str| {
-            result.x = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('x')) |v| {
+            result.x = v;
         }
 
-        if (kv.get("y")) |str| {
-            result.y = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('y')) |v| {
+            result.y = v;
         }
 
-        if (kv.get("w")) |str| {
-            result.width = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('w')) |v| {
+            result.width = v;
         }
 
-        if (kv.get("h")) |str| {
-            result.height = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('h')) |v| {
+            result.height = v;
         }
 
-        if (kv.get("X")) |str| {
-            result.x_offset = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('X')) |v| {
+            result.x_offset = v;
         }
 
-        if (kv.get("Y")) |str| {
-            result.y_offset = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('Y')) |v| {
+            result.y_offset = v;
         }
 
-        if (kv.get("c")) |str| {
-            result.columns = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('c')) |v| {
+            result.columns = v;
         }
 
-        if (kv.get("r")) |str| {
-            result.rows = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('r')) |v| {
+            result.rows = v;
         }
 
-        if (kv.get("C")) |str| {
-            if (str.len != 1) return error.InvalidFormat;
-            result.cursor_movement = switch (str[0]) {
-                '0' => .after,
-                '1' => .none,
+        if (kv.get('C')) |v| {
+            result.cursor_movement = switch (v) {
+                0 => .after,
+                1 => .none,
                 else => return error.InvalidFormat,
             };
         }
 
-        if (kv.get("U")) |str| {
-            if (str.len != 1) return error.InvalidFormat;
-            result.virtual_placement = switch (str[0]) {
-                '0' => false,
-                '1' => true,
+        if (kv.get('U')) |v| {
+            result.virtual_placement = switch (v) {
+                0 => false,
+                1 => true,
                 else => return error.InvalidFormat,
             };
         }
 
-        if (kv.get("z")) |str| {
-            result.z = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('z')) |v| {
+            result.z = v;
         }
 
         return result;
@@ -421,28 +444,27 @@ pub const AnimationFrameLoading = struct {
     fn parse(kv: KV) !AnimationFrameLoading {
         var result: AnimationFrameLoading = .{};
 
-        if (kv.get("x")) |str| {
-            result.x = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('x')) |v| {
+            result.x = v;
         }
 
-        if (kv.get("y")) |str| {
-            result.y = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('y')) |v| {
+            result.y = v;
         }
 
-        if (kv.get("c")) |str| {
-            result.create_frame = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('c')) |v| {
+            result.create_frame = v;
         }
 
-        if (kv.get("r")) |str| {
-            result.edit_frame = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('r')) |v| {
+            result.edit_frame = v;
         }
 
-        if (kv.get("z")) |str| {
-            result.gap_ms = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('z')) |v| {
+            result.gap_ms = v;
         }
 
-        if (kv.get("X")) |str| {
-            const v = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('X')) |v| {
             result.composition_mode = switch (v) {
                 0 => .alpha_blend,
                 1 => .overwrite,
@@ -450,8 +472,8 @@ pub const AnimationFrameLoading = struct {
             };
         }
 
-        if (kv.get("Y")) |str| {
-            result.background = @bitCast(try std.fmt.parseInt(u32, str, 10));
+        if (kv.get('Y')) |v| {
+            result.background = @bitCast(v);
         }
 
         return result;
@@ -472,40 +494,39 @@ pub const AnimationFrameComposition = struct {
     fn parse(kv: KV) !AnimationFrameComposition {
         var result: AnimationFrameComposition = .{};
 
-        if (kv.get("c")) |str| {
-            result.frame = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('c')) |v| {
+            result.frame = v;
         }
 
-        if (kv.get("r")) |str| {
-            result.edit_frame = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('r')) |v| {
+            result.edit_frame = v;
         }
 
-        if (kv.get("x")) |str| {
-            result.x = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('x')) |v| {
+            result.x = v;
         }
 
-        if (kv.get("y")) |str| {
-            result.y = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('y')) |v| {
+            result.y = v;
         }
 
-        if (kv.get("w")) |str| {
-            result.width = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('w')) |v| {
+            result.width = v;
         }
 
-        if (kv.get("h")) |str| {
-            result.height = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('h')) |v| {
+            result.height = v;
         }
 
-        if (kv.get("X")) |str| {
-            result.left_edge = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('X')) |v| {
+            result.left_edge = v;
         }
 
-        if (kv.get("Y")) |str| {
-            result.top_edge = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('Y')) |v| {
+            result.top_edge = v;
         }
 
-        if (kv.get("C")) |str| {
-            const v = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('C')) |v| {
             result.composition_mode = switch (v) {
                 0 => .alpha_blend,
                 1 => .overwrite,
@@ -534,8 +555,7 @@ pub const AnimationControl = struct {
     fn parse(kv: KV) !AnimationControl {
         var result: AnimationControl = .{};
 
-        if (kv.get("s")) |str| {
-            const v = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('s')) |v| {
             result.action = switch (v) {
                 0 => .invalid,
                 1 => .stop,
@@ -545,20 +565,20 @@ pub const AnimationControl = struct {
             };
         }
 
-        if (kv.get("r")) |str| {
-            result.frame = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('r')) |v| {
+            result.frame = v;
         }
 
-        if (kv.get("z")) |str| {
-            result.gap_ms = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('z')) |v| {
+            result.gap_ms = v;
         }
 
-        if (kv.get("c")) |str| {
-            result.current_frame = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('c')) |v| {
+            result.current_frame = v;
         }
 
-        if (kv.get("v")) |str| {
-            result.loops = try std.fmt.parseInt(u32, str, 10);
+        if (kv.get('v')) |v| {
+            result.loops = v;
         }
 
         return result;
@@ -624,9 +644,9 @@ pub const Delete = union(enum) {
 
     fn parse(kv: KV) !Delete {
         const what: u8 = what: {
-            const str = kv.get("d") orelse break :what 'a';
-            if (str.len != 1) return error.InvalidFormat;
-            break :what str[0];
+            const value = kv.get('d') orelse break :what 'a';
+            const c = std.math.cast(u8, value) orelse return error.InvalidFormat;
+            break :what c;
         };
 
         return switch (what) {
@@ -634,11 +654,11 @@ pub const Delete = union(enum) {
 
             'i', 'I' => blk: {
                 var result: Delete = .{ .id = .{ .delete = what == 'I' } };
-                if (kv.get("i")) |str| {
-                    result.id.image_id = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('i')) |v| {
+                    result.id.image_id = v;
                 }
-                if (kv.get("p")) |str| {
-                    result.id.placement_id = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('p')) |v| {
+                    result.id.placement_id = v;
                 }
 
                 break :blk result;
@@ -646,11 +666,11 @@ pub const Delete = union(enum) {
 
             'n', 'N' => blk: {
                 var result: Delete = .{ .newest = .{ .delete = what == 'N' } };
-                if (kv.get("I")) |str| {
-                    result.newest.count = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('I')) |v| {
+                    result.newest.count = v;
                 }
-                if (kv.get("p")) |str| {
-                    result.newest.placement_id = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('p')) |v| {
+                    result.newest.placement_id = v;
                 }
 
                 break :blk result;
@@ -662,11 +682,11 @@ pub const Delete = union(enum) {
 
             'p', 'P' => blk: {
                 var result: Delete = .{ .intersect_cell = .{ .delete = what == 'P' } };
-                if (kv.get("x")) |str| {
-                    result.intersect_cell.x = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('x')) |v| {
+                    result.intersect_cell.x = v;
                 }
-                if (kv.get("y")) |str| {
-                    result.intersect_cell.y = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('y')) |v| {
+                    result.intersect_cell.y = v;
                 }
 
                 break :blk result;
@@ -674,14 +694,14 @@ pub const Delete = union(enum) {
 
             'q', 'Q' => blk: {
                 var result: Delete = .{ .intersect_cell_z = .{ .delete = what == 'Q' } };
-                if (kv.get("x")) |str| {
-                    result.intersect_cell_z.x = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('x')) |v| {
+                    result.intersect_cell_z.x = v;
                 }
-                if (kv.get("y")) |str| {
-                    result.intersect_cell_z.y = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('y')) |v| {
+                    result.intersect_cell_z.y = v;
                 }
-                if (kv.get("z")) |str| {
-                    result.intersect_cell_z.z = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('z')) |v| {
+                    result.intersect_cell_z.z = v;
                 }
 
                 break :blk result;
@@ -689,8 +709,8 @@ pub const Delete = union(enum) {
 
             'x', 'X' => blk: {
                 var result: Delete = .{ .column = .{ .delete = what == 'X' } };
-                if (kv.get("x")) |str| {
-                    result.column.x = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('x')) |v| {
+                    result.column.x = v;
                 }
 
                 break :blk result;
@@ -698,8 +718,8 @@ pub const Delete = union(enum) {
 
             'y', 'Y' => blk: {
                 var result: Delete = .{ .row = .{ .delete = what == 'Y' } };
-                if (kv.get("y")) |str| {
-                    result.row.y = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('y')) |v| {
+                    result.row.y = v;
                 }
 
                 break :blk result;
@@ -707,8 +727,8 @@ pub const Delete = union(enum) {
 
             'z', 'Z' => blk: {
                 var result: Delete = .{ .z = .{ .delete = what == 'Z' } };
-                if (kv.get("z")) |str| {
-                    result.z.z = try std.fmt.parseInt(u32, str, 10);
+                if (kv.get('z')) |v| {
+                    result.z.z = v;
                 }
 
                 break :blk result;
