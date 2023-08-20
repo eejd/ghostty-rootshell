@@ -8,7 +8,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const freetype = @import("freetype");
 const harfbuzz = @import("harfbuzz");
-const resize = @import("stb_image_resize");
+const stb = @import("../../stb/main.zig");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
@@ -204,7 +204,7 @@ pub const Face = struct {
             result.buffer = buf.ptr;
             errdefer alloc.free(buf);
 
-            if (resize.stbir_resize_uint8(
+            if (stb.stbir_resize_uint8(
                 bm.buffer,
                 @intCast(bm.width),
                 @intCast(bm.rows),
