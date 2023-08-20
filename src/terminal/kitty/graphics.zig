@@ -30,16 +30,13 @@ pub const CommandParser = struct {
     /// is 10 characters (4294967295).
     kv_temp: [10]u8 = undefined,
     kv_temp_len: u4 = 0,
-
-    /// Current kv key
-    kv_current: u8 = 0,
+    kv_current: u8 = 0, // Current kv key
 
     /// This is the list of bytes that contains both KV data and final
     /// data. You shouldn't access this directly.
-    data: std.ArrayListUnmanaged(u8) = .{},
+    data: std.ArrayList(u8),
 
     /// Internal state for parsing.
-    data_i: usize = 0,
     state: State = .control_key,
 
     const State = enum {
@@ -54,19 +51,21 @@ pub const CommandParser = struct {
         data,
     };
 
-    /// Initialize the parser. The allocator given will be used only for
-    /// temporary state and nothing long-lived.
+    /// Initialize the parser. The allocator given will be used for both
+    /// temporary data and long-lived values such as the final image blob.
     pub fn init(alloc: Allocator) CommandParser {
         var arena = ArenaAllocator.init(alloc);
         errdefer arena.deinit();
         return .{
             .arena = arena,
+            .data = std.ArrayList(u8).init(alloc),
         };
     }
 
     pub fn deinit(self: *CommandParser) void {
-        // We don't free the hash map or array list because its in the arena
+        // We don't free the hash map because its in the arena
         self.arena.deinit();
+        self.data.deinit();
     }
 
     /// Feed a single byte to the parser.
@@ -110,7 +109,7 @@ pub const CommandParser = struct {
                 else => {},
             },
 
-            .data => try self.data.append(self.arena.allocator(), c),
+            .data => try self.data.append(c),
         }
 
         // We always add to our data list because this is our stable
@@ -122,7 +121,7 @@ pub const CommandParser = struct {
     ///
     /// The allocator given will be used for the long-lived data
     /// of the final command.
-    pub fn complete(self: *CommandParser, alloc: Allocator) !Command {
+    pub fn complete(self: *CommandParser) !Command {
         switch (self.state) {
             // We can't ever end in the control key state and be valid.
             // This means the command looked something like "a=1,b"
@@ -172,10 +171,7 @@ pub const CommandParser = struct {
             .control = control,
             .quiet = quiet,
             .data = if (self.data.items.len == 0) "" else data: {
-                // This is not the most efficient thing to do but it's easy
-                // and we can always optimize this later. Images are not super
-                // common, especially large ones.
-                break :data try alloc.dupe(u8, self.data.items[self.data_i..]);
+                break :data try self.data.toOwnedSlice();
             },
         };
     }
@@ -768,7 +764,7 @@ test "transmission command" {
 
     const input = "f=24,s=10,v=20";
     for (input) |c| try p.feed(c);
-    const command = try p.complete(alloc);
+    const command = try p.complete();
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .transmit);
@@ -786,7 +782,7 @@ test "query command" {
 
     const input = "i=31,s=1,v=1,a=q,t=d,f=24;AAAA";
     for (input) |c| try p.feed(c);
-    const command = try p.complete(alloc);
+    const command = try p.complete();
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .query);
@@ -806,7 +802,7 @@ test "display command" {
 
     const input = "a=p,U=1,i=31,c=80,r=120";
     for (input) |c| try p.feed(c);
-    const command = try p.complete(alloc);
+    const command = try p.complete();
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .display);
@@ -824,7 +820,7 @@ test "delete command" {
 
     const input = "a=d,d=p,x=3,y=4";
     for (input) |c| try p.feed(c);
-    const command = try p.complete(alloc);
+    const command = try p.complete();
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .delete);
@@ -844,7 +840,7 @@ test "ignore unknown keys (long)" {
 
     const input = "f=24,s=10,v=20,hello=world";
     for (input) |c| try p.feed(c);
-    const command = try p.complete(alloc);
+    const command = try p.complete();
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .transmit);
@@ -862,7 +858,7 @@ test "ignore very long values" {
 
     const input = "f=24,s=10,v=2000000000000000000000000000000000000000";
     for (input) |c| try p.feed(c);
-    const command = try p.complete(alloc);
+    const command = try p.complete();
     defer command.deinit(alloc);
 
     try testing.expect(command.control == .transmit);
