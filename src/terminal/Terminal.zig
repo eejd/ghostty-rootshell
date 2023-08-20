@@ -15,6 +15,7 @@ const ansi = @import("ansi.zig");
 const modes = @import("modes.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const kitty = @import("kitty.zig");
 const sgr = @import("sgr.zig");
 const Tabstops = @import("Tabstops.zig");
 const trace = @import("tracy").trace;
@@ -1553,6 +1554,22 @@ pub fn setPwd(self: *Terminal, pwd: []const u8) !void {
 pub fn getPwd(self: *const Terminal) ?[]const u8 {
     if (self.pwd.items.len == 0) return null;
     return self.pwd.items;
+}
+
+/// Execute a kitty graphics command. The buf is used to populate with
+/// the response that should be sent as an APC sequence. The response will
+/// be a full, valid APC sequence.
+///
+/// If an error occurs, the caller should response to the pty that a
+/// an error occurred otherwise the behavior of the graphics protocol is
+/// undefined.
+pub fn kittyGraphics(
+    self: *Terminal,
+    alloc: Allocator,
+    buf: []u8,
+    cmd: *kitty.graphics.Command,
+) ?kitty.graphics.Response {
+    return kitty.graphics.execute(alloc, self, buf, cmd);
 }
 
 /// Full reset
