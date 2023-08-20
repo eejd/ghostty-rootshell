@@ -24,10 +24,22 @@ pub fn execute(
 ) ?Response {
     _ = terminal;
     _ = buf;
-    switch (cmd.control) {
-        .query => return query(alloc, cmd),
-        else => return .{ .message = "ERROR: unimplemented action" },
+
+    const resp_: ?Response = switch (cmd.control) {
+        .query => query(alloc, cmd),
+        else => .{ .message = "ERROR: unimplemented action" },
+    };
+
+    // Handle the quiet settings
+    if (resp_) |resp| {
+        return switch (cmd.quiet) {
+            .no => resp,
+            .ok => if (resp.ok()) null else resp,
+            .failures => null,
+        };
     }
+
+    return null;
 }
 
 /// Execute a "query" command.
