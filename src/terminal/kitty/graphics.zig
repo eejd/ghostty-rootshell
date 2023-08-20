@@ -4,6 +4,7 @@
 //! https://sw.kovidgoyal.net/kitty/graphics-protocol
 
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
@@ -42,11 +43,12 @@ pub const CommandParser = struct {
     state: State = .control_key,
 
     const State = enum {
-        /// We're parsing the key of a KV pair.
+        /// Parsing k/v pairs. The "ignore" variants are in that state
+        /// but ignore any data because we know they're invalid.
         control_key,
-
-        /// We're parsing the value of a KV pair.
+        control_key_ignore,
         control_value,
+        control_value_ignore,
 
         /// We're parsing the data blob.
         data,
@@ -76,31 +78,36 @@ pub const CommandParser = struct {
         switch (self.state) {
             .control_key => switch (c) {
                 // '=' means the key is complete and we're moving to the value.
-                '=' => {
-                    // All keys at the time of writing this parser are one char
-                    if (self.kv_temp_len != 1) @panic("TODO");
+                '=' => if (self.kv_temp_len != 1) {
+                    // All control keys are a single character right now so
+                    // if we're not a single character just ignore follow-up
+                    // data.
+                    self.state = .control_value_ignore;
+                    self.kv_temp_len = 0;
+                } else {
                     self.kv_current = self.kv_temp[0];
                     self.kv_temp_len = 0;
                     self.state = .control_value;
                 },
 
-                else => try self.accumulateValue(c),
+                else => try self.accumulateValue(c, .control_key_ignore),
+            },
+
+            .control_key_ignore => switch (c) {
+                '=' => self.state = .control_value_ignore,
+                else => {},
             },
 
             .control_value => switch (c) {
-                // ',' means we're moving to another kv
-                ',' => {
-                    try self.finishValue();
-                    self.state = .control_key;
-                },
+                ',' => try self.finishValue(.control_key), // move to next key
+                ';' => try self.finishValue(.data), // move to data
+                else => try self.accumulateValue(c, .control_value_ignore),
+            },
 
-                // ';' means we're moving to the data
-                ';' => {
-                    try self.finishValue();
-                    self.state = .data;
-                },
-
-                else => try self.accumulateValue(c),
+            .control_value_ignore => switch (c) {
+                ',' => self.state = .control_key_ignore,
+                ';' => self.state = .data,
+                else => {},
             },
 
             .data => try self.data.append(self.arena.allocator(), c),
@@ -119,11 +126,12 @@ pub const CommandParser = struct {
         switch (self.state) {
             // We can't ever end in the control key state and be valid.
             // This means the command looked something like "a=1,b"
-            .control_key => return error.InvalidFormat,
+            .control_key, .control_key_ignore => return error.InvalidFormat,
 
             // Some commands (i.e. placements) end without extra data so
             // we end in the value state. i.e. "a=1,b=2"
-            .control_value => try self.finishValue(),
+            .control_value => try self.finishValue(.data),
+            .control_value_ignore => {},
 
             // Most commands end in data, i.e. "a=1,b=2;1234"
             .data => {},
@@ -172,14 +180,22 @@ pub const CommandParser = struct {
         };
     }
 
-    fn accumulateValue(self: *CommandParser, c: u8) !void {
-        self.kv_temp[self.kv_temp_len] = c;
+    fn accumulateValue(self: *CommandParser, c: u8, overflow_state: State) !void {
+        const idx = self.kv_temp_len;
         self.kv_temp_len += 1;
-        if (self.kv_temp_len > self.kv_temp.len) @panic("TODO");
+        if (self.kv_temp_len > self.kv_temp.len) {
+            self.state = overflow_state;
+            self.kv_temp_len = 0;
+            return;
+        }
+        self.kv_temp[idx] = c;
     }
 
-    fn finishValue(self: *CommandParser) !void {
+    fn finishValue(self: *CommandParser, next_state: State) !void {
         const alloc = self.arena.allocator();
+
+        // We can move states right away, we don't use it.
+        self.state = next_state;
 
         // Check for ASCII chars first
         if (self.kv_temp_len == 1) {
@@ -818,4 +834,40 @@ test "delete command" {
     try testing.expect(!dv.delete);
     try testing.expectEqual(@as(u32, 3), dv.x);
     try testing.expectEqual(@as(u32, 4), dv.y);
+}
+
+test "ignore unknown keys (long)" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = CommandParser.init(alloc);
+    defer p.deinit();
+
+    const input = "f=24,s=10,v=20,hello=world";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete(alloc);
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .transmit);
+    const v = command.control.transmit;
+    try testing.expectEqual(Transmission.Format.rgb, v.format);
+    try testing.expectEqual(@as(u32, 10), v.width);
+    try testing.expectEqual(@as(u32, 20), v.height);
+}
+
+test "ignore very long values" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = CommandParser.init(alloc);
+    defer p.deinit();
+
+    const input = "f=24,s=10,v=2000000000000000000000000000000000000000";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete(alloc);
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .transmit);
+    const v = command.control.transmit;
+    try testing.expectEqual(Transmission.Format.rgb, v.format);
+    try testing.expectEqual(@as(u32, 10), v.width);
+    try testing.expectEqual(@as(u32, 0), v.height);
 }
