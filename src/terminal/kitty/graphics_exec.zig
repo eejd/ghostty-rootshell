@@ -50,6 +50,13 @@ pub fn execute(
 fn query(alloc: Allocator, cmd: *Command) Response {
     const t = cmd.control.query;
 
+    // Query requires image ID. We can't actually send a response without
+    // an image ID either but we return an error and this will be logged
+    // downstream.
+    if (t.image_id == 0) {
+        return .{ .message = "EINVAL: image ID required" };
+    }
+
     // Build a partial response to start
     var result: Response = .{
         .id = t.image_id,
@@ -61,14 +68,19 @@ fn query(alloc: Allocator, cmd: *Command) Response {
     if (Image.load(alloc, t, cmd.data)) |img| {
         // Tell the command we've consumed the data.
         _ = cmd.toOwnedData();
+        defer {
+            // We need a mutable reference to deinit the image.
+            var img_c = img;
+            img_c.deinit(alloc);
+        }
 
-        // We need a mutable reference to deinit the image.
-        var img_c = img;
-        img_c.deinit(alloc);
+        // If the image is greater than a predetermined max size, then we
+        // error. The max size here is taken directly from Kitty.
     } else |err| switch (err) {
-        error.InvalidData => result.message = "ERROR: invalid data",
-        error.UnsupportedFormat => result.message = "ERROR: unsupported format",
-        error.DimensionsRequired => result.message = "ERROR: dimensions required",
+        error.InvalidData => result.message = "EINVAL: invalid data",
+        error.UnsupportedFormat => result.message = "EINVAL: unsupported format",
+        error.DimensionsRequired => result.message = "EINVAL: dimensions required",
+        error.DimensionsTooLarge => result.message = "EINVAL: dimensions too large",
     }
 
     return result;

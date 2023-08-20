@@ -5,6 +5,9 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const command = @import("graphics_command.zig");
 
+/// Maximum width or height of an image. Taken directly from Kitty.
+const max_dimension = 10000;
+
 pub const Image = struct {
     id: u32 = 0,
     data: []const u8,
@@ -12,6 +15,7 @@ pub const Image = struct {
     pub const Error = error{
         InvalidData,
         DimensionsRequired,
+        DimensionsTooLarge,
         UnsupportedFormat,
     };
 
@@ -33,6 +37,7 @@ pub const Image = struct {
         data: []const u8,
     ) !Image {
         if (t.width == 0 or t.height == 0) return error.DimensionsRequired;
+        if (t.width > max_dimension or t.height > max_dimension) return error.DimensionsTooLarge;
 
         // Data length must be what we expect
         // NOTE: we use a "<" check here because Kitty itself doesn't validate
@@ -70,4 +75,34 @@ test "image load with invalid RGB data" {
         .image_id = 31,
     }, data);
     defer img.deinit(alloc);
+}
+
+test "image load with image too wide" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var data = try alloc.dupe(u8, "AAAA");
+    defer alloc.free(data);
+
+    try testing.expectError(error.DimensionsTooLarge, Image.load(alloc, .{
+        .format = .rgb,
+        .width = max_dimension + 1,
+        .height = 1,
+        .image_id = 31,
+    }, data));
+}
+
+test "image load with image too tall" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var data = try alloc.dupe(u8, "AAAA");
+    defer alloc.free(data);
+
+    try testing.expectError(error.DimensionsTooLarge, Image.load(alloc, .{
+        .format = .rgb,
+        .height = max_dimension + 1,
+        .width = 1,
+        .image_id = 31,
+    }, data));
 }
