@@ -22,13 +22,19 @@ pub fn execute(
     buf: []u8,
     cmd: *Command,
 ) ?Response {
-    _ = terminal;
     _ = buf;
 
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),
-        .transmit => transmit(alloc, cmd),
-        else => .{ .message = "ERROR: unimplemented action" },
+        .transmit => transmit(alloc, terminal, cmd),
+        .transmit_and_display => transmitAndDisplay(alloc, terminal, cmd),
+        .display => display(alloc, terminal, cmd),
+
+        .delete,
+        .transmit_animation_frame,
+        .control_animation,
+        .compose_animation,
+        => .{ .message = "ERROR: unimplemented action" },
     };
 
     // Handle the quiet settings
@@ -42,7 +48,6 @@ pub fn execute(
 
     return null;
 }
-
 /// Execute a "query" command.
 ///
 /// This command is used to attempt to load an image and respond with
@@ -76,33 +81,74 @@ fn query(alloc: Allocator, cmd: *Command) Response {
 }
 
 /// Transmit image data.
-fn transmit(alloc: Allocator, cmd: *Command) Response {
-    const t = cmd.control.transmit;
+///
+/// This loads the image, validates it, and puts it into the terminal
+/// screen storage. It does not display the image.
+fn transmit(
+    alloc: Allocator,
+    terminal: *Terminal,
+    cmd: *Command,
+) Response {
+    const t = cmd.transmission().?;
     var result: Response = .{
         .id = t.image_id,
         .image_number = t.image_number,
         .placement_id = t.placement_id,
     };
 
-    // Load our image. This will also validate all the metadata.
-    var img = Image.load(alloc, cmd) catch |err| {
+    var img = loadAndAddImage(alloc, terminal, cmd) catch |err| {
         encodeError(&result, err);
         return result;
     };
-    errdefer img.deinit(alloc);
-
-    // Store our image
-    // TODO
     img.deinit(alloc);
 
     return result;
 }
 
-const EncodeableError = Image.Error;
+/// Display a previously transmitted image.
+fn display(
+    alloc: Allocator,
+    terminal: *Terminal,
+    cmd: *Command,
+) Response {
+    _ = alloc;
+    _ = terminal;
+    _ = cmd;
+    return .{};
+}
+
+/// A combination of transmit and display. Nothing special.
+fn transmitAndDisplay(
+    alloc: Allocator,
+    terminal: *Terminal,
+    cmd: *Command,
+) Response {
+    const resp = transmit(alloc, terminal, cmd);
+    if (!resp.ok()) return resp;
+    return display(alloc, terminal, cmd);
+}
+
+fn loadAndAddImage(
+    alloc: Allocator,
+    terminal: *Terminal,
+    cmd: *Command,
+) !Image {
+    // Load the image
+    var img = try Image.load(alloc, cmd);
+    errdefer img.deinit(alloc);
+
+    // Store our image
+    try terminal.screen.kitty_images.add(alloc, img);
+
+    return img;
+}
+
+const EncodeableError = Image.Error || Allocator.Error;
 
 /// Encode an error code into a message for a response.
 fn encodeError(r: *Response, err: EncodeableError) void {
     switch (err) {
+        error.OutOfMemory => r.message = "ENOMEM: out of memory",
         error.InvalidData => r.message = "EINVAL: invalid data",
         error.UnsupportedFormat => r.message = "EINVAL: unsupported format",
         error.DimensionsRequired => r.message = "EINVAL: dimensions required",

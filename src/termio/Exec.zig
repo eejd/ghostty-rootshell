@@ -1089,14 +1089,16 @@ const StreamHandler = struct {
             .kitty => |*kitty_cmd| {
                 var partial_buf: [512]u8 = undefined;
                 if (self.terminal.kittyGraphics(self.alloc, &partial_buf, kitty_cmd)) |resp| {
+                    if (!resp.ok()) {
+                        log.warn("erroneous kitty graphics response: {s}", .{resp.message});
+                    }
+
                     var buf: [1024]u8 = undefined;
                     var buf_stream = std.io.fixedBufferStream(&buf);
                     try resp.encode(buf_stream.writer());
-
-                    // The "2" here is for the leading and trailing ESC
                     const final = buf_stream.getWritten();
                     if (final.len > 2) {
-                        log.warn("kitty graphics response: {s}", .{final[1 .. final.len - 1]});
+                        //log.warn("kitty graphics response: {s}", .{final[1 .. final.len - 1]});
                         self.messageWriter(try termio.Message.writeReq(self.alloc, final));
                     }
                 }

@@ -865,6 +865,9 @@ selection: ?Selection = null,
 /// The kitty keyboard settings.
 kitty_keyboard: kitty.KeyFlagStack = .{},
 
+/// Kitty graphics protocol state.
+kitty_images: kitty.graphics.ImageStorage = .{},
+
 /// Initialize a new screen.
 pub fn init(
     alloc: Allocator,
@@ -889,6 +892,7 @@ pub fn init(
 }
 
 pub fn deinit(self: *Screen) void {
+    self.kitty_images.deinit(self.alloc);
     self.storage.deinit(self.alloc);
     self.deinitGraphemes();
 }
