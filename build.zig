@@ -17,7 +17,6 @@ const glfw = @import("vendor/mach-glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
 const freetype = @import("pkg/freetype/build.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.zig");
-const imgui = @import("pkg/imgui/build.zig");
 const js = @import("vendor/zig-js/build.zig");
 const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
@@ -722,16 +721,6 @@ fn addDeps(
     const utf8proc_step = try utf8proc.link(b, step);
     try static_libs.append(utf8proc_step.getEmittedBin());
 
-    // Imgui, we have to do this later since we need some information
-    const imgui_backends = if (step.target.isDarwin())
-        &[_][]const u8{ "glfw", "opengl3", "metal" }
-    else
-        &[_][]const u8{ "glfw", "opengl3" };
-    var imgui_opts: imgui.Options = .{
-        .backends = imgui_backends,
-        .freetype = .{ .enabled = true },
-    };
-
     // Dynamic link
     if (!static) {
         step.addIncludePath(.{ .path = freetype.include_path_self });
@@ -818,10 +807,6 @@ fn addDeps(
             });
             libxml2_lib.link(fontconfig_step);
         }
-
-        // Imgui
-        imgui_opts.freetype.step = freetype_step;
-        imgui_opts.freetype.include = &freetype.include_paths;
     }
 
     if (!lib) {
@@ -846,11 +831,6 @@ fn addDeps(
                     .opengl = false,
                 };
                 try glfw.link(b, step, glfw_opts);
-
-                // Must also link to imgui
-                step.addModule("imgui", imgui.module(b));
-                const imgui_step = try imgui.link(b, step, imgui_opts);
-                try glfw.link(b, imgui_step, glfw_opts);
             },
 
             .gtk => {
@@ -863,11 +843,6 @@ fn addDeps(
                 try glfw.link(b, step, glfw_opts);
 
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
-
-                // Must also link to imgui but only for tests.
-                step.addModule("imgui", imgui.module(b));
-                const imgui_step = try imgui.link(b, step, imgui_opts);
-                try glfw.link(b, imgui_step, glfw_opts);
             },
         }
     }

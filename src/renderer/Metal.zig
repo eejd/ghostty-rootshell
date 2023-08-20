@@ -16,7 +16,6 @@ const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
-const DevMode = @import("../DevMode.zig");
 const Surface = @import("../Surface.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -393,25 +392,6 @@ pub fn finalizeSurfaceInit(self: *const Metal, surface: *apprt.Surface) !void {
     layer.setProperty("contentsScale", info.scaleFactor);
 }
 
-/// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const Metal, surface: *apprt.Surface) !void {
-    if (DevMode.enabled) {
-        // Initialize for our window
-        assert(imgui.ImplGlfw.initForOther(@ptrCast(surface.window.handle), true));
-        assert(imgui.ImplMetal.init(self.device.value));
-    }
-}
-
-/// This is called if this renderer runs DevMode.
-pub fn deinitDevMode(self: *const Metal) void {
-    _ = self;
-
-    if (DevMode.enabled) {
-        imgui.ImplMetal.shutdown();
-        imgui.ImplGlfw.shutdown();
-    }
-}
-
 /// Callback called by renderer.Thread when it begins.
 pub fn threadEnter(self: *const Metal, surface: *apprt.Surface) !void {
     _ = self;
@@ -517,7 +497,6 @@ pub fn render(
     // Data we extract out of the critical area.
     const Critical = struct {
         bg: terminal.color.RGB,
-        devmode: bool,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
         draw_cursor: bool,
@@ -596,7 +575,6 @@ pub fn render(
 
         break :critical .{
             .bg = self.config.background,
-            .devmode = if (state.devmode) |dm| dm.visible else false,
             .selection = selection,
             .screen = screen_copy,
             .draw_cursor = draw_cursor,
@@ -715,29 +693,6 @@ pub fn render(
         // Issue the draw calls for this shader
         try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
         try self.drawCells(encoder, &self.buf_cells, self.cells);
-
-        // Build our devmode draw data. This sucks because it requires we
-        // lock our state mutex but the metal imgui implementation requires
-        // access to all this stuff.
-        if (critical.devmode) {
-            state.mutex.lock();
-            defer state.mutex.unlock();
-
-            if (DevMode.enabled) {
-                if (state.devmode) |dm| {
-                    if (dm.visible) {
-                        imgui.ImplMetal.newFrame(desc.value);
-                        imgui.ImplGlfw.newFrame();
-                        try dm.update();
-                        imgui.ImplMetal.renderDrawData(
-                            try dm.render(),
-                            buffer.value,
-                            encoder.value,
-                        );
-                    }
-                }
-            }
-        }
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});

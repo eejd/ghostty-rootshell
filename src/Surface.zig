@@ -31,7 +31,6 @@ const trace = @import("tracy").trace;
 const terminal = @import("terminal/main.zig");
 const configpkg = @import("config.zig");
 const input = @import("input.zig");
-const DevMode = @import("DevMode.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
 
@@ -53,9 +52,6 @@ rt_surface: *apprt.runtime.Surface,
 font_lib: font.Library,
 font_group: *font.GroupCache,
 font_size: font.face.DesiredSize,
-
-/// Imgui context
-imgui_ctx: if (DevMode.enabled) *imgui.Context else void,
 
 /// The renderer for this surface.
 renderer: Renderer,
@@ -419,11 +415,6 @@ pub fn init(
     var io_thread = try termio.Thread.init(alloc, &self.io);
     errdefer io_thread.deinit();
 
-    // True if this surface is hosting devmode. We only host devmode on
-    // the first surface since imgui is not threadsafe. We need to do some
-    // work to make DevMode work with multiple threads.
-    const host_devmode = DevMode.enabled and DevMode.instance.surface == null;
-
     self.* = .{
         .alloc = alloc,
         .app_mailbox = app_mailbox,
@@ -440,7 +431,6 @@ pub fn init(
                 .visible = true,
             },
             .terminal = &self.io.terminal,
-            .devmode = if (!host_devmode) null else &DevMode.instance,
         },
         .renderer_thr = undefined,
         .mouse = .{},
@@ -452,10 +442,7 @@ pub fn init(
         .cell_size = cell_size,
         .padding = padding,
         .config = try DerivedConfig.init(alloc, config),
-
-        .imgui_ctx = if (!DevMode.enabled) {} else try imgui.Context.create(),
     };
-    errdefer if (DevMode.enabled) self.imgui_ctx.destroy();
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
@@ -470,30 +457,6 @@ pub fn init(
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
     try self.sizeCallback(surface_size);
-
-    // Load imgui. This must be done LAST because it has to be done after
-    // all our GLFW setup is complete.
-    if (DevMode.enabled and DevMode.instance.surface == null) {
-        const dev_io = try imgui.IO.get();
-        dev_io.cval().IniFilename = "ghostty_dev_mode.ini";
-
-        // Add our built-in fonts so it looks slightly better
-        const dev_atlas: *imgui.FontAtlas = @ptrCast(dev_io.cval().Fonts);
-        dev_atlas.addFontFromMemoryTTF(
-            face_ttf,
-            @floatFromInt(font_size.pixels()),
-        );
-
-        // Default dark style
-        const style = try imgui.Style.get();
-        style.colorsDark();
-
-        // Add our surface to the instance if it isn't set.
-        DevMode.instance.surface = self;
-
-        // Let our renderer setup
-        try renderer_impl.initDevMode(rt_surface);
-    }
 
     // Give the renderer one more opportunity to finalize any surface
     // setup on the main thread prior to spinning up the rendering thread.
@@ -525,18 +488,6 @@ pub fn deinit(self: *Surface) void {
 
         // We need to become the active rendering thread again
         self.renderer.threadEnter(self.rt_surface) catch unreachable;
-
-        // If we are devmode-owning, clean that up.
-        if (DevMode.enabled and DevMode.instance.surface == self) {
-            // Let our renderer clean up
-            self.renderer.deinitDevMode();
-
-            // Clear the surface
-            DevMode.instance.surface = null;
-
-            // Uninitialize imgui
-            self.imgui_ctx.destroy();
-        }
     }
 
     // Stop our IO thread
@@ -1113,17 +1064,6 @@ pub fn scrollCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode surface is visible then we always schedule a render on
-    // cursor move because the cursor might touch our surfaces.
-    if (DevMode.enabled and DevMode.instance.visible) {
-        try self.queueRender();
-
-        // If the mouse event was handled by imgui, ignore it.
-        if (imgui.IO.get()) |io| {
-            if (io.cval().WantCaptureMouse) return;
-        } else |_| {}
-    }
-
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
 
     const ScrollAmount = struct {
@@ -1473,17 +1413,6 @@ pub fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our dev mode surface is visible then we always schedule a render on
-    // cursor move because the cursor might touch our surfaces.
-    if (DevMode.enabled and DevMode.instance.visible) {
-        try self.queueRender();
-
-        // If the mouse event was handled by imgui, ignore it.
-        if (imgui.IO.get()) |io| {
-            if (io.cval().WantCaptureMouse) return;
-        } else |_| {}
-    }
-
     // Always record our latest mouse state
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(mods);
@@ -1635,17 +1564,6 @@ pub fn cursorPosCallback(
 ) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    // If our dev mode surface is visible then we always schedule a render on
-    // cursor move because the cursor might touch our surfaces.
-    if (DevMode.enabled and DevMode.instance.visible) {
-        try self.queueRender();
-
-        // If the mouse event was handled by imgui, ignore it.
-        if (imgui.IO.get()) |io| {
-            if (io.cval().WantCaptureMouse) return;
-        } else |_| {}
-    }
 
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
@@ -2112,11 +2030,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             ), .{ .forever = {} });
             try self.io_thread.wakeup.notify();
         },
-
-        .toggle_dev_mode => if (DevMode.enabled) {
-            DevMode.instance.visible = !DevMode.instance.visible;
-            try self.queueRender();
-        } else log.warn("dev mode was not compiled into this binary", .{}),
 
         .new_window => {
             _ = self.app_mailbox.push(.{

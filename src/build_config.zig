@@ -29,10 +29,6 @@ pub const font_backend: font.Backend = std.meta.stringToEnum(
     @tagName(options.font_backend),
 ).?;
 
-/// Whether our devmode UI is enabled or not. This requires imgui to be
-/// compiled.
-pub const devmode_enabled = artifact == .exe and app_runtime == .glfw;
-
 /// We want to integrate with Flatpak APIs.
 pub const flatpak = options.flatpak;
 

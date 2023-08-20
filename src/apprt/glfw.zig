@@ -20,7 +20,6 @@ const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
 const Config = @import("../config.zig").Config;
-const DevMode = @import("../DevMode.zig");
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -67,11 +66,6 @@ pub const App = struct {
         // Load our configuration
         var config = try Config.load(core_app.alloc);
         errdefer config.deinit();
-
-        // If we have DevMode on, store the config so we can show it. This
-        // is messy because we're copying a thing here. We should clean this
-        // up when we take a pass at cleaning up the dev mode.
-        if (DevMode.enabled) DevMode.instance.config = config;
 
         // Queue a single new window that starts on launch
         _ = core_app.mailbox.push(.{

@@ -2,7 +2,6 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const DevMode = @import("../DevMode.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 
@@ -23,9 +22,6 @@ terminal: *terminal.Terminal,
 /// Preedit can in theory be multiple codepoints long but that is left as
 /// a future exercise.
 preedit: ?Preedit = null,
-
-/// The devmode data.
-devmode: ?*const DevMode = null,
 
 pub const Cursor = struct {
     /// Current cursor style. This can be set by escape sequences. To get

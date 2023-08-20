@@ -365,13 +365,6 @@ pub const Config = struct {
             .{ .reset_font_size = {} },
         );
 
-        // Dev Mode
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .down, .mods = .{ .shift = true, .super = true } },
-            .{ .toggle_dev_mode = {} },
-        );
-
         try result.keybind.set.put(
             alloc,
             .{ .key = .j, .mods = ctrlOrSuper(.{ .shift = true }) },

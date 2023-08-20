@@ -18,7 +18,6 @@ const gl = @import("opengl/main.zig");
 const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const lru = @import("../lru.zig");
-const DevMode = @import("../DevMode.zig");
 const Surface = @import("../Surface.zig");
 
 const log = std.log.scoped(.grid);
@@ -540,30 +539,6 @@ pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     }
 }
 
-/// This is called if this renderer runs DevMode.
-pub fn initDevMode(self: *const OpenGL, surface: *apprt.Surface) !void {
-    _ = self;
-
-    if (DevMode.enabled) {
-        // Initialize for our window
-        assert(imgui.ImplGlfw.initForOpenGL(
-            @ptrCast(surface.window.handle),
-            true,
-        ));
-        assert(imgui.ImplOpenGL3.init("#version 330 core"));
-    }
-}
-
-/// This is called if this renderer runs DevMode.
-pub fn deinitDevMode(self: *const OpenGL) void {
-    _ = self;
-
-    if (DevMode.enabled) {
-        imgui.ImplOpenGL3.shutdown();
-        imgui.ImplGlfw.shutdown();
-    }
-}
-
 /// Callback called by renderer.Thread when it begins.
 pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
@@ -716,7 +691,6 @@ pub fn render(
     // Data we extract out of the critical area.
     const Critical = struct {
         gl_bg: terminal.color.RGB,
-        devmode_data: ?*imgui.DrawData,
         active_screen: terminal.Terminal.ScreenType,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
@@ -769,22 +743,6 @@ pub fn render(
             self.config.foreground = bg;
         }
 
-        // Build our devmode draw data
-        const devmode_data = devmode_data: {
-            if (DevMode.enabled) {
-                if (state.devmode) |dm| {
-                    if (dm.visible) {
-                        imgui.ImplOpenGL3.newFrame();
-                        imgui.ImplGlfw.newFrame();
-                        try dm.update();
-                        break :devmode_data try dm.render();
-                    }
-                }
-            }
-
-            break :devmode_data null;
-        };
-
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
         // hold the lock wile rebuilding GPU cells.
@@ -812,7 +770,6 @@ pub fn render(
 
         break :critical .{
             .gl_bg = self.config.background,
-            .devmode_data = devmode_data,
             .active_screen = state.terminal.active_screen,
             .selection = selection,
             .screen = screen_copy,
@@ -846,13 +803,6 @@ pub fn render(
     if (single_threaded_draw) return;
 
     try self.draw();
-
-    // If we have devmode, then render that
-    if (DevMode.enabled) {
-        if (critical.devmode_data) |data| {
-            imgui.ImplOpenGL3.renderDrawData(data);
-        }
-    }
 
     // Swap our window buffers
     switch (apprt.runtime) {

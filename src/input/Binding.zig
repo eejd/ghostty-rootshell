@@ -201,9 +201,6 @@ pub const Action = union(enum) {
     /// path to the file to the tty.
     write_scrollback_file: void,
 
-    /// Dev mode
-    toggle_dev_mode: void,
-
     /// Open a new window
     new_window: void,
 
