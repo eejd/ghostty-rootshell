@@ -204,8 +204,9 @@ fn loadAndAddImage(
 
     // Determine our image. This also handles chunking and early exit.
     var img = if (storage.chunk) |chunk| img: {
+        // Note: we do NOT want to call "cmd.toOwnedData" here because
+        // we're _copying_ the data. We want the command data to be freed.
         try chunk.data.appendSlice(alloc, cmd.data);
-        _ = cmd.toOwnedData();
 
         // If we have more then we're done
         if (t.more_chunks) return chunk.image;
