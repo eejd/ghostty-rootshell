@@ -28,10 +28,8 @@ const log = std.log.scoped(.kitty_gfx);
 pub fn execute(
     alloc: Allocator,
     terminal: *Terminal,
-    buf: []u8,
     cmd: *Command,
 ) ?Response {
-    _ = buf;
     log.debug("executing kitty graphics command: {}", .{cmd.control});
 
     const resp_: ?Response = switch (cmd.control) {
@@ -245,6 +243,9 @@ fn loadAndAddImage(
         storage.chunk = chunk_ptr;
         return img;
     }
+
+    // Dump the image data before it is decompressed
+    // img.debugDump() catch unreachable;
 
     // Validate and store our image
     try img.complete(alloc);

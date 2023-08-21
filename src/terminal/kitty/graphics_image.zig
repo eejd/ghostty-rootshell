@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
@@ -72,6 +73,31 @@ pub const Image = struct {
         UnsupportedFormat,
         UnsupportedMedium,
     };
+
+    /// Debug function to write the data to a file. This is useful for
+    /// capturing some test data for unit tests.
+    pub fn debugDump(self: Image) !void {
+        if (comptime builtin.mode != .Debug) @compileError("debugDump in non-debug");
+
+        var buf: [1024]u8 = undefined;
+        const filename = try std.fmt.bufPrint(
+            &buf,
+            "image-{s}-{s}-{d}x{d}-{}.data",
+            .{
+                @tagName(self.format),
+                @tagName(self.compression),
+                self.width,
+                self.height,
+                self.id,
+            },
+        );
+        const cwd = std.fs.cwd();
+        const f = try cwd.createFile(filename, .{});
+        defer f.close();
+
+        const writer = f.writer();
+        try writer.writeAll(self.data);
+    }
 
     /// The length of the data in bytes, uncompressed. While this will
     /// decompress compressed data to count the bytes it doesn't actually

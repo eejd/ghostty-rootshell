@@ -1566,10 +1566,9 @@ pub fn getPwd(self: *const Terminal) ?[]const u8 {
 pub fn kittyGraphics(
     self: *Terminal,
     alloc: Allocator,
-    buf: []u8,
     cmd: *kitty.graphics.Command,
 ) ?kitty.graphics.Response {
-    return kitty.graphics.execute(alloc, self, buf, cmd);
+    return kitty.graphics.execute(alloc, self, cmd);
 }
 
 /// Full reset
