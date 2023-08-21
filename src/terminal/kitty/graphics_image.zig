@@ -369,3 +369,39 @@ test "image load: rgb, not compressed, direct" {
     // should be decompressed
     try testing.expect(img.compression == .none);
 }
+
+test "image load: rgb, zlib compressed, direct, chunked" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const data = @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data");
+
+    // Setup our initial chunk
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .direct,
+            .compression = .zlib_deflate,
+            .height = 96,
+            .width = 128,
+            .image_id = 31,
+            .more_chunks = true,
+        } },
+        .data = try alloc.dupe(u8, data[0..1024]),
+    };
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+
+    // Read our remaining chunks
+    var fbs = std.io.fixedBufferStream(data[1024..]);
+    var buf: [1024]u8 = undefined;
+    while (fbs.reader().readAll(&buf)) |size| {
+        try loading.addData(alloc, buf[0..size]);
+        if (size < buf.len) break;
+    } else |err| return err;
+
+    // Complete
+    var img = try loading.complete(alloc);
+    defer img.deinit(alloc);
+    try testing.expect(img.compression == .none);
+}
