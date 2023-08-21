@@ -104,8 +104,9 @@ pub const Image = struct {
         };
     }
 
-    /// Validate that the image appears valid.
-    pub fn validate(self: *const Image, alloc: Allocator) !void {
+    /// Complete the image. This must be called after loading and after
+    /// being sure the data is complete (not chunked).
+    pub fn complete(self: *Image, alloc: Allocator) !void {
         const bpp: u32 = switch (self.format) {
             .rgb => 3,
             .rgba => 4,
@@ -115,18 +116,37 @@ pub const Image = struct {
         if (self.width == 0 or self.height == 0) return error.DimensionsRequired;
         if (self.width > max_dimension or self.height > max_dimension) return error.DimensionsTooLarge;
 
+        // The data is base64 encoded, we must decode it.
+        var decoded = decoded: {
+            const Base64Decoder = std.base64.standard.Decoder;
+            const size = Base64Decoder.calcSizeForSlice(self.data) catch |err| {
+                log.warn("failed to calculate base64 decoded size: {}", .{err});
+                return error.InvalidData;
+            };
+
+            var buf = try alloc.alloc(u8, size);
+            errdefer alloc.free(buf);
+            Base64Decoder.decode(buf, self.data) catch |err| {
+                log.warn("failed to decode base64 data: {}", .{err});
+                return error.InvalidData;
+            };
+
+            break :decoded buf;
+        };
+
+        // After decoding, we swap the data immediately and free the old.
+        // This will ensure that we never leak memory.
+        alloc.free(self.data);
+        self.data = decoded;
+
         // Data length must be what we expect
-        // NOTE: we use a "<" check here because Kitty itself doesn't validate
-        // this and if we validate exact data length then various Kitty
-        // applications fail because the test that Kitty documents itself
-        // uses an invalid value.
         const expected_len = self.width * self.height * bpp;
         const actual_len = try self.dataLen(alloc);
         std.log.warn(
             "width={} height={} bpp={} expected_len={} actual_len={}",
             .{ self.width, self.height, bpp, expected_len, actual_len },
         );
-        if (actual_len < expected_len) return error.InvalidData;
+        if (actual_len != expected_len) return error.InvalidData;
     }
 
     /// Load an image from a transmission. The data in the command will be
@@ -230,7 +250,7 @@ test "image load with image too wide" {
     defer cmd.deinit(alloc);
     var img = try Image.load(alloc, &cmd);
     defer img.deinit(alloc);
-    try testing.expectError(error.DimensionsTooLarge, img.validate(alloc));
+    try testing.expectError(error.DimensionsTooLarge, img.complete(alloc));
 }
 
 test "image load with image too tall" {
@@ -249,5 +269,5 @@ test "image load with image too tall" {
     defer cmd.deinit(alloc);
     var img = try Image.load(alloc, &cmd);
     defer img.deinit(alloc);
-    try testing.expectError(error.DimensionsTooLarge, img.validate(alloc));
+    try testing.expectError(error.DimensionsTooLarge, img.complete(alloc));
 }

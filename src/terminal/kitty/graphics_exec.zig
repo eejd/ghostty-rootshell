@@ -247,7 +247,7 @@ fn loadAndAddImage(
     }
 
     // Validate and store our image
-    try img.validate(alloc);
+    try img.complete(alloc);
     try storage.addImage(alloc, img);
     return img;
 }
