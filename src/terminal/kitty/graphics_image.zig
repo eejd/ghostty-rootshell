@@ -175,9 +175,9 @@ pub const Image = struct {
         // Data length must be what we expect
         const expected_len = self.width * self.height * bpp;
         const actual_len = self.data.len;
-        std.log.warn(
-            "width={} height={} bpp={} expected_len={} actual_len={}",
-            .{ self.width, self.height, bpp, expected_len, actual_len },
+        std.log.debug(
+            "complete image id={} width={} height={} bpp={} expected_len={} actual_len={}",
+            .{ self.id, self.width, self.height, bpp, expected_len, actual_len },
         );
         if (actual_len != expected_len) return error.InvalidData;
     }
@@ -329,6 +329,33 @@ test "image load: rgb, zlib compressed, direct" {
         .data = try alloc.dupe(
             u8,
             @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data"),
+        ),
+    };
+    defer cmd.deinit(alloc);
+    var img = try Image.load(alloc, &cmd);
+    defer img.deinit(alloc);
+    try img.complete(alloc);
+
+    // should be decompressed
+    try testing.expect(img.compression == .none);
+}
+
+test "image load: rgb, not compressed, direct" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .direct,
+            .compression = .none,
+            .width = 20,
+            .height = 15,
+            .image_id = 31,
+        } },
+        .data = try alloc.dupe(
+            u8,
+            @embedFile("testdata/image-rgb-none-20x15-2147483647.data"),
         ),
     };
     defer cmd.deinit(alloc);
