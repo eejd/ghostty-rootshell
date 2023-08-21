@@ -8,11 +8,14 @@ const command = @import("graphics_command.zig");
 const image = @import("graphics_image.zig");
 const Command = command.Command;
 const Response = command.Response;
+const ChunkedImage = image.ChunkedImage;
 const Image = image.Image;
 
+const log = std.log.scoped(.kitty_gfx);
+
 // TODO:
-// - image ids need to be assigned, can't just be zero
 // - delete
+// - zlib deflate compression
 // (not exhaustive, almost every op is ignoring additional config)
 
 /// Execute a Kitty graphics command against the given terminal. This
@@ -29,6 +32,7 @@ pub fn execute(
     cmd: *Command,
 ) ?Response {
     _ = buf;
+    log.debug("executing kitty graphics command: {}", .{cmd.control});
 
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),
@@ -45,6 +49,10 @@ pub fn execute(
 
     // Handle the quiet settings
     if (resp_) |resp| {
+        if (!resp.ok()) {
+            log.warn("erroneous kitty graphics response: {s}", .{resp.message});
+        }
+
         return switch (cmd.quiet) {
             .no => resp,
             .ok => if (resp.ok()) null else resp,
@@ -111,6 +119,11 @@ fn transmit(
     // After the image is added, set the ID in case it changed
     result.id = img.id;
 
+    // If this is a transmit_and_display then the display part needs the image ID
+    if (cmd.control == .transmit_and_display) {
+        cmd.control.transmit_and_display.display.image_id = img.id;
+    }
+
     return result;
 }
 
@@ -173,6 +186,11 @@ fn transmitAndDisplay(
 ) Response {
     const resp = transmit(alloc, terminal, cmd);
     if (!resp.ok()) return resp;
+
+    // If the transmission is chunked, we defer the display
+    const t = cmd.transmission().?;
+    if (t.more_chunks) return resp;
+
     return display(alloc, terminal, cmd);
 }
 
@@ -181,20 +199,51 @@ fn loadAndAddImage(
     terminal: *Terminal,
     cmd: *Command,
 ) !Image {
-    // Load the image
-    var img = try Image.load(alloc, cmd);
+    const t = cmd.transmission().?;
+    const storage = &terminal.screen.kitty_images;
+
+    // Determine our image. This also handles chunking and early exit.
+    var img = if (storage.chunk) |chunk| img: {
+        try chunk.data.appendSlice(alloc, cmd.data);
+        _ = cmd.toOwnedData();
+
+        // If we have more then we're done
+        if (t.more_chunks) return chunk.image;
+
+        // We have no more chunks. Complete and validate the image.
+        // At this point no matter what we want to clear out our chunked
+        // state. If we hit a validation error or something we don't want
+        // the chunked image hanging around in-memory.
+        defer {
+            chunk.destroy(alloc);
+            storage.chunk = null;
+        }
+
+        break :img try chunk.complete(alloc);
+    } else try Image.load(alloc, cmd);
     errdefer img.deinit(alloc);
 
     // If the image has no ID, we assign one
-    const storage = &terminal.screen.kitty_images;
     if (img.id == 0) {
         img.id = storage.next_id;
         storage.next_id +%= 1;
     }
 
-    // Store our image
-    try storage.addImage(alloc, img);
+    // If this is chunked, this is the beginning of a new chunked transmission.
+    // (We checked for an in-progress chunk above.)
+    if (t.more_chunks) {
+        // We allocate the chunk on the heap because its rare and we
+        // don't want to always pay the memory cost to keep it around.
+        const chunk_ptr = try alloc.create(ChunkedImage);
+        errdefer alloc.destroy(chunk_ptr);
+        chunk_ptr.* = try ChunkedImage.init(alloc, img);
+        storage.chunk = chunk_ptr;
+        return img;
+    }
 
+    // Validate and store our image
+    try img.validate();
+    try storage.addImage(alloc, img);
     return img;
 }
 
@@ -206,6 +255,7 @@ fn encodeError(r: *Response, err: EncodeableError) void {
         error.OutOfMemory => r.message = "ENOMEM: out of memory",
         error.InvalidData => r.message = "EINVAL: invalid data",
         error.UnsupportedFormat => r.message = "EINVAL: unsupported format",
+        error.UnsupportedMedium => r.message = "EINVAL: unsupported medium",
         error.DimensionsRequired => r.message = "EINVAL: dimensions required",
         error.DimensionsTooLarge => r.message = "EINVAL: dimensions too large",
     }

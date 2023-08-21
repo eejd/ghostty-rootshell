@@ -8,64 +8,151 @@ const command = @import("graphics_command.zig");
 /// Maximum width or height of an image. Taken directly from Kitty.
 const max_dimension = 10000;
 
+/// A chunked image is an image that is in-progress and being constructed
+/// using chunks (the "m" parameter in the protocol).
+pub const ChunkedImage = struct {
+    /// The in-progress image. The first chunk must have all the metadata
+    /// so this comes from that initially.
+    image: Image,
+
+    /// The data that is being built up.
+    data: std.ArrayListUnmanaged(u8) = .{},
+
+    /// Initialize a chunked image from the first image part.
+    pub fn init(alloc: Allocator, image: Image) !ChunkedImage {
+        // Copy our initial set of data
+        var data = try std.ArrayListUnmanaged(u8).initCapacity(alloc, image.data.len * 2);
+        errdefer data.deinit(alloc);
+        try data.appendSlice(alloc, image.data);
+
+        // Set data to empty so it doesn't get freed.
+        var result: ChunkedImage = .{ .image = image, .data = data };
+        result.image.data = "";
+        return result;
+    }
+
+    pub fn deinit(self: *ChunkedImage, alloc: Allocator) void {
+        self.image.deinit(alloc);
+        self.data.deinit(alloc);
+    }
+
+    pub fn destroy(self: *ChunkedImage, alloc: Allocator) void {
+        self.deinit(alloc);
+        alloc.destroy(self);
+    }
+
+    /// Complete the chunked image, returning a completed image.
+    pub fn complete(self: *ChunkedImage, alloc: Allocator) !Image {
+        var result = self.image;
+        result.data = try self.data.toOwnedSlice(alloc);
+        self.image = .{};
+        return result;
+    }
+};
+
+/// Image represents a single fully loaded image.
 pub const Image = struct {
     id: u32 = 0,
     number: u32 = 0,
-    data: []const u8,
+    width: u32 = 0,
+    height: u32 = 0,
+    format: Format = .rgb,
+    data: []const u8 = "",
+
+    pub const Format = enum { rgb, rgba };
 
     pub const Error = error{
         InvalidData,
         DimensionsRequired,
         DimensionsTooLarge,
         UnsupportedFormat,
+        UnsupportedMedium,
     };
 
-    /// Load an image from a transmission. The data in the command will be
-    /// owned by the image if successful. Note that you still must deinit
-    /// the command, all the state change will be done internally.
-    pub fn load(alloc: Allocator, cmd: *command.Command) !Image {
-        _ = alloc;
-
-        const t = cmd.transmission().?;
-        const img = switch (t.format) {
-            .rgb => try loadPacked(3, t, cmd.data),
-            .rgba => try loadPacked(4, t, cmd.data),
-            else => return error.UnsupportedFormat,
+    /// Validate that the image appears valid.
+    pub fn validate(self: *const Image) !void {
+        const bpp: u32 = switch (self.format) {
+            .rgb => 3,
+            .rgba => 4,
         };
 
-        // If we loaded an image successfully then we take ownership
-        // of the command data.
-        _ = cmd.toOwnedData();
-
-        return img;
-    }
-
-    /// Load a package image format, i.e. RGB or RGBA.
-    fn loadPacked(
-        comptime bpp: comptime_int,
-        t: command.Transmission,
-        data: []const u8,
-    ) !Image {
-        if (t.width == 0 or t.height == 0) return error.DimensionsRequired;
-        if (t.width > max_dimension or t.height > max_dimension) return error.DimensionsTooLarge;
+        // Validate our dimensions.
+        if (self.width == 0 or self.height == 0) return error.DimensionsRequired;
+        if (self.width > max_dimension or self.height > max_dimension) return error.DimensionsTooLarge;
 
         // Data length must be what we expect
         // NOTE: we use a "<" check here because Kitty itself doesn't validate
         // this and if we validate exact data length then various Kitty
         // applications fail because the test that Kitty documents itself
         // uses an invalid value.
-        const expected_len = t.width * t.height * bpp;
-        if (data.len < expected_len) return error.InvalidData;
+        const expected_len = self.width * self.height * bpp;
+        std.log.warn(
+            "width={} height={} bpp={} expected_len={} actual_len={}",
+            .{ self.width, self.height, bpp, expected_len, self.data.len },
+        );
+        if (self.data.len < expected_len) return error.InvalidData;
+    }
 
+    /// Load an image from a transmission. The data in the command will be
+    /// owned by the image if successful. Note that you still must deinit
+    /// the command, all the state change will be done internally.
+    ///
+    /// If the command represents a chunked image then this image will
+    /// be incomplete. The caller is expected to inspect the command
+    /// and determine if it is a chunked image.
+    pub fn load(alloc: Allocator, cmd: *command.Command) !Image {
+        const t = cmd.transmission().?;
+
+        // Load the data
+        const data = switch (t.medium) {
+            .direct => cmd.data,
+            else => {
+                std.log.warn("unimplemented medium={}", .{t.medium});
+                return error.UnsupportedMedium;
+            },
+        };
+
+        // If we loaded an image successfully then we take ownership
+        // of the command data and we need to make sure to clean up on error.
+        _ = cmd.toOwnedData();
+        errdefer if (data.len > 0) alloc.free(data);
+
+        const img = switch (t.format) {
+            .rgb, .rgba => try loadPacked(t, data),
+            else => return error.UnsupportedFormat,
+        };
+
+        return img;
+    }
+
+    /// Load a package image format, i.e. RGB or RGBA.
+    fn loadPacked(
+        t: command.Transmission,
+        data: []const u8,
+    ) !Image {
         return Image{
             .id = t.image_id,
             .number = t.image_number,
+            .width = t.width,
+            .height = t.height,
+            .format = switch (t.format) {
+                .rgb => .rgb,
+                .rgba => .rgba,
+                else => unreachable,
+            },
             .data = data,
         };
     }
 
     pub fn deinit(self: *Image, alloc: Allocator) void {
-        alloc.free(self.data);
+        if (self.data.len > 0) alloc.free(self.data);
+    }
+
+    /// Mostly for logging
+    pub fn withoutData(self: *const Image) Image {
+        var copy = self.*;
+        copy.data = "";
+        return copy;
     }
 };
 
@@ -75,9 +162,6 @@ test "image load with invalid RGB data" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var data = try alloc.dupe(u8, "AAAA");
-    errdefer alloc.free(data);
-
     // <ESC>_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA<ESC>\
     var cmd: command.Command = .{
         .control = .{ .transmit = .{
@@ -86,8 +170,9 @@ test "image load with invalid RGB data" {
             .height = 1,
             .image_id = 31,
         } },
-        .data = data,
+        .data = try alloc.dupe(u8, "AAAA"),
     };
+    defer cmd.deinit(alloc);
     var img = try Image.load(alloc, &cmd);
     defer img.deinit(alloc);
 }
@@ -96,9 +181,6 @@ test "image load with image too wide" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var data = try alloc.dupe(u8, "AAAA");
-    defer alloc.free(data);
-
     var cmd: command.Command = .{
         .control = .{ .transmit = .{
             .format = .rgb,
@@ -106,17 +188,15 @@ test "image load with image too wide" {
             .height = 1,
             .image_id = 31,
         } },
-        .data = data,
+        .data = try alloc.dupe(u8, "AAAA"),
     };
+    defer cmd.deinit(alloc);
     try testing.expectError(error.DimensionsTooLarge, Image.load(alloc, &cmd));
 }
 
 test "image load with image too tall" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var data = try alloc.dupe(u8, "AAAA");
-    defer alloc.free(data);
 
     var cmd: command.Command = .{
         .control = .{ .transmit = .{
@@ -125,7 +205,8 @@ test "image load with image too tall" {
             .width = 1,
             .image_id = 31,
         } },
-        .data = data,
+        .data = try alloc.dupe(u8, "AAAA"),
     };
+    defer cmd.deinit(alloc);
     try testing.expectError(error.DimensionsTooLarge, Image.load(alloc, &cmd));
 }

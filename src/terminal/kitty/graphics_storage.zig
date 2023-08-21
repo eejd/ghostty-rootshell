@@ -5,9 +5,12 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const point = @import("../point.zig");
 const command = @import("graphics_command.zig");
+const ChunkedImage = @import("graphics_image.zig").ChunkedImage;
 const Image = @import("graphics_image.zig").Image;
 const Command = command.Command;
 const ScreenPoint = point.ScreenPoint;
+
+const log = std.log.scoped(.kitty_gfx);
 
 /// An image storage is associated with a terminal screen (i.e. main
 /// screen, alt screen) and contains all the transmitted images and
@@ -26,11 +29,16 @@ pub const ImageStorage = struct {
     /// The set of placements for loaded images.
     placements: PlacementMap = .{},
 
+    /// Non-null if there is a chunked image in progress.
+    chunk: ?*ChunkedImage = null,
+
     pub fn deinit(self: *ImageStorage, alloc: Allocator) void {
+        if (self.chunk) |chunk| chunk.destroy(alloc);
+
         var it = self.images.iterator();
         while (it.next()) |kv| kv.value_ptr.deinit(alloc);
-
         self.images.deinit(alloc);
+
         self.placements.deinit(alloc);
     }
 
@@ -39,6 +47,12 @@ pub const ImageStorage = struct {
     pub fn addImage(self: *ImageStorage, alloc: Allocator, img: Image) Allocator.Error!void {
         // Do the gop op first so if it fails we don't get a partial state
         const gop = try self.images.getOrPut(alloc, img.id);
+
+        log.debug("addImage image={}", .{img: {
+            var copy = img;
+            copy.data = "";
+            break :img copy;
+        }});
 
         // If the image has an image number, we need to invalidate the last
         // image with that same number.
@@ -67,6 +81,11 @@ pub const ImageStorage = struct {
         p: Placement,
     ) !void {
         assert(self.images.get(image_id) != null);
+        log.debug("placement image_id={} placement_id={} placement={}\n", .{
+            image_id,
+            placement_id,
+            p,
+        });
 
         const key: PlacementKey = .{ .image_id = image_id, .placement_id = placement_id };
         const gop = try self.placements.getOrPut(alloc, key);

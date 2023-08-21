@@ -1084,15 +1084,11 @@ const StreamHandler = struct {
         var cmd = self.apc.end() orelse return;
         defer cmd.deinit(self.alloc);
 
-        log.warn("APC command: {}", .{cmd});
+        // log.warn("APC command: {}", .{cmd});
         switch (cmd) {
             .kitty => |*kitty_cmd| {
                 var partial_buf: [512]u8 = undefined;
                 if (self.terminal.kittyGraphics(self.alloc, &partial_buf, kitty_cmd)) |resp| {
-                    if (!resp.ok()) {
-                        log.warn("erroneous kitty graphics response: {s}", .{resp.message});
-                    }
-
                     var buf: [1024]u8 = undefined;
                     var buf_stream = std.io.fixedBufferStream(&buf);
                     try resp.encode(buf_stream.writer());
