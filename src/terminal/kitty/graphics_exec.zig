@@ -8,7 +8,7 @@ const command = @import("graphics_command.zig");
 const image = @import("graphics_image.zig");
 const Command = command.Command;
 const Response = command.Response;
-const ChunkedImage = image.ChunkedImage;
+const LoadingImage = image.LoadingImage;
 const Image = image.Image;
 
 const log = std.log.scoped(.kitty_gfx);
@@ -83,11 +83,11 @@ fn query(alloc: Allocator, cmd: *Command) Response {
     };
 
     // Attempt to load the image. If we cannot, then set an appropriate error.
-    var img = Image.load(alloc, cmd) catch |err| {
+    var loading = LoadingImage.init(alloc, cmd) catch |err| {
         encodeError(&result, err);
         return result;
     };
-    img.deinit(alloc);
+    loading.deinit(alloc);
 
     return result;
 }
@@ -201,55 +201,60 @@ fn loadAndAddImage(
     const storage = &terminal.screen.kitty_images;
 
     // Determine our image. This also handles chunking and early exit.
-    var img = if (storage.chunk) |chunk| img: {
+    var loading: LoadingImage = if (storage.loading) |loading| loading: {
         // Note: we do NOT want to call "cmd.toOwnedData" here because
         // we're _copying_ the data. We want the command data to be freed.
-        try chunk.addData(alloc, cmd.data);
+        try loading.addData(alloc, cmd.data);
 
         // If we have more then we're done
-        if (t.more_chunks) return chunk.image;
+        if (t.more_chunks) return loading.image;
 
-        // We have no more chunks. Complete and validate the image.
-        // At this point no matter what we want to clear out our chunked
-        // state. If we hit a validation error or something we don't want
-        // the chunked image hanging around in-memory.
+        // We have no more chunks. We're going to be completing the
+        // image so we want to destroy the pointer to the loading
+        // image and copy it out.
         defer {
-            chunk.destroy(alloc);
-            storage.chunk = null;
+            alloc.destroy(loading);
+            storage.loading = null;
         }
 
-        break :img try chunk.complete(alloc);
-    } else img: {
-        const img = try Image.load(alloc, cmd);
-        _ = cmd.toOwnedData();
-        break :img img;
-    };
-    errdefer img.deinit(alloc);
+        break :loading loading.*;
+    } else try LoadingImage.init(alloc, cmd);
+
+    // We only want to deinit on error. If we're chunking, then we don't
+    // want to deinit at all. If we're not chunking, then we'll deinit
+    // after we've copied the image out.
+    errdefer loading.deinit(alloc);
 
     // If the image has no ID, we assign one
-    if (img.id == 0) {
-        img.id = storage.next_id;
+    if (loading.image.id == 0) {
+        loading.image.id = storage.next_id;
         storage.next_id +%= 1;
     }
 
     // If this is chunked, this is the beginning of a new chunked transmission.
     // (We checked for an in-progress chunk above.)
     if (t.more_chunks) {
-        // We allocate the chunk on the heap because its rare and we
+        // We allocate the pointer on the heap because its rare and we
         // don't want to always pay the memory cost to keep it around.
-        const chunk_ptr = try alloc.create(ChunkedImage);
-        errdefer alloc.destroy(chunk_ptr);
-        chunk_ptr.* = try ChunkedImage.init(alloc, img);
-        storage.chunk = chunk_ptr;
-        return img;
+        const loading_ptr = try alloc.create(LoadingImage);
+        errdefer alloc.destroy(loading_ptr);
+        loading_ptr.* = loading;
+        storage.loading = loading_ptr;
+        return loading.image;
     }
 
     // Dump the image data before it is decompressed
     // img.debugDump() catch unreachable;
 
     // Validate and store our image
-    try img.complete(alloc);
+    var img = try loading.complete(alloc);
+    errdefer img.deinit(alloc);
     try storage.addImage(alloc, img);
+
+    // Ensure we deinit the loading state because we're done. The image
+    // won't be deinit because of "complete" above.
+    loading.deinit(alloc);
+
     return img;
 }
 

@@ -14,9 +14,11 @@ const max_dimension = 10000;
 /// Maximum size in bytes, taken from Kitty.
 const max_size = 400 * 1024 * 1024; // 400MB
 
-/// A chunked image is an image that is in-progress and being constructed
-/// using chunks (the "m" parameter in the protocol).
-pub const ChunkedImage = struct {
+/// An image that is still being loaded. The image should be initialized
+/// using init on the first chunk and then addData for each subsequent
+/// chunk. Once all chunks have been added, complete should be called
+/// to finalize the image.
+pub const LoadingImage = struct {
     /// The in-progress image. The first chunk must have all the metadata
     /// so this comes from that initially.
     image: Image,
@@ -24,31 +26,66 @@ pub const ChunkedImage = struct {
     /// The data that is being built up.
     data: std.ArrayListUnmanaged(u8) = .{},
 
-    /// Initialize a chunked image from the first image part.
-    pub fn init(alloc: Allocator, image: Image) !ChunkedImage {
-        // Copy our initial set of data
-        var data = try std.ArrayListUnmanaged(u8).initCapacity(alloc, image.data.len * 2);
-        errdefer data.deinit(alloc);
-        try data.appendSlice(alloc, image.data);
+    /// Initialize a chunked immage from the first image transmission.
+    /// If this is a multi-chunk image, this should only be the FIRST
+    /// chunk.
+    pub fn init(alloc: Allocator, cmd: *command.Command) !LoadingImage {
+        // We must have data to load an image
+        if (cmd.data.len == 0) return error.InvalidData;
 
-        // Set data to empty so it doesn't get freed.
-        var result: ChunkedImage = .{ .image = image, .data = data };
-        result.image.data = "";
+        // Build our initial image from the properties sent via the control.
+        // These can be overwritten by the data loading process. For example,
+        // PNG loading sets the width/height from the data.
+        const t = cmd.transmission().?;
+        var result: LoadingImage = .{
+            .image = .{
+                .id = t.image_id,
+                .number = t.image_number,
+                .width = t.width,
+                .height = t.height,
+                .compression = t.compression,
+                .format = switch (t.format) {
+                    .rgb => .rgb,
+                    .rgba => .rgba,
+                    else => unreachable,
+                },
+            },
+        };
+
+        // Load the base64 encoded data from the transmission medium.
+        const raw_data = switch (t.medium) {
+            .direct => direct: {
+                const data = cmd.data;
+                _ = cmd.toOwnedData();
+                break :direct data;
+            },
+
+            else => {
+                std.log.warn("unimplemented medium={}", .{t.medium});
+                return error.UnsupportedMedium;
+            },
+        };
+        defer alloc.free(raw_data);
+
+        // Add the data
+        try result.addData(alloc, raw_data);
+
         return result;
     }
 
-    pub fn deinit(self: *ChunkedImage, alloc: Allocator) void {
+    pub fn deinit(self: *LoadingImage, alloc: Allocator) void {
         self.image.deinit(alloc);
         self.data.deinit(alloc);
     }
 
-    pub fn destroy(self: *ChunkedImage, alloc: Allocator) void {
+    pub fn destroy(self: *LoadingImage, alloc: Allocator) void {
         self.deinit(alloc);
         alloc.destroy(self);
     }
 
-    /// Adds a chunk of base64-encoded data to the image.
-    pub fn addData(self: *ChunkedImage, alloc: Allocator, data: []const u8) !void {
+    /// Adds a chunk of base64-encoded data to the image. Use this if the
+    /// image is coming in chunks (the "m" parameter in the protocol).
+    pub fn addData(self: *LoadingImage, alloc: Allocator, data: []const u8) !void {
         const Base64Decoder = std.base64.standard.Decoder;
 
         // Grow our array list by size capacity if it needs it
@@ -69,10 +106,12 @@ pub const ChunkedImage = struct {
     }
 
     /// Complete the chunked image, returning a completed image.
-    pub fn complete(self: *ChunkedImage, alloc: Allocator) !Image {
+    pub fn complete(self: *LoadingImage, alloc: Allocator) !Image {
         var result = self.image;
         result.data = try self.data.toOwnedSlice(alloc);
+        errdefer result.deinit(alloc);
         self.image = .{};
+        try result.complete(alloc);
         return result;
     }
 };
@@ -180,83 +219,6 @@ pub const Image = struct {
         if (actual_len != expected_len) return error.InvalidData;
     }
 
-    /// Load an image from a transmission. The data in the command will be
-    /// owned by the image if successful. Note that you still must deinit
-    /// the command, all the state change will be done internally.
-    ///
-    /// If the command represents a chunked image then this image will
-    /// be incomplete. The caller is expected to inspect the command
-    /// and determine if it is a chunked image.
-    pub fn load(alloc: Allocator, cmd: *command.Command) !Image {
-        const t = cmd.transmission().?;
-
-        // We must have data to load an image
-        if (cmd.data.len == 0) return error.InvalidData;
-
-        // Load the data
-        const raw_data = switch (t.medium) {
-            .direct => direct: {
-                const data = cmd.data;
-                _ = cmd.toOwnedData();
-                break :direct data;
-            },
-
-            else => {
-                std.log.warn("unimplemented medium={}", .{t.medium});
-                return error.UnsupportedMedium;
-            },
-        };
-
-        // We always free the raw data because it is base64 decoded below
-        defer alloc.free(raw_data);
-
-        // We base64 the data immediately
-        const decoded_data = base64Decode(alloc, raw_data) catch |err| {
-            log.warn("failed to calculate base64 decoded size: {}", .{err});
-            return error.InvalidData;
-        };
-
-        // If we loaded an image successfully then we take ownership
-        // of the command data and we need to make sure to clean up on error.
-        errdefer if (decoded_data.len > 0) alloc.free(decoded_data);
-
-        const img = switch (t.format) {
-            .rgb, .rgba => try loadPacked(t, decoded_data),
-            else => return error.UnsupportedFormat,
-        };
-
-        return img;
-    }
-
-    /// Read the temporary file data from a command. This will also DELETE
-    /// the temporary file if it is successful and the temporary file is
-    /// in a safe, well-known location.
-    fn readTemporaryFile(alloc: Allocator, path: []const u8) ![]const u8 {
-        _ = alloc;
-        _ = path;
-        return "";
-    }
-
-    /// Load a package image format, i.e. RGB or RGBA.
-    fn loadPacked(
-        t: command.Transmission,
-        data: []const u8,
-    ) !Image {
-        return Image{
-            .id = t.image_id,
-            .number = t.image_number,
-            .width = t.width,
-            .height = t.height,
-            .compression = t.compression,
-            .format = switch (t.format) {
-                .rgb => .rgb,
-                .rgba => .rgba,
-                else => unreachable,
-            },
-            .data = data,
-        };
-    }
-
     pub fn deinit(self: *Image, alloc: Allocator) void {
         if (self.data.len > 0) alloc.free(self.data);
     }
@@ -312,8 +274,8 @@ test "image load with invalid RGB data" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    var img = try Image.load(alloc, &cmd);
-    defer img.deinit(alloc);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
 }
 
 test "image load with image too wide" {
@@ -330,9 +292,9 @@ test "image load with image too wide" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    var img = try Image.load(alloc, &cmd);
-    defer img.deinit(alloc);
-    try testing.expectError(error.DimensionsTooLarge, img.complete(alloc));
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    try testing.expectError(error.DimensionsTooLarge, loading.complete(alloc));
 }
 
 test "image load with image too tall" {
@@ -349,9 +311,9 @@ test "image load with image too tall" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    var img = try Image.load(alloc, &cmd);
-    defer img.deinit(alloc);
-    try testing.expectError(error.DimensionsTooLarge, img.complete(alloc));
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    try testing.expectError(error.DimensionsTooLarge, loading.complete(alloc));
 }
 
 test "image load: rgb, zlib compressed, direct" {
@@ -373,9 +335,10 @@ test "image load: rgb, zlib compressed, direct" {
         ),
     };
     defer cmd.deinit(alloc);
-    var img = try Image.load(alloc, &cmd);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    var img = try loading.complete(alloc);
     defer img.deinit(alloc);
-    try img.complete(alloc);
 
     // should be decompressed
     try testing.expect(img.compression == .none);
@@ -400,9 +363,10 @@ test "image load: rgb, not compressed, direct" {
         ),
     };
     defer cmd.deinit(alloc);
-    var img = try Image.load(alloc, &cmd);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    var img = try loading.complete(alloc);
     defer img.deinit(alloc);
-    try img.complete(alloc);
 
     // should be decompressed
     try testing.expect(img.compression == .none);

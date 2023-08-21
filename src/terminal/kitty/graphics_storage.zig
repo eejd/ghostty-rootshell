@@ -5,7 +5,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const point = @import("../point.zig");
 const command = @import("graphics_command.zig");
-const ChunkedImage = @import("graphics_image.zig").ChunkedImage;
+const LoadingImage = @import("graphics_image.zig").LoadingImage;
 const Image = @import("graphics_image.zig").Image;
 const Command = command.Command;
 const ScreenPoint = point.ScreenPoint;
@@ -29,11 +29,11 @@ pub const ImageStorage = struct {
     /// The set of placements for loaded images.
     placements: PlacementMap = .{},
 
-    /// Non-null if there is a chunked image in progress.
-    chunk: ?*ChunkedImage = null,
+    /// Non-null if there is an in-progress loading image.
+    loading: ?*LoadingImage = null,
 
     pub fn deinit(self: *ImageStorage, alloc: Allocator) void {
-        if (self.chunk) |chunk| chunk.destroy(alloc);
+        if (self.loading) |loading| loading.destroy(alloc);
 
         var it = self.images.iterator();
         while (it.next()) |kv| kv.value_ptr.deinit(alloc);
