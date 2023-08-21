@@ -47,6 +47,27 @@ pub const ChunkedImage = struct {
         alloc.destroy(self);
     }
 
+    /// Adds a chunk of base64-encoded data to the image.
+    pub fn addData(self: *ChunkedImage, alloc: Allocator, data: []const u8) !void {
+        const Base64Decoder = std.base64.standard.Decoder;
+
+        // Grow our array list by size capacity if it needs it
+        const size = Base64Decoder.calcSizeForSlice(data) catch |err| {
+            log.warn("failed to calculate size for base64 data: {}", .{err});
+            return error.InvalidData;
+        };
+        try self.data.ensureUnusedCapacity(alloc, size);
+
+        // We decode directly into the arraylist
+        const start_i = self.data.items.len;
+        self.data.items.len = start_i + size;
+        const buf = self.data.items[start_i..];
+        Base64Decoder.decode(buf, data) catch |err| {
+            log.warn("failed to decode base64 data: {}", .{err});
+            return error.InvalidData;
+        };
+    }
+
     /// Complete the chunked image, returning a completed image.
     pub fn complete(self: *ChunkedImage, alloc: Allocator) !Image {
         var result = self.image;
@@ -146,29 +167,6 @@ pub const Image = struct {
         if (self.width == 0 or self.height == 0) return error.DimensionsRequired;
         if (self.width > max_dimension or self.height > max_dimension) return error.DimensionsTooLarge;
 
-        // The data is base64 encoded, we must decode it.
-        var decoded = decoded: {
-            const Base64Decoder = std.base64.standard.Decoder;
-            const size = Base64Decoder.calcSizeForSlice(self.data) catch |err| {
-                log.warn("failed to calculate base64 decoded size: {}", .{err});
-                return error.InvalidData;
-            };
-
-            var buf = try alloc.alloc(u8, size);
-            errdefer alloc.free(buf);
-            Base64Decoder.decode(buf, self.data) catch |err| {
-                log.warn("failed to decode base64 data: {}", .{err});
-                return error.InvalidData;
-            };
-
-            break :decoded buf;
-        };
-
-        // After decoding, we swap the data immediately and free the old.
-        // This will ensure that we never leak memory.
-        alloc.free(self.data);
-        self.data = decoded;
-
         // Decompress the data if it is compressed.
         try self.decompress(alloc);
 
@@ -192,26 +190,51 @@ pub const Image = struct {
     pub fn load(alloc: Allocator, cmd: *command.Command) !Image {
         const t = cmd.transmission().?;
 
+        // We must have data to load an image
+        if (cmd.data.len == 0) return error.InvalidData;
+
         // Load the data
-        const data = switch (t.medium) {
-            .direct => cmd.data,
+        const raw_data = switch (t.medium) {
+            .direct => direct: {
+                const data = cmd.data;
+                _ = cmd.toOwnedData();
+                break :direct data;
+            },
+
             else => {
                 std.log.warn("unimplemented medium={}", .{t.medium});
                 return error.UnsupportedMedium;
             },
         };
 
+        // We always free the raw data because it is base64 decoded below
+        defer alloc.free(raw_data);
+
+        // We base64 the data immediately
+        const decoded_data = base64Decode(alloc, raw_data) catch |err| {
+            log.warn("failed to calculate base64 decoded size: {}", .{err});
+            return error.InvalidData;
+        };
+
         // If we loaded an image successfully then we take ownership
         // of the command data and we need to make sure to clean up on error.
-        _ = cmd.toOwnedData();
-        errdefer if (data.len > 0) alloc.free(data);
+        errdefer if (decoded_data.len > 0) alloc.free(decoded_data);
 
         const img = switch (t.format) {
-            .rgb, .rgba => try loadPacked(t, data),
+            .rgb, .rgba => try loadPacked(t, decoded_data),
             else => return error.UnsupportedFormat,
         };
 
         return img;
+    }
+
+    /// Read the temporary file data from a command. This will also DELETE
+    /// the temporary file if it is successful and the temporary file is
+    /// in a safe, well-known location.
+    fn readTemporaryFile(alloc: Allocator, path: []const u8) ![]const u8 {
+        _ = alloc;
+        _ = path;
+        return "";
     }
 
     /// Load a package image format, i.e. RGB or RGBA.
@@ -245,6 +268,24 @@ pub const Image = struct {
         return copy;
     }
 };
+
+/// Helper to base64 decode some data. No data is freed.
+fn base64Decode(alloc: Allocator, data: []const u8) ![]const u8 {
+    const Base64Decoder = std.base64.standard.Decoder;
+    const size = Base64Decoder.calcSizeForSlice(data) catch |err| {
+        log.warn("failed to calculate base64 decoded size: {}", .{err});
+        return error.InvalidData;
+    };
+
+    var buf = try alloc.alloc(u8, size);
+    errdefer alloc.free(buf);
+    Base64Decoder.decode(buf, data) catch |err| {
+        log.warn("failed to decode base64 data: {}", .{err});
+        return error.InvalidData;
+    };
+
+    return buf;
+}
 
 /// Loads test data from a file path and base64 encodes it.
 fn testB64(alloc: Allocator, data: []const u8) ![]const u8 {
