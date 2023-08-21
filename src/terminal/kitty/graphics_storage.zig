@@ -94,12 +94,12 @@ pub const ImageStorage = struct {
     }
 
     /// Get an image by its ID. If the image doesn't exist, null is returned.
-    pub fn imageById(self: *ImageStorage, image_id: u32) ?Image {
+    pub fn imageById(self: *const ImageStorage, image_id: u32) ?Image {
         return self.images.get(image_id);
     }
 
     /// Get an image by its number. If the image doesn't exist, return null.
-    pub fn imageByNumber(self: *ImageStorage, image_number: u32) ?Image {
+    pub fn imageByNumber(self: *const ImageStorage, image_number: u32) ?Image {
         var it = self.images.iterator();
         while (it.next()) |kv| {
             if (kv.value_ptr.number == image_number) return kv.value_ptr.*;
