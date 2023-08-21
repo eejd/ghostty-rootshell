@@ -107,12 +107,67 @@ pub const LoadingImage = struct {
 
     /// Complete the chunked image, returning a completed image.
     pub fn complete(self: *LoadingImage, alloc: Allocator) !Image {
+        const img = &self.image;
+
+        // Validate our dimensions.
+        if (img.width == 0 or img.height == 0) return error.DimensionsRequired;
+        if (img.width > max_dimension or img.height > max_dimension) return error.DimensionsTooLarge;
+
+        // Decompress the data if it is compressed.
+        try self.decompress(alloc);
+
+        // Data length must be what we expect
+        const bpp: u32 = switch (img.format) {
+            .rgb => 3,
+            .rgba => 4,
+        };
+        const expected_len = img.width * img.height * bpp;
+        const actual_len = self.data.items.len;
+        std.log.debug(
+            "complete image id={} width={} height={} bpp={} expected_len={} actual_len={}",
+            .{ img.id, img.width, img.height, bpp, expected_len, actual_len },
+        );
+        if (actual_len != expected_len) return error.InvalidData;
+
+        // Everything looks good, copy the image data over.
         var result = self.image;
         result.data = try self.data.toOwnedSlice(alloc);
         errdefer result.deinit(alloc);
         self.image = .{};
-        try result.complete(alloc);
         return result;
+    }
+
+    /// Decompress the data in-place.
+    fn decompress(self: *LoadingImage, alloc: Allocator) !void {
+        return switch (self.image.compression) {
+            .none => {},
+            .zlib_deflate => self.decompressZlib(alloc),
+        };
+    }
+
+    fn decompressZlib(self: *LoadingImage, alloc: Allocator) !void {
+        // Open our zlib stream
+        var fbs = std.io.fixedBufferStream(self.data.items);
+        var stream = std.compress.zlib.decompressStream(alloc, fbs.reader()) catch |err| {
+            log.warn("zlib decompression failed: {}", .{err});
+            return error.DecompressionFailed;
+        };
+        defer stream.deinit();
+
+        // Write it to an array list
+        var list = std.ArrayList(u8).init(alloc);
+        errdefer list.deinit();
+        stream.reader().readAllArrayList(&list, max_size) catch |err| {
+            log.warn("failed to read decompressed data: {}", .{err});
+            return error.DecompressionFailed;
+        };
+
+        // Empty our current data list, take ownership over managed array list
+        self.data.deinit(alloc);
+        self.data = .{ .items = list.items, .capacity = list.capacity };
+
+        // Make sure we note that our image is no longer compressed
+        self.image.compression = .none;
     }
 };
 
@@ -137,6 +192,17 @@ pub const Image = struct {
         UnsupportedMedium,
     };
 
+    pub fn deinit(self: *Image, alloc: Allocator) void {
+        if (self.data.len > 0) alloc.free(self.data);
+    }
+
+    /// Mostly for logging
+    pub fn withoutData(self: *const Image) Image {
+        var copy = self.*;
+        copy.data = "";
+        return copy;
+    }
+
     /// Debug function to write the data to a file. This is useful for
     /// capturing some test data for unit tests.
     pub fn debugDump(self: Image) !void {
@@ -160,74 +226,6 @@ pub const Image = struct {
 
         const writer = f.writer();
         try writer.writeAll(self.data);
-    }
-
-    /// Decompress the image data in-place.
-    fn decompress(self: *Image, alloc: Allocator) !void {
-        return switch (self.compression) {
-            .none => {},
-            .zlib_deflate => self.decompressZlib(alloc),
-        };
-    }
-
-    fn decompressZlib(self: *Image, alloc: Allocator) !void {
-        // Open our zlib stream
-        var fbs = std.io.fixedBufferStream(self.data);
-        var stream = std.compress.zlib.decompressStream(alloc, fbs.reader()) catch |err| {
-            log.warn("zlib decompression failed: {}", .{err});
-            return error.DecompressionFailed;
-        };
-        defer stream.deinit();
-
-        // Write it to an array list
-        var list = std.ArrayList(u8).init(alloc);
-        defer list.deinit();
-        stream.reader().readAllArrayList(&list, max_size) catch |err| {
-            log.warn("failed to read decompressed data: {}", .{err});
-            return error.DecompressionFailed;
-        };
-
-        // Swap our data out
-        alloc.free(self.data);
-        self.data = "";
-        self.data = try list.toOwnedSlice();
-        self.compression = .none;
-    }
-
-    /// Complete the image. This must be called after loading and after
-    /// being sure the data is complete (not chunked).
-    pub fn complete(self: *Image, alloc: Allocator) !void {
-        const bpp: u32 = switch (self.format) {
-            .rgb => 3,
-            .rgba => 4,
-        };
-
-        // Validate our dimensions.
-        if (self.width == 0 or self.height == 0) return error.DimensionsRequired;
-        if (self.width > max_dimension or self.height > max_dimension) return error.DimensionsTooLarge;
-
-        // Decompress the data if it is compressed.
-        try self.decompress(alloc);
-
-        // Data length must be what we expect
-        const expected_len = self.width * self.height * bpp;
-        const actual_len = self.data.len;
-        std.log.debug(
-            "complete image id={} width={} height={} bpp={} expected_len={} actual_len={}",
-            .{ self.id, self.width, self.height, bpp, expected_len, actual_len },
-        );
-        if (actual_len != expected_len) return error.InvalidData;
-    }
-
-    pub fn deinit(self: *Image, alloc: Allocator) void {
-        if (self.data.len > 0) alloc.free(self.data);
-    }
-
-    /// Mostly for logging
-    pub fn withoutData(self: *const Image) Image {
-        var copy = self.*;
-        copy.data = "";
-        return copy;
     }
 };
 
