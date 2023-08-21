@@ -228,7 +228,9 @@ test "image load with image too wide" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    try testing.expectError(error.DimensionsTooLarge, Image.load(alloc, &cmd));
+    var img = try Image.load(alloc, &cmd);
+    defer img.deinit(alloc);
+    try testing.expectError(error.DimensionsTooLarge, img.validate(alloc));
 }
 
 test "image load with image too tall" {
@@ -245,5 +247,7 @@ test "image load with image too tall" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    try testing.expectError(error.DimensionsTooLarge, Image.load(alloc, &cmd));
+    var img = try Image.load(alloc, &cmd);
+    defer img.deinit(alloc);
+    try testing.expectError(error.DimensionsTooLarge, img.validate(alloc));
 }
