@@ -221,7 +221,11 @@ fn loadAndAddImage(
         }
 
         break :img try chunk.complete(alloc);
-    } else try Image.load(alloc, cmd);
+    } else img: {
+        const img = try Image.load(alloc, cmd);
+        _ = cmd.toOwnedData();
+        break :img img;
+    };
     errdefer img.deinit(alloc);
 
     // If the image has no ID, we assign one
