@@ -171,7 +171,7 @@ fn legacy(
     // If we match a PC style function key then that is our result.
     if (pcStyleFunctionKey(
         self.event.key,
-        binding_mods,
+        all_mods,
         self.cursor_key_application,
         self.keypad_key_application,
         self.modify_other_keys_state_2,
@@ -946,6 +946,20 @@ test "legacy: fixterm awkward letters" {
         const actual = try enc.legacy(&buf);
         try testing.expectEqualStrings("\x1b[64;6u", actual);
     }
+}
+
+test "legacy: shift+function key should use all mods" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .up,
+            .mods = .{ .shift = true },
+            .consumed_mods = .{ .shift = true },
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1b[1;2A", actual);
 }
 
 test "ctrlseq: normal ctrl c" {
