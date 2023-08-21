@@ -6,6 +6,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const command = @import("graphics_command.zig");
 const internal_os = @import("../../os/main.zig");
+const stb = @import("../../stb/main.zig");
 
 const log = std.log.scoped(.kitty_gfx);
 
@@ -45,11 +46,7 @@ pub const LoadingImage = struct {
                 .width = t.width,
                 .height = t.height,
                 .compression = t.compression,
-                .format = switch (t.format) {
-                    .rgb => .rgb,
-                    .rgba => .rgba,
-                    else => unreachable,
-                },
+                .format = t.format,
             },
         };
 
@@ -220,17 +217,21 @@ pub const LoadingImage = struct {
     pub fn complete(self: *LoadingImage, alloc: Allocator) !Image {
         const img = &self.image;
 
+        // Decompress the data if it is compressed.
+        try self.decompress(alloc);
+
+        // Decode the png if we have to
+        if (img.format == .png) try self.decodePng(alloc);
+
         // Validate our dimensions.
         if (img.width == 0 or img.height == 0) return error.DimensionsRequired;
         if (img.width > max_dimension or img.height > max_dimension) return error.DimensionsTooLarge;
-
-        // Decompress the data if it is compressed.
-        try self.decompress(alloc);
 
         // Data length must be what we expect
         const bpp: u32 = switch (img.format) {
             .rgb => 3,
             .rgba => 4,
+            .png => unreachable, // png should be decoded by here
         };
         const expected_len = img.width * img.height * bpp;
         const actual_len = self.data.items.len;
@@ -248,6 +249,31 @@ pub const LoadingImage = struct {
         errdefer result.deinit(alloc);
         self.image = .{};
         return result;
+    }
+
+    /// Debug function to write the data to a file. This is useful for
+    /// capturing some test data for unit tests.
+    pub fn debugDump(self: LoadingImage) !void {
+        if (comptime builtin.mode != .Debug) @compileError("debugDump in non-debug");
+
+        var buf: [1024]u8 = undefined;
+        const filename = try std.fmt.bufPrint(
+            &buf,
+            "image-{s}-{s}-{d}x{d}-{}.data",
+            .{
+                @tagName(self.image.format),
+                @tagName(self.image.compression),
+                self.image.width,
+                self.image.height,
+                self.image.id,
+            },
+        );
+        const cwd = std.fs.cwd();
+        const f = try cwd.createFile(filename, .{});
+        defer f.close();
+
+        const writer = f.writer();
+        try writer.writeAll(self.data.items);
     }
 
     /// Decompress the data in-place.
@@ -282,6 +308,44 @@ pub const LoadingImage = struct {
         // Make sure we note that our image is no longer compressed
         self.image.compression = .none;
     }
+
+    /// Decode the data as PNG. This will also updated the image dimensions.
+    fn decodePng(self: *LoadingImage, alloc: Allocator) !void {
+        assert(self.image.format == .png);
+
+        // Decode PNG
+        var width: c_int = 0;
+        var height: c_int = 0;
+        var bpp: c_int = 0;
+        const data = stb.stbi_load_from_memory(
+            self.data.items.ptr,
+            @intCast(self.data.items.len),
+            &width,
+            &height,
+            &bpp,
+            0,
+        ) orelse return error.InvalidData;
+        defer stb.stbi_image_free(data);
+        const len: usize = @intCast(width * height * bpp);
+
+        // Validate our bpp
+        if (bpp != 3 and bpp != 4) return error.UnsupportedDepth;
+
+        // Replace our data
+        self.data.deinit(alloc);
+        self.data = .{};
+        try self.data.ensureUnusedCapacity(alloc, len);
+        try self.data.appendSlice(alloc, data[0..len]);
+
+        // Store updated image dimensions
+        self.image.width = @intCast(width);
+        self.image.height = @intCast(height);
+        self.image.format = switch (bpp) {
+            3 => .rgb,
+            4 => .rgba,
+            else => unreachable, // validated above
+        };
+    }
 };
 
 /// Image represents a single fully loaded image.
@@ -290,11 +354,9 @@ pub const Image = struct {
     number: u32 = 0,
     width: u32 = 0,
     height: u32 = 0,
-    format: Format = .rgb,
+    format: command.Transmission.Format = .rgb,
     compression: command.Transmission.Compression = .none,
     data: []const u8 = "",
-
-    pub const Format = enum { rgb, rgba };
 
     pub const Error = error{
         InvalidData,
@@ -305,6 +367,7 @@ pub const Image = struct {
         TemporaryFileNotInTempDir,
         UnsupportedFormat,
         UnsupportedMedium,
+        UnsupportedDepth,
     };
 
     pub fn deinit(self: *Image, alloc: Allocator) void {
@@ -316,31 +379,6 @@ pub const Image = struct {
         var copy = self.*;
         copy.data = "";
         return copy;
-    }
-
-    /// Debug function to write the data to a file. This is useful for
-    /// capturing some test data for unit tests.
-    pub fn debugDump(self: Image) !void {
-        if (comptime builtin.mode != .Debug) @compileError("debugDump in non-debug");
-
-        var buf: [1024]u8 = undefined;
-        const filename = try std.fmt.bufPrint(
-            &buf,
-            "image-{s}-{s}-{d}x{d}-{}.data",
-            .{
-                @tagName(self.format),
-                @tagName(self.compression),
-                self.width,
-                self.height,
-                self.id,
-            },
-        );
-        const cwd = std.fs.cwd();
-        const f = try cwd.createFile(filename, .{});
-        defer f.close();
-
-        const writer = f.writer();
-        try writer.writeAll(self.data);
     }
 };
 
@@ -584,5 +622,38 @@ test "image load: rgb, not compressed, regular file" {
     var img = try loading.complete(alloc);
     defer img.deinit(alloc);
     try testing.expect(img.compression == .none);
+    try tmp_dir.dir.access(path, .{});
+}
+
+test "image load: png, not compressed, regular file" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var tmp_dir = try internal_os.TempDir.init();
+    defer tmp_dir.deinit();
+    const data = @embedFile("testdata/image-png-none-50x76-2147483647-raw.data");
+    try tmp_dir.dir.writeFile("image.data", data);
+
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try tmp_dir.dir.realpath("image.data", &buf);
+
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .png,
+            .medium = .file,
+            .compression = .none,
+            .width = 0,
+            .height = 0,
+            .image_id = 31,
+        } },
+        .data = try testB64(alloc, path),
+    };
+    defer cmd.deinit(alloc);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    var img = try loading.complete(alloc);
+    defer img.deinit(alloc);
+    try testing.expect(img.compression == .none);
+    try testing.expect(img.format == .rgb);
     try tmp_dir.dir.access(path, .{});
 }

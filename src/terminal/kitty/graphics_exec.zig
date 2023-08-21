@@ -15,7 +15,7 @@ const log = std.log.scoped(.kitty_gfx);
 
 // TODO:
 // - delete
-// - zlib deflate compression
+// - shared memory transmit
 // (not exhaustive, almost every op is ignoring additional config)
 
 /// Execute a Kitty graphics command against the given terminal. This
@@ -244,7 +244,7 @@ fn loadAndAddImage(
     }
 
     // Dump the image data before it is decompressed
-    // img.debugDump() catch unreachable;
+    // loading.debugDump() catch unreachable;
 
     // Validate and store our image
     var img = try loading.complete(alloc);
@@ -270,6 +270,7 @@ fn encodeError(r: *Response, err: EncodeableError) void {
         error.TemporaryFileNotInTempDir => r.message = "EINVAL: temporary file not in temp dir",
         error.UnsupportedFormat => r.message = "EINVAL: unsupported format",
         error.UnsupportedMedium => r.message = "EINVAL: unsupported medium",
+        error.UnsupportedDepth => r.message = "EINVAL: unsupported pixel depth",
         error.DimensionsRequired => r.message = "EINVAL: dimensions required",
         error.DimensionsTooLarge => r.message = "EINVAL: dimensions too large",
     }
