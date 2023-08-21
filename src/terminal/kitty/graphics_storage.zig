@@ -5,6 +5,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const point = @import("../point.zig");
 const command = @import("graphics_command.zig");
+const Screen = @import("../Screen.zig");
 const LoadingImage = @import("graphics_image.zig").LoadingImage;
 const Image = @import("graphics_image.zig").Image;
 const Command = command.Command;
@@ -105,6 +106,30 @@ pub const ImageStorage = struct {
         }
 
         return null;
+    }
+
+    /// Delete placements, images.
+    pub fn delete(
+        self: *ImageStorage,
+        alloc: Allocator,
+        screen: *const Screen,
+        cmd: command.Delete,
+    ) void {
+        _ = screen;
+
+        switch (cmd) {
+            .all => |delete_images| if (delete_images) {
+                // We just reset our entire state.
+                self.deinit(alloc);
+                self.* = .{};
+            } else {
+                // Delete all our placements
+                self.placements.deinit(alloc);
+                self.placements = .{};
+            },
+
+            else => log.warn("unimplemented delete command: {}", .{cmd}),
+        }
     }
 
     /// Every placement is uniquely identified by the image ID and the

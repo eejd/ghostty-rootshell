@@ -189,7 +189,11 @@ pub const AlternateScreenOptions = struct {
 ///   * has its own cursor state (included saved cursor)
 ///   * does not support scrollback
 ///
-pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
+pub fn alternateScreen(
+    self: *Terminal,
+    alloc: Allocator,
+    options: AlternateScreenOptions,
+) void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -216,12 +220,16 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.screen.selection = null;
 
     if (options.clear_on_enter) {
-        self.eraseDisplay(.complete);
+        self.eraseDisplay(alloc, .complete);
     }
 }
 
 /// Switch back to the primary screen (reset alternate screen mode).
-pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
+pub fn primaryScreen(
+    self: *Terminal,
+    alloc: Allocator,
+    options: AlternateScreenOptions,
+) void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -231,7 +239,7 @@ pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
     // TODO(mitchellh): what happens if we enter alternate screen multiple times?
     if (self.active_screen == .primary) return;
 
-    if (options.clear_on_exit) self.eraseDisplay(.complete);
+    if (options.clear_on_exit) self.eraseDisplay(alloc, .complete);
 
     // Switch the screens
     const old = self.screen;
@@ -278,7 +286,7 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     try self.resize(alloc, 0, self.rows);
 
     // TODO: do not clear screen flag mode
-    self.eraseDisplay(.complete);
+    self.eraseDisplay(alloc, .complete);
     self.setCursorPos(1, 1);
 
     // TODO: left/right margins
@@ -987,6 +995,7 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 /// TODO: test
 pub fn eraseDisplay(
     self: *Terminal,
+    alloc: Allocator,
     mode: csi.EraseDisplay,
 ) void {
     const tracy = trace(@src());
@@ -1003,6 +1012,13 @@ pub fn eraseDisplay(
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
+
+            // Clear all Kitty graphics state for this screen
+            self.screen.kitty_images.delete(
+                alloc,
+                &self.screen,
+                .{ .all = true },
+            );
         },
 
         .below => {
@@ -1572,17 +1588,18 @@ pub fn kittyGraphics(
 }
 
 /// Full reset
-pub fn fullReset(self: *Terminal) void {
-    self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
+pub fn fullReset(self: *Terminal, alloc: Allocator) void {
+    self.primaryScreen(alloc, .{ .clear_on_exit = true, .cursor_save = true });
     self.charset = .{};
-    self.eraseDisplay(.scrollback);
-    self.eraseDisplay(.complete);
+    self.eraseDisplay(alloc, .scrollback);
+    self.eraseDisplay(alloc, .complete);
     self.modes = .{};
     self.flags = .{};
     self.tabstops.reset(0);
     self.screen.cursor = .{};
     self.screen.saved_cursor = .{};
     self.screen.selection = null;
+    self.screen.kitty_keyboard = .{};
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
     self.previous_char = null;
     self.pwd.clearRetainingCapacity();
@@ -2541,7 +2558,7 @@ test "Terminal: cursorIsAtPrompt alternate screen" {
     try testing.expect(t.cursorIsAtPrompt());
 
     // Secondary screen is never a prompt
-    t.alternateScreen(.{});
+    t.alternateScreen(alloc, .{});
     try testing.expect(!t.cursorIsAtPrompt());
     t.markSemanticPrompt(.prompt);
     try testing.expect(!t.cursorIsAtPrompt());

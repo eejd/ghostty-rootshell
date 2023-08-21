@@ -16,6 +16,8 @@ const log = std.log.scoped(.kitty_gfx);
 // TODO:
 // - delete
 // - shared memory transmit
+// - terminal state around deleting images (i.e. CSI J)
+// - terminal state around deleting placements (i.e. scrolling)
 // (not exhaustive, almost every op is ignoring additional config)
 
 /// Execute a Kitty graphics command against the given terminal. This

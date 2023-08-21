@@ -1185,7 +1185,7 @@ const StreamHandler = struct {
             try self.queueRender();
         }
 
-        self.terminal.eraseDisplay(mode);
+        self.terminal.eraseDisplay(self.alloc, mode);
     }
 
     pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine) !void {
@@ -1280,9 +1280,9 @@ const StreamHandler = struct {
                 };
 
                 if (enabled)
-                    self.terminal.alternateScreen(opts)
+                    self.terminal.alternateScreen(self.alloc, opts)
                 else
-                    self.terminal.primaryScreen(opts);
+                    self.terminal.primaryScreen(self.alloc, opts);
 
                 // Schedule a render since we changed screens
                 try self.queueRender();
@@ -1450,7 +1450,7 @@ const StreamHandler = struct {
     pub fn fullReset(
         self: *StreamHandler,
     ) !void {
-        self.terminal.fullReset();
+        self.terminal.fullReset(self.alloc);
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
