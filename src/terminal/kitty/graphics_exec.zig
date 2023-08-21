@@ -266,6 +266,8 @@ fn encodeError(r: *Response, err: EncodeableError) void {
         error.OutOfMemory => r.message = "ENOMEM: out of memory",
         error.InvalidData => r.message = "EINVAL: invalid data",
         error.DecompressionFailed => r.message = "EINVAL: decompression failed",
+        error.FilePathTooLong => r.message = "EINVAL: file path too long",
+        error.TemporaryFileNotInTempDir => r.message = "EINVAL: temporary file not in temp dir",
         error.UnsupportedFormat => r.message = "EINVAL: unsupported format",
         error.UnsupportedMedium => r.message = "EINVAL: unsupported medium",
         error.DimensionsRequired => r.message = "EINVAL: dimensions required",

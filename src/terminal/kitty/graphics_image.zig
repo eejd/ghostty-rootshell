@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 const command = @import("graphics_command.zig");
+const internal_os = @import("../../os/main.zig");
 
 const log = std.log.scoped(.kitty_gfx);
 
@@ -52,25 +53,112 @@ pub const LoadingImage = struct {
             },
         };
 
-        // Load the base64 encoded data from the transmission medium.
-        const raw_data = switch (t.medium) {
-            .direct => direct: {
-                const data = cmd.data;
-                _ = cmd.toOwnedData();
-                break :direct data;
-            },
+        // Special case for the direct medium, we just add it directly
+        // which will handle copying the data, base64 decoding, etc.
+        if (t.medium == .direct) {
+            try result.addData(alloc, cmd.data);
+            return result;
+        }
+
+        // For every other medium, we'll need to at least base64 decode
+        // the data to make it useful so let's do that. Also, all the data
+        // has to be path data so we can put it in a stack-allocated buffer.
+        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        const Base64Decoder = std.base64.standard.Decoder;
+        const size = Base64Decoder.calcSizeForSlice(cmd.data) catch |err| {
+            log.warn("failed to calculate base64 size for file path: {}", .{err});
+            return error.InvalidData;
+        };
+        if (size > buf.len) return error.FilePathTooLong;
+        Base64Decoder.decode(&buf, cmd.data) catch |err| {
+            log.warn("failed to decode base64 data: {}", .{err});
+            return error.InvalidData;
+        };
+        var abs_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        const path = std.os.realpath(buf[0..size], &abs_buf) catch |err| {
+            log.warn("failed to get absolute path: {}", .{err});
+            return error.InvalidData;
+        };
+
+        // Depending on the medium, load the data from the path.
+        switch (t.medium) {
+            .direct => unreachable, // handled above
+
+            .temporary_file => try result.readTemporaryFile(alloc, t, path),
 
             else => {
                 std.log.warn("unimplemented medium={}", .{t.medium});
                 return error.UnsupportedMedium;
             },
-        };
-        defer alloc.free(raw_data);
-
-        // Add the data
-        try result.addData(alloc, raw_data);
+        }
 
         return result;
+    }
+
+    /// Reads the data from a temporary file and returns it. This allocates
+    /// and does not free any of the data, so the caller must free it.
+    ///
+    /// This will also delete the temporary file if it is in a safe location.
+    fn readTemporaryFile(
+        self: *LoadingImage,
+        alloc: Allocator,
+        t: command.Transmission,
+        path: []const u8,
+    ) !void {
+        if (!isPathInTempDir(path)) return error.TemporaryFileNotInTempDir;
+
+        // Delete the temporary file
+        defer std.os.unlink(path) catch |err| {
+            log.warn("failed to delete temporary file: {}", .{err});
+        };
+
+        var file = std.fs.cwd().openFile(path, .{}) catch |err| {
+            log.warn("failed to open temporary file: {}", .{err});
+            return error.InvalidData;
+        };
+        defer file.close();
+
+        if (t.offset > 0) {
+            file.seekTo(@intCast(t.offset)) catch |err| {
+                log.warn("failed to seek to offset {}: {}", .{ t.offset, err });
+                return error.InvalidData;
+            };
+        }
+
+        var buf_reader = std.io.bufferedReader(file.reader());
+        const reader = buf_reader.reader();
+
+        // Read the file
+        var managed = std.ArrayList(u8).init(alloc);
+        errdefer managed.deinit();
+        const size: usize = if (t.size > 0) @min(t.size, max_size) else max_size;
+        reader.readAllArrayList(&managed, size) catch |err| {
+            log.warn("failed to read temporary file: {}", .{err});
+            return error.InvalidData;
+        };
+
+        // Set our data
+        assert(self.data.items.len == 0);
+        self.data = .{ .items = managed.items, .capacity = managed.capacity };
+    }
+
+    /// Returns true if path appears to be in a temporary directory.
+    /// Copies logic from Kitty.
+    fn isPathInTempDir(path: []const u8) bool {
+        if (std.mem.startsWith(u8, path, "/tmp")) return true;
+        if (std.mem.startsWith(u8, path, "/dev/shm")) return true;
+        if (internal_os.tmpDir()) |dir| {
+            if (std.mem.startsWith(u8, path, dir)) return true;
+
+            // The temporary dir is sometimes a symlink. On macOS for
+            // example /tmp is /private/var/...
+            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            if (std.os.realpath(dir, &buf)) |real_dir| {
+                if (std.mem.startsWith(u8, path, real_dir)) return true;
+            } else |_| {}
+        }
+
+        return false;
     }
 
     pub fn deinit(self: *LoadingImage, alloc: Allocator) void {
@@ -123,11 +211,13 @@ pub const LoadingImage = struct {
         };
         const expected_len = img.width * img.height * bpp;
         const actual_len = self.data.items.len;
-        std.log.debug(
-            "complete image id={} width={} height={} bpp={} expected_len={} actual_len={}",
-            .{ img.id, img.width, img.height, bpp, expected_len, actual_len },
-        );
-        if (actual_len != expected_len) return error.InvalidData;
+        if (actual_len != expected_len) {
+            std.log.warn(
+                "unexpected length image id={} width={} height={} bpp={} expected_len={} actual_len={}",
+                .{ img.id, img.width, img.height, bpp, expected_len, actual_len },
+            );
+            return error.InvalidData;
+        }
 
         // Everything looks good, copy the image data over.
         var result = self.image;
@@ -188,6 +278,8 @@ pub const Image = struct {
         DecompressionFailed,
         DimensionsRequired,
         DimensionsTooLarge,
+        FilePathTooLong,
+        TemporaryFileNotInTempDir,
         UnsupportedFormat,
         UnsupportedMedium,
     };
@@ -229,30 +321,21 @@ pub const Image = struct {
     }
 };
 
-/// Helper to base64 decode some data. No data is freed.
-fn base64Decode(alloc: Allocator, data: []const u8) ![]const u8 {
-    const Base64Decoder = std.base64.standard.Decoder;
-    const size = Base64Decoder.calcSizeForSlice(data) catch |err| {
-        log.warn("failed to calculate base64 decoded size: {}", .{err});
-        return error.InvalidData;
-    };
-
-    var buf = try alloc.alloc(u8, size);
-    errdefer alloc.free(buf);
-    Base64Decoder.decode(buf, data) catch |err| {
-        log.warn("failed to decode base64 data: {}", .{err});
-        return error.InvalidData;
-    };
-
-    return buf;
-}
-
-/// Loads test data from a file path and base64 encodes it.
+/// Easy base64 encoding function.
 fn testB64(alloc: Allocator, data: []const u8) ![]const u8 {
     const B64Encoder = std.base64.standard.Encoder;
     var b64 = try alloc.alloc(u8, B64Encoder.calcSize(data.len));
     errdefer alloc.free(b64);
     return B64Encoder.encode(b64, data);
+}
+
+/// Easy base64 decoding function.
+fn testB64Decode(alloc: Allocator, data: []const u8) ![]const u8 {
+    const B64Decoder = std.base64.standard.Decoder;
+    var result = try alloc.alloc(u8, try B64Decoder.calcSizeForSlice(data));
+    errdefer alloc.free(result);
+    try B64Decoder.decode(result, data);
+    return result;
 }
 
 // This specifically tests we ALLOW invalid RGB data because Kitty
@@ -389,6 +472,7 @@ test "image load: rgb, zlib compressed, direct, chunked" {
         } },
         .data = try alloc.dupe(u8, data[0..1024]),
     };
+    defer cmd.deinit(alloc);
     var loading = try LoadingImage.init(alloc, &cmd);
     defer loading.deinit(alloc);
 
@@ -404,4 +488,42 @@ test "image load: rgb, zlib compressed, direct, chunked" {
     var img = try loading.complete(alloc);
     defer img.deinit(alloc);
     try testing.expect(img.compression == .none);
+}
+
+test "image load: rgb, not compressed, temporary file" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var tmp_dir = try internal_os.TempDir.init();
+    defer tmp_dir.deinit();
+    const data = try testB64Decode(
+        alloc,
+        @embedFile("testdata/image-rgb-none-20x15-2147483647.data"),
+    );
+    defer alloc.free(data);
+    try tmp_dir.dir.writeFile("image.data", data);
+
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try tmp_dir.dir.realpath("image.data", &buf);
+
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .temporary_file,
+            .compression = .none,
+            .width = 20,
+            .height = 15,
+            .image_id = 31,
+        } },
+        .data = try testB64(alloc, path),
+    };
+    defer cmd.deinit(alloc);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    var img = try loading.complete(alloc);
+    defer img.deinit(alloc);
+    try testing.expect(img.compression == .none);
+
+    // Temporary file should be gone
+    try testing.expectError(error.FileNotFound, tmp_dir.dir.access(path, .{}));
 }
