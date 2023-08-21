@@ -11,6 +11,9 @@ const log = std.log.scoped(.kitty_gfx);
 /// Maximum width or height of an image. Taken directly from Kitty.
 const max_dimension = 10000;
 
+/// Maximum size in bytes, taken from Kitty.
+const max_size = 400 * 1024 * 1024; // 400MB
+
 /// A chunked image is an image that is in-progress and being constructed
 /// using chunks (the "m" parameter in the protocol).
 pub const ChunkedImage = struct {
@@ -99,35 +102,36 @@ pub const Image = struct {
         try writer.writeAll(self.data);
     }
 
-    /// The length of the data in bytes, uncompressed. While this will
-    /// decompress compressed data to count the bytes it doesn't actually
-    /// store the decompressed data so this doesn't allocate much.
-    pub fn dataLen(self: *const Image, alloc: Allocator) !usize {
+    /// Decompress the image data in-place.
+    fn decompress(self: *Image, alloc: Allocator) !void {
         return switch (self.compression) {
-            .none => self.data.len,
-            .zlib_deflate => zlib: {
-                var fbs = std.io.fixedBufferStream(self.data);
-
-                var stream = std.compress.zlib.decompressStream(alloc, fbs.reader()) catch |err| {
-                    log.warn("zlib decompression failed: {}", .{err});
-                    return error.DecompressionFailed;
-                };
-                defer stream.deinit();
-
-                var counting_stream = std.io.countingReader(stream.reader());
-                const counting_reader = counting_stream.reader();
-
-                var buf: [4096]u8 = undefined;
-                while (counting_reader.readAll(&buf)) |_| {} else |err| {
-                    if (err != error.EndOfStream) {
-                        log.warn("zlib decompression failed: {}", .{err});
-                        return error.DecompressionFailed;
-                    }
-                }
-
-                break :zlib counting_stream.bytes_read;
-            },
+            .none => {},
+            .zlib_deflate => self.decompressZlib(alloc),
         };
+    }
+
+    fn decompressZlib(self: *Image, alloc: Allocator) !void {
+        // Open our zlib stream
+        var fbs = std.io.fixedBufferStream(self.data);
+        var stream = std.compress.zlib.decompressStream(alloc, fbs.reader()) catch |err| {
+            log.warn("zlib decompression failed: {}", .{err});
+            return error.DecompressionFailed;
+        };
+        defer stream.deinit();
+
+        // Write it to an array list
+        var list = std.ArrayList(u8).init(alloc);
+        defer list.deinit();
+        stream.reader().readAllArrayList(&list, max_size) catch |err| {
+            log.warn("failed to read decompressed data: {}", .{err});
+            return error.DecompressionFailed;
+        };
+
+        // Swap our data out
+        alloc.free(self.data);
+        self.data = "";
+        self.data = try list.toOwnedSlice();
+        self.compression = .none;
     }
 
     /// Complete the image. This must be called after loading and after
@@ -165,9 +169,12 @@ pub const Image = struct {
         alloc.free(self.data);
         self.data = decoded;
 
+        // Decompress the data if it is compressed.
+        try self.decompress(alloc);
+
         // Data length must be what we expect
         const expected_len = self.width * self.height * bpp;
-        const actual_len = try self.dataLen(alloc);
+        const actual_len = self.data.len;
         std.log.warn(
             "width={} height={} bpp={} expected_len={} actual_len={}",
             .{ self.width, self.height, bpp, expected_len, actual_len },
@@ -239,6 +246,14 @@ pub const Image = struct {
     }
 };
 
+/// Loads test data from a file path and base64 encodes it.
+fn testB64(alloc: Allocator, data: []const u8) ![]const u8 {
+    const B64Encoder = std.base64.standard.Encoder;
+    var b64 = try alloc.alloc(u8, B64Encoder.calcSize(data.len));
+    errdefer alloc.free(b64);
+    return B64Encoder.encode(b64, data);
+}
+
 // This specifically tests we ALLOW invalid RGB data because Kitty
 // documents that this should work.
 test "image load with invalid RGB data" {
@@ -296,4 +311,31 @@ test "image load with image too tall" {
     var img = try Image.load(alloc, &cmd);
     defer img.deinit(alloc);
     try testing.expectError(error.DimensionsTooLarge, img.complete(alloc));
+}
+
+test "image load: rgb, zlib compressed, direct" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .direct,
+            .compression = .zlib_deflate,
+            .height = 96,
+            .width = 128,
+            .image_id = 31,
+        } },
+        .data = try alloc.dupe(
+            u8,
+            @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data"),
+        ),
+    };
+    defer cmd.deinit(alloc);
+    var img = try Image.load(alloc, &cmd);
+    defer img.deinit(alloc);
+    try img.complete(alloc);
+
+    // should be decompressed
+    try testing.expect(img.compression == .none);
 }
