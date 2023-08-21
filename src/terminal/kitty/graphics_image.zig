@@ -83,33 +83,56 @@ pub const LoadingImage = struct {
         // Depending on the medium, load the data from the path.
         switch (t.medium) {
             .direct => unreachable, // handled above
-
-            .temporary_file => try result.readTemporaryFile(alloc, t, path),
-
-            else => {
-                std.log.warn("unimplemented medium={}", .{t.medium});
-                return error.UnsupportedMedium;
-            },
+            .file => try result.readFile(.file, alloc, t, path),
+            .temporary_file => try result.readFile(.temporary_file, alloc, t, path),
+            .shared_memory => try result.readSharedMemory(alloc, t, path),
         }
 
         return result;
+    }
+
+    /// Reads the data from a shared memory segment.
+    fn readSharedMemory(
+        self: *LoadingImage,
+        alloc: Allocator,
+        t: command.Transmission,
+        path: []const u8,
+    ) !void {
+        // We require libc for this for shm_open
+        if (comptime !builtin.link_libc) return error.UnsupportedMedium;
+
+        // Todo: support shared memory
+        _ = self;
+        _ = alloc;
+        _ = t;
+        _ = path;
+        return error.UnsupportedMedium;
     }
 
     /// Reads the data from a temporary file and returns it. This allocates
     /// and does not free any of the data, so the caller must free it.
     ///
     /// This will also delete the temporary file if it is in a safe location.
-    fn readTemporaryFile(
+    fn readFile(
         self: *LoadingImage,
+        comptime medium: command.Transmission.Medium,
         alloc: Allocator,
         t: command.Transmission,
         path: []const u8,
     ) !void {
-        if (!isPathInTempDir(path)) return error.TemporaryFileNotInTempDir;
+        switch (medium) {
+            .file, .temporary_file => {},
+            else => @compileError("readFile only supports file and temporary_file"),
+        }
 
-        // Delete the temporary file
-        defer std.os.unlink(path) catch |err| {
-            log.warn("failed to delete temporary file: {}", .{err});
+        // Temporary file logic
+        if (medium == .temporary_file) {
+            if (!isPathInTempDir(path)) return error.TemporaryFileNotInTempDir;
+        }
+        defer if (medium == .temporary_file) {
+            std.os.unlink(path) catch |err| {
+                log.warn("failed to delete temporary file: {}", .{err});
+            };
         };
 
         var file = std.fs.cwd().openFile(path, .{}) catch |err| {
@@ -526,4 +549,40 @@ test "image load: rgb, not compressed, temporary file" {
 
     // Temporary file should be gone
     try testing.expectError(error.FileNotFound, tmp_dir.dir.access(path, .{}));
+}
+
+test "image load: rgb, not compressed, regular file" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var tmp_dir = try internal_os.TempDir.init();
+    defer tmp_dir.deinit();
+    const data = try testB64Decode(
+        alloc,
+        @embedFile("testdata/image-rgb-none-20x15-2147483647.data"),
+    );
+    defer alloc.free(data);
+    try tmp_dir.dir.writeFile("image.data", data);
+
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try tmp_dir.dir.realpath("image.data", &buf);
+
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .file,
+            .compression = .none,
+            .width = 20,
+            .height = 15,
+            .image_id = 31,
+        } },
+        .data = try testB64(alloc, path),
+    };
+    defer cmd.deinit(alloc);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+    var img = try loading.complete(alloc);
+    defer img.deinit(alloc);
+    try testing.expect(img.compression == .none);
+    try tmp_dir.dir.access(path, .{});
 }
