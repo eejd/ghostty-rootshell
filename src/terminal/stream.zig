@@ -669,7 +669,7 @@ pub fn Stream(comptime Handler: type) type {
                             const number: u16 = if (action.params.len == 1)
                                 action.params[0]
                             else
-                                0;
+                                1;
 
                             try self.handler.popKittyKeyboard(number);
                         },
@@ -1072,4 +1072,19 @@ test "stream: restore mode" {
     var s: Stream(H) = .{ .handler = .{} };
     for ("\x1B[?42r") |c| try s.next(c);
     try testing.expect(!s.handler.called);
+}
+
+test "stream: pop kitty keyboard with no params defaults to 1" {
+    const H = struct {
+        const Self = @This();
+        n: u16 = 0,
+
+        pub fn popKittyKeyboard(self: *Self, n: u16) !void {
+            self.n = n;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    for ("\x1B[<u") |c| try s.next(c);
+    try testing.expectEqual(@as(u16, 1), s.handler.n);
 }

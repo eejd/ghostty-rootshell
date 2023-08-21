@@ -1415,7 +1415,7 @@ const StreamHandler = struct {
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
         if (comptime disable_kitty_keyboard_protocol) return;
 
-        // log.debug("querying kitty keyboard mode", .{});
+        log.debug("querying kitty keyboard mode", .{});
         var data: termio.Message.WriteReq.Small.Array = undefined;
         const resp = try std.fmt.bufPrint(&data, "\x1b[?{}u", .{
             self.terminal.screen.kitty_keyboard.current().int(),
@@ -1435,14 +1435,14 @@ const StreamHandler = struct {
     ) !void {
         if (comptime disable_kitty_keyboard_protocol) return;
 
-        // log.debug("pushing kitty keyboard mode: {}", .{flags});
+        log.debug("pushing kitty keyboard mode: {}", .{flags});
         self.terminal.screen.kitty_keyboard.push(flags);
     }
 
     pub fn popKittyKeyboard(self: *StreamHandler, n: u16) !void {
         if (comptime disable_kitty_keyboard_protocol) return;
 
-        // log.debug("popping kitty keyboard mode", .{});
+        log.debug("popping kitty keyboard mode n={}", .{n});
         self.terminal.screen.kitty_keyboard.pop(@intCast(n));
     }
 
@@ -1453,7 +1453,7 @@ const StreamHandler = struct {
     ) !void {
         if (comptime disable_kitty_keyboard_protocol) return;
 
-        // log.debug("setting kitty keyboard mode: {} {}", .{mode, flags});
+        log.debug("setting kitty keyboard mode: {} {}", .{ mode, flags });
         self.terminal.screen.kitty_keyboard.set(mode, flags);
     }
 
