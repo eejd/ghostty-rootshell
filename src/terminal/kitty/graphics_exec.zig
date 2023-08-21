@@ -243,7 +243,7 @@ fn loadAndAddImage(
     }
 
     // Validate and store our image
-    try img.validate();
+    try img.validate(alloc);
     try storage.addImage(alloc, img);
     return img;
 }
@@ -255,6 +255,7 @@ fn encodeError(r: *Response, err: EncodeableError) void {
     switch (err) {
         error.OutOfMemory => r.message = "ENOMEM: out of memory",
         error.InvalidData => r.message = "EINVAL: invalid data",
+        error.DecompressionFailed => r.message = "EINVAL: decompression failed",
         error.UnsupportedFormat => r.message = "EINVAL: unsupported format",
         error.UnsupportedMedium => r.message = "EINVAL: unsupported medium",
         error.DimensionsRequired => r.message = "EINVAL: dimensions required",

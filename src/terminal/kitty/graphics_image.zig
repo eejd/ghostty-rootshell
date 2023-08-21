@@ -5,6 +5,8 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const command = @import("graphics_command.zig");
 
+const log = std.log.scoped(.kitty_gfx);
+
 /// Maximum width or height of an image. Taken directly from Kitty.
 const max_dimension = 10000;
 
@@ -57,20 +59,53 @@ pub const Image = struct {
     width: u32 = 0,
     height: u32 = 0,
     format: Format = .rgb,
+    compression: command.Transmission.Compression = .none,
     data: []const u8 = "",
 
     pub const Format = enum { rgb, rgba };
 
     pub const Error = error{
         InvalidData,
+        DecompressionFailed,
         DimensionsRequired,
         DimensionsTooLarge,
         UnsupportedFormat,
         UnsupportedMedium,
     };
 
+    /// The length of the data in bytes, uncompressed. While this will
+    /// decompress compressed data to count the bytes it doesn't actually
+    /// store the decompressed data so this doesn't allocate much.
+    pub fn dataLen(self: *const Image, alloc: Allocator) !usize {
+        return switch (self.compression) {
+            .none => self.data.len,
+            .zlib_deflate => zlib: {
+                var fbs = std.io.fixedBufferStream(self.data);
+
+                var stream = std.compress.zlib.decompressStream(alloc, fbs.reader()) catch |err| {
+                    log.warn("zlib decompression failed: {}", .{err});
+                    return error.DecompressionFailed;
+                };
+                defer stream.deinit();
+
+                var counting_stream = std.io.countingReader(stream.reader());
+                const counting_reader = counting_stream.reader();
+
+                var buf: [4096]u8 = undefined;
+                while (counting_reader.readAll(&buf)) |_| {} else |err| {
+                    if (err != error.EndOfStream) {
+                        log.warn("zlib decompression failed: {}", .{err});
+                        return error.DecompressionFailed;
+                    }
+                }
+
+                break :zlib counting_stream.bytes_read;
+            },
+        };
+    }
+
     /// Validate that the image appears valid.
-    pub fn validate(self: *const Image) !void {
+    pub fn validate(self: *const Image, alloc: Allocator) !void {
         const bpp: u32 = switch (self.format) {
             .rgb => 3,
             .rgba => 4,
@@ -86,11 +121,12 @@ pub const Image = struct {
         // applications fail because the test that Kitty documents itself
         // uses an invalid value.
         const expected_len = self.width * self.height * bpp;
+        const actual_len = try self.dataLen(alloc);
         std.log.warn(
             "width={} height={} bpp={} expected_len={} actual_len={}",
-            .{ self.width, self.height, bpp, expected_len, self.data.len },
+            .{ self.width, self.height, bpp, expected_len, actual_len },
         );
-        if (self.data.len < expected_len) return error.InvalidData;
+        if (actual_len < expected_len) return error.InvalidData;
     }
 
     /// Load an image from a transmission. The data in the command will be
@@ -135,6 +171,7 @@ pub const Image = struct {
             .number = t.image_number,
             .width = t.width,
             .height = t.height,
+            .compression = t.compression,
             .format = switch (t.format) {
                 .rgb => .rgb,
                 .rgba => .rgba,
