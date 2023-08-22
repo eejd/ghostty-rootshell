@@ -199,11 +199,6 @@ fn display(
 
                 break :grid_size .{ .columns = width_cells, .rows = height_cells };
             };
-            log.warn("terminal width={} height={} image_grid={}", .{
-                terminal.width_px,
-                terminal.height_px,
-                image_grid_size,
-            });
 
             // If we are moving beneath the screen we need to scroll.
             // TODO: handle scroll regions
@@ -220,8 +215,8 @@ fn display(
 
             // Move the cursor
             terminal.setCursorPos(
-                terminal.screen.cursor.x + image_grid_size.columns,
                 new_y,
+                terminal.screen.cursor.x + image_grid_size.columns,
             );
         },
     }
