@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
+const terminal = @import("../main.zig");
 const point = @import("../point.zig");
 const command = @import("graphics_command.zig");
 const Screen = @import("../Screen.zig");
@@ -154,5 +155,35 @@ pub const ImageStorage = struct {
     pub const Placement = struct {
         /// The location of the image on the screen.
         point: ScreenPoint,
+
+        /// Returns a selection of the entire rectangle this placement
+        /// occupies within the screen.
+        pub fn selection(
+            self: Placement,
+            image: Image,
+            t: *const terminal.Terminal,
+        ) terminal.Selection {
+            // Calculate our cell size.
+            const terminal_width_f64: f64 = @floatFromInt(t.width_px);
+            const terminal_height_f64: f64 = @floatFromInt(t.height_px);
+            const grid_columns_f64: f64 = @floatFromInt(t.cols);
+            const grid_rows_f64: f64 = @floatFromInt(t.rows);
+            const cell_width_f64 = terminal_width_f64 / grid_columns_f64;
+            const cell_height_f64 = terminal_height_f64 / grid_rows_f64;
+
+            // Calculate our image size in grid cells
+            const width_f64: f64 = @floatFromInt(image.width);
+            const height_f64: f64 = @floatFromInt(image.height);
+            const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
+            const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
+
+            return .{
+                .start = self.point,
+                .end = .{
+                    .x = @min(t.cols - 1, self.point.x + width_cells),
+                    .y = self.point.y + height_cells,
+                },
+            };
+        }
     };
 };

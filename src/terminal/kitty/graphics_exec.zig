@@ -10,15 +10,16 @@ const Command = command.Command;
 const Response = command.Response;
 const LoadingImage = image.LoadingImage;
 const Image = image.Image;
+const ImageStorage = @import("graphics_storage.zig").ImageStorage;
 
 const log = std.log.scoped(.kitty_gfx);
 
 // TODO:
 // - delete
 // - shared memory transmit
-// - terminal state around deleting images (i.e. CSI J)
 // - terminal state around deleting placements (i.e. scrolling)
 // (not exhaustive, almost every op is ignoring additional config)
+
 /// Execute a Kitty graphics command against the given terminal. This
 /// will never fail, but the response may indicate an error and the
 /// terminal state may not be updated to reflect the command. This will
@@ -167,9 +168,8 @@ fn display(
     }).toScreen(&terminal.screen);
 
     // Add the placement
-    storage.addPlacement(alloc, img.id, d.placement_id, .{
-        .point = placement_point,
-    }) catch |err| {
+    const p: ImageStorage.Placement = .{ .point = placement_point };
+    storage.addPlacement(alloc, img.id, d.placement_id, p) catch |err| {
         encodeError(&result, err);
         return result;
     };
@@ -178,31 +178,11 @@ fn display(
     switch (d.cursor_movement) {
         .none => {},
         .after => {
-            // Determine the rectangle of the image in grid cells
-            const image_grid_size: struct {
-                columns: u32,
-                rows: u32,
-            } = grid_size: {
-                // Calculate our cell size.
-                const terminal_width_f64: f64 = @floatFromInt(terminal.width_px);
-                const terminal_height_f64: f64 = @floatFromInt(terminal.height_px);
-                const grid_columns_f64: f64 = @floatFromInt(terminal.cols);
-                const grid_rows_f64: f64 = @floatFromInt(terminal.rows);
-                const cell_width_f64 = terminal_width_f64 / grid_columns_f64;
-                const cell_height_f64 = terminal_height_f64 / grid_rows_f64;
-
-                // Calculate our image size in grid cells
-                const width_f64: f64 = @floatFromInt(img.width);
-                const height_f64: f64 = @floatFromInt(img.height);
-                const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
-                const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
-
-                break :grid_size .{ .columns = width_cells, .rows = height_cells };
-            };
+            const p_sel = p.selection(img, terminal);
 
             // If we are moving beneath the screen we need to scroll.
             // TODO: handle scroll regions
-            var new_y = terminal.screen.cursor.y + image_grid_size.rows + 1;
+            var new_y = p_sel.end.y + 1;
             if (new_y >= terminal.rows) {
                 const scroll_amount = (new_y + 1) - terminal.rows;
                 terminal.screen.scroll(.{ .screen = @intCast(scroll_amount) }) catch |err| {
@@ -216,7 +196,7 @@ fn display(
             // Move the cursor
             terminal.setCursorPos(
                 new_y,
-                terminal.screen.cursor.x + image_grid_size.columns,
+                p_sel.end.x,
             );
         },
     }
