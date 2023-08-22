@@ -5,6 +5,9 @@ const objc = @import("objc");
 
 const mtl = @import("api.zig");
 
+/// The map used for storing images.
+pub const ImageMap = std.AutoHashMapUnmanaged(u32, Image);
+
 /// The state for a single image that is to be rendered. The image can be
 /// pending upload or ready to use with a texture.
 pub const Image = union(enum) {
@@ -19,6 +22,10 @@ pub const Image = union(enum) {
 
     /// The image is uploaded and ready to be used.
     ready: objc.Object, // MTLTexture
+
+    /// The image is uploaded but is scheduled to be unloaded.
+    unload_pending: []u8,
+    unload_ready: objc.Object, // MTLTexture
 
     /// Pending image data that needs to be uploaded to the GPU.
     pub const Pending = struct {
@@ -42,27 +49,43 @@ pub const Image = union(enum) {
         switch (self) {
             .pending_rgb => |p| alloc.free(p.dataSlice(3)),
             .pending_rgba => |p| alloc.free(p.dataSlice(4)),
-            .ready => |obj| obj.msgSend(void, objc.sel("release"), .{}),
+            .unload_pending => |data| alloc.free(data),
+
+            .ready,
+            .unload_ready,
+            => |obj| obj.msgSend(void, objc.sel("release"), .{}),
         }
     }
 
-    /// Our pixel depth
-    pub fn depth(self: Image) u32 {
-        return switch (self) {
-            .ready => unreachable,
-            .pending_rgb => 3,
-            .pending_rgba => 4,
+    /// Mark this image for unload whatever state it is in.
+    pub fn markForUnload(self: *Image) void {
+        self.* = switch (self.*) {
+            .unload_pending,
+            .unload_ready,
+            => return,
+
+            .ready => |obj| .{ .unload_ready = obj },
+            .pending_rgb => |p| .{ .unload_pending = p.dataSlice(3) },
+            .pending_rgba => |p| .{ .unload_pending = p.dataSlice(4) },
         };
     }
 
-    /// Returns true if this image is in a pending state and requires upload.
-    pub fn pending(self: Image) ?Pending {
-        return switch (self) {
-            .ready => null,
+    /// Returns true if this image is pending upload.
+    pub fn isPending(self: Image) bool {
+        return self.pending() != null;
+    }
 
+    /// Returns true if this image is pending an unload.
+    pub fn isUnloading(self: Image) bool {
+        return switch (self) {
+            .unload_pending,
+            .unload_ready,
+            => true,
+
+            .ready,
             .pending_rgb,
             .pending_rgba,
-            => |p| p,
+            => false,
         };
     }
 
@@ -71,7 +94,10 @@ pub const Image = union(enum) {
     /// no-op.
     pub fn convert(self: *Image, alloc: Allocator) !void {
         switch (self.*) {
-            .ready => unreachable, // invalid
+            .ready,
+            .unload_pending,
+            .unload_ready,
+            => unreachable, // invalid
 
             .pending_rgba => {}, // ready
 
@@ -140,6 +166,26 @@ pub const Image = union(enum) {
         // Uploaded. We can now clear our data and change our state.
         self.deinit(alloc);
         self.* = .{ .ready = texture };
+    }
+
+    /// Our pixel depth
+    fn depth(self: Image) u32 {
+        return switch (self) {
+            .pending_rgb => 3,
+            .pending_rgba => 4,
+            else => unreachable,
+        };
+    }
+
+    /// Returns true if this image is in a pending state and requires upload.
+    fn pending(self: Image) ?Pending {
+        return switch (self) {
+            .pending_rgb,
+            .pending_rgba,
+            => |p| p,
+
+            else => null,
+        };
     }
 
     fn initTexture(p: Pending, device: objc.Object) !objc.Object {

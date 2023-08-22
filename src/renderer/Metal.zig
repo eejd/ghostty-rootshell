@@ -24,6 +24,7 @@ const Terminal = terminal.Terminal;
 const mtl = @import("metal/api.zig");
 const mtl_image = @import("metal/image.zig");
 const Image = mtl_image.Image;
+const ImageMap = mtl_image.ImageMap;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -73,7 +74,7 @@ font_group: *font.GroupCache,
 font_shaper: font.Shaper,
 
 /// The images that we may render.
-images: std.AutoHashMapUnmanaged(u32, Image) = .{},
+images: ImageMap = .{},
 
 /// Metal objects
 device: objc.Object, // MTLDevice
@@ -587,9 +588,9 @@ pub fn render(
         const draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom();
 
         // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
-        // This can be dramatically improved, this is basically a v1 effort
-        // to get it working.
-        if (state.terminal.screen.kitty_images.placements.count() > 0) {
+        // We only do this if the Kitty image state is dirty meaning only if
+        // it changes.
+        if (state.terminal.screen.kitty_images.dirty) {
             try self.prepKittyGraphics(&state.terminal.screen);
         }
 
@@ -632,8 +633,20 @@ pub fn render(
     {
         var image_it = self.images.iterator();
         while (image_it.next()) |kv| {
-            if (kv.value_ptr.pending() == null) continue;
-            try kv.value_ptr.upload(self.alloc, self.device);
+            switch (kv.value_ptr.*) {
+                .ready => {},
+
+                .pending_rgb,
+                .pending_rgba,
+                => try kv.value_ptr.upload(self.alloc, self.device),
+
+                .unload_pending,
+                .unload_ready,
+                => {
+                    kv.value_ptr.deinit(self.alloc);
+                    self.images.removeByPtr(kv.key_ptr);
+                },
+            }
         }
     }
 
@@ -767,8 +780,24 @@ fn drawCells(
 /// the visible images are loaded on the GPU.
 fn prepKittyGraphics(
     self: *Metal,
-    screen: *const terminal.Screen,
+    screen: *terminal.Screen,
 ) !void {
+    defer screen.kitty_images.dirty = false;
+
+    // Go through our known images and if there are any that are no longer
+    // in use then mark them to be freed.
+    //
+    // This never conflicts with the below because a placement can't
+    // reference an image that doesn't exist.
+    {
+        var it = self.images.iterator();
+        while (it.next()) |kv| {
+            if (screen.kitty_images.imageById(kv.key_ptr.*) == null) {
+                kv.value_ptr.markForUnload();
+            }
+        }
+    }
+
     // Go through the placements and ensure the image is loaded on the GPU.
     var it = screen.kitty_images.placements.iterator();
     while (it.next()) |kv| {

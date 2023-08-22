@@ -20,6 +20,12 @@ pub const ImageStorage = struct {
     const ImageMap = std.AutoHashMapUnmanaged(u32, Image);
     const PlacementMap = std.AutoHashMapUnmanaged(PlacementKey, Placement);
 
+    /// Dirty is set to true if placements or images change. This is
+    /// purely informational for the renderer and doesn't affect the
+    /// correctness of the program. The renderer must set this to false
+    /// if it cares about this value.
+    dirty: bool = false,
+
     /// This is the next automatically assigned ID. We start mid-way
     /// through the u32 range to avoid collisions with buggy programs.
     next_id: u32 = 2147483647,
@@ -70,6 +76,8 @@ pub const ImageStorage = struct {
         // Write our new image
         if (gop.found_existing) gop.value_ptr.deinit(alloc);
         gop.value_ptr.* = img;
+
+        self.dirty = true;
     }
 
     /// Add a placement for a given image. The caller must verify in advance
@@ -91,6 +99,8 @@ pub const ImageStorage = struct {
         const key: PlacementKey = .{ .image_id = image_id, .placement_id = placement_id };
         const gop = try self.placements.getOrPut(alloc, key);
         gop.value_ptr.* = p;
+
+        self.dirty = true;
     }
 
     /// Get an image by its ID. If the image doesn't exist, null is returned.
@@ -121,11 +131,12 @@ pub const ImageStorage = struct {
             .all => |delete_images| if (delete_images) {
                 // We just reset our entire state.
                 self.deinit(alloc);
-                self.* = .{};
+                self.* = .{ .dirty = true };
             } else {
                 // Delete all our placements
                 self.placements.deinit(alloc);
                 self.placements = .{};
+                self.dirty = true;
             },
 
             else => log.warn("unimplemented delete command: {}", .{cmd}),
