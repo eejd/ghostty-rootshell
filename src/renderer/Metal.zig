@@ -33,6 +33,8 @@ const CellBuffer = mtl_buffer.Buffer(mtl_shaders.Cell);
 const ImageBuffer = mtl_buffer.Buffer(mtl_shaders.Image);
 const InstanceBuffer = mtl_buffer.Buffer(u16);
 
+const ImagePlacementList = std.ArrayListUnmanaged(mtl_image.Placement);
+
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
     .cocoa = builtin.os.tag == .macos,
@@ -82,6 +84,7 @@ font_shaper: font.Shaper,
 
 /// The images that we may render.
 images: ImageMap = .{},
+image_placements: ImagePlacementList = .{},
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
@@ -285,6 +288,7 @@ pub fn deinit(self: *Metal) void {
         while (it.next()) |kv| kv.value_ptr.deinit(self.alloc);
         self.images.deinit(self.alloc);
     }
+    self.image_placements.deinit(self.alloc);
 
     self.buf_cells_bg.deinit();
     self.buf_cells.deinit();
@@ -632,47 +636,149 @@ pub fn render(
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
-        // Use our shader pipeline
-        encoder.msgSend(
-            void,
-            objc.sel("setRenderPipelineState:"),
-            .{self.shaders.cell_pipeline.value},
-        );
+        // Terminal grid
+        {
+            // Use our shader pipeline
+            encoder.msgSend(
+                void,
+                objc.sel("setRenderPipelineState:"),
+                .{self.shaders.cell_pipeline.value},
+            );
 
-        // Set our buffers
-        encoder.msgSend(
-            void,
-            objc.sel("setVertexBytes:length:atIndex:"),
-            .{
-                @as(*const anyopaque, @ptrCast(&self.uniforms)),
-                @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
-                @as(c_ulong, 1),
-            },
-        );
-        encoder.msgSend(
-            void,
-            objc.sel("setFragmentTexture:atIndex:"),
-            .{
-                self.texture_greyscale.value,
-                @as(c_ulong, 0),
-            },
-        );
-        encoder.msgSend(
-            void,
-            objc.sel("setFragmentTexture:atIndex:"),
-            .{
-                self.texture_color.value,
-                @as(c_ulong, 1),
-            },
-        );
+            // Set our buffers
+            encoder.msgSend(
+                void,
+                objc.sel("setVertexBytes:length:atIndex:"),
+                .{
+                    @as(*const anyopaque, @ptrCast(&self.uniforms)),
+                    @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
+                    @as(c_ulong, 1),
+                },
+            );
+            encoder.msgSend(
+                void,
+                objc.sel("setFragmentTexture:atIndex:"),
+                .{
+                    self.texture_greyscale.value,
+                    @as(c_ulong, 0),
+                },
+            );
+            encoder.msgSend(
+                void,
+                objc.sel("setFragmentTexture:atIndex:"),
+                .{
+                    self.texture_color.value,
+                    @as(c_ulong, 1),
+                },
+            );
 
-        // Issue the draw calls for this shader
-        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
-        try self.drawCells(encoder, &self.buf_cells, self.cells);
+            // Issue the draw calls for this shader
+            try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
+            try self.drawCells(encoder, &self.buf_cells, self.cells);
+        }
+
+        // Images
+        // TODO: these should not go above text
+        if (self.image_placements.items.len > 0) {
+            // Use our image shader pipeline
+            encoder.msgSend(
+                void,
+                objc.sel("setRenderPipelineState:"),
+                .{self.shaders.image_pipeline.value},
+            );
+
+            // Set our uniform, which is the only shared buffer
+            encoder.msgSend(
+                void,
+                objc.sel("setVertexBytes:length:atIndex:"),
+                .{
+                    @as(*const anyopaque, @ptrCast(&self.uniforms)),
+                    @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
+                    @as(c_ulong, 1),
+                },
+            );
+
+            for (self.image_placements.items) |placement| {
+                try self.drawImagePlacement(encoder, placement);
+            }
+        }
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+fn drawImagePlacement(
+    self: *Metal,
+    encoder: objc.Object,
+    p: mtl_image.Placement,
+) !void {
+    // Look up the image
+    const image = self.images.get(p.image_id) orelse {
+        log.warn("image not found for placement image_id={}", .{p.image_id});
+        return;
+    };
+
+    // Get the texture
+    const texture = switch (image) {
+        .ready => |t| t,
+        else => {
+            log.warn("image not ready for placement image_id={}", .{p.image_id});
+            return;
+        },
+    };
+
+    // Create our vertex buffer, which is always exactly one item.
+    // future(mitchellh): we can group rendering multiple instances of a single image
+    const Buffer = mtl_buffer.Buffer(mtl_shaders.Image);
+    var buf = try Buffer.initFill(self.device, &.{.{
+        .grid_pos = .{
+            @as(f32, @floatFromInt(p.x)),
+            @as(f32, @floatFromInt(p.y)),
+        },
+    }});
+    defer buf.deinit();
+
+    // Set our buffer
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+    );
+
+    // Set our texture
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexTexture:atIndex:"),
+        .{
+            texture.value,
+            @as(c_ulong, 0),
+        },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            texture.value,
+            @as(c_ulong, 0),
+        },
+    );
+
+    // Draw!
+    encoder.msgSend(
+        void,
+        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        .{
+            @intFromEnum(mtl.MTLPrimitiveType.triangle),
+            @as(c_ulong, 6),
+            @intFromEnum(mtl.MTLIndexType.uint16),
+            self.buf_instance.buffer.value,
+            @as(c_ulong, 0),
+            @as(c_ulong, 1),
+        },
+    );
+
+    // log.debug("drawImagePlacement: {}", .{p});
 }
 
 /// Loads some set of cell data into our buffer and issues a draw call.
@@ -718,6 +824,10 @@ fn prepKittyGraphics(
 ) !void {
     defer screen.kitty_images.dirty = false;
 
+    // We always clear our previous placements no matter what because
+    // we rebuild them from scratch.
+    self.image_placements.clearRetainingCapacity();
+
     // Go through our known images and if there are any that are no longer
     // in use then mark them to be freed.
     //
@@ -737,33 +847,42 @@ fn prepKittyGraphics(
     while (it.next()) |kv| {
         // If we already know about this image then do nothing
         const gop = try self.images.getOrPut(self.alloc, kv.key_ptr.image_id);
-        if (gop.found_existing) continue;
+        if (!gop.found_existing) {
+            // Find the image in storage
+            const image = screen.kitty_images.imageById(kv.key_ptr.image_id) orelse {
+                log.warn(
+                    "missing image for placement, ignoring image_id={}",
+                    .{kv.key_ptr.image_id},
+                );
+                continue;
+            };
 
-        // Find the image in storage
-        const image = screen.kitty_images.imageById(kv.key_ptr.image_id) orelse {
-            log.warn(
-                "missing image for placement, ignoring image_id={}",
-                .{kv.key_ptr.image_id},
-            );
-            continue;
-        };
+            // Copy the data into the pending state.
+            const data = try self.alloc.dupe(u8, image.data);
+            errdefer self.alloc.free(data);
 
-        // Copy the data into the pending state.
-        const data = try self.alloc.dupe(u8, image.data);
-        errdefer self.alloc.free(data);
+            // Store it in the map
+            const p: Image.Pending = .{
+                .width = image.width,
+                .height = image.height,
+                .data = data.ptr,
+            };
 
-        // Store it in the map
-        const p: Image.Pending = .{
-            .width = image.width,
-            .height = image.height,
-            .data = data.ptr,
-        };
+            gop.value_ptr.* = switch (image.format) {
+                .rgb => .{ .pending_rgb = p },
+                .rgba => .{ .pending_rgba = p },
+                .png => unreachable, // should be decoded by now
+            };
+        }
 
-        gop.value_ptr.* = switch (image.format) {
-            .rgb => .{ .pending_rgb = p },
-            .rgba => .{ .pending_rgba = p },
-            .png => unreachable, // should be decoded by now
-        };
+        // Accumulate the placement
+        try self.image_placements.append(self.alloc, .{
+            .image_id = kv.key_ptr.image_id,
+
+            // TODO
+            .x = 0,
+            .y = 0,
+        });
     }
 }
 

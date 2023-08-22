@@ -204,7 +204,7 @@ struct ImageVertexOut {
 vertex ImageVertexOut image_vertex(
   unsigned int vid [[ vertex_id ]],
   ImageVertexIn input [[ stage_in ]],
-  texture2d<float> image [[ texture(0) ]],
+  texture2d<uint> image [[ texture(0) ]],
   constant Uniforms &uniforms [[ buffer(1) ]]
 ) {
   // The position of our image starts at the top-left of the grid cell.
@@ -244,8 +244,13 @@ vertex ImageVertexOut image_vertex(
 
 fragment float4 image_fragment(
   ImageVertexOut in [[ stage_in ]],
-  texture2d<float> image [[ texture(0) ]]
+  texture2d<uint> image [[ texture(0) ]]
 ) {
   constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
-  return image.sample(textureSampler, in.tex_coord);
+
+  // Ehhhhh our texture is in RGBA8Uint but our color attachment is
+  // BGRA8Unorm. So we need to convert it. We should really be converting
+  // our texture to BGRA8Unorm.
+  uint4 rgba = image.sample(textureSampler, in.tex_coord);
+  return float4(rgba) / 255.0f;
 }

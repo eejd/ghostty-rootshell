@@ -5,6 +5,17 @@ const objc = @import("objc");
 
 const mtl = @import("api.zig");
 
+/// Represents a single image placement on the grid. A placement is a
+/// request to render an instance of an image.
+pub const Placement = struct {
+    /// The image being rendered. This MUST be in the image map.
+    image_id: u32,
+
+    /// The grid x/y where this placement is located.
+    x: u32,
+    y: u32,
+};
+
 /// The map used for storing images.
 pub const ImageMap = std.AutoHashMapUnmanaged(u32, Image);
 
