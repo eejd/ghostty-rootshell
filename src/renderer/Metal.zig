@@ -927,7 +927,7 @@ fn prepKittyGraphics(
         // Accumulate the placement
         try self.image_placements.append(self.alloc, .{
             .image_id = kv.key_ptr.image_id,
-            .x = @intCast(viewport.x),
+            .x = @intCast(kv.value_ptr.point.x),
             .y = @intCast(viewport.y),
             .offset_y = offset_y,
         });
