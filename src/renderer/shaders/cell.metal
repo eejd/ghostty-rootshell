@@ -201,6 +201,9 @@ struct ImageVertexIn {
 
   // The source rectangle of the texture to sample from.
   float4 source_rect [[ attribute(3) ]];
+
+  // The final width/height of the image in pixels.
+  float2 dest_size [[ attribute(4) ]];
 };
 
 struct ImageVertexOut {
@@ -242,7 +245,7 @@ vertex ImageVertexOut image_vertex(
   // The position of our image starts at the top-left of the grid cell and
   // adds the source rect width/height components.
   float2 image_pos = (uniforms.cell_size * input.grid_pos) + input.cell_offset;
-  image_pos += input.source_rect.zw * position;
+  image_pos += input.dest_size * position;
 
   out.position = uniforms.projection_matrix * float4(image_pos.x, image_pos.y, 0.0f, 1.0f);
   out.tex_coord = tex_coord;

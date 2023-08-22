@@ -166,6 +166,10 @@ pub const ImageStorage = struct {
         source_width: u32 = 0,
         source_height: u32 = 0,
 
+        /// The columns/rows this image occupies.
+        columns: u32 = 0,
+        rows: u32 = 0,
+
         /// Returns a selection of the entire rectangle this placement
         /// occupies within the screen.
         pub fn selection(
@@ -173,6 +177,17 @@ pub const ImageStorage = struct {
             image: Image,
             t: *const terminal.Terminal,
         ) terminal.Selection {
+            // If we have columns/rows specified we can simplify this whole thing.
+            if (self.columns > 0 and self.rows > 0) {
+                return terminal.Selection{
+                    .start = self.point,
+                    .end = .{
+                        .x = @min(self.point.x + self.columns, t.cols),
+                        .y = @min(self.point.y + self.rows, t.rows),
+                    },
+                };
+            }
+
             // Calculate our cell size.
             const terminal_width_f64: f64 = @floatFromInt(t.width_px);
             const terminal_height_f64: f64 = @floatFromInt(t.height_px);

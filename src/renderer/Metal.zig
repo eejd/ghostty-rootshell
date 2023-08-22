@@ -748,6 +748,11 @@ fn drawImagePlacement(
             @as(f32, @floatFromInt(p.source_width)),
             @as(f32, @floatFromInt(p.source_height)),
         },
+
+        .dest_size = .{
+            @as(f32, @floatFromInt(p.width)),
+            @as(f32, @floatFromInt(p.height)),
+        },
     }});
     defer buf.deinit();
 
@@ -924,12 +929,18 @@ fn prepKittyGraphics(
         else
             image.height -| offset_y;
 
+        // Calculate the width/height of our image.
+        const dest_width = if (p.columns > 0) p.columns * self.cell_size.width else source_width;
+        const dest_height = if (p.rows > 0) p.rows * self.cell_size.height else source_height;
+
         // Accumulate the placement
         if (image.width > 0 and image.height > 0) {
             try self.image_placements.append(self.alloc, .{
                 .image_id = kv.key_ptr.image_id,
                 .x = @intCast(kv.value_ptr.point.x),
                 .y = @intCast(viewport.y),
+                .width = dest_width,
+                .height = dest_height,
                 .cell_offset_x = kv.value_ptr.x_offset,
                 .cell_offset_y = kv.value_ptr.y_offset,
                 .source_x = source_x,

@@ -15,6 +15,10 @@ pub const Placement = struct {
     x: u32,
     y: u32,
 
+    /// The width/height of the placed image.
+    width: u32,
+    height: u32,
+
     /// The offset in pixels from the top left of the cell. This is
     /// clamped to the size of a cell.
     cell_offset_x: u32,
