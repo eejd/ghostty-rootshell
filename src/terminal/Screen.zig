@@ -2113,12 +2113,18 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         // No resize necessary
         if (self.rows == rows) return;
 
+        // No matter what we mark our image state as dirty
+        self.kitty_images.dirty = true;
+
         // If we have the same number of columns, text can't possibly
         // reflow in any way, so we do the quicker thing and do a resize
         // without reflow checks.
         try self.resizeWithoutReflow(rows, cols);
         return;
     }
+
+    // No matter what we mark our image state as dirty
+    self.kitty_images.dirty = true;
 
     // If our columns increased, we alloc space for the new column width
     // and go through each row and reflow if necessary.
