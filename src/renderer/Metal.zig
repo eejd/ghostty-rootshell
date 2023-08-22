@@ -736,6 +736,8 @@ fn drawImagePlacement(
             @as(f32, @floatFromInt(p.x)),
             @as(f32, @floatFromInt(p.y)),
         },
+
+        .offset_y = p.offset_y,
     }});
     defer buf.deinit();
 
@@ -842,21 +844,65 @@ fn prepKittyGraphics(
         }
     }
 
+    // The top-left and bottom-right corners of our viewport in screen
+    // points. This lets us determine offsets and containment of placements.
+    const top = (terminal.point.Viewport{}).toScreen(screen);
+    const bot = (terminal.point.Viewport{
+        .x = screen.cols - 1,
+        .y = screen.rows - 1,
+    }).toScreen(screen);
+
     // Go through the placements and ensure the image is loaded on the GPU.
     var it = screen.kitty_images.placements.iterator();
     while (it.next()) |kv| {
+        // Find the image in storage
+        const image = screen.kitty_images.imageById(kv.key_ptr.image_id) orelse {
+            log.warn(
+                "missing image for placement, ignoring image_id={}",
+                .{kv.key_ptr.image_id},
+            );
+            continue;
+        };
+
+        // We want the width/height of the image in cells to figure out
+        // if this image is within our viewport. We use floats here because
+        // we want to round UP so that if any part of the image is in a cell,
+        // we count the cell.
+        const image_grid_size: renderer.GridSize = grid_size: {
+            const width_f64: f64 = @floatFromInt(image.width);
+            const height_f64: f64 = @floatFromInt(image.height);
+            const cell_width_f64: f64 = @floatFromInt(self.cell_size.width);
+            const cell_height_f64: f64 = @floatFromInt(self.cell_size.height);
+            const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
+            const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
+            break :grid_size .{ .columns = width_cells, .rows = height_cells };
+        };
+
+        // Create a "selection" across the image. This is how we detect
+        // whether the image is in our viewport by detecting whether the
+        // selection is in our viewport.
+        const image_sel: terminal.Selection = .{
+            .start = kv.value_ptr.point,
+            .end = .{
+                .x = kv.value_ptr.point.x + image_grid_size.columns,
+                .y = kv.value_ptr.point.y + image_grid_size.rows,
+            },
+        };
+
+        // If the selection isn't within our viewport then skip it.
+        if (!image_sel.within(top, bot)) continue;
+
+        // If the top left is outside the viewport we need to calc an offset
+        // so that we render (0, 0) with some offset for the texture.
+        const offset_y: u32 = if (image_sel.start.y < screen.viewport) offset_y: {
+            const offset_cells = screen.viewport - image_sel.start.y;
+            const offset_pixels = offset_cells * self.cell_size.height;
+            break :offset_y @intCast(offset_pixels);
+        } else 0;
+
         // If we already know about this image then do nothing
         const gop = try self.images.getOrPut(self.alloc, kv.key_ptr.image_id);
         if (!gop.found_existing) {
-            // Find the image in storage
-            const image = screen.kitty_images.imageById(kv.key_ptr.image_id) orelse {
-                log.warn(
-                    "missing image for placement, ignoring image_id={}",
-                    .{kv.key_ptr.image_id},
-                );
-                continue;
-            };
-
             // Copy the data into the pending state.
             const data = try self.alloc.dupe(u8, image.data);
             errdefer self.alloc.free(data);
@@ -883,6 +929,7 @@ fn prepKittyGraphics(
             .image_id = kv.key_ptr.image_id,
             .x = @intCast(viewport.x),
             .y = @intCast(viewport.y),
+            .offset_y = offset_y,
         });
     }
 }

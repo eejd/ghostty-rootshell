@@ -41,6 +41,7 @@ pub const MTLVertexFormat = enum(c_ulong) {
     uchar4 = 3,
     float2 = 29,
     int2 = 33,
+    uint = 36,
     uint2 = 37,
     uchar = 45,
 };

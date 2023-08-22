@@ -1542,6 +1542,11 @@ pub const Scroll = union(enum) {
 /// want to do that yet (i.e. are they writing to the end of the screen
 /// or not).
 pub fn scroll(self: *Screen, behavior: Scroll) !void {
+    // No matter what, scrolling marks our image state as dirty since
+    // it could move placements. If there are no placements or no images
+    // this is still a very cheap operation.
+    self.kitty_images.dirty = true;
+
     switch (behavior) {
         // Setting viewport offset to zero makes row 0 be at self.top
         // which is the top!

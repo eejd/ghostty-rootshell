@@ -57,9 +57,10 @@ pub const Cell = extern struct {
     };
 };
 
-/// Single parameter for the image shader.
+/// Single parameter for the image shader. See shader for field details.
 pub const Image = extern struct {
     grid_pos: [2]f32,
+    offset_y: u32,
 };
 
 /// The uniforms that are passed to the terminal cell shader.
@@ -334,6 +335,17 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(Image, "grid_pos")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 2)},
+            );
+
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(Image, "offset_y")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 
