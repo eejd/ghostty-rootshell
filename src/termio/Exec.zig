@@ -103,6 +103,8 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     );
     errdefer term.deinit(alloc);
     term.color_palette = opts.config.palette;
+    term.width_px = opts.screen_size.width;
+    term.height_px = opts.screen_size.height;
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
@@ -255,10 +257,6 @@ pub fn resize(
     const padded_size = screen_size.subPadding(padding);
     try self.subprocess.resize(grid_size, padded_size);
 
-    // If our grid size didn't change, then we don't need to change
-    // the underlying terminal.
-    if (grid_size.equals(self.grid_size)) return;
-
     // Update our cached grid size
     self.grid_size = grid_size;
 
@@ -268,7 +266,15 @@ pub fn resize(
         defer self.renderer_state.mutex.unlock();
 
         // Update the size of our terminal state
-        try self.terminal.resize(self.alloc, grid_size.columns, grid_size.rows);
+        try self.terminal.resize(
+            self.alloc,
+            grid_size.columns,
+            grid_size.rows,
+        );
+
+        // Update our pixel sizes
+        self.terminal.width_px = screen_size.width;
+        self.terminal.height_px = screen_size.height;
     }
 }
 

@@ -19,7 +19,6 @@ const log = std.log.scoped(.kitty_gfx);
 // - terminal state around deleting images (i.e. CSI J)
 // - terminal state around deleting placements (i.e. scrolling)
 // (not exhaustive, almost every op is ignoring additional config)
-
 /// Execute a Kitty graphics command against the given terminal. This
 /// will never fail, but the response may indicate an error and the
 /// terminal state may not be updated to reflect the command. This will
@@ -174,6 +173,58 @@ fn display(
         encodeError(&result, err);
         return result;
     };
+
+    // Cursor needs to move after placement
+    switch (d.cursor_movement) {
+        .none => {},
+        .after => {
+            // Determine the rectangle of the image in grid cells
+            const image_grid_size: struct {
+                columns: u32,
+                rows: u32,
+            } = grid_size: {
+                // Calculate our cell size.
+                const terminal_width_f64: f64 = @floatFromInt(terminal.width_px);
+                const terminal_height_f64: f64 = @floatFromInt(terminal.height_px);
+                const grid_columns_f64: f64 = @floatFromInt(terminal.cols);
+                const grid_rows_f64: f64 = @floatFromInt(terminal.rows);
+                const cell_width_f64 = terminal_width_f64 / grid_columns_f64;
+                const cell_height_f64 = terminal_height_f64 / grid_rows_f64;
+
+                // Calculate our image size in grid cells
+                const width_f64: f64 = @floatFromInt(img.width);
+                const height_f64: f64 = @floatFromInt(img.height);
+                const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
+                const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
+
+                break :grid_size .{ .columns = width_cells, .rows = height_cells };
+            };
+            log.warn("terminal width={} height={} image_grid={}", .{
+                terminal.width_px,
+                terminal.height_px,
+                image_grid_size,
+            });
+
+            // If we are moving beneath the screen we need to scroll.
+            // TODO: handle scroll regions
+            var new_y = terminal.screen.cursor.y + image_grid_size.rows;
+            if (new_y >= terminal.rows) {
+                const scroll_amount = (new_y + 1) - terminal.rows;
+                terminal.screen.scroll(.{ .screen = @intCast(scroll_amount) }) catch |err| {
+                    // If this failed we just warn, the screen will just be in a
+                    // weird state but nothing fatal.
+                    log.warn("scroll for image failed: {}", .{err});
+                };
+                new_y = terminal.rows - 1;
+            }
+
+            // Move the cursor
+            terminal.setCursorPos(
+                terminal.screen.cursor.x + image_grid_size.columns,
+                new_y,
+            );
+        },
+    }
 
     return result;
 }

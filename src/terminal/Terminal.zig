@@ -63,6 +63,10 @@ tabstops: Tabstops,
 rows: usize,
 cols: usize,
 
+/// The size of the screen in pixels. This is used for pty events and images
+width_px: u32 = 0,
+height_px: u32 = 0,
+
 /// The current scrolling region.
 scrolling_region: ScrollingRegion,
 
@@ -304,6 +308,9 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
         if (self.modes.get(.@"132_column")) 132 else 80
     else
         cols_req;
+
+    // If our cols/rows didn't change then we're done
+    if (self.cols == cols and self.rows == rows) return;
 
     // Resize our tabstops
     // TODO: use resize, but it doesn't set new tabstops
