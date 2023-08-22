@@ -21,6 +21,10 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Terminal = terminal.Terminal;
 
+const mtl = @import("metal/api.zig");
+const mtl_image = @import("metal/image.zig");
+const Image = mtl_image.Image;
+
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
     .cocoa = builtin.os.tag == .macos,
@@ -67,6 +71,9 @@ uniforms: GPUUniforms,
 /// The font structures.
 font_group: *font.GroupCache,
 font_shaper: font.Shaper,
+
+/// The images that we may render.
+images: std.AutoHashMapUnmanaged(u32, Image) = .{},
 
 /// Metal objects
 device: objc.Object, // MTLDevice
@@ -197,7 +204,7 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
 
 pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // Initialize our metal stuff
-    const device = objc.Object.fromId(MTLCreateSystemDefaultDevice());
+    const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
     const swapchain = swapchain: {
         const CAMetalLayer = objc.Class.getClass("CAMetalLayer").?;
@@ -253,7 +260,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .{
                 @as(*const anyopaque, @ptrCast(&data)),
                 @as(c_ulong, @intCast(data.len * @sizeOf(u16))),
-                MTLResourceStorageModeShared,
+                mtl.MTLResourceStorageModeShared,
             },
         );
     };
@@ -268,7 +275,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             objc.sel("newBufferWithLength:options:"),
             .{
                 @as(c_ulong, @intCast(prealloc * @sizeOf(GPUCell))),
-                MTLResourceStorageModeShared,
+                mtl.MTLResourceStorageModeShared,
             },
         );
     };
@@ -283,7 +290,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             objc.sel("newBufferWithLength:options:"),
             .{
                 @as(c_ulong, @intCast(prealloc * @sizeOf(GPUCell))),
-                MTLResourceStorageModeShared,
+                mtl.MTLResourceStorageModeShared,
             },
         );
     };
@@ -340,6 +347,12 @@ pub fn deinit(self: *Metal) void {
     self.alloc.free(self.font_shaper.cell_buf);
 
     self.config.deinit();
+
+    {
+        var it = self.images.iterator();
+        while (it.next()) |kv| kv.value_ptr.deinit(self.alloc);
+        self.images.deinit(self.alloc);
+    }
 
     deinitMTLResource(self.buf_cells_bg);
     deinitMTLResource(self.buf_cells);
@@ -550,7 +563,7 @@ pub fn render(
 
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
-        // hold the lock wile rebuilding GPU cells.
+        // hold the lock while rebuilding GPU cells.
         const viewport_bottom = state.terminal.screen.viewportIsBottom();
         var screen_copy = if (viewport_bottom) try state.terminal.screen.clone(
             self.alloc,
@@ -572,6 +585,13 @@ pub fn render(
 
         // Whether to draw our cursor or not.
         const draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom();
+
+        // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
+        // This can be dramatically improved, this is basically a v1 effort
+        // to get it working.
+        if (state.terminal.screen.kitty_images.placements.count() > 0) {
+            try self.prepKittyGraphics(&state.terminal.screen);
+        }
 
         break :critical .{
             .bg = self.config.background,
@@ -608,6 +628,15 @@ pub fn render(
         self.font_group.atlas_color.modified = false;
     }
 
+    // Go through our images and see if we need to setup any textures.
+    {
+        var image_it = self.images.iterator();
+        while (image_it.next()) |kv| {
+            if (kv.value_ptr.pending() == null) continue;
+            try kv.value_ptr.upload(self.alloc, self.device);
+        }
+    }
+
     // Command buffer (MTLCommandBuffer)
     const buffer = self.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
 
@@ -635,10 +664,10 @@ pub fn render(
                 // which ironically doesn't implement CAMetalDrawable as a
                 // property so we just send a message.
                 const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
-                attachment.setProperty("loadAction", @intFromEnum(MTLLoadAction.clear));
-                attachment.setProperty("storeAction", @intFromEnum(MTLStoreAction.store));
+                attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
+                attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
                 attachment.setProperty("texture", texture);
-                attachment.setProperty("clearColor", MTLClearColor{
+                attachment.setProperty("clearColor", mtl.MTLClearColor{
                     .red = @as(f32, @floatFromInt(critical.bg.r)) / 255,
                     .green = @as(f32, @floatFromInt(critical.bg.g)) / 255,
                     .blue = @as(f32, @floatFromInt(critical.bg.b)) / 255,
@@ -722,14 +751,56 @@ fn drawCells(
             void,
             objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
             .{
-                @intFromEnum(MTLPrimitiveType.triangle),
+                @intFromEnum(mtl.MTLPrimitiveType.triangle),
                 @as(c_ulong, 6),
-                @intFromEnum(MTLIndexType.uint16),
+                @intFromEnum(mtl.MTLIndexType.uint16),
                 self.buf_instance.value,
                 @as(c_ulong, 0),
                 @as(c_ulong, cells.items.len),
             },
         );
+    }
+}
+
+/// This goes through the Kitty graphic placements and accumulates the
+/// placements we need to render on our viewport. It also ensures that
+/// the visible images are loaded on the GPU.
+fn prepKittyGraphics(
+    self: *Metal,
+    screen: *const terminal.Screen,
+) !void {
+    // Go through the placements and ensure the image is loaded on the GPU.
+    var it = screen.kitty_images.placements.iterator();
+    while (it.next()) |kv| {
+        // If we already know about this image then do nothing
+        const gop = try self.images.getOrPut(self.alloc, kv.key_ptr.image_id);
+        if (gop.found_existing) continue;
+
+        // Find the image in storage
+        const image = screen.kitty_images.imageById(kv.key_ptr.image_id) orelse {
+            log.warn(
+                "missing image for placement, ignoring image_id={}",
+                .{kv.key_ptr.image_id},
+            );
+            continue;
+        };
+
+        // Copy the data into the pending state.
+        const data = try self.alloc.dupe(u8, image.data);
+        errdefer self.alloc.free(data);
+
+        // Store it in the map
+        const p: Image.Pending = .{
+            .width = image.width,
+            .height = image.height,
+            .data = data.ptr,
+        };
+
+        gop.value_ptr.* = switch (image.format) {
+            .rgb => .{ .pending_rgb = p },
+            .rgba => .{ .pending_rgba = p },
+            .png => unreachable, // should be decoded by now
+        };
     }
 }
 
@@ -1256,7 +1327,7 @@ fn syncCells(
             objc.sel("newBufferWithLength:options:"),
             .{
                 @as(c_ulong, @intCast(size * @sizeOf(GPUCell))),
-                MTLResourceStorageModeShared,
+                mtl.MTLResourceStorageModeShared,
             },
         );
     }
@@ -1296,7 +1367,7 @@ fn syncAtlasTexture(device: objc.Object, atlas: *const font.Atlas, texture: *obj
         void,
         objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
         .{
-            MTLRegion{
+            mtl.MTLRegion{
                 .origin = .{ .x = 0, .y = 0, .z = 0 },
                 .size = .{
                     .width = @intCast(atlas.size),
@@ -1305,7 +1376,7 @@ fn syncAtlasTexture(device: objc.Object, atlas: *const font.Atlas, texture: *obj
                 },
             },
             @as(c_ulong, 0),
-            atlas.data.ptr,
+            @as(*const anyopaque, atlas.data.ptr),
             @as(c_ulong, atlas.format.depth() * atlas.size),
         },
     );
@@ -1382,7 +1453,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 0)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uchar));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "mode")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1393,7 +1464,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 1)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.float2));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "grid_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1404,7 +1475,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 2)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uint2));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1415,7 +1486,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 3)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uint2));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_size")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1426,7 +1497,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 4)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.int2));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.int2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "glyph_offset")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1437,7 +1508,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 5)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uchar4));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1448,7 +1519,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 6)},
             );
 
-            attr.setProperty("format", @intFromEnum(MTLVertexFormat.uchar));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(GPUCell, "cell_width")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -1463,7 +1534,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             // Access each GPUCell per instance, not per vertex.
-            layout.setProperty("stepFunction", @intFromEnum(MTLVertexStepFunction.per_instance));
+            layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
             layout.setProperty("stride", @as(c_ulong, @sizeOf(GPUCell)));
         }
 
@@ -1498,12 +1569,12 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
         // Blending. This is required so that our text we render on top
         // of our drawable properly blends into the bg.
         attachment.setProperty("blendingEnabled", true);
-        attachment.setProperty("rgbBlendOperation", @intFromEnum(MTLBlendOperation.add));
-        attachment.setProperty("alphaBlendOperation", @intFromEnum(MTLBlendOperation.add));
-        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(MTLBlendFactor.one));
-        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(MTLBlendFactor.one));
-        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(MTLBlendFactor.one_minus_source_alpha));
-        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(MTLBlendFactor.one_minus_source_alpha));
+        attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
+        attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
+        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
+        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
+        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
+        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
     }
 
     // Make our state
@@ -1521,7 +1592,7 @@ fn initPipelineState(device: objc.Object, library: objc.Object) !objc.Object {
 /// Initialize a MTLTexture object for the given atlas.
 fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object {
     // Determine our pixel format
-    const pixel_format: MTLPixelFormat = switch (atlas.format) {
+    const pixel_format: mtl.MTLPixelFormat = switch (atlas.format) {
         .greyscale => .r8unorm,
         .rgba => .bgra8unorm,
         else => @panic("unsupported atlas format for Metal texture"),
@@ -1568,137 +1639,3 @@ fn checkError(err_: ?*anyopaque) !void {
         return error.MetalFailed;
     }
 }
-
-/// https://developer.apple.com/documentation/metal/mtlloadaction?language=objc
-const MTLLoadAction = enum(c_ulong) {
-    dont_care = 0,
-    load = 1,
-    clear = 2,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlstoreaction?language=objc
-const MTLStoreAction = enum(c_ulong) {
-    dont_care = 0,
-    store = 1,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlstoragemode?language=objc
-const MTLStorageMode = enum(c_ulong) {
-    shared = 0,
-    managed = 1,
-    private = 2,
-    memoryless = 3,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlprimitivetype?language=objc
-const MTLPrimitiveType = enum(c_ulong) {
-    point = 0,
-    line = 1,
-    line_strip = 2,
-    triangle = 3,
-    triangle_strip = 4,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlindextype?language=objc
-const MTLIndexType = enum(c_ulong) {
-    uint16 = 0,
-    uint32 = 1,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlvertexformat?language=objc
-const MTLVertexFormat = enum(c_ulong) {
-    uchar4 = 3,
-    float2 = 29,
-    int2 = 33,
-    uint2 = 37,
-    uchar = 45,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlvertexstepfunction?language=objc
-const MTLVertexStepFunction = enum(c_ulong) {
-    constant = 0,
-    per_vertex = 1,
-    per_instance = 2,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlpixelformat?language=objc
-const MTLPixelFormat = enum(c_ulong) {
-    r8unorm = 10,
-    bgra8unorm = 80,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlpurgeablestate?language=objc
-const MTLPurgeableState = enum(c_ulong) {
-    empty = 4,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlblendfactor?language=objc
-const MTLBlendFactor = enum(c_ulong) {
-    zero = 0,
-    one = 1,
-    source_color = 2,
-    one_minus_source_color = 3,
-    source_alpha = 4,
-    one_minus_source_alpha = 5,
-    dest_color = 6,
-    one_minus_dest_color = 7,
-    dest_alpha = 8,
-    one_minus_dest_alpha = 9,
-    source_alpha_saturated = 10,
-    blend_color = 11,
-    one_minus_blend_color = 12,
-    blend_alpha = 13,
-    one_minus_blend_alpha = 14,
-    source_1_color = 15,
-    one_minus_source_1_color = 16,
-    source_1_alpha = 17,
-    one_minus_source_1_alpha = 18,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlblendoperation?language=objc
-const MTLBlendOperation = enum(c_ulong) {
-    add = 0,
-    subtract = 1,
-    reverse_subtract = 2,
-    min = 3,
-    max = 4,
-};
-
-/// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc
-/// (incomplete, we only use this mode so we just hardcode it)
-const MTLResourceStorageModeShared: c_ulong = @intFromEnum(MTLStorageMode.shared) << 4;
-
-const MTLClearColor = extern struct {
-    red: f64,
-    green: f64,
-    blue: f64,
-    alpha: f64,
-};
-
-const MTLViewport = extern struct {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    znear: f64,
-    zfar: f64,
-};
-
-const MTLRegion = extern struct {
-    origin: MTLOrigin,
-    size: MTLSize,
-};
-
-const MTLOrigin = extern struct {
-    x: c_ulong,
-    y: c_ulong,
-    z: c_ulong,
-};
-
-const MTLSize = extern struct {
-    width: c_ulong,
-    height: c_ulong,
-    depth: c_ulong,
-};
-
-extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;

@@ -114,7 +114,7 @@ fn transmit(
         encodeError(&result, err);
         return result;
     };
-    img.deinit(alloc);
+    errdefer img.deinit(alloc);
 
     // After the image is added, set the ID in case it changed
     result.id = img.id;
