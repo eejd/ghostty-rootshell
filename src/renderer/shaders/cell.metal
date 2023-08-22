@@ -199,8 +199,8 @@ struct ImageVertexIn {
   // corner of the image.
   float2 cell_offset [[ attribute(2) ]];
 
-  // The offset for the texture coordinates.
-  uint offset_y [[ attribute(3) ]];
+  // The source rectangle of the texture to sample from.
+  float4 source_rect [[ attribute(3) ]];
 };
 
 struct ImageVertexOut {
@@ -231,19 +231,18 @@ vertex ImageVertexOut image_vertex(
   position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
   position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
 
-  // The texture coordinates are in [0, 1]. If we're at top y (y == 0)
-  // then we need to offset the y by offset_y for clipping.
-  float2 tex_coord = position;
-  if (tex_coord.y == 0) tex_coord.y = input.offset_y / image_size.y;
+  // The texture coordinates start at our source x/y, then add the width/height
+  // as enabled by our instance id, then normalize to [0, 1]
+  float2 tex_coord = input.source_rect.xy;
+  tex_coord += input.source_rect.zw * position;
+  tex_coord /= image_size;
 
   ImageVertexOut out;
 
-  // The position of our image starts at the top-left of the grid cell.
+  // The position of our image starts at the top-left of the grid cell and
+  // adds the source rect width/height components.
   float2 image_pos = (uniforms.cell_size * input.grid_pos) + input.cell_offset;
-
-  // We need to adjust the bottom y of the image by offset y otherwise
-  // as we scroll the full image will be rendered and stretched.
-  image_pos += float2(image_size.x, image_size.y - input.offset_y) * position;
+  image_pos += input.source_rect.zw * position;
 
   out.position = uniforms.projection_matrix * float4(image_pos.x, image_pos.y, 0.0f, 1.0f);
   out.tex_coord = tex_coord;

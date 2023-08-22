@@ -528,7 +528,7 @@ pub fn render(
         // We only do this if the Kitty image state is dirty meaning only if
         // it changes.
         if (state.terminal.screen.kitty_images.dirty) {
-            try self.prepKittyGraphics(&state.terminal.screen);
+            try self.prepKittyGraphics(state.terminal);
         }
 
         break :critical .{
@@ -742,7 +742,12 @@ fn drawImagePlacement(
             @as(f32, @floatFromInt(p.cell_offset_y)),
         },
 
-        .offset_y = p.offset_y,
+        .source_rect = .{
+            @as(f32, @floatFromInt(p.source_x)),
+            @as(f32, @floatFromInt(p.source_y)),
+            @as(f32, @floatFromInt(p.source_width)),
+            @as(f32, @floatFromInt(p.source_height)),
+        },
     }});
     defer buf.deinit();
 
@@ -827,9 +832,10 @@ fn drawCells(
 /// the visible images are loaded on the GPU.
 fn prepKittyGraphics(
     self: *Metal,
-    screen: *terminal.Screen,
+    t: *terminal.Terminal,
 ) !void {
-    defer screen.kitty_images.dirty = false;
+    const storage = &t.screen.kitty_images;
+    defer storage.dirty = false;
 
     // We always clear our previous placements no matter what because
     // we rebuild them from scratch.
@@ -843,7 +849,7 @@ fn prepKittyGraphics(
     {
         var it = self.images.iterator();
         while (it.next()) |kv| {
-            if (screen.kitty_images.imageById(kv.key_ptr.*) == null) {
+            if (storage.imageById(kv.key_ptr.*) == null) {
                 kv.value_ptr.markForUnload();
             }
         }
@@ -851,17 +857,18 @@ fn prepKittyGraphics(
 
     // The top-left and bottom-right corners of our viewport in screen
     // points. This lets us determine offsets and containment of placements.
-    const top = (terminal.point.Viewport{}).toScreen(screen);
+    const top = (terminal.point.Viewport{}).toScreen(&t.screen);
     const bot = (terminal.point.Viewport{
-        .x = screen.cols - 1,
-        .y = screen.rows - 1,
-    }).toScreen(screen);
+        .x = t.screen.cols - 1,
+        .y = t.screen.rows - 1,
+    }).toScreen(&t.screen);
 
     // Go through the placements and ensure the image is loaded on the GPU.
-    var it = screen.kitty_images.placements.iterator();
+    var it = storage.placements.iterator();
     while (it.next()) |kv| {
         // Find the image in storage
-        const image = screen.kitty_images.imageById(kv.key_ptr.image_id) orelse {
+        const p = kv.value_ptr;
+        const image = storage.imageById(kv.key_ptr.image_id) orelse {
             log.warn(
                 "missing image for placement, ignoring image_id={}",
                 .{kv.key_ptr.image_id},
@@ -869,38 +876,14 @@ fn prepKittyGraphics(
             continue;
         };
 
-        // We want the width/height of the image in cells to figure out
-        // if this image is within our viewport. We use floats here because
-        // we want to round UP so that if any part of the image is in a cell,
-        // we count the cell.
-        const image_grid_size: renderer.GridSize = grid_size: {
-            const width_f64: f64 = @floatFromInt(image.width);
-            const height_f64: f64 = @floatFromInt(image.height);
-            const cell_width_f64: f64 = @floatFromInt(self.cell_size.width);
-            const cell_height_f64: f64 = @floatFromInt(self.cell_size.height);
-            const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
-            const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
-            break :grid_size .{ .columns = width_cells, .rows = height_cells };
-        };
-
-        // Create a "selection" across the image. This is how we detect
-        // whether the image is in our viewport by detecting whether the
-        // selection is in our viewport.
-        const image_sel: terminal.Selection = .{
-            .start = kv.value_ptr.point,
-            .end = .{
-                .x = kv.value_ptr.point.x + image_grid_size.columns,
-                .y = kv.value_ptr.point.y + image_grid_size.rows,
-            },
-        };
-
         // If the selection isn't within our viewport then skip it.
+        const image_sel = kv.value_ptr.selection(image, t);
         if (!image_sel.within(top, bot)) continue;
 
         // If the top left is outside the viewport we need to calc an offset
         // so that we render (0, 0) with some offset for the texture.
-        const offset_y: u32 = if (image_sel.start.y < screen.viewport) offset_y: {
-            const offset_cells = screen.viewport - image_sel.start.y;
+        const offset_y: u32 = if (image_sel.start.y < t.screen.viewport) offset_y: {
+            const offset_cells = t.screen.viewport - image_sel.start.y;
             const offset_pixels = offset_cells * self.cell_size.height;
             break :offset_y @intCast(offset_pixels);
         } else 0;
@@ -913,31 +896,48 @@ fn prepKittyGraphics(
             errdefer self.alloc.free(data);
 
             // Store it in the map
-            const p: Image.Pending = .{
+            const pending: Image.Pending = .{
                 .width = image.width,
                 .height = image.height,
                 .data = data.ptr,
             };
 
             gop.value_ptr.* = switch (image.format) {
-                .rgb => .{ .pending_rgb = p },
-                .rgba => .{ .pending_rgba = p },
+                .rgb => .{ .pending_rgb = pending },
+                .rgba => .{ .pending_rgba = pending },
                 .png => unreachable, // should be decoded by now
             };
         }
 
         // Convert our screen point to a viewport point
-        const viewport = kv.value_ptr.point.toViewport(screen);
+        const viewport = kv.value_ptr.point.toViewport(&t.screen);
+
+        // Calculate the source rectangle
+        const source_x = @min(image.width, p.source_x);
+        const source_y = @min(image.height, p.source_y + offset_y);
+        const source_width = if (p.source_width > 0)
+            @min(image.width - source_x, p.source_width)
+        else
+            image.width;
+        const source_height = if (p.source_height > 0)
+            @min(image.height, p.source_height)
+        else
+            image.height -| offset_y;
 
         // Accumulate the placement
-        try self.image_placements.append(self.alloc, .{
-            .image_id = kv.key_ptr.image_id,
-            .x = @intCast(kv.value_ptr.point.x),
-            .y = @intCast(viewport.y),
-            .cell_offset_x = kv.value_ptr.x_offset,
-            .cell_offset_y = kv.value_ptr.y_offset,
-            .offset_y = offset_y,
-        });
+        if (image.width > 0 and image.height > 0) {
+            try self.image_placements.append(self.alloc, .{
+                .image_id = kv.key_ptr.image_id,
+                .x = @intCast(kv.value_ptr.point.x),
+                .y = @intCast(viewport.y),
+                .cell_offset_x = kv.value_ptr.x_offset,
+                .cell_offset_y = kv.value_ptr.y_offset,
+                .source_x = source_x,
+                .source_y = source_y,
+                .source_width = source_width,
+                .source_height = source_height,
+            });
+        }
     }
 }
 

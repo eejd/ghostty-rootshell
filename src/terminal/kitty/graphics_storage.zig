@@ -160,6 +160,12 @@ pub const ImageStorage = struct {
         x_offset: u32 = 0,
         y_offset: u32 = 0,
 
+        /// Source rectangle for the image to pull from
+        source_x: u32 = 0,
+        source_y: u32 = 0,
+        source_width: u32 = 0,
+        source_height: u32 = 0,
+
         /// Returns a selection of the entire rectangle this placement
         /// occupies within the screen.
         pub fn selection(
@@ -175,9 +181,13 @@ pub const ImageStorage = struct {
             const cell_width_f64 = terminal_width_f64 / grid_columns_f64;
             const cell_height_f64 = terminal_height_f64 / grid_rows_f64;
 
+            // Our image width
+            const width_px = if (self.source_width > 0) self.source_width else image.width;
+            const height_px = if (self.source_height > 0) self.source_height else image.height;
+
             // Calculate our image size in grid cells
-            const width_f64: f64 = @floatFromInt(image.width);
-            const height_f64: f64 = @floatFromInt(image.height);
+            const width_f64: f64 = @floatFromInt(width_px);
+            const height_f64: f64 = @floatFromInt(height_px);
             const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
             const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
 

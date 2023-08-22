@@ -20,11 +20,11 @@ pub const Placement = struct {
     cell_offset_x: u32,
     cell_offset_y: u32,
 
-    /// The offset of the top of the image texture in case we are clipping
-    /// the top. We don't need an offset_x because we don't support any
-    /// horizontal scrolling so the width is never clipped from the left.
-    /// Clipping from the bottom/right is handled by the shader.
-    offset_y: u32,
+    /// The source rectangle of the placement.
+    source_x: u32,
+    source_y: u32,
+    source_width: u32,
+    source_height: u32,
 };
 
 /// The map used for storing images.

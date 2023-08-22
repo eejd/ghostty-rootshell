@@ -172,6 +172,10 @@ fn display(
         .point = placement_point,
         .x_offset = d.x_offset,
         .y_offset = d.y_offset,
+        .source_x = d.x,
+        .source_y = d.y,
+        .source_width = d.width,
+        .source_height = d.height,
     };
     storage.addPlacement(alloc, img.id, d.placement_id, p) catch |err| {
         encodeError(&result, err);
@@ -184,23 +188,17 @@ fn display(
         .after => {
             const p_sel = p.selection(img, terminal);
 
-            // If we are moving beneath the screen we need to scroll.
-            // TODO: handle scroll regions
-            var new_y = p_sel.end.y + 1;
-            if (new_y >= terminal.rows) {
-                const scroll_amount = (new_y + 1) - terminal.rows;
-                terminal.screen.scroll(.{ .screen = @intCast(scroll_amount) }) catch |err| {
-                    // If this failed we just warn, the screen will just be in a
-                    // weird state but nothing fatal.
-                    log.warn("scroll for image failed: {}", .{err});
-                };
-                new_y = terminal.rows - 1;
-            }
+            // We can do better by doing this with pure internal screen state
+            // but this handles scroll regions.
+            const height = p_sel.end.y - p_sel.start.y + 1;
+            for (0..height) |_| terminal.index() catch |err| {
+                log.warn("failed to move cursor: {}", .{err});
+                break;
+            };
 
-            // Move the cursor
             terminal.setCursorPos(
-                new_y,
-                p_sel.end.x,
+                terminal.screen.cursor.y + 1,
+                p_sel.end.x + 1,
             );
         },
     }
