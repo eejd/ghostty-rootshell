@@ -260,7 +260,12 @@ pub const Parser = struct {
             },
 
             .clipboard_kind => switch (c) {
-                ';' => self.state = .invalid,
+                ';' => {
+                    self.command.clipboard_contents.kind = 'c';
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.clipboard_contents.data };
+                    self.buf_start = self.buf_idx;
+                },
                 else => {
                     self.command.clipboard_contents.kind = c;
                     self.state = .clipboard_kind_end;
@@ -577,6 +582,20 @@ test "OSC: get/set clipboard" {
     const cmd = p.end().?;
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 's');
+    try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
+}
+
+test "OSC: get/set clipboard (optional parameter)" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "52;;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .clipboard_contents);
+    try testing.expect(cmd.clipboard_contents.kind == 'c');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
 }
 
