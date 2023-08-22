@@ -28,7 +28,9 @@ const mtl_shaders = @import("metal/shaders.zig");
 const Image = mtl_image.Image;
 const ImageMap = mtl_image.ImageMap;
 const Shaders = mtl_shaders.Shaders;
+
 const CellBuffer = mtl_buffer.Buffer(mtl_shaders.Cell);
+const ImageBuffer = mtl_buffer.Buffer(mtl_shaders.Image);
 const InstanceBuffer = mtl_buffer.Buffer(u16);
 
 // Get native API access on certain platforms so we can do more customization.
