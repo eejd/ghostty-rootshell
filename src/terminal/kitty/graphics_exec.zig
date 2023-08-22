@@ -202,7 +202,7 @@ fn display(
 
             // If we are moving beneath the screen we need to scroll.
             // TODO: handle scroll regions
-            var new_y = terminal.screen.cursor.y + image_grid_size.rows;
+            var new_y = terminal.screen.cursor.y + image_grid_size.rows + 1;
             if (new_y >= terminal.rows) {
                 const scroll_amount = (new_y + 1) - terminal.rows;
                 terminal.screen.scroll(.{ .screen = @intCast(scroll_amount) }) catch |err| {
