@@ -1407,7 +1407,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     self.screen.scrollRegionUp(
         .{ .active = self.screen.cursor.y },
         .{ .active = self.scrolling_region.bottom },
-        count,
+        @min(count, self.scrolling_region.bottom - self.screen.cursor.y),
     );
 }
 
@@ -2052,6 +2052,42 @@ test "Terminal: deleteLines with scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("E\nC\n\nD", str);
+    }
+}
+
+test "Terminal: deleteLines with scroll region, large count" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 80, 80);
+    defer t.deinit(alloc);
+
+    // Initial value
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('B');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('C');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('D');
+
+    t.setScrollingRegion(1, 3);
+    t.setCursorPos(1, 1);
+    try t.deleteLines(5);
+
+    try t.print('E');
+    t.carriageReturn();
+    try t.linefeed();
+
+    // We should be
+    // try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    // try testing.expectEqual(@as(usize, 2), t.screen.cursor.y);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("E\n\n\nD", str);
     }
 }
 
