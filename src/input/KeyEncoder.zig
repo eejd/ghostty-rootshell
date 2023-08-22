@@ -105,7 +105,14 @@ fn kitty(
             if (self.event.utf8.len > 0 and
                 binding_mods.empty() and
                 self.event.action != .release)
-            {
+            plain_text: {
+                // We only do this for printable characters. We should
+                // inspect the real unicode codepoint properties here but
+                // the real world issue is usually control characters.
+                const view = try std.unicode.Utf8View.init(self.event.utf8);
+                var it = view.iterator();
+                while (it.nextCodepoint()) |cp| if (cp < 0x20) break :plain_text;
+
                 return try copyToBuf(buf, self.event.utf8);
             }
         }
@@ -837,6 +844,23 @@ test "kitty: matching unshifted codepoint" {
     // codepoints.
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[65;2u", actual);
+}
+
+// macOS generates utf8 text for arrow keys.
+test "kitty: up arrow with utf8" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .up,
+            .mods = .{},
+            .utf8 = &.{30},
+        },
+
+        .kitty_flags = .{ .disambiguate = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[A", actual);
 }
 
 test "legacy: ctrl+alt+c" {
