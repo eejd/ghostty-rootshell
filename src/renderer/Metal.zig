@@ -875,13 +875,14 @@ fn prepKittyGraphics(
             };
         }
 
+        // Convert our screen point to a viewport point
+        const viewport = kv.value_ptr.point.toViewport(screen);
+
         // Accumulate the placement
         try self.image_placements.append(self.alloc, .{
             .image_id = kv.key_ptr.image_id,
-
-            // TODO
-            .x = 0,
-            .y = 0,
+            .x = @intCast(viewport.x),
+            .y = @intCast(viewport.y),
         });
     }
 }
