@@ -15,6 +15,11 @@ pub const Placement = struct {
     x: u32,
     y: u32,
 
+    /// The offset in pixels from the top left of the cell. This is
+    /// clamped to the size of a cell.
+    cell_offset_x: u32,
+    cell_offset_y: u32,
+
     /// The offset of the top of the image texture in case we are clipping
     /// the top. We don't need an offset_x because we don't support any
     /// horizontal scrolling so the width is never clipped from the left.

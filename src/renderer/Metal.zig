@@ -737,6 +737,11 @@ fn drawImagePlacement(
             @as(f32, @floatFromInt(p.y)),
         },
 
+        .cell_offset = .{
+            @as(f32, @floatFromInt(p.cell_offset_x)),
+            @as(f32, @floatFromInt(p.cell_offset_y)),
+        },
+
         .offset_y = p.offset_y,
     }});
     defer buf.deinit();
@@ -929,6 +934,8 @@ fn prepKittyGraphics(
             .image_id = kv.key_ptr.image_id,
             .x = @intCast(kv.value_ptr.point.x),
             .y = @intCast(viewport.y),
+            .cell_offset_x = kv.value_ptr.x_offset,
+            .cell_offset_y = kv.value_ptr.y_offset,
             .offset_y = offset_y,
         });
     }

@@ -168,7 +168,11 @@ fn display(
     }).toScreen(&terminal.screen);
 
     // Add the placement
-    const p: ImageStorage.Placement = .{ .point = placement_point };
+    const p: ImageStorage.Placement = .{
+        .point = placement_point,
+        .x_offset = d.x_offset,
+        .y_offset = d.y_offset,
+    };
     storage.addPlacement(alloc, img.id, d.placement_id, p) catch |err| {
         encodeError(&result, err);
         return result;

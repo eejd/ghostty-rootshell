@@ -195,8 +195,12 @@ struct ImageVertexIn {
   // the image will be rendered. It will be rendered from the top left.
   float2 grid_pos [[ attribute(1) ]];
 
+  // Offset in pixels from the top-left of the cell to make the top-left
+  // corner of the image.
+  float2 cell_offset [[ attribute(2) ]];
+
   // The offset for the texture coordinates.
-  uint offset_y [[ attribute(2) ]];
+  uint offset_y [[ attribute(3) ]];
 };
 
 struct ImageVertexOut {
@@ -235,7 +239,7 @@ vertex ImageVertexOut image_vertex(
   ImageVertexOut out;
 
   // The position of our image starts at the top-left of the grid cell.
-  float2 image_pos = uniforms.cell_size * input.grid_pos;
+  float2 image_pos = (uniforms.cell_size * input.grid_pos) + input.cell_offset;
 
   // We need to adjust the bottom y of the image by offset y otherwise
   // as we scroll the full image will be rendered and stretched.

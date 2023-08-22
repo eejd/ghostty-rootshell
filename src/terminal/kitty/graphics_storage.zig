@@ -156,6 +156,10 @@ pub const ImageStorage = struct {
         /// The location of the image on the screen.
         point: ScreenPoint,
 
+        /// Offset of the x/y from the top-left of the cell.
+        x_offset: u32 = 0,
+        y_offset: u32 = 0,
+
         /// Returns a selection of the entire rectangle this placement
         /// occupies within the screen.
         pub fn selection(
