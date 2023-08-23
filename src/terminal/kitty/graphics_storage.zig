@@ -63,18 +63,6 @@ pub const ImageStorage = struct {
             break :img copy;
         }});
 
-        // If the image has an image number, we need to invalidate the last
-        // image with that same number.
-        if (img.number > 0) {
-            var it = self.images.iterator();
-            while (it.next()) |kv| {
-                if (kv.value_ptr.number == img.number) {
-                    kv.value_ptr.number = 0;
-                    break;
-                }
-            }
-        }
-
         // Write our new image
         if (gop.found_existing) gop.value_ptr.deinit(alloc);
         gop.value_ptr.* = img;
@@ -112,12 +100,20 @@ pub const ImageStorage = struct {
 
     /// Get an image by its number. If the image doesn't exist, return null.
     pub fn imageByNumber(self: *const ImageStorage, image_number: u32) ?Image {
+        var newest: ?Image = null;
+
         var it = self.images.iterator();
         while (it.next()) |kv| {
-            if (kv.value_ptr.number == image_number) return kv.value_ptr.*;
+            if (kv.value_ptr.number == image_number) {
+                if (newest == null or
+                    kv.value_ptr.transmit_time.order(newest.?.transmit_time) == .gt)
+                {
+                    newest = kv.value_ptr.*;
+                }
+            }
         }
 
-        return null;
+        return newest;
     }
 
     /// Delete placements, images.
@@ -139,25 +135,16 @@ pub const ImageStorage = struct {
                 self.dirty = true;
             },
 
-            .id => |v| {
-                // If no placement, we delete all placements with the ID
-                if (v.placement_id == 0) {
-                    var it = self.placements.iterator();
-                    while (it.next()) |entry| {
-                        if (entry.key_ptr.image_id == v.image_id) {
-                            self.placements.removeByPtr(entry.key_ptr);
-                        }
-                    }
-                } else {
-                    _ = self.placements.remove(.{
-                        .image_id = v.image_id,
-                        .placement_id = v.placement_id,
-                    });
-                }
+            .id => |v| self.deleteById(
+                alloc,
+                v.image_id,
+                v.placement_id,
+                v.delete,
+            ),
 
-                // If this is specified, then we also delete the image
-                // if it is no longer in use.
-                if (v.delete) self.deleteIfUnused(alloc, v.image_id);
+            .newest => |v| newest: {
+                const img = self.imageByNumber(v.image_number) orelse break :newest;
+                self.deleteById(alloc, img.id, v.placement_id, v.delete);
             },
 
             .intersect_cursor => |delete_images| {
@@ -223,9 +210,34 @@ pub const ImageStorage = struct {
             // We don't support animation frames yet so they are successfully
             // deleted!
             .animation_frames => {},
-
-            else => log.warn("unimplemented delete command: {}", .{cmd}),
         }
+    }
+
+    fn deleteById(
+        self: *ImageStorage,
+        alloc: Allocator,
+        image_id: u32,
+        placement_id: u32,
+        delete_unused: bool,
+    ) void {
+        // If no placement, we delete all placements with the ID
+        if (placement_id == 0) {
+            var it = self.placements.iterator();
+            while (it.next()) |entry| {
+                if (entry.key_ptr.image_id == image_id) {
+                    self.placements.removeByPtr(entry.key_ptr);
+                }
+            }
+        } else {
+            _ = self.placements.remove(.{
+                .image_id = image_id,
+                .placement_id = placement_id,
+            });
+        }
+
+        // If this is specified, then we also delete the image
+        // if it is no longer in use.
+        if (delete_unused) self.deleteIfUnused(alloc, image_id);
     }
 
     /// Delete an image if it is unused.

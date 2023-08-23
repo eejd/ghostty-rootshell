@@ -679,7 +679,7 @@ pub const Delete = union(enum) {
     // n/N
     newest: struct {
         delete: bool = false, // uppercase
-        count: u32 = 0, // I
+        image_number: u32 = 0, // I
         placement_id: u32 = 0, // p
     },
 
@@ -747,7 +747,7 @@ pub const Delete = union(enum) {
             'n', 'N' => blk: {
                 var result: Delete = .{ .newest = .{ .delete = what == 'N' } };
                 if (kv.get('I')) |v| {
-                    result.newest.count = v;
+                    result.newest.image_number = v;
                 }
                 if (kv.get('p')) |v| {
                     result.newest.placement_id = v;
