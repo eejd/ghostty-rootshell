@@ -182,6 +182,44 @@ pub const ImageStorage = struct {
                 }.filter);
             },
 
+            .column => |v| {
+                var it = self.placements.iterator();
+                while (it.next()) |entry| {
+                    const img = self.imageById(entry.key_ptr.image_id) orelse continue;
+                    const rect = entry.value_ptr.rect(img, t);
+                    if (rect.top_left.x <= v.x and rect.bottom_right.x >= v.x) {
+                        self.placements.removeByPtr(entry.key_ptr);
+                        if (v.delete) self.deleteIfUnused(alloc, img.id);
+                    }
+                }
+            },
+
+            .row => |v| {
+                // Get the screenpoint y
+                const y = (point.Viewport{ .x = 0, .y = v.y }).toScreen(&t.screen).y;
+
+                var it = self.placements.iterator();
+                while (it.next()) |entry| {
+                    const img = self.imageById(entry.key_ptr.image_id) orelse continue;
+                    const rect = entry.value_ptr.rect(img, t);
+                    if (rect.top_left.y <= y and rect.bottom_right.y >= y) {
+                        self.placements.removeByPtr(entry.key_ptr);
+                        if (v.delete) self.deleteIfUnused(alloc, img.id);
+                    }
+                }
+            },
+
+            .z => |v| {
+                var it = self.placements.iterator();
+                while (it.next()) |entry| {
+                    if (entry.value_ptr.z == v.z) {
+                        const image_id = entry.key_ptr.image_id;
+                        self.placements.removeByPtr(entry.key_ptr);
+                        if (v.delete) self.deleteIfUnused(alloc, image_id);
+                    }
+                }
+            },
+
             // We don't support animation frames yet so they are successfully
             // deleted!
             .animation_frames => {},
@@ -530,4 +568,58 @@ test "storage: delete intersecting cursor hits multiple" {
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.placements.count());
     try testing.expectEqual(@as(usize, 1), s.images.count());
+}
+
+test "storage: delete by column" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 100, 100);
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1, .width = 50, .height = 50 });
+    try s.addImage(alloc, .{ .id = 2, .width = 25, .height = 25 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
+    try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
+
+    s.delete(alloc, &t, .{ .column = .{
+        .delete = false,
+        .x = 60,
+    } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.placements.count());
+    try testing.expectEqual(@as(usize, 2), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 1 }) != null);
+}
+
+test "storage: delete by row" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 100, 100);
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1, .width = 50, .height = 50 });
+    try s.addImage(alloc, .{ .id = 2, .width = 25, .height = 25 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
+    try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
+
+    s.delete(alloc, &t, .{ .row = .{
+        .delete = false,
+        .y = 60,
+    } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.placements.count());
+    try testing.expectEqual(@as(usize, 2), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 1 }) != null);
 }
