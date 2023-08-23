@@ -9,6 +9,7 @@ const command = @import("graphics_command.zig");
 const Screen = @import("../Screen.zig");
 const LoadingImage = @import("graphics_image.zig").LoadingImage;
 const Image = @import("graphics_image.zig").Image;
+const Rect = @import("graphics_image.zig").Rect;
 const Command = command.Command;
 const ScreenPoint = point.ScreenPoint;
 
@@ -218,8 +219,8 @@ pub const ImageStorage = struct {
         var it = self.placements.iterator();
         while (it.next()) |entry| {
             const img = self.imageById(entry.key_ptr.image_id) orelse continue;
-            const sel = entry.value_ptr.selection(img, t);
-            if (sel.contains(p)) {
+            const rect = entry.value_ptr.rect(img, t);
+            if (rect.contains(p)) {
                 if (filter) |f| if (!f(filter_ctx, entry.value_ptr.*)) continue;
                 self.placements.removeByPtr(entry.key_ptr);
                 if (delete_unused) self.deleteIfUnused(alloc, img.id);
@@ -255,6 +256,51 @@ pub const ImageStorage = struct {
 
         /// The z-index for this placement.
         z: i32 = 0,
+
+        /// Returns a selection of the entire rectangle this placement
+        /// occupies within the screen.
+        pub fn rect(
+            self: Placement,
+            image: Image,
+            t: *const terminal.Terminal,
+        ) Rect {
+            // If we have columns/rows specified we can simplify this whole thing.
+            if (self.columns > 0 and self.rows > 0) {
+                return .{
+                    .top_left = self.point,
+                    .bottom_right = .{
+                        .x = @min(self.point.x + self.columns, t.cols - 1),
+                        .y = self.point.y + self.rows,
+                    },
+                };
+            }
+
+            // Calculate our cell size.
+            const terminal_width_f64: f64 = @floatFromInt(t.width_px);
+            const terminal_height_f64: f64 = @floatFromInt(t.height_px);
+            const grid_columns_f64: f64 = @floatFromInt(t.cols);
+            const grid_rows_f64: f64 = @floatFromInt(t.rows);
+            const cell_width_f64 = terminal_width_f64 / grid_columns_f64;
+            const cell_height_f64 = terminal_height_f64 / grid_rows_f64;
+
+            // Our image width
+            const width_px = if (self.source_width > 0) self.source_width else image.width;
+            const height_px = if (self.source_height > 0) self.source_height else image.height;
+
+            // Calculate our image size in grid cells
+            const width_f64: f64 = @floatFromInt(width_px);
+            const height_f64: f64 = @floatFromInt(height_px);
+            const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
+            const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
+
+            return .{
+                .top_left = self.point,
+                .bottom_right = .{
+                    .x = @min(self.point.x + width_cells, t.cols - 1),
+                    .y = self.point.y + height_cells,
+                },
+            };
+        }
 
         /// Returns a selection of the entire rectangle this placement
         /// occupies within the screen.
