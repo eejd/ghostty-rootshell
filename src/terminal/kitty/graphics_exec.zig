@@ -189,11 +189,11 @@ fn display(
     switch (d.cursor_movement) {
         .none => {},
         .after => {
-            const p_sel = p.selection(img, terminal);
+            const rect = p.rect(img, terminal);
 
             // We can do better by doing this with pure internal screen state
             // but this handles scroll regions.
-            const height = p_sel.end.y - p_sel.start.y + 1;
+            const height = rect.bottom_right.y - rect.top_left.y + 1;
             for (0..height) |_| terminal.index() catch |err| {
                 log.warn("failed to move cursor: {}", .{err});
                 break;
@@ -201,7 +201,7 @@ fn display(
 
             terminal.setCursorPos(
                 terminal.screen.cursor.y + 1,
-                p_sel.end.x + 1,
+                rect.bottom_right.x + 1,
             );
         },
     }

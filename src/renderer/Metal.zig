@@ -896,13 +896,14 @@ fn prepKittyGraphics(
         };
 
         // If the selection isn't within our viewport then skip it.
-        const image_sel = p.selection(image, t);
-        if (!image_sel.within(top, bot)) continue;
+        const rect = p.rect(image, t);
+        if (rect.top_left.y > bot.y) continue;
+        if (rect.bottom_right.y < top.y) continue;
 
         // If the top left is outside the viewport we need to calc an offset
         // so that we render (0, 0) with some offset for the texture.
-        const offset_y: u32 = if (image_sel.start.y < t.screen.viewport) offset_y: {
-            const offset_cells = t.screen.viewport - image_sel.start.y;
+        const offset_y: u32 = if (rect.top_left.y < t.screen.viewport) offset_y: {
+            const offset_cells = t.screen.viewport - rect.top_left.y;
             const offset_pixels = offset_cells * self.cell_size.height;
             break :offset_y @intCast(offset_pixels);
         } else 0;

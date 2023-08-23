@@ -351,51 +351,6 @@ pub const ImageStorage = struct {
                 },
             };
         }
-
-        /// Returns a selection of the entire rectangle this placement
-        /// occupies within the screen.
-        pub fn selection(
-            self: Placement,
-            image: Image,
-            t: *const terminal.Terminal,
-        ) terminal.Selection {
-            // If we have columns/rows specified we can simplify this whole thing.
-            if (self.columns > 0 and self.rows > 0) {
-                return terminal.Selection{
-                    .start = self.point,
-                    .end = .{
-                        .x = @min(self.point.x + self.columns, t.cols),
-                        .y = @min(self.point.y + self.rows, t.rows),
-                    },
-                };
-            }
-
-            // Calculate our cell size.
-            const terminal_width_f64: f64 = @floatFromInt(t.width_px);
-            const terminal_height_f64: f64 = @floatFromInt(t.height_px);
-            const grid_columns_f64: f64 = @floatFromInt(t.cols);
-            const grid_rows_f64: f64 = @floatFromInt(t.rows);
-            const cell_width_f64 = terminal_width_f64 / grid_columns_f64;
-            const cell_height_f64 = terminal_height_f64 / grid_rows_f64;
-
-            // Our image width
-            const width_px = if (self.source_width > 0) self.source_width else image.width;
-            const height_px = if (self.source_height > 0) self.source_height else image.height;
-
-            // Calculate our image size in grid cells
-            const width_f64: f64 = @floatFromInt(width_px);
-            const height_f64: f64 = @floatFromInt(height_px);
-            const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
-            const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
-
-            return .{
-                .start = self.point,
-                .end = .{
-                    .x = @min(t.cols - 1, self.point.x + width_cells),
-                    .y = self.point.y + height_cells,
-                },
-            };
-        }
     };
 };
 
