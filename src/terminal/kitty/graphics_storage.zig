@@ -164,8 +164,26 @@ pub const ImageStorage = struct {
                     .x = t.screen.cursor.x,
                     .y = t.screen.cursor.y,
                 }).toScreen(&t.screen);
-                self.deleteIntersecting(alloc, t, target, delete_images);
+                self.deleteIntersecting(alloc, t, target, delete_images, {}, null);
             },
+
+            .intersect_cell => |v| {
+                const target = (point.Viewport{ .x = v.x, .y = v.y }).toScreen(&t.screen);
+                self.deleteIntersecting(alloc, t, target, v.delete, {}, null);
+            },
+
+            .intersect_cell_z => |v| {
+                const target = (point.Viewport{ .x = v.x, .y = v.y }).toScreen(&t.screen);
+                self.deleteIntersecting(alloc, t, target, v.delete, v.z, struct {
+                    fn filter(ctx: i32, p: Placement) bool {
+                        return p.z == ctx;
+                    }
+                }.filter);
+            },
+
+            // We don't support animation frames yet so they are successfully
+            // deleted!
+            .animation_frames => {},
 
             else => log.warn("unimplemented delete command: {}", .{cmd}),
         }
@@ -194,12 +212,15 @@ pub const ImageStorage = struct {
         t: *const terminal.Terminal,
         p: point.ScreenPoint,
         delete_unused: bool,
+        filter_ctx: anytype,
+        comptime filter: ?fn (@TypeOf(filter_ctx), Placement) bool,
     ) void {
         var it = self.placements.iterator();
         while (it.next()) |entry| {
             const img = self.imageById(entry.key_ptr.image_id) orelse continue;
             const sel = entry.value_ptr.selection(img, t);
             if (sel.contains(p)) {
+                if (filter) |f| if (!f(filter_ctx, entry.value_ptr.*)) continue;
                 self.placements.removeByPtr(entry.key_ptr);
                 if (delete_unused) self.deleteIfUnused(alloc, img.id);
             }
