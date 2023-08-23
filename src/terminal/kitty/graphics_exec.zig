@@ -26,6 +26,11 @@ pub fn execute(
     terminal: *Terminal,
     cmd: *Command,
 ) ?Response {
+    // If storage is disabled then we disable the full protocol. This means
+    // we don't even respond to queries so the terminal completely acts as
+    // if this feature is not supported.
+    if (!terminal.screen.kitty_images.enabled()) return null;
+
     log.debug("executing kitty graphics command: {}", .{cmd.control});
 
     const resp_: ?Response = switch (cmd.control) {

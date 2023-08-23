@@ -71,6 +71,7 @@ data: ?*EventData,
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
     palette: terminal.color.Palette,
+    image_storage_limit: usize,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -80,6 +81,7 @@ pub const DerivedConfig = struct {
 
         return .{
             .palette = config.palette.value,
+            .image_storage_limit = config.@"image-storage-limit",
         };
     }
 
@@ -105,6 +107,10 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     term.color_palette = opts.config.palette;
     term.width_px = opts.screen_size.width;
     term.height_px = opts.screen_size.height;
+
+    // Set the image size limits
+    try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
+    try term.secondary_screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
@@ -244,6 +250,16 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Update the palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
     self.terminal.color_palette = config.palette;
+
+    // Set the image size limits
+    try self.terminal.screen.kitty_images.setLimit(
+        self.alloc,
+        config.image_storage_limit,
+    );
+    try self.terminal.secondary_screen.kitty_images.setLimit(
+        self.alloc,
+        config.image_storage_limit,
+    );
 }
 
 /// Resize the terminal.

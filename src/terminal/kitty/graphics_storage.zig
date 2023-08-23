@@ -57,6 +57,34 @@ pub const ImageStorage = struct {
         self.placements.deinit(alloc);
     }
 
+    /// Kitty image protocol is enabled if we have a non-zero limit.
+    pub fn enabled(self: *const ImageStorage) bool {
+        return self.total_limit != 0;
+    }
+
+    /// Sets the limit in bytes for the total amount of image data that
+    /// can be loaded. If this limit is lower, this will do an eviction
+    /// if necessary. If the value is zero, then Kitty image protocol will
+    /// be disabled.
+    pub fn setLimit(self: *ImageStorage, alloc: Allocator, limit: usize) !void {
+        // Special case disabling by quickly deleting all
+        if (limit == 0) {
+            self.deinit(alloc);
+            self.* = .{};
+        }
+
+        // If we re lowering our limit, check if we need to evict.
+        if (limit < self.total_bytes) {
+            const req_bytes = self.total_bytes - limit;
+            log.info("evicting images to lower limit, evicting={}", .{req_bytes});
+            if (!try self.evictImage(alloc, req_bytes)) {
+                log.warn("failed to evict enough images for required bytes", .{});
+            }
+        }
+
+        self.total_limit = limit;
+    }
+
     /// Add an already-loaded image to the storage. This will automatically
     /// free any existing image with the same ID.
     pub fn addImage(self: *ImageStorage, alloc: Allocator, img: Image) Allocator.Error!void {

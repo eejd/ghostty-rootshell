@@ -186,6 +186,15 @@ pub const Config = struct {
     /// This does not affect data sent to the clipboard via "clipboard-write".
     @"clipboard-trim-trailing-spaces": bool = true,
 
+    /// The total amount of bytes that can be used for image data (i.e.
+    /// the Kitty image protocol) per terminal scren. The maximum value
+    /// is 4,294,967,295 (4GB). The default is 320MB. If this is set to zero,
+    /// then all image protocols will be disabled.
+    ///
+    /// This value is separate for primary and alternate screens so the
+    /// effective limit per surface is double.
+    @"image-storage-limit": u32 = 320 * 1000 * 1000,
+
     /// Whether to automatically copy selected text to the clipboard. "true"
     /// will only copy on systems that support a selection clipboard.
     ///
