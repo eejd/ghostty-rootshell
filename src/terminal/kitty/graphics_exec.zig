@@ -39,8 +39,8 @@ pub fn execute(
         .transmit => transmit(alloc, terminal, cmd),
         .transmit_and_display => transmitAndDisplay(alloc, terminal, cmd),
         .display => display(alloc, terminal, cmd),
+        .delete => delete(alloc, terminal, cmd),
 
-        .delete,
         .transmit_animation_frame,
         .control_animation,
         .compose_animation,
@@ -223,6 +223,17 @@ fn transmitAndDisplay(
     if (t.more_chunks) return resp;
 
     return display(alloc, terminal, cmd);
+}
+
+/// Display a previously transmitted image.
+fn delete(
+    alloc: Allocator,
+    terminal: *Terminal,
+    cmd: *Command,
+) Response {
+    const storage = &terminal.screen.kitty_images;
+    storage.delete(alloc, terminal, cmd.control.delete);
+    return .{};
 }
 
 fn loadAndAddImage(
