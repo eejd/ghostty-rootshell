@@ -123,11 +123,9 @@ pub const ImageStorage = struct {
     pub fn delete(
         self: *ImageStorage,
         alloc: Allocator,
-        screen: *const Screen,
+        t: *const terminal.Terminal,
         cmd: command.Delete,
     ) void {
-        _ = screen;
-
         switch (cmd) {
             .all => |delete_images| if (delete_images) {
                 // We just reset our entire state.
@@ -161,6 +159,14 @@ pub const ImageStorage = struct {
                 if (v.delete) self.deleteIfUnused(alloc, v.image_id);
             },
 
+            .intersect_cursor => |delete_images| {
+                const target = (point.Viewport{
+                    .x = t.screen.cursor.x,
+                    .y = t.screen.cursor.y,
+                }).toScreen(&t.screen);
+                self.deleteIntersecting(alloc, t, target, delete_images);
+            },
+
             else => log.warn("unimplemented delete command: {}", .{cmd}),
         }
     }
@@ -169,13 +175,34 @@ pub const ImageStorage = struct {
     fn deleteIfUnused(self: *ImageStorage, alloc: Allocator, image_id: u32) void {
         var it = self.placements.iterator();
         while (it.next()) |kv| {
-            if (kv.key_ptr.image_id == image_id) return;
+            if (kv.key_ptr.image_id == image_id) {
+                return;
+            }
         }
 
         // If we get here, we can delete the image.
         if (self.images.getEntry(image_id)) |entry| {
             entry.value_ptr.deinit(alloc);
             self.images.removeByPtr(entry.key_ptr);
+        }
+    }
+
+    /// Deletes all placements intersecting a screen point.
+    fn deleteIntersecting(
+        self: *ImageStorage,
+        alloc: Allocator,
+        t: *const terminal.Terminal,
+        p: point.ScreenPoint,
+        delete_unused: bool,
+    ) void {
+        var it = self.placements.iterator();
+        while (it.next()) |entry| {
+            const img = self.imageById(entry.key_ptr.image_id) orelse continue;
+            const sel = entry.value_ptr.selection(img, t);
+            if (sel.contains(p)) {
+                self.placements.removeByPtr(entry.key_ptr);
+                if (delete_unused) self.deleteIfUnused(alloc, img.id);
+            }
         }
     }
 
@@ -269,7 +296,7 @@ test "storage: delete all placements and images" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
-    s.delete(alloc, &t.screen, .{ .all = true });
+    s.delete(alloc, &t, .{ .all = true });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.images.count());
     try testing.expectEqual(@as(usize, 0), s.placements.count());
@@ -289,7 +316,7 @@ test "storage: delete all placements" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
-    s.delete(alloc, &t.screen, .{ .all = false });
+    s.delete(alloc, &t, .{ .all = false });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.placements.count());
     try testing.expectEqual(@as(usize, 3), s.images.count());
@@ -309,7 +336,7 @@ test "storage: delete all placements by image id" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
-    s.delete(alloc, &t.screen, .{ .id = .{ .image_id = 2 } });
+    s.delete(alloc, &t, .{ .id = .{ .image_id = 2 } });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 1), s.placements.count());
     try testing.expectEqual(@as(usize, 3), s.images.count());
@@ -329,7 +356,7 @@ test "storage: delete all placements by image id and unused images" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
-    s.delete(alloc, &t.screen, .{ .id = .{ .delete = true, .image_id = 2 } });
+    s.delete(alloc, &t, .{ .id = .{ .delete = true, .image_id = 2 } });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 1), s.placements.count());
     try testing.expectEqual(@as(usize, 2), s.images.count());
@@ -350,7 +377,7 @@ test "storage: delete placement by specific id" {
     try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
-    s.delete(alloc, &t.screen, .{ .id = .{
+    s.delete(alloc, &t, .{ .id = .{
         .delete = true,
         .image_id = 1,
         .placement_id = 2,
@@ -358,4 +385,82 @@ test "storage: delete placement by specific id" {
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 2), s.placements.count());
     try testing.expectEqual(@as(usize, 3), s.images.count());
+}
+
+test "storage: delete intersecting cursor" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 100, 100);
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1, .width = 50, .height = 50 });
+    try s.addImage(alloc, .{ .id = 2, .width = 25, .height = 25 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
+    try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
+
+    t.screen.cursor.x = 12;
+    t.screen.cursor.y = 12;
+
+    s.delete(alloc, &t, .{ .intersect_cursor = false });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.placements.count());
+    try testing.expectEqual(@as(usize, 2), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 2 }) != null);
+}
+
+test "storage: delete intersecting cursor plus unused" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 100, 100);
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1, .width = 50, .height = 50 });
+    try s.addImage(alloc, .{ .id = 2, .width = 25, .height = 25 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
+    try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
+
+    t.screen.cursor.x = 12;
+    t.screen.cursor.y = 12;
+
+    s.delete(alloc, &t, .{ .intersect_cursor = true });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.placements.count());
+    try testing.expectEqual(@as(usize, 2), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 2 }) != null);
+}
+
+test "storage: delete intersecting cursor hits multiple" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 100, 100);
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1, .width = 50, .height = 50 });
+    try s.addImage(alloc, .{ .id = 2, .width = 25, .height = 25 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
+    try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
+
+    t.screen.cursor.x = 26;
+    t.screen.cursor.y = 26;
+
+    s.delete(alloc, &t, .{ .intersect_cursor = true });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(@as(usize, 1), s.images.count());
 }

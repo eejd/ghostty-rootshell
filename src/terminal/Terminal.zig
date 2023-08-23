@@ -1021,11 +1021,7 @@ pub fn eraseDisplay(
             self.screen.cursor.pending_wrap = false;
 
             // Clear all Kitty graphics state for this screen
-            self.screen.kitty_images.delete(
-                alloc,
-                &self.screen,
-                .{ .all = true },
-            );
+            self.screen.kitty_images.delete(alloc, self, .{ .all = true });
         },
 
         .below => {
