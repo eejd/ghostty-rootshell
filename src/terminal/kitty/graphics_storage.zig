@@ -140,7 +140,42 @@ pub const ImageStorage = struct {
                 self.dirty = true;
             },
 
+            .id => |v| {
+                // If no placement, we delete all placements with the ID
+                if (v.placement_id == 0) {
+                    var it = self.placements.iterator();
+                    while (it.next()) |entry| {
+                        if (entry.key_ptr.image_id == v.image_id) {
+                            self.placements.removeByPtr(entry.key_ptr);
+                        }
+                    }
+                } else {
+                    _ = self.placements.remove(.{
+                        .image_id = v.image_id,
+                        .placement_id = v.placement_id,
+                    });
+                }
+
+                // If this is specified, then we also delete the image
+                // if it is no longer in use.
+                if (v.delete) self.deleteIfUnused(alloc, v.image_id);
+            },
+
             else => log.warn("unimplemented delete command: {}", .{cmd}),
+        }
+    }
+
+    /// Delete an image if it is unused.
+    fn deleteIfUnused(self: *ImageStorage, alloc: Allocator, image_id: u32) void {
+        var it = self.placements.iterator();
+        while (it.next()) |kv| {
+            if (kv.key_ptr.image_id == image_id) return;
+        }
+
+        // If we get here, we can delete the image.
+        if (self.images.getEntry(image_id)) |entry| {
+            entry.value_ptr.deinit(alloc);
+            self.images.removeByPtr(entry.key_ptr);
         }
     }
 
@@ -219,3 +254,108 @@ pub const ImageStorage = struct {
         }
     };
 };
+
+test "storage: delete all placements and images" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
+
+    s.delete(alloc, &t.screen, .{ .all = true });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 0), s.images.count());
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+}
+
+test "storage: delete all placements" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
+
+    s.delete(alloc, &t.screen, .{ .all = false });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+}
+
+test "storage: delete all placements by image id" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
+
+    s.delete(alloc, &t.screen, .{ .id = .{ .image_id = 2 } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.placements.count());
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+}
+
+test "storage: delete all placements by image id and unused images" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
+
+    s.delete(alloc, &t.screen, .{ .id = .{ .delete = true, .image_id = 2 } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.placements.count());
+    try testing.expectEqual(@as(usize, 2), s.images.count());
+}
+
+test "storage: delete placement by specific id" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
+
+    s.delete(alloc, &t.screen, .{ .id = .{
+        .delete = true,
+        .image_id = 1,
+        .placement_id = 2,
+    } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+}
