@@ -223,6 +223,13 @@ pub const LoadingImage = struct {
             log.warn("failed to calculate size for base64 data: {}", .{err});
             return error.InvalidData;
         };
+
+        // If our data would get too big, return an error
+        if (self.data.items.len + size > max_size) {
+            log.warn("image data too large max_size={}", .{max_size});
+            return error.InvalidData;
+        }
+
         try self.data.ensureUnusedCapacity(alloc, size);
 
         // We decode directly into the arraylist
@@ -355,6 +362,10 @@ pub const LoadingImage = struct {
         ) orelse return error.InvalidData;
         defer stb.stbi_image_free(data);
         const len: usize = @intCast(width * height * bpp);
+        if (len > max_size) {
+            log.warn("png image too large size={} max_size={}", .{ len, max_size });
+            return error.InvalidData;
+        }
 
         // Validate our bpp
         if (bpp != 3 and bpp != 4) return error.UnsupportedDepth;

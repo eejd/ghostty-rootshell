@@ -41,6 +41,12 @@ pub const ImageStorage = struct {
     /// Non-null if there is an in-progress loading image.
     loading: ?*LoadingImage = null,
 
+    /// The total bytes of image data that have been loaded and the limit.
+    /// If the limit is reached, the oldest images will be evicted to make
+    /// space. Unused images take priority.
+    total_bytes: usize = 0,
+    total_limit: usize = 320 * 1000 * 1000, // 320MB
+
     pub fn deinit(self: *ImageStorage, alloc: Allocator) void {
         if (self.loading) |loading| loading.destroy(alloc);
 
@@ -54,6 +60,20 @@ pub const ImageStorage = struct {
     /// Add an already-loaded image to the storage. This will automatically
     /// free any existing image with the same ID.
     pub fn addImage(self: *ImageStorage, alloc: Allocator, img: Image) Allocator.Error!void {
+        // If the image itself is over the limit, then error immediately
+        if (img.data.len > self.total_limit) return error.OutOfMemory;
+
+        // If this would put us over the limit, then evict.
+        const total_bytes = self.total_bytes + img.data.len;
+        if (total_bytes > self.total_limit) {
+            const req_bytes = total_bytes - self.total_limit;
+            log.info("evicting images to make space for {} bytes", .{req_bytes});
+            if (!try self.evictImage(alloc, req_bytes)) {
+                log.warn("failed to evict enough images for required bytes", .{});
+                return error.OutOfMemory;
+            }
+        }
+
         // Do the gop op first so if it fails we don't get a partial state
         const gop = try self.images.getOrPut(alloc, img.id);
 
@@ -64,8 +84,13 @@ pub const ImageStorage = struct {
         }});
 
         // Write our new image
-        if (gop.found_existing) gop.value_ptr.deinit(alloc);
+        if (gop.found_existing) {
+            self.total_bytes -= gop.value_ptr.data.len;
+            gop.value_ptr.deinit(alloc);
+        }
+
         gop.value_ptr.* = img;
+        self.total_bytes += img.data.len;
 
         self.dirty = true;
     }
@@ -251,6 +276,7 @@ pub const ImageStorage = struct {
 
         // If we get here, we can delete the image.
         if (self.images.getEntry(image_id)) |entry| {
+            self.total_bytes -= entry.value_ptr.data.len;
             entry.value_ptr.deinit(alloc);
             self.images.removeByPtr(entry.key_ptr);
         }
@@ -276,6 +302,106 @@ pub const ImageStorage = struct {
                 if (delete_unused) self.deleteIfUnused(alloc, img.id);
             }
         }
+    }
+
+    /// Evict image to make space. This will evict the oldest image,
+    /// prioritizing unused images first, as recommended by the published
+    /// Kitty spec.
+    ///
+    /// This will evict as many images as necessary to make space for
+    /// req bytes.
+    fn evictImage(self: *ImageStorage, alloc: Allocator, req: usize) !bool {
+        assert(req <= self.total_limit);
+
+        // Ironically we allocate to evict. We should probably redesign the
+        // data structures to avoid this but for now allocating a little
+        // bit is fine compared to the megabytes we're looking to save.
+        const Candidate = struct {
+            id: u32,
+            time: std.time.Instant,
+            used: bool,
+        };
+
+        var candidates = std.ArrayList(Candidate).init(alloc);
+        defer candidates.deinit();
+
+        var it = self.images.iterator();
+        while (it.next()) |kv| {
+            const img = kv.value_ptr;
+
+            // This is a huge waste. See comment above about redesigning
+            // our data structures to avoid this. Eviction should be very
+            // rare though and we never have that many images/placements
+            // so hopefully this will last a long time.
+            const used = used: {
+                var p_it = self.placements.iterator();
+                while (p_it.next()) |p_kv| {
+                    if (p_kv.key_ptr.image_id == img.id) {
+                        break :used true;
+                    }
+                }
+
+                break :used false;
+            };
+
+            try candidates.append(.{
+                .id = img.id,
+                .time = img.transmit_time,
+                .used = used,
+            });
+        }
+
+        // Sort
+        std.mem.sortUnstable(
+            Candidate,
+            candidates.items,
+            {},
+            struct {
+                fn lessThan(
+                    ctx: void,
+                    lhs: Candidate,
+                    rhs: Candidate,
+                ) bool {
+                    _ = ctx;
+
+                    // If they're usage matches, then its based on time.
+                    if (lhs.used == rhs.used) return switch (lhs.time.order(rhs.time)) {
+                        .lt => true,
+                        .gt => false,
+                        .eq => lhs.id < rhs.id,
+                    };
+
+                    // If not used, then its a better candidate
+                    return !lhs.used;
+                }
+            }.lessThan,
+        );
+
+        // They're in order of best to evict.
+        var evicted: usize = 0;
+        for (candidates.items) |c| {
+            // Delete all the placements for this image and the image.
+            var p_it = self.placements.iterator();
+            while (p_it.next()) |entry| {
+                if (entry.key_ptr.image_id == c.id) {
+                    self.placements.removeByPtr(entry.key_ptr);
+                }
+            }
+
+            if (self.images.getEntry(c.id)) |entry| {
+                log.info("evicting image id={} bytes={}", .{ c.id, entry.value_ptr.data.len });
+
+                evicted += entry.value_ptr.data.len;
+                self.total_bytes -= entry.value_ptr.data.len;
+
+                entry.value_ptr.deinit(alloc);
+                self.images.removeByPtr(entry.key_ptr);
+
+                if (evicted > req) return true;
+            }
+        }
+
+        return false;
     }
 
     /// Every placement is uniquely identified by the image ID and the
