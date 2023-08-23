@@ -244,6 +244,12 @@ pub const LoadingImage = struct {
             return error.InvalidData;
         }
 
+        // Set our time
+        self.image.transmit_time = std.time.Instant.now() catch |err| {
+            log.warn("failed to get time: {}", .{err});
+            return error.InternalError;
+        };
+
         // Everything looks good, copy the image data over.
         var result = self.image;
         result.data = try self.data.toOwnedSlice(alloc);
@@ -358,8 +364,10 @@ pub const Image = struct {
     format: command.Transmission.Format = .rgb,
     compression: command.Transmission.Compression = .none,
     data: []const u8 = "",
+    transmit_time: std.time.Instant = undefined,
 
     pub const Error = error{
+        InternalError,
         InvalidData,
         DecompressionFailed,
         DimensionsRequired,

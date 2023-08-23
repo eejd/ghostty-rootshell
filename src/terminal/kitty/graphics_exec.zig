@@ -297,6 +297,7 @@ const EncodeableError = Image.Error || Allocator.Error;
 fn encodeError(r: *Response, err: EncodeableError) void {
     switch (err) {
         error.OutOfMemory => r.message = "ENOMEM: out of memory",
+        error.InternalError => r.message = "EINVAL: internal error",
         error.InvalidData => r.message = "EINVAL: invalid data",
         error.DecompressionFailed => r.message = "EINVAL: decompression failed",
         error.FilePathTooLong => r.message = "EINVAL: file path too long",
