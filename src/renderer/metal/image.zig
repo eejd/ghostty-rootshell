@@ -14,6 +14,7 @@ pub const Placement = struct {
     /// The grid x/y where this placement is located.
     x: u32,
     y: u32,
+    z: i32,
 
     /// The width/height of the placed image.
     width: u32,

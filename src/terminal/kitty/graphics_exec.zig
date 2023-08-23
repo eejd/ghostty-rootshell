@@ -178,6 +178,7 @@ fn display(
         .source_height = d.height,
         .columns = d.columns,
         .rows = d.rows,
+        .z = d.z,
     };
     storage.addPlacement(alloc, img.id, d.placement_id, p) catch |err| {
         encodeError(&result, err);

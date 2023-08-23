@@ -198,9 +198,16 @@ pub const CommandParser = struct {
             }
         }
 
-        // Parse the value as a string
-        const v = try std.fmt.parseInt(u32, self.kv_temp[0..self.kv_temp_len], 10);
-        try self.kv.put(alloc, self.kv_current, v);
+        // Only "z" is currently signed. This is a bit of a kloodge; if more
+        // fields become signed we can rethink this but for now we parse
+        // "z" as i32 then bitcast it to u32 then bitcast it back later.
+        if (self.kv_current == 'z') {
+            const v = try std.fmt.parseInt(i32, self.kv_temp[0..self.kv_temp_len], 10);
+            try self.kv.put(alloc, self.kv_current, @bitCast(v));
+        } else {
+            const v = try std.fmt.parseInt(u32, self.kv_temp[0..self.kv_temp_len], 10);
+            try self.kv.put(alloc, self.kv_current, v);
+        }
 
         // Clear our temp buffer
         self.kv_temp_len = 0;
@@ -419,7 +426,7 @@ pub const Display = struct {
     rows: u32 = 0, // r
     cursor_movement: CursorMovement = .after, // C
     virtual_placement: bool = false, // U
-    z: u32 = 0, // z
+    z: i32 = 0, // z
 
     pub const CursorMovement = enum {
         after, // 0
@@ -490,7 +497,8 @@ pub const Display = struct {
         }
 
         if (kv.get('z')) |v| {
-            result.z = v;
+            // We can bitcast here because of how we parse it earlier.
+            result.z = @bitCast(v);
         }
 
         return result;
@@ -693,7 +701,7 @@ pub const Delete = union(enum) {
         delete: bool = false, // uppercase
         x: u32 = 0, // x
         y: u32 = 0, // y
-        z: u32 = 0, // z
+        z: i32 = 0, // z
     },
 
     // x/X
@@ -711,7 +719,7 @@ pub const Delete = union(enum) {
     // z/Z
     z: struct {
         delete: bool = false, // uppercase
-        z: u32 = 0, // z
+        z: i32 = 0, // z
     },
 
     fn parse(kv: KV) !Delete {
@@ -773,7 +781,8 @@ pub const Delete = union(enum) {
                     result.intersect_cell_z.y = v;
                 }
                 if (kv.get('z')) |v| {
-                    result.intersect_cell_z.z = v;
+                    // We can bitcast here because of how we parse it earlier.
+                    result.intersect_cell_z.z = @bitCast(v);
                 }
 
                 break :blk result;
@@ -800,7 +809,8 @@ pub const Delete = union(enum) {
             'z', 'Z' => blk: {
                 var result: Delete = .{ .z = .{ .delete = what == 'Z' } };
                 if (kv.get('z')) |v| {
-                    result.z.z = v;
+                    // We can bitcast here because of how we parse it earlier.
+                    result.z.z = @bitCast(v);
                 }
 
                 break :blk result;

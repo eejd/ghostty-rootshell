@@ -170,6 +170,9 @@ pub const ImageStorage = struct {
         columns: u32 = 0,
         rows: u32 = 0,
 
+        /// The z-index for this placement.
+        z: i32 = 0,
+
         /// Returns a selection of the entire rectangle this placement
         /// occupies within the screen.
         pub fn selection(

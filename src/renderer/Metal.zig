@@ -85,6 +85,8 @@ font_shaper: font.Shaper,
 /// The images that we may render.
 images: ImageMap = .{},
 image_placements: ImagePlacementList = .{},
+image_bg_end: u32 = 0,
+image_text_end: u32 = 0,
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
@@ -636,76 +638,54 @@ pub fn render(
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
-        // Terminal grid
-        {
-            // Use our shader pipeline
-            encoder.msgSend(
-                void,
-                objc.sel("setRenderPipelineState:"),
-                .{self.shaders.cell_pipeline.value},
-            );
+        // Draw background images first
+        try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
-            // Set our buffers
-            encoder.msgSend(
-                void,
-                objc.sel("setVertexBytes:length:atIndex:"),
-                .{
-                    @as(*const anyopaque, @ptrCast(&self.uniforms)),
-                    @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
-                    @as(c_ulong, 1),
-                },
-            );
-            encoder.msgSend(
-                void,
-                objc.sel("setFragmentTexture:atIndex:"),
-                .{
-                    self.texture_greyscale.value,
-                    @as(c_ulong, 0),
-                },
-            );
-            encoder.msgSend(
-                void,
-                objc.sel("setFragmentTexture:atIndex:"),
-                .{
-                    self.texture_color.value,
-                    @as(c_ulong, 1),
-                },
-            );
+        // Then draw background cells
+        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
 
-            // Issue the draw calls for this shader
-            try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
-            try self.drawCells(encoder, &self.buf_cells, self.cells);
-        }
+        // Then draw images under text
+        try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_text_end]);
 
-        // Images
-        // TODO: these should not go above text
-        if (self.image_placements.items.len > 0) {
-            // Use our image shader pipeline
-            encoder.msgSend(
-                void,
-                objc.sel("setRenderPipelineState:"),
-                .{self.shaders.image_pipeline.value},
-            );
+        // Then draw fg cells
+        try self.drawCells(encoder, &self.buf_cells, self.cells);
 
-            // Set our uniform, which is the only shared buffer
-            encoder.msgSend(
-                void,
-                objc.sel("setVertexBytes:length:atIndex:"),
-                .{
-                    @as(*const anyopaque, @ptrCast(&self.uniforms)),
-                    @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
-                    @as(c_ulong, 1),
-                },
-            );
-
-            for (self.image_placements.items) |placement| {
-                try self.drawImagePlacement(encoder, placement);
-            }
-        }
+        // Then draw remaining images
+        try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+fn drawImagePlacements(
+    self: *Metal,
+    encoder: objc.Object,
+    placements: []const mtl_image.Placement,
+) !void {
+    if (placements.len == 0) return;
+
+    // Use our image shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{self.shaders.image_pipeline.value},
+    );
+
+    // Set our uniform, which is the only shared buffer
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBytes:length:atIndex:"),
+        .{
+            @as(*const anyopaque, @ptrCast(&self.uniforms)),
+            @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
+            @as(c_ulong, 1),
+        },
+    );
+
+    for (placements) |placement| {
+        try self.drawImagePlacement(encoder, placement);
+    }
 }
 
 fn drawImagePlacement(
@@ -809,27 +789,61 @@ fn drawCells(
     buf: *CellBuffer,
     cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
 ) !void {
+    if (cells.items.len == 0) return;
+
     try buf.sync(self.device, cells.items);
+
+    // Use our shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{self.shaders.cell_pipeline.value},
+    );
+
+    // Set our buffers
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBytes:length:atIndex:"),
+        .{
+            @as(*const anyopaque, @ptrCast(&self.uniforms)),
+            @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
+            @as(c_ulong, 1),
+        },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            self.texture_greyscale.value,
+            @as(c_ulong, 0),
+        },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            self.texture_color.value,
+            @as(c_ulong, 1),
+        },
+    );
     encoder.msgSend(
         void,
         objc.sel("setVertexBuffer:offset:atIndex:"),
         .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
     );
 
-    if (cells.items.len > 0) {
-        encoder.msgSend(
-            void,
-            objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
-            .{
-                @intFromEnum(mtl.MTLPrimitiveType.triangle),
-                @as(c_ulong, 6),
-                @intFromEnum(mtl.MTLIndexType.uint16),
-                self.buf_instance.buffer.value,
-                @as(c_ulong, 0),
-                @as(c_ulong, cells.items.len),
-            },
-        );
-    }
+    encoder.msgSend(
+        void,
+        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        .{
+            @intFromEnum(mtl.MTLPrimitiveType.triangle),
+            @as(c_ulong, 6),
+            @intFromEnum(mtl.MTLIndexType.uint16),
+            self.buf_instance.buffer.value,
+            @as(c_ulong, 0),
+            @as(c_ulong, cells.items.len),
+        },
+    );
 }
 
 /// This goes through the Kitty graphic placements and accumulates the
@@ -882,7 +896,7 @@ fn prepKittyGraphics(
         };
 
         // If the selection isn't within our viewport then skip it.
-        const image_sel = kv.value_ptr.selection(image, t);
+        const image_sel = p.selection(image, t);
         if (!image_sel.within(top, bot)) continue;
 
         // If the top left is outside the viewport we need to calc an offset
@@ -915,7 +929,7 @@ fn prepKittyGraphics(
         }
 
         // Convert our screen point to a viewport point
-        const viewport = kv.value_ptr.point.toViewport(&t.screen);
+        const viewport = p.point.toViewport(&t.screen);
 
         // Calculate the source rectangle
         const source_x = @min(image.width, p.source_x);
@@ -937,17 +951,48 @@ fn prepKittyGraphics(
         if (image.width > 0 and image.height > 0) {
             try self.image_placements.append(self.alloc, .{
                 .image_id = kv.key_ptr.image_id,
-                .x = @intCast(kv.value_ptr.point.x),
+                .x = @intCast(p.point.x),
                 .y = @intCast(viewport.y),
+                .z = p.z,
                 .width = dest_width,
                 .height = dest_height,
-                .cell_offset_x = kv.value_ptr.x_offset,
-                .cell_offset_y = kv.value_ptr.y_offset,
+                .cell_offset_x = p.x_offset,
+                .cell_offset_y = p.y_offset,
                 .source_x = source_x,
                 .source_y = source_y,
                 .source_width = source_width,
                 .source_height = source_height,
             });
+        }
+    }
+
+    // Sort the placements by their Z value.
+    std.mem.sortUnstable(
+        mtl_image.Placement,
+        self.image_placements.items,
+        {},
+        struct {
+            fn lessThan(
+                ctx: void,
+                lhs: mtl_image.Placement,
+                rhs: mtl_image.Placement,
+            ) bool {
+                _ = ctx;
+                return lhs.z < rhs.z or (lhs.z == rhs.z and lhs.image_id < rhs.image_id);
+            }
+        }.lessThan,
+    );
+
+    // Find our indices
+    self.image_bg_end = 0;
+    self.image_text_end = 0;
+    const bg_limit = std.math.minInt(i32) / 2;
+    for (self.image_placements.items, 0..) |p, i| {
+        if (self.image_bg_end == 0 and p.z >= bg_limit) {
+            self.image_bg_end = @intCast(i);
+        }
+        if (self.image_text_end == 0 and p.z >= 0) {
+            self.image_text_end = @intCast(i);
         }
     }
 }
