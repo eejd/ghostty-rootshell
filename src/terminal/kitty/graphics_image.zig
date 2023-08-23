@@ -123,6 +123,16 @@ pub const LoadingImage = struct {
             else => @compileError("readFile only supports file and temporary_file"),
         }
 
+        // Verify file seems "safe". This is logic copied directly from Kitty,
+        // mostly. This is really rough but it will catch obvious bad actors.
+        if (std.mem.startsWith(u8, path, "/proc/") or
+            std.mem.startsWith(u8, path, "/sys/") or
+            (std.mem.startsWith(u8, path, "/dev/") and
+            !std.mem.startsWith(u8, path, "/dev/shm/")))
+        {
+            return error.InvalidData;
+        }
+
         // Temporary file logic
         if (medium == .temporary_file) {
             if (!isPathInTempDir(path)) return error.TemporaryFileNotInTempDir;
@@ -138,6 +148,17 @@ pub const LoadingImage = struct {
             return error.InvalidData;
         };
         defer file.close();
+
+        // File must be a regular file
+        if (file.stat()) |stat| {
+            if (stat.kind != .file) {
+                log.warn("file is not a regular file kind={}", .{stat.kind});
+                return error.InvalidData;
+            }
+        } else |err| {
+            log.warn("failed to stat file: {}", .{err});
+            return error.InvalidData;
+        }
 
         if (t.offset > 0) {
             file.seekTo(@intCast(t.offset)) catch |err| {
