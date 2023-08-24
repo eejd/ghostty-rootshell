@@ -480,6 +480,13 @@ pub const Surface = struct {
                 // If we aren't composing, then we set our preedit to
                 // empty no matter what.
                 self.core_surface.preeditCallback(null) catch {};
+
+                // If the text is just a single non-printable ASCII character
+                // then we clear the text. We handle non-printables in the
+                // key encoder manual (such as tab, ctrl+c, etc.)
+                if (result.text.len == 1 and result.text[0] < 0x20) {
+                    break :translate .{ .composing = false, .text = "" };
+                }
             }
 
             break :translate result;

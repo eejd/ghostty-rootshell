@@ -15,6 +15,8 @@ const KittyEntry = @import("kitty.zig").Entry;
 const kitty_entries = @import("kitty.zig").entries;
 const KittyFlags = terminal.kitty.KeyFlags;
 
+const log = std.log.scoped(.key_encoder);
+
 event: key.KeyEvent,
 
 /// The state of various modes of a terminal that impact encoding.
@@ -29,6 +31,8 @@ pub fn encode(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {
+    // log.debug("encode {}", .{self.*});
+
     if (self.kitty_flags.int() != 0) return try self.kitty(buf);
     return try self.legacy(buf);
 }
@@ -861,6 +865,22 @@ test "kitty: up arrow with utf8" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[A", actual);
+}
+
+test "kitty: shift+tab" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .tab,
+            .mods = .{ .shift = true },
+            .utf8 = "", // tab
+        },
+
+        .kitty_flags = .{ .disambiguate = true, .report_alternates = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[9;2u", actual);
 }
 
 test "legacy: ctrl+alt+c" {
