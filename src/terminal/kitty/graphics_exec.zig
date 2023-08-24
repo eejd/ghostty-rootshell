@@ -30,17 +30,22 @@ pub fn execute(
     // If storage is disabled then we disable the full protocol. This means
     // we don't even respond to queries so the terminal completely acts as
     // if this feature is not supported.
-    if (!terminal.screen.kitty_images.enabled()) return null;
+    if (!terminal.screen.kitty_images.enabled()) {
+        log.debug("kitty graphics requested but disabled", .{});
+        return null;
+    }
 
     // Only Metal supports rendering the images, right now.
-    if (comptime renderer.Renderer != renderer.Metal) return null;
+    if (comptime renderer.Renderer != renderer.Metal) {
+        log.warn("kitty graphics not supported on this renderer", .{});
+        return null;
+    }
 
     log.debug("executing kitty graphics command: {}", .{cmd.control});
 
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),
-        .transmit => transmit(alloc, terminal, cmd),
-        .transmit_and_display => transmitAndDisplay(alloc, terminal, cmd),
+        .transmit, .transmit_and_display => transmit(alloc, terminal, cmd),
         .display => display(alloc, terminal, cmd),
         .delete => delete(alloc, terminal, cmd),
 
@@ -113,19 +118,26 @@ fn transmit(
         .placement_id = t.placement_id,
     };
 
-    var img = loadAndAddImage(alloc, terminal, cmd) catch |err| {
+    const load = loadAndAddImage(alloc, terminal, cmd) catch |err| {
         encodeError(&result, err);
         return result;
     };
-    errdefer img.deinit(alloc);
+    errdefer load.image.deinit(alloc);
+
+    // If we're also displaying, then do that now. This function does
+    // both transmit and transmit and display. The display might also be
+    // deferred if it is multi-chunk.
+    if (load.display) |d| {
+        var d_copy = d;
+        d_copy.image_id = load.image.id;
+        return display(alloc, terminal, &.{
+            .control = .{ .display = d_copy },
+            .quiet = cmd.quiet,
+        });
+    }
 
     // After the image is added, set the ID in case it changed
-    result.id = img.id;
-
-    // If this is a transmit_and_display then the display part needs the image ID
-    if (cmd.control == .transmit_and_display) {
-        cmd.control.transmit_and_display.display.image_id = img.id;
-    }
+    result.id = load.image.id;
 
     return result;
 }
@@ -134,7 +146,7 @@ fn transmit(
 fn display(
     alloc: Allocator,
     terminal: *Terminal,
-    cmd: *Command,
+    cmd: *const Command,
 ) Response {
     const d = cmd.display().?;
 
@@ -212,22 +224,6 @@ fn display(
     return result;
 }
 
-/// A combination of transmit and display. Nothing special.
-fn transmitAndDisplay(
-    alloc: Allocator,
-    terminal: *Terminal,
-    cmd: *Command,
-) Response {
-    const resp = transmit(alloc, terminal, cmd);
-    if (!resp.ok()) return resp;
-
-    // If the transmission is chunked, we defer the display
-    const t = cmd.transmission().?;
-    if (t.more_chunks) return resp;
-
-    return display(alloc, terminal, cmd);
-}
-
 /// Display a previously transmitted image.
 fn delete(
     alloc: Allocator,
@@ -243,7 +239,10 @@ fn loadAndAddImage(
     alloc: Allocator,
     terminal: *Terminal,
     cmd: *Command,
-) !Image {
+) !struct {
+    image: Image,
+    display: ?command.Display = null,
+} {
     const t = cmd.transmission().?;
     const storage = &terminal.screen.kitty_images;
 
@@ -254,7 +253,7 @@ fn loadAndAddImage(
         try loading.addData(alloc, cmd.data);
 
         // If we have more then we're done
-        if (t.more_chunks) return loading.image;
+        if (t.more_chunks) return .{ .image = loading.image };
 
         // We have no more chunks. We're going to be completing the
         // image so we want to destroy the pointer to the loading
@@ -287,7 +286,7 @@ fn loadAndAddImage(
         errdefer alloc.destroy(loading_ptr);
         loading_ptr.* = loading;
         storage.loading = loading_ptr;
-        return loading.image;
+        return .{ .image = loading.image };
     }
 
     // Dump the image data before it is decompressed
@@ -298,11 +297,14 @@ fn loadAndAddImage(
     errdefer img.deinit(alloc);
     try storage.addImage(alloc, img);
 
+    // Get our display settings
+    const display_ = loading.display;
+
     // Ensure we deinit the loading state because we're done. The image
     // won't be deinit because of "complete" above.
     loading.deinit(alloc);
 
-    return img;
+    return .{ .image = img, .display = display_ };
 }
 
 const EncodeableError = Image.Error || Allocator.Error;

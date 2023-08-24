@@ -29,6 +29,10 @@ pub const LoadingImage = struct {
     /// The data that is being built up.
     data: std.ArrayListUnmanaged(u8) = .{},
 
+    /// This is non-null when a transmit and display command is given
+    /// so that we display the image after it is fully loaded.
+    display: ?command.Display = null,
+
     /// Initialize a chunked immage from the first image transmission.
     /// If this is a multi-chunk image, this should only be the FIRST
     /// chunk.
@@ -49,6 +53,8 @@ pub const LoadingImage = struct {
                 .compression = t.compression,
                 .format = t.format,
             },
+
+            .display = cmd.display(),
         };
 
         // Special case for the direct medium, we just add it directly
