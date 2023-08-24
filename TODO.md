@@ -27,4 +27,3 @@ Major Features:
 
 * Bell
 * Sixels: https://saitoha.github.io/libsixel/
-* Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/

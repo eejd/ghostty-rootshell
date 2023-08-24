@@ -865,6 +865,9 @@ selection: ?Selection = null,
 /// The kitty keyboard settings.
 kitty_keyboard: kitty.KeyFlagStack = .{},
 
+/// Kitty graphics protocol state.
+kitty_images: kitty.graphics.ImageStorage = .{},
+
 /// Initialize a new screen.
 pub fn init(
     alloc: Allocator,
@@ -889,6 +892,7 @@ pub fn init(
 }
 
 pub fn deinit(self: *Screen) void {
+    self.kitty_images.deinit(self.alloc);
     self.storage.deinit(self.alloc);
     self.deinitGraphemes();
 }
@@ -1538,6 +1542,11 @@ pub const Scroll = union(enum) {
 /// want to do that yet (i.e. are they writing to the end of the screen
 /// or not).
 pub fn scroll(self: *Screen, behavior: Scroll) !void {
+    // No matter what, scrolling marks our image state as dirty since
+    // it could move placements. If there are no placements or no images
+    // this is still a very cheap operation.
+    self.kitty_images.dirty = true;
+
     switch (behavior) {
         // Setting viewport offset to zero makes row 0 be at self.top
         // which is the top!
@@ -2104,12 +2113,18 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         // No resize necessary
         if (self.rows == rows) return;
 
+        // No matter what we mark our image state as dirty
+        self.kitty_images.dirty = true;
+
         // If we have the same number of columns, text can't possibly
         // reflow in any way, so we do the quicker thing and do a resize
         // without reflow checks.
         try self.resizeWithoutReflow(rows, cols);
         return;
     }
+
+    // No matter what we mark our image state as dirty
+    self.kitty_images.dirty = true;
 
     // If our columns increased, we alloc space for the new column width
     // and go through each row and reflow if necessary.

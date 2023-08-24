@@ -12,6 +12,9 @@ grid_size: renderer.GridSize,
 /// The size of the viewport in pixels.
 screen_size: renderer.ScreenSize,
 
+/// The padding of the viewport.
+padding: renderer.Padding,
+
 /// The full app configuration. This is only available during initialization.
 /// The memory it points to is NOT stable after the init call so any values
 /// in here must be copied.

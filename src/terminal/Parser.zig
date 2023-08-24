@@ -48,6 +48,7 @@ pub const TransitionAction = enum {
     csi_dispatch,
     put,
     osc_put,
+    apc_put,
 };
 
 /// Action is the action that a caller of the parser is expected to
@@ -73,6 +74,11 @@ pub const Action = union(enum) {
     dcs_hook: DCS,
     dcs_put: u8,
     dcs_unhook: void,
+
+    /// APC data
+    apc_start: void,
+    apc_put: u8,
+    apc_end: void,
 
     pub const CSI = struct {
         intermediates: []u8,
@@ -247,6 +253,7 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
             else
                 null,
             .dcs_passthrough => Action{ .dcs_unhook = {} },
+            .sos_pm_apc_string => Action{ .apc_end = {} },
             else => null,
         },
 
@@ -269,6 +276,7 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
                     .final = c,
                 },
             },
+            .sos_pm_apc_string => Action{ .apc_start = {} },
             .utf8 => utf8: {
                 // When entering the UTF8 state, we need to grab the
                 // last intermediate as our first byte and reset
@@ -426,9 +434,8 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                 .final = c,
             },
         },
-        .put => Action{
-            .dcs_put = c,
-        },
+        .put => Action{ .dcs_put = c },
+        .apc_put => Action{ .apc_put = c },
     };
 }
 

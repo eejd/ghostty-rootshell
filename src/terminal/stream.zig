@@ -64,8 +64,17 @@ pub fn Stream(comptime Handler: type) type {
                     .esc_dispatch => |esc| try self.escDispatch(esc),
                     .osc_dispatch => |cmd| try self.oscDispatch(cmd),
                     .dcs_hook => |dcs| log.warn("unhandled DCS hook: {}", .{dcs}),
-                    .dcs_put => |code| log.warn("unhandled DCS put: {}", .{code}),
+                    .dcs_put => |code| log.warn("unhandled DCS put: {x}", .{code}),
                     .dcs_unhook => log.warn("unhandled DCS unhook", .{}),
+                    .apc_start => if (@hasDecl(T, "apcStart")) {
+                        try self.handler.apcStart();
+                    } else log.warn("unimplemented APC start", .{}),
+                    .apc_put => |code| if (@hasDecl(T, "apcPut")) {
+                        try self.handler.apcPut(code);
+                    } else log.warn("unimplemented APC put: {x}", .{code}),
+                    .apc_end => if (@hasDecl(T, "apcEnd")) {
+                        try self.handler.apcEnd();
+                    } else log.warn("unimplemented APC end", .{}),
                 }
             }
         }

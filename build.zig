@@ -24,7 +24,6 @@ const libpng = @import("pkg/libpng/build.zig");
 const macos = @import("pkg/macos/build.zig");
 const objc = @import("vendor/zig-objc/build.zig");
 const pixman = @import("pkg/pixman/build.zig");
-const stb_image_resize = @import("pkg/stb_image_resize/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
 const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
@@ -670,6 +669,11 @@ fn addDeps(
         step.addLibraryPath(.{ .path = b.fmt("/usr/lib/{s}", .{triple}) });
     }
 
+    // C files
+    step.linkLibC();
+    step.addIncludePath(.{ .path = "src/stb" });
+    step.addCSourceFiles(&.{"src/stb/stb.c"}, &.{});
+
     // If we're building a lib we have some different deps
     const lib = step.kind == .lib;
 
@@ -693,7 +697,6 @@ fn addDeps(
     }));
     step.addModule("xev", mod_libxev);
     step.addModule("pixman", pixman.module(b));
-    step.addModule("stb_image_resize", stb_image_resize.module(b));
     step.addModule("utf8proc", utf8proc.module(b));
 
     // Mac Stuff
@@ -712,10 +715,6 @@ fn addDeps(
         var tracy_step = try tracylib.link(b, step);
         system_sdk.include(b, tracy_step, .{});
     }
-
-    // stb_image_resize
-    const stb_image_resize_step = try stb_image_resize.link(b, step, .{});
-    try static_libs.append(stb_image_resize_step.getEmittedBin());
 
     // utf8proc
     const utf8proc_step = try utf8proc.link(b, step);

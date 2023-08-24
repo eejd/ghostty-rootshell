@@ -15,6 +15,7 @@ const ansi = @import("ansi.zig");
 const modes = @import("modes.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const kitty = @import("kitty.zig");
 const sgr = @import("sgr.zig");
 const Tabstops = @import("Tabstops.zig");
 const trace = @import("tracy").trace;
@@ -61,6 +62,10 @@ tabstops: Tabstops,
 /// The size of the terminal.
 rows: usize,
 cols: usize,
+
+/// The size of the screen in pixels. This is used for pty events and images
+width_px: u32 = 0,
+height_px: u32 = 0,
 
 /// The current scrolling region.
 scrolling_region: ScrollingRegion,
@@ -188,7 +193,11 @@ pub const AlternateScreenOptions = struct {
 ///   * has its own cursor state (included saved cursor)
 ///   * does not support scrollback
 ///
-pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
+pub fn alternateScreen(
+    self: *Terminal,
+    alloc: Allocator,
+    options: AlternateScreenOptions,
+) void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -215,12 +224,16 @@ pub fn alternateScreen(self: *Terminal, options: AlternateScreenOptions) void {
     self.screen.selection = null;
 
     if (options.clear_on_enter) {
-        self.eraseDisplay(.complete);
+        self.eraseDisplay(alloc, .complete);
     }
 }
 
 /// Switch back to the primary screen (reset alternate screen mode).
-pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
+pub fn primaryScreen(
+    self: *Terminal,
+    alloc: Allocator,
+    options: AlternateScreenOptions,
+) void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -230,7 +243,7 @@ pub fn primaryScreen(self: *Terminal, options: AlternateScreenOptions) void {
     // TODO(mitchellh): what happens if we enter alternate screen multiple times?
     if (self.active_screen == .primary) return;
 
-    if (options.clear_on_exit) self.eraseDisplay(.complete);
+    if (options.clear_on_exit) self.eraseDisplay(alloc, .complete);
 
     // Switch the screens
     const old = self.screen;
@@ -277,7 +290,7 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     try self.resize(alloc, 0, self.rows);
 
     // TODO: do not clear screen flag mode
-    self.eraseDisplay(.complete);
+    self.eraseDisplay(alloc, .complete);
     self.setCursorPos(1, 1);
 
     // TODO: left/right margins
@@ -295,6 +308,9 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
         if (self.modes.get(.@"132_column")) 132 else 80
     else
         cols_req;
+
+    // If our cols/rows didn't change then we're done
+    if (self.cols == cols and self.rows == rows) return;
 
     // Resize our tabstops
     // TODO: use resize, but it doesn't set new tabstops
@@ -986,6 +1002,7 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 /// TODO: test
 pub fn eraseDisplay(
     self: *Terminal,
+    alloc: Allocator,
     mode: csi.EraseDisplay,
 ) void {
     const tracy = trace(@src());
@@ -1002,6 +1019,9 @@ pub fn eraseDisplay(
 
             // Unsets pending wrap state
             self.screen.cursor.pending_wrap = false;
+
+            // Clear all Kitty graphics state for this screen
+            self.screen.kitty_images.delete(alloc, self, .{ .all = true });
         },
 
         .below => {
@@ -1555,18 +1575,34 @@ pub fn getPwd(self: *const Terminal) ?[]const u8 {
     return self.pwd.items;
 }
 
+/// Execute a kitty graphics command. The buf is used to populate with
+/// the response that should be sent as an APC sequence. The response will
+/// be a full, valid APC sequence.
+///
+/// If an error occurs, the caller should response to the pty that a
+/// an error occurred otherwise the behavior of the graphics protocol is
+/// undefined.
+pub fn kittyGraphics(
+    self: *Terminal,
+    alloc: Allocator,
+    cmd: *kitty.graphics.Command,
+) ?kitty.graphics.Response {
+    return kitty.graphics.execute(alloc, self, cmd);
+}
+
 /// Full reset
-pub fn fullReset(self: *Terminal) void {
-    self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
+pub fn fullReset(self: *Terminal, alloc: Allocator) void {
+    self.primaryScreen(alloc, .{ .clear_on_exit = true, .cursor_save = true });
     self.charset = .{};
-    self.eraseDisplay(.scrollback);
-    self.eraseDisplay(.complete);
+    self.eraseDisplay(alloc, .scrollback);
+    self.eraseDisplay(alloc, .complete);
     self.modes = .{};
     self.flags = .{};
     self.tabstops.reset(0);
     self.screen.cursor = .{};
     self.screen.saved_cursor = .{};
     self.screen.selection = null;
+    self.screen.kitty_keyboard = .{};
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
     self.previous_char = null;
     self.pwd.clearRetainingCapacity();
@@ -2561,7 +2597,7 @@ test "Terminal: cursorIsAtPrompt alternate screen" {
     try testing.expect(t.cursorIsAtPrompt());
 
     // Secondary screen is never a prompt
-    t.alternateScreen(.{});
+    t.alternateScreen(alloc, .{});
     try testing.expect(!t.cursorIsAtPrompt());
     t.markSemanticPrompt(.prompt);
     try testing.expect(!t.cursorIsAtPrompt());

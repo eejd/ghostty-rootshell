@@ -401,6 +401,7 @@ pub fn init(
     var io = try termio.Impl.init(alloc, .{
         .grid_size = grid_size,
         .screen_size = screen_size,
+        .padding = padding,
         .full_config = config,
         .config = try termio.Impl.DerivedConfig.init(alloc, config),
         .resources_dir = app.resources_dir,
@@ -894,14 +895,12 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
 
     // Recalculate our grid size. Because Ghostty supports fluid resizing,
     // its possible the grid doesn't change at all even if the screen size changes.
-    const new_grid_size = renderer.GridSize.init(
+    // We have to update the IO thread no matter what because we send
+    // pixel-level sizing to the subprocess.
+    self.grid_size = renderer.GridSize.init(
         self.screen_size.subPadding(self.padding),
         self.cell_size,
     );
-    if (self.grid_size.equals(new_grid_size)) return;
-
-    // Grid size changed, update our grid size and notify the terminal
-    self.grid_size = new_grid_size;
     if (self.grid_size.columns < 5 and (self.padding.left > 0 or self.padding.right > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});

@@ -47,10 +47,6 @@ subprocess: Subprocess,
 /// just stores internal state about a grid.
 terminal: terminal.Terminal,
 
-/// The stream parser. This parses the stream of escape codes and so on
-/// from the child process and calls callbacks in the stream handler.
-terminal_stream: terminal.Stream(StreamHandler),
-
 /// The shared render state
 renderer_state: *renderer.State,
 
@@ -75,6 +71,7 @@ data: ?*EventData,
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
     palette: terminal.color.Palette,
+    image_storage_limit: usize,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -84,6 +81,7 @@ pub const DerivedConfig = struct {
 
         return .{
             .palette = config.palette.value,
+            .image_storage_limit = config.@"image-storage-limit",
         };
     }
 
@@ -108,13 +106,20 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     errdefer term.deinit(alloc);
     term.color_palette = opts.config.palette;
 
+    // Set the image size limits
+    try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
+    try term.secondary_screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
+
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
+
+    // Initial width/height based on subprocess
+    term.width_px = subprocess.screen_size.width;
+    term.height_px = subprocess.screen_size.height;
 
     return Exec{
         .alloc = alloc,
         .terminal = term,
-        .terminal_stream = undefined,
         .subprocess = subprocess,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
@@ -247,6 +252,16 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Update the palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
     self.terminal.color_palette = config.palette;
+
+    // Set the image size limits
+    try self.terminal.screen.kitty_images.setLimit(
+        self.alloc,
+        config.image_storage_limit,
+    );
+    try self.terminal.secondary_screen.kitty_images.setLimit(
+        self.alloc,
+        config.image_storage_limit,
+    );
 }
 
 /// Resize the terminal.
@@ -256,7 +271,7 @@ pub fn resize(
     screen_size: renderer.ScreenSize,
     padding: renderer.Padding,
 ) !void {
-    // Update the size of our pty
+    // Update the size of our pty.
     const padded_size = screen_size.subPadding(padding);
     try self.subprocess.resize(grid_size, padded_size);
 
@@ -269,7 +284,15 @@ pub fn resize(
         defer self.renderer_state.mutex.unlock();
 
         // Update the size of our terminal state
-        try self.terminal.resize(self.alloc, grid_size.columns, grid_size.rows);
+        try self.terminal.resize(
+            self.alloc,
+            grid_size.columns,
+            grid_size.rows,
+        );
+
+        // Update our pixel sizes
+        self.terminal.width_px = padded_size.width;
+        self.terminal.height_px = padded_size.height;
     }
 }
 
@@ -441,6 +464,9 @@ const EventData = struct {
 
         // Stop our process watcher
         self.process.deinit();
+
+        // Clear any StreamHandler state
+        self.terminal_stream.handler.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
@@ -658,6 +684,9 @@ const Subprocess = struct {
             log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
         }
 
+        // Our screen size should be our padded size
+        const padded_size = opts.screen_size.subPadding(opts.padding);
+
         return .{
             .arena = arena,
             .env = env,
@@ -665,7 +694,7 @@ const Subprocess = struct {
             .path = final_path,
             .args = args,
             .grid_size = opts.grid_size,
-            .screen_size = opts.screen_size,
+            .screen_size = padded_size,
         };
     }
 
@@ -1046,10 +1075,20 @@ const StreamHandler = struct {
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
 
+    /// The APC command handler maintains the APC state. APC is like
+    /// CSI or OSC, but it is a private escape sequence that is used
+    /// to send commands to the terminal emulator. This is used by
+    /// the kitty graphics protocol.
+    apc: terminal.apc.Handler = .{},
+
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
     /// to wake up the writer.
     writer_messaged: bool = false,
+
+    pub fn deinit(self: *StreamHandler) void {
+        self.apc.deinit();
+    }
 
     inline fn queueRender(self: *StreamHandler) !void {
         try self.ev.queueRender();
@@ -1058,6 +1097,35 @@ const StreamHandler = struct {
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
         self.writer_messaged = true;
+    }
+
+    pub fn apcStart(self: *StreamHandler) !void {
+        self.apc.start();
+    }
+
+    pub fn apcPut(self: *StreamHandler, byte: u8) !void {
+        self.apc.feed(self.alloc, byte);
+    }
+
+    pub fn apcEnd(self: *StreamHandler) !void {
+        var cmd = self.apc.end() orelse return;
+        defer cmd.deinit(self.alloc);
+
+        // log.warn("APC command: {}", .{cmd});
+        switch (cmd) {
+            .kitty => |*kitty_cmd| {
+                if (self.terminal.kittyGraphics(self.alloc, kitty_cmd)) |resp| {
+                    var buf: [1024]u8 = undefined;
+                    var buf_stream = std.io.fixedBufferStream(&buf);
+                    try resp.encode(buf_stream.writer());
+                    const final = buf_stream.getWritten();
+                    if (final.len > 2) {
+                        // log.warn("kitty graphics response: {s}", .{std.fmt.fmtSliceHexLower(final)});
+                        self.messageWriter(try termio.Message.writeReq(self.alloc, final));
+                    }
+                }
+            },
+        }
     }
 
     pub fn print(self: *StreamHandler, ch: u21) !void {
@@ -1144,7 +1212,7 @@ const StreamHandler = struct {
             try self.queueRender();
         }
 
-        self.terminal.eraseDisplay(mode);
+        self.terminal.eraseDisplay(self.alloc, mode);
     }
 
     pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine) !void {
@@ -1239,9 +1307,9 @@ const StreamHandler = struct {
                 };
 
                 if (enabled)
-                    self.terminal.alternateScreen(opts)
+                    self.terminal.alternateScreen(self.alloc, opts)
                 else
-                    self.terminal.primaryScreen(opts);
+                    self.terminal.primaryScreen(self.alloc, opts);
 
                 // Schedule a render since we changed screens
                 try self.queueRender();
@@ -1409,7 +1477,7 @@ const StreamHandler = struct {
     pub fn fullReset(
         self: *StreamHandler,
     ) !void {
-        self.terminal.fullReset();
+        self.terminal.fullReset(self.alloc);
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {

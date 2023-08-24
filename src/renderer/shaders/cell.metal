@@ -49,6 +49,11 @@ struct VertexOut {
   float2 tex_coord;
 };
 
+//-------------------------------------------------------------------
+// Terminal Grid Cell Shader
+//-------------------------------------------------------------------
+#pragma mark - Terminal Grid Cell Shader
+
 vertex VertexOut uber_vertex(
   unsigned int vid [[ vertex_id ]],
   VertexIn input [[ stage_in ]],
@@ -178,4 +183,84 @@ fragment float4 uber_fragment(
   case MODE_STRIKETHROUGH:
     return in.color;
   }
+}
+
+//-------------------------------------------------------------------
+// Image Shader
+//-------------------------------------------------------------------
+#pragma mark - Image Shader
+
+struct ImageVertexIn {
+  // The grid coordinates (x, y) where x < columns and y < rows where
+  // the image will be rendered. It will be rendered from the top left.
+  float2 grid_pos [[ attribute(1) ]];
+
+  // Offset in pixels from the top-left of the cell to make the top-left
+  // corner of the image.
+  float2 cell_offset [[ attribute(2) ]];
+
+  // The source rectangle of the texture to sample from.
+  float4 source_rect [[ attribute(3) ]];
+
+  // The final width/height of the image in pixels.
+  float2 dest_size [[ attribute(4) ]];
+};
+
+struct ImageVertexOut {
+  float4 position [[ position ]];
+  float2 tex_coord;
+};
+
+vertex ImageVertexOut image_vertex(
+  unsigned int vid [[ vertex_id ]],
+  ImageVertexIn input [[ stage_in ]],
+  texture2d<uint> image [[ texture(0) ]],
+  constant Uniforms &uniforms [[ buffer(1) ]]
+) {
+  // The size of the image in pixels
+  float2 image_size = float2(image.get_width(), image.get_height());
+
+  // Turn the image position into a vertex point depending on the
+  // vertex ID. Since we use instanced drawing, we have 4 vertices
+  // for each corner of the cell. We can use vertex ID to determine
+  // which one we're looking at. Using this, we can use 1 or 0 to keep
+  // or discard the value for the vertex.
+  //
+  // 0 = top-right
+  // 1 = bot-right
+  // 2 = bot-left
+  // 3 = top-left
+  float2 position;
+  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
+  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
+
+  // The texture coordinates start at our source x/y, then add the width/height
+  // as enabled by our instance id, then normalize to [0, 1]
+  float2 tex_coord = input.source_rect.xy;
+  tex_coord += input.source_rect.zw * position;
+  tex_coord /= image_size;
+
+  ImageVertexOut out;
+
+  // The position of our image starts at the top-left of the grid cell and
+  // adds the source rect width/height components.
+  float2 image_pos = (uniforms.cell_size * input.grid_pos) + input.cell_offset;
+  image_pos += input.dest_size * position;
+
+  out.position = uniforms.projection_matrix * float4(image_pos.x, image_pos.y, 0.0f, 1.0f);
+  out.tex_coord = tex_coord;
+  return out;
+}
+
+fragment float4 image_fragment(
+  ImageVertexOut in [[ stage_in ]],
+  texture2d<uint> image [[ texture(0) ]]
+) {
+  constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
+
+  // Ehhhhh our texture is in RGBA8Uint but our color attachment is
+  // BGRA8Unorm. So we need to convert it. We should really be converting
+  // our texture to BGRA8Unorm.
+  uint4 rgba = image.sample(textureSampler, in.tex_coord);
+  return float4(rgba) / 255.0f;
 }
