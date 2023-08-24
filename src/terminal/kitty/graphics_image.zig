@@ -37,9 +37,6 @@ pub const LoadingImage = struct {
     /// If this is a multi-chunk image, this should only be the FIRST
     /// chunk.
     pub fn init(alloc: Allocator, cmd: *command.Command) !LoadingImage {
-        // We must have data to load an image
-        if (cmd.data.len == 0) return error.InvalidData;
-
         // Build our initial image from the properties sent via the control.
         // These can be overwritten by the data loading process. For example,
         // PNG loading sets the width/height from the data.
@@ -222,9 +219,11 @@ pub const LoadingImage = struct {
     /// Adds a chunk of base64-encoded data to the image. Use this if the
     /// image is coming in chunks (the "m" parameter in the protocol).
     pub fn addData(self: *LoadingImage, alloc: Allocator, data: []const u8) !void {
-        const Base64Decoder = std.base64.standard.Decoder;
+        // If no data, skip
+        if (data.len == 0) return;
 
         // Grow our array list by size capacity if it needs it
+        const Base64Decoder = std.base64.standard.Decoder;
         const size = Base64Decoder.calcSizeForSlice(data) catch |err| {
             log.warn("failed to calculate size for base64 data: {}", .{err});
             return error.InvalidData;
@@ -602,6 +601,42 @@ test "image load: rgb, zlib compressed, direct, chunked" {
 
     // Read our remaining chunks
     var fbs = std.io.fixedBufferStream(data[1024..]);
+    var buf: [1024]u8 = undefined;
+    while (fbs.reader().readAll(&buf)) |size| {
+        try loading.addData(alloc, buf[0..size]);
+        if (size < buf.len) break;
+    } else |err| return err;
+
+    // Complete
+    var img = try loading.complete(alloc);
+    defer img.deinit(alloc);
+    try testing.expect(img.compression == .none);
+}
+
+test "image load: rgb, zlib compressed, direct, chunked with zero initial chunk" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const data = @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data");
+
+    // Setup our initial chunk
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .direct,
+            .compression = .zlib_deflate,
+            .height = 96,
+            .width = 128,
+            .image_id = 31,
+            .more_chunks = true,
+        } },
+    };
+    defer cmd.deinit(alloc);
+    var loading = try LoadingImage.init(alloc, &cmd);
+    defer loading.deinit(alloc);
+
+    // Read our remaining chunks
+    var fbs = std.io.fixedBufferStream(data);
     var buf: [1024]u8 = undefined;
     while (fbs.reader().readAll(&buf)) |size| {
         try loading.addData(alloc, buf[0..size]);
