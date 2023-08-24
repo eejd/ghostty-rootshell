@@ -41,11 +41,10 @@ pub fn execute(
         return null;
     }
 
-    log.debug("executing kitty graphics command: {}", .{cmd: {
-        var copy = cmd.*;
-        copy.data = "";
-        break :cmd copy;
-    }});
+    log.debug("executing kitty graphics command: quiet={} control={}", .{
+        cmd.quiet,
+        cmd.control,
+    });
 
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),
@@ -132,6 +131,7 @@ fn transmit(
     // both transmit and transmit and display. The display might also be
     // deferred if it is multi-chunk.
     if (load.display) |d| {
+        assert(!load.more);
         var d_copy = d;
         d_copy.image_id = load.image.id;
         return display(alloc, terminal, &.{
@@ -139,6 +139,9 @@ fn transmit(
             .quiet = cmd.quiet,
         });
     }
+
+    // If there are more chunks expected we do not respond.
+    if (load.more) return .{};
 
     // After the image is added, set the ID in case it changed
     result.id = load.image.id;
@@ -245,6 +248,7 @@ fn loadAndAddImage(
     cmd: *Command,
 ) !struct {
     image: Image,
+    more: bool = false,
     display: ?command.Display = null,
 } {
     const t = cmd.transmission().?;
@@ -257,7 +261,7 @@ fn loadAndAddImage(
         try loading.addData(alloc, cmd.data);
 
         // If we have more then we're done
-        if (t.more_chunks) return .{ .image = loading.image };
+        if (t.more_chunks) return .{ .image = loading.image, .more = true };
 
         // We have no more chunks. We're going to be completing the
         // image so we want to destroy the pointer to the loading
@@ -290,7 +294,7 @@ fn loadAndAddImage(
         errdefer alloc.destroy(loading_ptr);
         loading_ptr.* = loading;
         storage.loading = loading_ptr;
-        return .{ .image = loading.image };
+        return .{ .image = loading.image, .more = true };
     }
 
     // Dump the image data before it is decompressed
