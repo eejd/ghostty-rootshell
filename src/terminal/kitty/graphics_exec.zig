@@ -120,6 +120,9 @@ fn transmit(
         .image_number = t.image_number,
         .placement_id = t.placement_id,
     };
+    if (t.image_id > 0 and t.image_number > 0) {
+        return .{ .message = "EINVAL: image ID and number are mutually exclusive" };
+    }
 
     const load = loadAndAddImage(alloc, terminal, cmd) catch |err| {
         encodeError(&result, err);
@@ -244,6 +247,8 @@ fn delete(
 ) Response {
     const storage = &terminal.screen.kitty_images;
     storage.delete(alloc, terminal, cmd.control.delete);
+
+    // Delete never responds on success
     return .{};
 }
 
