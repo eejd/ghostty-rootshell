@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const renderer = @import("../../renderer.zig");
 const point = @import("../point.zig");
 const Terminal = @import("../Terminal.zig");
 const command = @import("graphics_command.zig");
@@ -30,6 +31,9 @@ pub fn execute(
     // we don't even respond to queries so the terminal completely acts as
     // if this feature is not supported.
     if (!terminal.screen.kitty_images.enabled()) return null;
+
+    // Only Metal supports rendering the images, right now.
+    if (comptime renderer.Renderer != renderer.Metal) return null;
 
     log.debug("executing kitty graphics command: {}", .{cmd.control});
 
