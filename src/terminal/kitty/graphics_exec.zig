@@ -41,7 +41,11 @@ pub fn execute(
         return null;
     }
 
-    log.debug("executing kitty graphics command: {}", .{cmd.control});
+    log.debug("executing kitty graphics command: {}", .{cmd: {
+        var copy = cmd.*;
+        copy.data = "";
+        break :cmd copy;
+    }});
 
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),

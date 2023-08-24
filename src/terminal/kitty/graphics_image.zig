@@ -241,9 +241,16 @@ pub const LoadingImage = struct {
         const start_i = self.data.items.len;
         self.data.items.len = start_i + size;
         const buf = self.data.items[start_i..];
-        Base64Decoder.decode(buf, data) catch |err| {
-            log.warn("failed to decode base64 data: {}", .{err});
-            return error.InvalidData;
+        Base64Decoder.decode(buf, data) catch |err| switch (err) {
+            // We have to ignore invalid padding because lots of encoders
+            // add the wrong padding. Since we validate image data later
+            // (PNG decode or simple dimensions check), we can ignore this.
+            error.InvalidPadding => {},
+
+            else => {
+                log.warn("failed to decode base64 data: {}", .{err});
+                return error.InvalidData;
+            },
         };
     }
 
