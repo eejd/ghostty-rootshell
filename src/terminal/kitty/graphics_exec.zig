@@ -146,6 +146,10 @@ fn transmit(
     // After the image is added, set the ID in case it changed
     result.id = load.image.id;
 
+    // If the original request had an image number, then we respond.
+    // Otherwise, we don't respond.
+    if (load.image.number == 0) return .{};
+
     return result;
 }
 
@@ -228,7 +232,8 @@ fn display(
         },
     }
 
-    return result;
+    // Display does not result in a response on success
+    return .{};
 }
 
 /// Display a previously transmitted image.
