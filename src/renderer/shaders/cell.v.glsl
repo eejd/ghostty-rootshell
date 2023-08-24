@@ -86,11 +86,6 @@ void main() {
     // Example: (1,0) with a 30 wide cell is converted to (30,0)
     vec2 cell_pos = cell_size * grid_coord;
 
-    // Our Z value. For now we just use grid_z directly but we pull it
-    // out here so the variable name is more uniform to our cell_pos and
-    // in case we want to do any other math later.
-    float cell_z = 0.0;
-
     // Turn the cell position into a vertex point depending on the
     // gl_VertexID. Since we use instanced drawing, we have 4 vertices
     // for each corner of the cell. We can use gl_VertexID to determine
@@ -116,7 +111,7 @@ void main() {
         // one cell up and to the left. (Do the math to verify yourself)
         cell_pos = cell_pos + cell_size_scaled * position;
 
-        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
+        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
         color = bg_color_in / 255.0;
         break;
 
@@ -125,7 +120,7 @@ void main() {
         vec2 glyph_offset_calc = glyph_offset;
 
         // If the glyph is larger than our cell, we need to downsample it.
-        // The "+ 3" here is to give some wiggle room for fonts that are
+        // The "+ 2" here is to give some wiggle room for fonts that are
         // BARELY over it.
         vec2 glyph_size_downsampled = glyph_size;
         if (glyph_size_downsampled.y > cell_size_scaled.y + 2) {
@@ -133,6 +128,10 @@ void main() {
             glyph_size_downsampled.y = cell_size_scaled.y * 0.9;
             glyph_size_downsampled.x = glyph_size.x * (glyph_size_downsampled.y / glyph_size.y);
             glyph_offset_calc.y = glyph_offset.y * 1.1 * (glyph_size_downsampled.y / glyph_size.y);
+        } else if (glyph_size_downsampled.x > cell_size_scaled.x + 2) {
+            glyph_size_downsampled.x = cell_size_scaled.x * 0.95;
+            glyph_size_downsampled.y = glyph_size.y * (glyph_size_downsampled.x / glyph_size.x);
+            glyph_offset_calc.x = glyph_offset.x * 1.1 * (glyph_size_downsampled.x / glyph_size.x);
         }
 
         // The glyph_offset.y is the y bearing, a y value that when added
@@ -142,7 +141,7 @@ void main() {
 
         // Calculate the final position of the cell.
         cell_pos = cell_pos + (glyph_size_downsampled * position) + glyph_offset_calc;
-        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
+        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
 
         // We need to convert our texture position and size to normalized
         // device coordinates (0 to 1.0) by dividing by the size of the texture.
@@ -176,7 +175,7 @@ void main() {
         // above the bottom.
         cell_pos = cell_pos + strikethrough_offset - (strikethrough_size * position);
 
-        gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
+        gl_Position = projection * vec4(cell_pos, 0.0, 1.0);
         color = fg_color_in / 255.0;
         break;
     }
