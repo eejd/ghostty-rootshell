@@ -401,6 +401,7 @@ pub fn init(
     var io = try termio.Impl.init(alloc, .{
         .grid_size = grid_size,
         .screen_size = screen_size,
+        .padding = padding,
         .full_config = config,
         .config = try termio.Impl.DerivedConfig.init(alloc, config),
         .resources_dir = app.resources_dir,

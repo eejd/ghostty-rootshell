@@ -105,8 +105,6 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     );
     errdefer term.deinit(alloc);
     term.color_palette = opts.config.palette;
-    term.width_px = opts.screen_size.width;
-    term.height_px = opts.screen_size.height;
 
     // Set the image size limits
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
@@ -114,6 +112,10 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
+
+    // Initial width/height based on subprocess
+    term.width_px = subprocess.screen_size.width;
+    term.height_px = subprocess.screen_size.height;
 
     return Exec{
         .alloc = alloc,
@@ -289,8 +291,8 @@ pub fn resize(
         );
 
         // Update our pixel sizes
-        self.terminal.width_px = screen_size.width;
-        self.terminal.height_px = screen_size.height;
+        self.terminal.width_px = padded_size.width;
+        self.terminal.height_px = padded_size.height;
     }
 }
 
@@ -682,6 +684,9 @@ const Subprocess = struct {
             log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
         }
 
+        // Our screen size should be our padded size
+        const padded_size = opts.screen_size.subPadding(opts.padding);
+
         return .{
             .arena = arena,
             .env = env,
@@ -689,7 +694,7 @@ const Subprocess = struct {
             .path = final_path,
             .args = args,
             .grid_size = opts.grid_size,
-            .screen_size = opts.screen_size,
+            .screen_size = padded_size,
         };
     }
 
