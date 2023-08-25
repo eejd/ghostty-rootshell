@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
+const quirks = @import("../../quirks.zig");
 
 const log = std.log.scoped(.font_face);
 
@@ -19,6 +20,9 @@ pub const Face = struct {
 
     /// Metrics for this font face. These are useful for renderers.
     metrics: font.face.Metrics,
+
+    /// Set quirks.disableDefaultFontFeatures
+    quirks_disable_default_font_features: bool = false,
 
     /// The matrix applied to a regular font to auto-italicize it.
     pub const italic_skew = macos.graphics.AffineTransform{
@@ -65,12 +69,14 @@ pub const Face = struct {
 
         const traits = ct_font.getSymbolicTraits();
 
-        return Face{
+        var result: Face = .{
             .font = ct_font,
             .hb_font = hb_font,
             .presentation = if (traits.color_glyphs) .emoji else .text,
             .metrics = try calcMetrics(ct_font),
         };
+        result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
+        return result;
     }
 
     pub fn deinit(self: *Face) void {

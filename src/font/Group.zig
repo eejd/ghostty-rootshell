@@ -22,6 +22,7 @@ const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const Presentation = @import("main.zig").Presentation;
 const options = @import("main.zig").options;
+const quirks = @import("../quirks.zig");
 
 const log = std.log.scoped(.font_group);
 
@@ -30,8 +31,7 @@ const log = std.log.scoped(.font_group);
 // usually only one font group for the entire process so this isn't the
 // most important memory efficiency we can look for. This is totally opaque
 // to the user so we can change this later.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
-
+const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 /// The allocator for this group
 alloc: Allocator,
 
@@ -54,6 +54,19 @@ discover: ?*font.Discover = null,
 /// to render sprite glyphs. But more than likely, if this isn't set then
 /// terminal rendering will look wrong.
 sprite: ?font.sprite.Face = null,
+
+/// A face in a group can be deferred or loaded.
+pub const GroupFace = union(enum) {
+    deferred: DeferredFace, // Not loaded
+    loaded: Face, // Loaded
+
+    pub fn deinit(self: *GroupFace) void {
+        switch (self.*) {
+            .deferred => |*v| v.deinit(),
+            .loaded => |*v| v.deinit(),
+        }
+    }
+};
 
 pub fn init(
     alloc: Allocator,
@@ -86,22 +99,55 @@ pub fn deinit(self: *Group) void {
 ///
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
-pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace) !void {
+pub fn addFace(self: *Group, style: Style, face: GroupFace) !void {
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
     if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
 
-    try list.append(alloc, face);
+    try list.append(self.alloc, face);
 }
 
-/// Get the face for the given style. This will always return the first
-/// face (if it exists). The returned pointer is only valid as long as
-/// the faces do not change.
-pub fn getFace(self: *Group, style: Style) ?*DeferredFace {
-    const list = self.faces.getPtr(style);
-    if (list.items.len == 0) return null;
-    return &list.items[0];
+/// Returns true if we have a face for the given style, though the face may
+/// not be loaded yet.
+pub fn hasFaceForStyle(self: Group, style: Style) bool {
+    const list = self.faces.get(style);
+    return list.items.len > 0;
+}
+
+/// This will automatically create an italicized font from the regular
+/// font face if we don't have any italicized fonts.
+pub fn italicize(self: *Group) !void {
+    // If we have an italic font, do nothing.
+    const italic_list = self.faces.getPtr(.italic);
+    if (italic_list.items.len > 0) return;
+
+    // Not all font backends support auto-italicization.
+    if (comptime !@hasDecl(Face, "italicize")) {
+        log.warn("no italic font face available, italics will not render", .{});
+        return;
+    }
+
+    // Our regular font. If we have no regular font we also do nothing.
+    const regular = regular: {
+        const list = self.faces.get(.regular);
+        if (list.items.len == 0) return;
+
+        // The font must be loaded.
+        break :regular try self.faceFromIndex(.{
+            .style = .regular,
+            .idx = 0,
+        });
+    };
+
+    // Try to italicize it.
+    const face = try regular.italicize();
+    try italic_list.append(self.alloc, .{ .loaded = face });
+
+    var buf: [128]u8 = undefined;
+    if (face.name(&buf)) |name| {
+        log.info("font auto-italicized: {s}", .{name});
+    } else |_| {}
 }
 
 /// Resize the fonts to the desired size.
@@ -113,10 +159,10 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
     while (it.next()) |entry| {
-        for (entry.value.items) |*deferred| {
-            if (!deferred.loaded()) continue;
-            try deferred.face.?.setSize(size);
-        }
+        for (entry.value.items) |*elem| switch (elem.*) {
+            .deferred => continue,
+            .loaded => |*f| try f.setSize(size),
+        };
     }
 
     // Set our size for future loads
@@ -213,11 +259,12 @@ pub fn indexForCodepoint(
             defer disco_it.deinit();
 
             if (disco_it.next() catch break :discover) |face| {
+                var buf: [256]u8 = undefined;
                 log.info("found codepoint 0x{x} in fallback face={s}", .{
                     cp,
-                    face.name() catch "<error>",
+                    face.name(&buf) catch "<error>",
                 });
-                self.addFace(self.alloc, style, face) catch break :discover;
+                self.addFace(style, .{ .deferred = face }) catch break :discover;
                 if (self.indexForCodepointExact(cp, style, p)) |value| return value;
             }
         }
@@ -231,8 +278,16 @@ pub fn indexForCodepoint(
 }
 
 fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) ?FontIndex {
-    for (self.faces.get(style).items, 0..) |deferred, i| {
-        if (deferred.hasCodepoint(cp, p)) {
+    for (self.faces.get(style).items, 0..) |elem, i| {
+        const has_cp = switch (elem) {
+            .deferred => |v| v.hasCodepoint(cp, p),
+            .loaded => |face| loaded: {
+                if (p) |desired| if (face.presentation != desired) break :loaded false;
+                break :loaded face.glyphIndex(cp) != null;
+            },
+        };
+
+        if (has_cp) {
             return FontIndex{
                 .style = style,
                 .idx = @intCast(i),
@@ -246,7 +301,7 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 
 /// Returns the presentation for a specific font index. This is useful for
 /// determining what atlas is needed.
-pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
+pub fn presentationFromIndex(self: *Group, index: FontIndex) !font.Presentation {
     if (index.special()) |sp| switch (sp) {
         .sprite => return .text,
     };
@@ -256,12 +311,22 @@ pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
 }
 
 /// Return the Face represented by a given FontIndex. Note that special
-/// fonts (i.e. box glyphs) do not have a face.
-pub fn faceFromIndex(self: Group, index: FontIndex) !*Face {
+/// fonts (i.e. box glyphs) do not have a face. The returned face pointer is
+/// only valid until the set of faces change.
+pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
-    const deferred = &self.faces.get(index.style).items[@intCast(index.idx)];
-    try deferred.load(self.lib, self.size);
-    return &deferred.face.?;
+    const list = self.faces.getPtr(index.style);
+    const item = &list.items[@intCast(index.idx)];
+    return switch (item.*) {
+        .deferred => |*d| deferred: {
+            const face = try d.load(self.lib, self.size);
+            d.deinit();
+            item.* = .{ .loaded = face };
+            break :deferred &item.loaded;
+        },
+
+        .loaded => |*f| f,
+    };
 }
 
 /// Render a glyph by glyph index into the given font atlas and return
@@ -276,7 +341,7 @@ pub fn faceFromIndex(self: Group, index: FontIndex) !*Face {
 /// doing text shaping, the text shaping library (i.e. HarfBuzz) will automatically
 /// determine glyph indexes for a text run.
 pub fn renderGlyph(
-    self: Group,
+    self: *Group,
     alloc: Allocator,
     atlas: *font.Atlas,
     index: FontIndex,
@@ -292,9 +357,8 @@ pub fn renderGlyph(
         ),
     };
 
-    const face = &self.faces.get(index.style).items[@intCast(index.idx)];
-    try face.load(self.lib, self.size);
-    const glyph = try face.face.?.renderGlyph(alloc, atlas, glyph_index, opts);
+    const face = try self.faceFromIndex(index);
+    const glyph = try face.renderGlyph(alloc, atlas, glyph_index, opts);
     // log.warn("GLYPH={}", .{glyph});
     return glyph;
 }
@@ -349,7 +413,7 @@ pub const Wasm = struct {
     }
 
     export fn group_add_face(self: *Group, style: u16, face: *font.DeferredFace) void {
-        return self.addFace(alloc, @enumFromInt(style), face.*) catch |err| {
+        return self.addFace(@enumFromInt(style), face.*) catch |err| {
             log.warn("error adding face to group err={}", .{err});
             return;
         };
@@ -422,13 +486,13 @@ test {
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
-        try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
+        try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
     }
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
 
     // Should find all visible ASCII
     var i: u32 = 32;
@@ -521,7 +585,7 @@ test "resize" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
 
     // Load a letter
     {
@@ -574,7 +638,7 @@ test "discover monospace with fontconfig and freetype" {
     defer lib.deinit();
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
-    try group.addFace(alloc, .regular, (try it.next()).?);
+    try group.addFace(.regular, .{ .deferred = (try it.next()).? });
 
     // Should find all visible ASCII
     var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
@@ -612,7 +676,7 @@ test "faceFromIndex returns pointer" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
 
     {
         const idx = group.indexForCodepoint('A', .regular, null).?;

@@ -30,9 +30,6 @@ const FaceState = switch (options.backend) {
     .web_canvas => WebCanvas,
 };
 
-/// The loaded face (once loaded).
-face: ?Face = null,
-
 /// Fontconfig
 fc: if (options.backend == .fontconfig_freetype) ?Fontconfig else void =
     if (options.backend == .fontconfig_freetype) null else {},
@@ -72,13 +69,6 @@ pub const CoreText = struct {
         self.font.release();
         self.* = undefined;
     }
-
-    /// Auto-italicize the font by applying a skew.
-    pub fn italicize(self: *const CoreText) !CoreText {
-        const ct_font = try self.font.copyWithAttributes(0.0, &Face.italic_skew, null);
-        errdefer ct_font.release();
-        return .{ .font = ct_font };
-    }
 };
 
 /// WebCanvas specific data. This is only present when building with canvas.
@@ -98,14 +88,7 @@ pub const WebCanvas = struct {
     }
 };
 
-/// Initialize a deferred face that is already pre-loaded. The deferred face
-/// takes ownership over the loaded face, deinit will deinit the loaded face.
-pub fn initLoaded(face: Face) DeferredFace {
-    return .{ .face = face };
-}
-
 pub fn deinit(self: *DeferredFace) void {
-    if (self.face) |*face| face.deinit();
     switch (options.backend) {
         .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
         .coretext, .coretext_freetype => if (self.ct) |*ct| ct.deinit(),
@@ -115,14 +98,9 @@ pub fn deinit(self: *DeferredFace) void {
     self.* = undefined;
 }
 
-/// Returns true if the face has been loaded.
-pub inline fn loaded(self: DeferredFace) bool {
-    return self.face != null;
-}
-
 /// Returns the name of this face. The memory is always owned by the
 /// face so it doesn't have to be freed.
-pub fn name(self: DeferredFace) ![:0]const u8 {
+pub fn name(self: DeferredFace, buf: []u8) ![]const u8 {
     switch (options.backend) {
         .freetype => {},
 
@@ -136,22 +114,15 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
                 // this to be returned efficiently." In this case, we need
                 // to allocate. But we can't return an allocated string because
                 // we don't have an allocator. Let's use the stack and log it.
-                var buf: [1024]u8 = undefined;
-                const buf_name = display_name.cstring(&buf, .utf8) orelse
-                    "<not enough internal storage space>";
-
-                log.info(
-                    "CoreText font required too much space to copy, value = {s}",
-                    .{buf_name},
-                );
-                break :unsupported "<CoreText internal storage limited, see logs>";
+                break :unsupported display_name.cstring(buf, .utf8) orelse
+                    return error.OutOfMemory;
             };
         },
 
         .web_canvas => if (self.wc) |wc| return wc.font_str,
     }
 
-    return "TODO: built-in font names";
+    return "";
 }
 
 /// Load the deferred font face. This does nothing if the face is loaded.
@@ -159,69 +130,48 @@ pub fn load(
     self: *DeferredFace,
     lib: Library,
     size: font.face.DesiredSize,
-) !void {
-    // No-op if we already loaded
-    if (self.face != null) return;
-
-    switch (options.backend) {
-        .fontconfig_freetype => {
-            try self.loadFontconfig(lib, size);
-            return;
-        },
-
-        .coretext => {
-            try self.loadCoreText(lib, size);
-            return;
-        },
-
-        .coretext_freetype => {
-            try self.loadCoreTextFreetype(lib, size);
-            return;
-        },
-
-        .web_canvas => {
-            try self.loadWebCanvas(size);
-            return;
-        },
+) !Face {
+    return switch (options.backend) {
+        .fontconfig_freetype => try self.loadFontconfig(lib, size),
+        .coretext => try self.loadCoreText(lib, size),
+        .coretext_freetype => try self.loadCoreTextFreetype(lib, size),
+        .web_canvas => try self.loadWebCanvas(size),
 
         // Unreachable because we must be already loaded or have the
         // proper configuration for one of the other deferred mechanisms.
         .freetype => unreachable,
-    }
+    };
 }
 
 fn loadFontconfig(
     self: *DeferredFace,
     lib: Library,
     size: font.face.DesiredSize,
-) !void {
-    assert(self.face == null);
+) !Face {
     const fc = self.fc.?;
 
     // Filename and index for our face so we can load it
     const filename = (try fc.pattern.get(.file, 0)).string;
     const face_index = (try fc.pattern.get(.index, 0)).integer;
 
-    self.face = try Face.initFile(lib, filename, face_index, size);
+    return try Face.initFile(lib, filename, face_index, size);
 }
 
 fn loadCoreText(
     self: *DeferredFace,
     lib: Library,
     size: font.face.DesiredSize,
-) !void {
+) !Face {
     _ = lib;
-    assert(self.face == null);
     const ct = self.ct.?;
-    self.face = try Face.initFontCopy(ct.font, size);
+    return try Face.initFontCopy(ct.font, size);
 }
 
 fn loadCoreTextFreetype(
     self: *DeferredFace,
     lib: Library,
     size: font.face.DesiredSize,
-) !void {
-    assert(self.face == null);
+) !Face {
     const ct = self.ct.?;
 
     // Get the URL for the font so we can get the filepath
@@ -253,16 +203,15 @@ fn loadCoreTextFreetype(
     // TODO: face index 0 is not correct long term and we should switch
     // to using CoreText for rendering, too.
     //std.log.warn("path={s}", .{path_slice});
-    self.face = try Face.initFile(lib, buf[0..path_slice.len :0], 0, size);
+    return try Face.initFile(lib, buf[0..path_slice.len :0], 0, size);
 }
 
 fn loadWebCanvas(
     self: *DeferredFace,
     size: font.face.DesiredSize,
-) !void {
-    assert(self.face == null);
+) !Face {
     const wc = self.wc.?;
-    self.face = try Face.initNamed(wc.alloc, wc.font_str, size, wc.presentation);
+    return try Face.initNamed(wc.alloc, wc.font_str, size, wc.presentation);
 }
 
 /// Returns true if this face can satisfy the given codepoint and
@@ -273,12 +222,6 @@ fn loadWebCanvas(
 /// discovery mechanism (i.e. fontconfig). If no discovery is used,
 /// the face is always expected to be loaded.
 pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
-    // If we have the face, use the face.
-    if (self.face) |face| {
-        if (p) |desired| if (face.presentation != desired) return false;
-        return face.glyphIndex(cp) != null;
-    }
-
     switch (options.backend) {
         .fontconfig_freetype => {
             // If we are using fontconfig, use the fontconfig metadata to
@@ -351,40 +294,6 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     unreachable;
 }
 
-/// Returns true if our deferred font implementation supports auto-itacilization.
-pub fn canItalicize() bool {
-    return @hasDecl(FaceState, "italicize") and @hasDecl(Face, "italicize");
-}
-
-/// Returns a new deferred face with the italicized version of this face
-/// by applying a skew. This is NOT TRUE italics. You should use the discovery
-/// mechanism to try to find an italic font. This is a fallback for when
-/// that fails.
-pub fn italicize(self: *const DeferredFace) !?DeferredFace {
-    if (comptime !canItalicize()) return null;
-
-    var result: DeferredFace = .{};
-
-    if (self.face) |face| {
-        result.face = try face.italicize();
-    }
-
-    switch (options.backend) {
-        .freetype => {},
-        .fontconfig_freetype => if (self.fc) |*fc| {
-            result.fc = try fc.italicize();
-        },
-        .coretext, .coretext_freetype => if (self.ct) |*ct| {
-            result.ct = try ct.italicize();
-        },
-        .web_canvas => if (self.wc) |*wc| {
-            result.wc = try wc.italicize();
-        },
-    }
-
-    return result;
-}
-
 /// The wasm-compatible API.
 pub const Wasm = struct {
     const wasm = @import("../os/wasm.zig");
@@ -429,29 +338,7 @@ pub const Wasm = struct {
             return;
         };
     }
-
-    /// Caller should not free this, the face is owned by the deferred face.
-    export fn deferred_face_face(self: *DeferredFace) ?*Face {
-        assert(self.loaded());
-        return &self.face.?;
-    }
 };
-
-test "preloaded" {
-    const testing = std.testing;
-    const testFont = @import("test.zig").fontRegular;
-
-    var lib = try Library.init();
-    defer lib.deinit();
-
-    var face = try Face.init(lib, testFont, .{ .points = 12 });
-    errdefer face.deinit();
-
-    var def = initLoaded(face);
-    defer def.deinit();
-
-    try testing.expect(def.hasCodepoint(' ', null));
-}
 
 test "fontconfig" {
     if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
@@ -471,16 +358,15 @@ test "fontconfig" {
         break :def (try it.next()).?;
     };
     defer def.deinit();
-    try testing.expect(!def.loaded());
 
     // Verify we can get the name
-    const n = try def.name();
+    var buf: [1024]u8 = undefined;
+    const n = try def.name(&buf);
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    try def.load(lib, .{ .points = 12 });
-    try testing.expect(def.hasCodepoint(' ', null));
-    try testing.expect(def.face.?.glyphIndex(' ') != null);
+    const face = try def.load(lib, .{ .points = 12 });
+    try testing.expect(face.glyphIndex(' ') != null);
 }
 
 test "coretext" {
@@ -501,15 +387,14 @@ test "coretext" {
         break :def (try it.next()).?;
     };
     defer def.deinit();
-    try testing.expect(!def.loaded());
     try testing.expect(def.hasCodepoint(' ', null));
 
     // Verify we can get the name
-    const n = try def.name();
+    var buf: [1024]u8 = undefined;
+    const n = try def.name(&buf);
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    try def.load(lib, .{ .points = 12 });
-    try testing.expect(def.hasCodepoint(' ', null));
-    try testing.expect(def.face.?.glyphIndex(' ') != null);
+    const face = try def.load(lib, .{ .points = 12 });
+    try testing.expect(face.glyphIndex(' ') != null);
 }

@@ -18,6 +18,7 @@ const Library = font.Library;
 const Presentation = font.Presentation;
 const convert = @import("freetype_convert.zig");
 const fastmem = @import("../../fastmem.zig");
+const quirks = @import("../../quirks.zig");
 
 const log = std.log.scoped(.font_face);
 
@@ -34,6 +35,9 @@ pub const Face = struct {
 
     /// Metrics for this font face. These are useful for renderers.
     metrics: font.face.Metrics,
+
+    /// Set quirks.disableDefaultFontFeatures
+    quirks_disable_default_font_features: bool = false,
 
     /// Initialize a new font face with the given source in-memory.
     pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: font.face.DesiredSize) !Face {
@@ -56,12 +60,14 @@ pub const Face = struct {
         const hb_font = try harfbuzz.freetype.createFont(face.handle);
         errdefer hb_font.destroy();
 
-        return Face{
+        var result: Face = .{
             .face = face,
             .hb_font = hb_font,
             .presentation = if (face.hasColor()) .emoji else .text,
             .metrics = calcMetrics(face),
         };
+        result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
+        return result;
     }
 
     pub fn deinit(self: *Face) void {

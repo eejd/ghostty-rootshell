@@ -217,7 +217,6 @@ pub const Fontconfig = struct {
             defer self.i += 1;
 
             return DeferredFace{
-                .face = null,
                 .fc = .{
                     .pattern = font_pattern,
                     .charset = (try font_pattern.get(.charset, 0)).char_set,
@@ -301,7 +300,6 @@ pub const CoreText = struct {
             defer self.i += 1;
 
             return DeferredFace{
-                .face = null,
                 .ct = .{ .font = font },
             };
         }
@@ -311,14 +309,9 @@ pub const CoreText = struct {
 test "fontconfig" {
     if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
 
-    const testing = std.testing;
-
     var fc = Fontconfig.init();
     var it = try fc.discover(.{ .family = "monospace", .size = 12 });
     defer it.deinit();
-    while (try it.next()) |face| {
-        try testing.expect(!face.loaded());
-    }
 }
 
 test "fontconfig codepoint" {
@@ -333,7 +326,6 @@ test "fontconfig codepoint" {
     // The first result should have the codepoint. Later ones may not
     // because fontconfig returns all fonts sorted.
     const face = (try it.next()).?;
-    try testing.expect(!face.loaded());
     try testing.expect(face.hasCodepoint('A', null));
 
     // Should have other codepoints too
@@ -351,9 +343,8 @@ test "coretext" {
     var it = try ct.discover(.{ .family = "Monaco", .size = 12 });
     defer it.deinit();
     var count: usize = 0;
-    while (try it.next()) |face| {
+    while (try it.next()) |_| {
         count += 1;
-        try testing.expect(!face.loaded());
     }
     try testing.expect(count > 0);
 }
@@ -372,7 +363,6 @@ test "coretext codepoint" {
     // The first result should have the codepoint. Later ones may not
     // because fontconfig returns all fonts sorted.
     const face = (try it.next()).?;
-    try testing.expect(!face.loaded());
     try testing.expect(face.hasCodepoint('A', null));
 
     // Should have other codepoints too
