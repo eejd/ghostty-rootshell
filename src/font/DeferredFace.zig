@@ -100,7 +100,7 @@ pub fn deinit(self: *DeferredFace) void {
 
 /// Returns the name of this face. The memory is always owned by the
 /// face so it doesn't have to be freed.
-pub fn name(self: DeferredFace) ![:0]const u8 {
+pub fn name(self: DeferredFace, buf: []u8) ![]const u8 {
     switch (options.backend) {
         .freetype => {},
 
@@ -114,22 +114,15 @@ pub fn name(self: DeferredFace) ![:0]const u8 {
                 // this to be returned efficiently." In this case, we need
                 // to allocate. But we can't return an allocated string because
                 // we don't have an allocator. Let's use the stack and log it.
-                var buf: [1024]u8 = undefined;
-                const buf_name = display_name.cstring(&buf, .utf8) orelse
-                    "<not enough internal storage space>";
-
-                log.info(
-                    "CoreText font required too much space to copy, value = {s}",
-                    .{buf_name},
-                );
-                break :unsupported "<CoreText internal storage limited, see logs>";
+                break :unsupported display_name.cstring(buf, .utf8) orelse
+                    return error.OutOfMemory;
             };
         },
 
         .web_canvas => if (self.wc) |wc| return wc.font_str,
     }
 
-    return "TODO: built-in font names";
+    return "";
 }
 
 /// Load the deferred font face. This does nothing if the face is loaded.
@@ -397,7 +390,8 @@ test "coretext" {
     try testing.expect(def.hasCodepoint(' ', null));
 
     // Verify we can get the name
-    const n = try def.name();
+    var buf: [1024]u8 = undefined;
+    const n = try def.name(&buf);
     try testing.expect(n.len > 0);
 
     // Load it and verify it works

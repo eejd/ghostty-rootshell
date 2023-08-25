@@ -259,9 +259,10 @@ pub fn indexForCodepoint(
             defer disco_it.deinit();
 
             if (disco_it.next() catch break :discover) |face| {
+                var buf: [256]u8 = undefined;
                 log.info("found codepoint 0x{x} in fallback face={s}", .{
                     cp,
-                    face.name() catch "<error>",
+                    face.name(&buf) catch "<error>",
                 });
                 self.addFace(style, .{ .deferred = face }) catch break :discover;
                 if (self.indexForCodepointExact(cp, style, p)) |value| return value;

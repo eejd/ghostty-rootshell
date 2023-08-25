@@ -222,6 +222,9 @@ pub fn init(
             };
             group.discover = disco;
 
+            // A buffer we use to store the font names for logging.
+            var name_buf: [256]u8 = undefined;
+
             if (config.@"font-family") |family| {
                 var disco_it = try disco.discover(.{
                     .family = family,
@@ -229,7 +232,7 @@ pub fn init(
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.info("font regular: {s}", .{try face.name()});
+                    log.info("font regular: {s}", .{try face.name(&name_buf)});
                     try group.addFace(.regular, .{ .deferred = face });
                 } else log.warn("font-family not found: {s}", .{family});
             }
@@ -241,7 +244,7 @@ pub fn init(
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.info("font bold: {s}", .{try face.name()});
+                    log.info("font bold: {s}", .{try face.name(&name_buf)});
                     try group.addFace(.bold, .{ .deferred = face });
                 } else log.warn("font-family-bold not found: {s}", .{family});
             }
@@ -253,7 +256,7 @@ pub fn init(
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.info("font italic: {s}", .{try face.name()});
+                    log.info("font italic: {s}", .{try face.name(&name_buf)});
                     try group.addFace(.italic, .{ .deferred = face });
                 } else log.warn("font-family-italic not found: {s}", .{family});
             }
@@ -266,7 +269,7 @@ pub fn init(
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.info("font bold+italic: {s}", .{try face.name()});
+                    log.info("font bold+italic: {s}", .{try face.name(&name_buf)});
                     try group.addFace(.bold_italic, .{ .deferred = face });
                 } else log.warn("font-family-bold-italic not found: {s}", .{family});
             }
@@ -307,7 +310,8 @@ pub fn init(
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
-                    log.info("font emoji: {s}", .{try face.name()});
+                    var name_buf: [256]u8 = undefined;
+                    log.info("font emoji: {s}", .{try face.name(&name_buf)});
                     try group.addFace(.regular, .{ .deferred = face });
                 }
             }
