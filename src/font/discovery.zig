@@ -217,7 +217,6 @@ pub const Fontconfig = struct {
             defer self.i += 1;
 
             return DeferredFace{
-                .face = null,
                 .fc = .{
                     .pattern = font_pattern,
                     .charset = (try font_pattern.get(.charset, 0)).char_set,

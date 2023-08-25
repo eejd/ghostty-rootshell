@@ -638,7 +638,7 @@ test "discover monospace with fontconfig and freetype" {
     defer lib.deinit();
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
-    try group.addFace(.regular, (try it.next()).?);
+    try group.addFace(.regular, .{ .deferred = (try it.next()).? });
 
     // Should find all visible ASCII
     var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);

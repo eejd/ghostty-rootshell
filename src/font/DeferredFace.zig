@@ -360,13 +360,13 @@ test "fontconfig" {
     defer def.deinit();
 
     // Verify we can get the name
-    const n = try def.name();
+    var buf: [1024]u8 = undefined;
+    const n = try def.name(&buf);
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    try def.load(lib, .{ .points = 12 });
-    try testing.expect(def.hasCodepoint(' ', null));
-    try testing.expect(def.face.?.glyphIndex(' ') != null);
+    const face = try def.load(lib, .{ .points = 12 });
+    try testing.expect(face.glyphIndex(' ') != null);
 }
 
 test "coretext" {
