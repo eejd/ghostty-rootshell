@@ -187,7 +187,7 @@ test {
         .regular,
         DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })),
     );
-    const group = cache.group;
+    var group = cache.group;
 
     // Visible ASCII. Do it twice to verify cache.
     var i: u32 = 32;

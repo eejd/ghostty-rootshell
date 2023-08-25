@@ -22,6 +22,7 @@ const Glyph = @import("main.zig").Glyph;
 const Style = @import("main.zig").Style;
 const Presentation = @import("main.zig").Presentation;
 const options = @import("main.zig").options;
+const quirks = @import("../quirks.zig");
 
 const log = std.log.scoped(.font_group);
 
@@ -30,7 +31,18 @@ const log = std.log.scoped(.font_group);
 // usually only one font group for the entire process so this isn't the
 // most important memory efficiency we can look for. This is totally opaque
 // to the user so we can change this later.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(DeferredFace));
+const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(StyleElem));
+const StyleElem = union(enum) {
+    deferred: DeferredFace, // Not loaded
+    loaded: Face, // Loaded
+
+    pub fn deinit(self: *StyleElem) void {
+        switch (self.*) {
+            .deferred => |*v| v.deinit(),
+            .loaded => |*v| v.deinit(),
+        }
+    }
+};
 
 /// The allocator for this group
 alloc: Allocator,
@@ -92,7 +104,7 @@ pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace)
     // We have some special indexes so we must never pass those.
     if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
 
-    try list.append(alloc, face);
+    try list.append(alloc, .{ .deferred = face });
 }
 
 /// Get the face for the given style. This will always return the first
@@ -113,10 +125,10 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
     while (it.next()) |entry| {
-        for (entry.value.items) |*deferred| {
-            if (!deferred.loaded()) continue;
-            try deferred.face.?.setSize(size);
-        }
+        for (entry.value.items) |*elem| switch (elem.*) {
+            .deferred => continue,
+            .loaded => |*f| try f.setSize(size),
+        };
     }
 
     // Set our size for future loads
@@ -231,8 +243,16 @@ pub fn indexForCodepoint(
 }
 
 fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) ?FontIndex {
-    for (self.faces.get(style).items, 0..) |deferred, i| {
-        if (deferred.hasCodepoint(cp, p)) {
+    for (self.faces.get(style).items, 0..) |elem, i| {
+        const has_cp = switch (elem) {
+            .deferred => |v| v.hasCodepoint(cp, p),
+            .loaded => |face| loaded: {
+                if (p) |desired| if (face.presentation != desired) break :loaded false;
+                break :loaded face.glyphIndex(cp) != null;
+            },
+        };
+
+        if (has_cp) {
             return FontIndex{
                 .style = style,
                 .idx = @intCast(i),
@@ -246,7 +266,7 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 
 /// Returns the presentation for a specific font index. This is useful for
 /// determining what atlas is needed.
-pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
+pub fn presentationFromIndex(self: *Group, index: FontIndex) !font.Presentation {
     if (index.special()) |sp| switch (sp) {
         .sprite => return .text,
     };
@@ -256,12 +276,21 @@ pub fn presentationFromIndex(self: Group, index: FontIndex) !font.Presentation {
 }
 
 /// Return the Face represented by a given FontIndex. Note that special
-/// fonts (i.e. box glyphs) do not have a face.
-pub fn faceFromIndex(self: Group, index: FontIndex) !*Face {
+/// fonts (i.e. box glyphs) do not have a face. The returned face pointer is
+/// only valid until the set of faces change.
+pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
-    const deferred = &self.faces.get(index.style).items[@intCast(index.idx)];
-    try deferred.load(self.lib, self.size);
-    return &deferred.face.?;
+    const list = self.faces.getPtr(index.style);
+    const item = &list.items[@intCast(index.idx)];
+    return switch (item.*) {
+        .deferred => |*d| deferred: {
+            try d.load(self.lib, self.size);
+            item.* = .{ .loaded = d.face.? };
+            break :deferred &item.loaded;
+        },
+
+        .loaded => |*f| f,
+    };
 }
 
 /// Render a glyph by glyph index into the given font atlas and return
@@ -276,7 +305,7 @@ pub fn faceFromIndex(self: Group, index: FontIndex) !*Face {
 /// doing text shaping, the text shaping library (i.e. HarfBuzz) will automatically
 /// determine glyph indexes for a text run.
 pub fn renderGlyph(
-    self: Group,
+    self: *Group,
     alloc: Allocator,
     atlas: *font.Atlas,
     index: FontIndex,
@@ -292,9 +321,8 @@ pub fn renderGlyph(
         ),
     };
 
-    const face = &self.faces.get(index.style).items[@intCast(index.idx)];
-    try face.load(self.lib, self.size);
-    const glyph = try face.face.?.renderGlyph(alloc, atlas, glyph_index, opts);
+    const face = try self.faceFromIndex(index);
+    const glyph = try face.renderGlyph(alloc, atlas, glyph_index, opts);
     // log.warn("GLYPH={}", .{glyph});
     return glyph;
 }
