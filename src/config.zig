@@ -71,6 +71,7 @@ pub const Config = struct {
 
     /// The color of the cursor. If this is not set, a default will be chosen.
     @"cursor-color": ?Color = null,
+    @"cursor-text": ?Color = null,
 
     /// The opacity level (opposite of transparency) of the background.
     /// A value of 1 is fully opaque and a value of 0 is fully transparent.
