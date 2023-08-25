@@ -8,6 +8,7 @@ const options = @import("build_options");
 const assert = std.debug.assert;
 const apprt = @import("apprt.zig");
 const font = @import("font/main.zig");
+const rendererpkg = @import("renderer.zig");
 
 /// The semantic version of this build.
 pub const version = options.app_version;
@@ -27,6 +28,12 @@ pub const app_runtime: apprt.Runtime = switch (artifact) {
 pub const font_backend: font.Backend = std.meta.stringToEnum(
     font.Backend,
     @tagName(options.font_backend),
+).?;
+
+/// The renderer implementation to use.
+pub const renderer: rendererpkg.Impl = std.meta.stringToEnum(
+    rendererpkg.Impl,
+    @tagName(options.renderer),
 ).?;
 
 /// We want to integrate with Flatpak APIs.

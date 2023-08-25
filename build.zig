@@ -6,6 +6,7 @@ const RunStep = std.build.RunStep;
 
 const apprt = @import("src/apprt.zig");
 const font = @import("src/font/main.zig");
+const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
@@ -52,6 +53,7 @@ const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 var tracy: bool = false;
 var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
+var renderer_impl: renderer.Impl = .opengl;
 var font_backend: font.Backend = .freetype;
 
 pub fn build(b: *std.Build) !void {
@@ -97,6 +99,12 @@ pub fn build(b: *std.Build) !void {
         "app-runtime",
         "The app runtime to use. Not all values supported on all platforms.",
     ) orelse apprt.Runtime.default(target);
+
+    renderer_impl = b.option(
+        renderer.Impl,
+        "renderer",
+        "The app runtime to use. Not all values supported on all platforms.",
+    ) orelse renderer.Impl.default(target, wasm_target);
 
     const static = b.option(
         bool,
@@ -203,6 +211,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(bool, "flatpak", flatpak);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
     exe_options.addOption(font.Backend, "font_backend", font_backend);
+    exe_options.addOption(renderer.Impl, "renderer", renderer_impl);
 
     // Exe
     if (exe_) |exe| {
