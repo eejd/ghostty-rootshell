@@ -31,19 +31,7 @@ const log = std.log.scoped(.font_group);
 // usually only one font group for the entire process so this isn't the
 // most important memory efficiency we can look for. This is totally opaque
 // to the user so we can change this later.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(StyleElem));
-const StyleElem = union(enum) {
-    deferred: DeferredFace, // Not loaded
-    loaded: Face, // Loaded
-
-    pub fn deinit(self: *StyleElem) void {
-        switch (self.*) {
-            .deferred => |*v| v.deinit(),
-            .loaded => |*v| v.deinit(),
-        }
-    }
-};
-
+const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 /// The allocator for this group
 alloc: Allocator,
 
@@ -66,6 +54,19 @@ discover: ?*font.Discover = null,
 /// to render sprite glyphs. But more than likely, if this isn't set then
 /// terminal rendering will look wrong.
 sprite: ?font.sprite.Face = null,
+
+/// A face in a group can be deferred or loaded.
+pub const GroupFace = union(enum) {
+    deferred: DeferredFace, // Not loaded
+    loaded: Face, // Loaded
+
+    pub fn deinit(self: *GroupFace) void {
+        switch (self.*) {
+            .deferred => |*v| v.deinit(),
+            .loaded => |*v| v.deinit(),
+        }
+    }
+};
 
 pub fn init(
     alloc: Allocator,
@@ -98,13 +99,13 @@ pub fn deinit(self: *Group) void {
 ///
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
-pub fn addFace(self: *Group, style: Style, face: DeferredFace) !void {
+pub fn addFace(self: *Group, style: Style, face: GroupFace) !void {
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
     if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
 
-    try list.append(self.alloc, .{ .deferred = face });
+    try list.append(self.alloc, face);
 }
 
 /// Returns true if we have a face for the given style, though the face may
@@ -262,7 +263,7 @@ pub fn indexForCodepoint(
                     cp,
                     face.name() catch "<error>",
                 });
-                self.addFace(style, face) catch break :discover;
+                self.addFace(style, .{ .deferred = face }) catch break :discover;
                 if (self.indexForCodepointExact(cp, style, p)) |value| return value;
             }
         }
@@ -317,8 +318,9 @@ pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
     const item = &list.items[@intCast(index.idx)];
     return switch (item.*) {
         .deferred => |*d| deferred: {
-            try d.load(self.lib, self.size);
-            item.* = .{ .loaded = d.face.? };
+            const face = try d.load(self.lib, self.size);
+            d.deinit();
+            item.* = .{ .loaded = face };
             break :deferred &item.loaded;
         },
 
@@ -483,13 +485,13 @@ test {
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
 
-    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
-        try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
+        try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
     }
-    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
 
     // Should find all visible ASCII
     var i: u32 = 32;
@@ -582,7 +584,7 @@ test "resize" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
 
     // Load a letter
     {
@@ -673,7 +675,7 @@ test "faceFromIndex returns pointer" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
 
     {
         const idx = group.indexForCodepoint('A', .regular, null).?;
