@@ -123,6 +123,10 @@ fn kitty(
     }
 
     const entry = entry_ orelse return "";
+
+    // If this is just a modifier we require "report all" to send the sequence.
+    if (entry.modifier and !self.kitty_flags.report_all) return "";
+
     const seq: KittySequence = seq: {
         var seq: KittySequence = .{
             .key = entry.code,
@@ -802,7 +806,7 @@ test "kitty: composing with modifier" {
             .mods = .{ .shift = true },
             .composing = true,
         },
-        .kitty_flags = .{ .disambiguate = true },
+        .kitty_flags = .{ .disambiguate = true, .report_all = true },
     };
 
     const actual = try enc.kitty(&buf);
@@ -881,6 +885,38 @@ test "kitty: shift+tab" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[9;2u", actual);
+}
+
+test "kitty: left shift" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .left_shift,
+            .mods = .{},
+            .utf8 = "",
+        },
+
+        .kitty_flags = .{ .disambiguate = true, .report_alternates = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("", actual);
+}
+
+test "kitty: left shift with report all" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .left_shift,
+            .mods = .{},
+            .utf8 = "",
+        },
+
+        .kitty_flags = .{ .disambiguate = true, .report_all = true },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[57441u", actual);
 }
 
 test "legacy: ctrl+alt+c" {
