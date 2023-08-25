@@ -12,7 +12,6 @@ const Library = font.Library;
 const Style = font.Style;
 const Presentation = font.Presentation;
 const terminal = @import("../../terminal/main.zig");
-const quirks = @import("../../quirks.zig");
 
 const log = std.log.scoped(.font_shaper);
 
@@ -108,7 +107,7 @@ pub const Shaper = struct {
         // fonts, the codepoint == glyph_index so we don't need to run any shaping.
         if (run.font_index.special() == null) {
             const face = try run.group.group.faceFromIndex(run.font_index);
-            const i = if (!quirks.disableDefaultFontFeatures(face)) 0 else i: {
+            const i = if (!face.quirks_disable_default_font_features) 0 else i: {
                 // If we are disabling default font features we just offset
                 // our features by the hardcoded items because always
                 // add those at the beginning.
