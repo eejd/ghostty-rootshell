@@ -230,7 +230,7 @@ pub fn init(
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
                     log.info("font regular: {s}", .{try face.name()});
-                    try group.addFace(alloc, .regular, face);
+                    try group.addFace(.regular, face);
                 } else log.warn("font-family not found: {s}", .{family});
             }
             if (config.@"font-family-bold") |family| {
@@ -242,7 +242,7 @@ pub fn init(
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
                     log.info("font bold: {s}", .{try face.name()});
-                    try group.addFace(alloc, .bold, face);
+                    try group.addFace(.bold, face);
                 } else log.warn("font-family-bold not found: {s}", .{family});
             }
             if (config.@"font-family-italic") |family| {
@@ -254,7 +254,7 @@ pub fn init(
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
                     log.info("font italic: {s}", .{try face.name()});
-                    try group.addFace(alloc, .italic, face);
+                    try group.addFace(.italic, face);
                 } else log.warn("font-family-italic not found: {s}", .{family});
             }
             if (config.@"font-family-bold-italic") |family| {
@@ -267,53 +267,32 @@ pub fn init(
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
                     log.info("font bold+italic: {s}", .{try face.name()});
-                    try group.addFace(alloc, .bold_italic, face);
+                    try group.addFace(.bold_italic, face);
                 } else log.warn("font-family-bold-italic not found: {s}", .{family});
             }
         }
 
         // Our built-in font will be used as a backup
         try group.addFace(
-            alloc,
             .regular,
             font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_ttf, font_size)),
         );
         try group.addFace(
-            alloc,
             .bold,
             font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_bold_ttf, font_size)),
         );
 
-        // If we support auto-italicization and we don't have an italic face,
-        // then we can try to auto-italicize our regular face.
-        if (comptime font.DeferredFace.canItalicize()) {
-            if (group.getFace(.italic) == null) {
-                if (group.getFace(.regular)) |regular| {
-                    if (try regular.italicize()) |face| {
-                        log.info("font auto-italicized: {s}", .{try face.name()});
-                        try group.addFace(alloc, .italic, face);
-                    }
-                }
-            }
-        } else {
-            // We don't support auto-italics. If we don't have an italic font
-            // face let the user know so they aren't surprised (if they look
-            // at logs).
-            if (group.getFace(.italic) == null) {
-                log.warn("no italic font face available, italics will not render", .{});
-            }
-        }
+        // Auto-italicize if we have to.
+        try group.italicize();
 
         // Emoji fallback. We don't include this on Mac since Mac is expected
         // to always have the Apple Emoji available.
         if (builtin.os.tag != .macos or font.Discover == void) {
             try group.addFace(
-                alloc,
                 .regular,
                 font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_ttf, font_size)),
             );
             try group.addFace(
-                alloc,
                 .regular,
                 font.DeferredFace.initLoaded(try font.Face.init(font_lib, face_emoji_text_ttf, font_size)),
             );
@@ -329,7 +308,7 @@ pub fn init(
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
                     log.info("font emoji: {s}", .{try face.name()});
-                    try group.addFace(alloc, .regular, face);
+                    try group.addFace(.regular, face);
                 }
             }
         }

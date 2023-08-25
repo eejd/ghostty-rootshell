@@ -98,22 +98,55 @@ pub fn deinit(self: *Group) void {
 ///
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
-pub fn addFace(self: *Group, alloc: Allocator, style: Style, face: DeferredFace) !void {
+pub fn addFace(self: *Group, style: Style, face: DeferredFace) !void {
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
     if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
 
-    try list.append(alloc, .{ .deferred = face });
+    try list.append(self.alloc, .{ .deferred = face });
 }
 
-/// Get the face for the given style. This will always return the first
-/// face (if it exists). The returned pointer is only valid as long as
-/// the faces do not change.
-pub fn getFace(self: *Group, style: Style) ?*DeferredFace {
-    const list = self.faces.getPtr(style);
-    if (list.items.len == 0) return null;
-    return &list.items[0];
+/// Returns true if we have a face for the given style, though the face may
+/// not be loaded yet.
+pub fn hasFaceForStyle(self: Group, style: Style) bool {
+    const list = self.faces.get(style);
+    return list.items.len > 0;
+}
+
+/// This will automatically create an italicized font from the regular
+/// font face if we don't have any italicized fonts.
+pub fn italicize(self: *Group) !void {
+    // If we have an italic font, do nothing.
+    const italic_list = self.faces.getPtr(.italic);
+    if (italic_list.items.len > 0) return;
+
+    // Not all font backends support auto-italicization.
+    if (comptime !@hasDecl(Face, "italicize")) {
+        log.warn("no italic font face available, italics will not render", .{});
+        return;
+    }
+
+    // Our regular font. If we have no regular font we also do nothing.
+    const regular = regular: {
+        const list = self.faces.get(.regular);
+        if (list.items.len == 0) return;
+
+        // The font must be loaded.
+        break :regular try self.faceFromIndex(.{
+            .style = .regular,
+            .idx = 0,
+        });
+    };
+
+    // Try to italicize it.
+    const face = try regular.italicize();
+    try italic_list.append(self.alloc, .{ .loaded = face });
+
+    var buf: [128]u8 = undefined;
+    if (face.name(&buf)) |name| {
+        log.info("font auto-italicized: {s}", .{name});
+    } else |_| {}
 }
 
 /// Resize the fonts to the desired size.
@@ -229,7 +262,7 @@ pub fn indexForCodepoint(
                     cp,
                     face.name() catch "<error>",
                 });
-                self.addFace(self.alloc, style, face) catch break :discover;
+                self.addFace(style, face) catch break :discover;
                 if (self.indexForCodepointExact(cp, style, p)) |value| return value;
             }
         }
@@ -377,7 +410,7 @@ pub const Wasm = struct {
     }
 
     export fn group_add_face(self: *Group, style: u16, face: *font.DeferredFace) void {
-        return self.addFace(alloc, @enumFromInt(style), face.*) catch |err| {
+        return self.addFace(@enumFromInt(style), face.*) catch |err| {
             log.warn("error adding face to group err={}", .{err});
             return;
         };
@@ -450,13 +483,13 @@ test {
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
+    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })));
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
-        try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
+        try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testEmoji, .{ .points = 12 })));
     }
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
+    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testEmojiText, .{ .points = 12 })));
 
     // Should find all visible ASCII
     var i: u32 = 32;
@@ -549,7 +582,7 @@ test "resize" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
 
     // Load a letter
     {
@@ -602,7 +635,7 @@ test "discover monospace with fontconfig and freetype" {
     defer lib.deinit();
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
-    try group.addFace(alloc, .regular, (try it.next()).?);
+    try group.addFace(.regular, (try it.next()).?);
 
     // Should find all visible ASCII
     var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
@@ -640,7 +673,7 @@ test "faceFromIndex returns pointer" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(alloc, .regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
+    try group.addFace(.regular, DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })));
 
     {
         const idx = group.indexForCodepoint('A', .regular, null).?;

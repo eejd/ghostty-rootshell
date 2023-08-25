@@ -72,13 +72,6 @@ pub const CoreText = struct {
         self.font.release();
         self.* = undefined;
     }
-
-    /// Auto-italicize the font by applying a skew.
-    pub fn italicize(self: *const CoreText) !CoreText {
-        const ct_font = try self.font.copyWithAttributes(0.0, &Face.italic_skew, null);
-        errdefer ct_font.release();
-        return .{ .font = ct_font };
-    }
 };
 
 /// WebCanvas specific data. This is only present when building with canvas.
@@ -349,40 +342,6 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
     // This is unreachable because discovery mechanisms terminate, and
     // if we're not using a discovery mechanism, the face MUST be loaded.
     unreachable;
-}
-
-/// Returns true if our deferred font implementation supports auto-itacilization.
-pub fn canItalicize() bool {
-    return @hasDecl(FaceState, "italicize") and @hasDecl(Face, "italicize");
-}
-
-/// Returns a new deferred face with the italicized version of this face
-/// by applying a skew. This is NOT TRUE italics. You should use the discovery
-/// mechanism to try to find an italic font. This is a fallback for when
-/// that fails.
-pub fn italicize(self: *const DeferredFace) !?DeferredFace {
-    if (comptime !canItalicize()) return null;
-
-    var result: DeferredFace = .{};
-
-    if (self.face) |face| {
-        result.face = try face.italicize();
-    }
-
-    switch (options.backend) {
-        .freetype => {},
-        .fontconfig_freetype => if (self.fc) |*fc| {
-            result.fc = try fc.italicize();
-        },
-        .coretext, .coretext_freetype => if (self.ct) |*ct| {
-            result.ct = try ct.italicize();
-        },
-        .web_canvas => if (self.wc) |*wc| {
-            result.wc = try wc.italicize();
-        },
-    }
-
-    return result;
 }
 
 /// The wasm-compatible API.

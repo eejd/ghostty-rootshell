@@ -183,7 +183,6 @@ test {
 
     // Setup group
     try cache.group.addFace(
-        alloc,
         .regular,
         DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12 })),
     );
@@ -340,7 +339,6 @@ test "resize" {
 
     // Setup group
     try cache.group.addFace(
-        alloc,
         .regular,
         DeferredFace.initLoaded(try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 })),
     );
