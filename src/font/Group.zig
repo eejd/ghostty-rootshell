@@ -299,6 +299,20 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
     return null;
 }
 
+/// Check if a specific font index has a specific codepoint. This does not
+/// necessarily force the font to load.
+pub fn hasCodepoint(self: *Group, index: FontIndex, cp: u32, p: ?Presentation) bool {
+    const list = self.faces.getPtr(index.style);
+    const item = list.items[@intCast(index.idx)];
+    return switch (item) {
+        .deferred => |v| v.hasCodepoint(cp, p),
+        .loaded => |face| loaded: {
+            if (p) |desired| if (face.presentation != desired) break :loaded false;
+            break :loaded face.glyphIndex(cp) != null;
+        },
+    };
+}
+
 /// Returns the presentation for a specific font index. This is useful for
 /// determining what atlas is needed.
 pub fn presentationFromIndex(self: *Group, index: FontIndex) !font.Presentation {

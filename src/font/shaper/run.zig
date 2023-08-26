@@ -135,33 +135,61 @@ pub const RunIterator = struct {
                 }
             }
 
-            // Determine the font for this cell. We'll use fallbacks
-            // manually here to try replacement chars and then a space
-            // for unknown glyphs.
-            const font_idx_opt = (try self.group.indexForCodepoint(
-                alloc,
-                if (cell.empty() or cell.char == 0) ' ' else cell.char,
-                style,
-                presentation,
-            )) orelse (try self.group.indexForCodepoint(
-                alloc,
-                0xFFFD,
-                style,
-                .text,
-            )) orelse
-                try self.group.indexForCodepoint(alloc, ' ', style, .text);
-            const font_idx = font_idx_opt.?;
-            //log.warn("char={x} idx={}", .{ cell.char, font_idx });
-            if (j == self.i) current_font = font_idx;
+            // We need to find a font that supports this character. If
+            // there are additional zero-width codepoints (to form a single
+            // grapheme, i.e. combining characters), we need to find a font
+            // that supports all of them.
+            const font_info: struct {
+                idx: font.Group.FontIndex,
+                fallback: ?u32 = null,
+            } = font_info: {
+                // If we find a font that supports this entire grapheme
+                // then we use that.
+                if (try self.indexForCell(
+                    alloc,
+                    j,
+                    cell,
+                    style,
+                    presentation,
+                )) |idx| break :font_info .{ .idx = idx };
+
+                // Otherwise we need a fallback character. Prefer the
+                // official replacement character.
+                if (try self.group.indexForCodepoint(
+                    alloc,
+                    0xFFFD, // replacement char
+                    style,
+                    presentation,
+                )) |idx| break :font_info .{ .idx = idx, .fallback = 0xFFFD };
+
+                // Fallback to space
+                if (try self.group.indexForCodepoint(
+                    alloc,
+                    ' ',
+                    style,
+                    presentation,
+                )) |idx| break :font_info .{ .idx = idx, .fallback = ' ' };
+
+                // We can't render at all. This is a bug, we should always
+                // have a font that can render a space.
+                unreachable;
+            };
+
+            //log.warn("char={x} info={}", .{ cell.char, font_info });
+            if (j == self.i) current_font = font_info.idx;
 
             // If our fonts are not equal, then we're done with our run.
-            if (font_idx.int() != current_font.int()) break;
+            if (font_info.idx.int() != current_font.int()) break;
 
-            // Continue with our run
+            // If we're a fallback character, add that and continue; we
+            // don't want to add the entire grapheme.
+            if (font_info.fallback) |cp| {
+                try self.hooks.addCodepoint(cp, @intCast(cluster));
+                continue;
+            }
+
+            // Add all the codepoints for our grapheme
             try self.hooks.addCodepoint(cell.char, @intCast(cluster));
-
-            // If this cell is part of a grapheme cluster, add all the grapheme
-            // data points.
             if (cell.attrs.grapheme) {
                 var it = self.row.codepointIterator(j);
                 while (it.next()) |cp| {
@@ -183,5 +211,72 @@ pub const RunIterator = struct {
             .group = self.group,
             .font_index = current_font,
         };
+    }
+
+    /// Find a font index that supports the grapheme for the given cell,
+    /// or null if no such font exists.
+    ///
+    /// This is used to find a font that supports the entire grapheme.
+    /// We look for fonts that support each individual codepoint and then
+    /// find the common font amongst all candidates.
+    fn indexForCell(
+        self: *RunIterator,
+        alloc: Allocator,
+        j: usize,
+        cell: terminal.Screen.Cell,
+        style: font.Style,
+        presentation: ?font.Presentation,
+    ) !?font.Group.FontIndex {
+        // Get the font index for the primary codepoint.
+        const primary_cp: u32 = if (cell.empty() or cell.char == 0) ' ' else cell.char;
+        const primary = try self.group.indexForCodepoint(
+            alloc,
+            primary_cp,
+            style,
+            presentation,
+        ) orelse return null;
+
+        // Easy, and common: we aren't a multi-codepoint grapheme, so
+        // we just return whatever index for the cell codepoint.
+        if (!cell.attrs.grapheme) return primary;
+
+        // If this is a grapheme, we need to find a font that supports
+        // all of the codepoints in the grapheme.
+        var it = self.row.codepointIterator(j);
+        var candidates = try std.ArrayList(font.Group.FontIndex).initCapacity(alloc, it.len() + 1);
+        defer candidates.deinit();
+        candidates.appendAssumeCapacity(primary);
+
+        while (it.next()) |cp| {
+            // Ignore Emoji ZWJs
+            if (cp == 0xFE0E or cp == 0xFE0F) continue;
+
+            // Find a font that supports this codepoint. If none support this
+            // then the whole grapheme can't be rendered so we return null.
+            const idx = try self.group.indexForCodepoint(
+                alloc,
+                cp,
+                style,
+                presentation,
+            ) orelse return null;
+            candidates.appendAssumeCapacity(idx);
+        }
+
+        // We need to find a candidate that has ALL of our codepoints
+        for (candidates.items) |idx| {
+            if (!self.group.group.hasCodepoint(idx, primary_cp, presentation)) continue;
+            it.reset();
+            while (it.next()) |cp| {
+                // Ignore Emoji ZWJs
+                if (cp == 0xFE0E or cp == 0xFE0F) continue;
+                if (!self.group.group.hasCodepoint(idx, cp, presentation)) break;
+            } else {
+                // If the while completed, then we have a candidate that
+                // supports all of our codepoints.
+                return idx;
+            }
+        }
+
+        return null;
     }
 };

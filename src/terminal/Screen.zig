@@ -623,6 +623,10 @@ pub const CodepointIterator = struct {
             },
         }
     }
+
+    pub fn reset(self: *CodepointIterator) void {
+        self.i = 0;
+    }
 };
 
 /// RowIndex represents a row within the screen. There are various meanings
