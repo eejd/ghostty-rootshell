@@ -108,6 +108,7 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     font_features: std.ArrayList([]const u8),
     cursor_color: ?terminal.color.RGB,
+    cursor_text: ?terminal.color.RGB,
     background: terminal.color.RGB,
     background_opacity: f64,
     foreground: terminal.color.RGB,
@@ -132,6 +133,11 @@ pub const DerivedConfig = struct {
 
             .cursor_color = if (config.@"cursor-color") |col|
                 col.toTerminalRGB()
+            else
+                null,
+
+            .cursor_text = if (config.@"cursor-text") |txt|
+                txt.toTerminalRGB()
             else
                 null,
 
@@ -1222,8 +1228,10 @@ fn rebuildCells(
         }
 
         if (cursor_cell) |*cell| {
-            // We always invert the cell color under the cursor.
-            cell.color = .{ 0, 0, 0, 255 };
+            cell.color = if (self.config.cursor_text) |txt|
+                .{ txt.r, txt.g, txt.b, 255 }
+            else
+                .{ 0, 0, 0, 255 };
             self.cells.appendAssumeCapacity(cell.*);
         }
     }
