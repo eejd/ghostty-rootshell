@@ -139,6 +139,16 @@ pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
 /// Delete the surface from the known surface list. This will NOT call the
 /// destructor or free the memory.
 pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
+    // If this surface is the focused surface then we need to clear it.
+    // There was a bug where we relied on hasSurface to return false and
+    // just let focused surface be but the allocator was reusing addresses
+    // after free and giving false positives, so we must clear it.
+    if (self.focused_surface) |focused| {
+        if (focused == &rt_surface.core_surface) {
+            self.focused_surface = null;
+        }
+    }
+
     var i: usize = 0;
     while (i < self.surfaces.items.len) {
         if (self.surfaces.items[i] == rt_surface) {
