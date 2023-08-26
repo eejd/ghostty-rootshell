@@ -75,6 +75,9 @@ pub const FontAttribute = enum {
     downloadable,
     downloaded,
 
+    // https://developer.apple.com/documentation/coretext/core_text_constants?language=objc
+    variation_axes,
+
     pub fn key(self: FontAttribute) *foundation.String {
         return @as(*foundation.String, @ptrFromInt(@intFromPtr(switch (self) {
             .url => c.kCTFontURLAttribute,
@@ -101,6 +104,7 @@ pub const FontAttribute = enum {
             .enabled => c.kCTFontEnabledAttribute,
             .downloadable => c.kCTFontDownloadableAttribute,
             .downloaded => c.kCTFontDownloadedAttribute,
+            .variation_axes => c.kCTFontVariationAxesAttribute,
         })));
     }
 
@@ -130,6 +134,7 @@ pub const FontAttribute = enum {
             .enabled => *foundation.Number,
             .downloadable => *anyopaque, // CFBoolean
             .downloaded => *anyopaque, // CFBoolean
+            .variation_axes => ?*foundation.Array,
         };
     }
 };
@@ -155,6 +160,38 @@ pub const FontTraitKey = enum {
             .weight => *foundation.Number,
             .width => *foundation.Number,
             .slant => *foundation.Number,
+        };
+    }
+};
+
+// https://developer.apple.com/documentation/coretext/ctfont/font_variation_axis_dictionary_keys?language=objc
+pub const FontVariationAxisKey = enum {
+    identifier,
+    minimum_value,
+    maximum_value,
+    default_value,
+    name,
+    hidden,
+
+    pub fn key(self: FontVariationAxisKey) *foundation.String {
+        return @as(*foundation.String, @ptrFromInt(@intFromPtr(switch (self) {
+            .identifier => c.kCTFontVariationAxisIdentifierKey,
+            .minimum_value => c.kCTFontVariationAxisMinimumValueKey,
+            .maximum_value => c.kCTFontVariationAxisMaximumValueKey,
+            .default_value => c.kCTFontVariationAxisDefaultValueKey,
+            .name => c.kCTFontVariationAxisNameKey,
+            .hidden => c.kCTFontVariationAxisHiddenKey,
+        })));
+    }
+
+    pub fn Value(comptime self: FontVariationAxisKey) type {
+        return switch (self) {
+            .identifier => foundation.Number,
+            .minimum_value => foundation.Number,
+            .maximum_value => foundation.Number,
+            .default_value => foundation.Number,
+            .name => foundation.String,
+            .hidden => foundation.Number,
         };
     }
 };

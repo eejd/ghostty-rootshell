@@ -24,7 +24,7 @@ pub const Array = opaque {
     /// constness so that further API calls work correctly. The Foundation
     /// API doesn't properly mark things const/non-const.
     pub fn getValueAtIndex(self: *Array, comptime T: type, idx: usize) *T {
-        return @ptrCast(CFArrayGetValueAtIndex(self, idx));
+        return @ptrCast(@alignCast(CFArrayGetValueAtIndex(self, idx)));
     }
 
     pub extern "c" fn CFArrayCreate(
