@@ -137,7 +137,7 @@ pub const Shaper = struct {
                 .glyph_index = v.codepoint,
             };
 
-            //log.warn("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
+            // log.warn("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
         }
 
         return self.cell_buf[0..info.len];
@@ -154,6 +154,7 @@ pub const Shaper = struct {
         }
 
         pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
+            // log.warn("cluster={} cp={x}", .{ cluster, cp });
             self.shaper.hb_buf.add(cp, cluster);
         }
 
