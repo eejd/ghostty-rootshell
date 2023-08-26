@@ -1042,6 +1042,20 @@ test "legacy: shift+function key should use all mods" {
     try testing.expectEqualStrings("\x1b[1;2A", actual);
 }
 
+test "legacy: keypad enter" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .kp_enter,
+            .mods = .{},
+            .consumed_mods = .{},
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\r", actual);
+}
+
 test "ctrlseq: normal ctrl c" {
     const seq = ctrlSeq(.c, .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);

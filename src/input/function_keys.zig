@@ -116,7 +116,7 @@ pub const keys = keys: {
     result.set(.kp_multiply, kpDefault("j") ++ pcStyle("\x1bO{}j"));
     result.set(.kp_subtract, kpDefault("m") ++ pcStyle("\x1bO{}m"));
     result.set(.kp_add, kpDefault("k") ++ pcStyle("\x1bO{}k"));
-    result.set(.kp_enter, kpDefault("M") ++ pcStyle("\x1bO{}M"));
+    result.set(.kp_enter, kpDefault("M") ++ pcStyle("\x1bO{}M") ++ .{.{ .sequence = "\r" }});
 
     result.set(.backspace, &.{
         // Modify Keys Normal
