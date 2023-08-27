@@ -4,7 +4,6 @@ class FullScreenHandler {
     var previousTabGroup: NSWindowTabGroup?
     var previousTabGroupIndex: Int?
     var previousContentFrame: NSRect?
-    var previousStyleMask: NSWindow.StyleMask?
     var isInFullscreen: Bool = false
     
     // We keep track of whether we entered non-native fullscreen in case
@@ -39,15 +38,22 @@ class FullScreenHandler {
         previousTabGroup = window.tabGroup
         previousTabGroupIndex = window.tabGroup?.windows.firstIndex(of: window)
         
-        // Save previous style mask
-        previousStyleMask = window.styleMask
         // Save previous contentViewFrame and screen
         previousContentFrame = window.convertToScreen(contentView.frame)
         
         // Change presentation style to hide menu bar and dock
-        NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
-        // Turn it into borderless window
-        window.styleMask.insert(.borderless)
+        // It's important to do this in two calls, because setting them in a single call guarantees
+        // that the menu bar will also be hidden on any additional displays (why? nobody knows!)
+        // When these options are set separately, the menu bar hiding problem will only occur in
+        // specific scenarios. More invesitgation is needed to pin these scenarios down precisely,
+        // but it seems to have something to do with which app had focus last.
+        // Furthermore, it's much easier to figure out which screen the dock is on if the menubar
+        // has not yet been hidden, so the order matters here!
+        if (shouldHideDock(screen: screen)) {
+            NSApp.presentationOptions.insert(.autoHideDock)
+        }
+        NSApp.presentationOptions.insert(.autoHideMenuBar)
+        
         // This is important: it gives us the full screen, including the
         // notch area on MacBooks.
         window.styleMask.remove(.titled)
@@ -59,13 +65,11 @@ class FullScreenHandler {
         window.makeKeyAndOrderFront(nil)
     }
     
-    
     func leaveFullscreen(window: NSWindow) {
         guard let previousFrame = previousContentFrame else { return }
-        guard let previousStyleMask = previousStyleMask else { return }
         
-        // Restore previous style
-        window.styleMask = previousStyleMask
+        // Restore title bar
+        window.styleMask.insert(.titled)
         
         // Restore previous presentation options
         NSApp.presentationOptions = []
@@ -99,5 +103,29 @@ class FullScreenHandler {
         
         // Focus window
         window.makeKeyAndOrderFront(nil)
+    }
+    
+    // We only want to hide the dock if it's not already going to be hidden automatically, and if
+    // it's on the same display as the ghostty window that we want to make fullscreen.
+    func shouldHideDock(screen: NSScreen) -> Bool {
+        if let dockAutohide = UserDefaults.standard.persistentDomain(forName: "com.apple.dock")?["autohide"] as? Bool {
+            if (dockAutohide) { return false }
+        }
+
+        // There is no public API to directly ask about dock visibility, so we have to figure it out
+        // by comparing the sizes of visibleFrame (the currently usable area of the screen) and
+        // frame (the full screen size). We also need to account for the menubar, any inset caused
+        // by the notch on macbooks, and a little extra padding to compensate for the boundary area
+        // which triggers showing the dock.
+        let frame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let menuHeight = NSApp.mainMenu?.menuBarHeight ?? 0
+        var notchInset = 0.0
+        if #available(macOS 12, *) {
+            notchInset = screen.safeAreaInsets.top
+        }
+        let boundaryAreaPadding = 5.0
+
+        return visibleFrame.height < (frame.height - max(menuHeight, notchInset) - boundaryAreaPadding) || visibleFrame.width < frame.width
     }
 }
