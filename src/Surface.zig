@@ -229,6 +229,7 @@ pub fn init(
                 var disco_it = try disco.discover(.{
                     .family = family,
                     .size = font_size.points,
+                    .variations = config.@"font-variation".list.items,
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
@@ -241,6 +242,7 @@ pub fn init(
                     .family = family,
                     .size = font_size.points,
                     .bold = true,
+                    .variations = config.@"font-variation-bold".list.items,
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
@@ -253,6 +255,7 @@ pub fn init(
                     .family = family,
                     .size = font_size.points,
                     .italic = true,
+                    .variations = config.@"font-variation-italic".list.items,
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
@@ -266,6 +269,7 @@ pub fn init(
                     .size = font_size.points,
                     .bold = true,
                     .italic = true,
+                    .variations = config.@"font-variation-bold-italic".list.items,
                 });
                 defer disco_it.deinit();
                 if (try disco_it.next()) |face| {
