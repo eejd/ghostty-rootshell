@@ -1,3 +1,4 @@
+const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
 const freetype = @import("face/freetype.zig");
@@ -34,6 +35,31 @@ pub const DesiredSize = struct {
         // 1 point = 1/72 inch
         return (self.points * self.ydpi) / 72;
     }
+};
+
+/// A font variation setting. The best documentation for this I know of
+/// is actually the CSS font-variation-settings property on MDN:
+/// https://developer.mozilla.org/en-US/docs/Web/CSS/font-variation-settings
+pub const Variation = struct {
+    id: Id,
+    value: f64,
+
+    pub const Id = packed struct(u32) {
+        d: u8,
+        c: u8,
+        b: u8,
+        a: u8,
+
+        pub fn init(v: *const [4]u8) Id {
+            return .{ .a = v[0], .b = v[1], .c = v[2], .d = v[3] };
+        }
+
+        /// Converts the ID to a string. The return value is only valid
+        /// for the lifetime of the self pointer.
+        pub fn str(self: Id) [4]u8 {
+            return .{ self.a, self.b, self.c, self.d };
+        }
+    };
 };
 
 /// Metrics associated with the font that are useful for renderers to know.
@@ -76,4 +102,18 @@ pub const Foo = if (options.backend == .coretext) coretext.Face else void;
 
 test {
     @import("std").testing.refAllDecls(@This());
+}
+
+test "Variation.Id: wght should be 2003265652" {
+    const testing = std.testing;
+    const id = Variation.Id.init("wght");
+    try testing.expectEqual(@as(u32, 2003265652), @as(u32, @bitCast(id)));
+    try testing.expectEqualStrings("wght", &(id.str()));
+}
+
+test "Variation.Id: slnt should be 1936486004" {
+    const testing = std.testing;
+    const id: Variation.Id = .{ .a = 's', .b = 'l', .c = 'n', .d = 't' };
+    try testing.expectEqual(@as(u32, 1936486004), @as(u32, @bitCast(id)));
+    try testing.expectEqualStrings("slnt", &(id.str()));
 }

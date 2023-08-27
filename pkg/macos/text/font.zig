@@ -39,6 +39,14 @@ pub const Font = opaque {
         c.CFRelease(self);
     }
 
+    pub fn retain(self: *Font) void {
+        _ = c.CFRetain(self);
+    }
+
+    pub fn copyDescriptor(self: *Font) *text.FontDescriptor {
+        return @ptrCast(@constCast(c.CTFontCopyFontDescriptor(@ptrCast(self))));
+    }
+
     pub fn getGlyphsForCharacters(self: *Font, chars: []const u16, glyphs: []graphics.Glyph) bool {
         assert(chars.len == glyphs.len);
         return c.CTFontGetGlyphsForCharacters(

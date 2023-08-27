@@ -31,6 +31,21 @@ pub const FontDescriptor = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createCopyWithVariation(
+        original: *FontDescriptor,
+        id: *foundation.Number,
+        value: f64,
+    ) Allocator.Error!*FontDescriptor {
+        return @as(
+            ?*FontDescriptor,
+            @ptrCast(@constCast(c.CTFontDescriptorCreateCopyWithVariation(
+                @ptrCast(original),
+                @ptrCast(id),
+                value,
+            ))),
+        ) orelse Allocator.Error.OutOfMemory;
+    }
+
     pub fn release(self: *FontDescriptor) void {
         c.CFRelease(self);
     }
