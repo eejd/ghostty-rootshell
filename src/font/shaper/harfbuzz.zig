@@ -800,6 +800,18 @@ fn testShaper(alloc: Allocator) !TestShaper {
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
         try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
+    } else {
+        // On CoreText we want to load Apple Emoji, we should have it.
+        var disco = font.Discover.init();
+        defer disco.deinit();
+        var disco_it = try disco.discover(.{
+            .family = "Apple Color Emoji",
+            .size = 12,
+        });
+        defer disco_it.deinit();
+        var face = (try disco_it.next()).?;
+        errdefer face.deinit();
+        try cache_ptr.group.addFace(.regular, .{ .deferred = face });
     }
     try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
 
