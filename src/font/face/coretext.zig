@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const macos = @import("macos");
@@ -75,22 +76,6 @@ pub const Face = struct {
 
         const traits = ct_font.getSymbolicTraits();
 
-        // Get variation axes
-        // if (ct_font.copyAttribute(.variation_axes)) |axes| {
-        //     defer axes.release();
-        //     const len = axes.getCount();
-        //     for (0..len) |i| {
-        //         const dict = axes.getValueAtIndex(macos.foundation.Dictionary, i);
-        //         const Key = macos.text.FontVariationAxisKey;
-        //         const name_ = dict.getValue(Key.name.Value(), Key.name.key());
-        //         if (name_) |name_val| {
-        //             var buf: [1024]u8 = undefined;
-        //             const namestr = name_val.cstring(&buf, .utf8) orelse "";
-        //             log.warn("AXES: {s}", .{namestr});
-        //         }
-        //     }
-        // }
-
         var result: Face = .{
             .font = ct_font,
             .hb_font = hb_font,
@@ -98,6 +83,52 @@ pub const Face = struct {
             .metrics = try calcMetrics(ct_font),
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
+
+        // In debug mode, we output information about available variation axes,
+        // if they exist.
+        if (comptime builtin.mode == .Debug) {
+            if (ct_font.copyAttribute(.variation_axes)) |axes| {
+                defer axes.release();
+
+                var buf: [1024]u8 = undefined;
+                log.debug("variation axes font={s}", .{try result.name(&buf)});
+
+                const len = axes.getCount();
+                for (0..len) |i| {
+                    const dict = axes.getValueAtIndex(macos.foundation.Dictionary, i);
+                    const Key = macos.text.FontVariationAxisKey;
+                    const cf_name = dict.getValue(Key.name.Value(), Key.name.key()).?;
+                    const cf_id = dict.getValue(Key.identifier.Value(), Key.identifier.key()).?;
+                    const cf_min = dict.getValue(Key.minimum_value.Value(), Key.minimum_value.key()).?;
+                    const cf_max = dict.getValue(Key.maximum_value.Value(), Key.maximum_value.key()).?;
+                    const cf_def = dict.getValue(Key.default_value.Value(), Key.default_value.key()).?;
+
+                    const namestr = cf_name.cstring(&buf, .utf8) orelse "";
+
+                    var id_raw: c_int = 0;
+                    _ = cf_id.getValue(.int, &id_raw);
+                    const id: font.face.Variation.Id = @bitCast(id_raw);
+
+                    var min: f64 = 0;
+                    _ = cf_min.getValue(.double, &min);
+
+                    var max: f64 = 0;
+                    _ = cf_max.getValue(.double, &max);
+
+                    var def: f64 = 0;
+                    _ = cf_def.getValue(.double, &def);
+
+                    log.debug("variation axis: name={s} id={s} min={} max={} def={}", .{
+                        namestr,
+                        id.str(),
+                        min,
+                        max,
+                        def,
+                    });
+                }
+            }
+        }
+
         return result;
     }
 
