@@ -370,6 +370,7 @@ const Window = struct {
         const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
         c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
         _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, G_CONNECT_DEFAULT);
 
         // The notebook is our main child
         c.gtk_window_set_child(gtk_window, notebook_widget);
@@ -531,11 +532,6 @@ const Window = struct {
         const page_idx = c.gtk_notebook_get_current_page(self.notebook);
         const widget = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
         _ = c.gtk_widget_grab_focus(widget);
-
-        const gtk_label_box = @as(*c.GtkWidget, @ptrCast(c.gtk_notebook_get_tab_label(self.notebook, widget)));
-        const gtk_label = @as(*c.GtkLabel, @ptrCast(c.gtk_widget_get_first_child(gtk_label_box)));
-        const label_text = c.gtk_label_get_text(gtk_label);
-        c.gtk_window_set_title(self.window, label_text);
     }
 
     fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
@@ -554,6 +550,14 @@ const Window = struct {
         ));
 
         surface.core_surface.close();
+    }
+
+    fn gtkSwitchPage(_: *c.GtkNotebook, page: *c.GtkWidget, _: usize, ud: ?*anyopaque) callconv(.C) void {
+        const self = userdataSelf(ud.?);
+        const gtk_label_box = @as(*c.GtkWidget, @ptrCast(c.gtk_notebook_get_tab_label(self.notebook, page)));
+        const gtk_label = @as(*c.GtkLabel, @ptrCast(c.gtk_widget_get_first_child(gtk_label_box)));
+        const label_text = c.gtk_label_get_text(gtk_label);
+        c.gtk_window_set_title(self.window, label_text);
     }
 
     fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
