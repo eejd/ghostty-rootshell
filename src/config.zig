@@ -97,6 +97,9 @@ pub const Config = struct {
     /// The color of the cursor. If this is not set, a default will be chosen.
     @"cursor-color": ?Color = null,
 
+    /// The style of the cursor.
+    @"cursor-style": terminal.CursorStyle = .default,
+
     /// The color of the text under the cursor. If this is not set, a default
     /// will be chosen.
     @"cursor-text": ?Color = null,

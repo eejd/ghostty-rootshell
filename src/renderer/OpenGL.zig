@@ -237,6 +237,7 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     font_features: std.ArrayList([]const u8),
     cursor_color: ?terminal.color.RGB,
+    cursor_style: terminal.CursorStyle,
     cursor_text: ?terminal.color.RGB,
     background: terminal.color.RGB,
     background_opacity: f64,
@@ -265,6 +266,7 @@ pub const DerivedConfig = struct {
             else
                 null,
 
+            .cursor_style = config.@"cursor-style",
             .cursor_text = if (config.@"cursor-text") |txt|
                 txt.toTerminalRGB()
             else
@@ -733,7 +735,9 @@ pub fn render(
                 // If we aren't focused, we use a hollow box
                 if (!self.focused) break :cursor_style .box_hollow;
 
-                break :cursor_style renderer.CursorStyle.fromTerminal(state.cursor.style) orelse .box;
+                const selected_cursor_style = if (state.cursor.style == .default) self.config.cursor_style else state.cursor.style;
+
+                break :cursor_style renderer.CursorStyle.fromTerminal(selected_cursor_style) orelse .box;
             };
         }
 
