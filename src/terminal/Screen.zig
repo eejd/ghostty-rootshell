@@ -2791,6 +2791,11 @@ pub fn dumpString(self: *Screen, writer: anytype, opts: Dump) !void {
 
             const codepoint: u21 = @intCast(cell.char);
             try writer.print("{u}", .{codepoint});
+
+            var it = row.codepointIterator(cells.i - 1);
+            while (it.next()) |cp| {
+                try writer.print("{u}", .{cp});
+            }
         }
     }
 }
@@ -4799,9 +4804,10 @@ test "Screen: resize (no reflow) grapheme copy" {
     // Resize
     try s.resizeWithoutReflow(10, 5);
     {
+        const expected = "1️A️B️C️D️\n2️E️F️G️H️\n3️I️J️K️L️";
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
 
     // Everything should be dirty
@@ -5133,14 +5139,16 @@ test "Screen: resize more cols grapheme map" {
     try testing.expectEqual(cursor, s.cursor);
 
     {
+        const expected = "1️A️B️C️D️\n2️E️F️G️H️\n3️I️J️K️L️";
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
     {
+        const expected = "1️A️B️C️D️\n2️E️F️G️H️\n3️I️J️K️L️";
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
 }
 
