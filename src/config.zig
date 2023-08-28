@@ -97,6 +97,14 @@ pub const Config = struct {
     /// The color of the cursor. If this is not set, a default will be chosen.
     @"cursor-color": ?Color = null,
 
+    /// The style of the cursor.
+    ///
+    /// Caveat: Shell integration currently defaults to always be a bar
+    /// In order to fix it, we probably would want to add something similar to Kitty's
+    /// shell integration options (no-cursor). For more information see:
+    /// https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.shell_integration
+    @"cursor-style": terminal.CursorStyle = .default,
+
     /// The color of the text under the cursor. If this is not set, a default
     /// will be chosen.
     @"cursor-text": ?Color = null,
