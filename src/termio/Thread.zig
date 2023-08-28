@@ -29,7 +29,7 @@ const Coalesce = struct {
 
 /// The number of milliseconds before we reset the synchronized output flag
 /// if the running program hasn't already.
-const sync_reset_ms = 5000;
+const sync_reset_ms = 1000;
 
 /// Allocator used for some state
 alloc: std.mem.Allocator,
