@@ -694,6 +694,33 @@ test "csi: colon for non-m final" {
     try testing.expect(p.state == .ground);
 }
 
+test "csi: request mode decrqm" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("[?2026$") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('p');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+
+        const d = a[1].?.csi_dispatch;
+        try testing.expect(d.final == 'p');
+        try testing.expectEqual(@as(usize, 2), d.intermediates.len);
+        try testing.expectEqual(@as(usize, 1), d.params.len);
+        try testing.expectEqual(@as(u16, '?'), d.intermediates[0]);
+        try testing.expectEqual(@as(u16, '$'), d.intermediates[1]);
+        try testing.expectEqual(@as(u16, 2026), d.params[0]);
+    }
+}
+
 test "osc: change window title" {
     var p = init();
     _ = p.next(0x1B);
