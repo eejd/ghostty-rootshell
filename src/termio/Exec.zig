@@ -612,6 +612,11 @@ const Subprocess = struct {
             try env.put("COLORTERM", "truecolor");
         }
 
+        // Set environment variables used by some programs (such as neovim) to detect
+        // which terminal emulator and version they're running under.
+        try env.put("TERM_PROGRAM", "ghostty");
+        try env.put("TERM_PROGRAM_VERSION", build_config.version_string);
+
         // When embedding in macOS and running via XCode, XCode injects
         // a bunch of things that break our shell process. We remove those.
         if (comptime builtin.target.isDarwin() and build_config.artifact == .lib) {
