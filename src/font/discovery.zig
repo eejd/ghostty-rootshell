@@ -5,6 +5,7 @@ const fontconfig = @import("fontconfig");
 const macos = @import("macos");
 const options = @import("main.zig").options;
 const DeferredFace = @import("main.zig").DeferredFace;
+const Variation = @import("main.zig").face.Variation;
 
 const log = std.log.scoped(.discovery);
 
@@ -42,6 +43,11 @@ pub const Descriptor = struct {
     /// bold, italic, or both.
     bold: bool = false,
     italic: bool = false,
+
+    /// Variation axes to apply to the font. This also impacts searching
+    /// for fonts since fonts with the ability to set these variations
+    /// will be preferred, but not guaranteed.
+    variations: []const Variation = &.{},
 
     /// Convert to Fontconfig pattern to use for lookup. The pattern does
     /// not have defaults filled/substituted (Fontconfig thing) so callers
@@ -149,7 +155,21 @@ pub const Descriptor = struct {
             );
         }
 
-        return try macos.text.FontDescriptor.createWithAttributes(@ptrCast(attrs));
+        // Build our descriptor from attrs
+        var desc = try macos.text.FontDescriptor.createWithAttributes(@ptrCast(attrs));
+        errdefer desc.release();
+
+        // Variations are built by copying the descriptor. I don't know a way
+        // to set it on attrs directly.
+        for (self.variations) |v| {
+            const id = try macos.foundation.Number.create(.int, @ptrCast(&v.id));
+            defer id.release();
+            const next = try desc.createCopyWithVariation(id, v.value);
+            desc.release();
+            desc = next;
+        }
+
+        return desc;
     }
 };
 
@@ -185,6 +205,7 @@ pub const Fontconfig = struct {
             .pattern = pat,
             .set = res.fs,
             .fonts = res.fs.fonts(),
+            .variations = desc.variations,
             .i = 0,
         };
     }
@@ -194,6 +215,7 @@ pub const Fontconfig = struct {
         pattern: *fontconfig.Pattern,
         set: *fontconfig.FontSet,
         fonts: []*fontconfig.Pattern,
+        variations: []const Variation,
         i: usize,
 
         pub fn deinit(self: *DiscoverIterator) void {
@@ -221,6 +243,7 @@ pub const Fontconfig = struct {
                     .pattern = font_pattern,
                     .charset = (try font_pattern.get(.charset, 0)).char_set,
                     .langset = (try font_pattern.get(.lang, 0)).lang_set,
+                    .variations = self.variations,
                 },
             };
         }

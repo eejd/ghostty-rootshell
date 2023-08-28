@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const macos = @import("macos");
@@ -64,6 +65,12 @@ pub const Face = struct {
         const ct_font = try base.copyWithAttributes(@floatFromInt(size.pixels()), null, null);
         errdefer ct_font.release();
 
+        return try initFont(ct_font);
+    }
+
+    /// Initialize a face with a CTFont. This will take ownership over
+    /// the CTFont. This does NOT copy or retain the CTFont.
+    pub fn initFont(ct_font: *macos.text.Font) !Face {
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
         errdefer hb_font.destroy();
 
@@ -76,6 +83,52 @@ pub const Face = struct {
             .metrics = try calcMetrics(ct_font),
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
+
+        // In debug mode, we output information about available variation axes,
+        // if they exist.
+        if (comptime builtin.mode == .Debug) {
+            if (ct_font.copyAttribute(.variation_axes)) |axes| {
+                defer axes.release();
+
+                var buf: [1024]u8 = undefined;
+                log.debug("variation axes font={s}", .{try result.name(&buf)});
+
+                const len = axes.getCount();
+                for (0..len) |i| {
+                    const dict = axes.getValueAtIndex(macos.foundation.Dictionary, i);
+                    const Key = macos.text.FontVariationAxisKey;
+                    const cf_name = dict.getValue(Key.name.Value(), Key.name.key()).?;
+                    const cf_id = dict.getValue(Key.identifier.Value(), Key.identifier.key()).?;
+                    const cf_min = dict.getValue(Key.minimum_value.Value(), Key.minimum_value.key()).?;
+                    const cf_max = dict.getValue(Key.maximum_value.Value(), Key.maximum_value.key()).?;
+                    const cf_def = dict.getValue(Key.default_value.Value(), Key.default_value.key()).?;
+
+                    const namestr = cf_name.cstring(&buf, .utf8) orelse "";
+
+                    var id_raw: c_int = 0;
+                    _ = cf_id.getValue(.int, &id_raw);
+                    const id: font.face.Variation.Id = @bitCast(id_raw);
+
+                    var min: f64 = 0;
+                    _ = cf_min.getValue(.double, &min);
+
+                    var max: f64 = 0;
+                    _ = cf_max.getValue(.double, &max);
+
+                    var def: f64 = 0;
+                    _ = cf_def.getValue(.double, &def);
+
+                    log.debug("variation axis: name={s} id={s} min={} max={} def={}", .{
+                        namestr,
+                        id.str(),
+                        min,
+                        max,
+                        def,
+                    });
+                }
+            }
+        }
+
         return result;
     }
 
@@ -89,8 +142,8 @@ pub const Face = struct {
     /// matrix applied to italicize it.
     pub fn italicize(self: *const Face) !Face {
         const ct_font = try self.font.copyWithAttributes(0.0, &italic_skew, null);
-        defer ct_font.release();
-        return try initFontCopy(ct_font, .{ .points = 0 });
+        errdefer ct_font.release();
+        return try initFont(ct_font);
     }
 
     /// Returns the font name. If allocation is required, buf will be used,
@@ -111,6 +164,31 @@ pub const Face = struct {
     pub fn setSize(self: *Face, size: font.face.DesiredSize) !void {
         // We just create a copy and replace ourself
         const face = try initFontCopy(self.font, size);
+        self.deinit();
+        self.* = face;
+    }
+
+    /// Set the variation axes for this font. This will modify this font
+    /// in-place.
+    pub fn setVariations(
+        self: *Face,
+        vs: []const font.face.Variation,
+    ) !void {
+        // Create a new font descriptor with all the variations set.
+        var desc = self.font.copyDescriptor();
+        defer desc.release();
+        for (vs) |v| {
+            const id = try macos.foundation.Number.create(.int, @ptrCast(&v.id));
+            defer id.release();
+            const next = try desc.createCopyWithVariation(id, v.value);
+            desc.release();
+            desc = next;
+        }
+
+        // Initialize a font based on these attributes.
+        const ct_font = try self.font.copyWithAttributes(0, null, desc);
+        errdefer ct_font.release();
+        const face = try initFont(ct_font);
         self.deinit();
         self.* = face;
     }
@@ -484,6 +562,58 @@ test "in-memory" {
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
+
+    // Generate all visible ASCII
+    var i: u8 = 32;
+    while (i < 127) : (i += 1) {
+        try testing.expect(face.glyphIndex(i) != null);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
+    }
+}
+
+test "variable" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("../test.zig").fontVariable;
+
+    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas.deinit(alloc);
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    defer face.deinit();
+
+    try testing.expectEqual(font.Presentation.text, face.presentation);
+
+    // Generate all visible ASCII
+    var i: u8 = 32;
+    while (i < 127) : (i += 1) {
+        try testing.expect(face.glyphIndex(i) != null);
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
+    }
+}
+
+test "variable set variation" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("../test.zig").fontVariable;
+
+    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas.deinit(alloc);
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    defer face.deinit();
+
+    try testing.expectEqual(font.Presentation.text, face.presentation);
+
+    try face.setVariations(&.{
+        .{ .id = font.face.Variation.Id.init("wght"), .value = 400 },
+    });
 
     // Generate all visible ASCII
     var i: u8 = 32;

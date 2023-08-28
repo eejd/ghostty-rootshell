@@ -3,6 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const fontpkg = @import("font/main.zig");
 const inputpkg = @import("input.zig");
 const terminal = @import("terminal/main.zig");
 const internal_os = @import("os/main.zig");
@@ -42,6 +43,30 @@ pub const Config = struct {
         .macos => 13,
         else => 12,
     },
+
+    /// A repeatable configuration to set one or more font variations values
+    /// for a variable font. A variable font is a single font, usually
+    /// with a filename ending in "-VF.ttf" or "-VF.otf" that contains
+    /// one or more configurable axes for things such as weight, slant,
+    /// etc. Not all fonts support variations; only fonts that explicitly
+    /// state they are variable fonts will work.
+    ///
+    /// The format of this is "id=value" where "id" is the axis identifier.
+    /// An axis identifier is always a 4 character string, such as "wght".
+    /// To get the list of supported axes, look at your font documentation
+    /// or use a font inspection tool.
+    ///
+    /// Invalid ids and values are usually ignored. For example, if a font
+    /// only supports weights from 100 to 700, setting "wght=800" will
+    /// do nothing (it will not be clamped to 700). You must consult your
+    /// font's documentation to see what values are supported.
+    ///
+    /// Common axes are: "wght" (weight), "slnt" (slant), "ital" (italic),
+    /// "opsz" (optical size), "wdth" (width), "GRAD" (gradient), etc.
+    @"font-variation": RepeatableFontVariation = .{},
+    @"font-variation-bold": RepeatableFontVariation = .{},
+    @"font-variation-italic": RepeatableFontVariation = .{},
+    @"font-variation-bold-italic": RepeatableFontVariation = .{},
 
     /// Draw fonts with a thicker stroke, if supported. This is only supported
     /// currently on macOS.
@@ -1214,6 +1239,97 @@ pub const RepeatableString = struct {
         try list.parseCLI(alloc, "B");
 
         try testing.expectEqual(@as(usize, 2), list.list.items.len);
+    }
+};
+
+/// FontVariation is a repeatable configuration value that sets a single
+/// font variation value. Font variations are configurations for what
+/// are often called "variable fonts." The font files usually end in
+/// "-VF.ttf."
+///
+/// The value for this is in the format of `id=value` where `id` is the
+/// 4-character font variation axis identifier and `value` is the
+/// floating point value for that axis. For more details on font variations
+/// see the MDN font-variation-settings documentation since this copies that
+/// behavior almost exactly:
+///
+/// https://developer.mozilla.org/en-US/docs/Web/CSS/font-variation-settings
+pub const RepeatableFontVariation = struct {
+    const Self = @This();
+
+    // Allocator for the list is the arena for the parent config.
+    list: std.ArrayListUnmanaged(fontpkg.face.Variation) = .{},
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input_: ?[]const u8) !void {
+        const input = input_ orelse return error.ValueRequired;
+        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return error.InvalidFormat;
+        const whitespace = " \t";
+        const key = std.mem.trim(u8, input[0..eql_idx], whitespace);
+        const value = std.mem.trim(u8, input[eql_idx + 1 ..], whitespace);
+        if (key.len != 4) return error.InvalidFormat;
+        try self.list.append(alloc, .{
+            .id = fontpkg.face.Variation.Id.init(@ptrCast(key.ptr)),
+            .value = std.fmt.parseFloat(f64, value) catch return error.InvalidFormat,
+        });
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        return .{
+            .list = try self.list.clone(alloc),
+        };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        const itemsA = self.list.items;
+        const itemsB = other.list.items;
+        if (itemsA.len != itemsB.len) return false;
+        for (itemsA, itemsB) |a, b| {
+            if (!std.meta.eql(a, b)) return false;
+        } else return true;
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "wght=200");
+        try list.parseCLI(alloc, "slnt=-15");
+
+        try testing.expectEqual(@as(usize, 2), list.list.items.len);
+        try testing.expectEqual(fontpkg.face.Variation{
+            .id = fontpkg.face.Variation.Id.init("wght"),
+            .value = 200,
+        }, list.list.items[0]);
+        try testing.expectEqual(fontpkg.face.Variation{
+            .id = fontpkg.face.Variation.Id.init("slnt"),
+            .value = -15,
+        }, list.list.items[1]);
+    }
+
+    test "parseCLI with whitespace" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "wght =200");
+        try list.parseCLI(alloc, "slnt= -15");
+
+        try testing.expectEqual(@as(usize, 2), list.list.items.len);
+        try testing.expectEqual(fontpkg.face.Variation{
+            .id = fontpkg.face.Variation.Id.init("wght"),
+            .value = 200,
+        }, list.list.items[0]);
+        try testing.expectEqual(fontpkg.face.Variation{
+            .id = fontpkg.face.Variation.Id.init("slnt"),
+            .value = -15,
+        }, list.list.items[1]);
     }
 };
 
