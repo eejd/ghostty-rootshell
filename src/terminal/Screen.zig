@@ -2349,7 +2349,8 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
         errdefer self.storage.deinit(self.alloc);
         defer old.storage.deinit(self.alloc);
 
-        // Copy grapheme map
+        // Create empty grapheme map. Cell IDs change so we can't just copy it,
+        // we'll rebuild it.
         self.graphemes = .{};
         errdefer self.deinitGraphemes();
         defer old.deinitGraphemes();
@@ -2388,9 +2389,12 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             }
 
             // Fast path: our old row is not wrapped AND our old row fits
-            // into our new smaller size. In this case, we just do a fast
-            // copy and move on.
-            if (!old_row_wrapped and trimmed_row.len <= self.cols) {
+            // into our new smaller size AND this row has no grapheme clusters.
+            // In this case, we just do a fast copy and move on.
+            if (!old_row_wrapped and
+                trimmed_row.len <= self.cols and
+                !old_row.header().flags.grapheme)
+            {
                 // If our cursor is on this line, then set the new cursor.
                 if (cursor_pos.y == old_y) {
                     assert(new_cursor == null);
@@ -2473,6 +2477,14 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                     // Write the cell
                     var new_cell = row.getCellPtr(x);
                     new_cell.* = cell.cell;
+
+                    // If the old cell is a multi-codepoint grapheme then we
+                    // need to also attach the graphemes.
+                    if (cell.cell.attrs.grapheme) {
+                        var it = cur_old_row.codepointIterator(old_x);
+                        while (it.next()) |cp| try row.attachGrapheme(x, cp);
+                    }
+
                     x += 1;
                 }
 
@@ -2791,6 +2803,11 @@ pub fn dumpString(self: *Screen, writer: anytype, opts: Dump) !void {
 
             const codepoint: u21 = @intCast(cell.char);
             try writer.print("{u}", .{codepoint});
+
+            var it = row.codepointIterator(cells.i - 1);
+            while (it.next()) |cp| {
+                try writer.print("{u}", .{cp});
+            }
         }
     }
 }
@@ -4799,9 +4816,10 @@ test "Screen: resize (no reflow) grapheme copy" {
     // Resize
     try s.resizeWithoutReflow(10, 5);
     {
+        const expected = "1️A️B️C️D️\n2️E️F️G️H️\n3️I️J️K️L️";
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
 
     // Everything should be dirty
@@ -5133,14 +5151,16 @@ test "Screen: resize more cols grapheme map" {
     try testing.expectEqual(cursor, s.cursor);
 
     {
+        const expected = "1️A️B️C️D️\n2️E️F️G️H️\n3️I️J️K️L️";
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
     {
+        const expected = "1️A️B️C️D️\n2️E️F️G️H️\n3️I️J️K️L️";
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
 }
 
@@ -5617,14 +5637,16 @@ test "Screen: resize less cols with graphemes" {
     try testing.expectEqual(cursor, s.cursor);
 
     {
+        const expected = "1️A️B️\n2️E️F️\n3️I️J️";
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
     {
+        const expected = "1️A️B️\n2️E️F️\n3️I️J️";
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        try testing.expectEqualStrings(expected, contents);
     }
 }
 
@@ -6094,6 +6116,36 @@ test "Screen: resize more cols with wide spacer head" {
         try testing.expect(!cell.attrs.wide_spacer_head);
         try testing.expect(cell.attrs.wide);
         try testing.expect(s.getCell(.screen, 0, 3).attrs.wide_spacer_tail);
+    }
+}
+
+test "Screen: resize less cols preserves grapheme cluster" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 5, 0);
+    defer s.deinit();
+    const str: []const u8 = &.{ 0x43, 0xE2, 0x83, 0x90 }; // C⃐ (C with combining left arrow)
+    try s.testWriteString(str);
+
+    // We should have a single cell with all the codepoints
+    {
+        const row = s.getRow(.{ .screen = 0 });
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Resize to less columns. No wrapping, but we should still have
+    // the same grapheme cluster.
+    try s.resize(1, 4);
+    {
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
     }
 }
 
