@@ -569,6 +569,35 @@ pub fn Stream(comptime Handler: type) type {
                     ),
                 },
 
+                // DECRQM - Request Mode
+                'p' => switch (action.intermediates.len) {
+                    2 => decrqm: {
+                        if (action.intermediates[0] != '?' and
+                            action.intermediates[1] != '$')
+                        {
+                            log.warn(
+                                "ignoring unimplemented CSI p with intermediates: {s}",
+                                .{action.intermediates},
+                            );
+                            break :decrqm;
+                        }
+
+                        if (action.params.len != 1) {
+                            log.warn("invalid DECRQM command: {}", .{action});
+                            break :decrqm;
+                        }
+
+                        if (@hasDecl(T, "requestMode")) {
+                            try self.handler.requestMode(action.params[0]);
+                        } else log.warn("unimplemented DECRQM callback: {}", .{action});
+                    },
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI p with intermediates: {s}",
+                        .{action.intermediates},
+                    ),
+                },
+
                 // DECSCUSR - Select Cursor Style
                 // TODO: test
                 'q' => if (@hasDecl(T, "setCursorStyle")) try self.handler.setCursorStyle(
