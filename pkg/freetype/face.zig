@@ -24,6 +24,12 @@ pub const Face = struct {
         return c.FT_HAS_COLOR(self.handle);
     }
 
+    /// A macro that returns true whenever a face object contains some
+    /// multiple masters.
+    pub fn hasMultipleMasters(self: Face) bool {
+        return c.FT_HAS_MULTIPLE_MASTERS(self.handle);
+    }
+
     /// A macro that returns true whenever a face object contains a scalable
     /// font face (true for TrueType, Type 1, Type 42, CID, OpenType/CFF,
     /// and PFR font formats).
@@ -94,6 +100,33 @@ pub const Face = struct {
         var name: c.FT_SfntName = undefined;
         const res = c.FT_Get_Sfnt_Name(self.handle, @intCast(i), &name);
         return if (intToError(res)) |_| name else |err| err;
+    }
+
+    /// Retrieve the font variation descriptor for a font.
+    pub fn getMMVar(self: Face) Error!*c.FT_MM_Var {
+        var result: *c.FT_MM_Var = undefined;
+        const res = c.FT_Get_MM_Var(self.handle, @ptrCast(&result));
+        return if (intToError(res)) |_| result else |err| err;
+    }
+
+    /// Get the design coordinates of the currently selected interpolated font.
+    pub fn getVarDesignCoordinates(self: Face, coords: []c.FT_Fixed) Error!void {
+        const res = c.FT_Get_Var_Design_Coordinates(
+            self.handle,
+            @intCast(coords.len),
+            coords.ptr,
+        );
+        return intToError(res);
+    }
+
+    /// Choose an interpolated font design through design coordinates.
+    pub fn setVarDesignCoordinates(self: Face, coords: []c.FT_Fixed) Error!void {
+        const res = c.FT_Set_Var_Design_Coordinates(
+            self.handle,
+            @intCast(coords.len),
+            coords.ptr,
+        );
+        return intToError(res);
     }
 };
 

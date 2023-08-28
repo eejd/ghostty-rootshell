@@ -54,6 +54,9 @@ pub const Fontconfig = struct {
     charset: *const fontconfig.CharSet,
     langset: *const fontconfig.LangSet,
 
+    /// Variations to apply to this font.
+    variations: []const font.face.Variation,
+
     pub fn deinit(self: *Fontconfig) void {
         self.pattern.destroy();
         self.* = undefined;
@@ -154,7 +157,10 @@ fn loadFontconfig(
     const filename = (try fc.pattern.get(.file, 0)).string;
     const face_index = (try fc.pattern.get(.index, 0)).integer;
 
-    return try Face.initFile(lib, filename, face_index, size);
+    var face = try Face.initFile(lib, filename, face_index, size);
+    errdefer face.deinit();
+    try face.setVariations(fc.variations);
+    return face;
 }
 
 fn loadCoreText(

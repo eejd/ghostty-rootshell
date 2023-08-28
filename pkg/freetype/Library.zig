@@ -57,6 +57,11 @@ pub fn initMemoryFace(self: Library, data: []const u8, index: i32) Error!Face {
     return face;
 }
 
+/// Call when you're done with a loaded MM var.
+pub fn doneMMVar(self: Library, mm: *c.FT_MM_Var) void {
+    _ = c.FT_Done_MM_Var(self.handle, mm);
+}
+
 pub const Version = struct {
     major: i32,
     minor: i32,

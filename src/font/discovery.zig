@@ -205,6 +205,7 @@ pub const Fontconfig = struct {
             .pattern = pat,
             .set = res.fs,
             .fonts = res.fs.fonts(),
+            .variations = desc.variations,
             .i = 0,
         };
     }
@@ -214,6 +215,7 @@ pub const Fontconfig = struct {
         pattern: *fontconfig.Pattern,
         set: *fontconfig.FontSet,
         fonts: []*fontconfig.Pattern,
+        variations: []const Variation,
         i: usize,
 
         pub fn deinit(self: *DiscoverIterator) void {
@@ -241,6 +243,7 @@ pub const Fontconfig = struct {
                     .pattern = font_pattern,
                     .charset = (try font_pattern.get(.charset, 0)).char_set,
                     .langset = (try font_pattern.get(.lang, 0)).lang_set,
+                    .variations = self.variations,
                 },
             };
         }

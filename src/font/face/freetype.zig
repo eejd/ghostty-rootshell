@@ -23,6 +23,9 @@ const quirks = @import("../../quirks.zig");
 const log = std.log.scoped(.font_face);
 
 pub const Face = struct {
+    /// Our freetype library
+    lib: freetype.Library,
+
     /// Our font face.
     face: freetype.Face,
 
@@ -43,30 +46,55 @@ pub const Face = struct {
     pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: font.face.DesiredSize) !Face {
         const face = try lib.lib.initFace(path, index);
         errdefer face.deinit();
-        return try initFace(face, size);
+        return try initFace(lib, face, size);
     }
 
     /// Initialize a new font face with the given source in-memory.
     pub fn init(lib: Library, source: [:0]const u8, size: font.face.DesiredSize) !Face {
         const face = try lib.lib.initMemoryFace(source, 0);
         errdefer face.deinit();
-        return try initFace(face, size);
+        return try initFace(lib, face, size);
     }
 
-    fn initFace(face: freetype.Face, size: font.face.DesiredSize) !Face {
+    fn initFace(lib: Library, face: freetype.Face, size: font.face.DesiredSize) !Face {
         try face.selectCharmap(.unicode);
         try setSize_(face, size);
 
-        const hb_font = try harfbuzz.freetype.createFont(face.handle);
+        var hb_font = try harfbuzz.freetype.createFont(face.handle);
         errdefer hb_font.destroy();
 
         var result: Face = .{
+            .lib = lib.lib,
             .face = face,
             .hb_font = hb_font,
             .presentation = if (face.hasColor()) .emoji else .text,
             .metrics = calcMetrics(face),
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
+
+        // In debug mode, we output information about available variation axes,
+        // if they exist.
+        if (comptime builtin.mode == .Debug) mm: {
+            if (!face.hasMultipleMasters()) break :mm;
+            var buf: [1024]u8 = undefined;
+            log.debug("variation axes font={s}", .{try result.name(&buf)});
+
+            const mm = try face.getMMVar();
+            defer lib.lib.doneMMVar(mm);
+            for (0..mm.num_axis) |i| {
+                const axis = mm.axis[i];
+                const id_raw = std.math.cast(c_int, axis.tag) orelse continue;
+                const id: font.face.Variation.Id = @bitCast(id_raw);
+                log.debug("variation axis: name={s} id={s} min={} max={} def={}", .{
+                    std.mem.sliceTo(axis.name, 0),
+                    id.str(),
+                    axis.minimum >> 16,
+                    axis.maximum >> 16,
+                    axis.def >> 16,
+                });
+            }
+        }
+
         return result;
     }
 
@@ -130,6 +158,50 @@ pub const Face = struct {
         }
 
         try face.selectSize(best_i);
+    }
+
+    /// Set the variation axes for this font. This will modify this font
+    /// in-place.
+    pub fn setVariations(
+        self: *Face,
+        vs: []const font.face.Variation,
+    ) !void {
+        // If this font doesn't support variations, we can't do anything.
+        if (!self.face.hasMultipleMasters() or vs.len == 0) return;
+
+        // Freetype requires that we send ALL coordinates in at once so the
+        // first thing we have to do is get all the vars and put them into
+        // an array.
+        const mm = try self.face.getMMVar();
+        defer self.lib.doneMMVar(mm);
+
+        // To avoid allocations, we cap the number of variation axes we can
+        // support. This is arbitrary but Firefox caps this at 16 so I
+        // feel like that's probably safe... and we do double cause its
+        // cheap.
+        var coords_buf: [32]freetype.c.FT_Fixed = undefined;
+        var coords = coords_buf[0..@min(coords_buf.len, mm.num_axis)];
+        try self.face.getVarDesignCoordinates(coords);
+
+        // Now we go through each axis and see if its set. This is slow
+        // but there usually aren't many axes and usually not many set
+        // variations, either.
+        for (0..mm.num_axis) |i| {
+            const axis = mm.axis[i];
+            const id = std.math.cast(u32, axis.tag) orelse continue;
+            for (vs) |v| {
+                if (id == @as(u32, @bitCast(v.id))) {
+                    coords[i] = @intFromFloat(v.value * 65536);
+                    break;
+                }
+            }
+        }
+
+        // Set them!
+        try self.face.setVarDesignCoordinates(coords);
+
+        // We need to recalculate font metrics which may have changed.
+        self.metrics = calcMetrics(self.face);
     }
 
     /// Returns the glyph index for the given Unicode code point. If this
