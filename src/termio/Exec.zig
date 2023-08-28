@@ -293,6 +293,13 @@ pub fn resize(
         // Update our pixel sizes
         self.terminal.width_px = padded_size.width;
         self.terminal.height_px = padded_size.height;
+
+        // Disable synchronized output mode so that we show changes
+        // immediately for a resize. This is allowed by the spec.
+        self.terminal.modes.set(.synchronized_output, false);
+
+        // Wake up our renderer so any changes will be shown asap
+        self.renderer_wakeup.notify() catch {};
     }
 }
 
