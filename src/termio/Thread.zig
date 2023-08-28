@@ -27,6 +27,10 @@ const Coalesce = struct {
     resize: ?termio.Message.Resize = null,
 };
 
+/// The number of milliseconds before we reset the synchronized output flag
+/// if the running program hasn't already.
+const sync_reset_ms = 5000;
+
 /// Allocator used for some state
 alloc: std.mem.Allocator,
 
@@ -48,6 +52,12 @@ coalesce: xev.Timer,
 coalesce_c: xev.Completion = .{},
 coalesce_cancel_c: xev.Completion = .{},
 coalesce_data: Coalesce = .{},
+
+/// This timer is used to reset synchronized output modes so that
+/// the terminal doesn't freeze with a bad actor.
+sync_reset: xev.Timer,
+sync_reset_c: xev.Completion = .{},
+sync_reset_cancel_c: xev.Completion = .{},
 
 /// The underlying IO implementation.
 impl: *termio.Impl,
@@ -79,6 +89,10 @@ pub fn init(
     var coalesce_h = try xev.Timer.init();
     errdefer coalesce_h.deinit();
 
+    // This timer is used to reset synchronized output modes.
+    var sync_reset_h = try xev.Timer.init();
+    errdefer sync_reset_h.deinit();
+
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
@@ -89,6 +103,7 @@ pub fn init(
         .wakeup = wakeup_h,
         .stop = stop_h,
         .coalesce = coalesce_h,
+        .sync_reset = sync_reset_h,
         .impl = impl,
         .mailbox = mailbox,
     };
@@ -98,6 +113,7 @@ pub fn init(
 /// completes executing; the caller must join prior to this.
 pub fn deinit(self: *Thread) void {
     self.coalesce.deinit();
+    self.sync_reset.deinit();
     self.stop.deinit();
     self.wakeup.deinit();
     self.loop.deinit();
@@ -158,6 +174,7 @@ fn drainMailbox(self: *Thread) !void {
             .clear_screen => |v| try self.impl.clearScreen(v.history),
             .scroll_viewport => |v| try self.impl.scrollViewport(v),
             .jump_to_prompt => |v| try self.impl.jumpToPrompt(v),
+            .start_synchronized_output => self.startSynchronizedOutput(),
             .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
             .write_stable => |v| try self.impl.queueWrite(v),
             .write_alloc => |v| {
@@ -172,6 +189,18 @@ fn drainMailbox(self: *Thread) !void {
     if (redraw) {
         try self.impl.renderer_wakeup.notify();
     }
+}
+
+fn startSynchronizedOutput(self: *Thread) void {
+    self.sync_reset.reset(
+        &self.loop,
+        &self.sync_reset_c,
+        &self.sync_reset_cancel_c,
+        sync_reset_ms,
+        Thread,
+        self,
+        syncResetCallback,
+    );
 }
 
 fn handleResize(self: *Thread, resize: termio.Message.Resize) void {
@@ -191,6 +220,25 @@ fn handleResize(self: *Thread, resize: termio.Message.Resize) void {
         self,
         coalesceCallback,
     );
+}
+
+fn syncResetCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
+    _ = r catch |err| switch (err) {
+        error.Canceled => {},
+        else => {
+            log.warn("error during sync reset callback err={}", .{err});
+            return .disarm;
+        },
+    };
+
+    const self = self_ orelse return .disarm;
+    self.impl.resetSynchronizedOutput();
+    return .disarm;
 }
 
 fn coalesceCallback(

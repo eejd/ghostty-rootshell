@@ -296,6 +296,15 @@ pub fn resize(
     }
 }
 
+/// Reset the synchronized output mode. This is usually called by timer
+/// expiration from the termio thread.
+pub fn resetSynchronizedOutput(self: *Exec) void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    self.terminal.modes.set(.synchronized_output, false);
+    self.renderer_wakeup.notify() catch {};
+}
+
 /// Clear the screen.
 pub fn clearScreen(self: *Exec, history: bool) !void {
     {
@@ -1349,6 +1358,13 @@ const StreamHandler = struct {
                 self.alloc,
                 if (enabled) .@"132_cols" else .@"80_cols",
             ),
+
+            // We need to start a timer to prevent the emulator being hung
+            // forever.
+            .synchronized_output => {
+                if (enabled) self.messageWriter(.{ .start_synchronized_output = {} });
+                try self.queueRender();
+            },
 
             .mouse_event_x10 => self.terminal.flags.mouse_event = if (enabled) .x10 else .none,
             .mouse_event_normal => self.terminal.flags.mouse_event = if (enabled) .normal else .none,

@@ -51,6 +51,11 @@ pub const Message = union(enum) {
     /// Jump forward/backward n prompts.
     jump_to_prompt: isize,
 
+    /// Send this when a synchronized output mode is started. This will
+    /// start the timer so that the output mode is disabled after a
+    /// period of time so that a bad actor can't hang the terminal.
+    start_synchronized_output: void,
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 
