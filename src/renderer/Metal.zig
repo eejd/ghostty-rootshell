@@ -469,6 +469,12 @@ pub fn render(
         state.mutex.lock();
         defer state.mutex.unlock();
 
+        // If we're in a synchronized output state, we pause all rendering.
+        if (state.terminal.modes.get(.synchronized_output)) {
+            log.debug("synchronized output started, skipping render", .{});
+            return;
+        }
+
         self.cursor_visible = visible: {
             // If the cursor is explicitly not visible in the state,
             // then it is not visible.

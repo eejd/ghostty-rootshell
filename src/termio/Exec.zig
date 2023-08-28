@@ -293,7 +293,23 @@ pub fn resize(
         // Update our pixel sizes
         self.terminal.width_px = padded_size.width;
         self.terminal.height_px = padded_size.height;
+
+        // Disable synchronized output mode so that we show changes
+        // immediately for a resize. This is allowed by the spec.
+        self.terminal.modes.set(.synchronized_output, false);
+
+        // Wake up our renderer so any changes will be shown asap
+        self.renderer_wakeup.notify() catch {};
     }
+}
+
+/// Reset the synchronized output mode. This is usually called by timer
+/// expiration from the termio thread.
+pub fn resetSynchronizedOutput(self: *Exec) void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    self.terminal.modes.set(.synchronized_output, false);
+    self.renderer_wakeup.notify() catch {};
 }
 
 /// Clear the screen.
@@ -1272,6 +1288,27 @@ const StreamHandler = struct {
         }
     }
 
+    pub fn requestMode(self: *StreamHandler, mode_raw: u16) !void {
+        // Get the mode value and respond.
+        const code: u8 = code: {
+            if (!terminal.modes.hasSupport(mode_raw)) break :code 0;
+            if (self.terminal.modes.get(@enumFromInt(mode_raw))) break :code 1;
+            break :code 2;
+        };
+
+        var msg: termio.Message = .{ .write_small = .{} };
+        const resp = try std.fmt.bufPrint(
+            &msg.write_small.data,
+            "\x1B[?{};{}$y",
+            .{
+                mode_raw,
+                code,
+            },
+        );
+        msg.write_small.len = @intCast(resp.len);
+        self.messageWriter(msg);
+    }
+
     pub fn saveMode(self: *StreamHandler, mode: terminal.Mode) !void {
         // log.debug("save mode={}", .{mode});
         self.terminal.modes.save(mode);
@@ -1333,6 +1370,13 @@ const StreamHandler = struct {
                 self.alloc,
                 if (enabled) .@"132_cols" else .@"80_cols",
             ),
+
+            // We need to start a timer to prevent the emulator being hung
+            // forever.
+            .synchronized_output => {
+                if (enabled) self.messageWriter(.{ .start_synchronized_output = {} });
+                try self.queueRender();
+            },
 
             .mouse_event_x10 => self.terminal.flags.mouse_event = if (enabled) .x10 else .none,
             .mouse_event_normal => self.terminal.flags.mouse_event = if (enabled) .normal else .none,
