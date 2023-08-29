@@ -218,6 +218,16 @@ pub const Cell = struct {
         /// also be true. The grapheme code points can be looked up in the
         /// screen grapheme map.
         grapheme: bool = false,
+
+        /// Returns only the attributes related to style.
+        pub fn styleAttrs(self: @This()) @This() {
+            var copy = self;
+            copy.wide = false;
+            copy.wide_spacer_tail = false;
+            copy.wide_spacer_head = false;
+            copy.grapheme = false;
+            return copy;
+        }
     } = .{},
 
     /// True if the cell should be skipped for drawing
@@ -2666,6 +2676,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
         switch (width) {
             1 => {
                 const cell = row.getCellPtr(x);
+                cell.* = self.cursor.pen;
                 cell.char = @intCast(c);
 
                 grapheme.x = x;
@@ -2691,6 +2702,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
 
                 {
                     const cell = row.getCellPtr(x);
+                    cell.* = self.cursor.pen;
                     cell.char = @intCast(c);
                     cell.attrs.wide = true;
 

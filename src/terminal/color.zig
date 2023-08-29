@@ -99,6 +99,10 @@ pub const RGB = struct {
     g: u8 = 0,
     b: u8 = 0,
 
+    pub fn eql(self: RGB, other: RGB) bool {
+        return self.r == other.r and self.g == other.g and self.b == other.b;
+    }
+
     test "size" {
         try std.testing.expectEqual(@as(usize, 24), @bitSizeOf(RGB));
         try std.testing.expectEqual(@as(usize, 3), @sizeOf(RGB));
