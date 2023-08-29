@@ -2414,7 +2414,7 @@ fn draw_dash_horizontal(
     canvas: *font.sprite.Canvas,
     count: u8,
     thick_px: u32,
-    gap: u32,
+    desired_gap: u32,
 ) void {
     assert(count >= 2 and count <= 4);
 
@@ -2422,23 +2422,35 @@ fn draw_dash_horizontal(
     // "- - -" => 2 gaps
     const gap_count = count - 1;
 
-    // Determine the width of our dashes
-    const dash_width = dash_width: {
-        var gap_i = gap;
-        var dash_width = (self.width - (gap_count * gap_i)) / count;
-        while (dash_width <= 0 and gap_i > 1) {
-            gap_i -= 1;
-            dash_width = (self.width - (gap_count * gap_i)) / count;
+    // Determine the width of each dash and the gap between them. We try
+    // to have gap match desired_gap but if our cell is too small then we
+    // have to bring it down.
+    const adjusted: struct {
+        dash_width: u32,
+        gap: u32,
+    } = adjusted: {
+        for (0..desired_gap) |i| {
+            const gap_width: u32 = desired_gap - @as(u32, @intCast(i));
+            const total_gap_width: u32 = gap_count * gap_width;
+
+            // This would make a negative and overflow our u32. A negative
+            // dash width is not allowed so we keep trying to fit it.
+            if (total_gap_width >= self.width) continue;
+
+            break :adjusted .{
+                .dash_width = (self.width - total_gap_width) / count,
+                .gap = gap_width,
+            };
         }
 
-        // If we can't fit any dashes then we just render a horizontal line.
-        if (dash_width <= 0) {
-            self.hline_middle(canvas, .light);
-            return;
-        }
-
-        break :dash_width dash_width;
+        // In this case, there is no combination of gap width and dash
+        // width that would fit our desired number of dashes, so we just
+        // draw a horizontal line.
+        self.hline_middle(canvas, .light);
+        return;
     };
+    const dash_width = adjusted.dash_width;
+    const gap = adjusted.gap;
 
     // Our total width should be less than our real width
     assert(count * dash_width + gap_count * gap <= self.width);
