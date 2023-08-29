@@ -77,6 +77,20 @@ pub const RunIterator = struct {
             // If we're a spacer, then we ignore it
             if (cell.attrs.wide_spacer_tail) continue;
 
+            // If our cell attributes are changing, then we split the run.
+            // This prevents a single glyph for ">=" to be rendered with
+            // one color when the two components have different styling.
+            if (j > self.i) {
+                const prev_cell = self.row.getCell(j - 1);
+                const Attrs = @TypeOf(cell.attrs);
+                const Int = @typeInfo(Attrs).Struct.backing_integer.?;
+                const prev_attrs: Int = @bitCast(prev_cell.attrs.styleAttrs());
+                const attrs: Int = @bitCast(cell.attrs.styleAttrs());
+                if (prev_attrs != attrs) break;
+                if (cell.attrs.has_bg and !cell.bg.eql(prev_cell.bg)) break;
+                if (cell.attrs.has_fg and !cell.fg.eql(prev_cell.fg)) break;
+            }
+
             // Text runs break when font styles change so we need to get
             // the proper style.
             const style: font.Style = style: {
