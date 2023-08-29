@@ -902,6 +902,11 @@ pub fn rebuildCells(
             screen.viewportIsBottom() and
             y == screen.cursor.y;
 
+        // True if we want to do font shaping around the cursor. We want to
+        // do font shaping as long as the cursor is enabled.
+        const shape_cursor = screen.viewportIsBottom() and
+            y == screen.cursor.y;
+
         // If this is the row with our cursor, then we may have to modify
         // the cell with the cursor.
         const start_i: usize = self.cells.items.len;
@@ -940,7 +945,7 @@ pub fn rebuildCells(
             self.font_group,
             row,
             selection,
-            if (cursor_row) screen.cursor.x else null,
+            if (shape_cursor) screen.cursor.x else null,
         );
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
