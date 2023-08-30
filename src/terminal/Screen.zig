@@ -2194,16 +2194,22 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             var new_row = self.getRow(.{ .active = y });
             try new_row.copyRow(old_row);
             if (!old_row.header().flags.wrap) {
+                // We used to do have this behavior, but it broke some programs.
+                // I know I copied this behavior while observing some other
+                // terminal, but I can't remember which one. I'm leaving this
+                // here in case we want to bring this back (with probably
+                // slightly different behavior).
+                //
                 // If we have no reflow, we attempt to extend any stylized
                 // cells at the end of the line if there is one.
-                const len = old_row.lenCells();
-                const end = new_row.getCell(len - 1);
-                if ((end.char == 0 or end.char == ' ') and !end.empty()) {
-                    for (len..self.cols) |x| {
-                        const cell = new_row.getCellPtr(x);
-                        cell.* = end;
-                    }
-                }
+                // const len = old_row.lenCells();
+                // const end = new_row.getCell(len - 1);
+                // if ((end.char == 0 or end.char == ' ') and !end.empty()) {
+                //     for (len..self.cols) |x| {
+                //         const cell = new_row.getCellPtr(x);
+                //         cell.* = end;
+                //     }
+                // }
 
                 y += 1;
                 continue;
@@ -5034,59 +5040,6 @@ test "Screen: resize more cols perfect split" {
     const str = "1ABCD2EFGH3IJKL";
     try s.testWriteString(str);
     try s.resize(3, 10);
-}
-
-test "Screen: resize more cols trailing background colors" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 3, 5, 0);
-    defer s.deinit();
-    const str = "1AB";
-    try s.testWriteString(str);
-    const cursor = s.cursor;
-
-    // Color our cells red
-    const pen: Cell = .{ .bg = .{ .r = 0xFF }, .attrs = .{ .has_bg = true } };
-    for (s.cursor.x..s.cols) |x| {
-        const row = s.getRow(.{ .active = s.cursor.y });
-        const cell = row.getCellPtr(x);
-        cell.* = pen;
-    }
-    for ((s.cursor.y + 1)..s.rows) |y| {
-        const row = s.getRow(.{ .active = y });
-        row.fill(pen);
-    }
-
-    try s.resize(3, 10);
-
-    // Cursor should not move
-    try testing.expectEqual(cursor, s.cursor);
-
-    {
-        var contents = try s.testString(alloc, .viewport);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
-    }
-    {
-        var contents = try s.testString(alloc, .screen);
-        defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
-    }
-
-    // Verify all our trailing cells have the color
-    for (s.cursor.x..s.cols) |x| {
-        const row = s.getRow(.{ .active = s.cursor.y });
-        const cell = row.getCellPtr(x);
-        try testing.expectEqual(pen, cell.*);
-    }
-    for ((s.cursor.y + 1)..s.rows) |y| {
-        const row = s.getRow(.{ .active = y });
-        for (0..s.cols) |x| {
-            const cell = row.getCellPtr(x);
-            try testing.expectEqual(pen, cell.*);
-        }
-    }
 }
 
 test "Screen: resize more cols no reflow preserves semantic prompt" {
