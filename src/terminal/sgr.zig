@@ -33,7 +33,7 @@ pub const Attribute = union(enum) {
     /// Underline the text
     underline: Underline,
     reset_underline: void,
-    underline_color: RGB,
+    underline_color: color.RGB,
     reset_underline_color: void,
 
     /// Blink the text
@@ -53,10 +53,10 @@ pub const Attribute = union(enum) {
     reset_strikethrough: void,
 
     /// Set foreground color as RGB values.
-    direct_color_fg: RGB,
+    direct_color_fg: color.RGB,
 
     /// Set background color as RGB values.
-    direct_color_bg: RGB,
+    direct_color_bg: color.RGB,
 
     /// Set the background/foreground as a named color attribute.
     @"8_bg": color.Name,
@@ -75,12 +75,6 @@ pub const Attribute = union(enum) {
 
     /// Set foreground color as 256-color palette.
     @"256_fg": u8,
-
-    pub const RGB = struct {
-        r: u8,
-        g: u8,
-        b: u8,
-    };
 
     pub const Underline = enum(u3) {
         none = 0,
