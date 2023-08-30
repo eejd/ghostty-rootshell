@@ -103,6 +103,23 @@ pub const RGB = struct {
         return self.r == other.r and self.g == other.g and self.b == other.b;
     }
 
+    /// Calculates the contrast ratio between two colors. The contrast
+    /// ration is a value between 1 and 21 where 1 is the lowest contrast
+    /// and 21 is the highest contrast.
+    ///
+    /// https://www.w3.org/TR/WCAG20/#contrast-ratiodef
+    pub fn contrast(self: RGB, other: RGB) f64 {
+        // pair[0] = lighter, pair[1] = darker
+        const pair: [2]f64 = pair: {
+            const self_lum = self.luminance();
+            const other_lum = other.luminance();
+            if (self_lum > other_lum) break :pair .{ self_lum, other_lum };
+            break :pair .{ other_lum, self_lum };
+        };
+
+        return (pair[0] + 0.05) / (pair[1] + 0.05);
+    }
+
     /// Calculates luminance based on the W3C formula. This returns a
     /// normalized value between 0 and 1 where 0 is black and 1 is white.
     ///
