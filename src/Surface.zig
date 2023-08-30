@@ -415,7 +415,7 @@ pub fn init(
         .renderer_state = .{
             .mutex = mutex,
             .cursor = .{
-                .style = .blinking_block,
+                .style = .default,
                 .visible = true,
             },
             .terminal = &self.io.terminal,

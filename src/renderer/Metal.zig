@@ -475,6 +475,14 @@ pub fn render(
             return;
         }
 
+        // If the terminal state isn't requesting any particular style,
+        // then use the configured style.
+        const selected_cursor_style = style: {
+            if (state.cursor.style != .default) break :style state.cursor.style;
+            if (self.config.cursor_style != .default) break :style self.config.cursor_style;
+            break :style .blinking_block;
+        };
+
         self.cursor_visible = visible: {
             // If the cursor is explicitly not visible in the state,
             // then it is not visible.
@@ -484,7 +492,7 @@ pub fn render(
             if (state.preedit != null) break :visible true;
 
             // If the cursor isn't a blinking style, then never blink.
-            if (!state.cursor.style.blinking()) break :visible true;
+            if (!selected_cursor_style.blinking()) break :visible true;
 
             // Otherwise, adhere to our current state.
             break :visible self.cursor_visible;
@@ -498,8 +506,6 @@ pub fn render(
 
                 // If we aren't focused, we use a hollow box
                 if (!self.focused) break :cursor_style .box_hollow;
-
-                const selected_cursor_style = if (state.cursor.style == .default) self.config.cursor_style else state.cursor.style;
 
                 break :cursor_style renderer.CursorStyle.fromTerminal(selected_cursor_style) orelse .box;
             };
