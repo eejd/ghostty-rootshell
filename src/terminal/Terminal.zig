@@ -1901,11 +1901,11 @@ test "Terminal: horizontal tabs" {
     // HT
     try t.print('1');
     try t.horizontalTab();
-    try testing.expectEqual(@as(usize, 7), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 8), t.screen.cursor.x);
 
     // HT
     try t.horizontalTab();
-    try testing.expectEqual(@as(usize, 15), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 16), t.screen.cursor.x);
 
     // HT at the end
     try t.horizontalTab();
@@ -1924,11 +1924,11 @@ test "Terminal: horizontal tabs back" {
 
     // HT
     try t.horizontalTabBack();
-    try testing.expectEqual(@as(usize, 15), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 16), t.screen.cursor.x);
 
     // HT
     try t.horizontalTabBack();
-    try testing.expectEqual(@as(usize, 7), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 8), t.screen.cursor.x);
 
     // HT
     try t.horizontalTabBack();
