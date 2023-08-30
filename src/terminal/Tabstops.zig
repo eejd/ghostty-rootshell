@@ -149,7 +149,7 @@ pub fn reset(self: *Tabstops, interval: usize) void {
     @memset(self.dynamic_stops, 0);
 
     if (interval > 0) {
-        var i: usize = interval - 1;
+        var i: usize = interval;
         while (i < self.cols - 1) : (i += interval) {
             self.set(i);
         }
@@ -203,9 +203,9 @@ test "Tabstops: interval" {
     var t: Tabstops = try init(testing.allocator, 80, 4);
     defer t.deinit(testing.allocator);
     try testing.expect(!t.get(0));
-    try testing.expect(t.get(3));
-    try testing.expect(!t.get(4));
-    try testing.expect(t.get(7));
+    try testing.expect(t.get(4));
+    try testing.expect(!t.get(5));
+    try testing.expect(t.get(8));
 }
 
 test "Tabstops: count on 80" {
