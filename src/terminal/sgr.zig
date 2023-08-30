@@ -126,9 +126,8 @@ pub const Parser = struct {
                         // an element to get here.
                         0 => unreachable,
 
-                        // 1 is unreachable because we can't have a colon
-                        // separator if there are no separators.
-                        1 => unreachable,
+                        // 1 is possible if underline is the last element.
+                        1 => return Attribute{ .underline = .single },
 
                         // 2 means we have a specific underline style.
                         2 => {
@@ -214,12 +213,8 @@ pub const Parser = struct {
             48 => if (slice.len >= 5 and slice[1] == 2) {
                 self.idx += 4;
 
-                // In the 6-len form, ignore the 3rd param. Otherwise, use it.
-                const rgb = if (slice.len == 5) slice[2..5] else rgb: {
-                    // Consume one more element
-                    self.idx += 1;
-                    break :rgb slice[3..6];
-                };
+                // We only support the 5-len form.
+                const rgb = slice[2..5];
 
                 // We use @truncate because the value should be 0 to 255. If
                 // it isn't, the behavior is undefined so we just... truncate it.
@@ -506,4 +501,34 @@ test "sgr: invisible" {
     var p: Parser = .{ .params = &[_]u16{ 8, 28 } };
     try testing.expect(p.next().? == .invisible);
     try testing.expect(p.next().? == .reset_invisible);
+}
+
+test "sgr: underline, bg, and fg" {
+    var p: Parser = .{
+        .params = &[_]u16{ 4, 38, 2, 255, 247, 219, 48, 2, 242, 93, 147, 4 },
+    };
+    {
+        const v = p.next().?;
+        try testing.expect(v == .underline);
+        try testing.expectEqual(Attribute.Underline.single, v.underline);
+    }
+    {
+        const v = p.next().?;
+        try testing.expect(v == .direct_color_fg);
+        try testing.expectEqual(@as(u8, 255), v.direct_color_fg.r);
+        try testing.expectEqual(@as(u8, 247), v.direct_color_fg.g);
+        try testing.expectEqual(@as(u8, 219), v.direct_color_fg.b);
+    }
+    {
+        const v = p.next().?;
+        try testing.expect(v == .direct_color_bg);
+        try testing.expectEqual(@as(u8, 242), v.direct_color_bg.r);
+        try testing.expectEqual(@as(u8, 93), v.direct_color_bg.g);
+        try testing.expectEqual(@as(u8, 147), v.direct_color_bg.b);
+    }
+    {
+        const v = p.next().?;
+        try testing.expect(v == .underline);
+        try testing.expectEqual(Attribute.Underline.single, v.underline);
+    }
 }
