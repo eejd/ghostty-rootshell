@@ -103,6 +103,29 @@ pub const RGB = struct {
         return self.r == other.r and self.g == other.g and self.b == other.b;
     }
 
+    /// Calculates luminance based on the W3C formula. This returns a
+    /// normalized value between 0 and 1 where 0 is black and 1 is white.
+    ///
+    /// https://www.w3.org/TR/WCAG20/#relativeluminancedef
+    pub fn luminance(self: RGB) f64 {
+        const r_lum = componentLuminance(self.r);
+        const g_lum = componentLuminance(self.g);
+        const b_lum = componentLuminance(self.b);
+        return 0.2126 * r_lum + 0.7152 * g_lum + 0.0722 * b_lum;
+    }
+
+    /// Calculates single-component luminance based on the W3C formula.
+    ///
+    /// Expects sRGB color space which at the time of writing we don't
+    /// generally use but it's a good enough approximation until we fix that.
+    /// https://www.w3.org/TR/WCAG20/#relativeluminancedef
+    fn componentLuminance(c: u8) f64 {
+        const c_f64: f64 = @floatFromInt(c);
+        const normalized: f64 = c_f64 / 255;
+        if (normalized <= 0.03928) return normalized / 12.92;
+        return std.math.pow(f64, (normalized + 0.055) / 1.055, 2.4);
+    }
+
     test "size" {
         try std.testing.expectEqual(@as(usize, 24), @bitSizeOf(RGB));
         try std.testing.expectEqual(@as(usize, 3), @sizeOf(RGB));
