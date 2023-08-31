@@ -82,72 +82,7 @@ pub fn parse(input: []const u8) !Binding {
     };
 
     // Find a matching action
-    const action: Action = action: {
-        // Split our action by colon. A colon may not exist for some
-        // actions so it is optional. The part preceding the colon is the
-        // action name.
-        const actionRaw = input[eqlIdx + 1 ..];
-        const colonIdx = std.mem.indexOf(u8, actionRaw, ":");
-        const action = actionRaw[0..(colonIdx orelse actionRaw.len)];
-
-        // An action name is always required
-        if (action.len == 0) return Error.InvalidFormat;
-
-        const actionInfo = @typeInfo(Action).Union;
-        inline for (actionInfo.fields) |field| {
-            if (std.mem.eql(u8, action, field.name)) {
-                // If the field type is void we expect no value
-                switch (field.type) {
-                    void => {
-                        if (colonIdx != null) return Error.InvalidFormat;
-                        break :action @unionInit(Action, field.name, {});
-                    },
-
-                    []const u8 => {
-                        const idx = colonIdx orelse return Error.InvalidFormat;
-                        const param = actionRaw[idx + 1 ..];
-                        break :action @unionInit(Action, field.name, param);
-                    },
-
-                    // Cursor keys can't be set currently
-                    Action.CursorKey => return Error.InvalidAction,
-
-                    else => switch (@typeInfo(field.type)) {
-                        .Enum => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = actionRaw[idx + 1 ..];
-                            const value = std.meta.stringToEnum(
-                                field.type,
-                                param,
-                            ) orelse return Error.InvalidFormat;
-
-                            break :action @unionInit(Action, field.name, value);
-                        },
-
-                        .Int => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = actionRaw[idx + 1 ..];
-                            const value = std.fmt.parseInt(field.type, param, 10) catch
-                                return Error.InvalidFormat;
-                            break :action @unionInit(Action, field.name, value);
-                        },
-
-                        .Float => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = actionRaw[idx + 1 ..];
-                            const value = std.fmt.parseFloat(field.type, param) catch
-                                return Error.InvalidFormat;
-                            break :action @unionInit(Action, field.name, value);
-                        },
-
-                        else => unreachable,
-                    },
-                }
-            }
-        }
-
-        return Error.InvalidFormat;
-    };
+    const action = try Action.parse(input[eqlIdx + 1 ..]);
 
     return Binding{ .trigger = trigger, .action = action };
 }
@@ -266,6 +201,75 @@ pub const Action = union(enum) {
         bottom,
         right,
     };
+
+    /// Parse an action in the format of "key=value" where key is the
+    /// action name and value is the action parameter. The parameter
+    /// is optional depending on the action.
+    pub fn parse(input: []const u8) !Action {
+        // Split our action by colon. A colon may not exist for some
+        // actions so it is optional. The part preceding the colon is the
+        // action name.
+        const colonIdx = std.mem.indexOf(u8, input, ":");
+        const action = input[0..(colonIdx orelse input.len)];
+
+        // An action name is always required
+        if (action.len == 0) return Error.InvalidFormat;
+
+        const actionInfo = @typeInfo(Action).Union;
+        inline for (actionInfo.fields) |field| {
+            if (std.mem.eql(u8, action, field.name)) {
+                // If the field type is void we expect no value
+                switch (field.type) {
+                    void => {
+                        if (colonIdx != null) return Error.InvalidFormat;
+                        return @unionInit(Action, field.name, {});
+                    },
+
+                    []const u8 => {
+                        const idx = colonIdx orelse return Error.InvalidFormat;
+                        const param = input[idx + 1 ..];
+                        return @unionInit(Action, field.name, param);
+                    },
+
+                    // Cursor keys can't be set currently
+                    Action.CursorKey => return Error.InvalidAction,
+
+                    else => switch (@typeInfo(field.type)) {
+                        .Enum => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = input[idx + 1 ..];
+                            const value = std.meta.stringToEnum(
+                                field.type,
+                                param,
+                            ) orelse return Error.InvalidFormat;
+
+                            return @unionInit(Action, field.name, value);
+                        },
+
+                        .Int => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = input[idx + 1 ..];
+                            const value = std.fmt.parseInt(field.type, param, 10) catch
+                                return Error.InvalidFormat;
+                            return @unionInit(Action, field.name, value);
+                        },
+
+                        .Float => {
+                            const idx = colonIdx orelse return Error.InvalidFormat;
+                            const param = input[idx + 1 ..];
+                            const value = std.fmt.parseFloat(field.type, param) catch
+                                return Error.InvalidFormat;
+                            return @unionInit(Action, field.name, value);
+                        },
+
+                        else => unreachable,
+                    },
+                }
+            }
+        }
+
+        return Error.InvalidAction;
+    }
 };
 
 // A key for the C API to execute an action. This must be kept in sync
@@ -427,7 +431,7 @@ test "parse: action invalid" {
     const testing = std.testing;
 
     // invalid action
-    try testing.expectError(Error.InvalidFormat, parse("a=nopenopenope"));
+    try testing.expectError(Error.InvalidAction, parse("a=nopenopenope"));
 }
 
 test "parse: action no parameters" {
