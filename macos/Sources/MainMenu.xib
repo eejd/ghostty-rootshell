@@ -16,6 +16,10 @@
             <connections>
                 <outlet property="menuNextSplit" destination="bD7-ei-wKU" id="LeT-xw-eh4"/>
                 <outlet property="menuPreviousSplit" destination="Lic-px-1wg" id="Rto-CG-yRe"/>
+                <outlet property="menuSelectSplitAbove" destination="0yU-hC-8xF" id="aPc-lS-own"/>
+                <outlet property="menuSelectSplitBelow" destination="QDz-d9-CBr" id="FsH-Dq-jij"/>
+                <outlet property="menuSelectSplitLeft" destination="cTK-oy-KuV" id="Jpr-5q-dqz"/>
+                <outlet property="menuSelectSplitRight" destination="upj-mc-L7X" id="nLY-o1-lky"/>
             </connections>
         </customObject>
         <customObject id="YLy-65-1bz" customClass="NSFontManager"/>
@@ -146,12 +150,14 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="rlu-tP-x0P"/>
-                            <menuItem title="Select Previous Split" keyEquivalent="[" id="Lic-px-1wg">
+                            <menuItem title="Select Previous Split" id="Lic-px-1wg">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="splitMoveFocusPrevious:" target="bbz-4X-AYv" id="mOs-gG-dAC"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Select Next Split" keyEquivalent="]" id="bD7-ei-wKU">
+                            <menuItem title="Select Next Split" id="bD7-ei-wKU">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="splitMoveFocusNext:" target="bbz-4X-AYv" id="rU6-Vw-DoW"/>
                                 </connections>
@@ -160,26 +166,26 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="Select Split" id="8tg-60-ZSU">
                                     <items>
-                                        <menuItem title="Select Split Above" keyEquivalent="" id="0yU-hC-8xF">
-                                            <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                                        <menuItem title="Select Split Above" id="0yU-hC-8xF">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="splitMoveFocusAbove:" target="bbz-4X-AYv" id="HDw-f2-RJY"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Select Split Below" keyEquivalent="" id="QDz-d9-CBr">
-                                            <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                                        <menuItem title="Select Split Below" id="QDz-d9-CBr">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="splitMoveFocusBelow:" target="bbz-4X-AYv" id="fmW-hZ-uOA"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Select Split Left" keyEquivalent="" id="cTK-oy-KuV">
-                                            <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                                        <menuItem title="Select Split Left" id="cTK-oy-KuV">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="splitMoveFocusLeft:" target="bbz-4X-AYv" id="N1i-a2-7N5"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Select Split Right" keyEquivalent="" id="upj-mc-L7X">
-                                            <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                                        <menuItem title="Select Split Right" id="upj-mc-L7X">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="splitMoveFocusRight:" target="bbz-4X-AYv" id="Pgi-df-84r"/>
                                             </connections>

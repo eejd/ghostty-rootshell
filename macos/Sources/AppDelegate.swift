@@ -17,6 +17,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
     @IBOutlet private var menuPreviousSplit: NSMenuItem?
     @IBOutlet private var menuNextSplit: NSMenuItem?
+    @IBOutlet private var menuSelectSplitAbove: NSMenuItem?
+    @IBOutlet private var menuSelectSplitBelow: NSMenuItem?
+    @IBOutlet private var menuSelectSplitLeft: NSMenuItem?
+    @IBOutlet private var menuSelectSplitRight: NSMenuItem?
     
     /// The ghostty global state. Only one per process.
     private var ghostty: Ghostty.AppState = Ghostty.AppState()
@@ -83,17 +87,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return .terminateLater
     }
     
+    /// Sync all of our menu item keyboard shortcuts with the Ghostty configuration.
     private func syncMenuShortcuts() {
-        guard let cfg = ghostty.config else { return }
+        guard ghostty.config != nil else { return }
         
-        if let menu = self.menuPreviousSplit {
-            let action = "goto_split:previous"
-            let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
-            if let equiv = Ghostty.keyEquivalent(key: trigger.key) {
-                menu.keyEquivalent = equiv
-                menu.keyEquivalentModifierMask = Ghostty.eventModifierFlags(mods: trigger.mods)
-            }
+        syncMenuShortcut(action: "goto_split:previous", menuItem: self.menuPreviousSplit)
+        syncMenuShortcut(action: "goto_split:next", menuItem: self.menuNextSplit)
+        syncMenuShortcut(action: "goto_split:top", menuItem: self.menuSelectSplitAbove)
+        syncMenuShortcut(action: "goto_split:bottom", menuItem: self.menuSelectSplitBelow)
+        syncMenuShortcut(action: "goto_split:left", menuItem: self.menuSelectSplitLeft)
+        syncMenuShortcut(action: "goto_split:right", menuItem: self.menuSelectSplitRight)
+    }
+    
+    /// Syncs a single menu shortcut for the given action. The action string is the same
+    /// action string used for the Ghostty configuration.
+    private func syncMenuShortcut(action: String, menuItem: NSMenuItem?) {
+        guard let cfg = ghostty.config else { return }
+        guard let menu = menuItem else { return }
+        
+        let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
+        guard let equiv = Ghostty.keyEquivalent(key: trigger.key) else {
+            Self.logger.debug("no keyboard shorcut set for action=\(action)")
+            return
         }
+        
+        menu.keyEquivalent = equiv
+        menu.keyEquivalentModifierMask = Ghostty.eventModifierFlags(mods: trigger.mods)
     }
     
     private func focusedSurface() -> ghostty_surface_t? {
