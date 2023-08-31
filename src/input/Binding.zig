@@ -393,7 +393,23 @@ pub const Set = struct {
     ) !void {
         // unbind should never go into the set, it should be handled prior
         assert(action != .unbind);
-        try self.bindings.put(alloc, t, action);
+
+        const gop = try self.bindings.getOrPut(alloc, t);
+
+        // If we have an existing binding for this trigger, we have to
+        // update the reverse mapping to remove the old action.
+        if (gop.found_existing) {
+            const t_hash = t.hash();
+            var it = self.reverse.iterator();
+            while (it.next()) |reverse_entry| it: {
+                if (t_hash == reverse_entry.value_ptr.hash()) {
+                    self.reverse.removeByPtr(reverse_entry.key_ptr);
+                    break :it;
+                }
+            }
+        }
+
+        gop.value_ptr.* = action;
         errdefer _ = self.bindings.remove(t);
         try self.reverse.put(alloc, action, t);
         errdefer _ = self.reverse.remove(action);
@@ -426,6 +442,10 @@ pub const Set = struct {
                 self.reverse.putAssumeCapacity(action, entry.key_ptr.*);
                 break;
             }
+        } else {
+            // No over trigger points to this action so we remove
+            // the reverse mapping completely.
+            _ = self.reverse.remove(action);
         }
     }
 
@@ -608,5 +628,26 @@ test "set: maintains reverse mapping" {
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
         try testing.expect(trigger.key == .a);
+    }
+}
+
+test "set: overriding a mapping updates reverse" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.put(alloc, .{ .key = .a }, .{ .new_window = {} });
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key == .a);
+    }
+
+    // should be most recent
+    try s.put(alloc, .{ .key = .a }, .{ .new_tab = {} });
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} });
+        try testing.expect(trigger == null);
     }
 }
