@@ -882,22 +882,21 @@ pub const CAPI = struct {
     /// Invoke an action on the surface.
     export fn ghostty_surface_binding_action(
         ptr: *Surface,
-        key: input.Binding.Key,
-        unused: *anyopaque,
-    ) void {
-        // For future arguments
-        _ = unused;
-
-        const action: input.Binding.Action = switch (key) {
-            .copy_to_clipboard => .{ .copy_to_clipboard = {} },
-            .paste_from_clipboard => .{ .paste_from_clipboard = {} },
-            .new_tab => .{ .new_tab = {} },
-            .new_window => .{ .new_window = {} },
+        action_ptr: [*]const u8,
+        action_len: usize,
+    ) bool {
+        const action_str = action_ptr[0..action_len];
+        const action = input.Binding.Action.parse(action_str) catch |err| {
+            log.err("error parsing binding action action={s} err={}", .{ action_str, err });
+            return false;
         };
 
         ptr.core_surface.performBindingAction(action) catch |err| {
             log.err("error performing binding action action={} err={}", .{ action, err });
+            return false;
         };
+
+        return true;
     }
 
     /// Sets the window background blur on macOS to the desired value.

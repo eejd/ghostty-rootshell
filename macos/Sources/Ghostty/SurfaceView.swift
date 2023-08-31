@@ -375,17 +375,26 @@ extension Ghostty {
         
         @IBAction func copy(_ sender: Any?) {
             guard let surface = self.surface else { return }
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_COPY_TO_CLIPBOARD, nil)
+            let action = "copy_to_clipboard"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         @IBAction func paste(_ sender: Any?) {
             guard let surface = self.surface else { return }
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD, nil)
+            let action = "paste_from_clipboard"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         @IBAction func pasteAsPlainText(_ sender: Any?) {
             guard let surface = self.surface else { return }
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD, nil)
+            let action = "paste_from_clipboard"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         // MARK: NSTextInputClient

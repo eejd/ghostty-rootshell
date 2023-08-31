@@ -140,11 +140,17 @@ extension Ghostty {
         }
         
         func newTab(surface: ghostty_surface_t) {
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_NEW_TAB, nil)
+            let action = "new_tab"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         func newWindow(surface: ghostty_surface_t) {
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_NEW_WINDOW, nil)
+            let action = "new_window"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         func split(surface: ghostty_surface_t, direction: ghostty_split_direction_e) {
