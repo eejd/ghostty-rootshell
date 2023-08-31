@@ -1216,8 +1216,7 @@ const StreamHandler = struct {
     pub fn setCursorRow(self: *StreamHandler, row: u16) !void {
         if (self.terminal.modes.get(.origin)) {
             // TODO
-            log.err("setCursorRow: implement origin mode", .{});
-            unreachable;
+            log.err("setCursorRow: unimplemented origin mode handling, misrendering may occur", .{});
         }
 
         self.terminal.setCursorPos(row, self.terminal.screen.cursor.x + 1);

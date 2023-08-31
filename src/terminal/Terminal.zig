@@ -990,7 +990,11 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 
     // TODO: test
 
-    assert(!self.modes.get(.origin)); // TODO
+    // TODO
+    if (!self.modes.get(.origin)) {
+        log.err("setCursorColAbsolute: cursor origin mode handling not implemented yet", .{});
+        return;
+    }
 
     if (self.status_display != .main) return; // TODO
 
@@ -1116,7 +1120,6 @@ pub fn eraseLine(
 
         else => {
             log.err("unimplemented erase line mode: {}", .{mode});
-            @panic("unimplemented");
         },
     }
 }
