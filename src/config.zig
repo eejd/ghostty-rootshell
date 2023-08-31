@@ -1559,6 +1559,25 @@ pub const CAPI = struct {
             log.err("error finalizing config err={}", .{err});
         };
     }
+
+    export fn ghostty_config_trigger(
+        self: *Config,
+        str: [*]const u8,
+        len: usize,
+    ) inputpkg.Binding.Trigger {
+        return config_trigger_(self, str[0..len]) catch |err| err: {
+            log.err("error finding trigger err={}", .{err});
+            break :err .{};
+        };
+    }
+
+    fn config_trigger_(
+        self: *Config,
+        str: []const u8,
+    ) !inputpkg.Binding.Trigger {
+        const action = try inputpkg.Binding.Action.parse(str);
+        return self.keybind.set.getTrigger(action) orelse .{};
+    }
 };
 
 test {

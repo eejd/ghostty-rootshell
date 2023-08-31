@@ -230,6 +230,12 @@ typedef enum {
     GHOSTTY_KEY_RIGHT_SUPER,
 } ghostty_input_key_e;
 
+typedef struct {
+    ghostty_input_key_e key;
+    ghostty_input_mods_e mods;
+    bool physical;
+} ghostty_input_trigger_s;
+
 // Fully defined types. This MUST be kept in sync with equivalent Zig
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
@@ -282,6 +288,7 @@ void ghostty_config_load_string(ghostty_config_t, const char *, uintptr_t);
 void ghostty_config_load_default_files(ghostty_config_t);
 void ghostty_config_load_recursive_files(ghostty_config_t);
 void ghostty_config_finalize(ghostty_config_t);
+ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t, const char *, uintptr_t);
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);

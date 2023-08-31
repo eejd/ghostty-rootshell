@@ -282,7 +282,10 @@ pub const Key = enum(c_int) {
 };
 
 /// Trigger is the associated key state that can trigger an action.
-pub const Trigger = struct {
+/// This is an extern struct because this is also used in the C API.
+///
+/// This must be kept in sync with include/ghostty.h ghostty_input_trigger_s
+pub const Trigger = extern struct {
     /// The key that has to be pressed for a binding to take action.
     key: key.Key = .invalid,
 
@@ -340,6 +343,22 @@ pub const Set = struct {
     /// Get a binding for a given trigger.
     pub fn get(self: Set, t: Trigger) ?Action {
         return self.bindings.get(t);
+    }
+
+    /// Get a trigger for the given action. An action can have multiple
+    /// triggers so this will return the first one found.
+    pub fn getTrigger(self: Set, a: Action) ?Trigger {
+        // Note: iterating over the full set each time is not ideal but
+        // we don't expect to have that many bindings. If this becomes
+        // a problem we can add a reverse map.
+        var it = self.bindings.iterator();
+        while (it.next()) |entry| {
+            if (std.meta.eql(entry.value_ptr.*, a)) {
+                return entry.key_ptr.*;
+            }
+        }
+
+        return null;
     }
 
     /// Remove a binding for a given trigger.
