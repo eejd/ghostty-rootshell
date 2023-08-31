@@ -3,7 +3,7 @@ import OSLog
 import GhosttyKit
 
 @NSApplicationMain
-class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyAppStateDelegate {
     // The application logger. We should probably move this at some point to a dedicated
     // class/struct but for now it lives here! 🤷‍♂️
     static let logger = Logger(
@@ -43,6 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     override init() {
         super.init()
         
+        ghostty.delegate = self
         windowManager = PrimaryWindowManager(ghostty: self.ghostty)
     }
     
@@ -148,6 +149,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         guard let surface = focusedSurface() else { return }
         ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
+    
+    //MARK: - GhosttyAppStateDelegate
+    
+    func configDidReload(_ state: Ghostty.AppState) {
+        syncMenuShortcuts()
+    }
+    
+    //MARK: - IB Actions
     
     @IBAction func newWindow(_ sender: Any?) {
         windowManager.newWindow()
