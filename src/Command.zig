@@ -190,7 +190,14 @@ pub fn wait(self: Command, block: bool) !Exit {
     // We specify NOHANG because its not our fault if the process we launch
     // for the tty doesn't properly waitpid its children. We don't want
     // to hang the terminal over it.
-    const res = std.os.waitpid(self.pid.?, if (block) 0 else std.c.W.NOHANG);
+    // When NOHANG is specified, waitpid will return a pid of 0 if the process
+    // doesn't have a status to report. When that happens, it is as though the
+    // wait call has not been performed, so we need to keep trying until we get
+    // a non-zero pid back, otherwise we end up with zombie processes.
+    var res = std.os.WaitPidResult{ .pid = 0, .status = 0 };
+    while (res.pid == 0) {
+        res = std.os.waitpid(self.pid.?, if (block) 0 else std.c.W.NOHANG);
+    }
     return Exit.init(res.status);
 }
 
