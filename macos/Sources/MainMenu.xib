@@ -14,12 +14,18 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customObject id="bbz-4X-AYv" userLabel="AppDelegate" customClass="AppDelegate" customModule="Ghostty" customModuleProvider="target">
             <connections>
+                <outlet property="menuClose" destination="DVo-aG-piG" id="R3t-0C-aSU"/>
+                <outlet property="menuCloseWindow" destination="W5w-UZ-crk" id="6ff-BT-ENV"/>
+                <outlet property="menuNewTab" destination="uTG-Vz-hJU" id="eMg-R3-SeS"/>
+                <outlet property="menuNewWindow" destination="Was-JA-tGl" id="lK7-3I-CPG"/>
                 <outlet property="menuNextSplit" destination="bD7-ei-wKU" id="LeT-xw-eh4"/>
                 <outlet property="menuPreviousSplit" destination="Lic-px-1wg" id="Rto-CG-yRe"/>
                 <outlet property="menuSelectSplitAbove" destination="0yU-hC-8xF" id="aPc-lS-own"/>
                 <outlet property="menuSelectSplitBelow" destination="QDz-d9-CBr" id="FsH-Dq-jij"/>
                 <outlet property="menuSelectSplitLeft" destination="cTK-oy-KuV" id="Jpr-5q-dqz"/>
                 <outlet property="menuSelectSplitRight" destination="upj-mc-L7X" id="nLY-o1-lky"/>
+                <outlet property="menuSplitHorizontal" destination="VUR-Ld-nLx" id="RxO-Zw-ovb"/>
+                <outlet property="menuSplitVertical" destination="UDZ-4y-6xL" id="fgZ-Wb-8OR"/>
             </connections>
         </customObject>
         <customObject id="YLy-65-1bz" customClass="NSFontManager"/>
@@ -68,34 +74,40 @@
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="File" id="bib-Uj-vzu">
                         <items>
-                            <menuItem title="New Window" keyEquivalent="n" id="Was-JA-tGl">
+                            <menuItem title="New Window" id="Was-JA-tGl">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="newWindow:" target="bbz-4X-AYv" id="NnC-l5-DUY"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="New Tab" keyEquivalent="t" id="uTG-Vz-hJU">
+                            <menuItem title="New Tab" id="uTG-Vz-hJU">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="newTab:" target="bbz-4X-AYv" id="cxO-CS-TJq"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="m54-Is-iLE"/>
-                            <menuItem title="Split Horizontally" keyEquivalent="d" id="VUR-Ld-nLx">
+                            <menuItem title="Split Horizontally" id="VUR-Ld-nLx">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="splitHorizontally:" target="bbz-4X-AYv" id="QT1-Yt-gYJ"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Split Vertically" keyEquivalent="D" id="UDZ-4y-6xL">
+                            <menuItem title="Split Vertically" id="UDZ-4y-6xL">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="splitVertically:" target="bbz-4X-AYv" id="ZZF-3f-OwW"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="sjq-M1-UGS"/>
-                            <menuItem title="Close" keyEquivalent="w" id="DVo-aG-piG">
+                            <menuItem title="Close" id="DVo-aG-piG">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="close:" target="bbz-4X-AYv" id="Szc-Fu-9yk"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Close Window" keyEquivalent="W" id="W5w-UZ-crk">
+                            <menuItem title="Close Window" id="W5w-UZ-crk">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="closeWindow:" target="bbz-4X-AYv" id="j4w-Nd-9bO"/>
                                 </connections>
