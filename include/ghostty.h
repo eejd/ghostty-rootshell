@@ -230,12 +230,11 @@ typedef enum {
     GHOSTTY_KEY_RIGHT_SUPER,
 } ghostty_input_key_e;
 
-typedef enum {
-    GHOSTTY_BINDING_COPY_TO_CLIPBOARD,
-    GHOSTTY_BINDING_PASTE_FROM_CLIPBOARD,
-    GHOSTTY_BINDING_NEW_TAB,
-    GHOSTTY_BINDING_NEW_WINDOW,
-} ghostty_binding_action_e;
+typedef struct {
+    ghostty_input_key_e key;
+    ghostty_input_mods_e mods;
+    bool physical;
+} ghostty_input_trigger_s;
 
 // Fully defined types. This MUST be kept in sync with equivalent Zig
 // structs. To find the Zig struct, grep for this type name. The documentation
@@ -289,6 +288,7 @@ void ghostty_config_load_string(ghostty_config_t, const char *, uintptr_t);
 void ghostty_config_load_default_files(ghostty_config_t);
 void ghostty_config_load_recursive_files(ghostty_config_t);
 void ghostty_config_finalize(ghostty_config_t);
+ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t, const char *, uintptr_t);
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);
@@ -315,7 +315,7 @@ void ghostty_surface_ime_point(ghostty_surface_t, double *, double *);
 void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
-void ghostty_surface_binding_action(ghostty_surface_t, ghostty_binding_action_e, void *);
+bool ghostty_surface_binding_action(ghostty_surface_t, const char *, uintptr_t);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.

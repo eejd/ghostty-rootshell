@@ -1,6 +1,11 @@
 import SwiftUI
 import GhosttyKit
 
+protocol GhosttyAppStateDelegate: AnyObject {
+    /// Called when the configuration did finish reloading.
+    func configDidReload(_ state: Ghostty.AppState)
+}
+
 extension Ghostty {
     enum AppReadiness {
         case loading, error, ready
@@ -11,6 +16,9 @@ extension Ghostty {
     class AppState: ObservableObject {
         /// The readiness value of the state.
         @Published var readiness: AppReadiness = .loading
+        
+        /// Optional delegate
+        weak var delegate: GhosttyAppStateDelegate?
         
         /// The ghostty global configuration. This should only be changed when it is definitely
         /// safe to change. It is definite safe to change only when the embedded app runtime
@@ -140,11 +148,17 @@ extension Ghostty {
         }
         
         func newTab(surface: ghostty_surface_t) {
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_NEW_TAB, nil)
+            let action = "new_tab"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         func newWindow(surface: ghostty_surface_t) {
-            ghostty_surface_binding_action(surface, GHOSTTY_BINDING_NEW_WINDOW, nil)
+            let action = "new_window"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
         }
         
         func split(surface: ghostty_surface_t, direction: ghostty_split_direction_e) {
@@ -235,6 +249,11 @@ extension Ghostty {
             // It is safe to free the old config from within this function call.
             let state = Unmanaged<AppState>.fromOpaque(userdata!).takeUnretainedValue()
             state.config = newConfig
+            
+            // If we have a delegate, notify.
+            if let delegate = state.delegate {
+                delegate.configDidReload(state)
+            }
             
             return newConfig
         }

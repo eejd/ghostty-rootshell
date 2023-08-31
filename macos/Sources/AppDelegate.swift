@@ -3,7 +3,7 @@ import OSLog
 import GhosttyKit
 
 @NSApplicationMain
-class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyAppStateDelegate {
     // The application logger. We should probably move this at some point to a dedicated
     // class/struct but for now it lives here! 🤷‍♂️
     static let logger = Logger(
@@ -14,6 +14,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     // confirmQuit published so other views can check whether quit needs to be confirmed.
     @Published var confirmQuit: Bool = false
     
+    /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    @IBOutlet private var menuQuit: NSMenuItem?
+    
+    @IBOutlet private var menuNewWindow: NSMenuItem?
+    @IBOutlet private var menuNewTab: NSMenuItem?
+    @IBOutlet private var menuSplitHorizontal: NSMenuItem?
+    @IBOutlet private var menuSplitVertical: NSMenuItem?
+    @IBOutlet private var menuClose: NSMenuItem?
+    @IBOutlet private var menuCloseWindow: NSMenuItem?
+    
+    @IBOutlet private var menuCopy: NSMenuItem?
+    @IBOutlet private var menuPaste: NSMenuItem?
+
+    @IBOutlet private var menuPreviousSplit: NSMenuItem?
+    @IBOutlet private var menuNextSplit: NSMenuItem?
+    @IBOutlet private var menuSelectSplitAbove: NSMenuItem?
+    @IBOutlet private var menuSelectSplitBelow: NSMenuItem?
+    @IBOutlet private var menuSelectSplitLeft: NSMenuItem?
+    @IBOutlet private var menuSelectSplitRight: NSMenuItem?
+    
     /// The ghostty global state. Only one per process.
     private var ghostty: Ghostty.AppState = Ghostty.AppState()
     
@@ -23,6 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     override init() {
         super.init()
         
+        ghostty.delegate = self
         windowManager = PrimaryWindowManager(ghostty: self.ghostty)
     }
     
@@ -32,6 +53,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
+        
+        // Sync our menu shortcuts with our Ghostty config
+        syncMenuShortcuts()
         
         // Let's launch our first window.
         // TODO: we should detect if we restored windows and if so not launch a new window.
@@ -76,6 +100,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return .terminateLater
     }
     
+    /// Sync all of our menu item keyboard shortcuts with the Ghostty configuration.
+    private func syncMenuShortcuts() {
+        guard ghostty.config != nil else { return }
+        
+        syncMenuShortcut(action: "quit", menuItem: self.menuQuit)
+        
+        syncMenuShortcut(action: "new_window", menuItem: self.menuNewWindow)
+        syncMenuShortcut(action: "new_tab", menuItem: self.menuNewTab)
+        syncMenuShortcut(action: "close_surface", menuItem: self.menuClose)
+        syncMenuShortcut(action: "close_window", menuItem: self.menuCloseWindow)
+        syncMenuShortcut(action: "new_split:right", menuItem: self.menuSplitHorizontal)
+        syncMenuShortcut(action: "new_split:down", menuItem: self.menuSplitVertical)
+        
+        syncMenuShortcut(action: "copy_to_clipboard", menuItem: self.menuCopy)
+        syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
+        
+        syncMenuShortcut(action: "goto_split:previous", menuItem: self.menuPreviousSplit)
+        syncMenuShortcut(action: "goto_split:next", menuItem: self.menuNextSplit)
+        syncMenuShortcut(action: "goto_split:top", menuItem: self.menuSelectSplitAbove)
+        syncMenuShortcut(action: "goto_split:bottom", menuItem: self.menuSelectSplitBelow)
+        syncMenuShortcut(action: "goto_split:left", menuItem: self.menuSelectSplitLeft)
+        syncMenuShortcut(action: "goto_split:right", menuItem: self.menuSelectSplitRight)
+    }
+    
+    /// Syncs a single menu shortcut for the given action. The action string is the same
+    /// action string used for the Ghostty configuration.
+    private func syncMenuShortcut(action: String, menuItem: NSMenuItem?) {
+        guard let cfg = ghostty.config else { return }
+        guard let menu = menuItem else { return }
+        
+        let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
+        guard let equiv = Ghostty.keyEquivalent(key: trigger.key) else {
+            Self.logger.debug("no keyboard shorcut set for action=\(action)")
+            return
+        }
+        
+        menu.keyEquivalent = equiv
+        menu.keyEquivalentModifierMask = Ghostty.eventModifierFlags(mods: trigger.mods)
+    }
+    
+    private func focusedSurface() -> ghostty_surface_t? {
+        guard let window = NSApp.keyWindow as? PrimaryWindow else { return nil }
+        return window.focusedSurfaceWrapper.surface
+    }
+    
+    private func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.splitMoveFocus(surface: surface, direction: direction)
+    }
+    
+    //MARK: - GhosttyAppStateDelegate
+    
+    func configDidReload(_ state: Ghostty.AppState) {
+        syncMenuShortcuts()
+    }
+    
+    //MARK: - IB Actions
+    
     @IBAction func newWindow(_ sender: Any?) {
         windowManager.newWindow()
     }
@@ -96,11 +178,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         ghostty.requestClose(surface: surface)
-    }
-    
-    private func focusedSurface() -> ghostty_surface_t? {
-        guard let window = NSApp.keyWindow as? PrimaryWindow else { return nil }
-        return window.focusedSurfaceWrapper.surface
     }
     
     @IBAction func splitHorizontally(_ sender: Any) {
@@ -135,11 +212,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     
     @IBAction func splitMoveFocusRight(_ sender: Any) {
         splitMoveFocus(direction: .right)
-    }
-    
-    func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
     
     @IBAction func showHelp(_ sender: Any) {
