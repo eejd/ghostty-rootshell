@@ -15,12 +15,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var confirmQuit: Bool = false
     
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    @IBOutlet private var menuQuit: NSMenuItem?
+    
     @IBOutlet private var menuNewWindow: NSMenuItem?
     @IBOutlet private var menuNewTab: NSMenuItem?
     @IBOutlet private var menuSplitHorizontal: NSMenuItem?
     @IBOutlet private var menuSplitVertical: NSMenuItem?
     @IBOutlet private var menuClose: NSMenuItem?
     @IBOutlet private var menuCloseWindow: NSMenuItem?
+    
+    @IBOutlet private var menuCopy: NSMenuItem?
+    @IBOutlet private var menuPaste: NSMenuItem?
+
     @IBOutlet private var menuPreviousSplit: NSMenuItem?
     @IBOutlet private var menuNextSplit: NSMenuItem?
     @IBOutlet private var menuSelectSplitAbove: NSMenuItem?
@@ -97,12 +103,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private func syncMenuShortcuts() {
         guard ghostty.config != nil else { return }
         
+        syncMenuShortcut(action: "quit", menuItem: self.menuQuit)
+        
         syncMenuShortcut(action: "new_window", menuItem: self.menuNewWindow)
         syncMenuShortcut(action: "new_tab", menuItem: self.menuNewTab)
         syncMenuShortcut(action: "close_surface", menuItem: self.menuClose)
         syncMenuShortcut(action: "close_window", menuItem: self.menuCloseWindow)
         syncMenuShortcut(action: "new_split:right", menuItem: self.menuSplitHorizontal)
         syncMenuShortcut(action: "new_split:down", menuItem: self.menuSplitVertical)
+        
+        syncMenuShortcut(action: "copy_to_clipboard", menuItem: self.menuCopy)
+        syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
         
         syncMenuShortcut(action: "goto_split:previous", menuItem: self.menuPreviousSplit)
         syncMenuShortcut(action: "goto_split:next", menuItem: self.menuNextSplit)
