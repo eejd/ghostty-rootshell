@@ -11,6 +11,7 @@
 		85102A1C2A6E32890084AB3E /* PrimaryWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85102A1B2A6E32890084AB3E /* PrimaryWindowController.swift */; };
 		857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 857F63802A5E64F200CA4815 /* MainMenu.xib */; };
 		85DE1C922A6A3DCA00493853 /* PrimaryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85DE1C912A6A3DCA00493853 /* PrimaryWindow.swift */; };
+		A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */; };
 		A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */; };
 		A53426392A7DC55C00EBB7A2 /* PrimaryWindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53426382A7DC55C00EBB7A2 /* PrimaryWindowManager.swift */; };
 		A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535B9D9299C569B0017E2E4 /* ErrorView.swift */; };
@@ -37,6 +38,7 @@
 		85102A1B2A6E32890084AB3E /* PrimaryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryWindowController.swift; sourceTree = "<group>"; };
 		857F63802A5E64F200CA4815 /* MainMenu.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
 		85DE1C912A6A3DCA00493853 /* PrimaryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryWindow.swift; sourceTree = "<group>"; };
+		A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Input.swift; sourceTree = "<group>"; };
 		A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A53426382A7DC55C00EBB7A2 /* PrimaryWindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryWindowManager.swift; sourceTree = "<group>"; };
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
@@ -132,6 +134,7 @@
 				A55B7BB729B6F53A0055DE60 /* Package.swift */,
 				A55B7BB529B6F47F0055DE60 /* AppState.swift */,
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
+				A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */,
 				A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */,
 				A55685DF29A03A9F004303CE /* AppError.swift */,
 			);
@@ -260,6 +263,7 @@
 			files = (
 				A53426392A7DC55C00EBB7A2 /* PrimaryWindowManager.swift in Sources */,
 				85DE1C922A6A3DCA00493853 /* PrimaryWindow.swift in Sources */,
+				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
