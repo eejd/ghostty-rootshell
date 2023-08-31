@@ -270,6 +270,49 @@ pub const Action = union(enum) {
 
         return Error.InvalidAction;
     }
+
+    /// Returns a hash code that can be used to uniquely identify this
+    /// action.
+    pub fn hash(self: Action) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+
+        // Always has the active tag.
+        const Tag = @typeInfo(Action).Union.tag_type.?;
+        std.hash.autoHash(&hasher, @as(Tag, self));
+
+        // Hash the value of the field.
+        switch (self) {
+            inline else => |field| {
+                const FieldType = @TypeOf(field);
+                switch (FieldType) {
+                    // Do nothing for void
+                    void => {},
+
+                    // Floats are hashed by their bits. This is totally not
+                    // portable and there are edge cases such as NaNs and
+                    // signed zeros but these are not cases we expect for
+                    // our bindings.
+                    f32 => std.hash.autoHash(
+                        &hasher,
+                        @as(u32, @bitCast(field)),
+                    ),
+                    f64 => std.hash.autoHash(
+                        &hasher,
+                        @as(u64, @bitCast(field)),
+                    ),
+
+                    // Everything else automatically handle.
+                    else => std.hash.autoHashStrat(
+                        &hasher,
+                        field,
+                        .DeepRecursive,
+                    ),
+                }
+            },
+        }
+
+        return hasher.final();
+    }
 };
 
 // A key for the C API to execute an action. This must be kept in sync
@@ -315,15 +358,28 @@ pub const Set = struct {
     const HashMap = std.HashMapUnmanaged(
         Trigger,
         Action,
-        Context,
+        Context(Trigger),
+        std.hash_map.default_max_load_percentage,
+    );
+
+    const ReverseMap = std.HashMapUnmanaged(
+        Action,
+        Trigger,
+        Context(Action),
         std.hash_map.default_max_load_percentage,
     );
 
     /// The set of bindings.
     bindings: HashMap = .{},
 
+    /// The reverse mapping of action to binding. Note that multiple
+    /// bindings can map to the same action and this map will only have
+    /// the most recently added binding for an action.
+    reverse: ReverseMap = .{},
+
     pub fn deinit(self: *Set, alloc: Allocator) void {
         self.bindings.deinit(alloc);
+        self.reverse.deinit(alloc);
         self.* = undefined;
     }
 
@@ -338,6 +394,9 @@ pub const Set = struct {
         // unbind should never go into the set, it should be handled prior
         assert(action != .unbind);
         try self.bindings.put(alloc, t, action);
+        errdefer _ = self.bindings.remove(t);
+        try self.reverse.put(alloc, action, t);
+        errdefer _ = self.reverse.remove(action);
     }
 
     /// Get a binding for a given trigger.
@@ -348,36 +407,42 @@ pub const Set = struct {
     /// Get a trigger for the given action. An action can have multiple
     /// triggers so this will return the first one found.
     pub fn getTrigger(self: Set, a: Action) ?Trigger {
-        // Note: iterating over the full set each time is not ideal but
-        // we don't expect to have that many bindings. If this becomes
-        // a problem we can add a reverse map.
-        var it = self.bindings.iterator();
-        while (it.next()) |entry| {
-            if (std.meta.eql(entry.value_ptr.*, a)) {
-                return entry.key_ptr.*;
-            }
-        }
-
-        return null;
+        return self.reverse.get(a);
     }
 
     /// Remove a binding for a given trigger.
     pub fn remove(self: *Set, t: Trigger) void {
+        const action = self.bindings.get(t) orelse return;
         _ = self.bindings.remove(t);
+
+        // Look for a matching action in bindings and use that.
+        // Note: we'd LIKE to replace this with the most recent binding but
+        // our hash map obviously has no concept of ordering so we have to
+        // choose whatever. Maybe a switch to an array hash map here.
+        const action_hash = action.hash();
+        var it = self.bindings.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.hash() == action_hash) {
+                self.reverse.putAssumeCapacity(action, entry.key_ptr.*);
+                break;
+            }
+        }
     }
 
     /// The hash map context for the set. This defines how the hash map
     /// gets the hash key and checks for equality.
-    const Context = struct {
-        pub fn hash(ctx: Context, k: Trigger) u64 {
-            _ = ctx;
-            return k.hash();
-        }
+    fn Context(comptime KeyType: type) type {
+        return struct {
+            pub fn hash(ctx: @This(), k: KeyType) u64 {
+                _ = ctx;
+                return k.hash();
+            }
 
-        pub fn eql(ctx: Context, a: Trigger, b: Trigger) bool {
-            return ctx.hash(a) == ctx.hash(b);
-        }
-    };
+            pub fn eql(ctx: @This(), a: KeyType, b: KeyType) bool {
+                return ctx.hash(a) == ctx.hash(b);
+            }
+        };
+    }
 };
 
 test "parse: triggers" {
@@ -515,5 +580,33 @@ test "parse: action with float" {
         const binding = try parse("a=scroll_page_fractional:+0.5");
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, 0.5), binding.action.scroll_page_fractional);
+    }
+}
+
+test "set: maintains reverse mapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.put(alloc, .{ .key = .a }, .{ .new_window = {} });
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key == .a);
+    }
+
+    // should be most recent
+    try s.put(alloc, .{ .key = .b }, .{ .new_window = {} });
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key == .b);
+    }
+
+    // removal should replace
+    s.remove(.{ .key = .b });
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key == .a);
     }
 }
