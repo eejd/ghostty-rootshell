@@ -831,8 +831,9 @@ const Subprocess = struct {
     }
 
     /// Stop the subprocess. This is safe to call anytime. This will wait
-    /// for the subprocess to end so it will block. This does not close
-    /// the pty.
+    /// for the subprocess to register that it has been signalled, but not
+    /// for it to terminate, so it will not block.
+    /// This does not close the pty.
     pub fn stop(self: *Subprocess) void {
         // Kill our command
         if (self.command) |*cmd| {
