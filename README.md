@@ -243,13 +243,8 @@ feature rich.
 
 The Mac app supports multi-window, tabbing, and splits.
 
-The Linux app built with GTK supports multi-window and tabbing. Splits
+The Linux app (built with GTK) supports multi-window and tabbing. Splits
 will come soon in a future update.
-
-The Linux app built with GLFW is aimed for a lighter weight experience,
-particularly for users of tiled window managers who don't want multi-window
-or tabs as much. The GLFW-based app supports multi-window but does not support
-tabs or splits.
 
 #### Native Platform Experiences
 
@@ -260,13 +255,10 @@ in Zig but we do a lot of platform-native thing:
 * The macOS app is a true SwiftUI-based application with all the things you
   would expect such as real windowing, menu bars, a settings GUI, etc.
 * macOS uses a true Metal renderer with CoreText for font discovery.
-* The Linux app comes in both a GTK and GLFW flavor. The GTK flavor is
-  more feature rich and looks and acts like any other desktop application.
-  Both Linux versions use OpenGL.
+* The Linux app is built with GTK.
 
 There are more improvements to be made. The macOS settings window is still
-a work-in-progress. Similar improvements will follow with Linux+GTK. The
-Linux+GLFW build will remain lightweight.
+a work-in-progress. Similar improvements will follow with Linux.
 
 ## Developing Ghostty
 
@@ -301,7 +293,7 @@ This will build a binary for the currently running system (if supported).
 macOS builds produce a library (`libghostty.a`) that is used by the Xcode
 project in the `macos` directory to produce the finally `Ghostty.app`.
 
-On macOS, you can use `zig build -Dapp-runtime=glfw run` for a quick
+On Linux or macOS, you can use `zig build -Dapp-runtime=glfw run` for a quick
 GLFW-based app for a faster development cycle while developing core
 terminal features. Note that this app is missing many features and is also
 known to crash in certain scenarios, so it is only meant for development
