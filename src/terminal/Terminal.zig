@@ -1132,25 +1132,27 @@ pub fn eraseLine(
 /// scrolling region, it is adjusted down.
 ///
 /// Does not change the cursor position.
-///
-/// TODO: test
-pub fn deleteChars(self: *Terminal, count: usize) !void {
+pub fn deleteChars(self: *Terminal, count_req: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // Count defaults to 1 and we can't delete more than we have remaining
+    // in the row.
+    const count = @min(self.cols - self.screen.cursor.x, count_req);
+    if (count == 0) return;
+
     const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    for (0..count) |i| {
+        const x = self.screen.cursor.x + i;
+        const copy_x = x + count;
+        if (copy_x >= self.cols) {
+            line.getCellPtr(x).* = self.screen.cursor.pen;
+            continue;
+        }
 
-    // Our last index is at most the end of the number of chars we have
-    // in the current line.
-    const end = self.cols - count;
-
-    // Shift
-    var i: usize = self.screen.cursor.x;
-    while (i < end) : (i += 1) {
-        const j = i + count;
-        const j_cell = line.getCellPtr(j);
-        line.getCellPtr(i).* = j_cell.*;
-        j_cell.char = 0;
+        const copy_cell = line.getCellPtr(copy_x);
+        line.getCellPtr(x).* = copy_cell.*;
+        copy_cell.char = 0;
     }
 }
 
@@ -2612,6 +2614,70 @@ test "Terminal: print wide char with 1-column width" {
     defer t.deinit(alloc);
 
     try t.print('😀'); // 0x1F600
+}
+
+test "Terminal: deleteChars" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+
+    try t.deleteChars(2);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ADE", str);
+    }
+}
+
+test "Terminal: deleteChars zero count" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+
+    try t.deleteChars(0);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDE", str);
+    }
+}
+
+test "Terminal: deleteChars more than half" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+
+    try t.deleteChars(3);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AE", str);
+    }
+}
+
+test "Terminal: deleteChars more than line width" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+
+    try t.deleteChars(10);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A", str);
+    }
 }
 
 // https://github.com/mitchellh/ghostty/issues/272
