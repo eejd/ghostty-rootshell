@@ -412,6 +412,8 @@ pub const Row = struct {
 
     /// Attach a grapheme codepoint to the given cell.
     pub fn attachGrapheme(self: Row, x: usize, cp: u21) !void {
+        assert(x < self.storage.len - 1);
+
         const cell = &self.storage[x + 1].cell;
         const key = self.getId() + x + 1;
         const gop = try self.screen.graphemes.getOrPut(self.screen.alloc, key);
@@ -448,6 +450,8 @@ pub const Row = struct {
 
     /// Removes all graphemes associated with a cell.
     pub fn clearGraphemes(self: Row, x: usize) void {
+        assert(x < self.storage.len - 1);
+
         // Our row is now dirty
         self.storage[0].header.flags.dirty = true;
 
