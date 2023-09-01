@@ -85,14 +85,15 @@ const dec_special = tech: {
     break :tech table;
 };
 
-const max_u8 = std.math.maxInt(u8);
+/// Our table length is 256 so we can contain all ASCII chars.
+const table_len = std.math.maxInt(u8) + 1;
 
 /// Creates a table that maps ASCII to ASCII as a getting started point.
-fn initTable() [max_u8]u16 {
-    var result: [max_u8]u16 = undefined;
+fn initTable() [table_len]u16 {
+    var result: [table_len]u16 = undefined;
     var i: usize = 0;
-    while (i < max_u8) : (i += 1) result[i] = @intCast(i);
-    assert(i == max_u8);
+    while (i < table_len) : (i += 1) result[i] = @intCast(i);
+    assert(i == table_len);
     return result;
 }
 
@@ -105,9 +106,9 @@ test {
 
         const table = @field(Charset, field.name).table();
 
-        // Yes, I could use `max_u8` here, but I want to explicitly use a
+        // Yes, I could use `table_len` here, but I want to explicitly use a
         // hardcoded constant so that if there are miscompilations or a comptime
         // issue, we catch it.
-        try testing.expectEqual(@as(usize, 255), table.len);
+        try testing.expectEqual(@as(usize, 256), table.len);
     }
 }
