@@ -23,7 +23,12 @@ class PrimaryWindow: NSWindow {
             backing: .buffered,
             defer: false)
         window.center()
-        
+
+        // Terminals typically operate in sRGB color space and macOS defaults
+        // to "native" which is typically P3. There is a lot more resources
+        // covered in thie GitHub issue: https://github.com/mitchellh/ghostty/pull/376
+        window.colorSpace = NSColorSpace.sRGB
+
         window.contentView = NSHostingView(rootView: PrimaryView(
             ghostty: ghostty,
             appDelegate: appDelegate,
