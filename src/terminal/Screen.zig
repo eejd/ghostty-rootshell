@@ -1071,12 +1071,12 @@ pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) !void {
 /// the top/bottom are within it).
 ///
 /// This can be used to implement terminal scroll regions efficiently.
-pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usize) void {
+pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
     // Avoid a lot of work if we're doing nothing.
-    if (count == 0) return;
+    if (count_req == 0) return;
 
     // Convert our top/bottom to screen y values. This is the y offset
     // in the entire screen buffer.
@@ -1088,7 +1088,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count: usi
 
     // We can only scroll up to the number of rows in the region. The "+ 1"
     // is because our y values are 0-based and count is 1-based.
-    assert(count <= (bot_y - top_y + 1));
+    const count = @min(count_req, bot_y - top_y + 1);
 
     // Get the storage pointer for the full scroll region. We're going to
     // be modifying the whole thing so we get it right away.
@@ -4014,6 +4014,22 @@ test "Screen: scrollRegionUp multiple count" {
     }
 }
 
+test "Screen: scrollRegionUp count greater than available lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    s.scrollRegionUp(.{ .active = 1 }, .{ .active = 2 }, 10);
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n\n\n4ABCD", contents);
+    }
+}
 test "Screen: scrollRegionUp fills with pen" {
     const testing = std.testing;
     const alloc = testing.allocator;
