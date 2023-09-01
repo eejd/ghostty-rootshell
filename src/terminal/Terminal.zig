@@ -991,7 +991,7 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
     // TODO: test
 
     // TODO
-    if (!self.modes.get(.origin)) {
+    if (self.modes.get(.origin)) {
         log.err("setCursorColAbsolute: cursor origin mode handling not implemented yet", .{});
         return;
     }
