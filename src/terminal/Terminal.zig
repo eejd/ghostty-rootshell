@@ -1425,6 +1425,13 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If our cursor is outside of the scroll region, do nothing.
+    if (self.screen.cursor.y < self.scrolling_region.top or
+        self.screen.cursor.y > self.scrolling_region.bottom)
+    {
+        return;
+    }
+
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
 
@@ -2129,6 +2136,34 @@ test "Terminal: deleteLines with scroll region, large count" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("E\n\n\nD", str);
+    }
+}
+
+test "Terminal: deleteLines with scroll region, cursor outside of region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 80, 80);
+    defer t.deinit(alloc);
+
+    // Initial value
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('B');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('C');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('D');
+
+    t.setScrollingRegion(1, 3);
+    t.setCursorPos(4, 1);
+    try t.deleteLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\nB\nC\nD", str);
     }
 }
 
