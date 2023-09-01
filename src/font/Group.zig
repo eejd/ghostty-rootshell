@@ -303,7 +303,8 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 /// necessarily force the font to load.
 pub fn hasCodepoint(self: *Group, index: FontIndex, cp: u32, p: ?Presentation) bool {
     const list = self.faces.getPtr(index.style);
-    const item = list.items[@intCast(index.idx)];
+    if (index.idx >= list.items.len) return false;
+    const item = list.items[index.idx];
     return switch (item) {
         .deferred => |v| v.hasCodepoint(cp, p),
         .loaded => |face| loaded: {
@@ -330,7 +331,7 @@ pub fn presentationFromIndex(self: *Group, index: FontIndex) !font.Presentation 
 pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
     const list = self.faces.getPtr(index.style);
-    const item = &list.items[@intCast(index.idx)];
+    const item = &list.items[index.idx];
     return switch (item.*) {
         .deferred => |*d| deferred: {
             const face = try d.load(self.lib, self.size);
@@ -551,6 +552,30 @@ test {
     {
         try testing.expect(group.indexForCodepoint(0x1FB00, .regular, null) == null);
     }
+}
+
+test "face count limit" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var group = try init(alloc, lib, .{ .points = 12 });
+    defer group.deinit();
+
+    for (0..FontIndex.Special.start - 1) |_| {
+        try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    }
+
+    try testing.expectError(error.GroupFull, group.addFace(
+        .regular,
+        .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) },
+    ));
 }
 
 test "box glyph" {
