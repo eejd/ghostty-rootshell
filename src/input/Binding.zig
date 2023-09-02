@@ -160,6 +160,7 @@ pub const Action = union(enum) {
 
     /// Zoom and unzoom the current split.
     zoom_split: void,
+    unzoom_split: void,
 
     /// Reload the configuration. The exact meaning depends on the app runtime
     /// in use but this usually involves re-reading the configuration file

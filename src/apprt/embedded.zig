@@ -73,7 +73,7 @@ pub const App = struct {
         focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
 
         /// Zoom the current split.
-        zoom_split: ?*const fn (SurfaceUD) callconv(.C) void = null,
+        zoom_split: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
         /// Goto tab
         goto_tab: ?*const fn (SurfaceUD, usize) callconv(.C) void = null,
@@ -273,13 +273,13 @@ pub const Surface = struct {
         func(self.opts.userdata, direction);
     }
 
-    pub fn zoomSplit(self: *const Surface) void {
+    pub fn zoomSplit(self: *const Surface, zoom: bool) void {
         const func = self.app.opts.zoom_split orelse {
             log.info("runtime embedder does not support zoom split", .{});
             return;
         };
 
-        func(self.opts.userdata);
+        func(self.opts.userdata, zoom);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {

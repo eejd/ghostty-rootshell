@@ -2119,9 +2119,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         },
 
         .zoom_split => {
-            log.warn("ZOOM ZOOM", .{});
             if (@hasDecl(apprt.Surface, "zoomSplit")) {
-                self.rt_surface.zoomSplit();
+                self.rt_surface.zoomSplit(true);
+            } else log.warn("runtime doesn't implement zoomSplit", .{});
+        },
+
+        .unzoom_split => {
+            if (@hasDecl(apprt.Surface, "zoomSplit")) {
+                self.rt_surface.zoomSplit(false);
             } else log.warn("runtime doesn't implement zoomSplit", .{});
         },
 

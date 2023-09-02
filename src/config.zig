@@ -688,6 +688,11 @@ pub const Config = struct {
                 .{ .key = .equal, .mods = .{ .super = true, .shift = true } },
                 .{ .zoom_split = {} },
             );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .minus, .mods = .{ .super = true, .shift = true } },
+                .{ .unzoom_split = {} },
+            );
         }
 
         return result;
