@@ -248,12 +248,16 @@ extension Ghostty {
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
             } else {
-                // On split, we want to reset the zoom state.
+                // On these events we want to reset the split state and call it.
                 let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
+                let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: zoomedSurface!)
+                let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: zoomedSurface!)
                 
                 ZStack {}
                     .onReceive(pubZoom) { onZoomReset(notification: $0) }
                     .onReceive(pubSplit) { onZoomReset(notification: $0) }
+                    .onReceive(pubClose) { onZoomReset(notification: $0) }
+                    .onReceive(pubFocus) { onZoomReset(notification: $0) }
             }
         }
         
@@ -288,10 +292,10 @@ extension Ghostty {
             DispatchQueue.main.async {
                 Ghostty.moveFocus(to: surfaceView)
 
-                // If the notification is a new split notification, we want to re-publish
+                // If the notification is not a toggle zoom notification, we want to re-publish
                 // it after a short delay so that the split tree has a chance to re-establish
                 // so the proper view gets this notification.
-                if (notification.name == Notification.ghosttyNewSplit) {
+                if (notification.name != Notification.didToggleSplitZoom) {
                     // We have to wait ANOTHER tick since we just established.
                     DispatchQueue.main.async {
                         NotificationCenter.default.post(notification)
