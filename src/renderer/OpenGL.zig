@@ -1427,12 +1427,17 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
 
 /// Set the screen size for rendering. This will update the projection
 /// used for the shader so that the scaling of the grid is correct.
-pub fn setScreenSize(self: *OpenGL, dim: renderer.ScreenSize) !void {
+pub fn setScreenSize(
+    self: *OpenGL,
+    dim: renderer.ScreenSize,
+    pad: renderer.Padding,
+) !void {
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
 
     // Store our screen size
     self.screen_size = dim;
+    self.padding.explicit = pad;
 
     // Recalculate the rows/columns.
     const grid_size = self.gridSize(dim);

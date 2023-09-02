@@ -350,7 +350,10 @@ pub const Surface = struct {
             .y = @floatCast(y),
         };
 
-        self.core_surface.contentScaleCallback(self.content_scale);
+        self.core_surface.contentScaleCallback(self.content_scale) catch |err| {
+            log.err("error in content scale callback err={}", .{err});
+            return;
+        };
     }
 
     pub fn updateSize(self: *Surface, width: u32, height: u32) void {

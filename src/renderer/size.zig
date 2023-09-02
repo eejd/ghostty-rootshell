@@ -143,6 +143,14 @@ pub const Padding = struct {
             .left = self.left + other.left,
         };
     }
+
+    /// Equality test between two paddings.
+    pub fn eql(self: Padding, other: Padding) bool {
+        return self.top == other.top and
+            self.bottom == other.bottom and
+            self.right == other.right and
+            self.left == other.left;
+    }
 };
 
 test "Padding balanced on zero" {
