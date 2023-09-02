@@ -26,6 +26,7 @@ struct PrimaryView: View {
     
     @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
     @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle
+    @FocusedValue(\.ghosttySurfaceZoomed) private var zoomedSplit
     
     // This is true if this view should be the one to show the quit confirmation.
     var ownsQuitConfirmation: Bool {
@@ -47,6 +48,25 @@ struct PrimaryView: View {
         // we take the job.
         guard let firstWindow = (windows.first { $0 is PrimaryWindow }) else { return false }
         return window == firstWindow
+    }
+    
+    // The title for our window
+    private var title: String {
+        var title = "👻"
+        
+        if let surfaceTitle = surfaceTitle {
+            if (surfaceTitle.count > 0) {
+                title = surfaceTitle
+            }
+        }
+        
+        if let zoomedSplit = zoomedSplit {
+            if zoomedSplit {
+                title = "🔍 " + title
+            }
+        }
+        
+        return title
     }
     
     var body: some View {
@@ -84,12 +104,11 @@ struct PrimaryView: View {
                 .onChange(of: focusedSurface) { newValue in
                     self.focusedSurfaceWrapper.surface = newValue?.surface
                 }
-                .onChange(of: surfaceTitle) { newValue in
+                .onChange(of: title) { newValue in
                     // We need to handle this manually because we are using AppKit lifecycle
                     // so navigationTitle no longer works.
                     guard let window = self.window else { return }
-                    guard let title = newValue else { return }
-                    window.title = title
+                    window.title = newValue
                 }
                 .confirmationDialog(
                     "Quit Ghostty?",

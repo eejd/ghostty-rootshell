@@ -287,7 +287,7 @@ extension Ghostty {
             discardCursorRects()
             addCursorRect(frame, cursor: .iBeam)
         }
-
+        
         override func viewDidChangeBackingProperties() {
             guard let surface = self.surface else { return }
 
@@ -710,3 +710,13 @@ extension FocusedValues {
     }
 }
 
+extension FocusedValues {
+    var ghosttySurfaceZoomed: Bool? {
+        get { self[FocusedGhosttySurfaceZoomed.self] }
+        set { self[FocusedGhosttySurfaceZoomed.self] = newValue }
+    }
+    
+    struct FocusedGhosttySurfaceZoomed: FocusedValueKey {
+        typealias Value = Bool
+    }
+}

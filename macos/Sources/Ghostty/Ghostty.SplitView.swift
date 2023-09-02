@@ -6,13 +6,34 @@ extension Ghostty {
     /// view. The terminal starts in the unsplit state (a plain ol' TerminalView) but responds to changes to the
     /// split direction by splitting the terminal.
     struct TerminalSplit: View {
-        @Environment(\.ghosttyApp) private var app
         let onClose: (() -> Void)?
         let baseConfig: ghostty_surface_config_s?
         
+        @Environment(\.ghosttyApp) private var app
+        
+        /// Non-nil if one of the surfaces in the split tree is currently "zoomed." A zoomed surface
+        /// becomes "full screen" on the split tree.
+        @State private var zoomedSurface: SurfaceView? = nil
+        
         var body: some View {
             if let app = app {
-                TerminalSplitRoot(app: app, onClose: onClose, baseConfig: baseConfig)
+                ZStack {
+                    TerminalSplitRoot(
+                        app: app,
+                        zoomedSurface: $zoomedSurface,
+                        onClose: onClose,
+                        baseConfig: baseConfig
+                    )
+                    
+                    // If we have a zoomed surface, we overlay that on top of our split
+                    // root. Our split root will become clear when there is a zoomed
+                    // surface. We need to keep the split root around so that we don't
+                    // lose all of the surface state so this must be a ZStack.
+                    if let surfaceView = zoomedSurface {
+                        SurfaceWrapper(surfaceView: surfaceView)
+                    }
+                }
+                .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
             }
         }
     }
@@ -60,6 +81,22 @@ extension Ghostty {
             case .vertical(let container):
                 container.topLeft.close()
                 container.bottomRight.close()
+            }
+        }
+        
+        /// Returns true if the split tree contains the given view.
+        func contains(view: SurfaceView) -> Bool {
+            switch (self) {
+            case .noSplit(let leaf):
+                return leaf.surface == view
+                
+            case .horizontal(let container):
+                return container.topLeft.contains(view: view) ||
+                    container.bottomRight.contains(view: view)
+                
+            case .vertical(let container):
+                return container.topLeft.contains(view: view) ||
+                    container.bottomRight.contains(view: view)
             }
         }
         
@@ -144,53 +181,127 @@ extension Ghostty {
         let onClose: (() -> Void)?
         let baseConfig: ghostty_surface_config_s?
         
+        /// Keeps track of whether we're in a zoomed split state or not. If one of the splits we own
+        /// is in the zoomed state, we clear our body since we expect a zoomed split to overlay
+        /// this one.
+        @Binding var zoomedSurface: SurfaceView?
+
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
         
-        init(app: ghostty_app_t, onClose: (() ->Void)? = nil, baseConfig: ghostty_surface_config_s? = nil) {
+        init(app: ghostty_app_t,
+             zoomedSurface: Binding<SurfaceView?>,
+             onClose: (() ->Void)? = nil,
+             baseConfig: ghostty_surface_config_s? = nil) {
             self.onClose = onClose
             self.baseConfig = baseConfig
+            self._zoomedSurface = zoomedSurface
             _node = State(wrappedValue: SplitNode.noSplit(.init(app, baseConfig)))
         }
         
         var body: some View {
-            ZStack {
-                switch (node) {
-                case .noSplit(let leaf):
-                    TerminalSplitLeaf(
-                        leaf: leaf,
-                        neighbors: .empty,
-                        node: $node,
-                        requestClose: $requestClose
-                    )
-                    .onChange(of: requestClose) { value in
-                        guard value else { return }
+            let center = NotificationCenter.default
+            let pubZoom = center.publisher(for: Notification.didToggleSplitZoom)
+            
+            // If we're zoomed, we don't render anything, we are transparent. This
+            // ensures that the View stays around so we don't lose our state, but
+            // also that the zoomed view on top can see through if background transparency
+            // is enabled.
+            if (zoomedSurface == nil) {
+                ZStack {
+                    switch (node) {
+                    case .noSplit(let leaf):
+                        TerminalSplitLeaf(
+                            leaf: leaf,
+                            neighbors: .empty,
+                            node: $node,
+                            requestClose: $requestClose
+                        )
+                        .onChange(of: requestClose) { value in
+                            guard value else { return }
+                            
+                            // Free any resources associated with this root, we're closing.
+                            node.close()
+                            
+                            // Call our callback
+                            guard let onClose = self.onClose else { return }
+                            onClose()
+                        }
                         
-                        // Free any resources associated with this root, we're closing.
-                        node.close()
+                    case .horizontal(let container):
+                        TerminalSplitContainer(
+                            direction: .horizontal,
+                            neighbors: .empty,
+                            node: $node,
+                            container: container
+                        )
+                        .onReceive(pubZoom) { onZoom(notification: $0) }
                         
-                        // Call our callback
-                        guard let onClose = self.onClose else { return }
-                        onClose()
+                    case .vertical(let container):
+                        TerminalSplitContainer(
+                            direction: .vertical,
+                            neighbors: .empty,
+                            node: $node,
+                            container: container
+                        )
+                        .onReceive(pubZoom) { onZoom(notification: $0) }
                     }
-                    
-                case .horizontal(let container):
-                    TerminalSplitContainer(
-                        direction: .horizontal,
-                        neighbors: .empty,
-                        node: $node,
-                        container: container
-                    )
-                    
-                case .vertical(let container):
-                    TerminalSplitContainer(
-                        direction: .vertical,
-                        neighbors: .empty,
-                        node: $node,
-                        container: container
-                    )
+                }
+                .navigationTitle(surfaceTitle ?? "Ghostty")
+            } else {
+                // On these events we want to reset the split state and call it.
+                let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
+                let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: zoomedSurface!)
+                let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: zoomedSurface!)
+                
+                ZStack {}
+                    .onReceive(pubZoom) { onZoomReset(notification: $0) }
+                    .onReceive(pubSplit) { onZoomReset(notification: $0) }
+                    .onReceive(pubClose) { onZoomReset(notification: $0) }
+                    .onReceive(pubFocus) { onZoomReset(notification: $0) }
+            }
+        }
+        
+        func onZoom(notification: SwiftUI.Notification) {
+            // Our node must be split to receive zooms. You can't zoom an unsplit terminal.
+            if case .noSplit = node {
+                preconditionFailure("TerminalSplitRoom must not be zoom-able if no splits exist")
+            }
+            
+            // Make sure the notification has a surface and that this window owns the surface.
+            guard let surfaceView = notification.object as? SurfaceView else { return }
+            guard node.contains(view: surfaceView) else { return }
+            
+            // We are in the zoomed state.
+            zoomedSurface = surfaceView
+            
+            // See onZoomReset, same logic.
+            DispatchQueue.main.async { Ghostty.moveFocus(to: surfaceView) }
+        }
+        
+        func onZoomReset(notification: SwiftUI.Notification) {
+            // Make sure the notification has a surface and that this window owns the surface.
+            guard let surfaceView = notification.object as? SurfaceView else { return }
+            guard zoomedSurface == surfaceView else { return }
+            
+            // We are now unzoomed
+            zoomedSurface = nil
+           
+            // We need to stay focused on this view, but the view is going to change
+            // superviews. We need to do this async so it happens on the next event loop
+            // tick.
+            DispatchQueue.main.async {
+                Ghostty.moveFocus(to: surfaceView)
+
+                // If the notification is not a toggle zoom notification, we want to re-publish
+                // it after a short delay so that the split tree has a chance to re-establish
+                // so the proper view gets this notification.
+                if (notification.name != Notification.didToggleSplitZoom) {
+                    // We have to wait ANOTHER tick since we just established.
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(notification)
+                    }
                 }
             }
-            .navigationTitle(surfaceTitle ?? "Ghostty")
         }
     }
     
@@ -231,7 +342,7 @@ extension Ghostty {
                         .keyboardShortcut(.defaultAction)
                     } message: {
                         Text("The terminal still has a running process. If you close the terminal " +
-                        "the process will be killed.")
+                             "the process will be killed.")
                     }
         }
         
@@ -285,7 +396,7 @@ extension Ghostty {
             }
             
             // See moveFocus comment, we have to run this whenever split changes.
-            Self.moveFocus(container.bottomRight, previous: node)
+            Ghostty.moveFocus(to: container.bottomRight.preferredFocus(), from: node.preferredFocus())
         }
         
         /// This handles the event to move the split focus (i.e. previous/next) from a keyboard event.
@@ -294,48 +405,7 @@ extension Ghostty {
             guard let directionAny = notification.userInfo?[Notification.SplitDirectionKey] else { return }
             guard let direction = directionAny as? SplitFocusDirection else { return }
             guard let next = neighbors.get(direction: direction) else { return }
-            Self.moveFocus(next, previous: node)
-        }
-        
-        /// There is a bug I can't figure out where when changing the split state, the terminal view
-        /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
-        /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
-        /// that should have it.
-        fileprivate static func moveFocus(_ target: SplitNode, previous: SplitNode) {
-            let view = target.preferredFocus()
-            
-            DispatchQueue.main.async {
-                // If the callback runs before the surface is attached to a view
-                // then the window will be nil. We just reschedule in that case.
-                guard let window = view.window else {
-                    self.moveFocus(target, previous: previous)
-                    return
-                }
-
-                window.makeFirstResponder(view)
-                
-                // If we had a previously focused node and its not where we're sending
-                // focus, make sure that we explicitly tell it to lose focus. In theory
-                // we should NOT have to do this but the focus callback isn't getting
-                // called for some reason.
-                let previous = previous.preferredFocus()
-                if previous != view {
-                    _ = previous.resignFirstResponder()
-                }
-                
-                // On newer versions of macOS everything above works great so we're done.
-                if #available(macOS 13, *) { return }
-                
-                // On macOS 12, splits do not properly gain focus. I don't know why, but
-                // it seems like the `focused` SwiftUI method doesn't work. We use
-                // NotificationCenter as a blunt force instrument to make it work.
-                if #available(macOS 12, *) {
-                    NotificationCenter.default.post(
-                        name: Notification.didBecomeFocusedSurface,
-                        object: view
-                    )
-                }
-            }
+            Ghostty.moveFocus(to: next.preferredFocus(), from: node.preferredFocus())
         }
     }
     
@@ -369,7 +439,7 @@ extension Ghostty {
                     
                     // When closing the topLeft, our parent becomes the bottomRight.
                     node = container.bottomRight
-                    TerminalSplitLeaf.moveFocus(node, previous: container.topLeft)
+                    Ghostty.moveFocus(to: node.preferredFocus(), from: container.topLeft.preferredFocus())
                 }
             }, right: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.left : \.top
@@ -390,7 +460,7 @@ extension Ghostty {
                     
                     // When closing the bottomRight, our parent becomes the topLeft.
                     node = container.topLeft
-                    TerminalSplitLeaf.moveFocus(node, previous: container.bottomRight)
+                    Ghostty.moveFocus(to: node.preferredFocus(), from: container.bottomRight.preferredFocus())
                 }
             })
         }
@@ -427,6 +497,44 @@ extension Ghostty {
                     neighbors: neighbors,
                     node: $node,
                     container: container
+                )
+            }
+        }
+    }
+    
+    /// There is a bug I can't figure out where when changing the split state, the terminal view
+    /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
+    /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
+    /// that should have it.
+    fileprivate static func moveFocus(to: SurfaceView, from: SurfaceView? = nil) {
+        DispatchQueue.main.async {
+            // If the callback runs before the surface is attached to a view
+            // then the window will be nil. We just reschedule in that case.
+            guard let window = to.window else {
+                moveFocus(to: to, from: from)
+                return
+            }
+            
+            // If we had a previously focused node and its not where we're sending
+            // focus, make sure that we explicitly tell it to lose focus. In theory
+            // we should NOT have to do this but the focus callback isn't getting
+            // called for some reason.
+            if let from = from {
+                _ = from.resignFirstResponder()
+            }
+
+            window.makeFirstResponder(to)
+            
+            // On newer versions of macOS everything above works great so we're done.
+            if #available(macOS 13, *) { return }
+            
+            // On macOS 12, splits do not properly gain focus. I don't know why, but
+            // it seems like the `focused` SwiftUI method doesn't work. We use
+            // NotificationCenter as a blunt force instrument to make it work.
+            if #available(macOS 12, *) {
+                NotificationCenter.default.post(
+                    name: Notification.didBecomeFocusedSurface,
+                    object: to
                 )
             }
         }

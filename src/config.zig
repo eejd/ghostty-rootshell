@@ -563,6 +563,13 @@ pub const Config = struct {
             .{ .toggle_fullscreen = {} },
         );
 
+        // Toggle zoom a split
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .enter, .mods = ctrlOrSuper(.{ .shift = true }) },
+            .{ .toggle_split_zoom = {} },
+        );
+
         // Mac-specific keyboard bindings.
         if (comptime builtin.target.isDarwin()) {
             try result.keybind.set.put(

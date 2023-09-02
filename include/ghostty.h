@@ -262,6 +262,7 @@ typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_window_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
+typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void *);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, ghostty_non_native_fullscreen_e);
 
@@ -278,6 +279,7 @@ typedef struct {
     ghostty_runtime_new_window_cb new_window_cb;
     ghostty_runtime_close_surface_cb close_surface_cb;
     ghostty_runtime_focus_split_cb focus_split_cb;
+    ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
 } ghostty_runtime_config_s;

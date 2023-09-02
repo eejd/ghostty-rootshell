@@ -72,6 +72,9 @@ pub const App = struct {
         /// Focus the previous/next split (if any).
         focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
 
+        /// Zoom the current split.
+        toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
+
         /// Goto tab
         goto_tab: ?*const fn (SurfaceUD, usize) callconv(.C) void = null,
 
@@ -268,6 +271,15 @@ pub const Surface = struct {
         };
 
         func(self.opts.userdata, direction);
+    }
+
+    pub fn toggleSplitZoom(self: *const Surface) void {
+        const func = self.app.opts.toggle_split_zoom orelse {
+            log.info("runtime embedder does not support split zoom", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
