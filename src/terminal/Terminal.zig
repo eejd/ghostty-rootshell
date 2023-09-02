@@ -1132,18 +1132,16 @@ pub fn eraseLine(
 /// scrolling region, it is adjusted down.
 ///
 /// Does not change the cursor position.
-pub fn deleteChars(self: *Terminal, count_req: usize) !void {
+pub fn deleteChars(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // Count defaults to 1 and we can't delete more than we have remaining
-    // in the row.
-    const count = @min(self.cols - self.screen.cursor.x, count_req);
     if (count == 0) return;
 
+    // We go from our cursor right to the end and either copy the cell
+    // "count" away or clear it.
     const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
-    for (0..count) |i| {
-        const x = self.screen.cursor.x + i;
+    for (self.screen.cursor.x..self.cols) |x| {
         const copy_x = x + count;
         if (copy_x >= self.cols) {
             line.getCellPtr(x).* = self.screen.cursor.pen;
@@ -2712,6 +2710,22 @@ test "Terminal: deleteChars more than line width" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A", str);
+    }
+}
+
+test "Terminal: deleteChars should shift left" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+
+    try t.deleteChars(1);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ACDE", str);
     }
 }
 
