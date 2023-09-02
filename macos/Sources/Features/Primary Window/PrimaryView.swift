@@ -146,7 +146,7 @@ struct PrimaryView: View {
 
         // Check whether we use non-native fullscreen
         guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }
-        guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? Bool else { return }
+        guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? ghostty_non_native_fullscreen_e else { return }
 
         self.fullScreen.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
         // After toggling fullscreen we need to focus the terminal again.

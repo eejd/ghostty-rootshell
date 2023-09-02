@@ -137,7 +137,7 @@ const DerivedConfig = struct {
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
     mouse_interval: u64,
-    macos_non_native_fullscreen: bool,
+    macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {

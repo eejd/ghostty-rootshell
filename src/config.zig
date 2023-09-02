@@ -278,11 +278,17 @@ pub const Config = struct {
     /// The default value is "detect".
     @"shell-integration": ShellIntegration = .detect,
 
-    /// If true, fullscreen mode on macOS will not use the native fullscreen,
-    /// but make the window fullscreen without animations and using a new space.
-    /// That's faster than the native fullscreen mode since it doesn't use
-    /// animations.
-    @"macos-non-native-fullscreen": bool = false,
+    /// If anything other than false, fullscreen mode on macOS will not use the
+    /// native fullscreen, but make the window fullscreen without animations and
+    /// using a new space. It's faster than the native fullscreen mode since it
+    /// doesn't use animations.
+    ///
+    /// Allowable values are:
+    ///
+    ///   * "visible-menu" - Use non-native macOS fullscreen, keep the menu bar visible
+    ///   * "true" - Use non-native macOS fullscreen, hide the menu bar
+    ///   * "false" - Use native macOS fullscreeen
+    @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
     /// If true, the Option key will be treated as Alt. This makes terminal
     /// sequences expecting Alt to work properly, but will break Unicode
@@ -1074,6 +1080,15 @@ fn equal(comptime T: type, old: T, new: T) bool {
         },
     }
 }
+
+/// Valid values for macos-non-native-fullscreen
+/// c_int because it needs to be extern compatible
+/// If this is changed, you must also update ghostty.h
+pub const NonNativeFullscreen = enum(c_int) {
+    false,
+    true,
+    @"visible-menu",
+};
 
 /// Valid values for macos-option-as-alt.
 pub const OptionAsAlt = enum {

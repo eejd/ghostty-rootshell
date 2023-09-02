@@ -1,4 +1,5 @@
 import SwiftUI
+import GhosttyKit
 
 class FullScreenHandler {
     var previousTabGroup: NSWindowTabGroup?
@@ -11,9 +12,10 @@ class FullScreenHandler {
     // and then wants to toggle it off
     var isInNonNativeFullscreen: Bool = false
     
-    func toggleFullscreen(window: NSWindow, nonNativeFullscreen: Bool) {
+    func toggleFullscreen(window: NSWindow, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {
+        let useNonNativeFullscreen = nonNativeFullscreen != GHOSTTY_NON_NATIVE_FULLSCREEN_FALSE
         if isInFullscreen {
-            if nonNativeFullscreen || isInNonNativeFullscreen {
+            if useNonNativeFullscreen || isInNonNativeFullscreen {
                 leaveFullscreen(window: window)
                 isInNonNativeFullscreen = false
             } else {
@@ -21,8 +23,9 @@ class FullScreenHandler {
             }
             isInFullscreen = false
         } else {
-            if nonNativeFullscreen {
-                enterFullscreen(window: window)
+            if useNonNativeFullscreen {
+                let hideMenu = nonNativeFullscreen != GHOSTTY_NON_NATIVE_FULLSCREEN_VISIBLE_MENU
+                enterFullscreen(window: window, hideMenu: hideMenu)
                 isInNonNativeFullscreen = true
             } else {
                 window.toggleFullScreen(nil)
@@ -31,7 +34,7 @@ class FullScreenHandler {
         }
     }
     
-    func enterFullscreen(window: NSWindow) {
+    func enterFullscreen(window: NSWindow, hideMenu: Bool) {
         guard let screen = window.screen else { return }
         guard let contentView = window.contentView else { return }
         
@@ -41,7 +44,7 @@ class FullScreenHandler {
         // Save previous contentViewFrame and screen
         previousContentFrame = window.convertToScreen(contentView.frame)
         
-        // Change presentation style to hide menu bar and dock
+        // Change presentation style to hide menu bar and dock if needed
         // It's important to do this in two calls, because setting them in a single call guarantees
         // that the menu bar will also be hidden on any additional displays (why? nobody knows!)
         // When these options are set separately, the menu bar hiding problem will only occur in
@@ -50,19 +53,74 @@ class FullScreenHandler {
         // Furthermore, it's much easier to figure out which screen the dock is on if the menubar
         // has not yet been hidden, so the order matters here!
         if (shouldHideDock(screen: screen)) {
-            NSApp.presentationOptions.insert(.autoHideDock)
+            self.hideDock()
+            
+            // Ensure that we always hide the dock bar for this window, but not for non fullscreen ones
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.hideDock),
+                name: NSWindow.didBecomeMainNotification,
+                object: window)
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.unHideDock),
+                name: NSWindow.didResignMainNotification,
+                object: window)
         }
-        NSApp.presentationOptions.insert(.autoHideMenuBar)
+        if (hideMenu) {
+            self.hideMenu()
+            
+            // Ensure that we always hide the menu bar for this window, but not for non fullscreen ones
+            // This is not the best way to do this, not least because it causes the menu to stay visible
+            // for a brief moment before being hidden in some cases (e.g. when switching spaces).
+            // If we end up adding a NSWindowDelegate to PrimaryWindow, then we may be better off
+            // handling this there.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.hideMenu),
+                name: NSWindow.didBecomeMainNotification,
+                object: window)
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.unHideMenu),
+                name: NSWindow.didResignMainNotification,
+                object: window)
+        }
         
         // This is important: it gives us the full screen, including the
         // notch area on MacBooks.
         window.styleMask.remove(.titled)
         
-        // Set frame to screen size
-        window.setFrame(screen.frame, display: true)
+        // Set frame to screen size, accounting for the menu bar if needed
+        let frame = calculateFullscreenFrame(screenFrame: screen.frame, subtractMenu: !hideMenu)
+        window.setFrame(frame, display: true)
         
         // Focus window
         window.makeKeyAndOrderFront(nil)
+    }
+    
+    @objc func hideMenu() {
+        NSApp.presentationOptions.insert(.autoHideMenuBar)
+    }
+    
+    @objc func unHideMenu() {
+        NSApp.presentationOptions.remove(.autoHideMenuBar)
+    }
+    
+    @objc func hideDock() {
+        NSApp.presentationOptions.insert(.autoHideDock)
+    }
+    
+    @objc func unHideDock() {
+        NSApp.presentationOptions.remove(.autoHideDock)
+    }
+    
+    func calculateFullscreenFrame(screenFrame: NSRect, subtractMenu: Bool)->NSRect {
+        if (subtractMenu) {
+            let menuHeight = NSApp.mainMenu?.menuBarHeight ?? 0
+            return NSMakeRect(screenFrame.minX, screenFrame.minY, screenFrame.width, screenFrame.height - menuHeight)
+        }
+        return screenFrame
     }
     
     func leaveFullscreen(window: NSWindow) {
@@ -73,6 +131,11 @@ class FullScreenHandler {
         
         // Restore previous presentation options
         NSApp.presentationOptions = []
+        
+        // Stop handling any window focus notifications
+        // that we use to manage menu bar visibility
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeMainNotification, object: window)
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignMainNotification, object: window)
         
         // Restore frame
         window.setFrame(window.frameRect(forContentRect: previousFrame), display: true)
