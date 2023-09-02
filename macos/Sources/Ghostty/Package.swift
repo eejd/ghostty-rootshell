@@ -91,6 +91,10 @@ extension Ghostty.Notification {
     /// Toggle fullscreen of current window
     static let ghosttyToggleFullscreen = Notification.Name("com.mitchellh.ghostty.toggleFullscreen")
     static let NonNativeFullscreenKey = ghosttyToggleFullscreen.rawValue
+    
+    /// Notification that a surface is becoming focused. This is only sent on macOS 12 to
+    /// work around bugs. macOS 13+ should use the ".focused()" attribute.
+    static let didBecomeFocusedSurface = Notification.Name("com.mitchellh.ghostty.didBecomeFocusedSurface")
 }
 
 // Make the input enum hashable.

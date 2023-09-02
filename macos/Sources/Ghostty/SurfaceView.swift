@@ -54,7 +54,8 @@ extension Ghostty {
             // resize callback.
             GeometryReader { geo in
                 // We use these notifications to determine when the window our surface is
-                // attached to is or is not focused. 
+                // attached to is or is not focused.
+                let pubBecomeFocused = NotificationCenter.default.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
                 let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
                 let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
                 
@@ -72,6 +73,16 @@ extension Ghostty {
                         guard let surfaceWindow = surfaceView.window else { return }
                         if (surfaceWindow == window) {
                             windowFocus = false
+                        }
+                    }
+                    .onReceive(pubBecomeFocused) { notification in
+                        // We only want to run this on older macOS versions where the .focused
+                        // method doesn't work properly. See the dispatch of this notification
+                        // for more information.
+                        if #available(macOS 13, *) { return }
+                        
+                        DispatchQueue.main.async {
+                            surfaceFocus = true
                         }
                     }
                     .onAppear() {
@@ -119,7 +130,7 @@ extension Ghostty {
         /// The view to render for the terminal surface.
         let view: SurfaceView
         
-        /// This should be set to true wen the surface has focus. This is up to the parent because
+        /// This should be set to true when the surface has focus. This is up to the parent because
         /// focus is also defined by window focus. It is important this is set correctly since if it is
         /// false then the surface will idle at almost 0% CPU.
         let hasFocus: Bool
