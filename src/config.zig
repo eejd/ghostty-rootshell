@@ -682,6 +682,12 @@ pub const Config = struct {
                 .{ .key = .right, .mods = .{ .super = true, .alt = true } },
                 .{ .goto_split = .right },
             );
+
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .equal, .mods = .{ .super = true, .shift = true } },
+                .{ .zoom_split = {} },
+            );
         }
 
         return result;

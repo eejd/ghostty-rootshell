@@ -2118,6 +2118,13 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             } else log.warn("runtime doesn't implement gotoSplit", .{});
         },
 
+        .zoom_split => {
+            log.warn("ZOOM ZOOM", .{});
+            if (@hasDecl(apprt.Surface, "zoomSplit")) {
+                self.rt_surface.zoomSplit();
+            } else log.warn("runtime doesn't implement zoomSplit", .{});
+        },
+
         .toggle_fullscreen => {
             if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
                 self.rt_surface.toggleFullscreen(self.config.macos_non_native_fullscreen);

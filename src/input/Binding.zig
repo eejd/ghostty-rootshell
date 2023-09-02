@@ -158,6 +158,9 @@ pub const Action = union(enum) {
     /// Focus on a split in a given direction.
     goto_split: SplitFocusDirection,
 
+    /// Zoom and unzoom the current split.
+    zoom_split: void,
+
     /// Reload the configuration. The exact meaning depends on the app runtime
     /// in use but this usually involves re-reading the configuration file
     /// and applying any changes. Note that not all changes can be applied at
