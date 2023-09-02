@@ -2118,16 +2118,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             } else log.warn("runtime doesn't implement gotoSplit", .{});
         },
 
-        .zoom_split => {
-            if (@hasDecl(apprt.Surface, "zoomSplit")) {
-                self.rt_surface.zoomSplit(true);
-            } else log.warn("runtime doesn't implement zoomSplit", .{});
-        },
-
-        .unzoom_split => {
-            if (@hasDecl(apprt.Surface, "zoomSplit")) {
-                self.rt_surface.zoomSplit(false);
-            } else log.warn("runtime doesn't implement zoomSplit", .{});
+        .toggle_split_zoom => {
+            if (@hasDecl(apprt.Surface, "toggleSplitZoom")) {
+                self.rt_surface.toggleSplitZoom();
+            } else log.warn("runtime doesn't implement toggleSplitZoom", .{});
         },
 
         .toggle_fullscreen => {

@@ -199,14 +199,13 @@ extension Ghostty {
         
         var body: some View {
             let center = NotificationCenter.default
+            let pubZoom = center.publisher(for: Notification.didToggleSplitZoom)
             
             // If we're zoomed, we don't render anything, we are transparent. This
             // ensures that the View stays around so we don't lose our state, but
             // also that the zoomed view on top can see through if background transparency
             // is enabled.
             if (zoomedSurface == nil) {
-                let pubZoom = center.publisher(for: Notification.didZoomSplit)
-                
                 ZStack {
                     switch (node) {
                     case .noSplit(let leaf):
@@ -248,11 +247,8 @@ extension Ghostty {
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
             } else {
-                // If we're zoomed, we want to listen for zoom resets.
-                let pubZoomReset = center.publisher(for: Notification.didZoomResetSplit)
-                
                 ZStack {}
-                    .onReceive(pubZoomReset) { onZoomReset(notification: $0) }
+                    .onReceive(pubZoom) { onZoomReset(notification: $0) }
             }
         }
         
