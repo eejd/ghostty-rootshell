@@ -710,3 +710,13 @@ extension FocusedValues {
     }
 }
 
+extension FocusedValues {
+    var ghosttySurfaceZoomed: Bool? {
+        get { self[FocusedGhosttySurfaceZoomed.self] }
+        set { self[FocusedGhosttySurfaceZoomed.self] = newValue }
+    }
+    
+    struct FocusedGhosttySurfaceZoomed: FocusedValueKey {
+        typealias Value = Bool
+    }
+}

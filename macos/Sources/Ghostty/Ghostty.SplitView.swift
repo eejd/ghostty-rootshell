@@ -33,6 +33,7 @@ extension Ghostty {
                         SurfaceWrapper(surfaceView: surfaceView)
                     }
                 }
+                .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
             }
         }
     }
