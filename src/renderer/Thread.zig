@@ -252,8 +252,8 @@ fn drainMailbox(self: *Thread) !void {
                 try self.renderer.setFontSize(size);
             },
 
-            .screen_size => |size| {
-                try self.renderer.setScreenSize(size);
+            .resize => |v| {
+                try self.renderer.setScreenSize(v.screen_size, v.padding);
             },
 
             .change_config => |config| {

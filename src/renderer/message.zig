@@ -20,8 +20,14 @@ pub const Message = union(enum) {
     /// the size changes.
     font_size: font.face.DesiredSize,
 
-    /// Change the screen size.
-    screen_size: renderer.ScreenSize,
+    /// Changes the screen size.
+    resize: struct {
+        /// The full screen (drawable) size. This does NOT include padding.
+        screen_size: renderer.ScreenSize,
+
+        /// The explicit padding values.
+        padding: renderer.Padding,
+    },
 
     /// The derived configuration to update the renderer with.
     change_config: struct {

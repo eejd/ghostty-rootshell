@@ -139,6 +139,8 @@ const DerivedConfig = struct {
     mouse_interval: u64,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
+    window_padding_x: u32,
+    window_padding_y: u32,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -156,6 +158,8 @@ const DerivedConfig = struct {
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
+            .window_padding_x = config.@"window-padding-x",
+            .window_padding_y = config.@"window-padding-y",
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -871,12 +875,19 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     // changed, so we just return.
     if (self.screen_size.equals(new_screen_size)) return;
 
+    try self.resize(new_screen_size);
+}
+
+fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     // Save our screen size
-    self.screen_size = new_screen_size;
+    self.screen_size = size;
 
     // Mail the renderer so that it can update the GPU and re-render
     _ = self.renderer_thread.mailbox.push(.{
-        .screen_size = self.screen_size,
+        .resize = .{
+            .screen_size = self.screen_size,
+            .padding = self.padding,
+        },
     }, .{ .forever = {} });
     try self.queueRender();
 
@@ -1192,16 +1203,50 @@ pub fn scrollCallback(
     try self.queueRender();
 }
 
-pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) void {
+/// This is called when the content scale of the surface changes. The surface
+/// can then update any DPI-sensitive state.
+pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !void {
+    // Calculate the new DPI
     const x_dpi = content_scale.x * font.face.default_dpi;
     const y_dpi = content_scale.y * font.face.default_dpi;
+
+    // Update our font size which is dependent on the DPI
     const size = size: {
         var size = self.font_size;
         size.xdpi = @intFromFloat(x_dpi);
         size.ydpi = @intFromFloat(y_dpi);
         break :size size;
     };
+
+    // If our DPI didn't actually change, save a lot of work by doing nothing.
+    if (size.xdpi == self.font_size.xdpi and size.ydpi == self.font_size.ydpi) {
+        return;
+    }
+
     self.setFontSize(size);
+
+    // Update our padding which is dependent on DPI.
+    self.padding = padding: {
+        const padding_x: u32 = padding_x: {
+            const padding_x: f32 = @floatFromInt(self.config.window_padding_x);
+            break :padding_x @intFromFloat(@floor(padding_x * x_dpi / 72));
+        };
+        const padding_y: u32 = padding_y: {
+            const padding_y: f32 = @floatFromInt(self.config.window_padding_y);
+            break :padding_y @intFromFloat(@floor(padding_y * y_dpi / 72));
+        };
+
+        break :padding .{
+            .top = padding_y,
+            .bottom = padding_y,
+            .right = padding_x,
+            .left = padding_x,
+        };
+    };
+
+    // Force a resize event because the change in padding will affect
+    // pixel-level changes to the renderer and viewport.
+    try self.resize(self.screen_size);
 }
 
 /// The type of action to report for a mouse event.

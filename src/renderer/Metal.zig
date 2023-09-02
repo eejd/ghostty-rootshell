@@ -1048,9 +1048,14 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
 }
 
 /// Resize the screen.
-pub fn setScreenSize(self: *Metal, dim: renderer.ScreenSize) !void {
-    // Store our screen size
+pub fn setScreenSize(
+    self: *Metal,
+    dim: renderer.ScreenSize,
+    pad: renderer.Padding,
+) !void {
+    // Store our sizes
     self.screen_size = dim;
+    self.padding.explicit = pad;
 
     // Recalculate the rows/columns. This can't fail since we just set
     // the screen size above.
