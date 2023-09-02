@@ -1192,6 +1192,18 @@ pub fn scrollCallback(
     try self.queueRender();
 }
 
+pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) void {
+    const x_dpi = content_scale.x * font.face.default_dpi;
+    const y_dpi = content_scale.y * font.face.default_dpi;
+    const size = size: {
+        var size = self.font_size;
+        size.xdpi = @intFromFloat(x_dpi);
+        size.ydpi = @intFromFloat(y_dpi);
+        break :size size;
+    };
+    self.setFontSize(size);
+}
+
 /// The type of action to report for a mouse event.
 const MouseReportAction = enum { press, release, motion };
 
