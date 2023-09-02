@@ -348,6 +348,8 @@ pub const Surface = struct {
             .x = @floatCast(x),
             .y = @floatCast(y),
         };
+
+        self.core_surface.contentScaleCallback(self.content_scale);
     }
 
     pub fn updateSize(self: *Surface, width: u32, height: u32) void {
