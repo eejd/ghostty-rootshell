@@ -248,8 +248,12 @@ extension Ghostty {
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
             } else {
+                // On split, we want to reset the zoom state.
+                let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
+                
                 ZStack {}
                     .onReceive(pubZoom) { onZoomReset(notification: $0) }
+                    .onReceive(pubSplit) { onZoomReset(notification: $0) }
             }
         }
         
@@ -281,7 +285,19 @@ extension Ghostty {
             // We need to stay focused on this view, but the view is going to change
             // superviews. We need to do this async so it happens on the next event loop
             // tick.
-            DispatchQueue.main.async { Ghostty.moveFocus(to: surfaceView) }
+            DispatchQueue.main.async {
+                Ghostty.moveFocus(to: surfaceView)
+
+                // If the notification is a new split notification, we want to re-publish
+                // it after a short delay so that the split tree has a chance to re-establish
+                // so the proper view gets this notification.
+                if (notification.name == Notification.ghosttyNewSplit) {
+                    // We have to wait ANOTHER tick since we just established.
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(notification)
+                    }
+                }
+            }
         }
     }
     
