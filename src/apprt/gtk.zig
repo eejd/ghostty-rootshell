@@ -10,7 +10,8 @@ const font = @import("../font/main.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
-const Config = @import("../config.zig").Config;
+const configpkg = @import("../config.zig");
+const Config = configpkg.Config;
 
 pub const c = @cImport({
     @cInclude("gtk/gtk.h");
@@ -518,7 +519,7 @@ const Window = struct {
     }
 
     /// Toggle fullscreen for this window.
-    fn toggleFullscreen(self: *Window, _: bool) void {
+    fn toggleFullscreen(self: *Window, _: configpkg.NonNativeFullscreen) void {
         const is_fullscreen = c.gtk_window_is_fullscreen(self.window);
         if (is_fullscreen == 0) {
             c.gtk_window_fullscreen(self.window);
@@ -896,7 +897,7 @@ pub const Surface = struct {
         c.gtk_widget_show(alert);
     }
 
-    pub fn toggleFullscreen(self: *Surface, mac_non_native: bool) void {
+    pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFullscreen) void {
         self.window.toggleFullscreen(mac_non_native);
     }
 

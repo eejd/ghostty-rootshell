@@ -70,6 +70,12 @@ typedef enum {
     GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN,
 } ghostty_input_mouse_momentum_e;
 
+typedef enum {
+    GHOSTTY_NON_NATIVE_FULLSCREEN_FALSE,
+    GHOSTTY_NON_NATIVE_FULLSCREEN_TRUE,
+    GHOSTTY_NON_NATIVE_FULLSCREEN_VISIBLE_MENU,
+} ghostty_non_native_fullscreen_e;
+
 // This is a packed struct (see src/input/mouse.zig) but the C standard
 // afaik doesn't let us reliably define packed structs so we build it up
 // from scratch.
@@ -257,7 +263,7 @@ typedef void (*ghostty_runtime_new_window_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
-typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, bool);
+typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, ghostty_non_native_fullscreen_e);
 
 typedef struct {
     void *userdata;

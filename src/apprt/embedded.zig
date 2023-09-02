@@ -13,7 +13,8 @@ const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
-const Config = @import("../config.zig").Config;
+const configpkg = @import("../config.zig");
+const Config = configpkg.Config;
 
 const log = std.log.scoped(.embedded_window);
 
@@ -75,7 +76,7 @@ pub const App = struct {
         goto_tab: ?*const fn (SurfaceUD, usize) callconv(.C) void = null,
 
         /// Toggle fullscreen for current window.
-        toggle_fullscreen: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
+        toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -622,7 +623,7 @@ pub const Surface = struct {
         func(self.opts.userdata, n);
     }
 
-    pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: bool) void {
+    pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {
         const func = self.app.opts.toggle_fullscreen orelse {
             log.info("runtime embedder does not toggle_fullscreen", .{});
             return;
