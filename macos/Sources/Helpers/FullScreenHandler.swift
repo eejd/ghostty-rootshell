@@ -53,10 +53,38 @@ class FullScreenHandler {
         // Furthermore, it's much easier to figure out which screen the dock is on if the menubar
         // has not yet been hidden, so the order matters here!
         if (shouldHideDock(screen: screen)) {
-            NSApp.presentationOptions.insert(.autoHideDock)
+            self.hideDock()
+            
+            // Ensure that we always hide the dock bar for this window, but not for non fullscreen ones
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.hideDock),
+                name: NSWindow.didBecomeMainNotification,
+                object: window)
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.unHideDock),
+                name: NSWindow.didResignMainNotification,
+                object: window)
         }
         if (hideMenu) {
-            NSApp.presentationOptions.insert(.autoHideMenuBar)
+            self.hideMenu()
+            
+            // Ensure that we always hide the menu bar for this window, but not for non fullscreen ones
+            // This is not the best way to do this, not least because it causes the menu to stay visible
+            // for a brief moment before being hidden in some cases (e.g. when switching spaces).
+            // If we end up adding a NSWindowDelegate to PrimaryWindow, then we may be better off
+            // handling this there.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.hideMenu),
+                name: NSWindow.didBecomeMainNotification,
+                object: window)
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(FullScreenHandler.unHideMenu),
+                name: NSWindow.didResignMainNotification,
+                object: window)
         }
         
         // This is important: it gives us the full screen, including the
@@ -69,6 +97,22 @@ class FullScreenHandler {
         
         // Focus window
         window.makeKeyAndOrderFront(nil)
+    }
+    
+    @objc func hideMenu() {
+        NSApp.presentationOptions.insert(.autoHideMenuBar)
+    }
+    
+    @objc func unHideMenu() {
+        NSApp.presentationOptions.remove(.autoHideMenuBar)
+    }
+    
+    @objc func hideDock() {
+        NSApp.presentationOptions.insert(.autoHideDock)
+    }
+    
+    @objc func unHideDock() {
+        NSApp.presentationOptions.remove(.autoHideDock)
     }
     
     func calculateFullscreenFrame(screenFrame: NSRect, subtractMenu: Bool)->NSRect {
@@ -87,6 +131,11 @@ class FullScreenHandler {
         
         // Restore previous presentation options
         NSApp.presentationOptions = []
+        
+        // Stop handling any window focus notifications
+        // that we use to manage menu bar visibility
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeMainNotification, object: window)
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignMainNotification, object: window)
         
         // Restore frame
         window.setFrame(window.frameRect(forContentRect: previousFrame), display: true)
