@@ -287,7 +287,7 @@ extension Ghostty {
             discardCursorRects()
             addCursorRect(frame, cursor: .iBeam)
         }
-
+        
         override func viewDidChangeBackingProperties() {
             guard let surface = self.surface else { return }
 

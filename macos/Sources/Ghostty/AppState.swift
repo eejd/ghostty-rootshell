@@ -73,6 +73,7 @@ extension Ghostty {
                 new_window_cb: { userdata, surfaceConfig in AppState.newWindow(userdata, config: surfaceConfig) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
+                zoom_split_cb: { userdata, zoom in AppState.zoomSplit(userdata, zoom: zoom) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) }
             )
@@ -202,6 +203,20 @@ extension Ghostty {
                 userInfo: [
                     Notification.SplitDirectionKey: splitDirection,
                 ]
+            )
+        }
+        
+        static func zoomSplit(_ userdata: UnsafeMutableRawPointer?, zoom: Bool) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            
+            var name = Notification.didZoomSplit
+            if (!zoom) {
+                name = Notification.didZoomResetSplit
+            }
+            
+            NotificationCenter.default.post(
+                name: name,
+                object: surface
             )
         }
         

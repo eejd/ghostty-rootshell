@@ -95,6 +95,12 @@ extension Ghostty.Notification {
     /// Notification that a surface is becoming focused. This is only sent on macOS 12 to
     /// work around bugs. macOS 13+ should use the ".focused()" attribute.
     static let didBecomeFocusedSurface = Notification.Name("com.mitchellh.ghostty.didBecomeFocusedSurface")
+    
+    /// Notification that a surface is being zoomed or unzoomed. Note that these are sent
+    /// regardless of if the surface is part of a split or not. It is up to the receiver to validate
+    /// this.
+    static let didZoomSplit = Notification.Name("com.mitchellh.ghostty.didZoomSplit")
+    static let didZoomResetSplit = Notification.Name("com.mitchellh.ghostty.didZoomResetSplit")
 }
 
 // Make the input enum hashable.
