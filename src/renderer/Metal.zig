@@ -137,7 +137,7 @@ pub const DerivedConfig = struct {
             else
                 null,
 
-            .cursor_style = config.@"cursor-style",
+            .cursor_style = config.@"cursor-style".toTerminalCursorStyle(config.@"cursor-style-blink"),
             .cursor_text = if (config.@"cursor-text") |txt|
                 txt.toTerminalRGB()
             else
