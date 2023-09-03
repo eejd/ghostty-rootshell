@@ -324,6 +324,12 @@ You can verify you have a release version by checking the filesize of the
 built binary (`zig-out/bin/ghostty`). The release version should be less
 than 5 MB on all platforms. The debug version is around 70MB.
 
+**Note: when using the GTK runtime (`-Dapp-runtime=gtk`) a release build will
+use a [single-instance application](https://developer.gnome.org/documentation/tutorials/application.html).
+If you're developing Ghostty from _inside_ a release build and build & launch a
+new one that will not reflect the changes you made, but instead launch a new
+window for the existing instance.**
+
 ### Mac `.app`
 
 To build the official, fully featured macOS application, you must
