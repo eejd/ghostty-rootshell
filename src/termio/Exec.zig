@@ -1623,6 +1623,11 @@ const StreamHandler = struct {
         self.terminal.flags.shell_redraws_prompt = redraw;
     }
 
+    pub fn promptContinuation(self: *StreamHandler, aid: ?[]const u8) !void {
+        _ = aid;
+        self.terminal.markSemanticPrompt(.prompt_continuation);
+    }
+
     pub fn promptEnd(self: *StreamHandler) !void {
         self.terminal.markSemanticPrompt(.input);
     }

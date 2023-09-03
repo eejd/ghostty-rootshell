@@ -155,13 +155,14 @@ pub const RowHeader = struct {
         /// This is a prompt line, meaning it only contains the shell prompt.
         /// For poorly behaving shells, this may also be the input.
         prompt = 1,
+        prompt_continuation = 2,
 
         /// This line contains the input area. We don't currently track
         /// where this actually is in the line, so we just assume it is somewhere.
-        input = 2,
+        input = 3,
 
         /// This line is the start of command output.
-        command = 3,
+        command = 4,
     };
 };
 
@@ -1762,7 +1763,7 @@ fn jumpPrompt(self: *Screen, delta: isize) bool {
     while (y >= 0 and y <= max_y and delta_rem > 0) : (y += step) {
         const row = self.getRow(.{ .screen = @intCast(y) });
         switch (row.getSemanticPrompt()) {
-            .prompt, .input => delta_rem -= 1,
+            .prompt, .prompt_continuation, .input => delta_rem -= 1,
             .command, .unknown => {},
         }
     }

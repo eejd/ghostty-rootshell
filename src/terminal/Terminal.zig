@@ -40,6 +40,7 @@ pub const ScreenType = enum {
 /// See: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
 pub const SemanticPrompt = enum {
     prompt,
+    prompt_continuation,
     input,
     command,
 };
@@ -361,12 +362,18 @@ fn clearPromptForResize(self: *Terminal) void {
             const real_y = self.screen.cursor.y - y;
             const row = self.screen.getRow(.{ .active = real_y });
             switch (row.getSemanticPrompt()) {
-                // If we're at a prompt or input area, then we are at a prompt.
+                // We are at a prompt but we're not at the start of the prompt.
                 // We mark our found value and continue because the prompt
                 // may be multi-line.
-                .prompt,
-                .input,
-                => found = real_y,
+                .input => found = real_y,
+
+                // If we find the prompt then we're done. We are also done
+                // if we find any prompt continuation, because the shells
+                // that send this currently (zsh) cannot redraw every line.
+                .prompt, .prompt_continuation => {
+                    found = real_y;
+                    break;
+                },
 
                 // If we have command output, then we're most certainly not
                 // at a prompt. Break out of the loop.
@@ -1535,6 +1542,7 @@ pub fn markSemanticPrompt(self: *Terminal, p: SemanticPrompt) void {
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
     row.setSemanticPrompt(switch (p) {
         .prompt => .prompt,
+        .prompt_continuation => .prompt_continuation,
         .input => .input,
         .command => .command,
     });
@@ -1557,6 +1565,7 @@ pub fn cursorIsAtPrompt(self: *Terminal) bool {
         switch (row.getSemanticPrompt()) {
             // If we're at a prompt or input area, then we are at a prompt.
             .prompt,
+            .prompt_continuation,
             .input,
             => return true,
 
