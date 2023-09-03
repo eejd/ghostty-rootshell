@@ -219,6 +219,11 @@ pub const Config = struct {
     /// specified in the configuration "font-size" will be used.
     @"window-inherit-font-size": bool = true,
 
+    /// If false, windows won't have native decorations, i.e. titlebar and
+    /// borders.
+    /// Currently only supported with GTK.
+    @"window-decoration": bool = true,
+
     /// Whether to allow programs running in the terminal to read/write to
     /// the system clipboard (OSC 52, for googling). The default is to
     /// disallow clipboard reading but allow writing.

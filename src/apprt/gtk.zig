@@ -354,6 +354,12 @@ const Window = struct {
             c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
         }
 
+        // Hide window decoration if configured. This has to happen before
+        // `gtk_widget_show`.
+        if (!app.config.@"window-decoration") {
+            c.gtk_window_set_decorated(gtk_window, 0);
+        }
+
         c.gtk_widget_show(window);
         _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, G_CONNECT_DEFAULT);
