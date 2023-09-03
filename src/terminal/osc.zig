@@ -26,6 +26,7 @@ pub const Command = union(enum) {
     /// not all shells will send the prompt end code.
     prompt_start: struct {
         aid: ?[]const u8 = null,
+        kind: enum { primary, right, continuation } = .primary,
         redraw: bool = true,
     },
 
@@ -397,6 +398,21 @@ pub const Parser = struct {
                 },
                 else => {},
             }
+        } else if (mem.eql(u8, self.temp_state.key, "k")) {
+            // The "k" marks the kind of prompt, or "primary" if we don't know.
+            // This can be used to distinguish between the first prompt,
+            // a continuation, etc.
+            switch (self.command) {
+                .prompt_start => |*v| if (value.len == 1) {
+                    v.kind = switch (value[0]) {
+                        'c', 's' => .continuation,
+                        'r' => .right,
+                        'i' => .primary,
+                        else => .primary,
+                    };
+                },
+                else => {},
+            }
         } else log.info("unknown semantic prompts option: {s}", .{self.temp_state.key});
     }
 
@@ -508,6 +524,20 @@ test "OSC: prompt_start with redraw invalid value" {
     const cmd = p.end().?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.redraw);
+    try testing.expect(cmd.prompt_start.kind == .primary);
+}
+
+test "OSC: prompt_start with continuation" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "133;A;k=c";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .prompt_start);
+    try testing.expect(cmd.prompt_start.kind == .continuation);
 }
 
 test "OSC: end_of_command no exit code" {
