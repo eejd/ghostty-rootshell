@@ -53,10 +53,10 @@ pub fn Stream(comptime Handler: type) type {
             // log.debug("char: {c}", .{c});
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
-                // if (action_opt) |action| {
-                //     if (action != .print)
-                //         log.info("action: {}", .{action});
-                // }
+                if (action_opt) |action| {
+                    if (action != .print and action == .osc_dispatch)
+                        log.info("action: {}", .{action});
+                }
                 switch (action_opt orelse continue) {
                     .print => |p| if (@hasDecl(T, "print")) try self.handler.print(p),
                     .execute => |code| try self.execute(code),
@@ -802,8 +802,9 @@ pub fn Stream(comptime Handler: type) type {
                 },
 
                 .prompt_start => |v| {
-                    if (@hasDecl(T, "promptStart")) {
-                        try self.handler.promptStart(v.aid, v.redraw);
+                    if (@hasDecl(T, "promptStart")) switch (v.kind) {
+                        .primary, .right => try self.handler.promptStart(v.aid, v.redraw),
+                        .continuation => try self.handler.promptContinuation(v.aid),
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
