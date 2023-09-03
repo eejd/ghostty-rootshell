@@ -97,13 +97,19 @@ pub const Config = struct {
     /// The color of the cursor. If this is not set, a default will be chosen.
     @"cursor-color": ?Color = null,
 
-    /// The style of the cursor.
+    /// The style of the cursor. This sets the default style. A running
+    /// programn can still request an explicit cursor style using escape
+    /// sequences (such as CSI q). Shell configurations will often request
+    /// specific cursor styles.
     ///
     /// Caveat: Shell integration currently defaults to always be a bar
     /// In order to fix it, we probably would want to add something similar to Kitty's
     /// shell integration options (no-cursor). For more information see:
     /// https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.shell_integration
-    @"cursor-style": terminal.CursorStyle = .default,
+    @"cursor-style": CursorStyle = .bar,
+
+    /// Whether the cursor shall blink
+    @"cursor-style-blink": bool = true,
 
     /// The color of the text under the cursor. If this is not set, a default
     /// will be chosen.
@@ -1453,6 +1459,22 @@ pub const ShellIntegration = enum {
     detect,
     fish,
     zsh,
+};
+
+/// Available options for `cursor-style`. Blinking is configured with
+/// the `cursor-style-blink` option.
+pub const CursorStyle = enum {
+    bar,
+    block,
+    underline,
+
+    pub fn toTerminalCursorStyle(self: CursorStyle, blinks: bool) terminal.CursorStyle {
+        return switch (self) {
+            .bar => if (blinks) .blinking_bar else .steady_bar,
+            .block => if (blinks) .blinking_block else .steady_block,
+            .underline => if (blinks) .blinking_underline else .steady_underline,
+        };
+    }
 };
 
 // Wasm API.
