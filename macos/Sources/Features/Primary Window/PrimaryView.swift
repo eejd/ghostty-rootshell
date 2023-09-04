@@ -170,5 +170,11 @@ struct PrimaryView: View {
         self.fullScreen.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
         // After toggling fullscreen we need to focus the terminal again.
         self.focused = true
+        
+        // For some reason focus always gets moved to the first split when
+        // toggling fullscreen, so we set it back to the correct one.
+        if let focusedSurface {
+            Ghostty.moveFocus(to: focusedSurface)
+        }
     }
 }
