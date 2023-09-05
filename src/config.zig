@@ -314,6 +314,15 @@ pub const Config = struct {
     /// This does not work with GLFW builds.
     @"macos-option-as-alt": OptionAsAlt = .false,
 
+    /// If true (default), then the Ghostty GTK application will run in
+    /// single-instance mode: each new `ghostty` process launched will result
+    /// in a new window, if there is already a running process.
+    ///
+    /// If false, each new ghostty process will launch a separate application.
+    ///
+    /// Debug builds of Ghostty have a separate single-instance ID.
+    @"gtk-single-instance": bool = true,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
