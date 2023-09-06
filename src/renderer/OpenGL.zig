@@ -736,6 +736,10 @@ pub fn render(
             // If the cursor isn't a blinking style, then never blink.
             if (!selected_cursor_style.blinking()) break :visible true;
 
+            // If we're not focused, our cursor is always visible so that
+            // we can show the hollow box.
+            if (!self.focused) break :visible true;
+
             // Otherwise, adhere to our current state.
             break :visible self.cursor_visible;
         };
