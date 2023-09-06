@@ -66,11 +66,15 @@ pub const App = struct {
         // Our uniqueness ID is based on whether we're in a debug mode or not.
         // In debug mode we want to be separate so we can develop Ghostty in
         // Ghostty.
-        const uniqueness_id = "com.mitchellh.ghostty" ++ if (builtin.mode == .Debug) "-debug" else "";
+        const uniqueness_id: ?[*c]const u8 = uniqueness_id: {
+            if (!config.@"gtk-single-instance") break :uniqueness_id null;
+
+            break :uniqueness_id "com.mitchellh.ghostty" ++ if (builtin.mode == .Debug) "-debug" else "";
+        };
 
         // Create our GTK Application which encapsulates our process.
         const app = @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-            uniqueness_id,
+            uniqueness_id orelse null,
 
             // GTK >= 2.74
             if (@hasDecl(c, "G_APPLICATION_DEFAULT_FLAGS"))

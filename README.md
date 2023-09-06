@@ -328,7 +328,9 @@ than 5 MB on all platforms. The debug version is around 70MB.
 use a [single-instance application](https://developer.gnome.org/documentation/tutorials/application.html).
 If you're developing Ghostty from _inside_ a release build and build & launch a
 new one that will not reflect the changes you made, but instead launch a new
-window for the existing instance.**
+window for the existing instance. You can disable this behaviour with the
+`--gtk-single-instance=false` flag or by adding `gtk-single-instance = false` to
+the configuration file.**
 
 ### Mac `.app`
 
