@@ -47,6 +47,8 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         windowManager = PrimaryWindowManager(ghostty: self.ghostty)
     }
     
+    //MARK: - NSApplicationDelegate
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         // System settings overrides
         UserDefaults.standard.register(defaults: [
@@ -98,6 +100,18 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // We have some visible window, and all our windows will watch the confirmQuit.
         confirmQuit = true
         return .terminateLater
+    }
+    
+    /// This is called when the application is already open and someone double-clicks the icon
+    /// or clicks the dock icon.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // If we have visible windows then we allow macOS to do its default behavior
+        // of focusing one of them.
+        guard !flag else { return true }
+        
+        // No visible windows, open a new one.
+        windowManager.newWindow()
+        return false
     }
     
     /// Sync all of our menu item keyboard shortcuts with the Ghostty configuration.
