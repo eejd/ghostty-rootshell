@@ -34,7 +34,7 @@ class PrimaryWindowManager {
 
         // In case we run into the inconsistency, let it crash in debug mode so we
         // can fix our window management setup to prevent this from happening.
-        assert(mainManagedWindow != nil || managedWindows.isEmpty)
+        assert(mainManagedWindow != nil || !managedWindows.isEmpty)
 
         return (mainManagedWindow ?? managedWindows.first)
             .map { $0.window }
@@ -100,6 +100,7 @@ class PrimaryWindowManager {
     
     func addNewWindow(withBaseConfig config: ghostty_surface_config_s? = nil) {
         guard let controller = createWindowController(withBaseConfig: config) else { return }
+        controller.showWindow(self)
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return }
         newWindow.makeKeyAndOrderFront(nil)
     }
