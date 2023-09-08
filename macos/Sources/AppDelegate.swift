@@ -34,6 +34,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuSelectSplitLeft: NSMenuItem?
     @IBOutlet private var menuSelectSplitRight: NSMenuItem?
     
+    /// The dock menu
+    private var dockMenu: NSMenu = NSMenu()
+    
     /// The ghostty global state. Only one per process.
     private var ghostty: Ghostty.AppState = Ghostty.AppState()
     
@@ -114,6 +117,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         return false
     }
     
+    /// This is called for the dock right-click menu.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        return dockMenu
+    }
+    
     /// Sync all of our menu item keyboard shortcuts with the Ghostty configuration.
     private func syncMenuShortcuts() {
         guard ghostty.config != nil else { return }
@@ -136,6 +144,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "goto_split:bottom", menuItem: self.menuSelectSplitBelow)
         syncMenuShortcut(action: "goto_split:left", menuItem: self.menuSelectSplitLeft)
         syncMenuShortcut(action: "goto_split:right", menuItem: self.menuSelectSplitRight)
+        
+        // Dock menu
+        reloadDockMenu()
     }
     
     /// Syncs a single menu shortcut for the given action. The action string is the same
@@ -170,14 +181,33 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcuts()
     }
     
+    //MARK: - Dock Menu
+    
+    private func reloadDockMenu() {
+        let newWindow = NSMenuItem(title: "New Window", action: #selector(newWindow), keyEquivalent: "")
+        let newTab = NSMenuItem(title: "New Tab", action: #selector(newTab), keyEquivalent: "")
+        
+        dockMenu.removeAllItems()
+        dockMenu.addItem(newWindow)
+        dockMenu.addItem(newTab)
+    }
+    
     //MARK: - IB Actions
     
     @IBAction func newWindow(_ sender: Any?) {
         windowManager.newWindow()
+        
+        // We also activate our app so that it becomes front. This may be
+        // necessary for the dock menu.
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     @IBAction func newTab(_ sender: Any?) {
         windowManager.newTab()
+        
+        // We also activate our app so that it becomes front. This may be
+        // necessary for the dock menu.
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     @IBAction func closeWindow(_ sender: Any) {
