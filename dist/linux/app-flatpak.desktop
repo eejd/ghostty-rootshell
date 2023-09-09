@@ -7,3 +7,8 @@ Icon=com.mitchellh.ghostty
 Keywords=terminal;tty;pty;
 StartupNotify=true
 Terminal=false
+Actions=new-window
+
+[Desktop Action new-window]
+Actions=new-window
+Exec=/app/bin/ghostty
