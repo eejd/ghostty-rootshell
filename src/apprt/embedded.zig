@@ -76,10 +76,17 @@ pub const App = struct {
         toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
 
         /// Goto tab
-        goto_tab: ?*const fn (SurfaceUD, usize) callconv(.C) void = null,
+        goto_tab: ?*const fn (SurfaceUD, GotoTab) callconv(.C) void = null,
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
+    };
+
+    /// Special values for the goto_tab callback.
+    const GotoTab = enum(i32) {
+        previous = -1,
+        next = -2,
+        _,
     };
 
     core_app: *CoreApp,
@@ -637,7 +644,30 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, n);
+        const idx = std.math.cast(i32, n) orelse {
+            log.warn("cannot cast tab index to i32 n={}", .{n});
+            return;
+        };
+
+        func(self.opts.userdata, @enumFromInt(idx));
+    }
+
+    pub fn gotoPreviousTab(self: *Surface) void {
+        const func = self.app.opts.goto_tab orelse {
+            log.info("runtime embedder does not goto_tab", .{});
+            return;
+        };
+
+        func(self.opts.userdata, .previous);
+    }
+
+    pub fn gotoNextTab(self: *Surface) void {
+        const func = self.app.opts.goto_tab orelse {
+            log.info("runtime embedder does not goto_tab", .{});
+            return;
+        };
+
+        func(self.opts.userdata, .next);
     }
 
     pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {

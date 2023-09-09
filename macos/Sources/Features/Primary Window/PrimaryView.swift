@@ -148,11 +148,28 @@ struct PrimaryView: View {
         guard let tabGroup = windowController.window?.tabGroup else { return }
         let tabbedWindows = tabGroup.windows
         
-        // Tabs are 0-indexed here, so we subtract one from the key the user hit.
-        let adjustedIndex = Int(tabIndex - 1);
-        guard adjustedIndex >= 0 && adjustedIndex < tabbedWindows.count else { return }
+        // This will be the index we want to actual go to
+        let finalIndex: Int
         
-        let targetWindow = tabbedWindows[adjustedIndex]
+        // An index that is invalid is used to signal some special values.
+        if (tabIndex <= 0) {
+            guard let selectedWindow = tabGroup.selectedWindow else { return }
+            guard let selectedIndex = tabbedWindows.firstIndex(where: { $0 == selectedWindow }) else { return }
+            
+            if (tabIndex == GHOSTTY_TAB_PREVIOUS.rawValue) {
+                finalIndex = selectedIndex - 1
+            } else if (tabIndex == GHOSTTY_TAB_NEXT.rawValue) {
+                finalIndex = selectedIndex + 1
+            } else {
+                return
+            }
+        } else {
+            // Tabs are 0-indexed here, so we subtract one from the key the user hit.
+            finalIndex = Int(tabIndex - 1)
+        }
+        
+        guard finalIndex >= 0 && finalIndex < tabbedWindows.count else { return }
+        let targetWindow = tabbedWindows[finalIndex]
         targetWindow.makeKeyAndOrderFront(nil)
     }
 

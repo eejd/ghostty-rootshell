@@ -76,6 +76,11 @@ typedef enum {
     GHOSTTY_NON_NATIVE_FULLSCREEN_VISIBLE_MENU,
 } ghostty_non_native_fullscreen_e;
 
+typedef enum {
+    GHOSTTY_TAB_PREVIOUS = -1,
+    GHOSTTY_TAB_NEXT = -2,
+} ghostty_tab_e;
+
 // This is a packed struct (see src/input/mouse.zig) but the C standard
 // afaik doesn't let us reliably define packed structs so we build it up
 // from scratch.
