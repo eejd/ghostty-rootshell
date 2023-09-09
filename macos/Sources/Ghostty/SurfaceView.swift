@@ -405,6 +405,28 @@ extension Ghostty {
             keyAction(GHOSTTY_ACTION_RELEASE, event: event)
         }
         
+        override func flagsChanged(with event: NSEvent) {
+            let mod: UInt32;
+            switch (event.keyCode) {
+            case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
+            case 0x38, 0x3C: mod = GHOSTTY_MODS_SHIFT.rawValue
+            case 0x3B, 0x3E: mod = GHOSTTY_MODS_CTRL.rawValue
+            case 0x3A, 0x3D: mod = GHOSTTY_MODS_ALT.rawValue
+            case 0x37, 0x36: mod = GHOSTTY_MODS_SUPER.rawValue
+            default: return
+            }
+            
+            // The keyAction function will do this AGAIN below which sucks to repeat
+            // but this is super cheap and flagsChanged isn't that common.
+            let mods = Self.translateFlags(event.modifierFlags)
+            
+            // If the key that pressed this is active, its a press, else release
+            var action = GHOSTTY_ACTION_RELEASE
+            if (mods.rawValue & mod != 0) { action = GHOSTTY_ACTION_PRESS }
+            
+            keyAction(action, event: event)
+        }
+        
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
