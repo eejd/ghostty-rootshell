@@ -5,6 +5,7 @@
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     zig.url = "github:mitchellh/zig-overlay";
+    zls-master.url = "github:zigtools/zls/master";
 
     # We want to stay as up to date as possible but need to be careful
     # that the glibc versions used by our dependencies from Nix are compatible
@@ -27,6 +28,9 @@
 
           # Latest version of Tracy
           tracy = inputs.nixpkgs-unstable.legacyPackages.${prev.system}.tracy;
+
+          # Latest version of ZLS
+          zls = inputs.zls-master.packages.${prev.system}.zls;
         })
       ];
 
