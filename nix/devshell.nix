@@ -20,6 +20,7 @@
 , wraptest
 , zig
 , zip
+, zls
 , llvmPackages_latest
 
 , bzip2
@@ -72,6 +73,7 @@ in mkShell rec {
     scdoc
     zig
     zip
+    zls
 
     # For web and wasm stuff
     nodejs
