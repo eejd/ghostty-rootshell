@@ -38,6 +38,10 @@ extension Ghostty {
         // remains the same, the surface that is being rendered remains the same.
         @ObservedObject var surfaceView: SurfaceView
         
+        // True if this surface is part of a split view. This is important to know so
+        // we know whether to dim the surface out of focus.
+        var isSplit: Bool = false
+        
         // Maintain whether our view has focus or not
         @FocusState private var surfaceFocus: Bool
         
@@ -49,73 +53,85 @@ extension Ghostty {
         private var hasFocus: Bool { surfaceFocus && windowFocus }
         
         var body: some View {
-            // We use a GeometryReader to get the frame bounds so that our metal surface
-            // is up to date. See TerminalSurfaceView for why we don't use the NSView
-            // resize callback.
-            GeometryReader { geo in
-                // We use these notifications to determine when the window our surface is
-                // attached to is or is not focused.
-                let pubBecomeFocused = NotificationCenter.default.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
-                let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
-                let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
-                
-                Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
-                    .focused($surfaceFocus)
-                    .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
-                    .focusedValue(\.ghosttySurfaceView, surfaceView)
-                    .onReceive(pubBecomeKey) { notification in
-                        guard let window = notification.object as? NSWindow else { return }
-                        guard let surfaceWindow = surfaceView.window else { return }
-                        windowFocus = surfaceWindow == window
-                    }
-                    .onReceive(pubResign) { notification in
-                        guard let window = notification.object as? NSWindow else { return }
-                        guard let surfaceWindow = surfaceView.window else { return }
-                        if (surfaceWindow == window) {
-                            windowFocus = false
+            ZStack {
+                // We use a GeometryReader to get the frame bounds so that our metal surface
+                // is up to date. See TerminalSurfaceView for why we don't use the NSView
+                // resize callback.
+                GeometryReader { geo in
+                    // We use these notifications to determine when the window our surface is
+                    // attached to is or is not focused.
+                    let pubBecomeFocused = NotificationCenter.default.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
+                    let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
+                    let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
+                    
+                    Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
+                        .focused($surfaceFocus)
+                        .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
+                        .focusedValue(\.ghosttySurfaceView, surfaceView)
+                        .onReceive(pubBecomeKey) { notification in
+                            guard let window = notification.object as? NSWindow else { return }
+                            guard let surfaceWindow = surfaceView.window else { return }
+                            windowFocus = surfaceWindow == window
                         }
-                    }
-                    .onReceive(pubBecomeFocused) { notification in
-                        // We only want to run this on older macOS versions where the .focused
-                        // method doesn't work properly. See the dispatch of this notification
-                        // for more information.
-                        if #available(macOS 13, *) { return }
-                        
-                        DispatchQueue.main.async {
-                            surfaceFocus = true
+                        .onReceive(pubResign) { notification in
+                            guard let window = notification.object as? NSWindow else { return }
+                            guard let surfaceWindow = surfaceView.window else { return }
+                            if (surfaceWindow == window) {
+                                windowFocus = false
+                            }
                         }
-                    }
-                    .onAppear() {
-                        // Welcome to the SwiftUI bug house of horrors. On macOS 12 (at least
-                        // 12.5.1, didn't test other versions), the order in which the view
-                        // is added to the window hierarchy is such that $surfaceFocus is
-                        // not set to true for the first surface in a window. As a result,
-                        // new windows are key (they have window focus) but the terminal surface
-                        // does not have surface until the user clicks. Bad!
-                        //
-                        // There is a very real chance that I am doing something wrong, but it
-                        // works great as-is on macOS 13, so I've instead decided to make the
-                        // older macOS hacky. A workaround is on initial appearance to "steal
-                        // focus" under certain conditions that seem to imply we're in the
-                        // screwy state.
-                        if #available(macOS 13, *) {
-                            // If we're on a more modern version of macOS, do nothing.
-                            return
-                        }
-                        if #available(macOS 12, *) {
-                            // On macOS 13, the view is attached to a window at this point,
-                            // so this is one extra check that we're a new view and behaving odd.
-                            guard surfaceView.window == nil else { return }
+                        .onReceive(pubBecomeFocused) { notification in
+                            // We only want to run this on older macOS versions where the .focused
+                            // method doesn't work properly. See the dispatch of this notification
+                            // for more information.
+                            if #available(macOS 13, *) { return }
+                            
                             DispatchQueue.main.async {
                                 surfaceFocus = true
                             }
                         }
-                        
-                        // I don't know how older macOS versions behave but Ghostty only
-                        // supports back to macOS 12 so its moot.
-                    }
+                        .onAppear() {
+                            // Welcome to the SwiftUI bug house of horrors. On macOS 12 (at least
+                            // 12.5.1, didn't test other versions), the order in which the view
+                            // is added to the window hierarchy is such that $surfaceFocus is
+                            // not set to true for the first surface in a window. As a result,
+                            // new windows are key (they have window focus) but the terminal surface
+                            // does not have surface until the user clicks. Bad!
+                            //
+                            // There is a very real chance that I am doing something wrong, but it
+                            // works great as-is on macOS 13, so I've instead decided to make the
+                            // older macOS hacky. A workaround is on initial appearance to "steal
+                            // focus" under certain conditions that seem to imply we're in the
+                            // screwy state.
+                            if #available(macOS 13, *) {
+                                // If we're on a more modern version of macOS, do nothing.
+                                return
+                            }
+                            if #available(macOS 12, *) {
+                                // On macOS 13, the view is attached to a window at this point,
+                                // so this is one extra check that we're a new view and behaving odd.
+                                guard surfaceView.window == nil else { return }
+                                DispatchQueue.main.async {
+                                    surfaceFocus = true
+                                }
+                            }
+                            
+                            // I don't know how older macOS versions behave but Ghostty only
+                            // supports back to macOS 12 so its moot.
+                        }
+                }
+                .ghosttySurfaceView(surfaceView)
+                
+                // If we're part of a split view and don't have focus, we put a semi-transparent
+                // rectangle above our view to make it look unfocused. We use "surfaceFocus"
+                // because we want to keep our focused surface dark even if we don't have window
+                // focus.
+                if (isSplit && !surfaceFocus) {
+                    Rectangle()
+                        .fill(.white)
+                        .opacity(0.15)
+                }
             }
-            .ghosttySurfaceView(surfaceView)
         }
     }
     
