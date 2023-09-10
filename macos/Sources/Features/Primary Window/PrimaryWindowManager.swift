@@ -32,10 +32,6 @@ class PrimaryWindowManager {
         let mainManagedWindow = managedWindows
             .first { $0.window.isMainWindow }
 
-        // In case we run into the inconsistency, let it crash in debug mode so we
-        // can fix our window management setup to prevent this from happening.
-        assert(mainManagedWindow != nil || !managedWindows.isEmpty)
-
         return (mainManagedWindow ?? managedWindows.first)
             .map { $0.window }
     }
