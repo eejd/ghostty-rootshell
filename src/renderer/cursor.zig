@@ -50,3 +50,96 @@ pub fn cursorStyle(
     // Otherwise, we use whatever the terminal wants.
     return CursorStyle.fromTerminal(state.terminal.screen.cursor.style);
 }
+
+test "cursor: default uses configured style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var term = try terminal.Terminal.init(alloc, 10, 10);
+    defer term.deinit(alloc);
+
+    term.screen.cursor.style = .bar;
+    term.modes.set(.cursor_blinking, true);
+
+    var state: State = .{
+        .mutex = undefined,
+        .terminal = &term,
+        .preedit = null,
+    };
+
+    try testing.expect(cursorStyle(&state, true, true) == .bar);
+    try testing.expect(cursorStyle(&state, false, true) == .block_hollow);
+    try testing.expect(cursorStyle(&state, false, false) == .block_hollow);
+    try testing.expect(cursorStyle(&state, true, false) == null);
+}
+
+test "cursor: blinking disabled" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var term = try terminal.Terminal.init(alloc, 10, 10);
+    defer term.deinit(alloc);
+
+    term.screen.cursor.style = .bar;
+    term.modes.set(.cursor_blinking, false);
+
+    var state: State = .{
+        .mutex = undefined,
+        .terminal = &term,
+        .preedit = null,
+    };
+
+    try testing.expect(cursorStyle(&state, true, true) == .bar);
+    try testing.expect(cursorStyle(&state, true, false) == .bar);
+    try testing.expect(cursorStyle(&state, false, true) == .block_hollow);
+    try testing.expect(cursorStyle(&state, false, false) == .block_hollow);
+}
+
+test "cursor: explictly not visible" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var term = try terminal.Terminal.init(alloc, 10, 10);
+    defer term.deinit(alloc);
+
+    term.screen.cursor.style = .bar;
+    term.modes.set(.cursor_visible, false);
+    term.modes.set(.cursor_blinking, false);
+
+    var state: State = .{
+        .mutex = undefined,
+        .terminal = &term,
+        .preedit = null,
+    };
+
+    try testing.expect(cursorStyle(&state, true, true) == null);
+    try testing.expect(cursorStyle(&state, true, false) == null);
+    try testing.expect(cursorStyle(&state, false, true) == null);
+    try testing.expect(cursorStyle(&state, false, false) == null);
+}
+
+test "cursor: always block with preedit" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var term = try terminal.Terminal.init(alloc, 10, 10);
+    defer term.deinit(alloc);
+
+    var state: State = .{
+        .mutex = undefined,
+        .terminal = &term,
+        .preedit = .{},
+    };
+
+    // In any bool state
+    try testing.expect(cursorStyle(&state, false, false) == .block);
+    try testing.expect(cursorStyle(&state, true, false) == .block);
+    try testing.expect(cursorStyle(&state, true, true) == .block);
+    try testing.expect(cursorStyle(&state, false, true) == .block);
+
+    // If we're scrolled though, then we don't show the cursor.
+    for (0..100) |_| try term.index();
+    try term.scrollViewport(.{ .top = {} });
+
+    // In any bool state
+    try testing.expect(cursorStyle(&state, false, false) == null);
+    try testing.expect(cursorStyle(&state, true, false) == null);
+    try testing.expect(cursorStyle(&state, true, true) == null);
+    try testing.expect(cursorStyle(&state, false, true) == null);
+}
