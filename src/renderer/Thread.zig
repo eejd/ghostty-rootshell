@@ -48,6 +48,11 @@ cursor_h: xev.Timer,
 cursor_c: xev.Completion = .{},
 cursor_c_cancel: xev.Completion = .{},
 
+/// This is true when a blinking cursor should be visible and false
+/// when it should not be visible. This is toggled on a timer by the
+/// thread automatically.
+cursor_blink_visible: bool = false,
+
 /// The surface we're rendering to.
 surface: *apprt.Surface,
 
@@ -220,7 +225,7 @@ fn drainMailbox(self: *Thread) !void {
                     // If we're focused, we immediately show the cursor again
                     // and then restart the timer.
                     if (self.cursor_c.state() != .active) {
-                        self.renderer.blinkCursor(true);
+                        self.cursor_blink_visible = true;
                         self.cursor_h.run(
                             &self.loop,
                             &self.cursor_c,
@@ -234,7 +239,7 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .reset_cursor_blink => {
-                self.renderer.blinkCursor(true);
+                self.cursor_blink_visible = true;
                 if (self.cursor_c.state() == .active) {
                     self.cursor_h.reset(
                         &self.loop,
@@ -317,7 +322,11 @@ fn renderCallback(
         return .disarm;
     };
 
-    t.renderer.render(t.surface, t.state) catch |err|
+    t.renderer.render(
+        t.surface,
+        t.state,
+        t.cursor_blink_visible,
+    ) catch |err|
         log.warn("error rendering err={}", .{err});
 
     // If we're doing single-threaded GPU calls then we also wake up the
@@ -356,7 +365,7 @@ fn cursorTimerCallback(
         return .disarm;
     };
 
-    t.renderer.blinkCursor(false);
+    t.cursor_blink_visible = !t.cursor_blink_visible;
     t.wakeup.notify() catch {};
 
     t.cursor_h.run(&t.loop, &t.cursor_c, CURSOR_BLINK_INTERVAL, Thread, t, cursorTimerCallback);

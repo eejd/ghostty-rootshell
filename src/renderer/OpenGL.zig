@@ -83,11 +83,6 @@ texture_color: gl.Texture,
 font_group: *font.GroupCache,
 font_shaper: font.Shaper,
 
-/// Whether the cursor is visible or not. This is used to control cursor
-/// blinking.
-cursor_visible: bool,
-cursor_style: renderer.CursorStyle,
-
 /// True if the window is focused
 focused: bool,
 
@@ -237,7 +232,6 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     font_features: std.ArrayList([]const u8),
     cursor_color: ?terminal.color.RGB,
-    cursor_style: terminal.CursorStyle,
     cursor_text: ?terminal.color.RGB,
     background: terminal.color.RGB,
     background_opacity: f64,
@@ -266,7 +260,6 @@ pub const DerivedConfig = struct {
             else
                 null,
 
-            .cursor_style = config.@"cursor-style".toTerminalCursorStyle(config.@"cursor-style-blink"),
             .cursor_text = if (config.@"cursor-text") |txt|
                 txt.toTerminalRGB()
             else
@@ -435,8 +428,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .texture_color = tex_color,
         .font_group = options.font_group,
         .font_shaper = shaper,
-        .cursor_visible = true,
-        .cursor_style = .box,
         .draw_background = options.config.background,
         .focused = true,
         .padding = options.padding,
@@ -609,13 +600,6 @@ pub fn setFocus(self: *OpenGL, focus: bool) !void {
     self.focused = focus;
 }
 
-/// Called to toggle the blink state of the cursor
-///
-/// Must be called on the render thread.
-pub fn blinkCursor(self: *OpenGL, reset: bool) void {
-    self.cursor_visible = reset or !self.cursor_visible;
-}
-
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
@@ -695,6 +679,7 @@ pub fn render(
     self: *OpenGL,
     surface: *apprt.Surface,
     state: *renderer.State,
+    cursor_blink_visible: bool,
 ) !void {
     // Data we extract out of the critical area.
     const Critical = struct {
@@ -702,8 +687,8 @@ pub fn render(
         active_screen: terminal.Terminal.ScreenType,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
-        draw_cursor: bool,
         preedit: ?renderer.State.Preedit,
+        cursor_style: ?renderer.CursorStyle,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -715,46 +700,6 @@ pub fn render(
         if (state.terminal.modes.get(.synchronized_output)) {
             log.debug("synchronized output started, skipping render", .{});
             return;
-        }
-
-        // If the terminal state isn't requesting any particular style,
-        // then use the configured style.
-        const selected_cursor_style = style: {
-            if (state.cursor.style != .default) break :style state.cursor.style;
-            if (self.config.cursor_style != .default) break :style self.config.cursor_style;
-            break :style .blinking_block;
-        };
-
-        self.cursor_visible = visible: {
-            // If the cursor is explicitly not visible in the state,
-            // then it is not visible.
-            if (!state.cursor.visible) break :visible false;
-
-            // If we are in preedit, then we always show the cursor
-            if (state.preedit != null) break :visible true;
-
-            // If the cursor isn't a blinking style, then never blink.
-            if (!selected_cursor_style.blinking()) break :visible true;
-
-            // If we're not focused, our cursor is always visible so that
-            // we can show the hollow box.
-            if (!self.focused) break :visible true;
-
-            // Otherwise, adhere to our current state.
-            break :visible self.cursor_visible;
-        };
-
-        // The cursor style only needs to be set if its visible.
-        if (self.cursor_visible) {
-            self.cursor_style = cursor_style: {
-                // If we have a dead key preedit then we always use a box style
-                if (state.preedit != null) break :cursor_style .box;
-
-                // If we aren't focused, we use a hollow box
-                if (!self.focused) break :cursor_style .box_hollow;
-
-                break :cursor_style renderer.CursorStyle.fromTerminal(selected_cursor_style) orelse .box;
-            };
         }
 
         // Swap bg/fg if the terminal is reversed
@@ -792,15 +737,19 @@ pub fn render(
             null;
 
         // Whether to draw our cursor or not.
-        const draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom();
+        const cursor_style = renderer.cursorStyle(
+            state,
+            self.focused,
+            cursor_blink_visible,
+        );
 
         break :critical .{
             .gl_bg = self.config.background,
             .active_screen = state.terminal.active_screen,
             .selection = selection,
             .screen = screen_copy,
-            .draw_cursor = draw_cursor,
-            .preedit = if (draw_cursor) state.preedit else null,
+            .preedit = if (cursor_style != null) state.preedit else null,
+            .cursor_style = cursor_style,
         };
     };
     defer critical.screen.deinit();
@@ -818,8 +767,8 @@ pub fn render(
             critical.active_screen,
             critical.selection,
             &critical.screen,
-            critical.draw_cursor,
             critical.preedit,
+            critical.cursor_style,
         );
     }
 
@@ -849,8 +798,8 @@ pub fn rebuildCells(
     active_screen: terminal.Terminal.ScreenType,
     term_selection: ?terminal.Selection,
     screen: *terminal.Screen,
-    draw_cursor: bool,
     preedit: ?renderer.State.Preedit,
+    cursor_style_: ?renderer.CursorStyle,
 ) !void {
     const t = trace(@src());
     defer t.end();
@@ -906,11 +855,12 @@ pub fn rebuildCells(
         };
 
         // See Metal.zig
-        const cursor_row = draw_cursor and
-            self.cursor_visible and
-            self.cursor_style == .box and
-            screen.viewportIsBottom() and
-            y == screen.cursor.y;
+        const cursor_row = if (cursor_style_) |cursor_style|
+            cursor_style == .block and
+                screen.viewportIsBottom() and
+                y == screen.cursor.y
+        else
+            false;
 
         // True if we want to do font shaping around the cursor. We want to
         // do font shaping as long as the cursor is enabled.
@@ -1003,8 +953,8 @@ pub fn rebuildCells(
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    if (draw_cursor) {
-        const real_cursor_cell = self.addCursor(screen);
+    if (cursor_style_) |cursor_style| {
+        const real_cursor_cell = self.addCursor(screen, cursor_style);
 
         // If we have a preedit, we try to render the preedit text on top
         // of the cursor.
@@ -1052,7 +1002,11 @@ pub fn rebuildCells(
     }
 }
 
-fn addCursor(self: *OpenGL, screen: *terminal.Screen) ?*const GPUCell {
+fn addCursor(
+    self: *OpenGL,
+    screen: *terminal.Screen,
+    cursor_style: renderer.CursorStyle,
+) ?*const GPUCell {
     // Add the cursor
     const cell = screen.getCell(
         .active,
@@ -1066,9 +1020,9 @@ fn addCursor(self: *OpenGL, screen: *terminal.Screen) ?*const GPUCell {
         .b = 0xFF,
     };
 
-    const sprite: font.Sprite = switch (self.cursor_style) {
-        .box => .cursor_rect,
-        .box_hollow => .cursor_hollow_rect,
+    const sprite: font.Sprite = switch (cursor_style) {
+        .block => .cursor_rect,
+        .block_hollow => .cursor_hollow_rect,
         .bar => .cursor_bar,
     };
 

@@ -63,6 +63,11 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
+/// The default cursor style. We need to know this so that we can set
+/// it when a CSI q with default is called.
+default_cursor_style: terminal.Cursor.Style,
+default_cursor_blink: bool,
+
 /// The data associated with the currently running thread.
 data: ?*EventData,
 
@@ -72,6 +77,8 @@ data: ?*EventData,
 pub const DerivedConfig = struct {
     palette: terminal.color.Palette,
     image_storage_limit: usize,
+    cursor_style: terminal.Cursor.Style,
+    cursor_blink: bool,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -82,6 +89,8 @@ pub const DerivedConfig = struct {
         return .{
             .palette = config.palette.value,
             .image_storage_limit = config.@"image-storage-limit",
+            .cursor_style = config.@"cursor-style",
+            .cursor_blink = config.@"cursor-style-blink",
         };
     }
 
@@ -110,6 +119,9 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
     try term.secondary_screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
 
+    // Set default cursor blink settings
+    term.modes.set(.cursor_blinking, opts.config.cursor_blink);
+
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
 
@@ -126,6 +138,8 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
+        .default_cursor_style = opts.config.cursor_style,
+        .default_cursor_blink = opts.config.cursor_blink,
         .data = null,
     };
 }
@@ -188,6 +202,8 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
                 .grid_size = &self.grid_size,
+                .default_cursor_style = self.default_cursor_style,
+                .default_cursor_blink = self.default_cursor_blink,
             },
         },
     };
@@ -252,6 +268,18 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Update the palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
     self.terminal.color_palette = config.palette;
+
+    // Update our default cursor style
+    self.default_cursor_style = config.cursor_style;
+    self.default_cursor_blink = config.cursor_blink;
+
+    // If we have event data, then update our active stream too
+    if (self.data) |data| {
+        data.terminal_stream.handler.changeDefaultCursor(
+            config.cursor_style,
+            config.cursor_blink,
+        );
+    }
 
     // Set the image size limits
     try self.terminal.screen.kitty_images.setLimit(
@@ -1108,6 +1136,12 @@ const StreamHandler = struct {
     /// to wake up the writer.
     writer_messaged: bool = false,
 
+    /// The default cursor state. This is used with CSI q. This is
+    /// set to true when we're currently in the default cursor state.
+    default_cursor: bool = true,
+    default_cursor_style: terminal.Cursor.Style,
+    default_cursor_blink: bool,
+
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
     }
@@ -1119,6 +1153,21 @@ const StreamHandler = struct {
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
         self.writer_messaged = true;
+    }
+
+    pub fn changeDefaultCursor(
+        self: *StreamHandler,
+        style: terminal.Cursor.Style,
+        blink: bool,
+    ) void {
+        self.default_cursor_style = style;
+        self.default_cursor_blink = blink;
+
+        // If our cursor is the default, then we update it immediately.
+        if (self.default_cursor) self.setCursorStyle(.default) catch |err| {
+            log.warn("failed to set default cursor style: {}", .{err});
+            return;
+        };
     }
 
     pub fn apcStart(self: *StreamHandler) !void {
@@ -1339,9 +1388,6 @@ const StreamHandler = struct {
             // Origin resets cursor pos
             .origin => self.terminal.setCursorPos(1, 1),
 
-            // We need to update our renderer state for this mode
-            .cursor_visible => self.ev.renderer_state.cursor.visible = enabled,
-
             .alt_screen_save_cursor_clear_enter => {
                 const opts: terminal.Terminal.AlternateScreenOptions = .{
                     .cursor_save = true,
@@ -1462,9 +1508,50 @@ const StreamHandler = struct {
 
     pub fn setCursorStyle(
         self: *StreamHandler,
-        style: terminal.CursorStyle,
+        style: terminal.CursorStyleReq,
     ) !void {
-        self.ev.renderer_state.cursor.style = style;
+        // Assume we're setting to a non-default.
+        self.default_cursor = false;
+
+        switch (style) {
+            .default => {
+                self.default_cursor = true;
+                self.terminal.screen.cursor.style = self.default_cursor_style;
+                self.terminal.modes.set(.cursor_blinking, self.default_cursor_blink);
+            },
+
+            .blinking_block => {
+                self.terminal.screen.cursor.style = .block;
+                self.terminal.modes.set(.cursor_blinking, true);
+            },
+
+            .steady_block => {
+                self.terminal.screen.cursor.style = .block;
+                self.terminal.modes.set(.cursor_blinking, false);
+            },
+
+            .blinking_underline => {
+                self.terminal.screen.cursor.style = .underline;
+                self.terminal.modes.set(.cursor_blinking, true);
+            },
+
+            .steady_underline => {
+                self.terminal.screen.cursor.style = .underline;
+                self.terminal.modes.set(.cursor_blinking, false);
+            },
+
+            .blinking_bar => {
+                self.terminal.screen.cursor.style = .bar;
+                self.terminal.modes.set(.cursor_blinking, true);
+            },
+
+            .steady_bar => {
+                self.terminal.screen.cursor.style = .bar;
+                self.terminal.modes.set(.cursor_blinking, false);
+            },
+
+            else => log.warn("unimplemented cursor style: {}", .{style}),
+        }
     }
 
     pub fn decaln(self: *StreamHandler) !void {

@@ -418,10 +418,6 @@ pub fn init(
         .renderer_thread = render_thread,
         .renderer_state = .{
             .mutex = mutex,
-            .cursor = .{
-                .style = .default,
-                .visible = true,
-            },
             .terminal = &self.io.terminal,
         },
         .renderer_thr = undefined,

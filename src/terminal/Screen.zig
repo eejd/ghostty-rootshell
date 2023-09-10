@@ -68,16 +68,26 @@ const log = std.log.scoped(.screen);
 
 /// Cursor represents the cursor state.
 pub const Cursor = struct {
-    // x, y where the cursor currently exists (0-indexed). This x/y is
-    // always the offset in the active area.
+    /// x, y where the cursor currently exists (0-indexed). This x/y is
+    /// always the offset in the active area.
     x: usize = 0,
     y: usize = 0,
 
-    // pen is the current cell styling to apply to new cells.
+    /// The visual style of the cursor. This defaults to block because
+    /// it has to default to something, but users of this struct are
+    /// encouraged to set their own default.
+    style: Style = .block,
+
+    /// pen is the current cell styling to apply to new cells.
     pen: Cell = .{ .char = 0 },
 
-    // The last column flag (LCF) used to do soft wrapping.
+    /// The last column flag (LCF) used to do soft wrapping.
     pending_wrap: bool = false,
+
+    /// The visual style of the cursor. Whether or not it blinks
+    /// is determined by mode 12 (modes.zig). This mode is synchronized
+    /// with CSI q, the same as xterm.
+    pub const Style = enum { bar, block, underline };
 };
 
 /// This is a single item within the storage buffer. We use a union to

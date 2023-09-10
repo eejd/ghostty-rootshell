@@ -64,11 +64,6 @@ padding: renderer.Options.Padding,
 /// True if the window is focused
 focused: bool,
 
-/// Whether the cursor is visible or not. This is used to control cursor
-/// blinking.
-cursor_visible: bool,
-cursor_style: renderer.CursorStyle,
-
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
@@ -108,7 +103,6 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     font_features: std.ArrayList([]const u8),
     cursor_color: ?terminal.color.RGB,
-    cursor_style: terminal.CursorStyle,
     cursor_text: ?terminal.color.RGB,
     background: terminal.color.RGB,
     background_opacity: f64,
@@ -137,7 +131,6 @@ pub const DerivedConfig = struct {
             else
                 null,
 
-            .cursor_style = config.@"cursor-style".toTerminalCursorStyle(config.@"cursor-style-blink"),
             .cursor_text = if (config.@"cursor-text") |txt|
                 txt.toTerminalRGB()
             else
@@ -252,8 +245,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .screen_size = null,
         .padding = options.padding,
         .focused = true,
-        .cursor_visible = true,
-        .cursor_style = .box,
 
         // Render state
         .cells_bg = .{},
@@ -385,13 +376,6 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
     self.focused = focus;
 }
 
-/// Called to toggle the blink state of the cursor
-///
-/// Must be called on the render thread.
-pub fn blinkCursor(self: *Metal, reset: bool) void {
-    self.cursor_visible = reset or !self.cursor_visible;
-}
-
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
@@ -452,6 +436,7 @@ pub fn render(
     self: *Metal,
     surface: *apprt.Surface,
     state: *renderer.State,
+    cursor_blink_visible: bool,
 ) !void {
     _ = surface;
 
@@ -460,8 +445,8 @@ pub fn render(
         bg: terminal.color.RGB,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
-        draw_cursor: bool,
         preedit: ?renderer.State.Preedit,
+        cursor_style: ?renderer.CursorStyle,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -473,46 +458,6 @@ pub fn render(
         if (state.terminal.modes.get(.synchronized_output)) {
             log.debug("synchronized output started, skipping render", .{});
             return;
-        }
-
-        // If the terminal state isn't requesting any particular style,
-        // then use the configured style.
-        const selected_cursor_style = style: {
-            if (state.cursor.style != .default) break :style state.cursor.style;
-            if (self.config.cursor_style != .default) break :style self.config.cursor_style;
-            break :style .blinking_block;
-        };
-
-        self.cursor_visible = visible: {
-            // If the cursor is explicitly not visible in the state,
-            // then it is not visible.
-            if (!state.cursor.visible) break :visible false;
-
-            // If we are in preedit, then we always show the cursor
-            if (state.preedit != null) break :visible true;
-
-            // If the cursor isn't a blinking style, then never blink.
-            if (!selected_cursor_style.blinking()) break :visible true;
-
-            // If we're not focused, our cursor is always visible so that
-            // we can show the hollow box.
-            if (!self.focused) break :visible true;
-
-            // Otherwise, adhere to our current state.
-            break :visible self.cursor_visible;
-        };
-
-        // The cursor style only needs to be set if its visible.
-        if (self.cursor_visible) {
-            self.cursor_style = cursor_style: {
-                // If we have a dead key preedit then we always use a box style
-                if (state.preedit != null) break :cursor_style .box;
-
-                // If we aren't focused, we use a hollow box
-                if (!self.focused) break :cursor_style .box_hollow;
-
-                break :cursor_style renderer.CursorStyle.fromTerminal(selected_cursor_style) orelse .box;
-            };
         }
 
         // Swap bg/fg if the terminal is reversed
@@ -550,7 +495,11 @@ pub fn render(
             null;
 
         // Whether to draw our cursor or not.
-        const draw_cursor = self.cursor_visible and state.terminal.screen.viewportIsBottom();
+        const cursor_style = renderer.cursorStyle(
+            state,
+            self.focused,
+            cursor_blink_visible,
+        );
 
         // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
         // We only do this if the Kitty image state is dirty meaning only if
@@ -563,8 +512,8 @@ pub fn render(
             .bg = self.config.background,
             .selection = selection,
             .screen = screen_copy,
-            .draw_cursor = draw_cursor,
-            .preedit = if (draw_cursor) state.preedit else null,
+            .preedit = if (cursor_style != null) state.preedit else null,
+            .cursor_style = cursor_style,
         };
     };
     defer critical.screen.deinit();
@@ -577,8 +526,8 @@ pub fn render(
     try self.rebuildCells(
         critical.selection,
         &critical.screen,
-        critical.draw_cursor,
         critical.preedit,
+        critical.cursor_style,
     );
 
     // Get our drawable (CAMetalDrawable)
@@ -1114,8 +1063,8 @@ fn rebuildCells(
     self: *Metal,
     term_selection: ?terminal.Selection,
     screen: *terminal.Screen,
-    draw_cursor: bool,
     preedit: ?renderer.State.Preedit,
+    cursor_style_: ?renderer.CursorStyle,
 ) !void {
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
@@ -1145,8 +1094,7 @@ fn rebuildCells(
         // True if this is the row with our cursor. There are a lot of conditions
         // here because the reasons we need to know this are primarily to invert.
         //
-        //   - If we aren't drawing the cursor (draw_cursor), then we don't need
-        //     to change our rendering.
+        //   - If we aren't drawing the cursor then we don't need to change our rendering.
         //   - If the cursor is not visible, then we don't need to change rendering.
         //   - If the cursor style is not a box, then we don't need to change
         //     rendering because it'll never fully overlap a glyph.
@@ -1157,11 +1105,12 @@ fn rebuildCells(
         //   - If this y doesn't match our cursor y then we don't need to
         //     change rendering.
         //
-        const cursor_row = draw_cursor and
-            self.cursor_visible and
-            self.cursor_style == .box and
-            screen.viewportIsBottom() and
-            y == screen.cursor.y;
+        const cursor_row = if (cursor_style_) |cursor_style|
+            cursor_style == .block and
+                screen.viewportIsBottom() and
+                y == screen.cursor.y
+        else
+            false;
 
         // True if we want to do font shaping around the cursor. We want to
         // do font shaping as long as the cursor is enabled.
@@ -1234,8 +1183,8 @@ fn rebuildCells(
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    if (draw_cursor) {
-        const real_cursor_cell = self.addCursor(screen);
+    if (cursor_style_) |cursor_style| {
+        const real_cursor_cell = self.addCursor(screen, cursor_style);
 
         // If we have a preedit, we try to render the preedit text on top
         // of the cursor.
@@ -1452,7 +1401,11 @@ pub fn updateCell(
     return true;
 }
 
-fn addCursor(self: *Metal, screen: *terminal.Screen) ?*const mtl_shaders.Cell {
+fn addCursor(
+    self: *Metal,
+    screen: *terminal.Screen,
+    cursor_style: renderer.CursorStyle,
+) ?*const mtl_shaders.Cell {
     // Add the cursor
     const cell = screen.getCell(
         .active,
@@ -1466,9 +1419,9 @@ fn addCursor(self: *Metal, screen: *terminal.Screen) ?*const mtl_shaders.Cell {
         .b = 0xFF,
     };
 
-    const sprite: font.Sprite = switch (self.cursor_style) {
-        .box => .cursor_rect,
-        .box_hollow => .cursor_hollow_rect,
+    const sprite: font.Sprite = switch (cursor_style) {
+        .block => .cursor_rect,
+        .block_hollow => .cursor_hollow_rect,
         .bar => .cursor_bar,
     };
 

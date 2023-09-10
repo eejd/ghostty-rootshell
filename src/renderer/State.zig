@@ -11,9 +11,6 @@ const renderer = @import("../renderer.zig");
 /// state (i.e. the terminal, devmode, etc. values).
 mutex: *std.Thread.Mutex,
 
-/// Cursor configuration for rendering
-cursor: Cursor,
-
 /// The terminal data.
 terminal: *terminal.Terminal,
 
@@ -22,17 +19,6 @@ terminal: *terminal.Terminal,
 /// Preedit can in theory be multiple codepoints long but that is left as
 /// a future exercise.
 preedit: ?Preedit = null,
-
-pub const Cursor = struct {
-    /// Current cursor style. This can be set by escape sequences. To get
-    /// the default style, the config has to be referenced.
-    style: terminal.CursorStyle = .default,
-
-    /// Whether the cursor is visible at all. This should not be used for
-    /// "blink" settings, see "blink" for that. This is used to turn the
-    /// cursor ON or OFF.
-    visible: bool = true,
-};
 
 /// The pre-edit state. See Surface.preeditCallback for more information.
 pub const Preedit = struct {
