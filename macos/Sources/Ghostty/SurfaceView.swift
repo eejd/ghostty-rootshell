@@ -129,6 +129,7 @@ extension Ghostty {
                 if (isSplit && !surfaceFocus) {
                     Rectangle()
                         .fill(.white)
+                        .allowsHitTesting(false)
                         .opacity(0.15)
                 }
             }
