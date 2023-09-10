@@ -27,6 +27,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuCopy: NSMenuItem?
     @IBOutlet private var menuPaste: NSMenuItem?
 
+    @IBOutlet private var menuZoomSplit: NSMenuItem?
     @IBOutlet private var menuPreviousSplit: NSMenuItem?
     @IBOutlet private var menuNextSplit: NSMenuItem?
     @IBOutlet private var menuSelectSplitAbove: NSMenuItem?
@@ -138,6 +139,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
         
+        syncMenuShortcut(action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
         syncMenuShortcut(action: "goto_split:previous", menuItem: self.menuPreviousSplit)
         syncMenuShortcut(action: "goto_split:next", menuItem: self.menuNextSplit)
         syncMenuShortcut(action: "goto_split:top", menuItem: self.menuSelectSplitAbove)
@@ -232,6 +234,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBAction func splitVertically(_ sender: Any) {
         guard let surface = focusedSurface() else { return }
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
+    }
+    
+    @IBAction func splitZoom(_ sender: Any) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.splitToggleZoom(surface: surface)
     }
     
     @IBAction func splitMoveFocusPrevious(_ sender: Any) {
