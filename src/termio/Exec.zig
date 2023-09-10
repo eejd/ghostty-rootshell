@@ -119,6 +119,9 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
     try term.secondary_screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
 
+    // Set default cursor blink settings
+    term.modes.set(.cursor_blinking, opts.config.cursor_blink);
+
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
 
