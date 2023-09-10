@@ -106,7 +106,7 @@ pub const Config = struct {
     /// In order to fix it, we probably would want to add something similar to Kitty's
     /// shell integration options (no-cursor). For more information see:
     /// https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.shell_integration
-    @"cursor-style": CursorStyle = .bar,
+    @"cursor-style": terminal.Cursor.Style = .bar,
 
     /// Whether the cursor shall blink
     @"cursor-style-blink": bool = true,
@@ -1473,22 +1473,6 @@ pub const ShellIntegration = enum {
     detect,
     fish,
     zsh,
-};
-
-/// Available options for `cursor-style`. Blinking is configured with
-/// the `cursor-style-blink` option.
-pub const CursorStyle = enum {
-    bar,
-    block,
-    underline,
-
-    pub fn toTerminalCursorStyle(self: CursorStyle, blinks: bool) terminal.CursorStyle {
-        return switch (self) {
-            .bar => if (blinks) .blinking_bar else .steady_bar,
-            .block => if (blinks) .blinking_block else .steady_block,
-            .underline => if (blinks) .blinking_underline else .steady_underline,
-        };
-    }
 };
 
 // Wasm API.
