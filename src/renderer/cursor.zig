@@ -27,14 +27,22 @@ pub fn cursorStyle(
     focused: bool,
     blink_visible: bool,
 ) ?CursorStyle {
+    // Note the order of conditionals below is important. It represents
+    // a priority system of how we determine what state overrides cursor
+    // visibility and style.
+
     // The cursor is only at the bottom of the viewport. If we aren't
-    // at the bottom, we never render the cursor.
+    // at the bottom, we never render the cursor. The cursor x/y is by
+    // viewport so if we are above the viewport, we'll end up rendering
+    // the cursor in some random part of the screen.
     if (!state.terminal.screen.viewportIsBottom()) return null;
 
-    // If we are in preedit, then we always show the cursor
+    // If we are in preedit, then we always show the block cursor. We do
+    // this even if the cursor is explicitly not visible because it shows
+    // an important editing state to the user.
     if (state.preedit != null) return .block;
 
-    // If the cursor is explicitly not visible by terminal mode, then false.
+    // If the cursor is explicitly not visible by terminal mode, we don't render.
     if (!state.terminal.modes.get(.cursor_visible)) return null;
 
     // If we're not focused, our cursor is always visible so that
@@ -47,7 +55,7 @@ pub fn cursorStyle(
         return null;
     }
 
-    // Otherwise, we use whatever the terminal wants.
+    // Otherwise, we use whatever style the terminal wants.
     return CursorStyle.fromTerminal(state.terminal.screen.cursor.style);
 }
 
