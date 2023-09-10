@@ -202,6 +202,8 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .ev = ev_data_ptr,
                 .terminal = &self.terminal,
                 .grid_size = &self.grid_size,
+                .default_cursor_style = self.default_cursor_style,
+                .default_cursor_blink = self.default_cursor_blink,
             },
         },
     };
@@ -270,6 +272,14 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Update our default cursor style
     self.default_cursor_style = config.cursor_style;
     self.default_cursor_blink = config.cursor_blink;
+
+    // If we have event data, then update our active stream too
+    if (self.data) |data| {
+        data.terminal_stream.handler.changeDefaultCursor(
+            config.cursor_style,
+            config.cursor_blink,
+        );
+    }
 
     // Set the image size limits
     try self.terminal.screen.kitty_images.setLimit(
@@ -485,10 +495,6 @@ const EventData = struct {
     /// This is set to true when we've seen a title escape sequence. We use
     /// this to determine if we need to default the window title.
     seen_title: bool = false,
-
-    /// The default cursor style used for CSI q.
-    default_cursor_style: terminal.Cursor.Style = .block,
-    default_cursor_blink: bool = true,
 
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         // Clear our write pools. We know we aren't ever going to do
@@ -1130,6 +1136,12 @@ const StreamHandler = struct {
     /// to wake up the writer.
     writer_messaged: bool = false,
 
+    /// The default cursor state. This is used with CSI q. This is
+    /// set to true when we're currently in the default cursor state.
+    default_cursor: bool = true,
+    default_cursor_style: terminal.Cursor.Style,
+    default_cursor_blink: bool,
+
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
     }
@@ -1141,6 +1153,21 @@ const StreamHandler = struct {
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
         self.writer_messaged = true;
+    }
+
+    pub fn changeDefaultCursor(
+        self: *StreamHandler,
+        style: terminal.Cursor.Style,
+        blink: bool,
+    ) void {
+        self.default_cursor_style = style;
+        self.default_cursor_blink = blink;
+
+        // If our cursor is the default, then we update it immediately.
+        if (self.default_cursor) self.setCursorStyle(.default) catch |err| {
+            log.warn("failed to set default cursor style: {}", .{err});
+            return;
+        };
     }
 
     pub fn apcStart(self: *StreamHandler) !void {
@@ -1483,10 +1510,14 @@ const StreamHandler = struct {
         self: *StreamHandler,
         style: terminal.CursorStyleReq,
     ) !void {
+        // Assume we're setting to a non-default.
+        self.default_cursor = false;
+
         switch (style) {
             .default => {
-                self.terminal.screen.cursor.style = self.ev.default_cursor_style;
-                self.terminal.modes.set(.cursor_blinking, self.ev.default_cursor_blink);
+                self.default_cursor = true;
+                self.terminal.screen.cursor.style = self.default_cursor_style;
+                self.terminal.modes.set(.cursor_blinking, self.default_cursor_blink);
             },
 
             .blinking_block => {
