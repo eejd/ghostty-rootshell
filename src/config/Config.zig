@@ -13,6 +13,7 @@ const internal_os = @import("../os/main.zig");
 const cli_args = @import("../cli_args.zig");
 
 const Key = @import("key.zig").Key;
+const KeyValue = @import("key.zig").Value;
 
 const log = std.log.scoped(.config);
 

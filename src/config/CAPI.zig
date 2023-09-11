@@ -4,6 +4,8 @@ const inputpkg = @import("../input.zig");
 const global = &@import("../main.zig").state;
 
 const Config = @import("Config.zig");
+const c_get = @import("c_get.zig");
+const Key = @import("key.zig").Key;
 
 const log = std.log.scoped(.config);
 
@@ -76,6 +78,16 @@ export fn ghostty_config_finalize(self: *Config) void {
     self.finalize() catch |err| {
         log.err("error finalizing config err={}", .{err});
     };
+}
+
+export fn ghostty_config_get(
+    self: *Config,
+    ptr: *anyopaque,
+    key_str: [*]const u8,
+    len: usize,
+) bool {
+    const key = std.meta.stringToEnum(Key, key_str[0..len]) orelse return false;
+    return c_get.get(self, key, ptr);
 }
 
 export fn ghostty_config_trigger(

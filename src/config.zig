@@ -1,5 +1,7 @@
+const builtin = @import("builtin");
+
+pub usingnamespace @import("config/key.zig");
 pub const Config = @import("config/Config.zig");
-pub const Key = @import("config/key.zig").Key;
 
 // Field types
 pub const CopyOnSelect = Config.CopyOnSelect;
@@ -9,8 +11,10 @@ pub const OptionAsAlt = Config.OptionAsAlt;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");
-pub const Wasm = @import("config/Wasm.zig");
+pub const Wasm = if (!builtin.target.isWasm()) struct {} else @import("config/Wasm.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
+
+    _ = @import("config/c_get.zig");
 }

@@ -30,3 +30,26 @@ pub const Key = key: {
         },
     });
 };
+
+/// Returns the value type for a key
+pub fn Value(comptime key: Key) type {
+    const field = comptime field: {
+        const fields = std.meta.fields(Config);
+        for (fields) |field| {
+            if (@field(Key, field.name) == key) {
+                break :field field;
+            }
+        }
+
+        unreachable;
+    };
+
+    return field.type;
+}
+
+test "Value" {
+    const testing = std.testing;
+
+    try testing.expectEqual(?[:0]const u8, Value(.@"font-family"));
+    try testing.expectEqual(bool, Value(.@"cursor-style-blink"));
+}
