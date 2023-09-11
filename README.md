@@ -104,6 +104,15 @@ are easily visible if you're mildly comfortable with Zig. The available keys
 are just the keys (verbatim) in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
 The keys are documented there, too.
 
+#### Configuration Errors
+
+If your configuration file has any errors, Ghostty does its best to ignore
+them and move on. Configuration errors currently show up in the log. The
+log is written directly to stderr, so it is up to you to figure out how to
+access that for your system (for now). On macOS, you can also use the
+system `log` CLI utility. See the [Mac App](#mac-app) section for more
+information.
+
 #### Debugging Configuration
 
 You can verify that configuration is being properly loaded by looking at
