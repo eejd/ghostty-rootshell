@@ -42,7 +42,18 @@ struct ConfigurationErrorsView: View {
                     .background(Color.white)
                 }
             }
+            
+            HStack {
+                Spacer()
+                Button("Reload Configuration") { reloadConfig() }
+                    .padding([.bottom, .trailing])
+            }
         }
         .frame(minWidth: 480, maxWidth: 960, minHeight: 270)
+    }
+    
+    private func reloadConfig() {
+        guard let delegate = NSApplication.shared.delegate as? AppDelegate else { return }
+        delegate.reloadConfig(nil)
     }
 }
