@@ -17,7 +17,7 @@ struct ConfigurationErrorsView: View {
                     .frame(alignment: .center)
                 
                 Text("""
-                    ^[\(model.errors.count) error was](inflect: true) found while loading the configuration. \
+                    ^[\(model.errors.count) error(s) were](inflect: true) found while loading the configuration. \
                     Please review the errors below and reload your configuration.
                     """)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -26,18 +26,19 @@ struct ConfigurationErrorsView: View {
 
             GeometryReader { geo in
                 ScrollView {
-                    VStack {
+                    VStack(alignment: .leading) {
                         ForEach(model.errors, id: \.self) { error in
                             Text(error)
                                 .lineLimit(nil)
                                 .font(.system(size: 12).monospaced())
                                 .textSelection(.enabled)
-                                .padding(.all)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
+                        
                         Spacer()
                     }
-                    .frame(height: geo.size.height)
+                    .padding(.all)
+                    .frame(minHeight: geo.size.height)
                     .background(Color.white)
                 }
             }
