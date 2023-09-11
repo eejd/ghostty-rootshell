@@ -15,6 +15,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @Published var confirmQuit: Bool = false
     
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    @IBOutlet private var menuReloadConfig: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
     
     @IBOutlet private var menuNewWindow: NSMenuItem?
@@ -60,12 +61,12 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
             "ApplePressAndHoldEnabled": false,
         ])
         
-        // Sync our menu shortcuts with our Ghostty config
-        syncMenuShortcuts()
-        
         // Let's launch our first window.
         // TODO: we should detect if we restored windows and if so not launch a new window.
         windowManager.addInitialWindow()
+        
+        // Initial config loading
+        configDidReload(ghostty)
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -127,6 +128,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     private func syncMenuShortcuts() {
         guard ghostty.config != nil else { return }
         
+        syncMenuShortcut(action: "reload_config", menuItem: self.menuReloadConfig)
         syncMenuShortcut(action: "quit", menuItem: self.menuQuit)
         
         syncMenuShortcut(action: "new_window", menuItem: self.menuNewWindow)
@@ -180,7 +182,17 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     //MARK: - GhosttyAppStateDelegate
     
     func configDidReload(_ state: Ghostty.AppState) {
+        // Config could change keybindings, so update our menu
         syncMenuShortcuts()
+        
+        // If we have configuration errors, we need to show them.
+        let c = ConfigurationErrorsController.sharedInstance
+        c.model.errors = state.configErrors()
+        if (c.model.errors.count > 0) {
+            if (c.window == nil || !c.window!.isVisible) {
+                c.showWindow(self)
+            }
+        }
     }
     
     //MARK: - Dock Menu
@@ -195,6 +207,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     //MARK: - IB Actions
+    
+    @IBAction func reloadConfig(_ sender: Any?) {
+        ghostty.reloadConfig()
+    }
     
     @IBAction func newWindow(_ sender: Any?) {
         windowManager.newWindow()

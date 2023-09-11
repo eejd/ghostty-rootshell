@@ -779,6 +779,14 @@ pub const CAPI = struct {
         };
     }
 
+    /// Reload the configuration.
+    export fn ghostty_app_reload_config(v: *App) void {
+        _ = v.reloadConfig() catch |err| {
+            log.err("error reloading config err={}", .{err});
+            return;
+        };
+    }
+
     /// Returns initial surface options.
     export fn ghostty_surface_config_new() apprt.Surface.Options {
         return .{};

@@ -52,7 +52,7 @@ extension Ghostty {
             }
             
             // Initialize the global configuration.
-            guard let cfg = Self.reloadConfig() else {
+            guard let cfg = Self.loadConfig() else {
                 readiness = .error
                 return
             }
@@ -109,7 +109,7 @@ extension Ghostty {
         }
         
         /// Initializes a new configuration and loads all the values.
-        static func reloadConfig() -> ghostty_config_t? {
+        static func loadConfig() -> ghostty_config_t? {
             // Initialize the global configuration.
             guard let cfg = ghostty_config_new() else {
                 AppDelegate.logger.critical("ghostty_config_new failed")
@@ -145,6 +145,21 @@ extension Ghostty {
             return cfg
         }
         
+        /// Returns the configuration errors (if any).
+        func configErrors() -> [String] {
+            guard let cfg = self.config else { return [] }
+            
+            var errors: [String] = [];
+            let errCount = ghostty_config_errors_count(cfg)
+            for i in 0..<errCount {
+                let err = ghostty_config_get_error(cfg, UInt32(i))
+                let message = String(cString: err.message)
+                errors.append(message)
+            }
+            
+            return errors
+        }
+        
         func appTick() {
             guard let app = self.app else { return }
             
@@ -154,6 +169,11 @@ extension Ghostty {
                 
             // We want to quit, start that process
             NSApplication.shared.terminate(nil)
+        }
+        
+        func reloadConfig() {
+            guard let app = self.app else { return }
+            ghostty_app_reload_config(app)
         }
         
         /// Request that the given surface is closed. This will trigger the full normal surface close event
@@ -271,7 +291,7 @@ extension Ghostty {
         }
         
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
-            guard let newConfig = AppState.reloadConfig() else {
+            guard let newConfig = Self.loadConfig() else {
                 AppDelegate.logger.warning("failed to reload configuration")
                 return nil
             }
