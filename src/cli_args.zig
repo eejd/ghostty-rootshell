@@ -155,6 +155,15 @@ fn parseIntoField(
                         // 3 arg = (self, alloc, input) => void
                         3 => try @field(dst, field.name).parseCLI(alloc, value),
 
+                        // 4 arg = (self, alloc, errors, input) => void
+                        4 => if (comptime canTrackErrors(T)) {
+                            try @field(dst, field.name).parseCLI(alloc, &dst._errors, value);
+                        } else {
+                            var list: ErrorList = .{};
+                            try @field(dst, field.name).parseCLI(alloc, &list, value);
+                            if (!list.empty()) return error.InvalidValue;
+                        },
+
                         else => @compileError("parseCLI invalid argument count"),
                     }
 
@@ -191,22 +200,22 @@ fn parseIntoField(
 
                 bool => try parseBool(value orelse "t"),
 
-                u8 => try std.fmt.parseInt(
+                u8 => std.fmt.parseInt(
                     u8,
                     value orelse return error.ValueRequired,
                     0,
-                ),
+                ) catch return error.InvalidValue,
 
-                u32 => try std.fmt.parseInt(
+                u32 => std.fmt.parseInt(
                     u32,
                     value orelse return error.ValueRequired,
                     0,
-                ),
+                ) catch return error.InvalidValue,
 
-                f64 => try std.fmt.parseFloat(
+                f64 => std.fmt.parseFloat(
                     f64,
                     value orelse return error.ValueRequired,
-                ),
+                ) catch return error.InvalidValue,
 
                 else => unreachable,
             };
@@ -229,7 +238,7 @@ fn parseBool(v: []const u8) !bool {
         if (mem.eql(u8, v, str)) return false;
     }
 
-    return error.InvalidBooleanValue;
+    return error.InvalidValue;
 }
 
 test "parse: simple" {
@@ -467,6 +476,62 @@ test "parseIntoField: struct with parse func" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
     try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
+}
+
+test "parseIntoField: struct with parse func with error tracking" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: struct {
+            const Self = @This();
+
+            pub fn parseCLI(
+                _: Self,
+                parse_alloc: Allocator,
+                errors: *ErrorList,
+                value: ?[]const u8,
+            ) !void {
+                _ = value;
+                try errors.add(parse_alloc, .{ .message = "OH NO!" });
+            }
+        } = .{},
+
+        _errors: ErrorList = .{},
+    } = .{};
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
+    try testing.expect(!data._errors.empty());
+}
+
+test "parseIntoField: struct with parse func with unsupported error tracking" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: struct {
+            const Self = @This();
+
+            pub fn parseCLI(
+                _: Self,
+                parse_alloc: Allocator,
+                errors: *ErrorList,
+                value: ?[]const u8,
+            ) !void {
+                _ = value;
+                try errors.add(parse_alloc, .{ .message = "OH NO!" });
+            }
+        } = .{},
+    } = .{};
+
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "a", "42"),
+    );
 }
 
 /// Returns an iterator (implements "next") that reads CLI args by line.
