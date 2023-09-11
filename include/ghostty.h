@@ -251,6 +251,10 @@ typedef struct {
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
 typedef struct {
+    const char *message;
+} ghostty_error_s;
+
+typedef struct {
     void *userdata;
     void *nsview;
     double scale_factor;
@@ -303,6 +307,8 @@ void ghostty_config_load_recursive_files(ghostty_config_t);
 void ghostty_config_finalize(ghostty_config_t);
 bool ghostty_config_get(ghostty_config_t, void *, const char *, uintptr_t);
 ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t, const char *, uintptr_t);
+uint32_t ghostty_config_errors_count(ghostty_config_t);
+ghostty_error_s ghostty_config_get_error(ghostty_config_t, uint32_t);
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);

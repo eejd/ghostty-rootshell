@@ -108,3 +108,18 @@ fn config_trigger_(
     const action = try inputpkg.Binding.Action.parse(str);
     return self.keybind.set.getTrigger(action) orelse .{};
 }
+
+export fn ghostty_config_errors_count(self: *Config) u32 {
+    return @intCast(self._errors.list.items.len);
+}
+
+export fn ghostty_config_get_error(self: *Config, idx: u32) Error {
+    if (idx >= self._errors.list.items.len) return .{};
+    const err = self._errors.list.items[idx];
+    return .{ .message = err.message.ptr };
+}
+
+/// Sync with ghostty_error_s
+const Error = extern struct {
+    message: [*:0]const u8 = "",
+};
