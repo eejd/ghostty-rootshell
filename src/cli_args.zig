@@ -78,7 +78,15 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
 
             parseIntoField(T, arena_alloc, dst, key, value) catch |err| {
                 if (comptime !canTrackErrors(T)) return err;
-                switch (err) {
+
+                // The error set is dependent on comptime T, so we always add
+                // an extra error so we can have the "else" below.
+                const ErrSet = @TypeOf(err) || error{Unknown};
+                switch (@as(ErrSet, @errSetCast(err))) {
+                    // OOM is not recoverable since we need to allocate to
+                    // track more error messages.
+                    error.OutOfMemory => return err,
+
                     error.InvalidField => try dst._errors.add(arena_alloc, .{
                         .message = try std.fmt.allocPrintZ(
                             arena_alloc,
@@ -103,7 +111,13 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
                         ),
                     }),
 
-                    else => return err,
+                    else => try dst._errors.add(arena_alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            arena_alloc,
+                            "{s}: unknown error {}",
+                            .{ key, err },
+                        ),
+                    }),
                 }
             };
         }
