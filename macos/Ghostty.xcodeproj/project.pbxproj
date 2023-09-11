@@ -26,6 +26,9 @@
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
+		A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */; };
+		A5CDF1932AAF9E0800513312 /* ConfigurationErrorsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CDF1922AAF9E0800513312 /* ConfigurationErrorsController.swift */; };
+		A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CDF1942AAFA19600513312 /* ConfigurationErrorsView.swift */; };
 		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
 		A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */; };
 		A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
@@ -55,6 +58,9 @@
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
+		A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ConfigurationErrors.xib; sourceTree = "<group>"; };
+		A5CDF1922AAF9E0800513312 /* ConfigurationErrorsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationErrorsController.swift; sourceTree = "<group>"; };
+		A5CDF1942AAFA19600513312 /* ConfigurationErrorsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationErrorsView.swift; sourceTree = "<group>"; };
 		A5CEAFDB29B8009000646FDA /* SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.swift; sourceTree = "<group>"; };
 		A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Divider.swift; sourceTree = "<group>"; };
 		A5CEAFFE29C2410700646FDA /* Backport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backport.swift; sourceTree = "<group>"; };
@@ -112,6 +118,9 @@
 			isa = PBXGroup;
 			children = (
 				A59444F629A2ED5200725BBA /* SettingsView.swift */,
+				A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */,
+				A5CDF1922AAF9E0800513312 /* ConfigurationErrorsController.swift */,
+				A5CDF1942AAFA19600513312 /* ConfigurationErrorsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -249,6 +258,7 @@
 			files = (
 				A545D1A22A5772CE006E0AE4 /* shell-integration in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
+				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
 				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
 				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 			);
@@ -265,6 +275,7 @@
 				85DE1C922A6A3DCA00493853 /* PrimaryWindow.swift in Sources */,
 				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
+				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A5FECBD729D1FC3900022361 /* PrimaryView.swift in Sources */,
@@ -272,6 +283,7 @@
 				A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */,
 				A55B7BB629B6F47F0055DE60 /* AppState.swift in Sources */,
 				A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */,
+				A5CDF1932AAF9E0800513312 /* ConfigurationErrorsController.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A5FECBD929D2010400022361 /* WindowAccessor.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,

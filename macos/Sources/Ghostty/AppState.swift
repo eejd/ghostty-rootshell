@@ -145,6 +145,21 @@ extension Ghostty {
             return cfg
         }
         
+        /// Returns the configuration errors (if any).
+        func configErrors() -> [String] {
+            guard let cfg = self.config else { return [] }
+            
+            var errors: [String] = [];
+            let errCount = ghostty_config_errors_count(cfg)
+            for i in 0..<errCount {
+                let err = ghostty_config_get_error(cfg, UInt32(i))
+                let message = String(cString: err.message)
+                errors.append(message)
+            }
+            
+            return errors
+        }
+        
         func appTick() {
             guard let app = self.app else { return }
             

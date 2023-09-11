@@ -60,12 +60,12 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
             "ApplePressAndHoldEnabled": false,
         ])
         
-        // Sync our menu shortcuts with our Ghostty config
-        syncMenuShortcuts()
-        
         // Let's launch our first window.
         // TODO: we should detect if we restored windows and if so not launch a new window.
         windowManager.addInitialWindow()
+        
+        // Initial config loading
+        configDidReload(ghostty)
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -180,7 +180,13 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     //MARK: - GhosttyAppStateDelegate
     
     func configDidReload(_ state: Ghostty.AppState) {
+        // Config could change keybindings, so update our menu
         syncMenuShortcuts()
+        
+        // If we have configuration errors, we need to show them.
+        let c = ConfigurationErrorsController.sharedInstance
+        c.model.errors = state.configErrors()
+        if (c.model.errors.count > 0) { c.showWindow(self) }
     }
     
     //MARK: - Dock Menu
