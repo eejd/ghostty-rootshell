@@ -764,16 +764,25 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
 
 /// Load and parse the config files that were added in the "config-file" key.
 pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
-    // TODO(mitchellh): we should parse the files form the homedir first
     // TODO(mitchellh): support nesting (config-file in a config file)
     // TODO(mitchellh): detect cycles when nesting
 
     if (self.@"config-file".list.items.len == 0) return;
 
+    const arena_alloc = self._arena.?.allocator();
     const cwd = std.fs.cwd();
     const len = self.@"config-file".list.items.len;
     for (self.@"config-file".list.items) |path| {
-        var file = try cwd.openFile(path, .{});
+        var file = cwd.openFile(path, .{}) catch |err| {
+            try self._errors.add(arena_alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "error opening config-file {s}: {}",
+                    .{ path, err },
+                ),
+            });
+            continue;
+        };
         defer file.close();
 
         var buf_reader = std.io.bufferedReader(file.reader());
@@ -783,8 +792,15 @@ pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
         // We don't currently support adding more config files to load
         // from within a loaded config file. This can be supported
         // later.
-        if (self.@"config-file".list.items.len > len)
-            return error.ConfigFileInConfigFile;
+        if (self.@"config-file".list.items.len > len) {
+            try self._errors.add(arena_alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "config-file cannot be used in a config-file. Found in {s}",
+                    .{path},
+                ),
+            });
+        }
     }
 }
 
