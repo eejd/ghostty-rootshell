@@ -67,6 +67,13 @@ pub const App = struct {
         var config = try Config.load(core_app.alloc);
         errdefer config.deinit();
 
+        // If we had configuration errors, then log them.
+        if (!config._errors.empty()) {
+            for (config._errors.list.items) |err| {
+                log.warn("configuration error: {s}", .{err.message});
+            }
+        }
+
         // Queue a single new window that starts on launch
         _ = core_app.mailbox.push(.{
             .new_window = .{},
