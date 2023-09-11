@@ -101,7 +101,7 @@ palette = 15=#fbf1c7
 
 The available keys and valid values are not easily documented yet, but they
 are easily visible if you're mildly comfortable with Zig. The available keys
-are just the keys (verbatim) in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config.zig).
+are just the keys (verbatim) in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
 The keys are documented there, too.
 
 #### Debugging Configuration
