@@ -90,7 +90,7 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
                     error.InvalidField => try dst._errors.add(arena_alloc, .{
                         .message = try std.fmt.allocPrintZ(
                             arena_alloc,
-                            "unknown field: {s}",
+                            "{s}: unknown field",
                             .{key},
                         ),
                     }),

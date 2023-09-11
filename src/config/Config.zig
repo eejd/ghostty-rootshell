@@ -1145,10 +1145,6 @@ pub const Color = struct {
     g: u8,
     b: u8,
 
-    pub const Error = error{
-        InvalidFormat,
-    };
-
     /// Convert this to the terminal RGB struct
     pub fn toTerminalRGB(self: Color) terminal.color.RGB {
         return .{ .r = self.r, .g = self.g, .b = self.b };
@@ -1175,7 +1171,7 @@ pub const Color = struct {
         const trimmed = if (input.len != 0 and input[0] == '#') input[1..] else input;
 
         // We expect exactly 6 for RRGGBB
-        if (trimmed.len != 6) return Error.InvalidFormat;
+        if (trimmed.len != 6) return error.InvalidValue;
 
         // Parse the colors two at a time.
         var result: Color = undefined;
@@ -1214,17 +1210,13 @@ pub const Palette = struct {
     /// The actual value that is updated as we parse.
     value: terminal.color.Palette = terminal.color.default,
 
-    pub const Error = error{
-        InvalidFormat,
-    };
-
     pub fn parseCLI(
         self: *Self,
         input: ?[]const u8,
     ) !void {
         const value = input orelse return error.ValueRequired;
         const eqlIdx = std.mem.indexOf(u8, value, "=") orelse
-            return Error.InvalidFormat;
+            return error.InvalidValue;
 
         const key = try std.fmt.parseInt(u8, value[0..eqlIdx], 10);
         const rgb = try Color.parseCLI(value[eqlIdx + 1 ..]);
@@ -1326,14 +1318,14 @@ pub const RepeatableFontVariation = struct {
 
     pub fn parseCLI(self: *Self, alloc: Allocator, input_: ?[]const u8) !void {
         const input = input_ orelse return error.ValueRequired;
-        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return error.InvalidFormat;
+        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return error.InvalidValue;
         const whitespace = " \t";
         const key = std.mem.trim(u8, input[0..eql_idx], whitespace);
         const value = std.mem.trim(u8, input[eql_idx + 1 ..], whitespace);
-        if (key.len != 4) return error.InvalidFormat;
+        if (key.len != 4) return error.InvalidValue;
         try self.list.append(alloc, .{
             .id = fontpkg.face.Variation.Id.init(@ptrCast(key.ptr)),
-            .value = std.fmt.parseFloat(f64, value) catch return error.InvalidFormat,
+            .value = std.fmt.parseFloat(f64, value) catch return error.InvalidValue,
         });
     }
 
