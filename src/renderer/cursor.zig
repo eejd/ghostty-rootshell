@@ -9,13 +9,14 @@ pub const CursorStyle = enum {
     block,
     block_hollow,
     bar,
+    underline,
 
     /// Create a cursor style from the terminal style request.
     pub fn fromTerminal(style: terminal.Cursor.Style) ?CursorStyle {
         return switch (style) {
             .bar => .bar,
             .block => .block,
-            .underline => null, // TODO
+            .underline => .underline,
         };
     }
 };

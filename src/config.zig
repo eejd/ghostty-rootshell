@@ -15,6 +15,4 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else @import("config/Wa
 
 test {
     @import("std").testing.refAllDecls(@This());
-
-    _ = @import("config/c_get.zig");
 }

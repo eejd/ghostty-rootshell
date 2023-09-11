@@ -721,6 +721,32 @@ test "csi: request mode decrqm" {
     }
 }
 
+test "csi: change cursor" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("[3 ") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('q');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+
+        const d = a[1].?.csi_dispatch;
+        try testing.expect(d.final == 'q');
+        try testing.expectEqual(@as(usize, 1), d.intermediates.len);
+        try testing.expectEqual(@as(usize, 1), d.params.len);
+        try testing.expectEqual(@as(u16, ' '), d.intermediates[0]);
+        try testing.expectEqual(@as(u16, 3), d.params[0]);
+    }
+}
+
 test "osc: change window title" {
     var p = init();
     _ = p.next(0x1B);

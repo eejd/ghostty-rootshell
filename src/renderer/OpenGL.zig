@@ -1024,6 +1024,7 @@ fn addCursor(
         .block => .cursor_rect,
         .block_hollow => .cursor_hollow_rect,
         .bar => .cursor_bar,
+        .underline => .underline,
     };
 
     const glyph = self.font_group.renderGlyph(
