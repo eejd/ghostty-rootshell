@@ -83,7 +83,7 @@ fn parseIntoField(
     assert(info == .Struct);
 
     inline for (info.Struct.fields) |field| {
-        if (mem.eql(u8, field.name, key)) {
+        if (field.name[0] != '_' and mem.eql(u8, field.name, key)) {
             // For optional fields, we just treat it as the child type.
             // This lets optional fields default to null but get set by
             // the CLI.
@@ -167,7 +167,7 @@ fn parseIntoField(
         }
     }
 
-    return error.InvalidFlag;
+    return error.InvalidField;
 }
 
 fn parseBool(v: []const u8) !bool {
@@ -238,6 +238,23 @@ test "parse: quoted value" {
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expectEqual(@as(u8, 42), data.a);
     try testing.expectEqualStrings("hello!", data.b);
+}
+
+test "parseIntoField: ignore underscore-prefixed fields" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        _a: []const u8 = "12",
+    } = .{};
+
+    try testing.expectError(
+        error.InvalidField,
+        parseIntoField(@TypeOf(data), alloc, &data, "_a", "42"),
+    );
+    try testing.expectEqualStrings("12", data._a);
 }
 
 test "parseIntoField: string" {
