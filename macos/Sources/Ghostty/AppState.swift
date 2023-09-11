@@ -40,6 +40,12 @@ extension Ghostty {
             }
         }
         
+        /// True if we need to confirm before quitting.
+        var needsConfirmQuit: Bool {
+            guard let app = app else { return false }
+            return ghostty_app_needs_confirm_quit(app)
+        }
+        
         /// Cached clipboard string for `read_clipboard` callback.
         private var cached_clipboard_string: String? = nil
 

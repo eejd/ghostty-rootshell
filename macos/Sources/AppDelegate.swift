@@ -102,6 +102,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
             }
         }
         
+        // If our app says we don't need to confirm, we can exit now.
+        if (!ghostty.needsConfirmQuit) { return .terminateNow }
+        
         // We have some visible window, and all our windows will watch the confirmQuit.
         confirmQuit = true
         return .terminateLater
