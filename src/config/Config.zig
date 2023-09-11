@@ -14,6 +14,7 @@ const cli_args = @import("../cli_args.zig");
 
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
+const ErrorList = @import("ErrorList.zig");
 
 const log = std.log.scoped(.config);
 
@@ -340,6 +341,11 @@ keybind: Keybinds = .{},
 
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
+
+/// List of errors that occurred while loading. This can be accessed directly
+/// by callers. It is only underscore-prefixed so it can't be set by the
+/// configuration file.
+_errors: ErrorList = .{},
 
 pub fn deinit(self: *Config) void {
     if (self._arena) |arena| arena.deinit();

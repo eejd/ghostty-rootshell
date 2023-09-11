@@ -393,7 +393,7 @@ pub const Set = struct {
         alloc: Allocator,
         t: Trigger,
         action: Action,
-    ) !void {
+    ) Allocator.Error!void {
         // unbind should never go into the set, it should be handled prior
         assert(action != .unbind);
 

@@ -4,9 +4,19 @@ const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
+const ErrorList = @import("config/ErrorList.zig");
+
 // TODO:
 //   - Only `--long=value` format is accepted. Do we want to allow
 //     `--long value`? Not currently allowed.
+
+/// The base errors for arg parsing. Additional errors can be returned due
+/// to type-specific parsing but these are always possible.
+pub const Error = error{
+    ValueRequired,
+    InvalidField,
+    InvalidValue,
+};
 
 /// Parse the command line arguments from iter into dst.
 ///
@@ -18,6 +28,10 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 /// If the destination type has a field "_arena" of type `?ArenaAllocator`,
 /// an arena allocator will be created (or reused if set already) for any
 /// allocations. Allocations are necessary for certain types, like `[]const u8`.
+///
+/// If the destination type has a field "_errors" of type "ErrorList" then
+/// errors will be added to that list. In this case, the only error returned by
+/// parse are allocation errors.
 ///
 /// Note: If the arena is already non-null, then it will be used. In this
 /// case, in the case of an error some memory might be leaked into the arena.
@@ -62,9 +76,43 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
                 break :value null;
             };
 
-            try parseIntoField(T, arena_alloc, dst, key, value);
+            parseIntoField(T, arena_alloc, dst, key, value) catch |err| {
+                if (comptime !canTrackErrors(T)) return err;
+                switch (err) {
+                    error.InvalidField => try dst._errors.add(arena_alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            arena_alloc,
+                            "unknown field: {s}",
+                            .{key},
+                        ),
+                    }),
+
+                    error.ValueRequired => try dst._errors.add(arena_alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            arena_alloc,
+                            "{s}: value required",
+                            .{key},
+                        ),
+                    }),
+
+                    error.InvalidValue => try dst._errors.add(arena_alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            arena_alloc,
+                            "{s}: invalid value",
+                            .{key},
+                        ),
+                    }),
+
+                    else => return err,
+                }
+            };
         }
     }
+}
+
+/// Returns true if this type can track errors.
+fn canTrackErrors(comptime T: type) bool {
+    return @hasField(T, "_errors");
 }
 
 /// Parse a single key/value pair into the destination type T.
@@ -238,6 +286,29 @@ test "parse: quoted value" {
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expectEqual(@as(u8, 42), data.a);
     try testing.expectEqualStrings("hello!", data.b);
+}
+
+test "parse: error tracking" {
+    const testing = std.testing;
+
+    var data: struct {
+        a: []const u8 = "",
+        b: enum { one } = .one,
+
+        _arena: ?ArenaAllocator = null,
+        _errors: ErrorList = .{},
+    } = .{};
+    defer if (data._arena) |arena| arena.deinit();
+
+    var iter = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--what --a=42",
+    );
+    defer iter.deinit();
+    try parse(@TypeOf(data), testing.allocator, &data, &iter);
+    try testing.expect(data._arena != null);
+    try testing.expectEqualStrings("42", data.a);
+    try testing.expect(!data._errors.empty());
 }
 
 test "parseIntoField: ignore underscore-prefixed fields" {
