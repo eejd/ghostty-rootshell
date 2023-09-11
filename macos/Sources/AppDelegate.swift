@@ -188,8 +188,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.model.errors = state.configErrors()
-        Self.logger.warning("TEST did reload, count=\(c.model.errors.count)")
-        if (c.model.errors.count > 0) { c.showWindow(self) }
+        if (c.model.errors.count > 0) {
+            if (c.window == nil || !c.window!.isVisible) {
+                c.showWindow(self)
+            }
+        }
     }
     
     //MARK: - Dock Menu

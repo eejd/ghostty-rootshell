@@ -32,7 +32,6 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate {
         window.center()
         window.level = .popUpMenu
         window.contentView = NSHostingView(rootView: ConfigurationErrorsView(model: model))
-        window.makeKeyAndOrderFront(self)
     }
     
     //MARK: - NSWindowDelegate
