@@ -38,9 +38,6 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate {
     //MARK: - NSWindowDelegate
     
     func windowWillClose(_ notification: Notification) {
-        guard let window = window else { return }
-        window.contentView = nil
-
         if let cancellable = cancellable {
             cancellable.cancel()
             self.cancellable = nil
