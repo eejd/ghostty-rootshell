@@ -63,6 +63,13 @@ pub const App = struct {
         var config = try Config.load(core_app.alloc);
         errdefer config.deinit();
 
+        // If we had configuration errors, then log them.
+        if (!config._errors.empty()) {
+            for (config._errors.list.items) |err| {
+                log.warn("configuration error: {s}", .{err.message});
+            }
+        }
+
         // Our uniqueness ID is based on whether we're in a debug mode or not.
         // In debug mode we want to be separate so we can develop Ghostty in
         // Ghostty.

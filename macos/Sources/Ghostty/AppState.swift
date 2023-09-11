@@ -128,6 +128,20 @@ extension Ghostty {
             // Finalize will make our defaults available.
             ghostty_config_finalize(cfg)
             
+            // Log any configuration errors. These will be automatically shown in a
+            // pop-up window too.
+            let errCount = ghostty_config_errors_count(cfg)
+            if errCount > 0 {
+                AppDelegate.logger.warning("config error: \(errCount) configuration errors on reload")
+                var errors: [String] = [];
+                for i in 0..<errCount {
+                    let err = ghostty_config_get_error(cfg, UInt32(i))
+                    let message = String(cString: err.message)
+                    errors.append(message)
+                    AppDelegate.logger.warning("config error: \(message)")
+                }
+            }
+            
             return cfg
         }
         
