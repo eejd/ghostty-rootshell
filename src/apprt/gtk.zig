@@ -594,6 +594,13 @@ const Window = struct {
         log.debug("window close request", .{});
         const self = userdataSelf(ud.?);
 
+        // If none of our surfaces need confirmation, we can just exit.
+        for (self.app.core_app.surfaces.items) |surface| {
+            if (surface.window == self) {
+                if (surface.core_surface.needsConfirmQuit()) break;
+            }
+        } else return false;
+
         // Setup our basic message
         const alert = c.gtk_message_dialog_new(
             self.window,
