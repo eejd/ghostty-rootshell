@@ -5,7 +5,7 @@ struct ConfigurationErrorsView: View {
         @Published var errors: [String] = []
     }
     
-    var model: Model
+    @ObservedObject var model: Model
     
     var body: some View {
         VStack {

@@ -20,8 +20,8 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate {
         shouldCascadeWindows = false
         
         if let c = cancellable { c.cancel() }
-        cancellable = model.objectWillChange.sink {
-            if (self.model.errors.count == 0) {
+        cancellable = model.$errors.sink { newValue in
+            if (newValue.count == 0) {
                 self.window?.close()
             }
         }
