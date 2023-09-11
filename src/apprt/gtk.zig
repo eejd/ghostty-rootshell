@@ -228,6 +228,12 @@ pub const App = struct {
         }
         c.g_list_free(list);
 
+        // If the app says we don't need to confirm, then we can quit now.
+        if (!self.core_app.needsConfirmQuit()) {
+            self.quitNow();
+            return;
+        }
+
         // If we have windows, then we want to confirm that we want to exit.
         const alert = c.gtk_message_dialog_new(
             null,
@@ -259,20 +265,8 @@ pub const App = struct {
         c.gtk_widget_show(alert);
     }
 
-    fn gtkQuitConfirmation(
-        alert: *c.GtkMessageDialog,
-        response: c.gint,
-        ud: ?*anyopaque,
-    ) callconv(.C) void {
-        _ = ud;
-
-        // Close the alert window
-        c.gtk_window_destroy(@ptrCast(alert));
-
-        // If we didn't confirm then we're done
-        if (response != c.GTK_RESPONSE_YES) return;
-
-        // Force close all open windows
+    fn quitNow(self: *App) void {
+        _ = self;
         const list = c.gtk_window_list_toplevels();
         defer c.g_list_free(list);
         c.g_list_foreach(list, struct {
@@ -283,6 +277,23 @@ pub const App = struct {
                 c.gtk_window_destroy(window);
             }
         }.callback, null);
+    }
+
+    fn gtkQuitConfirmation(
+        alert: *c.GtkMessageDialog,
+        response: c.gint,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const self: *App = @ptrCast(@alignCast(ud orelse return));
+
+        // Close the alert window
+        c.gtk_window_destroy(@ptrCast(alert));
+
+        // If we didn't confirm then we're done
+        if (response != c.GTK_RESPONSE_YES) return;
+
+        // Force close all open windows
+        self.quitNow();
     }
 
     /// This is called by the "activate" signal. This is sent on program
@@ -582,6 +593,13 @@ const Window = struct {
         _ = v;
         log.debug("window close request", .{});
         const self = userdataSelf(ud.?);
+
+        // If none of our surfaces need confirmation, we can just exit.
+        for (self.app.core_app.surfaces.items) |surface| {
+            if (surface.window == self) {
+                if (surface.core_surface.needsConfirmQuit()) break;
+            }
+        } else return false;
 
         // Setup our basic message
         const alert = c.gtk_message_dialog_new(
