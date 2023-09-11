@@ -15,6 +15,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @Published var confirmQuit: Bool = false
     
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    @IBOutlet private var menuReloadConfig: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
     
     @IBOutlet private var menuNewWindow: NSMenuItem?
@@ -127,6 +128,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     private func syncMenuShortcuts() {
         guard ghostty.config != nil else { return }
         
+        syncMenuShortcut(action: "reload_config", menuItem: self.menuReloadConfig)
         syncMenuShortcut(action: "quit", menuItem: self.menuQuit)
         
         syncMenuShortcut(action: "new_window", menuItem: self.menuNewWindow)
@@ -186,6 +188,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.model.errors = state.configErrors()
+        Self.logger.warning("TEST did reload, count=\(c.model.errors.count)")
         if (c.model.errors.count > 0) { c.showWindow(self) }
     }
     
@@ -201,6 +204,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     //MARK: - IB Actions
+    
+    @IBAction func reloadConfig(_ sender: Any?) {
+        ghostty.reloadConfig()
+    }
     
     @IBAction func newWindow(_ sender: Any?) {
         windowManager.newWindow()

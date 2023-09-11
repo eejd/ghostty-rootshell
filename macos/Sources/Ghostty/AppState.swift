@@ -171,6 +171,22 @@ extension Ghostty {
             NSApplication.shared.terminate(nil)
         }
         
+        func reloadConfig() {
+            guard let newConfig = Self.reloadConfig() else {
+                AppDelegate.logger.warning("failed to reload configuration")
+                return
+            }
+            
+            // Assign the new config. This will automatically free the old config.
+            // It is safe to free the old config from within this function call.
+            config = newConfig
+            
+            // If we have a delegate, notify.
+            if let delegate = delegate {
+                delegate.configDidReload(self)
+            }
+        }
+        
         /// Request that the given surface is closed. This will trigger the full normal surface close event
         /// cycle which will call our close surface callback.
         func requestClose(surface: ghostty_surface_t) {
@@ -286,22 +302,9 @@ extension Ghostty {
         }
         
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
-            guard let newConfig = AppState.reloadConfig() else {
-                AppDelegate.logger.warning("failed to reload configuration")
-                return nil
-            }
-            
-            // Assign the new config. This will automatically free the old config.
-            // It is safe to free the old config from within this function call.
             let state = Unmanaged<AppState>.fromOpaque(userdata!).takeUnretainedValue()
-            state.config = newConfig
-            
-            // If we have a delegate, notify.
-            if let delegate = state.delegate {
-                delegate.configDidReload(state)
-            }
-            
-            return newConfig
+            state.reloadConfig()
+            return state.config
         }
         
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {

@@ -588,6 +588,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .q, .mods = .{ .super = true } },
             .{ .quit = {} },
         );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .comma, .mods = .{ .super = true, .shift = true } },
+            .{ .reload_config = {} },
+        );
 
         try result.keybind.set.put(
             alloc,

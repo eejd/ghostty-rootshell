@@ -23,6 +23,7 @@
                 <outlet property="menuPaste" destination="i27-pK-umN" id="ICc-X2-gV3"/>
                 <outlet property="menuPreviousSplit" destination="Lic-px-1wg" id="Rto-CG-yRe"/>
                 <outlet property="menuQuit" destination="4sb-4s-VLi" id="qYN-S1-6UW"/>
+                <outlet property="menuReloadConfig" destination="KKH-XX-5py" id="Wvp-7J-wqX"/>
                 <outlet property="menuSelectSplitAbove" destination="0yU-hC-8xF" id="aPc-lS-own"/>
                 <outlet property="menuSelectSplitBelow" destination="QDz-d9-CBr" id="FsH-Dq-jij"/>
                 <outlet property="menuSelectSplitLeft" destination="cTK-oy-KuV" id="Jpr-5q-dqz"/>
@@ -47,6 +48,12 @@
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="VOq-y0-SEH"/>
                             <menuItem title="Preferences…" keyEquivalent="," id="BOF-NM-1cW"/>
+                            <menuItem title="Reload Configuration" id="KKH-XX-5py">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="reloadConfig:" target="bbz-4X-AYv" id="h5x-tu-Izk"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="4je-JR-u6R"/>
                             <menuItem title="Hide Ghostty" keyEquivalent="h" id="Olw-nP-bQN">
                                 <connections>
