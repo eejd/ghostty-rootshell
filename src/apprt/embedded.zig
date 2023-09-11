@@ -787,6 +787,11 @@ pub const CAPI = struct {
         };
     }
 
+    /// Returns true if the app needs to confirm quitting.
+    export fn ghostty_app_needs_confirm_quit(v: *App) bool {
+        return v.core_app.needsConfirmQuit();
+    }
+
     /// Returns initial surface options.
     export fn ghostty_surface_config_new() apprt.Surface.Options {
         return .{};

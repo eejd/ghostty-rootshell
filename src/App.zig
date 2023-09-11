@@ -168,6 +168,16 @@ pub fn focusedSurface(self: *const App) ?*Surface {
     return surface;
 }
 
+/// Returns true if confirmation is needed to quit the app. It is up to
+/// the apprt to call this.
+pub fn needsConfirmQuit(self: *const App) bool {
+    for (self.surfaces.items) |v| {
+        if (v.core_surface.needsConfirmQuit()) return true;
+    }
+
+    return false;
+}
+
 /// Initialize once and return the font discovery mechanism. This remains
 /// initialized throughout the lifetime of the application because some
 /// font discovery mechanisms (i.e. fontconfig) are unsafe to reinit.

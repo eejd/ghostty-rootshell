@@ -504,22 +504,24 @@ pub fn deinit(self: *Surface) void {
 /// Close this surface. This will trigger the runtime to start the
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
-    const process_alive = process_alive: {
-        // If the child has exited then our process is certainly not alive.
-        // We check this first to avoid the locking overhead below.
-        if (self.child_exited) break :process_alive false;
+    self.rt_surface.close(self.needsConfirmQuit());
+}
 
-        // If we are configured to not hold open surfaces explicitly, just
-        // always say there is nothing alive.
-        if (!self.config.confirm_close_surface) break :process_alive false;
+/// True if the surface requires confirmation to quit. This should be called
+/// by apprt to determine if the surface should confirm before quitting.
+pub fn needsConfirmQuit(self: *Surface) bool {
+    // If the child has exited then our process is certainly not alive.
+    // We check this first to avoid the locking overhead below.
+    if (self.child_exited) return false;
 
-        // We have to talk to the terminal.
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        break :process_alive !self.io.terminal.cursorIsAtPrompt();
-    };
+    // If we are configured to not hold open surfaces explicitly, just
+    // always say there is nothing alive.
+    if (!self.config.confirm_close_surface) return false;
 
-    self.rt_surface.close(process_alive);
+    // We have to talk to the terminal.
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    return !self.io.terminal.cursorIsAtPrompt();
 }
 
 /// Called from the app thread to handle mailbox messages to our specific
