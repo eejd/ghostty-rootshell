@@ -96,6 +96,7 @@ struct PrimaryView: View {
             
             Ghostty.TerminalSplit(onClose: Self.closeWindow, baseConfig: self.baseConfig)
                 .ghosttyApp(ghostty.app!)
+                .ghosttyConfig(ghostty.config!)
                 .background(WindowAccessor(window: $window))
                 .onReceive(gotoTab) { onGotoTab(notification: $0) }
                 .onReceive(toggleFullscreen) { onToggleFullscreen(notification: $0) }

@@ -48,9 +48,19 @@ extension Ghostty {
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
         
+        @Environment(\.ghosttyConfig) private var ghostty_config
+        
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.
         private var hasFocus: Bool { surfaceFocus && windowFocus }
+        
+        // The opacity of the rectangle when unfocused.
+        private var unfocusedOpacity: Double {
+            var opacity: Double = 0.85
+            let key = "unfocused-split-opacity"
+            _ = ghostty_config_get(ghostty_config, &opacity, key, UInt(key.count))
+            return 1 - opacity
+        }
         
         var body: some View {
             ZStack {
@@ -129,7 +139,8 @@ extension Ghostty {
                 if (isSplit && !surfaceFocus) {
                     Rectangle()
                         .fill(.white)
-                        .opacity(0.15)
+                        .allowsHitTesting(false)
+                        .opacity(unfocusedOpacity)
                 }
             }
         }
