@@ -52,7 +52,7 @@ extension Ghostty {
             }
             
             // Initialize the global configuration.
-            guard let cfg = Self.reloadConfig() else {
+            guard let cfg = Self.loadConfig() else {
                 readiness = .error
                 return
             }
@@ -109,7 +109,7 @@ extension Ghostty {
         }
         
         /// Initializes a new configuration and loads all the values.
-        static func reloadConfig() -> ghostty_config_t? {
+        static func loadConfig() -> ghostty_config_t? {
             // Initialize the global configuration.
             guard let cfg = ghostty_config_new() else {
                 AppDelegate.logger.critical("ghostty_config_new failed")
@@ -172,19 +172,8 @@ extension Ghostty {
         }
         
         func reloadConfig() {
-            guard let newConfig = Self.reloadConfig() else {
-                AppDelegate.logger.warning("failed to reload configuration")
-                return
-            }
-            
-            // Assign the new config. This will automatically free the old config.
-            // It is safe to free the old config from within this function call.
-            config = newConfig
-            
-            // If we have a delegate, notify.
-            if let delegate = delegate {
-                delegate.configDidReload(self)
-            }
+            guard let app = self.app else { return }
+            ghostty_app_reload_config(app)
         }
         
         /// Request that the given surface is closed. This will trigger the full normal surface close event
@@ -302,9 +291,22 @@ extension Ghostty {
         }
         
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
+            guard let newConfig = Self.loadConfig() else {
+                AppDelegate.logger.warning("failed to reload configuration")
+                return nil
+            }
+            
+            // Assign the new config. This will automatically free the old config.
+            // It is safe to free the old config from within this function call.
             let state = Unmanaged<AppState>.fromOpaque(userdata!).takeUnretainedValue()
-            state.reloadConfig()
-            return state.config
+            state.config = newConfig
+            
+            // If we have a delegate, notify.
+            if let delegate = state.delegate {
+                delegate.configDidReload(state)
+            }
+            
+            return newConfig
         }
         
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
