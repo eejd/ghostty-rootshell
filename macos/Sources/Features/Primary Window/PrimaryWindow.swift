@@ -15,11 +15,20 @@ class FocusedSurfaceWrapper {
 // such as non-native fullscreen.
 class PrimaryWindow: NSWindow {
     var focusedSurfaceWrapper: FocusedSurfaceWrapper = FocusedSurfaceWrapper()
-
+    
+    static func getStyleMask(render_decoration: Bool) -> NSWindow.StyleMask {
+        var mask: NSWindow.StyleMask = [.resizable, .closable, .miniaturizable]
+        if render_decoration {
+            mask.insert(.titled)
+        }
+        return mask
+    }
+    
     static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
+        let decorations = baseConfig?.render_decoration ?? ghostty_config_render_decoration(ghostty.config)
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: getStyleMask(render_decoration: decorations),
             backing: .buffered,
             defer: false)
         window.center()

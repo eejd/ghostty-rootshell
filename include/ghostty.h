@@ -309,6 +309,7 @@ typedef struct {
     void *nsview;
     double scale_factor;
     uint16_t font_size;
+    bool render_decoration;
 } ghostty_surface_config_s;
 
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
@@ -364,6 +365,7 @@ bool ghostty_config_get(ghostty_config_t, void *, const char *, uintptr_t);
 ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t, const char *, uintptr_t);
 uint32_t ghostty_config_errors_count(ghostty_config_t);
 ghostty_error_s ghostty_config_get_error(ghostty_config_t, uint32_t);
+bool ghostty_config_render_decoration(ghostty_config_t);
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);
