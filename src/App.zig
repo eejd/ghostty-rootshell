@@ -199,8 +199,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
         switch (message) {
             .reload_config => try self.reloadConfig(rt_app),
             .new_window => |msg| try self.newWindow(rt_app, msg),
-            .close => |surface| try self.closeSurface(rt_app, surface),
-            .focus => |surface| try self.focusSurface(rt_app, surface),
+            .close => |surface| try self.closeSurface(surface),
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
             .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
@@ -208,7 +207,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
     }
 }
 
-fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
+pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
     log.debug("reloading configuration", .{});
     if (try rt_app.reloadConfig()) |new| {
         log.debug("new configuration received, applying", .{});
@@ -216,16 +215,12 @@ fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
     }
 }
 
-fn closeSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
-    _ = rt_app;
-
+pub fn closeSurface(self: *App, surface: *Surface) !void {
     if (!self.hasSurface(surface)) return;
     surface.close();
 }
 
-fn focusSurface(self: *App, rt_app: *apprt.App, surface: *Surface) !void {
-    _ = rt_app;
-
+pub fn focusSurface(self: *App, surface: *Surface) void {
     if (!self.hasSurface(surface)) return;
     self.focused_surface = surface;
 }
@@ -236,7 +231,7 @@ fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void 
 }
 
 /// Create a new window
-fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
+pub fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
     if (!@hasDecl(apprt.App, "newWindow")) {
         log.warn("newWindow is not supported by this runtime", .{});
         return;
@@ -253,7 +248,7 @@ fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
 }
 
 /// Start quitting
-fn setQuit(self: *App) !void {
+pub fn setQuit(self: *App) !void {
     if (self.quit) return;
     self.quit = true;
 }
@@ -291,11 +286,6 @@ pub const Message = union(enum) {
     /// Close a surface. This notifies the runtime that a surface
     /// should close.
     close: *Surface,
-
-    /// The last focused surface. The app keeps track of this to
-    /// enable "inheriting" various configurations from the last
-    /// surface.
-    focus: *Surface,
 
     /// Quit
     quit: void,

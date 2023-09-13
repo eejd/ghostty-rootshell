@@ -42,10 +42,11 @@ const Renderer = renderer.Renderer;
 /// Allocator
 alloc: Allocator,
 
-/// The mailbox for sending messages to the main app thread.
-app_mailbox: App.Mailbox,
+/// The app that this surface is attached to.
+app: *App,
 
-/// The windowing system surface
+/// The windowing system surface and app.
+rt_app: *apprt.runtime.App,
 rt_surface: *apprt.runtime.Surface,
 
 /// The font structures
@@ -180,7 +181,7 @@ pub fn init(
     alloc: Allocator,
     config: *const configpkg.Config,
     app: *App,
-    app_mailbox: App.Mailbox,
+    rt_app: *apprt.runtime.App,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
     // Initialize our renderer with our initialized surface.
@@ -351,6 +352,7 @@ pub fn init(
     };
 
     // Create our terminal grid with the initial size
+    const app_mailbox: App.Mailbox = .{ .rt_app = rt_app, .mailbox = &app.mailbox };
     var renderer_impl = try Renderer.init(alloc, .{
         .config = try Renderer.DerivedConfig.init(alloc, config),
         .font_group = font_group,
@@ -409,7 +411,8 @@ pub fn init(
 
     self.* = .{
         .alloc = alloc,
-        .app_mailbox = app_mailbox,
+        .app = app,
+        .rt_app = rt_app,
         .rt_surface = rt_surface,
         .font_lib = font_lib,
         .font_group = font_group,
@@ -1019,11 +1022,7 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
     }, .{ .forever = {} });
 
     // Notify our app if we gained focus.
-    if (focused) {
-        _ = self.app_mailbox.push(.{
-            .focus = self,
-        }, .{ .forever = {} });
-    }
+    if (focused) self.app.focusSurface(self);
 
     // Schedule render which also drains our mailbox
     try self.queueRender();
@@ -1871,11 +1870,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         .unbind => unreachable,
         .ignore => {},
 
-        .reload_config => {
-            _ = self.app_mailbox.push(.{
-                .reload_config = {},
-            }, .{ .instant = {} });
-        },
+        .reload_config => try self.app.reloadConfig(self.rt_app),
 
         .csi => |data| {
             // We need to send the CSI sequence as a single write request.
@@ -2072,13 +2067,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             try self.io_thread.wakeup.notify();
         },
 
-        .new_window => {
-            _ = self.app_mailbox.push(.{
-                .new_window = .{
-                    .parent = self,
-                },
-            }, .{ .instant = {} });
-        },
+        .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
 
         .new_tab => {
             if (@hasDecl(apprt.Surface, "newTab")) {
@@ -2130,15 +2119,9 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
 
         .close_surface => self.close(),
 
-        .close_window => {
-            _ = self.app_mailbox.push(.{ .close = self }, .{ .instant = {} });
-        },
+        .close_window => try self.app.closeSurface(self),
 
-        .quit => {
-            _ = self.app_mailbox.push(.{
-                .quit = {},
-            }, .{ .instant = {} });
-        },
+        .quit => try self.app.setQuit(),
     }
 }
 
