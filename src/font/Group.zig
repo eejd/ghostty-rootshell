@@ -311,13 +311,10 @@ pub fn hasCodepoint(self: *Group, index: FontIndex, cp: u32, p: ?Presentation) b
     const list = self.faces.getPtr(index.style);
     if (index.idx >= list.items.len) return false;
     const item = list.items[index.idx];
-    std.log.warn("hasCodepoint item={}", .{item});
     return switch (item) {
         .deferred => |v| v.hasCodepoint(cp, p),
         .loaded => |face| loaded: {
-            if (p) |desired| {
-                if (face.presentation != desired) break :loaded false;
-            }
+            if (p) |desired| if (face.presentation != desired) break :loaded false;
             break :loaded face.glyphIndex(cp) != null;
         },
     };
