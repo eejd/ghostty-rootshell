@@ -260,7 +260,7 @@ will come soon in a future update.
 
 Ghostty is a cross-platform terminal emulator but we don't aim for a
 least-common-denominator experience. There is a large, shared core written
-in Zig but we do a lot of platform-native thing:
+in Zig but we do a lot of platform-native things:
 
 * The macOS app is a true SwiftUI-based application with all the things you
   would expect such as real windowing, menu bars, a settings GUI, etc.
@@ -301,7 +301,7 @@ $ zig-out/bin/ghostty
 This will build a binary for the currently running system (if supported).
 **Note: macOS does not result in a runnable binary with this command.**
 macOS builds produce a library (`libghostty.a`) that is used by the Xcode
-project in the `macos` directory to produce the finally `Ghostty.app`.
+project in the `macos` directory to produce the final `Ghostty.app`.
 
 On Linux or macOS, you can use `zig build -Dapp-runtime=glfw run` for a quick
 GLFW-based app for a faster development cycle while developing core
@@ -312,7 +312,7 @@ tasks.
 Other useful commands:
 
   * `zig build test` for running unit tests.
-  * `zig build run -Dconformance=<name>` run a conformance test case from
+  * `zig build run -Dconformance=<name>` runs a conformance test case from
     the `conformance` directory. The `name` is the name of the file. This runs
     in the current running terminal emulator so if you want to check the
     behavior of this project, you must run this command in ghostty.
@@ -357,7 +357,7 @@ This app will be not be signed or notarized. Note that
 that are both signed and notarized.
 
 When running the app, logs are available via macOS unified logging such
-as `Console.app`. The easiest way I've found is to just use the CLI:
+as `Console.app`. The easiest way I've found to view these is to just use the CLI:
 
 ```sh
 $ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
