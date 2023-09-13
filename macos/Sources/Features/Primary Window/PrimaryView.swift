@@ -2,7 +2,7 @@ import SwiftUI
 import GhosttyKit
 
 struct PrimaryView: View {
-    let ghostty: Ghostty.AppState
+    @ObservedObject var ghostty: Ghostty.AppState
     
     // We need access to our app delegate to know if we're quitting or not.
     // Make sure to use `@ObservedObject` so we can keep track of `appDelegate.confirmQuit`.
