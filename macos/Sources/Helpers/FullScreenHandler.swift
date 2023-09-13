@@ -6,6 +6,7 @@ class FullScreenHandler {
     var previousTabGroupIndex: Int?
     var previousContentFrame: NSRect?
     var isInFullscreen: Bool = false
+    var previousStyleMask: NSWindow.StyleMask? = nil
     
     // We keep track of whether we entered non-native fullscreen in case
     // a user goes to fullscreen, changes the config to disable non-native fullscreen
@@ -89,6 +90,7 @@ class FullScreenHandler {
         
         // This is important: it gives us the full screen, including the
         // notch area on MacBooks.
+        self.previousStyleMask = window.styleMask
         window.styleMask.remove(.titled)
         
         // Set frame to screen size, accounting for the menu bar if needed
@@ -126,8 +128,8 @@ class FullScreenHandler {
     func leaveFullscreen(window: NSWindow) {
         guard let previousFrame = previousContentFrame else { return }
         
-        // Restore title bar
-        window.styleMask.insert(.titled)
+        // Restore the style mask
+        window.styleMask = self.previousStyleMask!
         
         // Restore previous presentation options
         NSApp.presentationOptions = []
