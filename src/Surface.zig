@@ -300,11 +300,11 @@ pub fn init(
         // Emoji fallback. We don't include this on Mac since Mac is expected
         // to always have the Apple Emoji available on the system.
         if (builtin.os.tag != .macos or font.Discover == void) {
-            try group.addFace(
+            _ = try group.addFace(
                 .regular,
                 .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, font_size) },
             );
-            try group.addFace(
+            _ = try group.addFace(
                 .regular,
                 .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, font_size) },
             );
