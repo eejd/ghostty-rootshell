@@ -297,19 +297,6 @@ pub fn init(
         // Auto-italicize if we have to.
         try group.italicize();
 
-        // Emoji fallback. We don't include this on Mac since Mac is expected
-        // to always have the Apple Emoji available.
-        if (builtin.os.tag != .macos or font.Discover == void) {
-            _ = try group.addFace(
-                .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, font_size) },
-            );
-            _ = try group.addFace(
-                .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, font_size) },
-            );
-        }
-
         // If we're on Mac, then we try to use the Apple Emoji font for Emoji.
         if (builtin.os.tag == .macos and font.Discover != void) {
             if (try app.fontDiscover()) |disco| {
