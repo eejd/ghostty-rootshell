@@ -23,7 +23,7 @@ extension Ghostty {
         /// The ghostty global configuration. This should only be changed when it is definitely
         /// safe to change. It is definite safe to change only when the embedded app runtime
         /// in Ghostty says so (usually, only in a reload configuration callback).
-        var config: ghostty_config_t? = nil {
+        @Published var config: ghostty_config_t? = nil {
             didSet {
                 // Free the old value whenever we change
                 guard let old = oldValue else { return }
@@ -33,7 +33,7 @@ extension Ghostty {
         
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
         /// in theory you can have multiple... I don't know why you would...
-        var app: ghostty_app_t? = nil {
+        @Published var app: ghostty_app_t? = nil {
             didSet {
                 guard let old = oldValue else { return }
                 ghostty_app_free(old)
