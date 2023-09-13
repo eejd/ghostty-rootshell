@@ -31,7 +31,7 @@ class PrimaryWindow: NSWindow {
         
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: getStyleMask(renderDecoration: baseConfig?.render_decoration ?? renderDecoration),
+            styleMask: getStyleMask(renderDecoration: renderDecoration),
             backing: .buffered,
             defer: false)
         window.center()
