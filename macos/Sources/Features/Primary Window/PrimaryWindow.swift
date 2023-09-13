@@ -16,19 +16,22 @@ class FocusedSurfaceWrapper {
 class PrimaryWindow: NSWindow {
     var focusedSurfaceWrapper: FocusedSurfaceWrapper = FocusedSurfaceWrapper()
     
-    static func getStyleMask(render_decoration: Bool) -> NSWindow.StyleMask {
+    static func getStyleMask(renderDecoration: Bool) -> NSWindow.StyleMask {
         var mask: NSWindow.StyleMask = [.resizable, .closable, .miniaturizable]
-        if render_decoration {
+        if renderDecoration {
             mask.insert(.titled)
         }
         return mask
     }
     
     static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
-        let decorations = baseConfig?.render_decoration ?? ghostty_config_render_decoration(ghostty.config)
+        var renderDecoration = false;
+        let configString = "window-decoration"
+        _ = ghostty_config_get(ghostty.config, &renderDecoration, configString, UInt(configString.count))
+        
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: getStyleMask(render_decoration: decorations),
+            styleMask: getStyleMask(renderDecoration: baseConfig?.render_decoration ?? renderDecoration),
             backing: .buffered,
             defer: false)
         window.center()
