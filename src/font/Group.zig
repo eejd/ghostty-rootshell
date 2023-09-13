@@ -99,13 +99,15 @@ pub fn deinit(self: *Group) void {
 ///
 /// The group takes ownership of the face. The face will be deallocated when
 /// the group is deallocated.
-pub fn addFace(self: *Group, style: Style, face: GroupFace) !void {
+pub fn addFace(self: *Group, style: Style, face: GroupFace) !FontIndex {
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
     if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
 
+    const idx = list.items.len;
     try list.append(self.alloc, face);
+    return .{ .style = style, .idx = @intCast(idx) };
 }
 
 /// Returns true if we have a face for the given style, though the face may
@@ -259,13 +261,17 @@ pub fn indexForCodepoint(
             defer disco_it.deinit();
 
             if (disco_it.next() catch break :discover) |face| {
-                var buf: [256]u8 = undefined;
-                log.info("found codepoint 0x{x} in fallback face={s}", .{
-                    cp,
-                    face.name(&buf) catch "<error>",
-                });
-                self.addFace(style, .{ .deferred = face }) catch break :discover;
-                if (self.indexForCodepointExact(cp, style, p)) |value| return value;
+                // Discovery is supposed to only return faces that have our
+                // codepoint but we can't search presentation in discovery so
+                // we have to check it here.
+                if (face.hasCodepoint(cp, p)) {
+                    var buf: [256]u8 = undefined;
+                    log.info("found codepoint 0x{x} in fallback face={s}", .{
+                        cp,
+                        face.name(&buf) catch "<error>",
+                    });
+                    return self.addFace(style, .{ .deferred = face }) catch break :discover;
+                }
             }
         }
     }
@@ -273,7 +279,7 @@ pub fn indexForCodepoint(
     // If this is already regular, we're done falling back.
     if (style == .regular and p == null) return null;
 
-    // For non-regular fonts, we fall back to regular.
+    // For non-regular fonts, we fall back to regular with no presentation
     return self.indexForCodepointExact(cp, .regular, null);
 }
 
@@ -501,13 +507,13 @@ test {
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
 
-    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
-        try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
+        _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
     }
-    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
 
     // Should find all visible ASCII
     var i: u32 = 32;
@@ -569,7 +575,7 @@ test "face count limit" {
     defer group.deinit();
 
     for (0..FontIndex.Special.start - 1) |_| {
-        try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+        _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
     }
 
     try testing.expectError(error.GroupFull, group.addFace(
@@ -624,7 +630,7 @@ test "resize" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
 
     // Load a letter
     {
@@ -677,7 +683,7 @@ test "discover monospace with fontconfig and freetype" {
     defer lib.deinit();
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
-    try group.addFace(.regular, .{ .deferred = (try it.next()).? });
+    _ = try group.addFace(.regular, .{ .deferred = (try it.next()).? });
 
     // Should find all visible ASCII
     var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
@@ -715,7 +721,7 @@ test "faceFromIndex returns pointer" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
 
     {
         const idx = group.indexForCodepoint('A', .regular, null).?;

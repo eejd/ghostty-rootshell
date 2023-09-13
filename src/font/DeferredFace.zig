@@ -254,6 +254,12 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
         .coretext, .coretext_freetype => {
             // If we are using coretext, we check the loaded CT font.
             if (self.ct) |ct| {
+                if (p) |desired_p| {
+                    const traits = ct.font.getSymbolicTraits();
+                    const actual_p: Presentation = if (traits.color_glyphs) .emoji else .text;
+                    if (actual_p != desired_p) return false;
+                }
+
                 // Turn UTF-32 into UTF-16 for CT API
                 var unichars: [2]u16 = undefined;
                 const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
