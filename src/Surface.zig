@@ -297,22 +297,6 @@ pub fn init(
         // Auto-italicize if we have to.
         try group.italicize();
 
-        // If we're on Mac, then we try to use the Apple Emoji font for Emoji.
-        if (builtin.os.tag == .macos and font.Discover != void) {
-            if (try app.fontDiscover()) |disco| {
-                var disco_it = try disco.discover(.{
-                    .family = "Apple Color Emoji",
-                    .size = font_size.points,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    var name_buf: [256]u8 = undefined;
-                    log.info("font emoji: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.regular, .{ .deferred = face });
-                }
-            }
-        }
-
         break :group group;
     });
     errdefer font_group.deinit(alloc);
