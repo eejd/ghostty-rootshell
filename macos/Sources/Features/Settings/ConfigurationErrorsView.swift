@@ -39,7 +39,7 @@ struct ConfigurationErrorsView: View {
                     }
                     .padding(.all)
                     .frame(minHeight: geo.size.height)
-                    .background(Color.white)
+                    .background(Color(.controlBackgroundColor))
                 }
             }
             
