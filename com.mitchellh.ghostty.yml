@@ -1,3 +1,6 @@
+# Note: the flatpak build is likely broken right now and is not actively
+# maintained. We may completely remove this file in the future. For now,
+# we want to keep _trying_ but its something with known issues.
 app-id: com.mitchellh.ghostty
 runtime: org.gnome.Platform
 runtime-version: '43'

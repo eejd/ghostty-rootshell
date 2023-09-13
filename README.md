@@ -47,8 +47,7 @@ things, but I've been using it full time since April 2022.
 | Platform / Package  | Links | Notes |
 | ----------| ----- | ----- |
 | macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | MacOS 12+ Universal Binary |
-| Linux (Flatpak) | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | |
-| Linux (Other) | [Build from Source](#developing-ghostty)  | |
+| Linux | [Build from Source](#developing-ghostty)  | |
 | Windows | n/a | Not supported yet |
 
 ### Configuration
