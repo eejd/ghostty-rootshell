@@ -15,7 +15,7 @@ comptime {
 }
 
 /// Used to determine the default shell and directory on Unixes.
-const c = @cImport({
+const c = if (builtin.os.tag == .windows) { } else @cImport({
     @cInclude("sys/types.h");
     @cInclude("unistd.h");
     @cInclude("pwd.h");
@@ -30,6 +30,8 @@ pub const Entry = struct {
 
 /// Get the passwd entry for the currently executing user.
 pub fn get(alloc: Allocator) !Entry {
+    if (builtin.os.tag == .windows) @panic("todo: windows");
+
     var buf: [1024]u8 = undefined;
     var pw: c.struct_passwd = undefined;
     var pw_ptr: ?*c.struct_passwd = null;

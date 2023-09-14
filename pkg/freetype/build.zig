@@ -117,7 +117,6 @@ pub fn buildFreetype(
         .windows => {
             lib.addCSourceFiles(&.{
                 root ++ "builds/windows/ftdebug.c",
-                root ++ "src/base/ftver.c",
             }, flags.items);
         },
         else => lib.addCSourceFile(.{

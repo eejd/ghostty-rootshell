@@ -13,6 +13,7 @@ const Error = error{
 pub inline fn home(buf: []u8) !?[]u8 {
     return switch (builtin.os.tag) {
         inline .linux, .macos => try homeUnix(buf),
+        .windows => try homeWindows(buf),
         else => @compileError("unimplemented"),
     };
 }
@@ -75,6 +76,36 @@ fn homeUnix(buf: []u8) !?[]u8 {
     }
 
     return null;
+}
+
+fn homeWindows(buf: []u8) !?[]u8 {
+    const drive_len = blk: {
+        var fba_instance = std.heap.FixedBufferAllocator.init(buf);
+        const fba = fba_instance.allocator();
+        const drive = std.process.getEnvVarOwned(fba, "HOMEDRIVE") catch |err| switch (err) {
+            error.OutOfMemory => return Error.BufferTooSmall,
+            error.InvalidUtf8,
+            error.EnvironmentVariableNotFound => return null,
+        };
+        // could shift the contents if this ever happens
+        if (drive.ptr != buf.ptr) @panic("codebug");
+        break :blk drive.len;
+    };
+
+    const path_len = blk: {
+        const path_buf = buf[drive_len..];
+        var fba_instance = std.heap.FixedBufferAllocator.init(buf[drive_len..]);
+        const fba = fba_instance.allocator();
+        const homepath = std.process.getEnvVarOwned(fba, "HOMEPATH") catch |err| switch (err) {
+            error.OutOfMemory => return Error.BufferTooSmall,
+            error.InvalidUtf8,
+            error.EnvironmentVariableNotFound => return null,
+        };
+        // could shift the contents if this ever happens
+        if (homepath.ptr != path_buf.ptr) @panic("codebug");
+        break :blk homepath.len;
+    };
+    return buf[0 .. drive_len + path_len];
 }
 
 fn trimSpace(input: []const u8) []const u8 {

@@ -122,6 +122,9 @@ pub fn start(self: *Command, alloc: Allocator) !void {
     else
         @compileError("missing env vars");
 
+    if (builtin.os.tag == .windows)
+        @panic("start not implemented on windows");
+
     // Fork
     const pid = try std.os.fork();
     if (pid != 0) {
@@ -187,6 +190,9 @@ fn setupFd(src: File.Handle, target: i32) !void {
 
 /// Wait for the command to exit and return information about how it exited.
 pub fn wait(self: Command, block: bool) !Exit {
+    if (builtin.os.tag == .windows)
+        @panic("wait not implemented on windows");
+
     const res = if (block) std.os.waitpid(self.pid.?, 0) else res: {
         // We specify NOHANG because its not our fault if the process we launch
         // for the tty doesn't properly waitpid its children. We don't want
@@ -255,7 +261,7 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
         };
         defer f.close();
         const stat = try f.stat();
-        if (stat.kind != .directory and stat.mode & 0o0111 != 0) {
+        if (stat.kind != .directory and isExecutable(stat.mode)) {
             return try alloc.dupe(u8, full_path);
         }
     }
@@ -263,6 +269,11 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
     if (seen_eacces) return error.AccessDenied;
 
     return null;
+}
+
+fn isExecutable(mode: std.fs.File.Mode) bool {
+    if (builtin.os.tag == .windows) return true;
+    return mode & 0o0111 != 0;
 }
 
 test "expandPath: env" {

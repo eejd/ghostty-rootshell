@@ -99,15 +99,9 @@ pub fn buildFontconfig(
         "-DHAVE_STDLIB_H",
         "-DHAVE_STRING_H",
         "-DHAVE_UNISTD_H",
-        "-DHAVE_SYS_STATVFS_H",
-        "-DHAVE_SYS_VFS_H",
-        "-DHAVE_SYS_STATFS_H",
         "-DHAVE_SYS_PARAM_H",
-        "-DHAVE_SYS_MOUNT_H",
 
-        "-DHAVE_LINK",
         "-DHAVE_MKSTEMP",
-        "-DHAVE_MKOSTEMP",
         "-DHAVE__MKTEMP_S",
         "-DHAVE_MKDTEMP",
         "-DHAVE_GETOPT",
@@ -115,15 +109,9 @@ pub fn buildFontconfig(
         //"-DHAVE_GETPROGNAME",
         //"-DHAVE_GETEXECNAME",
         "-DHAVE_RAND",
-        "-DHAVE_RANDOM",
-        "-DHAVE_LRAND48",
         //"-DHAVE_RANDOM_R",
-        "-DHAVE_RAND_R",
-        "-DHAVE_READLINK",
         "-DHAVE_FSTATVFS",
         "-DHAVE_FSTATFS",
-        "-DHAVE_LSTAT",
-        "-DHAVE_MMAP",
         "-DHAVE_VPRINTF",
 
         "-DHAVE_FT_GET_BDF_PROPERTY",
@@ -175,8 +163,27 @@ pub fn buildFontconfig(
         });
     }
 
-    if (!target.isWindows()) {
+    if (target.isWindows()) {
         try flags.appendSlice(&.{
+            "-DFC_CACHEDIR=\"LOCAL_APPDATA_FONTCONFIG_CACHE\"",
+            "-DFC_TEMPLATEDIR=\"c:/share/fontconfig/conf.avail\"",
+            "-DCONFIGDIR=\"c:/etc/fonts/conf.d\"",
+            "-DFC_DEFAULT_FONTS=\"\\t<dir>WINDOWSFONTDIR</dir>\\n\\t<dir>WINDOWSUSERFONTDIR</dir>\\n\"",
+        });
+    } else {
+        try flags.appendSlice(&.{
+            "-DHAVE_SYS_STATVFS_H",
+            "-DHAVE_SYS_VFS_H",
+            "-DHAVE_SYS_STATFS_H",
+            "-DHAVE_SYS_MOUNT_H",
+            "-DHAVE_LINK",
+            "-DHAVE_MKOSTEMP",
+            "-DHAVE_RANDOM",
+            "-DHAVE_LRAND48",
+            "-DHAVE_RAND_R",
+            "-DHAVE_READLINK",
+            "-DHAVE_LSTAT",
+            "-DHAVE_MMAP",
             "-DHAVE_PTHREAD",
 
             "-DFC_CACHEDIR=\"/var/cache/fontconfig\"",

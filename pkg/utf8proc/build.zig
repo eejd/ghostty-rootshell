@@ -41,6 +41,7 @@ pub fn buildLib(
 
     // Compile
     var flags = std.ArrayList([]const u8).init(b.allocator);
+    try flags.append("-DUTF8PROC_EXPORTS");
     defer flags.deinit();
 
     // C files
