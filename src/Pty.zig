@@ -13,6 +13,7 @@ const c = switch (builtin.os.tag) {
         @cInclude("sys/ioctl.h"); // ioctl and constants
         @cInclude("util.h"); // openpty()
     }),
+    .windows => { },
     else => @cImport({
         @cInclude("sys/ioctl.h"); // ioctl and constants
         @cInclude("pty.h");
@@ -45,6 +46,8 @@ slave: fd_t,
 
 /// Open a new PTY with the given initial size.
 pub fn open(size: winsize) !Pty {
+    if (builtin.os.tag == .windows) return error.NotImplementedOnWindows;
+
     // Need to copy so that it becomes non-const.
     var sizeCopy = size;
 
@@ -86,6 +89,8 @@ pub fn deinit(self: *Pty) void {
 
 /// Return the size of the pty.
 pub fn getSize(self: Pty) !winsize {
+    if (builtin.os.tag == .windows) return error.NotImplementedOnWindows;
+
     var ws: winsize = undefined;
     if (c.ioctl(self.master, TIOCGWINSZ, @intFromPtr(&ws)) < 0)
         return error.IoctlFailed;
@@ -95,6 +100,7 @@ pub fn getSize(self: Pty) !winsize {
 
 /// Set the size of the pty.
 pub fn setSize(self: Pty, size: winsize) !void {
+    if (builtin.os.tag == .windows) return error.NotImplementedOnWindows;
     if (c.ioctl(self.master, TIOCSWINSZ, @intFromPtr(&size)) < 0)
         return error.IoctlFailed;
 }

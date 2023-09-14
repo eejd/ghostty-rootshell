@@ -81,13 +81,17 @@ pub fn buildHarfbuzz(
     defer flags.deinit();
 
     try flags.appendSlice(&.{
-        "-DHAVE_UNISTD_H",
-        "-DHAVE_SYS_MMAN_H",
         "-DHAVE_STDBOOL_H",
-
-        // We always have pthread
-        "-DHAVE_PTHREAD=1",
     });
+
+    if (!step.target.isWindows()) {
+        try flags.appendSlice(&.{
+            "-DHAVE_UNISTD_H",
+            "-DHAVE_SYS_MMAN_H",
+            "-DHAVE_PTHREAD=1",
+        });
+    }
+
     if (opt.freetype.enabled) try flags.appendSlice(&.{
         "-DHAVE_FREETYPE=1",
 

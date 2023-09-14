@@ -329,7 +329,7 @@ pub fn build(b: *std.Build) !void {
         // Convert to termcap source format if thats helpful to people and
         // install it. The resulting value here is the termcap source in case
         // that is used for other commands.
-        {
+        if (!target.isWindows()) {
             const run_step = RunStep.create(b, "infotocap");
             run_step.addArg("infotocap");
             run_step.addFileSourceArg(src_source);
@@ -349,7 +349,7 @@ pub fn build(b: *std.Build) !void {
         }
 
         // Compile the terminfo source into a terminfo database
-        {
+        if (!target.isWindows()) {
             const run_step = RunStep.create(b, "tic");
             run_step.addArgs(&.{ "tic", "-x", "-o" });
             const path = run_step.addOutputFileArg("terminfo");
@@ -799,7 +799,11 @@ fn addDeps(
                 b,
                 step.target,
                 step.optimize,
-                .{ .lzma = false, .zlib = false },
+                .{
+                    .lzma = false,
+                    .zlib = false,
+                    .iconv = !step.target.isWindows(),
+                },
             );
             libxml2_lib.link(step);
 
