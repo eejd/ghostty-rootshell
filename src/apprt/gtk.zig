@@ -1177,6 +1177,25 @@ pub const Surface = struct {
         alloc.destroy(self);
     }
 
+    /// Scale x/y by the GDK device scale.
+    fn scaledCoordinates(
+        self: *const Surface,
+        x: c.gdouble,
+        y: c.gdouble,
+    ) struct {
+        x: c.gdouble,
+        y: c.gdouble,
+    } {
+        const scale_factor: f64 = @floatFromInt(
+            c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area)),
+        );
+
+        return .{
+            .x = x * scale_factor,
+            .y = y * scale_factor,
+        };
+    }
+
     fn gtkMouseDown(
         gesture: *c.GtkGestureClick,
         _: c.gint,
@@ -1221,9 +1240,11 @@ pub const Surface = struct {
         ud: ?*anyopaque,
     ) callconv(.C) void {
         const self = userdataSelf(ud.?);
+        const scaled = self.scaledCoordinates(x, y);
+
         self.cursor_pos = .{
-            .x = @max(@as(f32, 0), @as(f32, @floatCast(x))),
-            .y = @floatCast(y),
+            .x = @floatCast(@max(0, scaled.x)),
+            .y = @floatCast(scaled.y),
         };
 
         self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
@@ -1239,11 +1260,16 @@ pub const Surface = struct {
         ud: ?*anyopaque,
     ) callconv(.C) void {
         const self = userdataSelf(ud.?);
+        const scaled = self.scaledCoordinates(x, y);
 
         // GTK doesn't support any of the scroll mods.
         const scroll_mods: input.ScrollMods = .{};
 
-        self.core_surface.scrollCallback(x, y * -1, scroll_mods) catch |err| {
+        self.core_surface.scrollCallback(
+            scaled.x,
+            scaled.y * -1,
+            scroll_mods,
+        ) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
