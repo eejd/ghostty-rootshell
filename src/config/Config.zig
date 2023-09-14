@@ -315,11 +315,11 @@ keybind: Keybinds = .{},
 /// Allowable values are:
 ///
 ///   * "none" - OSC 10/11 queries receive no reply
-///   * "bits8" - Color components are return unscaled, i.e. rr/gg/bb
-///   * "bits16" - Color components are returned scaled, e.g. rrrr/gggg/bbbb
+///   * "8-bit" - Color components are return unscaled, i.e. rr/gg/bb
+///   * "16-bit" - Color components are returned scaled, e.g. rrrr/gggg/bbbb
 ///
-/// The default value is "bits16".
-@"osc-color-report-format": OSCColorReportFormat = .bits16,
+/// The default value is "16-bit".
+@"osc-color-report-format": OSCColorReportFormat = .@"16-bit",
 
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
@@ -1500,6 +1500,6 @@ pub const ShellIntegration = enum {
 /// OSC 10 and 11 default color reporting format.
 pub const OSCColorReportFormat = enum {
     none,
-    bits8,
-    bits16,
+    @"8-bit",
+    @"16-bit",
 };

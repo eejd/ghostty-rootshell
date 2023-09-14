@@ -1820,7 +1820,7 @@ const StreamHandler = struct {
 
         var msg: termio.Message = .{ .write_small = .{} };
         const resp = switch (self.osc_color_report_format) {
-            .bits16 => try std.fmt.bufPrint(
+            .@"16-bit" => try std.fmt.bufPrint(
                 &msg.write_small.data,
                 "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}",
                 .{
@@ -1832,7 +1832,7 @@ const StreamHandler = struct {
                 },
             ),
 
-            else => try std.fmt.bufPrint(
+            .@"8-bit" => try std.fmt.bufPrint(
                 &msg.write_small.data,
                 "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
                 .{
@@ -1843,6 +1843,8 @@ const StreamHandler = struct {
                     terminator.string(),
                 },
             ),
+
+            .none => unreachable, // early return above
         };
         msg.write_small.len = @intCast(resp.len);
         self.messageWriter(msg);
