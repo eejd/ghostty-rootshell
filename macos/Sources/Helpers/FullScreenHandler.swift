@@ -1,17 +1,16 @@
 import SwiftUI
 import GhosttyKit
 
-class FullScreenHandler {
-    var previousTabGroup: NSWindowTabGroup?
+class FullScreenHandler {    var previousTabGroup: NSWindowTabGroup?
     var previousTabGroupIndex: Int?
     var previousContentFrame: NSRect?
-    var isInFullscreen: Bool = false
     var previousStyleMask: NSWindow.StyleMask? = nil
     
     // We keep track of whether we entered non-native fullscreen in case
     // a user goes to fullscreen, changes the config to disable non-native fullscreen
     // and then wants to toggle it off
     var isInNonNativeFullscreen: Bool = false
+    var isInFullscreen: Bool = false
     
     func toggleFullscreen(window: NSWindow, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {
         let useNonNativeFullscreen = nonNativeFullscreen != GHOSTTY_NON_NATIVE_FULLSCREEN_FALSE
