@@ -781,7 +781,7 @@ pub const CAPI = struct {
 
     /// Reload the configuration.
     export fn ghostty_app_reload_config(v: *App) void {
-        _ = v.reloadConfig() catch |err| {
+        _ = v.core_app.reloadConfig(v) catch |err| {
             log.err("error reloading config err={}", .{err});
             return;
         };
