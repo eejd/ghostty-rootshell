@@ -3,6 +3,8 @@ const std = @import("std");
 /// The possible cursor shapes. Not all app runtimes support these shapes.
 /// The shapes are always based on the W3C supported cursor styles so we
 /// can have a cross platform list.
+//
+// Must be kept in sync with ghostty_cursor_shape_e
 pub const CursorShape = enum(c_int) {
     default,
     context_menu,

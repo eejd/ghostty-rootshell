@@ -72,6 +72,7 @@ extension Ghostty {
                 wakeup_cb: { userdata in AppState.wakeup(userdata) },
                 reload_config_cb: { userdata in AppState.reloadConfig(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
+                set_cursor_shape_cb: { userdata, shape in AppState.setCursorShape(userdata, shape: shape) },
                 read_clipboard_cb: { userdata, loc in AppState.readClipboard(userdata, location: loc) },
                 write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
@@ -331,6 +332,11 @@ extension Ghostty {
             DispatchQueue.main.async {
                 surfaceView.title = titleStr
             }
+        }
+        
+        static func setCursorShape(_ userdata: UnsafeMutableRawPointer?, shape: ghostty_cursor_shape_e) {
+            let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
+            surfaceView.setCursorShape(shape)
         }
 
         static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {

@@ -6,7 +6,7 @@ extension Ghostty {
     struct Terminal: View {
         @Environment(\.ghosttyApp) private var app
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
-        
+
         var body: some View {
             if let app = self.app {
                 SurfaceForApp(app) { surfaceView in
@@ -16,44 +16,44 @@ extension Ghostty {
             }
         }
     }
-    
+
     /// Yields a SurfaceView for a ghostty app that can then be used however you want.
     struct SurfaceForApp<Content: View>: View {
         let content: ((SurfaceView) -> Content)
-        
+
         @StateObject private var surfaceView: SurfaceView
-        
+
         init(_ app: ghostty_app_t, @ViewBuilder content: @escaping ((SurfaceView) -> Content)) {
             _surfaceView = StateObject(wrappedValue: SurfaceView(app, nil))
             self.content = content
         }
-        
+
         var body: some View {
             content(surfaceView)
         }
     }
-    
+
     struct SurfaceWrapper: View {
         // The surface to create a view for. This must be created upstream. As long as this
         // remains the same, the surface that is being rendered remains the same.
         @ObservedObject var surfaceView: SurfaceView
-        
+
         // True if this surface is part of a split view. This is important to know so
         // we know whether to dim the surface out of focus.
         var isSplit: Bool = false
-        
+
         // Maintain whether our view has focus or not
         @FocusState private var surfaceFocus: Bool
-        
+
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
-        
+
         @Environment(\.ghosttyConfig) private var ghostty_config
-        
+
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.
         private var hasFocus: Bool { surfaceFocus && windowFocus }
-        
+
         // The opacity of the rectangle when unfocused.
         private var unfocusedOpacity: Double {
             var opacity: Double = 0.85
@@ -61,7 +61,7 @@ extension Ghostty {
             _ = ghostty_config_get(ghostty_config, &opacity, key, UInt(key.count))
             return 1 - opacity
         }
-        
+
         var body: some View {
             ZStack {
                 // We use a GeometryReader to get the frame bounds so that our metal surface
@@ -73,7 +73,7 @@ extension Ghostty {
                     let pubBecomeFocused = NotificationCenter.default.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
                     let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
                     let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
-                    
+
                     Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                         .focused($surfaceFocus)
                         .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
@@ -95,7 +95,7 @@ extension Ghostty {
                             // method doesn't work properly. See the dispatch of this notification
                             // for more information.
                             if #available(macOS 13, *) { return }
-                            
+
                             DispatchQueue.main.async {
                                 surfaceFocus = true
                             }
@@ -125,13 +125,13 @@ extension Ghostty {
                                     surfaceFocus = true
                                 }
                             }
-                            
+
                             // I don't know how older macOS versions behave but Ghostty only
                             // supports back to macOS 12 so its moot.
                         }
                 }
                 .ghosttySurfaceView(surfaceView)
-                
+
                 // If we're part of a split view and don't have focus, we put a semi-transparent
                 // rectangle above our view to make it look unfocused. We use "surfaceFocus"
                 // because we want to keep our focused surface dark even if we don't have window
@@ -145,7 +145,7 @@ extension Ghostty {
             }
         }
     }
-    
+
     /// A surface is terminology in Ghostty for a terminal surface, or a place where a terminal is actually drawn
     /// and interacted with. The word "surface" is used because a surface may represent a window, a tab,
     /// a split, a small preview pane, etc. It is ANYTHING that has a terminal drawn to it.
@@ -156,12 +156,12 @@ extension Ghostty {
     struct Surface: NSViewRepresentable {
         /// The view to render for the terminal surface.
         let view: SurfaceView
-        
+
         /// This should be set to true when the surface has focus. This is up to the parent because
         /// focus is also defined by window focus. It is important this is set correctly since if it is
         /// false then the surface will idle at almost 0% CPU.
         let hasFocus: Bool
-        
+
         /// The size of the frame containing this view. We use this to update the the underlying
         /// surface. This does not actually SET the size of our frame, this only sets the size
         /// of our Metal surface for drawing.
@@ -171,74 +171,76 @@ extension Ghostty {
         ///
         /// The best approach is to wrap this view in a GeometryReader and pass in the geo.size.
         let size: CGSize
-        
+
         func makeNSView(context: Context) -> SurfaceView {
             // We need the view as part of the state to be created previously because
             // the view is sent to the Ghostty API so that it can manipulate it
             // directly since we draw on a render thread.
             return view;
         }
-        
+
         func updateNSView(_ view: SurfaceView, context: Context) {
             view.focusDidChange(hasFocus)
             view.sizeDidChange(size)
         }
     }
-    
+
     /// The NSView implementation for a terminal surface.
     class SurfaceView: NSView, NSTextInputClient, ObservableObject {
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
         @Published var title: String = "👻"
-        
+
         private(set) var surface: ghostty_surface_t?
         var error: Error? = nil
-        
-        private var markedText: NSMutableAttributedString;
-        
+
+        private var markedText: NSMutableAttributedString
+        private var mouseEntered: Bool = false
+        private var cursor: NSCursor = .arrow
+
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
-        
+
         // I don't think we need this but this lets us know we should redraw our layer
         // so we'll use that to tell ghostty to refresh.
         override var wantsUpdateLayer: Bool { return true }
-        
+
         init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
             self.markedText = NSMutableAttributedString()
-            
+
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
             super.init(frame: NSMakeRect(0, 0, 800, 600))
-            
+
             // Setup our surface. This will also initialize all the terminal IO.
             var surface_cfg = baseConfig ?? ghostty_surface_config_new()
             surface_cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
             surface_cfg.nsview = Unmanaged.passUnretained(self).toOpaque()
             surface_cfg.scale_factor = NSScreen.main!.backingScaleFactor
-            
+
             guard let surface = ghostty_surface_new(app, &surface_cfg) else {
                 self.error = AppError.surfaceCreateError
                 return
             }
             self.surface = surface;
-            
+
             // Setup our tracking area so we get mouse moved events
             updateTrackingAreas()
         }
-        
+
         required init?(coder: NSCoder) {
             fatalError("init(coder:) is not supported for this view")
         }
-        
+
         deinit {
             trackingAreas.forEach { removeTrackingArea($0) }
-            
+
             guard let surface = self.surface else { return }
             ghostty_surface_free(surface)
         }
-        
+
         /// Close the surface early. This will free the associated Ghostty surface and the view will
         /// no longer render. The view can never be used again. This is a way for us to free the
         /// Ghostty resources while references may still be held to this view. I've found that SwiftUI
@@ -248,15 +250,15 @@ extension Ghostty {
             ghostty_surface_free(surface)
             self.surface = nil
         }
-        
+
         func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             ghostty_surface_set_focus(surface, focused)
         }
-        
+
         func sizeDidChange(_ size: CGSize) {
             guard let surface = self.surface else { return }
-            
+
             // Ghostty wants to know the actual framebuffer size... It is very important
             // here that we use "size" and NOT the view frame. If we're in the middle of
             // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
@@ -264,35 +266,93 @@ extension Ghostty {
             let scaledSize = self.convertToBacking(size)
             ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
         }
-        
+
+        func setCursorShape(_ shape: ghostty_cursor_shape_e) {
+            switch (shape) {
+            case GHOSTTY_CURSOR_SHAPE_DEFAULT:
+                cursor = .arrow
+
+            case GHOSTTY_CURSOR_SHAPE_CONTEXT_MENU:
+                cursor = .contextualMenu
+
+            case GHOSTTY_CURSOR_SHAPE_TEXT:
+                cursor = .iBeam
+
+            case GHOSTTY_CURSOR_SHAPE_CROSSHAIR:
+                cursor = .crosshair
+
+            case GHOSTTY_CURSOR_SHAPE_GRAB:
+                cursor = .openHand
+
+            case GHOSTTY_CURSOR_SHAPE_GRABBING:
+                cursor = .closedHand
+
+            case GHOSTTY_CURSOR_SHAPE_POINTER:
+                cursor = .pointingHand
+
+            case GHOSTTY_CURSOR_SHAPE_W_RESIZE:
+                cursor = .resizeLeft
+
+            case GHOSTTY_CURSOR_SHAPE_E_RESIZE:
+                cursor = .resizeRight
+
+            case GHOSTTY_CURSOR_SHAPE_N_RESIZE:
+                cursor = .resizeUp
+
+            case GHOSTTY_CURSOR_SHAPE_S_RESIZE:
+                cursor = .resizeDown
+
+            case GHOSTTY_CURSOR_SHAPE_NS_RESIZE:
+                cursor = .resizeUpDown
+
+            case GHOSTTY_CURSOR_SHAPE_EW_RESIZE:
+                cursor = .resizeLeftRight
+
+            case GHOSTTY_CURSOR_SHAPE_VERTICAL_TEXT:
+                cursor = .iBeamCursorForVerticalLayout
+
+            case GHOSTTY_CURSOR_SHAPE_NOT_ALLOWED:
+                cursor = .operationNotAllowed
+
+            default:
+                // We ignore unknown shapes.
+                return
+            }
+
+            // Set our cursor immediately if our mouse is over our window
+            if (mouseEntered) {
+                cursor.set()
+            }
+        }
+
         override func viewDidMoveToWindow() {
             guard let window = self.window else { return }
             guard let surface = self.surface else { return }
             guard ghostty_surface_transparent(surface) else { return }
-            
+
             // Set the window transparency settings
             window.isOpaque = false
             window.hasShadow = false
             window.backgroundColor = .clear
-            
+
             // If we have a blur, set the blur
             ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
         }
-        
+
         override func resignFirstResponder() -> Bool {
             let result = super.resignFirstResponder()
-            
+
             // We sometimes call this manually (see SplitView) as a way to force us to
             // yield our focus state.
             if (result) { focusDidChange(false) }
-            
+
             return result
         }
-        
+
         override func updateTrackingAreas() {
             // To update our tracking area we just recreate it all.
             trackingAreas.forEach { removeTrackingArea($0) }
-            
+
             // This tracking area is across the entire frame to notify us of mouse movements.
             addTrackingArea(NSTrackingArea(
                 rect: frame,
@@ -300,7 +360,7 @@ extension Ghostty {
                     .mouseEnteredAndExited,
                     .mouseMoved,
                     .inVisibleRect,
-                    
+
                     // It is possible this is incorrect when we have splits. This will make
                     // mouse events only happen while the terminal is focused. Is that what
                     // we want?
@@ -309,12 +369,12 @@ extension Ghostty {
                 owner: self,
                 userInfo: nil))
         }
-        
+
         override func resetCursorRects() {
             discardCursorRects()
             addCursorRect(frame, cursor: .iBeam)
         }
-        
+
         override func viewDidChangeBackingProperties() {
             guard let surface = self.surface else { return }
 
@@ -323,71 +383,79 @@ extension Ghostty {
             let xScale = fbFrame.size.width / self.frame.size.width
             let yScale = fbFrame.size.height / self.frame.size.height
             ghostty_surface_set_content_scale(surface, xScale, yScale)
-            
+
             // When our scale factor changes, so does our fb size so we send that too
             ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
         }
-        
+
         override func updateLayer() {
             guard let surface = self.surface else { return }
             ghostty_surface_refresh(surface);
         }
-        
+
         override func mouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
         }
-        
+
         override func mouseUp(with event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         }
-        
+
         override func rightMouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods)
         }
-        
+
         override func rightMouseUp(with event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
         }
-        
+
         override func mouseMoved(with event: NSEvent) {
             guard let surface = self.surface else { return }
 
             // Convert window position to view position. Note (0, 0) is bottom left.
             let pos = self.convert(event.locationInWindow, from: nil)
             ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
-            
+
         }
-        
+
         override func mouseDragged(with event: NSEvent) {
             self.mouseMoved(with: event)
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            mouseEntered = true
+        }
+        
+        override func mouseExited(with event: NSEvent) {
+            mouseEntered = false
         }
         
         override func scrollWheel(with event: NSEvent) {
             guard let surface = self.surface else { return }
-            
+
             // Builds up the "input.ScrollMods" bitmask
             var mods: Int32 = 0
-            
+
             var x = event.scrollingDeltaX
             var y = event.scrollingDeltaY
             if event.hasPreciseScrollingDeltas {
                 mods = 1
-                
+
                 // We do a 2x speed multiplier. This is subjective, it "feels" better to me.
                 x *= 2;
                 y *= 2;
-                
+
                 // TODO(mitchellh): do we have to scale the x/y here by window scale factor?
             }
-            
+
             // Determine our momentum value
             var momentum: ghostty_input_mouse_momentum_e = GHOSTTY_MOUSE_MOMENTUM_NONE
             switch (event.momentumPhase) {
@@ -406,17 +474,21 @@ extension Ghostty {
             default:
                 break
             }
-            
+
             // Pack our momentum value into the mods bitmask
             mods |= Int32(momentum.rawValue) << 1
-            
+
             ghostty_surface_mouse_scroll(surface, x, y, mods)
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            cursor.set()
         }
 
         override func keyDown(with event: NSEvent) {
             let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             keyAction(action, event: event)
-            
+
             // We specifically DO NOT call interpretKeyEvents because ghostty_surface_key
             // automatically handles all key translation, and we don't handle any commands
             // currently.
@@ -427,11 +499,11 @@ extension Ghostty {
             //
             // self.interpretKeyEvents([event])
         }
-        
+
         override func keyUp(with event: NSEvent) {
             keyAction(GHOSTTY_ACTION_RELEASE, event: event)
         }
-        
+
         override func flagsChanged(with event: NSEvent) {
             let mod: UInt32;
             switch (event.keyCode) {
@@ -442,26 +514,26 @@ extension Ghostty {
             case 0x37, 0x36: mod = GHOSTTY_MODS_SUPER.rawValue
             default: return
             }
-            
+
             // The keyAction function will do this AGAIN below which sucks to repeat
             // but this is super cheap and flagsChanged isn't that common.
             let mods = Self.translateFlags(event.modifierFlags)
-            
+
             // If the key that pressed this is active, its a press, else release
             var action = GHOSTTY_ACTION_RELEASE
             if (mods.rawValue & mod != 0) { action = GHOSTTY_ACTION_PRESS }
-            
+
             keyAction(action, event: event)
         }
-        
+
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Self.translateFlags(event.modifierFlags)
             ghostty_surface_key(surface, action, UInt32(event.keyCode), mods)
         }
-        
+
         // MARK: Menu Handlers
-        
+
         @IBAction func copy(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "copy_to_clipboard"
@@ -469,7 +541,7 @@ extension Ghostty {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
-        
+
         @IBAction func paste(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_clipboard"
@@ -477,7 +549,7 @@ extension Ghostty {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
-        
+
         @IBAction func pasteAsPlainText(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_clipboard"
@@ -485,75 +557,75 @@ extension Ghostty {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
-        
+
         // MARK: NSTextInputClient
-        
+
         func hasMarkedText() -> Bool {
             return markedText.length > 0
         }
-        
+
         func markedRange() -> NSRange {
             guard markedText.length > 0 else { return NSRange() }
             return NSRange(0...(markedText.length-1))
         }
-        
+
         func selectedRange() -> NSRange {
             return NSRange()
         }
-        
+
         func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
             switch string {
             case let v as NSAttributedString:
                 self.markedText = NSMutableAttributedString(attributedString: v)
-                
+
             case let v as String:
                 self.markedText = NSMutableAttributedString(string: v)
-                
+
             default:
                 print("unknown marked text: \(string)")
             }
         }
-        
+
         func unmarkText() {
             self.markedText.mutableString.setString("")
         }
-        
+
         func validAttributesForMarkedText() -> [NSAttributedString.Key] {
             return []
         }
-        
+
         func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
             return nil
         }
-        
+
         func characterIndex(for point: NSPoint) -> Int {
             return 0
         }
-        
+
         func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
             guard let surface = self.surface else {
                 return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
             }
-            
+
             // Ghostty will tell us where it thinks an IME keyboard should render.
             var x: Double = 0;
             var y: Double = 0;
             ghostty_surface_ime_point(surface, &x, &y)
-            
+
             // Ghostty coordinates are in top-left (0, 0) so we have to convert to
             // bottom-left since that is what UIKit expects
             let rect = NSMakeRect(x, frame.size.height - y, 0, 0)
-            
+
             // Convert from view to screen coordinates
             guard let window = self.window else { return rect }
             return window.convertToScreen(rect)
         }
-        
+
         func insertText(_ string: Any, replacementRange: NSRange) {
             // We must have an associated event
             guard NSApp.currentEvent != nil else { return }
             guard let surface = self.surface else { return }
-            
+
             // We want the string view of the any value
             var chars = ""
             switch (string) {
@@ -564,39 +636,39 @@ extension Ghostty {
             default:
                 return
             }
-            
+
             for codepoint in chars.unicodeScalars {
                 ghostty_surface_char(surface, codepoint.value)
             }
         }
-        
+
         override func doCommand(by selector: Selector) {
             // This currently just prevents NSBeep from interpretKeyEvents but in the future
             // we may want to make some of this work.
-            
+
             print("SEL: \(selector)")
         }
-        
+
         private static func translateFlags(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
             var mods: UInt32 = GHOSTTY_MODS_NONE.rawValue
-            
+
             if (flags.contains(.shift)) { mods |= GHOSTTY_MODS_SHIFT.rawValue }
             if (flags.contains(.control)) { mods |= GHOSTTY_MODS_CTRL.rawValue }
             if (flags.contains(.option)) { mods |= GHOSTTY_MODS_ALT.rawValue }
             if (flags.contains(.command)) { mods |= GHOSTTY_MODS_SUPER.rawValue }
             if (flags.contains(.capsLock)) { mods |= GHOSTTY_MODS_CAPS.rawValue }
-            
+
             // Handle sided input. We can't tell that both are pressed in the
             // Ghostty structure but thats okay -- we don't use that information.
             let rawFlags = flags.rawValue
             if (rawFlags & UInt(NX_DEVICERSHIFTKEYMASK) != 0) { mods |= GHOSTTY_MODS_SHIFT_RIGHT.rawValue }
             if (rawFlags & UInt(NX_DEVICERCTLKEYMASK) != 0) { mods |= GHOSTTY_MODS_CTRL_RIGHT.rawValue }
             if (rawFlags & UInt(NX_DEVICERALTKEYMASK) != 0) { mods |= GHOSTTY_MODS_ALT_RIGHT.rawValue }
-            if (rawFlags & UInt(NX_DEVICERCMDKEYMASK) != 0) { mods |= GHOSTTY_MODS_SUPER_RIGHT.rawValue }   
-            
+            if (rawFlags & UInt(NX_DEVICERCMDKEYMASK) != 0) { mods |= GHOSTTY_MODS_SUPER_RIGHT.rawValue }
+
             return ghostty_input_mods_e(mods)
         }
-        
+
         // Mapping of event keyCode to ghostty input key values. This is cribbed from
         // glfw mostly since we started as a glfw-based app way back in the day!
         static let keycodes: [UInt16 : ghostty_input_key_e] = [
@@ -742,7 +814,7 @@ extension FocusedValues {
         get { self[FocusedGhosttySurface.self] }
         set { self[FocusedGhosttySurface.self] = newValue }
     }
-    
+
     struct FocusedGhosttySurface: FocusedValueKey {
         typealias Value = Ghostty.SurfaceView
     }
@@ -753,7 +825,7 @@ extension FocusedValues {
         get { self[FocusedGhosttySurfaceTitle.self] }
         set { self[FocusedGhosttySurfaceTitle.self] = newValue }
     }
-    
+
     struct FocusedGhosttySurfaceTitle: FocusedValueKey {
         typealias Value = String
     }
@@ -764,7 +836,7 @@ extension FocusedValues {
         get { self[FocusedGhosttySurfaceZoomed.self] }
         set { self[FocusedGhosttySurfaceZoomed.self] = newValue }
     }
-    
+
     struct FocusedGhosttySurfaceZoomed: FocusedValueKey {
         typealias Value = Bool
     }
