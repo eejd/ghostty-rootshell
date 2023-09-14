@@ -525,9 +525,9 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             try self.rt_surface.setTitle(slice);
         },
 
-        .set_cursor_shape => |shape| {
-            log.debug("changing cursor shape: {}", .{shape});
-            try self.rt_surface.setCursorShape(shape);
+        .set_mouse_shape => |shape| {
+            log.debug("changing mouse shape: {}", .{shape});
+            try self.rt_surface.setMouseShape(shape);
         },
 
         .cell_size => |size| try self.setCellSize(size),

@@ -267,51 +267,51 @@ extension Ghostty {
             ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
         }
 
-        func setCursorShape(_ shape: ghostty_cursor_shape_e) {
+        func setCursorShape(_ shape: ghostty_mouse_shape_e) {
             switch (shape) {
-            case GHOSTTY_CURSOR_SHAPE_DEFAULT:
+            case GHOSTTY_MOUSE_SHAPE_DEFAULT:
                 cursor = .arrow
 
-            case GHOSTTY_CURSOR_SHAPE_CONTEXT_MENU:
+            case GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU:
                 cursor = .contextualMenu
 
-            case GHOSTTY_CURSOR_SHAPE_TEXT:
+            case GHOSTTY_MOUSE_SHAPE_TEXT:
                 cursor = .iBeam
 
-            case GHOSTTY_CURSOR_SHAPE_CROSSHAIR:
+            case GHOSTTY_MOUSE_SHAPE_CROSSHAIR:
                 cursor = .crosshair
 
-            case GHOSTTY_CURSOR_SHAPE_GRAB:
+            case GHOSTTY_MOUSE_SHAPE_GRAB:
                 cursor = .openHand
 
-            case GHOSTTY_CURSOR_SHAPE_GRABBING:
+            case GHOSTTY_MOUSE_SHAPE_GRABBING:
                 cursor = .closedHand
 
-            case GHOSTTY_CURSOR_SHAPE_POINTER:
+            case GHOSTTY_MOUSE_SHAPE_POINTER:
                 cursor = .pointingHand
 
-            case GHOSTTY_CURSOR_SHAPE_W_RESIZE:
+            case GHOSTTY_MOUSE_SHAPE_W_RESIZE:
                 cursor = .resizeLeft
 
-            case GHOSTTY_CURSOR_SHAPE_E_RESIZE:
+            case GHOSTTY_MOUSE_SHAPE_E_RESIZE:
                 cursor = .resizeRight
 
-            case GHOSTTY_CURSOR_SHAPE_N_RESIZE:
+            case GHOSTTY_MOUSE_SHAPE_N_RESIZE:
                 cursor = .resizeUp
 
-            case GHOSTTY_CURSOR_SHAPE_S_RESIZE:
+            case GHOSTTY_MOUSE_SHAPE_S_RESIZE:
                 cursor = .resizeDown
 
-            case GHOSTTY_CURSOR_SHAPE_NS_RESIZE:
+            case GHOSTTY_MOUSE_SHAPE_NS_RESIZE:
                 cursor = .resizeUpDown
 
-            case GHOSTTY_CURSOR_SHAPE_EW_RESIZE:
+            case GHOSTTY_MOUSE_SHAPE_EW_RESIZE:
                 cursor = .resizeLeftRight
 
-            case GHOSTTY_CURSOR_SHAPE_VERTICAL_TEXT:
+            case GHOSTTY_MOUSE_SHAPE_VERTICAL_TEXT:
                 cursor = .iBeamCursorForVerticalLayout
 
-            case GHOSTTY_CURSOR_SHAPE_NOT_ALLOWED:
+            case GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED:
                 cursor = .operationNotAllowed
 
             default:
@@ -433,11 +433,11 @@ extension Ghostty {
         override func mouseEntered(with event: NSEvent) {
             mouseEntered = true
         }
-        
+
         override func mouseExited(with event: NSEvent) {
             mouseEntered = false
         }
-        
+
         override func scrollWheel(with event: NSEvent) {
             guard let surface = self.surface else { return }
 

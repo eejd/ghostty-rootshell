@@ -17,8 +17,8 @@ pub const Message = union(enum) {
     /// of any length
     set_title: [256]u8,
 
-    /// Set the cursor shape.
-    set_cursor_shape: terminal.CursorShape,
+    /// Set the mouse shape.
+    set_mouse_shape: terminal.MouseShape,
 
     /// Change the cell size.
     cell_size: renderer.CellSize,

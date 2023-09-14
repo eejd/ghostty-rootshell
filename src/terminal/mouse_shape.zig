@@ -5,7 +5,7 @@ const std = @import("std");
 /// can have a cross platform list.
 //
 // Must be kept in sync with ghostty_cursor_shape_e
-pub const CursorShape = enum(c_int) {
+pub const MouseShape = enum(c_int) {
     default,
     context_menu,
     help,
@@ -42,12 +42,12 @@ pub const CursorShape = enum(c_int) {
     zoom_out,
 
     /// Build cursor shape from string or null if its unknown.
-    pub fn fromString(v: []const u8) ?CursorShape {
+    pub fn fromString(v: []const u8) ?MouseShape {
         return string_map.get(v);
     }
 };
 
-const string_map = std.ComptimeStringMap(CursorShape, .{
+const string_map = std.ComptimeStringMap(MouseShape, .{
     // W3C
     .{ "default", .default },
     .{ "context-menu", .context_menu },
@@ -111,5 +111,5 @@ const string_map = std.ComptimeStringMap(CursorShape, .{
 
 test "cursor shape from string" {
     const testing = std.testing;
-    try testing.expectEqual(CursorShape.default, CursorShape.fromString("default").?);
+    try testing.expectEqual(MouseShape.default, MouseShape.fromString("default").?);
 }

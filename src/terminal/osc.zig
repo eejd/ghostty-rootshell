@@ -84,11 +84,11 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
-    /// OSC 22. Set the cursor shape. There doesn't seem to be a standard
+    /// OSC 22. Set the mouse shape. There doesn't seem to be a standard
     /// naming scheme for cursors but it looks like terminals such as Foot
     /// are moving towards using the W3C CSS cursor names. For OSC parsing,
     /// we just parse whatever string is given.
-    pointer_cursor: struct {
+    mouse_shape: struct {
         value: []const u8,
     },
 };
@@ -248,10 +248,10 @@ pub const Parser = struct {
 
             .@"22" => switch (c) {
                 ';' => {
-                    self.command = .{ .pointer_cursor = undefined };
+                    self.command = .{ .mouse_shape = undefined };
 
                     self.state = .string;
-                    self.temp_state = .{ .str = &self.command.pointer_cursor.value };
+                    self.temp_state = .{ .str = &self.command.mouse_shape.value };
                     self.buf_start = self.buf_idx;
                 },
                 else => self.state = .invalid,
@@ -672,8 +672,8 @@ test "OSC: pointer cursor" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end().?;
-    try testing.expect(cmd == .pointer_cursor);
-    try testing.expect(std.mem.eql(u8, "pointer", cmd.pointer_cursor.value));
+    try testing.expect(cmd == .mouse_shape);
+    try testing.expect(std.mem.eql(u8, "pointer", cmd.mouse_shape.value));
 }
 
 test "OSC: report pwd empty" {

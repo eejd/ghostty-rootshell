@@ -9,7 +9,7 @@ const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
 const trace = @import("tracy").trace;
-const CursorShape = @import("cursor_shape.zig").CursorShape;
+const MouseShape = @import("mouse_shape.zig").MouseShape;
 
 const log = std.log.scoped(.stream);
 
@@ -850,14 +850,14 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .pointer_cursor => |v| {
-                    if (@hasDecl(T, "setCursorShape")) {
-                        const shape = CursorShape.fromString(v.value) orelse {
+                .mouse_shape => |v| {
+                    if (@hasDecl(T, "setMouseShape")) {
+                        const shape = MouseShape.fromString(v.value) orelse {
                             log.warn("unknown cursor shape: {s}", .{v.value});
                             return;
                         };
 
-                        try self.handler.setCursorShape(shape);
+                        try self.handler.setMouseShape(shape);
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 

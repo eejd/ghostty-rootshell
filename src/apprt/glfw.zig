@@ -357,7 +357,7 @@ pub const Surface = struct {
         errdefer self.* = undefined;
 
         // Initialize our cursor
-        try self.setCursorShape(.text);
+        try self.setMouseShape(.text);
 
         // Add ourselves to the list of surfaces on the app.
         try app.app.addSurface(self);
@@ -506,7 +506,7 @@ pub const Surface = struct {
     }
 
     /// Set the shape of the cursor.
-    pub fn setCursorShape(self: *Surface, shape: terminal.CursorShape) !void {
+    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
         if ((comptime builtin.target.isDarwin()) and
             !internal_os.macosVersionAtLeast(13, 0, 0))
         {

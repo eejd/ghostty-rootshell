@@ -50,7 +50,7 @@ pub const App = struct {
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
 
         /// Called to set the cursor shape.
-        set_cursor_shape: *const fn (SurfaceUD, terminal.CursorShape) callconv(.C) void,
+        set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
 
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
@@ -314,8 +314,8 @@ pub const Surface = struct {
         );
     }
 
-    pub fn setCursorShape(self: *Surface, shape: terminal.CursorShape) !void {
-        self.app.opts.set_cursor_shape(
+    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
+        self.app.opts.set_mouse_shape(
             self.opts.userdata,
             shape,
         );

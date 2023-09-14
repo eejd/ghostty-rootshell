@@ -1682,12 +1682,12 @@ const StreamHandler = struct {
         }, .{ .forever = {} });
     }
 
-    pub fn setCursorShape(
+    pub fn setMouseShape(
         self: *StreamHandler,
-        shape: terminal.CursorShape,
+        shape: terminal.MouseShape,
     ) !void {
         _ = self.ev.surface_mailbox.push(.{
-            .set_cursor_shape = shape,
+            .set_mouse_shape = shape,
         }, .{ .forever = {} });
     }
 

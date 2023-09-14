@@ -990,9 +990,9 @@ pub const Surface = struct {
         // ));
     }
 
-    pub fn setCursorShape(
+    pub fn setMouseShape(
         self: *Surface,
-        shape: terminal.CursorShape,
+        shape: terminal.MouseShape,
     ) !void {
         const name: [:0]const u8 = switch (shape) {
             .default => "default",
