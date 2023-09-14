@@ -861,6 +861,12 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
+                .report_default_color => |v| {
+                    if (@hasDecl(T, "reportDefaultColor")) {
+                        try self.handler.reportDefaultColor(if (v.kind == .foreground) "10" else "11", v.string_terminator);
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
                 else => if (@hasDecl(T, "oscUnimplemented"))
                     try self.handler.oscUnimplemented(cmd)
                 else

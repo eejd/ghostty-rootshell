@@ -68,6 +68,15 @@ grid_size: renderer.GridSize,
 default_cursor_style: terminal.Cursor.Style,
 default_cursor_blink: bool,
 
+/// Default foreground color for OSC 10 reporting.
+default_foreground_color: terminal.color.RGB,
+
+/// Default background color for OSC 11 reporting.
+default_background_color: terminal.color.RGB,
+
+/// The OSC 10/11 reply style.
+osc_color_report_format: configpkg.Config.OSCColorReportFormat,
+
 /// The data associated with the currently running thread.
 data: ?*EventData,
 
@@ -79,6 +88,9 @@ pub const DerivedConfig = struct {
     image_storage_limit: usize,
     cursor_style: terminal.Cursor.Style,
     cursor_blink: bool,
+    foreground: configpkg.Config.Color,
+    background: configpkg.Config.Color,
+    osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -91,6 +103,9 @@ pub const DerivedConfig = struct {
             .image_storage_limit = config.@"image-storage-limit",
             .cursor_style = config.@"cursor-style",
             .cursor_blink = config.@"cursor-style-blink",
+            .foreground = config.foreground,
+            .background = config.background,
+            .osc_color_report_format = config.@"osc-color-report-format",
         };
     }
 
@@ -140,6 +155,9 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .grid_size = opts.grid_size,
         .default_cursor_style = opts.config.cursor_style,
         .default_cursor_blink = opts.config.cursor_blink,
+        .default_foreground_color = config.foreground.toTerminalRGB(),
+        .default_background_color = config.background.toTerminalRGB(),
+        .osc_color_report_format = config.osc_color_report_format,
         .data = null,
     };
 }
@@ -204,6 +222,9 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .grid_size = &self.grid_size,
                 .default_cursor_style = self.default_cursor_style,
                 .default_cursor_blink = self.default_cursor_blink,
+                .default_foreground_color = self.default_foreground_color,
+                .default_background_color = self.default_background_color,
+                .osc_color_report_format = self.osc_color_report_format,
             },
         },
     };
@@ -1141,6 +1162,9 @@ const StreamHandler = struct {
     default_cursor: bool = true,
     default_cursor_style: terminal.Cursor.Style,
     default_cursor_blink: bool,
+    default_foreground_color: terminal.color.RGB,
+    default_background_color: terminal.color.RGB,
+    osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
@@ -1778,5 +1802,33 @@ const StreamHandler = struct {
             try self.changeWindowTitle(uri.path);
             self.ev.seen_title = false;
         }
+    }
+
+    /// Implements OSC 10 and OSC 11, which reports default foreground and background color respectively.
+    pub fn reportDefaultColor(self: *StreamHandler, osc_code: []const u8, string_terminator: ?[]const u8) !void {
+        if (self.osc_color_report_format == .none) return;
+        var msg: termio.Message = .{ .write_small = .{} };
+
+        const resp = resp: {
+            if (self.osc_color_report_format == .bits16) {
+                break :resp try std.fmt.bufPrint(&msg.write_small.data, "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{
+                    osc_code,
+                    @as(u16, self.default_foreground_color.r) * 257,
+                    @as(u16, self.default_foreground_color.g) * 257,
+                    @as(u16, self.default_foreground_color.b) * 257,
+                    if (string_terminator) |st| st else "\x1b\\",
+                });
+            } else {
+                break :resp try std.fmt.bufPrint(&msg.write_small.data, "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}", .{
+                    osc_code,
+                    @as(u16, self.default_foreground_color.r),
+                    @as(u16, self.default_foreground_color.g),
+                    @as(u16, self.default_foreground_color.b),
+                    if (string_terminator) |st| st else "\x1b\\",
+                });
+            }
+        };
+        msg.write_small.len = @intCast(resp.len);
+        self.messageWriter(msg);
     }
 };

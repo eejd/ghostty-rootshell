@@ -84,12 +84,23 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
+<<<<<<< HEAD
     /// OSC 22. Set the mouse shape. There doesn't seem to be a standard
     /// naming scheme for cursors but it looks like terminals such as Foot
     /// are moving towards using the W3C CSS cursor names. For OSC parsing,
     /// we just parse whatever string is given.
     mouse_shape: struct {
         value: []const u8,
+    },
+
+    /// OSC 10 and OSC 11 default color report.
+    report_default_color: struct {
+        /// OSC 10 requests the foreground color, OSC 11 the background color.
+        kind: enum { foreground, background },
+
+        /// We must reply with the same string terminator (ST) as used in the
+        /// request. This is either ESC\ or BEL (0x07)
+        string_terminator: ?[]const u8 = null,
     },
 };
 
@@ -134,6 +145,7 @@ pub const Parser = struct {
         // but the state space is small enough that we just build it up this way.
         @"0",
         @"1",
+        @"10",
         @"11",
         @"13",
         @"133",
@@ -142,6 +154,14 @@ pub const Parser = struct {
         @"5",
         @"52",
         @"7",
+
+        // OSC 10 is used to query the default foreground color, and to set the default foreground color.
+        // Only querying is currently supported.
+        osc_10,
+
+        // OSC 11 is used to query the default background color, and to set the default background color.
+        // Only querying is currently supported.
+        osc_11,
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -210,12 +230,23 @@ pub const Parser = struct {
             },
 
             .@"1" => switch (c) {
+                '0' => self.state = .@"10",
                 '1' => self.state = .@"11",
                 '3' => self.state = .@"13",
                 else => self.state = .invalid,
             },
 
+            .@"10" => switch (c) {
+                ';' => {
+                    self.state = .osc_10;
+                },
+                else => self.state = .invalid,
+            },
+
             .@"11" => switch (c) {
+                ';' => {
+                    self.state = .osc_11;
+                },
                 '2' => {
                     self.complete = true;
                     self.command = .{ .reset_cursor_color = {} };
@@ -299,6 +330,22 @@ pub const Parser = struct {
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .osc_10 => switch (c) {
+                '?' => {
+                    self.command = .{ .report_default_color = .{ .kind = .foreground } };
+                    self.complete = true;
+                },
+                else => self.state = .invalid,
+            },
+
+            .osc_11 => switch (c) {
+                '?' => {
+                    self.command = .{ .report_default_color = .{ .kind = .background } };
+                    self.complete = true;
                 },
                 else => self.state = .invalid,
             },
@@ -465,6 +512,24 @@ pub const Parser = struct {
         }
 
         return self.command;
+    }
+
+    /// End the sequence and return the command, if any. If the return value
+    /// is null, then no valid command was found. The provided `string_terminator`
+    /// character originates from the request. This way we can use the same
+    /// terminator in the reply, which would otherwise break applications that
+    /// don't consider both options.
+    pub fn endWithStringTerminator(self: *Parser, string_separator: u8) ?Command {
+        var maybe_cmd = self.end();
+        if (maybe_cmd) |*cmd| {
+            switch (cmd.*) {
+                .report_default_color => |*c| {
+                    c.string_terminator = if (string_separator == 0x07) "\x07" else "\x1b\\";
+                },
+                else => {},
+            }
+        }
+        return maybe_cmd;
     }
 };
 
@@ -696,4 +761,34 @@ test "OSC: longer than buffer" {
     for (input) |ch| p.next(ch);
 
     try testing.expect(p.end() == null);
+}
+
+test "OSC: report default foreground color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "10;?";
+    for (input) |ch| p.next(ch);
+
+    // This corresponds to ST = ESC \
+    const cmd = p.endWithStringTerminator('\x1b').?;
+    try testing.expect(cmd == .report_default_color);
+    try testing.expect(cmd.report_default_color.kind == .foreground);
+    try testing.expectEqualSlices(u8, cmd.report_default_color.string_terminator.?, "\x1b\\");
+}
+
+test "OSC: report default background color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "11;?";
+    for (input) |ch| p.next(ch);
+
+    // This corresponds to ST = BELL
+    const cmd = p.endWithStringTerminator('\x07').?;
+    try testing.expect(cmd == .report_default_color);
+    try testing.expect(cmd.report_default_color.kind == .background);
+    try testing.expectEqualSlices(u8, cmd.report_default_color.string_terminator.?, "\x07");
 }
