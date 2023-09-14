@@ -281,6 +281,7 @@ pub const Key = enum(c_int) {
     period,
     slash,
     minus,
+    plus,
     equal,
     left_bracket, // [
     right_bracket, // ]
@@ -612,6 +613,9 @@ pub const Key = enum(c_int) {
             .f23,
             .f24,
             .f25,
+
+            // These keys aren't represented in cimgui
+            .plus,
             => null,
         };
     }
@@ -692,6 +696,7 @@ pub const Key = enum(c_int) {
         .{ '.', .period },
         .{ '/', .slash },
         .{ '-', .minus },
+        .{ '+', .plus },
         .{ '=', .equal },
         .{ '[', .left_bracket },
         .{ ']', .right_bracket },
