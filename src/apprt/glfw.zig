@@ -15,6 +15,7 @@ const objc = @import("objc");
 const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
+const terminal = @import("../terminal/main.zig");
 const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
@@ -506,6 +507,12 @@ pub const Surface = struct {
     /// Set the title of the window.
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         self.window.setTitle(slice.ptr);
+    }
+
+    /// Set the shape of the cursor.
+    pub fn setCursorShape(self: *Surface, shape: terminal.CursorShape) !void {
+        _ = self;
+        _ = shape;
     }
 
     /// Read the clipboard. The windowing system is responsible for allocating

@@ -9,6 +9,7 @@ const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
 const trace = @import("tracy").trace;
+const CursorShape = @import("cursor_shape.zig").CursorShape;
 
 const log = std.log.scoped(.stream);
 
@@ -846,6 +847,17 @@ pub fn Stream(comptime Handler: type) type {
                 .report_pwd => |v| {
                     if (@hasDecl(T, "reportPwd")) {
                         try self.handler.reportPwd(v.value);
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
+                .pointer_cursor => |v| {
+                    if (@hasDecl(T, "setCursorShape")) {
+                        const shape = CursorShape.fromString(v.value) orelse {
+                            log.warn("unknown cursor shape: {s}", .{v.value});
+                            return;
+                        };
+
+                        try self.handler.setCursorShape(shape);
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 

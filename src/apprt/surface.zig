@@ -2,6 +2,7 @@ const App = @import("../App.zig");
 const Surface = @import("../Surface.zig");
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
+const terminal = @import("../terminal/main.zig");
 const Config = @import("../config.zig").Config;
 
 /// The message types that can be sent to a single surface.
@@ -15,6 +16,9 @@ pub const Message = union(enum) {
     /// the termio message so that we can more efficiently send strings
     /// of any length
     set_title: [256]u8,
+
+    /// Set the cursor shape.
+    set_cursor_shape: terminal.CursorShape,
 
     /// Change the cell size.
     cell_size: renderer.CellSize,

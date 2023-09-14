@@ -525,6 +525,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             try self.rt_surface.setTitle(slice);
         },
 
+        .set_cursor_shape => |shape| {
+            log.debug("changing cursor shape: {}", .{shape});
+            try self.rt_surface.setCursorShape(shape);
+        },
+
         .cell_size => |size| try self.setCellSize(size),
 
         .clipboard_read => |kind| try self.clipboardRead(kind),
