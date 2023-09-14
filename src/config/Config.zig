@@ -110,7 +110,7 @@ palette: Palette = .{},
 /// In order to fix it, we probably would want to add something similar to Kitty's
 /// shell integration options (no-cursor). For more information see:
 /// https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.shell_integration
-@"cursor-style": terminal.Cursor.Style = .bar,
+@"cursor-style": terminal.Cursor.Style = .block,
 
 /// Whether the cursor shall blink
 @"cursor-style-blink": bool = true,
