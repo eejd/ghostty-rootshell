@@ -305,6 +305,22 @@ keybind: Keybinds = .{},
 /// The default value is "detect".
 @"shell-integration": ShellIntegration = .detect,
 
+/// Sets the reporting format for OSC sequences that request color information.
+/// Ghostty currently supports OSC 10 (foreground) and OSC 11 (background) queries,
+/// and by default the reported values are scaled-up RGB values, where each component
+/// are 16 bits. This is how most terminals report these values. However, some legacy
+/// applications may require 8-bit, unscaled, components. We also support turning off
+/// reporting alltogether. The components are lowercase hex values.
+///
+/// Allowable values are:
+///
+///   * "none" - OSC 10/11 queries receive no reply
+///   * "8-bit" - Color components are return unscaled, i.e. rr/gg/bb
+///   * "16-bit" - Color components are returned scaled, e.g. rrrr/gggg/bbbb
+///
+/// The default value is "16-bit".
+@"osc-color-report-format": OSCColorReportFormat = .@"16-bit",
+
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
 /// using a new space. It's faster than the native fullscreen mode since it
@@ -1479,4 +1495,11 @@ pub const ShellIntegration = enum {
     detect,
     fish,
     zsh,
+};
+
+/// OSC 10 and 11 default color reporting format.
+pub const OSCColorReportFormat = enum {
+    none,
+    @"8-bit",
+    @"16-bit",
 };

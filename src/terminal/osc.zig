@@ -91,6 +91,57 @@ pub const Command = union(enum) {
     mouse_shape: struct {
         value: []const u8,
     },
+
+    /// OSC 10 and OSC 11 default color report.
+    report_default_color: struct {
+        /// OSC 10 requests the foreground color, OSC 11 the background color.
+        kind: DefaultColorKind,
+
+        /// We must reply with the same string terminator (ST) as used in the
+        /// request.
+        terminator: Terminator = .st,
+    },
+
+    pub const DefaultColorKind = enum {
+        foreground,
+        background,
+
+        pub fn code(self: DefaultColorKind) []const u8 {
+            return switch (self) {
+                .foreground => "10",
+                .background => "11",
+            };
+        }
+    };
+};
+
+/// The terminator used to end an OSC command. For OSC commands that demand
+/// a response, we try to match the terminator used in the request since that
+/// is most likely to be accepted by the calling program.
+pub const Terminator = enum {
+    /// The preferred string terminator is ESC followed by \
+    st,
+
+    /// Some applications and terminals use BELL (0x07) as the string terminator.
+    bel,
+
+    /// Initialize the terminator based on the last byte seen. If the
+    /// last byte is a BEL then we use BEL, otherwise we just assume ST.
+    pub fn init(ch: ?u8) Terminator {
+        return switch (ch orelse return .st) {
+            0x07 => .bel,
+            else => .st,
+        };
+    }
+
+    /// The terminator as a string. This is static memory so it doesn't
+    /// need to be freed.
+    pub fn string(self: Terminator) []const u8 {
+        return switch (self) {
+            .st => "\x1b\\",
+            .bel => "\x07",
+        };
+    }
 };
 
 pub const Parser = struct {
@@ -134,6 +185,7 @@ pub const Parser = struct {
         // but the state space is small enough that we just build it up this way.
         @"0",
         @"1",
+        @"10",
         @"11",
         @"13",
         @"133",
@@ -142,6 +194,14 @@ pub const Parser = struct {
         @"5",
         @"52",
         @"7",
+
+        // OSC 10 is used to query the default foreground color, and to set the default foreground color.
+        // Only querying is currently supported.
+        query_default_fg,
+
+        // OSC 11 is used to query the default background color, and to set the default background color.
+        // Only querying is currently supported.
+        query_default_bg,
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -210,12 +270,19 @@ pub const Parser = struct {
             },
 
             .@"1" => switch (c) {
+                '0' => self.state = .@"10",
                 '1' => self.state = .@"11",
                 '3' => self.state = .@"13",
                 else => self.state = .invalid,
             },
 
+            .@"10" => switch (c) {
+                ';' => self.state = .query_default_fg,
+                else => self.state = .invalid,
+            },
+
             .@"11" => switch (c) {
+                ';' => self.state = .query_default_bg,
                 '2' => {
                     self.complete = true;
                     self.command = .{ .reset_cursor_color = {} };
@@ -299,6 +366,22 @@ pub const Parser = struct {
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .query_default_fg => switch (c) {
+                '?' => {
+                    self.command = .{ .report_default_color = .{ .kind = .foreground } };
+                    self.complete = true;
+                },
+                else => self.state = .invalid,
+            },
+
+            .query_default_bg => switch (c) {
+                '?' => {
+                    self.command = .{ .report_default_color = .{ .kind = .background } };
+                    self.complete = true;
                 },
                 else => self.state = .invalid,
             },
@@ -449,8 +532,10 @@ pub const Parser = struct {
     }
 
     /// End the sequence and return the command, if any. If the return value
-    /// is null, then no valid command was found.
-    pub fn end(self: *Parser) ?Command {
+    /// is null, then no valid command was found. The optional terminator_ch
+    /// is the final character in the OSC sequence. This is used to determine
+    /// the response terminator.
+    pub fn end(self: *Parser, terminator_ch: ?u8) ?Command {
         if (!self.complete) {
             log.warn("invalid OSC command: {s}", .{self.buf[0..self.buf_idx]});
             return null;
@@ -461,6 +546,11 @@ pub const Parser = struct {
             .semantic_exit_code => self.endSemanticExitCode(),
             .semantic_option_value => self.endSemanticOptionValue(),
             .string => self.endString(),
+            else => {},
+        }
+
+        switch (self.command) {
+            .report_default_color => |*c| c.terminator = Terminator.init(terminator_ch),
             else => {},
         }
 
@@ -476,7 +566,7 @@ test "OSC: change_window_title" {
     p.next(';');
     p.next('a');
     p.next('b');
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .change_window_title);
     try testing.expectEqualStrings("ab", cmd.change_window_title);
 }
@@ -489,7 +579,7 @@ test "OSC: change_window_title with 2" {
     p.next(';');
     p.next('a');
     p.next('b');
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .change_window_title);
     try testing.expectEqualStrings("ab", cmd.change_window_title);
 }
@@ -502,7 +592,7 @@ test "OSC: prompt_start" {
     const input = "133;A";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.aid == null);
     try testing.expect(cmd.prompt_start.redraw);
@@ -516,7 +606,7 @@ test "OSC: prompt_start with single option" {
     const input = "133;A;aid=14";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expectEqualStrings("14", cmd.prompt_start.aid.?);
 }
@@ -529,7 +619,7 @@ test "OSC: prompt_start with redraw disabled" {
     const input = "133;A;redraw=0";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(!cmd.prompt_start.redraw);
 }
@@ -542,7 +632,7 @@ test "OSC: prompt_start with redraw invalid value" {
     const input = "133;A;redraw=42";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.redraw);
     try testing.expect(cmd.prompt_start.kind == .primary);
@@ -556,7 +646,7 @@ test "OSC: prompt_start with continuation" {
     const input = "133;A;k=c";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.kind == .continuation);
 }
@@ -569,7 +659,7 @@ test "OSC: end_of_command no exit code" {
     const input = "133;D";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .end_of_command);
 }
 
@@ -581,7 +671,7 @@ test "OSC: end_of_command with exit code" {
     const input = "133;D;25";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .end_of_command);
     try testing.expectEqual(@as(u8, 25), cmd.end_of_command.exit_code.?);
 }
@@ -594,7 +684,7 @@ test "OSC: prompt_end" {
     const input = "133;B";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_end);
 }
 
@@ -606,7 +696,7 @@ test "OSC: end_of_input" {
     const input = "133;C";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .end_of_input);
 }
 
@@ -618,7 +708,7 @@ test "OSC: reset_cursor_color" {
     const input = "112";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .reset_cursor_color);
 }
 
@@ -630,7 +720,7 @@ test "OSC: get/set clipboard" {
     const input = "52;s;?";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 's');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
@@ -644,7 +734,7 @@ test "OSC: get/set clipboard (optional parameter)" {
     const input = "52;;?";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 'c');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
@@ -658,7 +748,7 @@ test "OSC: report pwd" {
     const input = "7;file:///tmp/example";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .report_pwd);
     try testing.expect(std.mem.eql(u8, "file:///tmp/example", cmd.report_pwd.value));
 }
@@ -671,7 +761,7 @@ test "OSC: pointer cursor" {
     const input = "22;pointer";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .mouse_shape);
     try testing.expect(std.mem.eql(u8, "pointer", cmd.mouse_shape.value));
 }
@@ -684,7 +774,7 @@ test "OSC: report pwd empty" {
     const input = "7;";
     for (input) |ch| p.next(ch);
 
-    try testing.expect(p.end() == null);
+    try testing.expect(p.end(null) == null);
 }
 
 test "OSC: longer than buffer" {
@@ -695,5 +785,35 @@ test "OSC: longer than buffer" {
     const input = "a" ** (Parser.MAX_BUF + 2);
     for (input) |ch| p.next(ch);
 
-    try testing.expect(p.end() == null);
+    try testing.expect(p.end(null) == null);
+}
+
+test "OSC: report default foreground color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "10;?";
+    for (input) |ch| p.next(ch);
+
+    // This corresponds to ST = ESC followed by \
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .report_default_color);
+    try testing.expectEqual(cmd.report_default_color.kind, .foreground);
+    try testing.expectEqual(cmd.report_default_color.terminator, .st);
+}
+
+test "OSC: report default background color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "11;?";
+    for (input) |ch| p.next(ch);
+
+    // This corresponds to ST = BEL character
+    const cmd = p.end('\x07').?;
+    try testing.expect(cmd == .report_default_color);
+    try testing.expectEqual(cmd.report_default_color.kind, .background);
+    try testing.expectEqual(cmd.report_default_color.terminator, .bel);
 }

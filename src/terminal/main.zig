@@ -6,6 +6,7 @@ const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const sgr = @import("sgr.zig");
 pub const apc = @import("apc.zig");
+pub const osc = @import("osc.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
 pub const kitty = @import("kitty.zig");
