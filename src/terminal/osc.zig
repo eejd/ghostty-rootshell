@@ -95,17 +95,53 @@ pub const Command = union(enum) {
     /// OSC 10 and OSC 11 default color report.
     report_default_color: struct {
         /// OSC 10 requests the foreground color, OSC 11 the background color.
-        kind: enum { foreground, background },
+        kind: DefaultColorKind,
 
         /// We must reply with the same string terminator (ST) as used in the
         /// request.
-        string_terminator: ?enum {
-            /// The preferred string terminator is ESC followed by \
-            st,
-            /// Some applications and terminals use BELL (0x07) as the string terminator.
-            bel,
-        } = null,
+        terminator: Terminator = .st,
     },
+
+    pub const DefaultColorKind = enum {
+        foreground,
+        background,
+
+        pub fn code(self: DefaultColorKind) []const u8 {
+            return switch (self) {
+                .foreground => "10",
+                .background => "11",
+            };
+        }
+    };
+};
+
+/// The terminator used to end an OSC command. For OSC commands that demand
+/// a response, we try to match the terminator used in the request since that
+/// is most likely to be accepted by the calling program.
+pub const Terminator = enum {
+    /// The preferred string terminator is ESC followed by \
+    st,
+
+    /// Some applications and terminals use BELL (0x07) as the string terminator.
+    bel,
+
+    /// Initialize the terminator based on the last byte seen. If the
+    /// last byte is a BEL then we use BEL, otherwise we just assume ST.
+    pub fn init(ch: ?u8) Terminator {
+        return switch (ch orelse return .st) {
+            0x07 => .bel,
+            else => .st,
+        };
+    }
+
+    /// The terminator as a string. This is static memory so it doesn't
+    /// need to be freed.
+    pub fn string(self: Terminator) []const u8 {
+        return switch (self) {
+            .st => "\x1b\\",
+            .bel => "\x07",
+        };
+    }
 };
 
 pub const Parser = struct {
@@ -496,8 +532,10 @@ pub const Parser = struct {
     }
 
     /// End the sequence and return the command, if any. If the return value
-    /// is null, then no valid command was found.
-    pub fn end(self: *Parser, string_separator: ?u8) ?Command {
+    /// is null, then no valid command was found. The optional terminator_ch
+    /// is the final character in the OSC sequence. This is used to determine
+    /// the response terminator.
+    pub fn end(self: *Parser, terminator_ch: ?u8) ?Command {
         if (!self.complete) {
             log.warn("invalid OSC command: {s}", .{self.buf[0..self.buf_idx]});
             return null;
@@ -512,11 +550,10 @@ pub const Parser = struct {
         }
 
         switch (self.command) {
-            .report_default_color => |*c| {
-                c.string_terminator = if (string_separator == 0x07) .bel else .st;
-            },
+            .report_default_color => |*c| c.terminator = Terminator.init(terminator_ch),
             else => {},
         }
+
         return self.command;
     }
 };
@@ -763,7 +800,7 @@ test "OSC: report default foreground color" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .report_default_color);
     try testing.expectEqual(cmd.report_default_color.kind, .foreground);
-    try testing.expectEqual(cmd.report_default_color.string_terminator, .st);
+    try testing.expectEqual(cmd.report_default_color.terminator, .st);
 }
 
 test "OSC: report default background color" {
@@ -778,5 +815,5 @@ test "OSC: report default background color" {
     const cmd = p.end('\x07').?;
     try testing.expect(cmd == .report_default_color);
     try testing.expectEqual(cmd.report_default_color.kind, .background);
-    try testing.expectEqual(cmd.report_default_color.string_terminator.?, .bel);
+    try testing.expectEqual(cmd.report_default_color.terminator, .bel);
 }

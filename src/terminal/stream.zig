@@ -863,10 +863,7 @@ pub fn Stream(comptime Handler: type) type {
 
                 .report_default_color => |v| {
                     if (@hasDecl(T, "reportDefaultColor")) {
-                        try self.handler.reportDefaultColor(
-                            if (v.kind == .foreground) "10" else "11",
-                            if (v.string_terminator == .st) "\x1b\\" else "\x07",
-                        );
+                        try self.handler.reportDefaultColor(v.kind, v.terminator);
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 

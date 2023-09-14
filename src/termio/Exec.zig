@@ -1804,29 +1804,45 @@ const StreamHandler = struct {
         }
     }
 
-    /// Implements OSC 10 and OSC 11, which reports default foreground and background color respectively.
-    pub fn reportDefaultColor(self: *StreamHandler, osc_code: []const u8, string_terminator: ?[]const u8) !void {
+    /// Implements OSC 10 and OSC 11, which reports default foreground and
+    /// background color respectively.
+    pub fn reportDefaultColor(
+        self: *StreamHandler,
+        kind: terminal.osc.Command.DefaultColorKind,
+        terminator: terminal.osc.Terminator,
+    ) !void {
         if (self.osc_color_report_format == .none) return;
+
+        const color = switch (kind) {
+            .foreground => self.default_foreground_color,
+            .background => self.default_background_color,
+        };
+
         var msg: termio.Message = .{ .write_small = .{} };
-        const color = if (std.mem.eql(u8, osc_code, "10")) self.default_foreground_color else self.default_background_color;
-        const resp = resp: {
-            if (self.osc_color_report_format == .bits16) {
-                break :resp try std.fmt.bufPrint(&msg.write_small.data, "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{
-                    osc_code,
+        const resp = switch (self.osc_color_report_format) {
+            .bits16 => try std.fmt.bufPrint(
+                &msg.write_small.data,
+                "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}",
+                .{
+                    kind.code(),
                     @as(u16, color.r) * 257,
                     @as(u16, color.g) * 257,
                     @as(u16, color.b) * 257,
-                    if (string_terminator) |st| st else "\x1b\\",
-                });
-            } else {
-                break :resp try std.fmt.bufPrint(&msg.write_small.data, "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}", .{
-                    osc_code,
+                    terminator.string(),
+                },
+            ),
+
+            else => try std.fmt.bufPrint(
+                &msg.write_small.data,
+                "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
+                .{
+                    kind.code(),
                     @as(u16, color.r),
                     @as(u16, color.g),
                     @as(u16, color.b),
-                    if (string_terminator) |st| st else "\x1b\\",
-                });
-            }
+                    terminator.string(),
+                },
+            ),
         };
         msg.write_small.len = @intCast(resp.len);
         self.messageWriter(msg);
