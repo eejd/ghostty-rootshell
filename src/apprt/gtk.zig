@@ -791,7 +791,7 @@ pub const Surface = struct {
         c.gtk_widget_set_focus_on_click(widget, 1);
 
         // When we're over the widget, set the cursor to the ibeam
-        c.gtk_widget_set_cursor(widget, app.cursor_ibeam);
+        c.gtk_widget_set_cursor(widget, app.cursor);
 
         // Build our result
         self.* = .{
@@ -1029,7 +1029,6 @@ pub const Surface = struct {
             .nwse_resize => "nwse-resize",
             .zoom_in => "zoom-in",
             .zoom_out => "zoom-out",
-            else => return,
         };
 
         const cursor = c.gdk_cursor_new_from_name(name.ptr, null) orelse {
@@ -1042,8 +1041,8 @@ pub const Surface = struct {
         c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
 
         // Free our existing cursor
-        if (self.cursor) |old| c.g_object_unref(old);
-        self.cursor = cursor;
+        if (self.app.cursor) |old| c.g_object_unref(old);
+        self.app.cursor = cursor;
     }
 
     pub fn getClipboardString(
