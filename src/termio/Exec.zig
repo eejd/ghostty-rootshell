@@ -1808,22 +1808,22 @@ const StreamHandler = struct {
     pub fn reportDefaultColor(self: *StreamHandler, osc_code: []const u8, string_terminator: ?[]const u8) !void {
         if (self.osc_color_report_format == .none) return;
         var msg: termio.Message = .{ .write_small = .{} };
-
+        const color = if (std.mem.eql(u8, osc_code, "10")) self.default_foreground_color else self.default_background_color;
         const resp = resp: {
             if (self.osc_color_report_format == .bits16) {
                 break :resp try std.fmt.bufPrint(&msg.write_small.data, "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}", .{
                     osc_code,
-                    @as(u16, self.default_foreground_color.r) * 257,
-                    @as(u16, self.default_foreground_color.g) * 257,
-                    @as(u16, self.default_foreground_color.b) * 257,
+                    @as(u16, color.r) * 257,
+                    @as(u16, color.g) * 257,
+                    @as(u16, color.b) * 257,
                     if (string_terminator) |st| st else "\x1b\\",
                 });
             } else {
                 break :resp try std.fmt.bufPrint(&msg.write_small.data, "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}", .{
                     osc_code,
-                    @as(u16, self.default_foreground_color.r),
-                    @as(u16, self.default_foreground_color.g),
-                    @as(u16, self.default_foreground_color.b),
+                    @as(u16, color.r),
+                    @as(u16, color.g),
+                    @as(u16, color.b),
                     if (string_terminator) |st| st else "\x1b\\",
                 });
             }

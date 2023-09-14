@@ -84,7 +84,6 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
-<<<<<<< HEAD
     /// OSC 22. Set the mouse shape. There doesn't seem to be a standard
     /// naming scheme for cursors but it looks like terminals such as Foot
     /// are moving towards using the W3C CSS cursor names. For OSC parsing,
@@ -99,8 +98,13 @@ pub const Command = union(enum) {
         kind: enum { foreground, background },
 
         /// We must reply with the same string terminator (ST) as used in the
-        /// request. This is either ESC\ or BEL (0x07)
-        string_terminator: ?[]const u8 = null,
+        /// request.
+        string_terminator: ?enum {
+            /// The preferred string terminator is ESC followed by \
+            st,
+            /// Some applications and terminals use BELL (0x07) as the string terminator.
+            bel,
+        } = null,
     },
 };
 
@@ -157,11 +161,11 @@ pub const Parser = struct {
 
         // OSC 10 is used to query the default foreground color, and to set the default foreground color.
         // Only querying is currently supported.
-        osc_10,
+        query_default_fg,
 
         // OSC 11 is used to query the default background color, and to set the default background color.
         // Only querying is currently supported.
-        osc_11,
+        query_default_bg,
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -237,16 +241,12 @@ pub const Parser = struct {
             },
 
             .@"10" => switch (c) {
-                ';' => {
-                    self.state = .osc_10;
-                },
+                ';' => self.state = .query_default_fg,
                 else => self.state = .invalid,
             },
 
             .@"11" => switch (c) {
-                ';' => {
-                    self.state = .osc_11;
-                },
+                ';' => self.state = .query_default_bg,
                 '2' => {
                     self.complete = true;
                     self.command = .{ .reset_cursor_color = {} };
@@ -334,7 +334,7 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .osc_10 => switch (c) {
+            .query_default_fg => switch (c) {
                 '?' => {
                     self.command = .{ .report_default_color = .{ .kind = .foreground } };
                     self.complete = true;
@@ -342,7 +342,7 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .osc_11 => switch (c) {
+            .query_default_bg => switch (c) {
                 '?' => {
                     self.command = .{ .report_default_color = .{ .kind = .background } };
                     self.complete = true;
@@ -497,7 +497,7 @@ pub const Parser = struct {
 
     /// End the sequence and return the command, if any. If the return value
     /// is null, then no valid command was found.
-    pub fn end(self: *Parser) ?Command {
+    pub fn end(self: *Parser, string_separator: ?u8) ?Command {
         if (!self.complete) {
             log.warn("invalid OSC command: {s}", .{self.buf[0..self.buf_idx]});
             return null;
@@ -511,25 +511,13 @@ pub const Parser = struct {
             else => {},
         }
 
-        return self.command;
-    }
-
-    /// End the sequence and return the command, if any. If the return value
-    /// is null, then no valid command was found. The provided `string_terminator`
-    /// character originates from the request. This way we can use the same
-    /// terminator in the reply, which would otherwise break applications that
-    /// don't consider both options.
-    pub fn endWithStringTerminator(self: *Parser, string_separator: u8) ?Command {
-        var maybe_cmd = self.end();
-        if (maybe_cmd) |*cmd| {
-            switch (cmd.*) {
-                .report_default_color => |*c| {
-                    c.string_terminator = if (string_separator == 0x07) "\x07" else "\x1b\\";
-                },
-                else => {},
-            }
+        switch (self.command) {
+            .report_default_color => |*c| {
+                c.string_terminator = if (string_separator == 0x07) .bel else .st;
+            },
+            else => {},
         }
-        return maybe_cmd;
+        return self.command;
     }
 };
 
@@ -541,7 +529,7 @@ test "OSC: change_window_title" {
     p.next(';');
     p.next('a');
     p.next('b');
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .change_window_title);
     try testing.expectEqualStrings("ab", cmd.change_window_title);
 }
@@ -554,7 +542,7 @@ test "OSC: change_window_title with 2" {
     p.next(';');
     p.next('a');
     p.next('b');
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .change_window_title);
     try testing.expectEqualStrings("ab", cmd.change_window_title);
 }
@@ -567,7 +555,7 @@ test "OSC: prompt_start" {
     const input = "133;A";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.aid == null);
     try testing.expect(cmd.prompt_start.redraw);
@@ -581,7 +569,7 @@ test "OSC: prompt_start with single option" {
     const input = "133;A;aid=14";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expectEqualStrings("14", cmd.prompt_start.aid.?);
 }
@@ -594,7 +582,7 @@ test "OSC: prompt_start with redraw disabled" {
     const input = "133;A;redraw=0";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(!cmd.prompt_start.redraw);
 }
@@ -607,7 +595,7 @@ test "OSC: prompt_start with redraw invalid value" {
     const input = "133;A;redraw=42";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.redraw);
     try testing.expect(cmd.prompt_start.kind == .primary);
@@ -621,7 +609,7 @@ test "OSC: prompt_start with continuation" {
     const input = "133;A;k=c";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.kind == .continuation);
 }
@@ -634,7 +622,7 @@ test "OSC: end_of_command no exit code" {
     const input = "133;D";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .end_of_command);
 }
 
@@ -646,7 +634,7 @@ test "OSC: end_of_command with exit code" {
     const input = "133;D;25";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .end_of_command);
     try testing.expectEqual(@as(u8, 25), cmd.end_of_command.exit_code.?);
 }
@@ -659,7 +647,7 @@ test "OSC: prompt_end" {
     const input = "133;B";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_end);
 }
 
@@ -671,7 +659,7 @@ test "OSC: end_of_input" {
     const input = "133;C";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .end_of_input);
 }
 
@@ -683,7 +671,7 @@ test "OSC: reset_cursor_color" {
     const input = "112";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .reset_cursor_color);
 }
 
@@ -695,7 +683,7 @@ test "OSC: get/set clipboard" {
     const input = "52;s;?";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 's');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
@@ -709,7 +697,7 @@ test "OSC: get/set clipboard (optional parameter)" {
     const input = "52;;?";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 'c');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
@@ -723,7 +711,7 @@ test "OSC: report pwd" {
     const input = "7;file:///tmp/example";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .report_pwd);
     try testing.expect(std.mem.eql(u8, "file:///tmp/example", cmd.report_pwd.value));
 }
@@ -736,7 +724,7 @@ test "OSC: pointer cursor" {
     const input = "22;pointer";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end().?;
+    const cmd = p.end(null).?;
     try testing.expect(cmd == .mouse_shape);
     try testing.expect(std.mem.eql(u8, "pointer", cmd.mouse_shape.value));
 }
@@ -749,7 +737,7 @@ test "OSC: report pwd empty" {
     const input = "7;";
     for (input) |ch| p.next(ch);
 
-    try testing.expect(p.end() == null);
+    try testing.expect(p.end(null) == null);
 }
 
 test "OSC: longer than buffer" {
@@ -760,7 +748,7 @@ test "OSC: longer than buffer" {
     const input = "a" ** (Parser.MAX_BUF + 2);
     for (input) |ch| p.next(ch);
 
-    try testing.expect(p.end() == null);
+    try testing.expect(p.end(null) == null);
 }
 
 test "OSC: report default foreground color" {
@@ -771,11 +759,11 @@ test "OSC: report default foreground color" {
     const input = "10;?";
     for (input) |ch| p.next(ch);
 
-    // This corresponds to ST = ESC \
-    const cmd = p.endWithStringTerminator('\x1b').?;
+    // This corresponds to ST = ESC followed by \
+    const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .report_default_color);
-    try testing.expect(cmd.report_default_color.kind == .foreground);
-    try testing.expectEqualSlices(u8, cmd.report_default_color.string_terminator.?, "\x1b\\");
+    try testing.expectEqual(cmd.report_default_color.kind, .foreground);
+    try testing.expectEqual(cmd.report_default_color.string_terminator, .st);
 }
 
 test "OSC: report default background color" {
@@ -786,9 +774,9 @@ test "OSC: report default background color" {
     const input = "11;?";
     for (input) |ch| p.next(ch);
 
-    // This corresponds to ST = BELL
-    const cmd = p.endWithStringTerminator('\x07').?;
+    // This corresponds to ST = BEL character
+    const cmd = p.end('\x07').?;
     try testing.expect(cmd == .report_default_color);
-    try testing.expect(cmd.report_default_color.kind == .background);
-    try testing.expectEqualSlices(u8, cmd.report_default_color.string_terminator.?, "\x07");
+    try testing.expectEqual(cmd.report_default_color.kind, .background);
+    try testing.expectEqual(cmd.report_default_color.string_terminator.?, .bel);
 }
