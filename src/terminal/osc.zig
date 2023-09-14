@@ -83,6 +83,14 @@ pub const Command = union(enum) {
         /// be a file URL but it is up to the caller to utilize this value.
         value: []const u8,
     },
+
+    /// OSC 22. Set the cursor shape. There doesn't seem to be a standard
+    /// naming scheme for cursors but it looks like terminals such as Foot
+    /// are moving towards using the W3C CSS cursor names. For OSC parsing,
+    /// we just parse whatever string is given.
+    pointer_cursor: struct {
+        value: []const u8,
+    },
 };
 
 pub const Parser = struct {
@@ -130,6 +138,7 @@ pub const Parser = struct {
         @"13",
         @"133",
         @"2",
+        @"22",
         @"5",
         @"52",
         @"7",
@@ -226,11 +235,23 @@ pub const Parser = struct {
             },
 
             .@"2" => switch (c) {
+                '2' => self.state = .@"22",
                 ';' => {
                     self.command = .{ .change_window_title = undefined };
 
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.change_window_title };
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .@"22" => switch (c) {
+                ';' => {
+                    self.command = .{ .pointer_cursor = undefined };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.pointer_cursor.value };
                     self.buf_start = self.buf_idx;
                 },
                 else => self.state = .invalid,
@@ -640,6 +661,19 @@ test "OSC: report pwd" {
     const cmd = p.end().?;
     try testing.expect(cmd == .report_pwd);
     try testing.expect(std.mem.eql(u8, "file:///tmp/example", cmd.report_pwd.value));
+}
+
+test "OSC: pointer cursor" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "22;pointer";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end().?;
+    try testing.expect(cmd == .pointer_cursor);
+    try testing.expect(std.mem.eql(u8, "pointer", cmd.pointer_cursor.value));
 }
 
 test "OSC: report pwd empty" {
