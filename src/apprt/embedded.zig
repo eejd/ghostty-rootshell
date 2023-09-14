@@ -11,6 +11,7 @@ const Allocator = std.mem.Allocator;
 const objc = @import("objc");
 const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
+const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
 const configpkg = @import("../config.zig");
@@ -47,6 +48,9 @@ pub const App = struct {
 
         /// Called to set the title of the window.
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
+
+        /// Called to set the cursor shape.
+        set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
 
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
@@ -307,6 +311,13 @@ pub const Surface = struct {
         self.app.opts.set_title(
             self.opts.userdata,
             slice.ptr,
+        );
+    }
+
+    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
+        self.app.opts.set_mouse_shape(
+            self.opts.userdata,
+            shape,
         );
     }
 

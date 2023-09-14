@@ -1682,6 +1682,15 @@ const StreamHandler = struct {
         }, .{ .forever = {} });
     }
 
+    pub fn setMouseShape(
+        self: *StreamHandler,
+        shape: terminal.MouseShape,
+    ) !void {
+        _ = self.ev.surface_mailbox.push(.{
+            .set_mouse_shape = shape,
+        }, .{ .forever = {} });
+    }
+
     pub fn clipboardContents(self: *StreamHandler, kind: u8, data: []const u8) !void {
         // Note: we ignore the "kind" field and always use the standard clipboard.
         // iTerm also appears to do this but other terminals seem to only allow

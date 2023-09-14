@@ -15,6 +15,7 @@ pub const parse_table = @import("parse_table.zig");
 pub const Charset = charsets.Charset;
 pub const CharsetSlot = charsets.Slots;
 pub const CharsetActiveSlot = charsets.ActiveSlot;
+pub const MouseShape = @import("mouse_shape.zig").MouseShape;
 pub const Terminal = @import("Terminal.zig");
 pub const Parser = @import("Parser.zig");
 pub const Selection = @import("Selection.zig");

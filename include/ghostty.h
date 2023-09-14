@@ -71,6 +71,43 @@ typedef enum {
 } ghostty_input_mouse_momentum_e;
 
 typedef enum {
+    GHOSTTY_MOUSE_SHAPE_DEFAULT,
+    GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU,
+    GHOSTTY_MOUSE_SHAPE_HELP,
+    GHOSTTY_MOUSE_SHAPE_POINTER,
+    GHOSTTY_MOUSE_SHAPE_PROGRESS,
+    GHOSTTY_MOUSE_SHAPE_WAIT,
+    GHOSTTY_MOUSE_SHAPE_CELL,
+    GHOSTTY_MOUSE_SHAPE_CROSSHAIR,
+    GHOSTTY_MOUSE_SHAPE_TEXT,
+    GHOSTTY_MOUSE_SHAPE_VERTICAL_TEXT,
+    GHOSTTY_MOUSE_SHAPE_ALIAS,
+    GHOSTTY_MOUSE_SHAPE_COPY,
+    GHOSTTY_MOUSE_SHAPE_MOVE,
+    GHOSTTY_MOUSE_SHAPE_NO_DROP,
+    GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED,
+    GHOSTTY_MOUSE_SHAPE_GRAB,
+    GHOSTTY_MOUSE_SHAPE_GRABBING,
+    GHOSTTY_MOUSE_SHAPE_ALL_SCROLL,
+    GHOSTTY_MOUSE_SHAPE_COL_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_ROW_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_N_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_E_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_S_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_W_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_NE_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_NW_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_SE_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_SW_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_EW_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_NS_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_NESW_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_NWSE_RESIZE,
+    GHOSTTY_MOUSE_SHAPE_ZOOM_IN,
+    GHOSTTY_MOUSE_SHAPE_ZOOM_OUT,
+} ghostty_mouse_shape_e;
+
+typedef enum {
     GHOSTTY_NON_NATIVE_FULLSCREEN_FALSE,
     GHOSTTY_NON_NATIVE_FULLSCREEN_TRUE,
     GHOSTTY_NON_NATIVE_FULLSCREEN_VISIBLE_MENU,
@@ -264,6 +301,7 @@ typedef struct {
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
 typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
+typedef void (*ghostty_runtime_set_mouse_shape_cb)(void *, ghostty_mouse_shape_e);
 typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *, ghostty_clipboard_e);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty_clipboard_e);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e, ghostty_surface_config_s);
@@ -281,6 +319,7 @@ typedef struct {
     ghostty_runtime_wakeup_cb wakeup_cb;
     ghostty_runtime_reload_config_cb reload_config_cb;
     ghostty_runtime_set_title_cb set_title_cb;
+    ghostty_runtime_set_mouse_shape_cb set_mouse_shape_cb;
     ghostty_runtime_read_clipboard_cb read_clipboard_cb;
     ghostty_runtime_write_clipboard_cb write_clipboard_cb;
     ghostty_runtime_new_split_cb new_split_cb;

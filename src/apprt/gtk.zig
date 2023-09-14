@@ -8,6 +8,7 @@ const glfw = @import("glfw");
 const apprt = @import("../apprt.zig");
 const font = @import("../font/main.zig");
 const input = @import("../input.zig");
+const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
 const configpkg = @import("../config.zig");
@@ -43,9 +44,6 @@ pub const App = struct {
 
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
-
-    cursor_default: *c.GdkCursor,
-    cursor_ibeam: *c.GdkCursor,
 
     /// This is set to false when the main loop should exit.
     running: bool = true,
@@ -125,19 +123,11 @@ pub const App = struct {
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         c.g_application_activate(gapp);
 
-        // Get our cursors
-        const cursor_default = c.gdk_cursor_new_from_name("default", null).?;
-        errdefer c.g_object_unref(cursor_default);
-        const cursor_ibeam = c.gdk_cursor_new_from_name("text", cursor_default).?;
-        errdefer c.g_object_unref(cursor_ibeam);
-
         return .{
             .core_app = core_app,
             .app = app,
             .config = config,
             .ctx = ctx,
-            .cursor_default = cursor_default,
-            .cursor_ibeam = cursor_ibeam,
 
             // If we are NOT the primary instance, then we never want to run.
             // This means that another instance of the GTK app is running and
@@ -153,9 +143,6 @@ pub const App = struct {
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
         c.g_object_unref(self.app);
-
-        c.g_object_unref(self.cursor_ibeam);
-        c.g_object_unref(self.cursor_default);
 
         self.config.deinit();
 
@@ -722,6 +709,9 @@ pub const Surface = struct {
     /// Our GTK area
     gl_area: *c.GtkGLArea,
 
+    /// Any active cursor we may have
+    cursor: ?*c.GdkCursor = null,
+
     /// Our title label (if there is one).
     title: Title,
 
@@ -797,9 +787,6 @@ pub const Surface = struct {
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
         c.gtk_widget_set_focus_on_click(widget, 1);
-
-        // When we're over the widget, set the cursor to the ibeam
-        c.gtk_widget_set_cursor(widget, app.cursor_ibeam);
 
         // Build our result
         self.* = .{
@@ -880,6 +867,8 @@ pub const Surface = struct {
         // Free all our GTK stuff
         c.g_object_unref(self.im_context);
         c.g_value_unset(&self.clipboard);
+
+        if (self.cursor) |cursor| c.g_object_unref(cursor);
     }
 
     fn render(self: *Surface) !void {
@@ -996,6 +985,61 @@ pub const Surface = struct {
         //     *c.GtkWidget,
         //     self.gl_area,
         // ));
+    }
+
+    pub fn setMouseShape(
+        self: *Surface,
+        shape: terminal.MouseShape,
+    ) !void {
+        const name: [:0]const u8 = switch (shape) {
+            .default => "default",
+            .help => "help",
+            .pointer => "pointer",
+            .context_menu => "context-menu",
+            .progress => "progress",
+            .wait => "wait",
+            .cell => "cell",
+            .crosshair => "crosshair",
+            .text => "text",
+            .vertical_text => "vertical-text",
+            .alias => "alias",
+            .copy => "copy",
+            .no_drop => "no-drop",
+            .move => "move",
+            .not_allowed => "not-allowed",
+            .grab => "grab",
+            .grabbing => "grabbing",
+            .all_scroll => "all-scroll",
+            .col_resize => "col-resize",
+            .row_resize => "row-resize",
+            .n_resize => "n-resize",
+            .e_resize => "e-resize",
+            .s_resize => "s-resize",
+            .w_resize => "w-resize",
+            .ne_resize => "ne-resize",
+            .nw_resize => "nw-resize",
+            .se_resize => "se-resize",
+            .sw_resize => "sw-resize",
+            .ew_resize => "ew-resize",
+            .ns_resize => "ns-resize",
+            .nesw_resize => "nesw-resize",
+            .nwse_resize => "nwse-resize",
+            .zoom_in => "zoom-in",
+            .zoom_out => "zoom-out",
+        };
+
+        const cursor = c.gdk_cursor_new_from_name(name.ptr, null) orelse {
+            log.warn("unsupported cursor name={s}", .{name});
+            return;
+        };
+        errdefer c.g_object_unref(cursor);
+
+        // Set our new cursor
+        c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
+
+        // Free our existing cursor
+        if (self.cursor) |old| c.g_object_unref(old);
+        self.cursor = cursor;
     }
 
     pub fn getClipboardString(
