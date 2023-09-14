@@ -45,9 +45,6 @@ pub const App = struct {
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
 
-    /// Any active cursor we may have
-    cursor: ?*c.GdkCursor = null,
-
     /// This is set to false when the main loop should exit.
     running: bool = true,
 
@@ -146,8 +143,6 @@ pub const App = struct {
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
         c.g_object_unref(self.app);
-
-        if (self.cursor) |cursor| c.g_object_unref(cursor);
 
         self.config.deinit();
 
@@ -714,6 +709,9 @@ pub const Surface = struct {
     /// Our GTK area
     gl_area: *c.GtkGLArea,
 
+    /// Any active cursor we may have
+    cursor: ?*c.GdkCursor = null,
+
     /// Our title label (if there is one).
     title: Title,
 
@@ -789,9 +787,6 @@ pub const Surface = struct {
         // The GL area has to be focusable so that it can receive events
         c.gtk_widget_set_focusable(widget, 1);
         c.gtk_widget_set_focus_on_click(widget, 1);
-
-        // When we're over the widget, set the cursor to the ibeam
-        c.gtk_widget_set_cursor(widget, app.cursor);
 
         // Build our result
         self.* = .{
@@ -872,6 +867,8 @@ pub const Surface = struct {
         // Free all our GTK stuff
         c.g_object_unref(self.im_context);
         c.g_value_unset(&self.clipboard);
+
+        if (self.cursor) |cursor| c.g_object_unref(cursor);
     }
 
     fn render(self: *Surface) !void {
@@ -1041,8 +1038,8 @@ pub const Surface = struct {
         c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
 
         // Free our existing cursor
-        if (self.app.cursor) |old| c.g_object_unref(old);
-        self.app.cursor = cursor;
+        if (self.cursor) |old| c.g_object_unref(old);
+        self.cursor = cursor;
     }
 
     pub fn getClipboardString(
