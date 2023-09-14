@@ -309,7 +309,6 @@ typedef struct {
     void *nsview;
     double scale_factor;
     uint16_t font_size;
-    bool render_decoration;
 } ghostty_surface_config_s;
 
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
