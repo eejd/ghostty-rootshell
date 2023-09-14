@@ -276,7 +276,7 @@ pub const Surface = struct {
     window: glfw.Window,
 
     /// The glfw mouse cursor handle.
-    cursor: glfw.Cursor,
+    cursor: ?glfw.Cursor,
 
     /// The app we're part of
     app: *App,
@@ -336,16 +336,6 @@ pub const Surface = struct {
             nswindow.setProperty("tabbingIdentifier", app.darwin.tabbing_id);
         }
 
-        // Create the cursor
-        const cursor = glfw.Cursor.createStandard(.ibeam) orelse return glfw.mustGetErrorCode();
-        errdefer cursor.destroy();
-        if ((comptime !builtin.target.isDarwin()) or internal_os.macosVersionAtLeast(13, 0, 0)) {
-            // We only set our cursor if we're NOT on Mac, or if we are then the
-            // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
-            // since we use a tab group.
-            win.setCursor(cursor);
-        }
-
         // Set our callbacks
         win.setUserPointer(&self.core_surface);
         win.setSizeCallback(sizeCallback);
@@ -361,10 +351,13 @@ pub const Surface = struct {
         self.* = .{
             .app = app,
             .window = win,
-            .cursor = cursor,
+            .cursor = null,
             .core_surface = undefined,
         };
         errdefer self.* = undefined;
+
+        // Initialize our cursor
+        try self.setCursorShape(.text);
 
         // Add ourselves to the list of surfaces on the app.
         try app.app.addSurface(self);
@@ -426,7 +419,10 @@ pub const Surface = struct {
         // We can now safely destroy our windows. We have to do this BEFORE
         // setting up the new focused window below.
         self.window.destroy();
-        self.cursor.destroy();
+        if (self.cursor) |c| {
+            c.destroy();
+            self.cursor = null;
+        }
 
         // If we have a tabgroup set, we want to manually focus the next window.
         // We should NOT have to do this usually, see the comments above.
@@ -511,8 +507,39 @@ pub const Surface = struct {
 
     /// Set the shape of the cursor.
     pub fn setCursorShape(self: *Surface, shape: terminal.CursorShape) !void {
-        _ = self;
-        _ = shape;
+        if ((comptime builtin.target.isDarwin()) and
+            !internal_os.macosVersionAtLeast(13, 0, 0))
+        {
+            // We only set our cursor if we're NOT on Mac, or if we are then the
+            // macOS version is >= 13 (Ventura). On prior versions, glfw crashes
+            // since we use a tab group.
+            return;
+        }
+
+        const new = glfw.Cursor.createStandard(switch (shape) {
+            .default => .arrow,
+            .text => .ibeam,
+            .crosshair => .crosshair,
+            .pointer => .pointing_hand,
+            .ew_resize => .resize_ew,
+            .ns_resize => .resize_ns,
+            .nwse_resize => .resize_nwse,
+            .nesw_resize => .resize_nesw,
+            .all_scroll => .resize_all,
+            .not_allowed => .not_allowed,
+            else => return, // unsupported, ignore
+        }) orelse {
+            const err = glfw.mustGetErrorCode();
+            log.warn("error creating cursor: {}", .{err});
+            return;
+        };
+        errdefer new.destroy();
+
+        // Set our cursor before we destroy the old one
+        self.window.setCursor(new);
+
+        if (self.cursor) |c| c.destroy();
+        self.cursor = new;
     }
 
     /// Read the clipboard. The windowing system is responsible for allocating
