@@ -52,6 +52,9 @@ pub const App = struct {
         /// Called to set the cursor shape.
         set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
 
+        /// Called to set the mouse visibility.
+        set_mouse_visibility: *const fn (SurfaceUD, bool) callconv(.C) void,
+
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
         /// value then this should return null.
@@ -318,6 +321,14 @@ pub const Surface = struct {
         self.app.opts.set_mouse_shape(
             self.opts.userdata,
             shape,
+        );
+    }
+
+    /// Set the visibility of the mouse cursor.
+    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
+        self.app.opts.set_mouse_visibility(
+            self.opts.userdata,
+            visible,
         );
     }
 
