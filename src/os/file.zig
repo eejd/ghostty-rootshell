@@ -53,6 +53,16 @@ pub fn fixMaxFiles() void {
 
 /// Return the recommended path for temporary files.
 pub fn tmpDir() ?[]const u8 {
+    if (builtin.os.tag == .windows) {
+        // TODO: what is a good fallback path on windows?
+        const w_temp = std.os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
+        var buf = [_]u8{0} ** 256; // 256 is the maximum path length on windows
+        const len = std.unicode.utf16leToUtf8(buf[0..], w_temp[0..w_temp.len]) catch {
+            log.warn("failed to convert temp dir path from windows string", .{});
+            return null;
+        };
+        return buf[0..len];
+    }
     if (std.os.getenv("TMPDIR")) |v| return v;
     if (std.os.getenv("TMP")) |v| return v;
     return "/tmp";

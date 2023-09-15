@@ -61,8 +61,9 @@ pub fn name(self: *TempDir) []const u8 {
 }
 
 /// Finish with the temporary directory. This deletes all contents in the
-/// directory. This is safe to call multiple times.
+/// directory.
 pub fn deinit(self: *TempDir) void {
+    self.dir.close();
     self.parent.deleteTree(self.name()) catch |err|
         log.err("error deleting temp dir err={}", .{err});
 }
@@ -78,13 +79,14 @@ const b64_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345
 
 test {
     var td = try init();
-    defer td.deinit();
+    errdefer td.deinit();
 
     const nameval = td.name();
     try testing.expect(nameval.len > 0);
 
     // Can open a new handle to it proves it exists.
-    _ = try td.parent.openDir(nameval, .{});
+    var dir = try td.parent.openDir(nameval, .{});
+    dir.close();
 
     // Should be deleted after we deinit
     td.deinit();
