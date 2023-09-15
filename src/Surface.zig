@@ -755,13 +755,30 @@ fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) 
     const dec = std.base64.standard.Decoder;
 
     // Build buffer
-    const size = try dec.calcSizeForSlice(data);
+    const size = dec.calcSizeForSlice(data) catch |err| switch (err) {
+        error.InvalidPadding => {
+            log.info("application sent invalid base64 data for OSC 52", .{});
+            return;
+        },
+
+        // Should not be reachable but don't want to risk it.
+        else => return,
+    };
     var buf = try self.alloc.allocSentinel(u8, size, 0);
     defer self.alloc.free(buf);
     buf[buf.len] = 0;
 
     // Decode
-    try dec.decode(buf, data);
+    dec.decode(buf, data) catch |err| switch (err) {
+        // Ignore this. It is possible to actually have valid data and
+        // get this error, so we allow it.
+        error.InvalidPadding => {},
+
+        else => {
+            log.info("application sent invalid base64 data for OSC 52", .{});
+            return;
+        },
+    };
     assert(buf[buf.len] == 0);
 
     self.rt_surface.setClipboardString(buf, loc) catch |err| {
