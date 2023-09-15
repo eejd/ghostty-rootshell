@@ -120,7 +120,8 @@ palette: Palette = .{},
 @"cursor-text": ?Color = null,
 
 /// Hide the mouse immediately when typing. The mouse becomes visible
-/// again when the mouse is used.
+/// again when the mouse is used. The mouse is only hidden if the mouse
+/// cursor is over the active terminal surface.
 @"mouse-hide-while-typing": bool = false,
 
 /// The opacity level (opposite of transparency) of the background.
