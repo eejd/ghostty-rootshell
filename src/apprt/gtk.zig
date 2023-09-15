@@ -392,14 +392,32 @@ const Window = struct {
         c.gtk_notebook_set_show_tabs(notebook, 0);
         c.gtk_notebook_set_show_border(notebook, 0);
 
+        // This is important so the notebook expands to fit available space.
+        // Otherwise, it will be zero/zero in the box below.
+        c.gtk_widget_set_vexpand(notebook_widget, 1);
+        c.gtk_widget_set_hexpand(notebook_widget, 1);
+
         // Create our add button for new tabs
         const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
         c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
         _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, G_CONNECT_DEFAULT);
 
-        // The notebook is our main child
-        c.gtk_window_set_child(gtk_window, notebook_widget);
+        // Create our box which will hold our widgets.
+        const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
+
+        // In debug we show a warning. This is a really common issue where
+        // people build from source in debug and performance is really bad.
+        if (builtin.mode == .Debug) {
+            const warning = c.gtk_label_new("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
+            c.gtk_widget_set_margin_top(warning, 10);
+            c.gtk_widget_set_margin_bottom(warning, 10);
+            c.gtk_box_append(@ptrCast(box), warning);
+        }
+        c.gtk_box_append(@ptrCast(box), notebook_widget);
+
+        // The box is our main child
+        c.gtk_window_set_child(gtk_window, box);
     }
 
     pub fn deinit(self: *Window) void {
