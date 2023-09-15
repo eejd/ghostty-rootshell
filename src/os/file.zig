@@ -55,10 +55,14 @@ pub fn fixMaxFiles() void {
 pub fn tmpDir() ?[]const u8 {
     if (builtin.os.tag == .windows) {
         // TODO: what is a good fallback path on windows?
-        const w_temp = std.os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
-        var buf = [_]u8{0} ** 256; // 256 is the maximum path length on windows
-        const len = std.unicode.utf16leToUtf8(buf[0..], w_temp[0..w_temp.len]) catch {
-            log.warn("failed to convert temp dir path from windows string", .{});
+        const v = std.os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
+        // MAX_PATH is very likely sufficient, but it's theoretically possible for someone to
+        // configure their os to allow paths as big as std.os.windows.PATH_MAX_WIDE, which is MUCH
+        // larger. Even if they did that, though, it's very unlikey that their Temp dir will use
+        // such a long path. We can switch if we see any issues, though it seems fairly unlikely.
+        var buf = [_]u8{0} ** std.os.windows.MAX_PATH;
+        const len = std.unicode.utf16leToUtf8(buf[0..], v[0..v.len]) catch |e| {
+            log.warn("failed to convert temp dir path from windows string: {}", .{e});
             return null;
         };
         return buf[0..len];
