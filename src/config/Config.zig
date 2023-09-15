@@ -119,6 +119,10 @@ palette: Palette = .{},
 /// will be chosen.
 @"cursor-text": ?Color = null,
 
+/// Hide the mouse immediately when typing. The mouse becomes visible
+/// again when the mouse is used.
+@"mouse-hide-while-typing": bool = false,
+
 /// The opacity level (opposite of transparency) of the background.
 /// A value of 1 is fully opaque and a value of 0 is fully transparent.
 /// A value less than 0 or greater than 1 will be clamped to the nearest
