@@ -15,7 +15,7 @@ class FocusedSurfaceWrapper {
 // such as non-native fullscreen.
 class PrimaryWindow: NSWindow {
     var focusedSurfaceWrapper: FocusedSurfaceWrapper = FocusedSurfaceWrapper()
-    
+
     static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),

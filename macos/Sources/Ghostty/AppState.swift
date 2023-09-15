@@ -385,6 +385,16 @@ extension Ghostty {
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
 
+            guard self.appState(fromSurface: userdata)?.windowDecorations else {
+                let alert = NSAlert()
+                alert.messageText = "Tabs are disabled"
+                alert.informativeText = "Enable window decorations to use tabs"
+                alert.addButton(withTitle: "OK")
+                alert.alertStyle = .warning
+                _ = alert.runModal()
+                return
+            }
+
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewTab,
                 object: surface,
