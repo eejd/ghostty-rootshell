@@ -94,38 +94,46 @@ struct PrimaryView: View {
                 self.appDelegate.confirmQuit = $0
             })
             
-            Ghostty.TerminalSplit(onClose: Self.closeWindow, baseConfig: self.baseConfig)
-                .ghosttyApp(ghostty.app!)
-                .ghosttyConfig(ghostty.config!)
-                .background(WindowAccessor(window: $window))
-                .onReceive(gotoTab) { onGotoTab(notification: $0) }
-                .onReceive(toggleFullscreen) { onToggleFullscreen(notification: $0) }
-                .focused($focused)
-                .onAppear { self.focused = true }
-                .onChange(of: focusedSurface) { newValue in
-                    self.focusedSurfaceWrapper.surface = newValue?.surface
+            VStack(spacing: 0) {
+                // If we're running in debug mode we show a warning so that users
+                // know that performance will be degraded.
+                if (ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG) {
+                    DebugBuildWarningView()
                 }
-                .onChange(of: title) { newValue in
-                    // We need to handle this manually because we are using AppKit lifecycle
-                    // so navigationTitle no longer works.
-                    guard let window = self.window else { return }
-                    window.title = newValue
-                }
-                .confirmationDialog(
-                    "Quit Ghostty?",
-                    isPresented: confirmQuitting) {
-                        Button("Close Ghostty") {
-                            NSApplication.shared.reply(toApplicationShouldTerminate: true)
-                        }
-                        .keyboardShortcut(.defaultAction)
-                        
-                        Button("Cancel", role: .cancel) {
-                            NSApplication.shared.reply(toApplicationShouldTerminate: false)
-                        }
-                        .keyboardShortcut(.cancelAction)
-                    } message: {
-                        Text("All terminal sessions will be terminated.")
+                
+                Ghostty.TerminalSplit(onClose: Self.closeWindow, baseConfig: self.baseConfig)
+                    .ghosttyApp(ghostty.app!)
+                    .ghosttyConfig(ghostty.config!)
+                    .background(WindowAccessor(window: $window))
+                    .onReceive(gotoTab) { onGotoTab(notification: $0) }
+                    .onReceive(toggleFullscreen) { onToggleFullscreen(notification: $0) }
+                    .focused($focused)
+                    .onAppear { self.focused = true }
+                    .onChange(of: focusedSurface) { newValue in
+                        self.focusedSurfaceWrapper.surface = newValue?.surface
                     }
+                    .onChange(of: title) { newValue in
+                        // We need to handle this manually because we are using AppKit lifecycle
+                        // so navigationTitle no longer works.
+                        guard let window = self.window else { return }
+                        window.title = newValue
+                    }
+                    .confirmationDialog(
+                        "Quit Ghostty?",
+                        isPresented: confirmQuitting) {
+                            Button("Close Ghostty") {
+                                NSApplication.shared.reply(toApplicationShouldTerminate: true)
+                            }
+                            .keyboardShortcut(.defaultAction)
+                            
+                            Button("Cancel", role: .cancel) {
+                                NSApplication.shared.reply(toApplicationShouldTerminate: false)
+                            }
+                            .keyboardShortcut(.cancelAction)
+                        } message: {
+                            Text("All terminal sessions will be terminated.")
+                        }
+            }
         }
     }
     
@@ -193,6 +201,37 @@ struct PrimaryView: View {
         // toggling fullscreen, so we set it back to the correct one.
         if let focusedSurface {
             Ghostty.moveFocus(to: focusedSurface)
+        }
+    }
+}
+
+struct DebugBuildWarningView: View {
+    @State private var isPopover = false
+    
+    var body: some View {
+        HStack {
+            Spacer()
+            
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.yellow)
+            
+            Text("You're running a debug build of Ghostty! Performance will be degraded.")
+                .padding(.all, 8)
+                .popover(isPresented: $isPopover, arrowEdge: .bottom) {
+                    Text("""
+                    Debug builds of Ghostty are very slow and you may experience
+                    performance problems. Debug builds are only recommended during
+                    development.
+                    """)
+                    .padding(.all)
+                }
+            
+            Spacer()
+        }
+        .background(Color(.windowBackgroundColor))
+        .frame(maxWidth: .infinity)
+        .onTapGesture {
+            isPopover = true
         }
     }
 }

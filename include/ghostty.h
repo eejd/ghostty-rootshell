@@ -284,9 +284,22 @@ typedef struct {
     bool physical;
 } ghostty_input_trigger_s;
 
+typedef enum {
+    GHOSTTY_BUILD_MODE_DEBUG,
+    GHOSTTY_BUILD_MODE_RELEASE_SAFE,
+    GHOSTTY_BUILD_MODE_RELEASE_FAST,
+    GHOSTTY_BUILD_MODE_RELEASE_SMALL,
+} ghostty_build_mode_e;
+
 // Fully defined types. This MUST be kept in sync with equivalent Zig
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
+typedef struct {
+    ghostty_build_mode_e build_mode;
+    const char *version;
+    uintptr_t version_len;
+} ghostty_info_s;
+
 typedef struct {
     const char *message;
 } ghostty_error_s;
@@ -338,6 +351,7 @@ typedef struct {
 // Published API
 
 int ghostty_init(void);
+ghostty_info_s ghostty_info(void);
 
 ghostty_config_t ghostty_config_new();
 void ghostty_config_free(ghostty_config_t);
