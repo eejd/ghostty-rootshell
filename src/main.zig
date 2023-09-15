@@ -1,10 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
 const build_config = @import("build_config.zig");
 const options = @import("build_options");
 const glfw = @import("glfw");
 const macos = @import("macos");
 const tracy = @import("tracy");
+const cli_action = @import("cli_action.zig");
 const internal_os = @import("os/main.zig");
 const xev = @import("xev");
 const fontconfig = @import("fontconfig");
@@ -31,6 +33,38 @@ pub fn main() !void {
     state.init();
     defer state.deinit();
     const alloc = state.alloc;
+
+    // Before we do anything else, we need to check for special commands
+    // via the CLI flags.
+    if (cli_action.Action.detectCLI(alloc)) |action_| {
+        if (action_) |action| {
+            std.log.info("executing CLI action={}", .{action});
+            std.os.exit(action.run(alloc) catch |err| err: {
+                std.log.err("CLI action failed error={}", .{err});
+                break :err 1;
+            });
+            return;
+        }
+    } else |err| {
+        const stderr = std.io.getStdErr().writer();
+        defer std.os.exit(1);
+        const ErrSet = @TypeOf(err) || error{Unknown};
+        switch (@as(ErrSet, @errSetCast(err))) {
+            error.MultipleActions => try stderr.print(
+                "Error: multiple CLI actions specified. You must specify only one\n" ++
+                    "action starting with the `+` character.\n",
+                .{},
+            ),
+
+            error.InvalidAction => try stderr.print(
+                "Error: unknown CLI action specified. CLI actions are specified with\n" ++
+                    "the '+' character.\n",
+                .{},
+            ),
+
+            else => try stderr.print("invalid CLI invocation err={}\n", .{err}),
+        }
+    }
 
     // Create our app state
     var app = try App.create(alloc);
@@ -187,6 +221,7 @@ test {
     _ = @import("renderer.zig");
     _ = @import("termio.zig");
     _ = @import("input.zig");
+    _ = @import("cli_action.zig");
 
     // Libraries
     _ = @import("segmented_pool.zig");
