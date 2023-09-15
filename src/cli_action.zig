@@ -40,7 +40,7 @@ pub const Action = enum {
             pending = std.meta.stringToEnum(Action, arg[1..]) orelse return Error.InvalidAction;
         }
 
-        return null;
+        return pending;
     }
 
     /// Run the action. This returns the exit code to exit with.
@@ -99,6 +99,41 @@ test "parse action version" {
         var iter = try std.process.ArgIteratorGeneral(.{}).init(
             alloc,
             "--c=84 --d --version --a=42 --b --b-f=false",
+        );
+        defer iter.deinit();
+        const action = try Action.detectIter(&iter);
+        try testing.expect(action.? == .version);
+    }
+}
+
+test "parse action plus" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var iter = try std.process.ArgIteratorGeneral(.{}).init(
+            alloc,
+            "--a=42 --b --b-f=false +version",
+        );
+        defer iter.deinit();
+        const action = try Action.detectIter(&iter);
+        try testing.expect(action.? == .version);
+    }
+
+    {
+        var iter = try std.process.ArgIteratorGeneral(.{}).init(
+            alloc,
+            "+version --a=42 --b --b-f=false",
+        );
+        defer iter.deinit();
+        const action = try Action.detectIter(&iter);
+        try testing.expect(action.? == .version);
+    }
+
+    {
+        var iter = try std.process.ArgIteratorGeneral(.{}).init(
+            alloc,
+            "--c=84 --d +version --a=42 --b --b-f=false",
         );
         defer iter.deinit();
         const action = try Action.detectIter(&iter);
