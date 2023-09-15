@@ -1,7 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const xev = @import("xev");
 const Allocator = std.mem.Allocator;
 const build_config = @import("build_config.zig");
+const renderer = @import("renderer.zig");
 
 /// Special commands that can be invoked via CLI flags. These are all
 /// invoked by using `+<action>` as a CLI flag. The only exception is
@@ -54,7 +56,13 @@ pub const Action = enum {
 
 fn runVersion() !u8 {
     const stdout = std.io.getStdOut().writer();
-    try stdout.print("Ghostty {s}\n", .{build_config.version_string});
+    try stdout.print("Ghostty {s}\n\n", .{build_config.version_string});
+    try stdout.print("Build Config\n", .{});
+    try stdout.print("  - build mode : {}\n", .{builtin.mode});
+    try stdout.print("  - app runtime: {}\n", .{build_config.app_runtime});
+    try stdout.print("  - font engine: {}\n", .{build_config.font_backend});
+    try stdout.print("  - renderer   : {}\n", .{renderer.Renderer});
+    try stdout.print("  - libxev     : {}\n", .{xev.backend});
     return 0;
 }
 
