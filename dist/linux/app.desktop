@@ -2,7 +2,7 @@
 Name=Ghostty
 Type=Application
 Comment=A terminal emulator
-Exec=/usr/bin/ghostty
+Exec=ghostty
 Icon=com.mitchellh.ghostty
 Keywords=terminal;tty;pty;
 StartupNotify=true
@@ -11,4 +11,4 @@ Actions=new-window
 
 [Desktop Action new-window]
 Actions=new-window
-Exec=/usr/bin/ghostty
+Exec=ghostty
