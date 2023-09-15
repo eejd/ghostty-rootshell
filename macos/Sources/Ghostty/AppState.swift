@@ -73,6 +73,7 @@ extension Ghostty {
                 reload_config_cb: { userdata in AppState.reloadConfig(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
                 set_mouse_shape_cb: { userdata, shape in AppState.setMouseShape(userdata, shape: shape) },
+                set_mouse_visibility_cb: { userdata, visible in AppState.setMouseVisibility(userdata, visible: visible) },
                 read_clipboard_cb: { userdata, loc in AppState.readClipboard(userdata, location: loc) },
                 write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
@@ -337,6 +338,11 @@ extension Ghostty {
         static func setMouseShape(_ userdata: UnsafeMutableRawPointer?, shape: ghostty_mouse_shape_e) {
             let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
             surfaceView.setCursorShape(shape)
+        }
+        
+        static func setMouseVisibility(_ userdata: UnsafeMutableRawPointer?, visible: Bool) {
+            let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
+            surfaceView.setCursorVisibility(visible)
         }
 
         static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {

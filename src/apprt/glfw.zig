@@ -542,6 +542,11 @@ pub const Surface = struct {
         self.cursor = new;
     }
 
+    /// Set the visibility of the mouse cursor.
+    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
+        self.window.setInputModeCursor(if (visible) .normal else .hidden);
+    }
+
     /// Read the clipboard. The windowing system is responsible for allocating
     /// a buffer as necessary. This should be a stable pointer until the next
     /// time getClipboardString is called.

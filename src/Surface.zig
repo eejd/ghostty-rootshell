@@ -122,6 +122,9 @@ const Mouse = struct {
     /// Pending scroll amounts for high-precision scrolls
     pending_scroll_x: f64 = 0,
     pending_scroll_y: f64 = 0,
+
+    /// True if the mouse is hidden
+    hidden: bool = false,
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -138,6 +141,7 @@ const DerivedConfig = struct {
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
     mouse_interval: u64,
+    mouse_hide_while_typing: bool,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
     window_padding_x: u32,
@@ -157,6 +161,7 @@ const DerivedConfig = struct {
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
+            .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
             .window_padding_x = config.@"window-padding-x",
@@ -566,6 +571,11 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     self.config.deinit();
     self.config = derived;
 
+    // If our mouse is hidden but we disabled mouse hiding, then show it again.
+    if (!self.config.mouse_hide_while_typing and self.mouse.hidden) {
+        self.showMouse();
+    }
+
     // We need to store our configs in a heap-allocated pointer so that
     // our messages aren't huge.
     var renderer_config_ptr = try self.alloc.create(Renderer.DerivedConfig);
@@ -961,6 +971,14 @@ pub fn keyCallback(
         }
     }
 
+    // If this input event has text, then we hide the mouse if configured.
+    if (self.config.mouse_hide_while_typing and
+        !self.mouse.hidden and
+        event.utf8.len > 0)
+    {
+        self.hideMouse();
+    }
+
     // No binding, so we have to perform an encoding task. This
     // may still result in no encoding. Under different modes and
     // inputs there are many keybindings that result in no encoding
@@ -1048,6 +1066,9 @@ pub fn scrollCallback(
     defer tracy.end();
 
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
+
+    // Always show the mouse again if it is hidden
+    if (self.mouse.hidden) self.showMouse();
 
     const ScrollAmount = struct {
         // Positive is up, right
@@ -1446,6 +1467,9 @@ pub fn mouseButtonCallback(
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(mods);
 
+    // Always show the mouse again if it is hidden
+    if (self.mouse.hidden) self.showMouse();
+
     // Shift-click continues the previous mouse state if we have a selection.
     // cursorPosCallback will also do a mouse report so we don't need to do any
     // of the logic below.
@@ -1593,6 +1617,9 @@ pub fn cursorPosCallback(
 ) !void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    // Always show the mouse again if it is hidden
+    if (self.mouse.hidden) self.showMouse();
 
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
@@ -1850,6 +1877,18 @@ fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
 fn scrollToBottom(self: *Surface) !void {
     try self.io.terminal.scrollViewport(.{ .bottom = {} });
     try self.queueRender();
+}
+
+fn hideMouse(self: *Surface) void {
+    if (self.mouse.hidden) return;
+    self.mouse.hidden = true;
+    self.rt_surface.setMouseVisibility(false);
+}
+
+fn showMouse(self: *Surface) void {
+    if (!self.mouse.hidden) return;
+    self.mouse.hidden = false;
+    self.rt_surface.setMouseVisibility(true);
 }
 
 /// Perform a binding action. A binding is a keybinding. This function

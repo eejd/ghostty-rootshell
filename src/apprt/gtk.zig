@@ -45,6 +45,9 @@ pub const App = struct {
     app: *c.GtkApplication,
     ctx: *c.GMainContext,
 
+    /// The "none" cursor. We use one that is shared across the entire app.
+    cursor_none: ?*c.GdkCursor,
+
     /// This is set to false when the main loop should exit.
     running: bool = true,
 
@@ -67,6 +70,10 @@ pub const App = struct {
                 log.warn("configuration error: {s}", .{err.message});
             }
         }
+
+        // The "none" cursor is used for hiding the cursor
+        const cursor_none = c.gdk_cursor_new_from_name("none", null);
+        errdefer if (cursor_none) |cursor| c.g_object_unref(cursor);
 
         // Our uniqueness ID is based on whether we're in a debug mode or not.
         // In debug mode we want to be separate so we can develop Ghostty in
@@ -128,6 +135,7 @@ pub const App = struct {
             .app = app,
             .config = config,
             .ctx = ctx,
+            .cursor_none = cursor_none,
 
             // If we are NOT the primary instance, then we never want to run.
             // This means that another instance of the GTK app is running and
@@ -143,6 +151,8 @@ pub const App = struct {
         while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
         c.g_main_context_release(self.ctx);
         c.g_object_unref(self.app);
+
+        if (self.cursor_none) |cursor| c.g_object_unref(cursor);
 
         self.config.deinit();
 
@@ -1040,6 +1050,21 @@ pub const Surface = struct {
         // Free our existing cursor
         if (self.cursor) |old| c.g_object_unref(old);
         self.cursor = cursor;
+    }
+
+    /// Set the visibility of the mouse cursor.
+    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
+        // Note in there that self.cursor or cursor_none may be null. That's
+        // not a problem because NULL is a valid argument for set cursor
+        // which means to just use the parent value.
+
+        if (visible) {
+            c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.cursor);
+            return;
+        }
+
+        // Set our new cursor to the app "none" cursor
+        c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.app.cursor_none);
     }
 
     pub fn getClipboardString(

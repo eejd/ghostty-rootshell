@@ -197,7 +197,9 @@ extension Ghostty {
 
         private var markedText: NSMutableAttributedString
         private var mouseEntered: Bool = false
-        private var cursor: NSCursor = .arrow
+        private var focused: Bool = true
+        private var cursor: NSCursor = .iBeam
+        private var cursorVisible: CursorVisibility = .visible
 
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
@@ -205,6 +207,15 @@ extension Ghostty {
         // I don't think we need this but this lets us know we should redraw our layer
         // so we'll use that to tell ghostty to refresh.
         override var wantsUpdateLayer: Bool { return true }
+
+        // State machine for mouse cursor visibility because every call to
+        // NSCursor.hide/unhide must be balanced.
+        enum CursorVisibility {
+            case visible
+            case hidden
+            case pendingVisible
+            case pendingHidden
+        }
 
         init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
             self.markedText = NSMutableAttributedString()
@@ -236,7 +247,14 @@ extension Ghostty {
 
         deinit {
             trackingAreas.forEach { removeTrackingArea($0) }
-
+            
+            // mouseExited is not called by AppKit one last time when the view
+            // closes so we do it manually to ensure our NSCursor state remains
+            // accurate.
+            if (mouseEntered) {
+                mouseExited(with: NSEvent())
+            }
+            
             guard let surface = self.surface else { return }
             ghostty_surface_free(surface)
         }
@@ -320,8 +338,41 @@ extension Ghostty {
             }
 
             // Set our cursor immediately if our mouse is over our window
+            if (mouseEntered) { cursorUpdate(with: NSEvent()) }
+            if let window = self.window {
+                window.invalidateCursorRects(for: self)
+            }
+        }
+        
+        func setCursorVisibility(_ visible: Bool) {
+            switch (cursorVisible) {
+            case .visible:
+                // If we want to be visible, do nothing. If we want to be hidden
+                // enter the pending state.
+                if (visible) { return }
+                cursorVisible = .pendingHidden
+                
+            case .hidden:
+                // If we want to be hidden, do nothing. If we want to be visible
+                // enter the pending state.
+                if (!visible) { return }
+                cursorVisible = .pendingVisible
+                
+            case .pendingVisible:
+                // If we want to be visible, do nothing because we're already pending.
+                // If we want to be hidden, we're already hidden so reset state.
+                if (visible) { return }
+                cursorVisible = .hidden
+                
+            case .pendingHidden:
+                // If we want to be hidden, do nothing because we're pending that switch.
+                // If we want to be visible, we're already visible so reset state.
+                if (!visible) { return }
+                cursorVisible = .visible
+            }
+
             if (mouseEntered) {
-                cursor.set()
+                cursorUpdate(with: NSEvent())
             }
         }
 
@@ -338,13 +389,22 @@ extension Ghostty {
             // If we have a blur, set the blur
             ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
         }
+        
+        override func becomeFirstResponder() -> Bool {
+            let result = super.becomeFirstResponder()
+            if (result) { focused = true }
+            return result
+        }
 
         override func resignFirstResponder() -> Bool {
             let result = super.resignFirstResponder()
 
             // We sometimes call this manually (see SplitView) as a way to force us to
             // yield our focus state.
-            if (result) { focusDidChange(false) }
+            if (result) {
+                focusDidChange(false)
+                focused = false
+            }
 
             return result
         }
@@ -372,7 +432,7 @@ extension Ghostty {
 
         override func resetCursorRects() {
             discardCursorRects()
-            addCursorRect(frame, cursor: .iBeam)
+            addCursorRect(frame, cursor: self.cursor)
         }
 
         override func viewDidChangeBackingProperties() {
@@ -419,7 +479,7 @@ extension Ghostty {
 
         override func mouseMoved(with event: NSEvent) {
             guard let surface = self.surface else { return }
-
+            
             // Convert window position to view position. Note (0, 0) is bottom left.
             let pos = self.convert(event.locationInWindow, from: nil)
             ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
@@ -432,10 +492,20 @@ extension Ghostty {
 
         override func mouseEntered(with event: NSEvent) {
             mouseEntered = true
+            
+            // If our cursor is hidden, we hide it on upon entry and we unhide
+            // it on exit (mouseExited)
+            if (cursorVisible == .hidden) {
+                NSCursor.hide()
+            }
         }
 
         override func mouseExited(with event: NSEvent) {
             mouseEntered = false
+            
+            if (cursorVisible == .hidden) {
+                NSCursor.unhide()
+            }
         }
 
         override func scrollWheel(with event: NSEvent) {
@@ -482,6 +552,22 @@ extension Ghostty {
         }
 
         override func cursorUpdate(with event: NSEvent) {
+            if (focused) {
+                switch (cursorVisible) {
+                case .visible, .hidden:
+                    // Do nothing, stable state
+                    break
+                    
+                case .pendingHidden:
+                    NSCursor.hide()
+                    cursorVisible = .hidden
+                    
+                case .pendingVisible:
+                    NSCursor.unhide()
+                    cursorVisible = .visible
+                }
+            }
+            
             cursor.set()
         }
 
