@@ -571,6 +571,11 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     self.config.deinit();
     self.config = derived;
 
+    // If our mouse is hidden but we disabled mouse hiding, then show it again.
+    if (!self.config.mouse_hide_while_typing and self.mouse.hidden) {
+        self.showMouse();
+    }
+
     // We need to store our configs in a heap-allocated pointer so that
     // our messages aren't huge.
     var renderer_config_ptr = try self.alloc.create(Renderer.DerivedConfig);
