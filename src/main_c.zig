@@ -27,6 +27,9 @@ pub usingnamespace apprt.runtime.CAPI;
 /// one global state but it has zero practical benefit.
 export fn ghostty_init() c_int {
     assert(builtin.link_libc);
-    main.state.init();
+    main.state.init() catch |err| {
+        std.log.err("failed to initialize ghostty error={}", .{err});
+        return 1;
+    };
     return 0;
 }

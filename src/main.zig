@@ -24,28 +24,11 @@ const Ghostty = @import("main_c.zig").Ghostty;
 pub var state: GlobalState = undefined;
 
 pub fn main() !void {
-    if (comptime builtin.mode == .Debug) {
-        std.log.warn("This is a debug build. Performance will be very poor.", .{});
-        std.log.warn("You should only use a debug build for developing Ghostty.", .{});
-        std.log.warn("Otherwise, please rebuild in a release mode.", .{});
-    }
-
-    state.init();
-    defer state.deinit();
-    const alloc = state.alloc;
-
-    // Before we do anything else, we need to check for special commands
-    // via the CLI flags.
-    if (cli_action.Action.detectCLI(alloc)) |action_| {
-        if (action_) |action| {
-            std.log.info("executing CLI action={}", .{action});
-            std.os.exit(action.run(alloc) catch |err| err: {
-                std.log.err("CLI action failed error={}", .{err});
-                break :err 1;
-            });
-            return;
-        }
-    } else |err| {
+    // We first start by initializing our global state. This will setup
+    // process-level state we need to run the terminal. The reason we use
+    // a global is because the C API needs to be able to access this state;
+    // no other Zig code should EVER access the global state.
+    state.init() catch |err| {
         const stderr = std.io.getStdErr().writer();
         defer std.os.exit(1);
         const ErrSet = @TypeOf(err) || error{Unknown};
@@ -64,6 +47,24 @@ pub fn main() !void {
 
             else => try stderr.print("invalid CLI invocation err={}\n", .{err}),
         }
+    };
+    defer state.deinit();
+    const alloc = state.alloc;
+
+    if (comptime builtin.mode == .Debug) {
+        std.log.warn("This is a debug build. Performance will be very poor.", .{});
+        std.log.warn("You should only use a debug build for developing Ghostty.", .{});
+        std.log.warn("Otherwise, please rebuild in a release mode.", .{});
+    }
+
+    // Execute our action if we have one
+    if (state.action) |action| {
+        std.log.info("executing CLI action={}", .{action});
+        std.os.exit(action.run(alloc) catch |err| err: {
+            std.log.err("CLI action failed error={}", .{err});
+            break :err 1;
+        });
+        return;
     }
 
     // Create our app state
@@ -125,6 +126,11 @@ pub const std_options = struct {
             logger.log(std.heap.c_allocator, mac_level, format, args);
         }
 
+        // If we have an action executing, we don't log to stderr.
+        // TODO(mitchellh): flag to enable logs
+        // TODO(mitchellh): flag to send logs to file
+        if (state.action != null) return;
+
         // Always try default to send to stderr
         const stderr = std.io.getStdErr().writer();
         nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
@@ -140,31 +146,17 @@ pub const GlobalState = struct {
     gpa: ?GPA,
     alloc: std.mem.Allocator,
     tracy: if (tracy.enabled) ?tracy.Allocator(null) else void,
+    action: ?cli_action.Action,
 
-    pub fn init(self: *GlobalState) void {
-        // Output some debug information right away
-        std.log.info("ghostty version={s}", .{build_config.version_string});
-        std.log.info("runtime={}", .{build_config.app_runtime});
-        std.log.info("font_backend={}", .{build_config.font_backend});
-        std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
-        if (comptime build_config.font_backend.hasFontconfig()) {
-            std.log.info("dependency fontconfig={d}", .{fontconfig.version()});
-        }
-        std.log.info("renderer={}", .{renderer.Renderer});
-        std.log.info("libxev backend={}", .{xev.backend});
-
-        // First things first, we fix our file descriptors
-        internal_os.fixMaxFiles();
-
-        // We need to make sure the process locale is set properly. Locale
-        // affects a lot of behaviors in a shell.
-        internal_os.ensureLocale();
-
+    pub fn init(self: *GlobalState) !void {
         // Initialize ourself to nothing so we don't have any extra state.
+        // IMPORTANT: this MUST be initialized before any log output because
+        // the log function uses the global state.
         self.* = .{
             .gpa = null,
             .alloc = undefined,
             .tracy = undefined,
+            .action = null,
         };
         errdefer self.deinit();
 
@@ -198,6 +190,27 @@ pub const GlobalState = struct {
             self.tracy = tracy.allocator(base, null);
             break :alloc self.tracy.?.allocator();
         };
+
+        // We first try to parse any action that we may be executing.
+        self.action = try cli_action.Action.detectCLI(self.alloc);
+
+        // Output some debug information right away
+        std.log.info("ghostty version={s}", .{build_config.version_string});
+        std.log.info("runtime={}", .{build_config.app_runtime});
+        std.log.info("font_backend={}", .{build_config.font_backend});
+        std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
+        if (comptime build_config.font_backend.hasFontconfig()) {
+            std.log.info("dependency fontconfig={d}", .{fontconfig.version()});
+        }
+        std.log.info("renderer={}", .{renderer.Renderer});
+        std.log.info("libxev backend={}", .{xev.backend});
+
+        // First things first, we fix our file descriptors
+        internal_os.fixMaxFiles();
+
+        // We need to make sure the process locale is set properly. Locale
+        // affects a lot of behaviors in a shell.
+        internal_os.ensureLocale();
     }
 
     /// Cleans up the global state. This doesn't _need_ to be called but
