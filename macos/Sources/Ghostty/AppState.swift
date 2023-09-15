@@ -11,6 +11,11 @@ extension Ghostty {
         case loading, error, ready
     }
     
+    struct Info {
+        var mode: ghostty_build_mode_e
+        var version: String
+    }
+    
     /// The AppState is the global state that is associated with the Swift app. This handles initially
     /// initializing Ghostty, loading the configuration, etc.
     class AppState: ObservableObject {
@@ -44,6 +49,18 @@ extension Ghostty {
         var needsConfirmQuit: Bool {
             guard let app = app else { return false }
             return ghostty_app_needs_confirm_quit(app)
+        }
+        
+        /// Build information
+        var info: Info {
+            let raw = ghostty_info()
+            let version = NSString(
+                bytes: raw.version,
+                length: Int(raw.version_len),
+                encoding: NSUTF8StringEncoding
+            ) ?? "unknown"
+            
+            return Info(mode: raw.build_mode, version: String(version))
         }
         
         /// Cached clipboard string for `read_clipboard` callback.
