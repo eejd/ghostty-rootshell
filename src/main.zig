@@ -126,14 +126,15 @@ pub const std_options = struct {
             logger.log(std.heap.c_allocator, mac_level, format, args);
         }
 
-        // If we have an action executing, we don't log to stderr.
-        // TODO(mitchellh): flag to enable logs
-        // TODO(mitchellh): flag to send logs to file
-        if (state.action != null) return;
+        switch (state.logging) {
+            .disabled => {},
 
-        // Always try default to send to stderr
-        const stderr = std.io.getStdErr().writer();
-        nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
+            .stderr => {
+                // Always try default to send to stderr
+                const stderr = std.io.getStdErr().writer();
+                nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
+            },
+        }
     }
 };
 
@@ -147,6 +148,13 @@ pub const GlobalState = struct {
     alloc: std.mem.Allocator,
     tracy: if (tracy.enabled) ?tracy.Allocator(null) else void,
     action: ?cli_action.Action,
+    logging: Logging,
+
+    /// Where logging should go
+    pub const Logging = union(enum) {
+        disabled: void,
+        stderr: void,
+    };
 
     pub fn init(self: *GlobalState) !void {
         // Initialize ourself to nothing so we don't have any extra state.
@@ -157,6 +165,7 @@ pub const GlobalState = struct {
             .alloc = undefined,
             .tracy = undefined,
             .action = null,
+            .logging = .{ .stderr = {} },
         };
         errdefer self.deinit();
 
@@ -193,6 +202,22 @@ pub const GlobalState = struct {
 
         // We first try to parse any action that we may be executing.
         self.action = try cli_action.Action.detectCLI(self.alloc);
+
+        // If we have an action executing, we disable logging by default
+        // since we write to stderr we don't want logs messing up our
+        // output.
+        if (self.action != null) self.logging = .{ .disabled = {} };
+
+        // I don't love the env var name but I don't have it in my heart
+        // to parse CLI args 3 times (once for actions, once for config,
+        // maybe once for logging) so for now this is an easy way to do
+        // this. Env vars are useful for logging too because they are
+        // easy to set.
+        if (std.os.getenv("GHOSTTY_LOG")) |v| {
+            if (v.len > 0) {
+                self.logging = .{ .stderr = {} };
+            }
+        }
 
         // Output some debug information right away
         std.log.info("ghostty version={s}", .{build_config.version_string});
