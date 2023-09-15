@@ -138,7 +138,7 @@ The currently support shell integration features in Ghostty:
   * New terminals start in the working directory of the previously focused terminal.
   * Complex prompts resize correctly by allowing the shell to redraw the prompt line.
   * The cursor at the prompt is turned into a bar.
-  * The `scroll_to_prompt` keybinding can be used to scroll the terminal window
+  * The `jump_to_prompt` keybinding can be used to scroll the terminal window
     forward and back through prompts.
 
 #### Shell Integration Installation and Verification

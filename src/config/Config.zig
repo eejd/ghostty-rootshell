@@ -294,7 +294,7 @@ keybind: Keybinds = .{},
 ///
 ///   * Working directory reporting so new tabs, splits inherit the
 ///     previous terminal's working directory.
-///   * Prompt marking that enables the "scroll_to_prompt" keybinding.
+///   * Prompt marking that enables the "jump_to_prompt" keybinding.
 ///   * If you're sitting at a prompt, closing a terminal will not ask
 ///     for confirmation.
 ///   * Resizing the window with a complex prompt usually paints much
