@@ -596,7 +596,10 @@ const Window = struct {
             if (surface.window == self) {
                 if (surface.core_surface.needsConfirmQuit()) break;
             }
-        } else return false;
+        } else {
+            c.gtk_window_destroy(self.window);
+            return true;
+        }
 
         // Setup our basic message
         const alert = c.gtk_message_dialog_new(
