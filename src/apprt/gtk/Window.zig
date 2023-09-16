@@ -15,6 +15,7 @@ const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
 
+const GL_AREA_SURFACE = "gl_area_surface";
 const TAB_CLOSE_PAGE = "tab_close_page";
 const TAB_CLOSE_SURFACE = "tab_close_surface";
 
@@ -132,6 +133,7 @@ pub fn init(self: *Window, app: *App) !void {
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), self, null, c.G_CONNECT_DEFAULT);
 
     // The box is our main child
     c.gtk_window_set_child(gtk_window, box);
@@ -189,6 +191,7 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
 
     // Tab settings
     c.gtk_notebook_set_tab_reorderable(self.notebook, gl_area, 1);
+    c.gtk_notebook_set_tab_detachable(self.notebook, gl_area, 1);
 
     // If we have multiple tabs, show the tab bar.
     if (c.gtk_notebook_get_n_pages(self.notebook) > 1) {
@@ -201,6 +204,7 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
     c.g_object_set_data(@ptrCast(label_close), TAB_CLOSE_SURFACE, surface);
     c.g_object_set_data(@ptrCast(label_close), TAB_CLOSE_PAGE, page);
     c.g_object_set_data(@ptrCast(gl_area), TAB_CLOSE_PAGE, page);
+    c.g_object_set_data(@ptrCast(gl_area), GL_AREA_SURFACE, surface);
 
     // Switch to the new tab
     c.gtk_notebook_set_current_page(self.notebook, page_idx);
@@ -321,6 +325,32 @@ fn gtkSwitchPage(_: *c.GtkNotebook, page: *c.GtkWidget, _: usize, ud: ?*anyopaqu
     const gtk_label = @as(*c.GtkLabel, @ptrCast(c.gtk_widget_get_first_child(gtk_label_box)));
     const label_text = c.gtk_label_get_text(gtk_label);
     c.gtk_window_set_title(self.window, label_text);
+}
+
+fn gtkNotebookCreateWindow(
+    _: *c.GtkNotebook,
+    page: *c.GtkWidget,
+    ud: ?*anyopaque,
+) callconv(.C) ?*c.GtkNotebook {
+    // The surface for the page is stored in the widget data.
+    const surface: *Surface = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), GL_AREA_SURFACE) orelse return null,
+    ));
+
+    const self = userdataSelf(ud.?);
+    const alloc = self.app.core_app.alloc;
+
+    // Create a new window
+    const window = Window.create(alloc, self.app) catch |err| {
+        log.warn("error creating new window error={}", .{err});
+        return null;
+    };
+
+    // We need to update our surface to point to the new window so that
+    // events such as new tab go to the right window.
+    surface.window = window;
+
+    return window.notebook;
 }
 
 fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
