@@ -201,12 +201,15 @@ pub const GlobalState = struct {
         };
 
         // We first try to parse any action that we may be executing.
-        self.action = try cli_action.Action.detectCLI(self.alloc);
+        // We do not execute this in the lib because os.argv is not set.
+        if (comptime build_config.artifact != .lib) {
+            self.action = try cli_action.Action.detectCLI(self.alloc);
 
-        // If we have an action executing, we disable logging by default
-        // since we write to stderr we don't want logs messing up our
-        // output.
-        if (self.action != null) self.logging = .{ .disabled = {} };
+            // If we have an action executing, we disable logging by default
+            // since we write to stderr we don't want logs messing up our
+            // output.
+            if (self.action != null) self.logging = .{ .disabled = {} };
+        }
 
         // I don't love the env var name but I don't have it in my heart
         // to parse CLI args 3 times (once for actions, once for config,
