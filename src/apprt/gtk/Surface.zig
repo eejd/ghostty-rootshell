@@ -158,6 +158,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
     // GL events
     _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(opts.gl_area, "unrealize", c.G_CALLBACK(&gtkUnrealize), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
@@ -177,6 +178,16 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 }
 
 fn realize(self: *Surface) !void {
+    // If this surface has already been realized, then we don't need to
+    // reinitialize. This can happen if a surface is moved from one GDK surface
+    // to another (i.e. a tab is pulled out into a window).
+    if (self.realized) {
+        // If we have no OpenGL state though, we do need to reinitialize.
+        // We allow the renderer to figure that out
+        try self.core_surface.renderer.displayRealize();
+        return;
+    }
+
     // Add ourselves to the list of surfaces on the app.
     try self.app.core_app.addSurface(self);
     errdefer self.app.core_app.deleteSurface(self);
@@ -477,6 +488,15 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
         log.err("surface failed to realize: {}", .{err});
         return;
     };
+}
+
+/// This is called when the underlying OpenGL resources must be released.
+/// This is usually due to the OpenGL area changing GDK surfaces.
+fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
+    _ = area;
+
+    const self = userdataSelf(ud.?);
+    self.core_surface.renderer.displayUnrealized();
 }
 
 /// render signal

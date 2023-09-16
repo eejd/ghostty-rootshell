@@ -192,9 +192,7 @@ pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
     //
     // The allocation is owned by the GtkWindow created. It will be
     // freed when the window is closed.
-    var window = try alloc.create(Window);
-    errdefer alloc.destroy(window);
-    try window.init(self);
+    var window = try Window.create(alloc, self);
 
     // Add our initial tab
     try window.newTab(parent_);

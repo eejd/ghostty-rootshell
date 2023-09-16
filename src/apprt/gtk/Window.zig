@@ -3,6 +3,7 @@ const Window = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const configpkg = @import("../../config.zig");
 const font = @import("../../font/main.zig");
@@ -28,6 +29,20 @@ notebook: *c.GtkNotebook,
 /// The resources directory for the icon (if any). We need to retain a
 /// pointer to this because GTK can use it at any time.
 icon_search_dir: ?[:0]const u8 = null,
+
+pub fn create(alloc: Allocator, app: *App) !*Window {
+    // Allocate a fixed pointer for our window. We try to minimize
+    // allocations but windows and other GUI requirements are so minimal
+    // compared to the steady-state terminal operation so we use heap
+    // allocation for this.
+    //
+    // The allocation is owned by the GtkWindow created. It will be
+    // freed when the window is closed.
+    var window = try alloc.create(Window);
+    errdefer alloc.destroy(window);
+    try window.init(app);
+    return window;
+}
 
 pub fn init(self: *Window, app: *App) !void {
     // Set up our own state
