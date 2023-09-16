@@ -72,12 +72,7 @@ gl_cells_size: usize = 0,
 gl_cells_written: usize = 0,
 
 /// Shader program for cell rendering.
-program: gl.Program,
-vao: gl.VertexArray,
-ebo: gl.Buffer,
-vbo: gl.Buffer,
-texture: gl.Texture,
-texture_color: gl.Texture,
+gl_state: ?GLState = null,
 
 /// The font structures.
 font_group: *font.GroupCache,
@@ -110,6 +105,8 @@ const SetScreenSize = struct {
     size: renderer.ScreenSize,
 
     fn apply(self: SetScreenSize, r: *const OpenGL) !void {
+        const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
+
         // Apply our padding
         const padding = r.padding.explicit.add(if (r.padding.balance)
             renderer.Padding.balanced(self.size, r.gridSize(self.size), r.cell_size)
@@ -135,7 +132,7 @@ const SetScreenSize = struct {
         );
 
         // Update the projection uniform within our shader
-        try r.program.setUniform(
+        try gl_state.program.setUniform(
             "projection",
 
             // 2D orthographic projection with the full w/h
@@ -153,18 +150,20 @@ const SetFontSize = struct {
     metrics: font.face.Metrics,
 
     fn apply(self: SetFontSize, r: *const OpenGL) !void {
-        try r.program.setUniform(
+        const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
+
+        try gl_state.program.setUniform(
             "cell_size",
             @Vector(2, f32){
                 @floatFromInt(self.metrics.cell_width),
                 @floatFromInt(self.metrics.cell_height),
             },
         );
-        try r.program.setUniform(
+        try gl_state.program.setUniform(
             "strikethrough_position",
             @as(f32, @floatFromInt(self.metrics.strikethrough_position)),
         );
-        try r.program.setUniform(
+        try gl_state.program.setUniform(
             "strikethrough_thickness",
             @as(f32, @floatFromInt(self.metrics.strikethrough_thickness)),
         );
@@ -295,12 +294,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     });
     errdefer shaper.deinit();
 
-    // Create our shader
-    const program = try gl.Program.createVF(
-        @embedFile("shaders/cell.v.glsl"),
-        @embedFile("shaders/cell.f.glsl"),
-    );
-
     // Setup our font metrics uniform
     const metrics = try resetFontMetrics(
         alloc,
@@ -308,109 +301,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         options.config.font_thicken,
     );
 
-    // Set our cell dimensions
-    const pbind = try program.use();
-    defer pbind.unbind();
-
-    // Set all of our texture indexes
-    try program.setUniform("text", 0);
-    try program.setUniform("text_color", 1);
-
-    // Setup our VAO
-    const vao = try gl.VertexArray.create();
-    errdefer vao.destroy();
-    try vao.bind();
-    defer gl.VertexArray.unbind() catch null;
-
-    // Element buffer (EBO)
-    const ebo = try gl.Buffer.create();
-    errdefer ebo.destroy();
-    var ebobind = try ebo.bind(.ElementArrayBuffer);
-    defer ebobind.unbind();
-    try ebobind.setData([6]u8{
-        0, 1, 3, // Top-left triangle
-        1, 2, 3, // Bottom-right triangle
-    }, .StaticDraw);
-
-    // Vertex buffer (VBO)
-    const vbo = try gl.Buffer.create();
-    errdefer vbo.destroy();
-    var vbobind = try vbo.bind(.ArrayBuffer);
-    defer vbobind.unbind();
-    var offset: usize = 0;
-    try vbobind.attributeAdvanced(0, 2, gl.c.GL_UNSIGNED_SHORT, false, @sizeOf(GPUCell), offset);
-    offset += 2 * @sizeOf(u16);
-    try vbobind.attributeAdvanced(1, 2, gl.c.GL_UNSIGNED_INT, false, @sizeOf(GPUCell), offset);
-    offset += 2 * @sizeOf(u32);
-    try vbobind.attributeAdvanced(2, 2, gl.c.GL_UNSIGNED_INT, false, @sizeOf(GPUCell), offset);
-    offset += 2 * @sizeOf(u32);
-    try vbobind.attributeAdvanced(3, 2, gl.c.GL_INT, false, @sizeOf(GPUCell), offset);
-    offset += 2 * @sizeOf(i32);
-    try vbobind.attributeAdvanced(4, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
-    offset += 4 * @sizeOf(u8);
-    try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
-    offset += 4 * @sizeOf(u8);
-    try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
-    offset += 1 * @sizeOf(u8);
-    try vbobind.attributeIAdvanced(7, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
-    try vbobind.enableAttribArray(0);
-    try vbobind.enableAttribArray(1);
-    try vbobind.enableAttribArray(2);
-    try vbobind.enableAttribArray(3);
-    try vbobind.enableAttribArray(4);
-    try vbobind.enableAttribArray(5);
-    try vbobind.enableAttribArray(6);
-    try vbobind.enableAttribArray(7);
-    try vbobind.attributeDivisor(0, 1);
-    try vbobind.attributeDivisor(1, 1);
-    try vbobind.attributeDivisor(2, 1);
-    try vbobind.attributeDivisor(3, 1);
-    try vbobind.attributeDivisor(4, 1);
-    try vbobind.attributeDivisor(5, 1);
-    try vbobind.attributeDivisor(6, 1);
-    try vbobind.attributeDivisor(7, 1);
-
-    // Build our texture
-    const tex = try gl.Texture.create();
-    errdefer tex.destroy();
-    {
-        const texbind = try tex.bind(.@"2D");
-        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
-        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
-        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
-        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
-        try texbind.image2D(
-            0,
-            .Red,
-            @intCast(options.font_group.atlas_greyscale.size),
-            @intCast(options.font_group.atlas_greyscale.size),
-            0,
-            .Red,
-            .UnsignedByte,
-            options.font_group.atlas_greyscale.data.ptr,
-        );
-    }
-
-    // Build our color texture
-    const tex_color = try gl.Texture.create();
-    errdefer tex_color.destroy();
-    {
-        const texbind = try tex_color.bind(.@"2D");
-        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
-        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
-        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
-        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
-        try texbind.image2D(
-            0,
-            .RGBA,
-            @intCast(options.font_group.atlas_color.size),
-            @intCast(options.font_group.atlas_color.size),
-            0,
-            .BGRA,
-            .UnsignedByte,
-            options.font_group.atlas_color.data.ptr,
-        );
-    }
+    var gl_state = try GLState.init(options.font_group);
+    errdefer gl_state.deinit();
 
     return OpenGL{
         .alloc = alloc,
@@ -420,12 +312,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .screen_size = null,
-        .program = program,
-        .vao = vao,
-        .ebo = ebo,
-        .vbo = vbo,
-        .texture = tex,
-        .texture_color = tex_color,
+        .gl_state = gl_state,
         .font_group = options.font_group,
         .font_shaper = shaper,
         .draw_background = options.config.background,
@@ -440,12 +327,7 @@ pub fn deinit(self: *OpenGL) void {
     self.font_shaper.deinit();
     self.alloc.free(self.font_shaper.cell_buf);
 
-    self.texture.destroy();
-    self.texture_color.destroy();
-    self.vbo.destroy();
-    self.ebo.destroy();
-    self.vao.destroy();
-    self.program.destroy();
+    if (self.gl_state) |*v| v.deinit();
 
     self.resetCellsLRU();
     self.cells_lru.deinit(self.alloc);
@@ -508,13 +390,6 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
         apprt.glfw => try self.threadEnter(surface),
     }
 
-    // Blending for text. We use GL_ONE here because we should be using
-    // premultiplied alpha for all our colors in our fragment shaders.
-    // This avoids having a blurry border where transparency is expected on
-    // pixels.
-    try gl.enable(gl.c.GL_BLEND);
-    try gl.blendFunc(gl.c.GL_ONE, gl.c.GL_ONE_MINUS_SRC_ALPHA);
-
     // These are very noisy so this is commented, but easy to uncomment
     // whenever we need to check the OpenGL extension list
     // if (builtin.mode == .Debug) {
@@ -536,6 +411,54 @@ pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     if (apprt.runtime == apprt.glfw) {
         glfw.makeContextCurrent(null);
     }
+}
+
+/// Called when the OpenGL context is made invalid, so we need to free
+/// all previous resources and stop rendering.
+pub fn displayUnrealized(self: *OpenGL) void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
+    if (self.gl_state) |*v| {
+        v.deinit();
+        self.gl_state = null;
+    }
+}
+
+/// Called when the OpenGL is ready to be initialized.
+pub fn displayRealize(self: *OpenGL) !void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
+    // Reset our GPU uniforms
+    const metrics = try resetFontMetrics(
+        self.alloc,
+        self.font_group,
+        self.config.font_thicken,
+    );
+
+    // Make our new state
+    var gl_state = try GLState.init(self.font_group);
+    errdefer gl_state.deinit();
+
+    // Unrealize if we have to
+    if (self.gl_state) |*v| v.deinit();
+
+    // Set our new state
+    self.gl_state = gl_state;
+
+    // Make sure we invalidate all the fields so that we
+    // reflush everything
+    self.gl_cells_size = 0;
+    self.gl_cells_written = 0;
+    self.font_group.atlas_greyscale.modified = true;
+    self.font_group.atlas_color.modified = true;
+
+    // We need to reset our uniforms
+    if (self.screen_size) |size| {
+        self.deferred_screen_size = .{ .size = size };
+    }
+    self.deferred_font_size = .{ .metrics = metrics };
 }
 
 /// Callback called by renderer.Thread when it begins.
@@ -1429,11 +1352,13 @@ pub fn setScreenSize(
 
 /// Updates the font texture atlas if it is dirty.
 fn flushAtlas(self: *OpenGL) !void {
+    const gl_state = self.gl_state orelse return;
+
     {
         const atlas = &self.font_group.atlas_greyscale;
         if (atlas.modified) {
             atlas.modified = false;
-            var texbind = try self.texture.bind(.@"2D");
+            var texbind = try gl_state.texture.bind(.@"2D");
             defer texbind.unbind();
 
             if (atlas.resized) {
@@ -1467,7 +1392,7 @@ fn flushAtlas(self: *OpenGL) !void {
         const atlas = &self.font_group.atlas_color;
         if (atlas.modified) {
             atlas.modified = false;
-            var texbind = try self.texture_color.bind(.@"2D");
+            var texbind = try gl_state.texture_color.bind(.@"2D");
             defer texbind.unbind();
 
             if (atlas.resized) {
@@ -1507,6 +1432,7 @@ pub fn draw(self: *OpenGL) !void {
     // If we're in single-threaded more we grab a lock since we use shared data.
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
+    const gl_state = self.gl_state orelse return;
 
     // If we have no cells to render, then we render nothing.
     if (self.cells.items.len == 0) return;
@@ -1525,28 +1451,28 @@ pub fn draw(self: *OpenGL) !void {
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
     // Setup our VAO
-    try self.vao.bind();
+    try gl_state.vao.bind();
     defer gl.VertexArray.unbind() catch null;
 
     // Bind EBO
-    var ebobind = try self.ebo.bind(.ElementArrayBuffer);
+    var ebobind = try gl_state.ebo.bind(.ElementArrayBuffer);
     defer ebobind.unbind();
 
     // Bind VBO and set data
-    var binding = try self.vbo.bind(.ArrayBuffer);
+    var binding = try gl_state.vbo.bind(.ArrayBuffer);
     defer binding.unbind();
 
     // Bind our textures
     try gl.Texture.active(gl.c.GL_TEXTURE0);
-    var texbind = try self.texture.bind(.@"2D");
+    var texbind = try gl_state.texture.bind(.@"2D");
     defer texbind.unbind();
 
     try gl.Texture.active(gl.c.GL_TEXTURE1);
-    var texbind1 = try self.texture_color.bind(.@"2D");
+    var texbind1 = try gl_state.texture_color.bind(.@"2D");
     defer texbind1.unbind();
 
     // Pick our shader to use
-    const pbind = try self.program.use();
+    const pbind = try gl_state.program.use();
     defer pbind.unbind();
 
     // If we have deferred operations, run them.
@@ -1596,7 +1522,7 @@ fn drawCells(
     // If we have data to write to the GPU, send it.
     if (self.gl_cells_written < cells.items.len) {
         const data = cells.items[self.gl_cells_written..];
-        //log.info("sending {} cells to GPU", .{data.len});
+        // log.info("sending {} cells to GPU", .{data.len});
         try binding.setSubData(self.gl_cells_written * @sizeOf(GPUCell), data);
 
         self.gl_cells_written += data.len;
@@ -1611,3 +1537,152 @@ fn drawCells(
         cells.items.len,
     );
 }
+
+/// The OpenGL objects that are associated with a renderer. This makes it
+/// easy to create/destroy these as a set in situations i.e. where the
+/// OpenGL context is replaced.
+const GLState = struct {
+    program: gl.Program,
+    vao: gl.VertexArray,
+    ebo: gl.Buffer,
+    vbo: gl.Buffer,
+    texture: gl.Texture,
+    texture_color: gl.Texture,
+
+    pub fn init(font_group: *font.GroupCache) !GLState {
+        // Blending for text. We use GL_ONE here because we should be using
+        // premultiplied alpha for all our colors in our fragment shaders.
+        // This avoids having a blurry border where transparency is expected on
+        // pixels.
+        try gl.enable(gl.c.GL_BLEND);
+        try gl.blendFunc(gl.c.GL_ONE, gl.c.GL_ONE_MINUS_SRC_ALPHA);
+
+        // Shader
+        const program = try gl.Program.createVF(
+            @embedFile("shaders/cell.v.glsl"),
+            @embedFile("shaders/cell.f.glsl"),
+        );
+
+        // Set our cell dimensions
+        const pbind = try program.use();
+        defer pbind.unbind();
+
+        // Set all of our texture indexes
+        try program.setUniform("text", 0);
+        try program.setUniform("text_color", 1);
+
+        // Setup our VAO
+        const vao = try gl.VertexArray.create();
+        errdefer vao.destroy();
+        try vao.bind();
+        defer gl.VertexArray.unbind() catch null;
+
+        // Element buffer (EBO)
+        const ebo = try gl.Buffer.create();
+        errdefer ebo.destroy();
+        var ebobind = try ebo.bind(.ElementArrayBuffer);
+        defer ebobind.unbind();
+        try ebobind.setData([6]u8{
+            0, 1, 3, // Top-left triangle
+            1, 2, 3, // Bottom-right triangle
+        }, .StaticDraw);
+
+        // Vertex buffer (VBO)
+        const vbo = try gl.Buffer.create();
+        errdefer vbo.destroy();
+        var vbobind = try vbo.bind(.ArrayBuffer);
+        defer vbobind.unbind();
+        var offset: usize = 0;
+        try vbobind.attributeAdvanced(0, 2, gl.c.GL_UNSIGNED_SHORT, false, @sizeOf(GPUCell), offset);
+        offset += 2 * @sizeOf(u16);
+        try vbobind.attributeAdvanced(1, 2, gl.c.GL_UNSIGNED_INT, false, @sizeOf(GPUCell), offset);
+        offset += 2 * @sizeOf(u32);
+        try vbobind.attributeAdvanced(2, 2, gl.c.GL_UNSIGNED_INT, false, @sizeOf(GPUCell), offset);
+        offset += 2 * @sizeOf(u32);
+        try vbobind.attributeAdvanced(3, 2, gl.c.GL_INT, false, @sizeOf(GPUCell), offset);
+        offset += 2 * @sizeOf(i32);
+        try vbobind.attributeAdvanced(4, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
+        offset += 4 * @sizeOf(u8);
+        try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
+        offset += 4 * @sizeOf(u8);
+        try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
+        offset += 1 * @sizeOf(u8);
+        try vbobind.attributeIAdvanced(7, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
+        try vbobind.enableAttribArray(0);
+        try vbobind.enableAttribArray(1);
+        try vbobind.enableAttribArray(2);
+        try vbobind.enableAttribArray(3);
+        try vbobind.enableAttribArray(4);
+        try vbobind.enableAttribArray(5);
+        try vbobind.enableAttribArray(6);
+        try vbobind.enableAttribArray(7);
+        try vbobind.attributeDivisor(0, 1);
+        try vbobind.attributeDivisor(1, 1);
+        try vbobind.attributeDivisor(2, 1);
+        try vbobind.attributeDivisor(3, 1);
+        try vbobind.attributeDivisor(4, 1);
+        try vbobind.attributeDivisor(5, 1);
+        try vbobind.attributeDivisor(6, 1);
+        try vbobind.attributeDivisor(7, 1);
+
+        // Build our texture
+        const tex = try gl.Texture.create();
+        errdefer tex.destroy();
+        {
+            const texbind = try tex.bind(.@"2D");
+            try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+            try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+            try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+            try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+            try texbind.image2D(
+                0,
+                .Red,
+                @intCast(font_group.atlas_greyscale.size),
+                @intCast(font_group.atlas_greyscale.size),
+                0,
+                .Red,
+                .UnsignedByte,
+                font_group.atlas_greyscale.data.ptr,
+            );
+        }
+
+        // Build our color texture
+        const tex_color = try gl.Texture.create();
+        errdefer tex_color.destroy();
+        {
+            const texbind = try tex_color.bind(.@"2D");
+            try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+            try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+            try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+            try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+            try texbind.image2D(
+                0,
+                .RGBA,
+                @intCast(font_group.atlas_color.size),
+                @intCast(font_group.atlas_color.size),
+                0,
+                .BGRA,
+                .UnsignedByte,
+                font_group.atlas_color.data.ptr,
+            );
+        }
+
+        return .{
+            .program = program,
+            .vao = vao,
+            .ebo = ebo,
+            .vbo = vbo,
+            .texture = tex,
+            .texture_color = tex_color,
+        };
+    }
+
+    pub fn deinit(self: *GLState) void {
+        self.texture.destroy();
+        self.texture_color.destroy();
+        self.vbo.destroy();
+        self.ebo.destroy();
+        self.vao.destroy();
+        self.program.destroy();
+    }
+};
