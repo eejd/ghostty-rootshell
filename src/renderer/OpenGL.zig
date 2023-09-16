@@ -390,13 +390,6 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
         apprt.glfw => try self.threadEnter(surface),
     }
 
-    // Blending for text. We use GL_ONE here because we should be using
-    // premultiplied alpha for all our colors in our fragment shaders.
-    // This avoids having a blurry border where transparency is expected on
-    // pixels.
-    try gl.enable(gl.c.GL_BLEND);
-    try gl.blendFunc(gl.c.GL_ONE, gl.c.GL_ONE_MINUS_SRC_ALPHA);
-
     // These are very noisy so this is commented, but easy to uncomment
     // whenever we need to check the OpenGL extension list
     // if (builtin.mode == .Debug) {
@@ -437,6 +430,13 @@ pub fn displayRealize(self: *OpenGL) !void {
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
 
+    // Reset our GPU uniforms
+    const metrics = try resetFontMetrics(
+        self.alloc,
+        self.font_group,
+        self.config.font_thicken,
+    );
+
     // Make our new state
     var gl_state = try GLState.init(self.font_group);
     errdefer gl_state.deinit();
@@ -447,11 +447,18 @@ pub fn displayRealize(self: *OpenGL) !void {
     // Set our new state
     self.gl_state = gl_state;
 
-    // Make sure we invalidate all the fields so that we reflush everything
+    // Make sure we invalidate all the fields so that we
+    // reflush everything
     self.gl_cells_size = 0;
     self.gl_cells_written = 0;
     self.font_group.atlas_greyscale.modified = true;
     self.font_group.atlas_color.modified = true;
+
+    // We need to reset our uniforms
+    if (self.screen_size) |size| {
+        self.deferred_screen_size = .{ .size = size };
+    }
+    self.deferred_font_size = .{ .metrics = metrics };
 }
 
 /// Callback called by renderer.Thread when it begins.
@@ -1515,7 +1522,7 @@ fn drawCells(
     // If we have data to write to the GPU, send it.
     if (self.gl_cells_written < cells.items.len) {
         const data = cells.items[self.gl_cells_written..];
-        //log.info("sending {} cells to GPU", .{data.len});
+        // log.info("sending {} cells to GPU", .{data.len});
         try binding.setSubData(self.gl_cells_written * @sizeOf(GPUCell), data);
 
         self.gl_cells_written += data.len;
@@ -1543,6 +1550,13 @@ const GLState = struct {
     texture_color: gl.Texture,
 
     pub fn init(font_group: *font.GroupCache) !GLState {
+        // Blending for text. We use GL_ONE here because we should be using
+        // premultiplied alpha for all our colors in our fragment shaders.
+        // This avoids having a blurry border where transparency is expected on
+        // pixels.
+        try gl.enable(gl.c.GL_BLEND);
+        try gl.blendFunc(gl.c.GL_ONE, gl.c.GL_ONE_MINUS_SRC_ALPHA);
+
         // Shader
         const program = try gl.Program.createVF(
             @embedFile("shaders/cell.v.glsl"),
