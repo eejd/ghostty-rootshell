@@ -223,8 +223,6 @@ pub fn getData(self: Command, comptime DT: type) ?*DT {
 /// Search for "cmd" in the PATH and return the absolute path. This will
 /// always allocate if there is a non-null result. The caller must free the
 /// resulting value.
-///
-/// TODO: windows
 pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
     // If the command already contains a slash, then we return it as-is
     // because it is assumed to be absolute or relative.
@@ -232,9 +230,18 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
         return try alloc.dupe(u8, cmd);
     }
 
-    const PATH = os.getenvZ("PATH") orelse return null;
+    const PATH = switch (builtin.os.tag) {
+        .windows => blk: {
+            const win_path = os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("PATH")) orelse return null;
+            const path = try std.unicode.utf16leToUtf8Alloc(alloc, win_path);
+            break :blk path;
+        },
+        else => os.getenvZ("PATH") orelse return null,
+    };
+    defer if (builtin.os.tag == .windows) alloc.free(PATH);
+
     var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    var it = std.mem.tokenize(u8, PATH, ":");
+    var it = std.mem.tokenize(u8, PATH, &[_]u8{std.fs.path.delimiter});
     var seen_eacces = false;
     while (it.next()) |search_path| {
         // We need enough space in our path buffer to store this
@@ -243,7 +250,7 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
 
         // Copy in the full path
         mem.copy(u8, &path_buf, search_path);
-        path_buf[search_path.len] = '/';
+        path_buf[search_path.len] = std.fs.path.sep;
         mem.copy(u8, path_buf[search_path.len + 1 ..], cmd);
         path_buf[path_len] = 0;
         const full_path = path_buf[0..path_len :0];
@@ -276,10 +283,12 @@ fn isExecutable(mode: std.fs.File.Mode) bool {
     return mode & 0o0111 != 0;
 }
 
-test "expandPath: env" {
-    const path = (try expandPath(testing.allocator, "env")).?;
+// `hostname` is present on both *nix and windows
+test "expandPath: hostname" {
+    const executable = if (builtin.os.tag == .windows) "hostname.exe" else "hostname";
+    const path = (try expandPath(testing.allocator, executable)).?;
     defer testing.allocator.free(path);
-    try testing.expect(path.len > 0);
+    try testing.expect(path.len > executable.len);
 }
 
 test "expandPath: does not exist" {
