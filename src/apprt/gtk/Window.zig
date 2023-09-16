@@ -16,8 +16,6 @@ const c = @import("c.zig");
 const log = std.log.scoped(.gtk);
 
 const GL_AREA_SURFACE = "gl_area_surface";
-const TAB_CLOSE_PAGE = "tab_close_page";
-const TAB_CLOSE_SURFACE = "tab_close_surface";
 
 app: *App,
 
@@ -132,6 +130,7 @@ pub fn init(self: *Window, app: *App) !void {
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), self, null, c.G_CONNECT_DEFAULT);
@@ -170,7 +169,7 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
     const label_close = @as(*c.GtkButton, @ptrCast(label_close_widget));
     c.gtk_button_set_has_frame(label_close, 0);
     c.gtk_box_append(label_box, label_close_widget);
-    _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), surface, null, c.G_CONNECT_DEFAULT);
 
     // Initialize the GtkGLArea and attach it to our surface.
     // The surface starts in the "unrealized" state because we have to
@@ -200,11 +199,6 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
     }
 
     // Set the userdata of the close button so it points to this page.
-    const page = c.gtk_notebook_get_page(self.notebook, gl_area) orelse
-        return error.GtkNotebookPageNotFound;
-    c.g_object_set_data(@ptrCast(label_close), TAB_CLOSE_SURFACE, surface);
-    c.g_object_set_data(@ptrCast(label_close), TAB_CLOSE_PAGE, page);
-    c.g_object_set_data(@ptrCast(gl_area), TAB_CLOSE_PAGE, page);
     c.g_object_set_data(@ptrCast(gl_area), GL_AREA_SURFACE, surface);
 
     // Switch to the new tab
@@ -241,12 +235,14 @@ fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
 /// Close the surface. This surface must be definitely part of this window.
 pub fn closeSurface(self: *Window, surface: *Surface) void {
     assert(surface.window == self);
-    self.closeTab(getNotebookPage(@ptrCast(surface.gl_area)) orelse return);
+
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
+    self.closeTab(page);
 }
 
 /// Go to the previous tab for a surface.
 pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
-    const page = getNotebookPage(@ptrCast(surface.gl_area)) orelse return;
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
     const page_idx = getNotebookPageIndex(page);
 
     // The next index is the previous or we wrap around.
@@ -264,7 +260,7 @@ pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
 
 /// Go to the next tab for a surface.
 pub fn gotoNextTab(self: *Window, surface: *Surface) void {
-    const page = getNotebookPage(@ptrCast(surface.gl_area)) orelse return;
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
     const page_idx = getNotebookPageIndex(page);
     const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
     const next_idx = if (page_idx < max) page_idx + 1 else 0;
@@ -311,13 +307,20 @@ fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     };
 }
 
-fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-    _ = ud;
-    const surface: *Surface = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(btn), TAB_CLOSE_SURFACE) orelse return,
-    ));
-
+fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+    const surface: *Surface = @ptrCast(@alignCast(ud));
     surface.core_surface.close();
+}
+
+fn gtkPageAdded(
+    _: *c.GtkNotebook,
+    child: *c.GtkWidget,
+    _: c.guint,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud.?);
+    _ = self;
+    _ = child;
 }
 
 fn gtkPageRemoved(
@@ -437,14 +440,6 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     const alloc = self.app.core_app.alloc;
     self.deinit();
     alloc.destroy(self);
-}
-
-/// Get the GtkNotebookPage for the given object. You must be sure the
-/// object has the notebook page property set.
-fn getNotebookPage(obj: *c.GObject) ?*c.GtkNotebookPage {
-    return @ptrCast(@alignCast(
-        c.g_object_get_data(obj, TAB_CLOSE_PAGE) orelse return null,
-    ));
 }
 
 fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
