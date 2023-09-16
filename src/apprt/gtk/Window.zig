@@ -132,6 +132,7 @@ pub fn init(self: *Window, app: *App) !void {
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), self, null, c.G_CONNECT_DEFAULT);
 
@@ -317,6 +318,21 @@ fn gtkTabCloseClick(btn: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     ));
 
     surface.core_surface.close();
+}
+
+fn gtkPageRemoved(
+    _: *c.GtkNotebook,
+    _: *c.GtkWidget,
+    _: c.guint,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud.?);
+
+    // Hide the tab bar if we only have one tab after removal
+    const remaining = c.gtk_notebook_get_n_pages(self.notebook);
+    if (remaining == 1) {
+        c.gtk_notebook_set_show_tabs(self.notebook, 0);
+    }
 }
 
 fn gtkSwitchPage(_: *c.GtkNotebook, page: *c.GtkWidget, _: usize, ud: ?*anyopaque) callconv(.C) void {
