@@ -420,6 +420,40 @@ pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     }
 }
 
+/// Called when the OpenGL context is made invalid, so we need to free
+/// all previous resources and stop rendering.
+pub fn displayUnrealized(self: *OpenGL) void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
+    if (self.gl_state) |*v| {
+        v.deinit();
+        self.gl_state = null;
+    }
+}
+
+/// Called when the OpenGL is ready to be initialized.
+pub fn displayRealize(self: *OpenGL) !void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
+    // Make our new state
+    var gl_state = try GLState.init(self.font_group);
+    errdefer gl_state.deinit();
+
+    // Unrealize if we have to
+    if (self.gl_state) |*v| v.deinit();
+
+    // Set our new state
+    self.gl_state = gl_state;
+
+    // Make sure we invalidate all the fields so that we reflush everything
+    self.gl_cells_size = 0;
+    self.gl_cells_written = 0;
+    self.font_group.atlas_greyscale.modified = true;
+    self.font_group.atlas_color.modified = true;
+}
+
 /// Callback called by renderer.Thread when it begins.
 pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
