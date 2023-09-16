@@ -25,9 +25,6 @@ window: *c.GtkWindow,
 /// The notebook (tab grouping) for this window.
 notebook: *c.GtkNotebook,
 
-/// The background CSS for the window (if any).
-css_window_background: ?[]u8 = null,
-
 /// The resources directory for the icon (if any).
 icon_search_dir: ?[:0]const u8 = null,
 
@@ -125,7 +122,6 @@ pub fn init(self: *Window, app: *App) !void {
 }
 
 pub fn deinit(self: *Window) void {
-    if (self.css_window_background) |ptr| self.app.core_app.alloc.free(ptr);
     if (self.icon_search_dir) |ptr| self.app.core_app.alloc.free(ptr);
 }
 
