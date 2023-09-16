@@ -25,7 +25,8 @@ window: *c.GtkWindow,
 /// The notebook (tab grouping) for this window.
 notebook: *c.GtkNotebook,
 
-/// The resources directory for the icon (if any).
+/// The resources directory for the icon (if any). We need to retain a
+/// pointer to this because GTK can use it at any time.
 icon_search_dir: ?[:0]const u8 = null,
 
 pub fn init(self: *Window, app: *App) !void {
@@ -80,10 +81,6 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_window_set_decorated(gtk_window, 0);
     }
 
-    c.gtk_widget_show(window);
-    _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-
     // Create a notebook to hold our tabs.
     const notebook_widget = c.gtk_notebook_new();
     const notebook: *c.GtkNotebook = @ptrCast(notebook_widget);
@@ -101,8 +98,6 @@ pub fn init(self: *Window, app: *App) !void {
     // Create our add button for new tabs
     const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
     c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
-    _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
 
     // Create our box which will hold our widgets.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
@@ -117,8 +112,17 @@ pub fn init(self: *Window, app: *App) !void {
     }
     c.gtk_box_append(@ptrCast(box), notebook_widget);
 
+    // All of our events
+    _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
+
     // The box is our main child
     c.gtk_window_set_child(gtk_window, box);
+
+    // Show the window
+    c.gtk_widget_show(window);
 }
 
 pub fn deinit(self: *Window) void {
