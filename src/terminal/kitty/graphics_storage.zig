@@ -180,7 +180,10 @@ pub const ImageStorage = struct {
             .all => |delete_images| if (delete_images) {
                 // We just reset our entire state.
                 self.deinit(alloc);
-                self.* = .{ .dirty = true };
+                self.* = .{
+                    .dirty = true,
+                    .total_limit = self.total_limit,
+                };
             } else {
                 // Delete all our placements
                 self.placements.deinit(alloc);
@@ -526,6 +529,28 @@ test "storage: delete all placements and images" {
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.images.count());
     try testing.expectEqual(@as(usize, 0), s.placements.count());
+}
+
+test "storage: delete all placements and images preserves limit" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    s.total_limit = 5000;
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
+    try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
+
+    s.delete(alloc, &t, .{ .all = true });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 0), s.images.count());
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(@as(usize, 5000), s.total_limit);
 }
 
 test "storage: delete all placements" {
