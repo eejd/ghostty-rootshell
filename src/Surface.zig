@@ -1305,25 +1305,27 @@ fn mouseReport(
         .any => {},
     }
 
-    // The maximum pos values so we can determine if we're outside the window.
-    // If we're outside the window, we do not report mouse events.
-    const pos_out_viewport = pos_out_viewport: {
-        const max_x: f32 = @floatFromInt(self.screen_size.width);
-        const max_y: f32 = @floatFromInt(self.screen_size.height);
-        break :pos_out_viewport pos.x < 0 or pos.y < 0 or
-            pos.x > max_x or pos.y > max_y;
-    };
-    if (pos_out_viewport) outside_viewport: {
-        // If we don't have a motion-tracking event mode, do nothing.
-        if (!self.io.terminal.flags.mouse_event.motion()) return;
+    // Handle scenarios where the mouse position is outside the viewport.
+    // We always report release events no matter where they happen.
+    if (action != .release) {
+        const pos_out_viewport = pos_out_viewport: {
+            const max_x: f32 = @floatFromInt(self.screen_size.width);
+            const max_y: f32 = @floatFromInt(self.screen_size.height);
+            break :pos_out_viewport pos.x < 0 or pos.y < 0 or
+                pos.x > max_x or pos.y > max_y;
+        };
+        if (pos_out_viewport) outside_viewport: {
+            // If we don't have a motion-tracking event mode, do nothing.
+            if (!self.io.terminal.flags.mouse_event.motion()) return;
 
-        // If any button is pressed, we still do the report. Otherwise,
-        // we do not do the report.
-        for (self.mouse.click_state) |state| {
-            if (state != .release) break :outside_viewport;
+            // If any button is pressed, we still do the report. Otherwise,
+            // we do not do the report.
+            for (self.mouse.click_state) |state| {
+                if (state != .release) break :outside_viewport;
+            }
+
+            return;
         }
-
-        return;
     }
 
     // This format reports X/Y
