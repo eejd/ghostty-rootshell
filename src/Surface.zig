@@ -117,7 +117,7 @@ const Mouse = struct {
     left_click_time: std.time.Instant = undefined,
 
     /// The last x/y sent for mouse reports.
-    event_point: terminal.point.Viewport = .{},
+    event_point: ?terminal.point.Viewport = null,
 
     /// Pending scroll amounts for high-precision scrolls
     pending_scroll_x: f64 = 0,
@@ -1283,12 +1283,6 @@ fn mouseReport(
     mods: input.Mods,
     pos: apprt.CursorPos,
 ) !void {
-    // The maximum pos values so we can determine if we're outside the window.
-    // If we're outside the window, we do not report mouse events.
-    const max_x: f32 = @floatFromInt(self.screen_size.width);
-    const max_y: f32 = @floatFromInt(self.screen_size.height);
-    if (pos.x < 0 or pos.y < 0 or pos.x > max_x or pos.y > max_y) return;
-
     // Depending on the event, we may do nothing at all.
     switch (self.io.terminal.flags.mouse_event) {
         .none => return,
@@ -1311,10 +1305,37 @@ fn mouseReport(
         .any => {},
     }
 
+    // The maximum pos values so we can determine if we're outside the window.
+    // If we're outside the window, we do not report mouse events.
+    const pos_out_viewport = pos_out_viewport: {
+        const max_x: f32 = @floatFromInt(self.screen_size.width);
+        const max_y: f32 = @floatFromInt(self.screen_size.height);
+        break :pos_out_viewport pos.x < 0 or pos.y < 0 or
+            pos.x > max_x or pos.y > max_y;
+    };
+    if (pos_out_viewport) outside_viewport: {
+        // If we don't have a motion-tracking event mode, do nothing.
+        if (!self.io.terminal.flags.mouse_event.motion()) return;
+
+        // If any button is pressed, we still do the report. Otherwise,
+        // we do not do the report.
+        for (self.mouse.click_state) |state| {
+            if (state != .release) break :outside_viewport;
+        }
+
+        return;
+    }
+
     // This format reports X/Y
     const viewport_point = self.posToViewport(pos.x, pos.y);
 
-    // Record our new point
+    // Record our new point. We only want to send a mouse event if the
+    // cell changed, unless we're tracking raw pixels.
+    if (self.io.terminal.flags.mouse_format != .sgr_pixels) {
+        if (self.mouse.event_point) |last_point| {
+            if (last_point.eql(viewport_point)) return;
+        }
+    }
     self.mouse.event_point = viewport_point;
 
     // Get the code we'll actually write
@@ -1450,9 +1471,6 @@ fn mouseReport(
         },
 
         .sgr_pixels => {
-            assert(pos.x >= 0);
-            assert(pos.y >= 0);
-
             // Final character to send in the CSI
             const final: u8 = if (action == .release) 'm' else 'M';
 
@@ -1461,8 +1479,8 @@ fn mouseReport(
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
-                @as(u32, @intFromFloat(@round(pos.x))),
-                @as(u32, @intFromFloat(@round(pos.y))),
+                @as(i32, @intFromFloat(@round(pos.x))),
+                @as(i32, @intFromFloat(@round(pos.y))),
                 final,
             });
 

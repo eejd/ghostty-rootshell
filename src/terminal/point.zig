@@ -20,6 +20,10 @@ pub const Viewport = struct {
         };
     }
 
+    pub fn eql(self: Viewport, other: Viewport) bool {
+        return self.x == other.x and self.y == other.y;
+    }
+
     test "toScreen with no scrollback" {
         const testing = std.testing;
         const alloc = testing.allocator;
