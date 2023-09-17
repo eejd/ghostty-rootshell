@@ -963,9 +963,9 @@ pub fn keyCallback(
 
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
-    if (event.action == .press or event.action == .repeat) {
-        const binding_mods = event.mods.binding();
-        const binding_action_: ?input.Binding.Action = action: {
+    binding: {
+        const binding_action: input.Binding.Action = action: {
+            const binding_mods = event.mods.binding();
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
                 .key = event.key,
@@ -978,14 +978,17 @@ pub fn keyCallback(
             trigger.physical = true;
             if (set.get(trigger)) |v| break :action v;
 
-            break :action null;
+            break :binding;
         };
 
-        if (binding_action_) |binding_action| {
-            //log.warn("BINDING ACTION={}", .{binding_action});
+        // We only execute the binding on press/repeat but we still consume
+        // the key on release so that we don't send any release events.
+        log.debug("key event consumed by binding action={}", .{binding_action});
+        if (event.action == .press or event.action == .repeat) {
             try self.performBindingAction(binding_action);
-            return true;
         }
+
+        return true;
     }
 
     // If this input event has text, then we hide the mouse if configured.
