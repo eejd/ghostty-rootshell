@@ -242,7 +242,6 @@ keybind: Keybinds = .{},
 
 /// If false, windows won't have native decorations, i.e. titlebar and
 /// borders.
-/// Currently only supported with GTK.
 @"window-decoration": bool = true,
 
 /// Whether to allow programs running in the terminal to read/write to

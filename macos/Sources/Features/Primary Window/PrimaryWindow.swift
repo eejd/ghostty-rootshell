@@ -19,7 +19,7 @@ class PrimaryWindow: NSWindow {
     static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: getStyleMask(renderDecoration: ghostty.windowDecorations),
             backing: .buffered,
             defer: false)
         window.center()
@@ -43,6 +43,15 @@ class PrimaryWindow: NSWindow {
         window.title = "Ghostty 👻"
         
         return window
+    }
+    
+    static func getStyleMask(renderDecoration: Bool) -> NSWindow.StyleMask {
+        var mask: NSWindow.StyleMask = [.resizable, .closable, .miniaturizable]
+        if renderDecoration {
+            mask.insert(.titled)
+        }
+        
+        return mask
     }
     
     override var canBecomeKey: Bool {
