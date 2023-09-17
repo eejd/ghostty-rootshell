@@ -117,7 +117,7 @@ const Mouse = struct {
     left_click_time: std.time.Instant = undefined,
 
     /// The last x/y sent for mouse reports.
-    event_point: terminal.point.Viewport = .{},
+    event_point: ?terminal.point.Viewport = null,
 
     /// Pending scroll amounts for high-precision scrolls
     pending_scroll_x: f64 = 0,
@@ -1329,7 +1329,13 @@ fn mouseReport(
     // This format reports X/Y
     const viewport_point = self.posToViewport(pos.x, pos.y);
 
-    // Record our new point
+    // Record our new point. We only want to send a mouse event if the
+    // cell changed, unless we're tracking raw pixels.
+    if (self.io.terminal.flags.mouse_format != .sgr_pixels) {
+        if (self.mouse.event_point) |last_point| {
+            if (last_point.eql(viewport_point)) return;
+        }
+    }
     self.mouse.event_point = viewport_point;
 
     // Get the code we'll actually write
