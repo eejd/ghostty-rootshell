@@ -1283,8 +1283,11 @@ fn mouseReport(
     mods: input.Mods,
     pos: apprt.CursorPos,
 ) !void {
-    // TODO: posToViewport currently clamps to the surface boundary,
-    // do we want to not report mouse events at all outside the surface?
+    // The maximum pos values so we can determine if we're outside the window.
+    // If we're outside the window, we do not report mouse events.
+    const max_x: f32 = @floatFromInt(self.screen_size.width);
+    const max_y: f32 = @floatFromInt(self.screen_size.height);
+    if (pos.x < 0 or pos.y < 0 or pos.x > max_x or pos.y > max_y) return;
 
     // Depending on the event, we may do nothing at all.
     switch (self.io.terminal.flags.mouse_event) {
@@ -1444,6 +1447,9 @@ fn mouseReport(
         },
 
         .sgr_pixels => {
+            assert(pos.x >= 0);
+            assert(pos.y >= 0);
+
             // Final character to send in the CSI
             const final: u8 = if (action == .release) 'm' else 'M';
 
@@ -1452,8 +1458,8 @@ fn mouseReport(
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
-                pos.x,
-                pos.y,
+                @as(u32, @intFromFloat(@round(pos.x))),
+                @as(u32, @intFromFloat(@round(pos.y))),
                 final,
             });
 
