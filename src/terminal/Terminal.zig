@@ -132,6 +132,11 @@ pub const MouseEvents = enum(u3) {
     normal = 2, // 1000
     button = 3, // 1002
     any = 4, // 1003
+
+    /// Returns true if this event sends motion events.
+    pub fn motion(self: MouseEvents) bool {
+        return self == .button or self == .any;
+    }
 };
 
 /// The format of mouse events when enabled.
