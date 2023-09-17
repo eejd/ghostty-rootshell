@@ -305,7 +305,8 @@ extension Ghostty {
             // We only support the standard clipboard
             if (location != GHOSTTY_CLIPBOARD_STANDARD) { return nil }
 
-            guard let appState = self.appState(fromSurface: userdata) else { return nil }
+            guard let surface = self.surfaceUserdata(from: userdata) else { return nil }
+            guard let appState = self.appState(fromView: surface) else { return nil }
             guard let str = NSPasteboard.general.string(forType: .string) else { return nil }
 
             // Ghostty requires we cache the string because the pointer we return has to remain
@@ -384,8 +385,9 @@ extension Ghostty {
 
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
-
-            guard self.appState(fromSurface: userdata)?.windowDecorations else {
+            
+            guard let appState = self.appState(fromView: surface) else { return }
+            guard appState.windowDecorations else {
                 let alert = NSAlert()
                 alert.messageText = "Tabs are disabled"
                 alert.informativeText = "Enable window decorations to use tabs"
@@ -417,9 +419,8 @@ extension Ghostty {
         }
 
         /// Returns the GhosttyState from the given userdata value.
-        static private func appState(fromSurface userdata: UnsafeMutableRawPointer?) -> AppState? {
-            let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
-            guard let surface = surfaceView.surface else { return nil }
+        static private func appState(fromView view: SurfaceView) -> AppState? {
+            guard let surface = view.surface else { return nil }
             guard let app = ghostty_surface_app(surface) else { return nil }
             guard let app_ud = ghostty_app_userdata(app) else { return nil }
             return Unmanaged<AppState>.fromOpaque(app_ud).takeUnretainedValue()
