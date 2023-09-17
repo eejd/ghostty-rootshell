@@ -1325,7 +1325,10 @@ fn mouseReport(
         if (button == null) {
             // Null button means motion without a button pressed
             acc = 3;
-        } else if (action == .release and self.io.terminal.flags.mouse_format != .sgr) {
+        } else if (action == .release and
+            self.io.terminal.flags.mouse_format != .sgr and
+            self.io.terminal.flags.mouse_format != .sgr_pixels)
+        {
             // Release is 3. It is NOT 3 in SGR mode because SGR can tell
             // the application what button was released.
             acc = 3;
