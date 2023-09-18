@@ -33,54 +33,21 @@ fn destroy(self: *ConfigErrors) void {
 }
 
 fn init(self: *ConfigErrors, app: *App) !void {
+    // Set some state
+    self.* = .{ .app = app };
+
     // Create the window
     const window = c.gtk_application_window_new(app.app);
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
     c.gtk_window_set_title(gtk_window, "Configuration Errors");
     c.gtk_window_set_default_size(gtk_window, 600, 300);
-
-    // All our widgets
-    const label = c.gtk_label_new(
-        "One or more configuration errors were found while loading " ++
-            "the configuration. Please review the errors below and reload " ++
-            "your configuration or ignore the erroneous lines.",
-    );
-
-    const buf = try contentsBuffer(&app.config);
-    defer c.g_object_unref(buf);
-    const text = c.gtk_text_view_new_with_buffer(buf);
-    errdefer c.g_object_unref(text);
-
-    var buttons = try ButtonsView.init(self);
-    errdefer buttons.deinit();
-
-    // Create our view
-    const view = try View.init(&.{
-        .{ .name = "label", .widget = label },
-        .{ .name = "text", .widget = text },
-        .{ .name = "buttons", .widget = buttons.view.root },
-    }, &rootvfl);
-    errdefer view.deinit();
-
-    // We can do additional settings once the layout is setup
-    c.gtk_label_set_wrap(@ptrCast(label), 1);
-    c.gtk_text_view_set_editable(@ptrCast(text), 0);
-    c.gtk_text_view_set_cursor_visible(@ptrCast(text), 0);
-    c.gtk_text_view_set_top_margin(@ptrCast(text), 8);
-    c.gtk_text_view_set_bottom_margin(@ptrCast(text), 8);
-    c.gtk_text_view_set_left_margin(@ptrCast(text), 8);
-    c.gtk_text_view_set_right_margin(@ptrCast(text), 8);
-
-    // Signals
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
 
     // Show the window
+    const view = try PrimaryView.init(self);
     c.gtk_window_set_child(@ptrCast(window), view.root);
     c.gtk_widget_show(window);
-
-    // Set some state
-    self.* = .{ .app = app };
 }
 
 fn gtkDestroy(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
@@ -92,21 +59,65 @@ fn userdataSelf(ud: *anyopaque) *ConfigErrors {
     return @ptrCast(@alignCast(ud));
 }
 
-/// Returns the GtkTextBuffer for the config errors that we want to show.
-fn contentsBuffer(config: *const Config) !*c.GtkTextBuffer {
-    const buf = c.gtk_text_buffer_new(null);
-    errdefer c.g_object_unref(buf);
+const PrimaryView = struct {
+    root: *c.GtkWidget,
 
-    for (config._errors.list.items) |err| {
-        c.gtk_text_buffer_insert_at_cursor(buf, err.message, @intCast(err.message.len));
-        c.gtk_text_buffer_insert_at_cursor(buf, "\n", -1);
+    pub fn init(root: *ConfigErrors) !PrimaryView {
+        // All our widgets
+        const label = c.gtk_label_new(
+            "One or more configuration errors were found while loading " ++
+                "the configuration. Please review the errors below and reload " ++
+                "your configuration or ignore the erroneous lines.",
+        );
+        const buf = try contentsBuffer(&root.app.config);
+        defer c.g_object_unref(buf);
+        const text = c.gtk_text_view_new_with_buffer(buf);
+        errdefer c.g_object_unref(text);
+        const buttons = try ButtonsView.init(root);
+
+        // Create our view
+        const view = try View.init(&.{
+            .{ .name = "label", .widget = label },
+            .{ .name = "text", .widget = text },
+            .{ .name = "buttons", .widget = buttons.root },
+        }, &vfl);
+        errdefer view.deinit();
+
+        // We can do additional settings once the layout is setup
+        c.gtk_label_set_wrap(@ptrCast(label), 1);
+        c.gtk_text_view_set_editable(@ptrCast(text), 0);
+        c.gtk_text_view_set_cursor_visible(@ptrCast(text), 0);
+        c.gtk_text_view_set_top_margin(@ptrCast(text), 8);
+        c.gtk_text_view_set_bottom_margin(@ptrCast(text), 8);
+        c.gtk_text_view_set_left_margin(@ptrCast(text), 8);
+        c.gtk_text_view_set_right_margin(@ptrCast(text), 8);
+
+        return .{ .root = view.root };
     }
 
-    return buf;
-}
+    /// Returns the GtkTextBuffer for the config errors that we want to show.
+    fn contentsBuffer(config: *const Config) !*c.GtkTextBuffer {
+        const buf = c.gtk_text_buffer_new(null);
+        errdefer c.g_object_unref(buf);
+
+        for (config._errors.list.items) |err| {
+            c.gtk_text_buffer_insert_at_cursor(buf, err.message, @intCast(err.message.len));
+            c.gtk_text_buffer_insert_at_cursor(buf, "\n", -1);
+        }
+
+        return buf;
+    }
+
+    const vfl = [_][*:0]const u8{
+        "H:|-8-[label]-8-|",
+        "H:|[text]|",
+        "H:|[buttons]|",
+        "V:|[label(<=100)][text(>=100)]-[buttons]-|",
+    };
+};
 
 const ButtonsView = struct {
-    view: View,
+    root: *c.GtkWidget,
 
     pub fn init(root: *ConfigErrors) !ButtonsView {
         // Todo for events
@@ -123,23 +134,11 @@ const ButtonsView = struct {
             .{ .name = "ignore", .widget = ignore_button },
             .{ .name = "reload", .widget = reload_button },
         }, &vfl);
-        errdefer view.deinit();
 
-        return .{ .view = view };
-    }
-
-    pub fn deinit(self: *ButtonsView) void {
-        self.view.deinit();
+        return .{ .root = view.root };
     }
 
     const vfl = [_][*:0]const u8{
         "H:[ignore]-8-[reload]-8-|",
     };
-};
-
-const rootvfl = [_][*:0]const u8{
-    "H:|-8-[label]-8-|",
-    "H:|[text]|",
-    "H:|[buttons]|",
-    "V:|[label(<=100)][text(>=100)]-[buttons]-|",
 };

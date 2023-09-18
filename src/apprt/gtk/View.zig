@@ -71,7 +71,3 @@ pub fn init(widgets: []const Widget, vfl: []const [*:0]const u8) !View {
 
     return .{ .root = box };
 }
-
-pub fn deinit(self: *View) void {
-    _ = self;
-}
