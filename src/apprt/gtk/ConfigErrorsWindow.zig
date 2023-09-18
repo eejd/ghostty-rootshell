@@ -28,6 +28,11 @@ pub fn create(app: *App) !void {
 }
 
 pub fn update(self: *ConfigErrors) void {
+    if (self.app.config._errors.empty()) {
+        c.gtk_window_destroy(@ptrCast(self.window));
+        return;
+    }
+
     self.view.update(&self.app.config);
     _ = c.gtk_window_present(self.window);
     _ = c.gtk_widget_grab_focus(@ptrCast(self.window));

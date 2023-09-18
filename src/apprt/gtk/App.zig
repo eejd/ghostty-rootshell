@@ -178,8 +178,9 @@ fn updateConfigErrors(self: *App) !void {
             try ConfigErrorsWindow.create(self);
             assert(self.config_errors_window != null);
         }
+    }
 
-        const window = self.config_errors_window.?;
+    if (self.config_errors_window) |window| {
         window.update();
     }
 }
