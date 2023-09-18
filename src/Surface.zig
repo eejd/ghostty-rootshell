@@ -1336,7 +1336,7 @@ fn mouseReport(
 
     // Record our new point. We only want to send a mouse event if the
     // cell changed, unless we're tracking raw pixels.
-    if (self.io.terminal.flags.mouse_format != .sgr_pixels) {
+    if (action == .motion and self.io.terminal.flags.mouse_format != .sgr_pixels) {
         if (self.mouse.event_point) |last_point| {
             if (last_point.eql(viewport_point)) return;
         }
