@@ -13,6 +13,7 @@ const c = @import("c.zig");
 const log = std.log.scoped(.gtk);
 
 app: *App,
+window: *c.GtkWindow,
 
 pub fn create(app: *App) !void {
     if (app.config_errors_window != null) return error.InvalidOperation;
@@ -33,16 +34,19 @@ fn destroy(self: *ConfigErrors) void {
 }
 
 fn init(self: *ConfigErrors, app: *App) !void {
-    // Set some state
-    self.* = .{ .app = app };
-
     // Create the window
     const window = c.gtk_application_window_new(app.app);
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
     c.gtk_window_set_title(gtk_window, "Configuration Errors");
-    c.gtk_window_set_default_size(gtk_window, 600, 300);
+    c.gtk_window_set_default_size(gtk_window, 600, 275);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+
+    // Set some state
+    self.* = .{
+        .app = app,
+        .window = gtk_window,
+    };
 
     // Show the window
     const view = try PrimaryView.init(self);
@@ -112,7 +116,7 @@ const PrimaryView = struct {
         "H:|-8-[label]-8-|",
         "H:|[text]|",
         "H:|[buttons]|",
-        "V:|[label(<=100)][text(>=100)]-[buttons]-|",
+        "V:|[label(<=80)][text(>=100)]-[buttons]-|",
     };
 };
 
@@ -120,9 +124,6 @@ const ButtonsView = struct {
     root: *c.GtkWidget,
 
     pub fn init(root: *ConfigErrors) !ButtonsView {
-        // Todo for events
-        _ = root;
-
         const ignore_button = c.gtk_button_new_with_label("Ignore");
         errdefer c.g_object_unref(ignore_button);
 
@@ -135,7 +136,38 @@ const ButtonsView = struct {
             .{ .name = "reload", .widget = reload_button },
         }, &vfl);
 
+        // Signals
+        _ = c.g_signal_connect_data(
+            ignore_button,
+            "clicked",
+            c.G_CALLBACK(&gtkIgnoreClick),
+            root,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        _ = c.g_signal_connect_data(
+            reload_button,
+            "clicked",
+            c.G_CALLBACK(&gtkReloadClick),
+            root,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+
         return .{ .root = view.root };
+    }
+
+    fn gtkIgnoreClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+        const self: *ConfigErrors = @ptrCast(@alignCast(ud));
+        c.gtk_window_destroy(@ptrCast(self.window));
+    }
+
+    fn gtkReloadClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+        const self: *ConfigErrors = @ptrCast(@alignCast(ud));
+        _ = self.app.reloadConfig() catch |err| {
+            log.warn("error reloading config error={}", .{err});
+            return;
+        };
     }
 
     const vfl = [_][*:0]const u8{
