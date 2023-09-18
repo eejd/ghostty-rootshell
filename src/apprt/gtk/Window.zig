@@ -98,6 +98,11 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
         c.gtk_header_bar_pack_end(@ptrCast(header), btn);
     }
+    {
+        const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
+        c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+        _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkActionNewTab), self, null, c.G_CONNECT_DEFAULT);
+    }
 
     // Hide window decoration if configured. This has to happen before
     // `gtk_widget_show`.
@@ -119,10 +124,6 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_widget_set_vexpand(notebook_widget, 1);
     c.gtk_widget_set_hexpand(notebook_widget, 1);
 
-    // Create our add button for new tabs
-    const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
-    c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
-
     // Create our box which will hold our widgets.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
@@ -139,7 +140,6 @@ pub fn init(self: *Window, app: *App) !void {
     // All of our events
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
@@ -334,15 +334,6 @@ fn focusCurrentTab(self: *Window) void {
     const page_idx = c.gtk_notebook_get_current_page(self.notebook);
     const widget = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
     _ = c.gtk_widget_grab_focus(widget);
-}
-
-fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-    const parent = self.app.core_app.focusedSurface();
-    self.newTab(parent) catch |err| {
-        log.warn("error adding new tab: {}", .{err});
-        return;
-    };
 }
 
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
