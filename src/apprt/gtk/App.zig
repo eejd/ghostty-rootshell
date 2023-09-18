@@ -15,6 +15,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
+const input = @import("../../input.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
@@ -23,6 +24,7 @@ const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const c = @import("c.zig");
+const key = @import("key.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -36,6 +38,9 @@ ctx: *c.GMainContext,
 
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*c.GdkCursor,
+
+/// The shared application menu.
+menu: ?*c.GMenu = null,
 
 /// The configuration errors window, if it is currently open.
 config_errors_window: ?*ConfigErrorsWindow = null,
@@ -140,6 +145,7 @@ pub fn terminate(self: *App) void {
     c.g_object_unref(self.app);
 
     if (self.cursor_none) |cursor| c.g_object_unref(cursor);
+    if (self.menu) |menu| c.g_object_unref(menu);
 
     self.config.deinit();
 
@@ -159,13 +165,17 @@ pub fn reloadConfig(self: *App) !?*const Config {
     // Update the existing config, be sure to clean up the old one.
     self.config.deinit();
     self.config = config;
-
-    // If there were errors, report them
-    self.updateConfigErrors() catch |err| {
-        log.warn("error handling configuration errors err={}", .{err});
+    self.syncConfigChanges() catch |err| {
+        log.warn("error handling configuration changes err={}", .{err});
     };
 
     return &self.config;
+}
+
+/// Call this anytime the configuration changes.
+fn syncConfigChanges(self: *App) !void {
+    try self.updateConfigErrors();
+    try self.syncActionAccelerators();
 }
 
 /// This should be called whenever the configuration changes to update
@@ -185,6 +195,35 @@ fn updateConfigErrors(self: *App) !void {
     }
 }
 
+fn syncActionAccelerators(self: *App) !void {
+    try self.syncActionAccelerator("app.quit", .{ .quit = {} });
+    try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
+    try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
+    try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
+    try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
+}
+
+fn syncActionAccelerator(
+    self: *App,
+    gtk_action: [:0]const u8,
+    action: input.Binding.Action,
+) !void {
+    // Reset it initially
+    const zero = [_]?[*:0]const u8{null};
+    c.gtk_application_set_accels_for_action(@ptrCast(self.app), gtk_action.ptr, &zero);
+
+    const trigger = self.config.keybind.set.getTrigger(action) orelse return;
+    var buf: [256]u8 = undefined;
+    const accel = try key.accelFromTrigger(&buf, trigger) orelse return;
+    const accels = [_]?[*:0]const u8{ accel, null };
+
+    c.gtk_application_set_accels_for_action(
+        @ptrCast(self.app),
+        gtk_action.ptr,
+        &accels,
+    );
+}
+
 /// Called by CoreApp to wake up the event loop.
 pub fn wakeup(self: App) void {
     _ = self;
@@ -195,10 +234,15 @@ pub fn wakeup(self: App) void {
 pub fn run(self: *App) !void {
     if (!self.running) return;
 
+    // If we're not remote, then we also setup our actions and menus.
+    self.initActions();
+    self.initMenu();
+
     // On startup, we want to check for configuration errors right away
-    // so we can show our error window.
-    self.updateConfigErrors() catch |err| {
-        log.warn("error handling configuration errors err={}", .{err});
+    // so we can show our error window. We also need to setup other initial
+    // state.
+    self.syncConfigChanges() catch |err| {
+        log.warn("error handling configuration changes err={}", .{err});
     };
 
     while (self.running) {
@@ -330,4 +374,82 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = core_app.mailbox.push(.{
         .new_window = .{},
     }, .{ .forever = {} });
+}
+
+fn gtkActionReloadConfig(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _ = self.core_app.mailbox.push(.{
+        .reload_config = {},
+    }, .{ .forever = {} });
+}
+
+fn gtkActionQuit(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    self.core_app.setQuit() catch |err| {
+        log.warn("error setting quit err={}", .{err});
+        return;
+    };
+}
+
+/// This is called to setup the action map that this application supports.
+/// This should be called only once on startup.
+fn initActions(self: *App) void {
+    const actions = .{
+        .{ "quit", &gtkActionQuit },
+        .{ "reload_config", &gtkActionReloadConfig },
+    };
+
+    inline for (actions) |entry| {
+        const action = c.g_simple_action_new(entry[0], null);
+        defer c.g_object_unref(action);
+        _ = c.g_signal_connect_data(
+            action,
+            "activate",
+            c.G_CALLBACK(entry[1]),
+            self,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action));
+    }
+}
+
+/// This sets the self.menu property to the application menu that can be
+/// shared by all application windows.
+fn initMenu(self: *App) void {
+    const menu = c.g_menu_new();
+    errdefer c.g_object_unref(menu);
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "New Window", "win.new_window");
+        c.g_menu_append(section, "New Tab", "win.new_tab");
+        c.g_menu_append(section, "Close Window", "win.close");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Reload Configuration", "app.reload_config");
+        c.g_menu_append(section, "About Ghostty", "win.about");
+    }
+
+    // {
+    //     const section = c.g_menu_new();
+    //     defer c.g_object_unref(section);
+    //     c.g_menu_append_submenu(menu, "File", @ptrCast(@alignCast(section)));
+    // }
+
+    self.menu = menu;
 }

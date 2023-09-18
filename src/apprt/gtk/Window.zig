@@ -3,6 +3,7 @@ const Window = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("../../build_config.zig");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const configpkg = @import("../../config.zig");
@@ -89,6 +90,23 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
 
+    // Use the new GTK4 header bar
+    const header = c.gtk_header_bar_new();
+    c.gtk_window_set_titlebar(gtk_window, header);
+    {
+        const btn = c.gtk_menu_button_new();
+        c.gtk_widget_set_tooltip_text(btn, "Main Menu");
+        c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
+        c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
+        c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+    }
+    {
+        const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
+        c.gtk_widget_set_tooltip_text(btn, "New Tab");
+        c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+        _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkActionNewTab), self, null, c.G_CONNECT_DEFAULT);
+    }
+
     // Hide window decoration if configured. This has to happen before
     // `gtk_widget_show`.
     if (!app.config.@"window-decoration") {
@@ -109,10 +127,6 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_widget_set_vexpand(notebook_widget, 1);
     c.gtk_widget_set_hexpand(notebook_widget, 1);
 
-    // Create our add button for new tabs
-    const notebook_add_btn = c.gtk_button_new_from_icon_name("list-add-symbolic");
-    c.gtk_notebook_set_action_widget(notebook, notebook_add_btn, c.GTK_PACK_END);
-
     // Create our box which will hold our widgets.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
@@ -129,17 +143,45 @@ pub fn init(self: *Window, app: *App) !void {
     // All of our events
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook_add_btn, "clicked", c.G_CALLBACK(&gtkTabAddClick), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), self, null, c.G_CONNECT_DEFAULT);
+
+    // Our actions for the menu
+    initActions(self);
 
     // The box is our main child
     c.gtk_window_set_child(gtk_window, box);
 
     // Show the window
     c.gtk_widget_show(window);
+}
+
+/// Sets up the GTK actions for the window scope. Actions are how GTK handles
+/// menus and such. The menu is defined in App.zig but the action is defined
+/// here. The string name binds them.
+fn initActions(self: *Window) void {
+    const actions = .{
+        .{ "about", &gtkActionAbout },
+        .{ "close", &gtkActionClose },
+        .{ "new_window", &gtkActionNewWindow },
+        .{ "new_tab", &gtkActionNewTab },
+    };
+
+    inline for (actions) |entry| {
+        const action = c.g_simple_action_new(entry[0], null);
+        defer c.g_object_unref(action);
+        _ = c.g_signal_connect_data(
+            action,
+            "activate",
+            c.G_CALLBACK(entry[1]),
+            self,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        c.g_action_map_add_action(@ptrCast(self.window), @ptrCast(action));
+    }
 }
 
 pub fn deinit(self: *Window) void {
@@ -298,15 +340,6 @@ fn focusCurrentTab(self: *Window) void {
     _ = c.gtk_widget_grab_focus(widget);
 }
 
-fn gtkTabAddClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-    const parent = self.app.core_app.focusedSurface();
-    self.newTab(parent) catch |err| {
-        log.warn("error adding new tab: {}", .{err});
-        return;
-    };
-}
-
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     const surface: *Surface = @ptrCast(@alignCast(ud));
     surface.core_surface.close();
@@ -453,6 +486,78 @@ fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
     );
 
     return c.g_value_get_int(&value);
+}
+
+fn gtkActionAbout(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+
+    c.gtk_show_about_dialog(
+        self.window,
+        "program-name",
+        "Ghostty",
+        "logo-icon-name",
+        "com.mitchellh.ghostty",
+        "title",
+        "About Ghostty",
+        "version",
+        build_config.version_string.ptr,
+        "website",
+        "https://github.com/mitchellh/ghostty",
+        @as(?*anyopaque, null),
+    );
+}
+
+fn gtkActionClose(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    surface.performBindingAction(.{ .close_surface = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionNewWindow(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    surface.performBindingAction(.{ .new_window = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionNewTab(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+/// Returns the surface to use for an action.
+fn actionSurface(self: *Window) ?*CoreSurface {
+    const page_idx = c.gtk_notebook_get_current_page(self.notebook);
+    const page = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
+    const surface: *Surface = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), GL_AREA_SURFACE) orelse return null,
+    ));
+    return &surface.core_surface;
 }
 
 fn userdataSelf(ud: *anyopaque) *Window {

@@ -25,7 +25,7 @@ pub const surface = @import("apprt/surface.zig");
 /// Window or something.
 pub const runtime = switch (build_config.artifact) {
     .exe => switch (build_config.app_runtime) {
-        .none => @compileError("exe with no runtime not allowed"),
+        .none => struct {},
         .glfw => glfw,
         .gtk => gtk,
     },
@@ -64,5 +64,6 @@ pub const Runtime = enum {
 };
 
 test {
-    @import("std").testing.refAllDecls(@This());
+    _ = Runtime;
+    _ = runtime;
 }
