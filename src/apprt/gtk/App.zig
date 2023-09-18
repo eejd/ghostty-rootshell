@@ -448,7 +448,13 @@ fn initMenu(self: *App) void {
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Close Window", "win.close");
-        c.g_menu_append(section, "Quit Ghostty", "app.quit");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "About Ghostty", "win.about");
     }
 
     // {

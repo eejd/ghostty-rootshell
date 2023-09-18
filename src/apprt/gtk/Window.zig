@@ -3,6 +3,7 @@ const Window = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("../../build_config.zig");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const configpkg = @import("../../config.zig");
@@ -162,6 +163,7 @@ pub fn init(self: *Window, app: *App) !void {
 /// here. The string name binds them.
 fn initActions(self: *Window) void {
     const actions = .{
+        .{ "about", &gtkActionAbout },
         .{ "close", &gtkActionClose },
         .{ "new_window", &gtkActionNewWindow },
         .{ "new_tab", &gtkActionNewTab },
@@ -484,6 +486,29 @@ fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
     );
 
     return c.g_value_get_int(&value);
+}
+
+fn gtkActionAbout(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+
+    c.gtk_show_about_dialog(
+        self.window,
+        "program-name",
+        "Ghostty",
+        "logo-icon-name",
+        "com.mitchellh.ghostty",
+        "title",
+        "About Ghostty",
+        "version",
+        build_config.version_string.ptr,
+        "website",
+        "https://github.com/mitchellh/ghostty",
+        @as(?*anyopaque, null),
+    );
 }
 
 fn gtkActionClose(

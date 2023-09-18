@@ -206,7 +206,11 @@ pub fn build(b: *std.Build) !void {
 
     const exe_options = b.addOptions();
     exe_options.addOption(std.SemanticVersion, "app_version", version);
-    exe_options.addOption([]const u8, "app_version_string", b.fmt("{}", .{version}));
+    exe_options.addOption([:0]const u8, "app_version_string", try std.fmt.allocPrintZ(
+        b.allocator,
+        "{}",
+        .{version},
+    ));
     exe_options.addOption(bool, "tracy_enabled", tracy);
     exe_options.addOption(bool, "flatpak", flatpak);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
