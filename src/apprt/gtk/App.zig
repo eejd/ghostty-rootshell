@@ -197,6 +197,7 @@ fn updateConfigErrors(self: *App) !void {
 
 fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
+    try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
 }
 
 fn syncActionAccelerator(
@@ -397,6 +398,7 @@ fn initActions(self: *App) void {
 fn initMenu(self: *App) void {
     const menu = c.g_menu_new();
     errdefer c.g_object_unref(menu);
+    c.g_menu_append(menu, "Close", "win.close");
     c.g_menu_append(menu, "Quit", "app.quit");
 
     // {
