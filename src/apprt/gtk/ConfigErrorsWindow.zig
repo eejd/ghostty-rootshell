@@ -26,6 +26,11 @@ pub fn create(app: *App) !void {
     app.config_errors_window = self;
 }
 
+pub fn update(self: *ConfigErrors) void {
+    _ = c.gtk_window_present(self.window);
+    _ = c.gtk_widget_grab_focus(@ptrCast(self.window));
+}
+
 /// Not public because this should be called by the GTK lifecycle.
 fn destroy(self: *ConfigErrors) void {
     const alloc = self.app.core_app.alloc;
@@ -40,6 +45,7 @@ fn init(self: *ConfigErrors, app: *App) !void {
     errdefer c.gtk_window_destroy(gtk_window);
     c.gtk_window_set_title(gtk_window, "Configuration Errors");
     c.gtk_window_set_default_size(gtk_window, 600, 275);
+    c.gtk_window_set_resizable(gtk_window, 0);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
 
     // Set some state
@@ -75,14 +81,17 @@ const PrimaryView = struct {
         );
         const buf = try contentsBuffer(&root.app.config);
         defer c.g_object_unref(buf);
+        const buttons = try ButtonsView.init(root);
+        const text_scroll = c.gtk_scrolled_window_new();
+        errdefer c.g_object_unref(text_scroll);
         const text = c.gtk_text_view_new_with_buffer(buf);
         errdefer c.g_object_unref(text);
-        const buttons = try ButtonsView.init(root);
+        c.gtk_scrolled_window_set_child(@ptrCast(text_scroll), text);
 
         // Create our view
         const view = try View.init(&.{
             .{ .name = "label", .widget = label },
-            .{ .name = "text", .widget = text },
+            .{ .name = "text", .widget = text_scroll },
             .{ .name = "buttons", .widget = buttons.root },
         }, &vfl);
         errdefer view.deinit();
