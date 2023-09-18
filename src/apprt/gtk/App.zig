@@ -15,6 +15,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
+const input = @import("../../input.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
@@ -23,6 +24,7 @@ const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const c = @import("c.zig");
+const key = @import("key.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -163,13 +165,17 @@ pub fn reloadConfig(self: *App) !?*const Config {
     // Update the existing config, be sure to clean up the old one.
     self.config.deinit();
     self.config = config;
-
-    // If there were errors, report them
-    self.updateConfigErrors() catch |err| {
-        log.warn("error handling configuration errors err={}", .{err});
+    self.syncConfigChanges() catch |err| {
+        log.warn("error handling configuration changes err={}", .{err});
     };
 
     return &self.config;
+}
+
+/// Call this anytime the configuration changes.
+fn syncConfigChanges(self: *App) !void {
+    try self.updateConfigErrors();
+    try self.syncActionAccelerators();
 }
 
 /// This should be called whenever the configuration changes to update
@@ -189,6 +195,29 @@ fn updateConfigErrors(self: *App) !void {
     }
 }
 
+fn syncActionAccelerators(self: *App) !void {
+    try self.syncActionAccelerator("app.quit", .{ .quit = {} });
+}
+
+fn syncActionAccelerator(
+    self: *App,
+    gtk_action: [:0]const u8,
+    action: input.Binding.Action,
+) !void {
+    const trigger = self.config.keybind.set.getTrigger(action) orelse return;
+
+    // Build our accelerator string.
+    var buf: [256]u8 = undefined;
+    const accel = try key.accelFromTrigger(&buf, trigger) orelse return;
+    const accels = [_]?[*:0]const u8{ accel, null };
+
+    c.gtk_application_set_accels_for_action(
+        @ptrCast(self.app),
+        gtk_action.ptr,
+        &accels,
+    );
+}
+
 /// Called by CoreApp to wake up the event loop.
 pub fn wakeup(self: App) void {
     _ = self;
@@ -204,9 +233,10 @@ pub fn run(self: *App) !void {
     self.initMenu();
 
     // On startup, we want to check for configuration errors right away
-    // so we can show our error window.
-    self.updateConfigErrors() catch |err| {
-        log.warn("error handling configuration errors err={}", .{err});
+    // so we can show our error window. We also need to setup other initial
+    // state.
+    self.syncConfigChanges() catch |err| {
+        log.warn("error handling configuration changes err={}", .{err});
     };
 
     while (self.running) {
@@ -357,9 +387,9 @@ fn gtkActionQuit(
 fn initActions(self: *App) void {
     const action_quit = c.g_simple_action_new("quit", null);
     defer c.g_object_unref(action_quit);
-    c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action_quit));
-
     _ = c.g_signal_connect_data(action_quit, "activate", c.G_CALLBACK(&gtkActionQuit), self, null, c.G_CONNECT_DEFAULT);
+
+    c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action_quit));
 }
 
 /// This sets the self.menu property to the application menu that can be

@@ -64,5 +64,6 @@ pub const Runtime = enum {
 };
 
 test {
-    @import("std").testing.refAllDecls(@This());
+    _ = Runtime;
+    _ = runtime;
 }
