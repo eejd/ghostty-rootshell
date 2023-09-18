@@ -47,7 +47,7 @@ fn destroy(self: *ConfigErrors) void {
 
 fn init(self: *ConfigErrors, app: *App) !void {
     // Create the window
-    const window = c.gtk_application_window_new(app.app);
+    const window = c.gtk_window_new();
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
     c.gtk_window_set_title(gtk_window, "Configuration Errors");
