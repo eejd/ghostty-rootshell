@@ -197,7 +197,10 @@ fn updateConfigErrors(self: *App) !void {
 
 fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
+    try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
+    try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
+    try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
 }
 
 fn syncActionAccelerator(
@@ -371,6 +374,17 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     }, .{ .forever = {} });
 }
 
+fn gtkActionReloadConfig(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _ = self.core_app.mailbox.push(.{
+        .reload_config = {},
+    }, .{ .forever = {} });
+}
+
 fn gtkActionQuit(
     _: *c.GSimpleAction,
     _: *c.GVariant,
@@ -386,11 +400,24 @@ fn gtkActionQuit(
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
-    const action_quit = c.g_simple_action_new("quit", null);
-    defer c.g_object_unref(action_quit);
-    _ = c.g_signal_connect_data(action_quit, "activate", c.G_CALLBACK(&gtkActionQuit), self, null, c.G_CONNECT_DEFAULT);
+    const actions = .{
+        .{ "quit", &gtkActionQuit },
+        .{ "reload_config", &gtkActionReloadConfig },
+    };
 
-    c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action_quit));
+    inline for (actions) |entry| {
+        const action = c.g_simple_action_new(entry[0], null);
+        defer c.g_object_unref(action);
+        _ = c.g_signal_connect_data(
+            action,
+            "activate",
+            c.G_CALLBACK(entry[1]),
+            self,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action));
+    }
 }
 
 /// This sets the self.menu property to the application menu that can be
@@ -405,6 +432,13 @@ fn initMenu(self: *App) void {
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "New Window", "win.new_window");
         c.g_menu_append(section, "New Tab", "win.new_tab");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Reload Configuration", "app.reload_config");
     }
 
     {
