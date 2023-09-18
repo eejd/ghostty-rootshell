@@ -37,6 +37,9 @@ ctx: *c.GMainContext,
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*c.GdkCursor,
 
+/// The shared application menu.
+menu: ?*c.GMenu = null,
+
 /// The configuration errors window, if it is currently open.
 config_errors_window: ?*ConfigErrorsWindow = null,
 
@@ -140,6 +143,7 @@ pub fn terminate(self: *App) void {
     c.g_object_unref(self.app);
 
     if (self.cursor_none) |cursor| c.g_object_unref(cursor);
+    if (self.menu) |menu| c.g_object_unref(menu);
 
     self.config.deinit();
 
@@ -194,6 +198,10 @@ pub fn wakeup(self: App) void {
 /// Run the event loop. This doesn't return until the app exits.
 pub fn run(self: *App) !void {
     if (!self.running) return;
+
+    // If we're not remote, then we also setup our actions and menus.
+    self.initActions();
+    self.initMenu();
 
     // On startup, we want to check for configuration errors right away
     // so we can show our error window.
@@ -330,4 +338,42 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = core_app.mailbox.push(.{
         .new_window = .{},
     }, .{ .forever = {} });
+}
+
+fn gtkActionQuit(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    self.core_app.setQuit() catch |err| {
+        log.warn("error setting quit err={}", .{err});
+        return;
+    };
+}
+
+/// This is called to setup the action map that this application supports.
+/// This should be called only once on startup.
+fn initActions(self: *App) void {
+    const action_quit = c.g_simple_action_new("quit", null);
+    defer c.g_object_unref(action_quit);
+    c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action_quit));
+
+    _ = c.g_signal_connect_data(action_quit, "activate", c.G_CALLBACK(&gtkActionQuit), self, null, c.G_CONNECT_DEFAULT);
+}
+
+/// This sets the self.menu property to the application menu that can be
+/// shared by all application windows.
+fn initMenu(self: *App) void {
+    const menu = c.g_menu_new();
+    errdefer c.g_object_unref(menu);
+    c.g_menu_append(menu, "Quit", "app.quit");
+
+    // {
+    //     const section = c.g_menu_new();
+    //     defer c.g_object_unref(section);
+    //     c.g_menu_append_submenu(menu, "File", @ptrCast(@alignCast(section)));
+    // }
+
+    self.menu = menu;
 }

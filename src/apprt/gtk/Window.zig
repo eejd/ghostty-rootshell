@@ -89,6 +89,16 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
 
+    // Use the new GTK4 header bar
+    const header = c.gtk_header_bar_new();
+    c.gtk_window_set_titlebar(gtk_window, header);
+    {
+        const btn = c.gtk_menu_button_new();
+        c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
+        c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
+        c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+    }
+
     // Hide window decoration if configured. This has to happen before
     // `gtk_widget_show`.
     if (!app.config.@"window-decoration") {
