@@ -14,6 +14,7 @@ const log = std.log.scoped(.gtk);
 
 app: *App,
 window: *c.GtkWindow,
+view: PrimaryView,
 
 pub fn create(app: *App) !void {
     if (app.config_errors_window != null) return error.InvalidOperation;
@@ -27,6 +28,7 @@ pub fn create(app: *App) !void {
 }
 
 pub fn update(self: *ConfigErrors) void {
+    self.view.update(&self.app.config);
     _ = c.gtk_window_present(self.window);
     _ = c.gtk_widget_grab_focus(@ptrCast(self.window));
 }
@@ -52,10 +54,12 @@ fn init(self: *ConfigErrors, app: *App) !void {
     self.* = .{
         .app = app,
         .window = gtk_window,
+        .view = undefined,
     };
 
     // Show the window
     const view = try PrimaryView.init(self);
+    self.view = view;
     c.gtk_window_set_child(@ptrCast(window), view.root);
     c.gtk_widget_show(window);
 }
@@ -71,6 +75,7 @@ fn userdataSelf(ud: *anyopaque) *ConfigErrors {
 
 const PrimaryView = struct {
     root: *c.GtkWidget,
+    text: *c.GtkTextView,
 
     pub fn init(root: *ConfigErrors) !PrimaryView {
         // All our widgets
@@ -79,7 +84,7 @@ const PrimaryView = struct {
                 "the configuration. Please review the errors below and reload " ++
                 "your configuration or ignore the erroneous lines.",
         );
-        const buf = try contentsBuffer(&root.app.config);
+        const buf = contentsBuffer(&root.app.config);
         defer c.g_object_unref(buf);
         const buttons = try ButtonsView.init(root);
         const text_scroll = c.gtk_scrolled_window_new();
@@ -105,11 +110,17 @@ const PrimaryView = struct {
         c.gtk_text_view_set_left_margin(@ptrCast(text), 8);
         c.gtk_text_view_set_right_margin(@ptrCast(text), 8);
 
-        return .{ .root = view.root };
+        return .{ .root = view.root, .text = @ptrCast(text) };
+    }
+
+    pub fn update(self: *PrimaryView, config: *const Config) void {
+        const buf = contentsBuffer(config);
+        defer c.g_object_unref(buf);
+        c.gtk_text_view_set_buffer(@ptrCast(self.text), buf);
     }
 
     /// Returns the GtkTextBuffer for the config errors that we want to show.
-    fn contentsBuffer(config: *const Config) !*c.GtkTextBuffer {
+    fn contentsBuffer(config: *const Config) *c.GtkTextBuffer {
         const buf = c.gtk_text_buffer_new(null);
         errdefer c.g_object_unref(buf);
 
