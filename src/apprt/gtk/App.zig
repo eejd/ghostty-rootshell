@@ -398,8 +398,22 @@ fn initActions(self: *App) void {
 fn initMenu(self: *App) void {
     const menu = c.g_menu_new();
     errdefer c.g_object_unref(menu);
-    c.g_menu_append(menu, "Close", "win.close");
-    c.g_menu_append(menu, "Quit", "app.quit");
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "New Window", "win.new_window");
+        c.g_menu_append(section, "New Tab", "win.new_tab");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Close Window", "win.close");
+        c.g_menu_append(section, "Quit Ghostty", "app.quit");
+    }
 
     // {
     //     const section = c.g_menu_new();

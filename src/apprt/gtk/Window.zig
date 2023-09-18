@@ -159,11 +159,25 @@ pub fn init(self: *Window, app: *App) !void {
 /// menus and such. The menu is defined in App.zig but the action is defined
 /// here. The string name binds them.
 fn initActions(self: *Window) void {
-    const action_close = c.g_simple_action_new("close", null);
-    defer c.g_object_unref(action_close);
-    _ = c.g_signal_connect_data(action_close, "activate", c.G_CALLBACK(&gtkActionClose), self, null, c.G_CONNECT_DEFAULT);
+    const actions = .{
+        .{ "close", &gtkActionClose },
+        .{ "new_window", &gtkActionNewWindow },
+        .{ "new_tab", &gtkActionNewTab },
+    };
 
-    c.g_action_map_add_action(@ptrCast(self.window), @ptrCast(action_close));
+    inline for (actions) |entry| {
+        const action = c.g_simple_action_new(entry[0], null);
+        defer c.g_object_unref(action);
+        _ = c.g_signal_connect_data(
+            action,
+            "activate",
+            c.G_CALLBACK(entry[1]),
+            self,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        c.g_action_map_add_action(@ptrCast(self.window), @ptrCast(action));
+    }
 }
 
 pub fn deinit(self: *Window) void {
@@ -487,6 +501,32 @@ fn gtkActionClose(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.app.core_app.focusedSurface() orelse return;
     surface.performBindingAction(.{ .close_surface = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionNewWindow(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.app.core_app.focusedSurface() orelse return;
+    surface.performBindingAction(.{ .new_window = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionNewTab(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.app.core_app.focusedSurface() orelse return;
+    surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
