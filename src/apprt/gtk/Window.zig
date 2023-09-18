@@ -517,7 +517,7 @@ fn gtkActionClose(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
-    const surface = self.app.core_app.focusedSurface() orelse return;
+    const surface = self.actionSurface() orelse return;
     surface.performBindingAction(.{ .close_surface = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
@@ -530,7 +530,7 @@ fn gtkActionNewWindow(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
-    const surface = self.app.core_app.focusedSurface() orelse return;
+    const surface = self.actionSurface() orelse return;
     surface.performBindingAction(.{ .new_window = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
@@ -543,11 +543,21 @@ fn gtkActionNewTab(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
-    const surface = self.app.core_app.focusedSurface() orelse return;
+    const surface = self.actionSurface() orelse return;
     surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
+}
+
+/// Returns the surface to use for an action.
+fn actionSurface(self: *Window) ?*CoreSurface {
+    const page_idx = c.gtk_notebook_get_current_page(self.notebook);
+    const page = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
+    const surface: *Surface = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), GL_AREA_SURFACE) orelse return null,
+    ));
+    return &surface.core_surface;
 }
 
 fn userdataSelf(ud: *anyopaque) *Window {

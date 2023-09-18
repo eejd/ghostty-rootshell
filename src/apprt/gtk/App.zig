@@ -434,19 +434,6 @@ fn initMenu(self: *App) void {
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "New Window", "win.new_window");
         c.g_menu_append(section, "New Tab", "win.new_tab");
-    }
-
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-        c.g_menu_append(section, "Reload Configuration", "app.reload_config");
-    }
-
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Close Window", "win.close");
     }
 
@@ -454,6 +441,7 @@ fn initMenu(self: *App) void {
         const section = c.g_menu_new();
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Reload Configuration", "app.reload_config");
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
 
