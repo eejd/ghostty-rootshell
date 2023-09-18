@@ -1,8 +1,6 @@
 { mkShell, lib, stdenv
 
 , bashInteractive
-, debugedit
-, flatpak-builder
 , gdb
 , glxinfo
 , ncurses
@@ -91,10 +89,6 @@ in mkShell rec {
     # My nix shell environment installs the non-interactive version
     # by default so we have to include this.
     bashInteractive
-
-    # Flatpak builds
-    debugedit
-    flatpak-builder
 
     gdb
     valgrind
