@@ -11,6 +11,7 @@
 const App = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const builtin = @import("builtin");
 const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
@@ -20,6 +21,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
+const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
@@ -34,6 +36,9 @@ ctx: *c.GMainContext,
 
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*c.GdkCursor,
+
+/// The configuration errors window, if it is currently open.
+config_errors_window: ?*ConfigErrorsWindow = null,
 
 /// This is set to false when the main loop should exit.
 running: bool = true,
@@ -80,7 +85,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = c.g_signal_connect_data(
         app,
         "activate",
-        c.G_CALLBACK(&activate),
+        c.G_CALLBACK(&gtkActivate),
         core_app,
         null,
         c.G_CONNECT_DEFAULT,
@@ -155,7 +160,25 @@ pub fn reloadConfig(self: *App) !?*const Config {
     self.config.deinit();
     self.config = config;
 
+    // If there were errors, report them
+    self.updateConfigErrors() catch |err| {
+        log.warn("error handling configuration errors err={}", .{err});
+    };
+
     return &self.config;
+}
+
+/// This should be called whenever the configuration changes to update
+/// the state of our config errors window. This will show the window if
+/// there are new configuration errors and hide the window if the errors
+/// are resolved.
+fn updateConfigErrors(self: *App) !void {
+    if (!self.config._errors.empty()) {
+        if (self.config_errors_window == null) {
+            try ConfigErrorsWindow.create(self);
+            assert(self.config_errors_window != null);
+        }
+    }
 }
 
 /// Called by CoreApp to wake up the event loop.
@@ -166,6 +189,14 @@ pub fn wakeup(self: App) void {
 
 /// Run the event loop. This doesn't return until the app exits.
 pub fn run(self: *App) !void {
+    if (!self.running) return;
+
+    // On startup, we want to check for configuration errors right away
+    // so we can show our error window.
+    self.updateConfigErrors() catch |err| {
+        log.warn("error handling configuration errors err={}", .{err});
+    };
+
     while (self.running) {
         _ = c.g_main_context_iteration(self.ctx, 1);
 
@@ -286,7 +317,7 @@ fn gtkQuitConfirmation(
 /// This is called by the "activate" signal. This is sent on program
 /// startup and also when a secondary instance launches and requests
 /// a new window.
-fn activate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
+fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = app;
 
     const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
