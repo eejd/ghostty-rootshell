@@ -208,9 +208,11 @@ fn syncActionAccelerator(
     gtk_action: [:0]const u8,
     action: input.Binding.Action,
 ) !void {
-    const trigger = self.config.keybind.set.getTrigger(action) orelse return;
+    // Reset it initially
+    const zero = [_]?[*:0]const u8{null};
+    c.gtk_application_set_accels_for_action(@ptrCast(self.app), gtk_action.ptr, &zero);
 
-    // Build our accelerator string.
+    const trigger = self.config.keybind.set.getTrigger(action) orelse return;
     var buf: [256]u8 = undefined;
     const accel = try key.accelFromTrigger(&buf, trigger) orelse return;
     const accels = [_]?[*:0]const u8{ accel, null };
