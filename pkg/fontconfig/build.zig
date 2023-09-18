@@ -160,7 +160,15 @@ pub fn buildFontconfig(
     if (opt.libxml2) {
         try flags.appendSlice(&.{
             "-DENABLE_LIBXML2",
+            "-DLIBXML_STATIC",
+            "-DLIBXML_PUSH_ENABLED",
         });
+        if (target.isWindows()) {
+            // NOTE: this should be defined on all targets
+            try flags.appendSlice(&.{
+                "-Werror=implicit-function-declaration",
+            });
+        }
     }
 
     if (target.isWindows()) {
