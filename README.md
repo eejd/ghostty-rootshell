@@ -340,6 +340,28 @@ window for the existing instance. You can disable this behaviour with the
 `--gtk-single-instance=false` flag or by adding `gtk-single-instance = false` to
 the configuration file.**
 
+### Linux Installation Tips
+
+If you're planning to use a build from source as your daily driver,
+I recommend using the `-p` (prefix) flag for `zig build` to install
+Ghostty into `~/.local`. This will setup the proper FHS directory structure
+that ensures features such as shell integration, icons, GTK shortcuts, etc.
+all work.
+
+```
+$ zig build -p $HOME/.local -Doptimize=ReleaseFast
+...
+```
+
+With a typical Freedesktop-compatible desktop environment (i.e. Gnome,
+KDE), this will make Ghostty available as an app in your app launcher.
+For any other desktop environment, you can launch Ghostty at `~/.local/bin/ghostty`.
+
+This _isn't required_, but `~/.local` is a directory that happens to be
+on the search path for a lot of software (such as Gnome and KDE) and
+installing into a prefix with `-p` sets up a directory structure to ensure
+all features of Ghostty work.
+
 ### Mac `.app`
 
 To build the official, fully featured macOS application, you must
