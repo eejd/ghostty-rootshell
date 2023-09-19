@@ -355,7 +355,10 @@ $ zig build -p $HOME/.local -Doptimize=ReleaseFast
 
 With a typical Freedesktop-compatible desktop environment (i.e. Gnome,
 KDE), this will make Ghostty available as an app in your app launcher.
-For any other desktop environment, you can launch Ghostty at `~/.local/bin/ghostty`.
+Note, if you don't see it immediately you may have to log out and log back
+in or maybe even restart. For my Gnome environment, it showed up within a
+few seconds. For any other desktop environment, you can launch Ghostty
+directly using `~/.local/bin/ghostty`.
 
 This _isn't required_, but `~/.local` is a directory that happens to be
 on the search path for a lot of software (such as Gnome and KDE) and
