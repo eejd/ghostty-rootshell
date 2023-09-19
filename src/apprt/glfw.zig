@@ -547,25 +547,27 @@ pub const Surface = struct {
         self.window.setInputModeCursor(if (visible) .normal else .hidden);
     }
 
-    /// Read the clipboard. The windowing system is responsible for allocating
-    /// a buffer as necessary. This should be a stable pointer until the next
-    /// time getClipboardString is called.
-    pub fn getClipboardString(
-        self: *const Surface,
+    /// Start an async clipboard request.
+    pub fn clipboardRequest(
+        self: *Surface,
         clipboard_type: apprt.Clipboard,
-    ) ![:0]const u8 {
-        _ = self;
-        return switch (clipboard_type) {
-            .standard => glfw.getClipboardString() orelse glfw.mustGetErrorCode(),
+        state: apprt.ClipboardRequest,
+    ) !void {
+        // GLFW can read clipboards immediately so just do that.
+        const str: []const u8 = switch (clipboard_type) {
+            .standard => glfw.getClipboardString() orelse return glfw.mustGetErrorCode(),
             .selection => selection: {
                 // Not supported except on Linux
-                if (comptime builtin.os.tag != .linux) return "";
+                if (comptime builtin.os.tag != .linux) break :selection "";
 
                 const raw = glfwNative.getX11SelectionString() orelse
                     return glfw.mustGetErrorCode();
                 break :selection std.mem.span(raw);
             },
         };
+
+        // Complete our request
+        try self.core_surface.completeClipboardRequest(state, str);
     }
 
     /// Set the clipboard.
