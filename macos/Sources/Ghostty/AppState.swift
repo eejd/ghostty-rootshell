@@ -72,9 +72,6 @@ extension Ghostty {
             return v;
         }
 
-        /// Cached clipboard string for `read_clipboard` callback.
-        private var cached_clipboard_string: String? = nil
-
         init() {
             // Initialize ghostty global state. This happens once per process.
             guard ghostty_init() == GHOSTTY_SUCCESS else {
@@ -100,7 +97,7 @@ extension Ghostty {
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
                 set_mouse_shape_cb: { userdata, shape in AppState.setMouseShape(userdata, shape: shape) },
                 set_mouse_visibility_cb: { userdata, visible in AppState.setMouseVisibility(userdata, visible: visible) },
-                read_clipboard_cb: { userdata, loc in AppState.readClipboard(userdata, location: loc) },
+                read_clipboard_cb: { userdata, loc, state in AppState.readClipboard(userdata, location: loc, state: state) },
                 write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
                 new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
@@ -301,18 +298,24 @@ extension Ghostty {
             )
         }
 
-        static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e) -> UnsafePointer<CChar>? {
+        static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) {
+            // If we don't even have a surface, something went terrible wrong so we have
+            // to leak "state".
+            guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
+            guard let surface = surfaceView.surface else { return }
+            
             // We only support the standard clipboard
-            if (location != GHOSTTY_CLIPBOARD_STANDARD) { return nil }
-
-            guard let surface = self.surfaceUserdata(from: userdata) else { return nil }
-            guard let appState = self.appState(fromView: surface) else { return nil }
-            guard let str = NSPasteboard.general.string(forType: .string) else { return nil }
-
-            // Ghostty requires we cache the string because the pointer we return has to remain
-            // stable until the next call to readClipboard.
-            appState.cached_clipboard_string = str
-            return (str as NSString).utf8String
+            if (location != GHOSTTY_CLIPBOARD_STANDARD) {
+                return completeClipboardRequest(surface, data: "", state: state)
+            }
+            
+            // Get our string
+            let str = NSPasteboard.general.string(forType: .string) ?? ""
+            completeClipboardRequest(surface, data: str, state: state)
+        }
+        
+        static private func completeClipboardRequest(_ surface: ghostty_surface_t, data: String, state: UnsafeMutableRawPointer?) {
+            ghostty_surface_complete_clipboard_request(surface, data, UInt(data.count), state)
         }
 
         static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e) {

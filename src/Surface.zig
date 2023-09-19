@@ -537,7 +537,14 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .cell_size => |size| try self.setCellSize(size),
 
-        .clipboard_read => |kind| try self.clipboardRead(kind),
+        .clipboard_read => |kind| {
+            if (!self.config.clipboard_read) {
+                log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
+                return;
+            }
+
+            try self.startClipboardRequest(.standard, .{ .osc_52 = kind });
+        },
 
         .clipboard_write => |req| switch (req) {
             .small => |v| try self.clipboardWrite(v.data[0..v.len], .standard),
@@ -661,89 +668,6 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     };
 
     return .{ .x = x, .y = y };
-}
-
-/// Paste from the clipboard
-fn clipboardPaste(
-    self: *Surface,
-    loc: apprt.Clipboard,
-    lock: bool,
-) !void {
-    const data = self.rt_surface.getClipboardString(loc) catch |err| {
-        log.warn("error reading clipboard: {}", .{err});
-        return;
-    };
-
-    if (data.len > 0) {
-        const bracketed = bracketed: {
-            if (lock) self.renderer_state.mutex.lock();
-            defer if (lock) self.renderer_state.mutex.unlock();
-
-            // With the lock held, we must scroll to the bottom.
-            // We always scroll to the bottom for these inputs.
-            self.scrollToBottom() catch |err| {
-                log.warn("error scrolling to bottom err={}", .{err});
-            };
-
-            break :bracketed self.io.terminal.modes.get(.bracketed_paste);
-        };
-
-        if (bracketed) {
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = "\x1B[200~",
-            }, .{ .forever = {} });
-        }
-
-        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
-            self.alloc,
-            data,
-        ), .{ .forever = {} });
-
-        if (bracketed) {
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = "\x1B[201~",
-            }, .{ .forever = {} });
-        }
-
-        try self.io_thread.wakeup.notify();
-    }
-}
-
-/// This is similar to clipboardPaste but is used specifically for OSC 52
-fn clipboardRead(self: *const Surface, kind: u8) !void {
-    if (!self.config.clipboard_read) {
-        log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
-        return;
-    }
-
-    const data = self.rt_surface.getClipboardString(.standard) catch |err| {
-        log.warn("error reading clipboard: {}", .{err});
-        return;
-    };
-
-    // Even if the clipboard data is empty we reply, since presumably
-    // the client app is expecting a reply. We first allocate our buffer.
-    // This must hold the base64 encoded data PLUS the OSC code surrounding it.
-    const enc = std.base64.standard.Encoder;
-    const size = enc.calcSize(data.len);
-    var buf = try self.alloc.alloc(u8, size + 9); // const for OSC
-    defer self.alloc.free(buf);
-
-    // Wrap our data with the OSC code
-    const prefix = try std.fmt.bufPrint(buf, "\x1b]52;{c};", .{kind});
-    assert(prefix.len == 7);
-    buf[buf.len - 2] = '\x1b';
-    buf[buf.len - 1] = '\\';
-
-    // Do the base64 encoding
-    const encoded = enc.encode(buf[prefix.len..], data);
-    assert(encoded.len == size);
-
-    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
-        self.alloc,
-        buf,
-    ), .{ .forever = {} });
-    self.io_thread.wakeup.notify() catch {};
 }
 
 fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) !void {
@@ -1541,41 +1465,45 @@ pub fn mouseButtonCallback(
         }
     }
 
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-
     // Report mouse events if enabled
-    if (self.io.terminal.flags.mouse_event != .none) report: {
-        // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-        if (mods.shift) break :report;
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        if (self.io.terminal.flags.mouse_event != .none) report: {
+            // Shift overrides mouse "grabbing" in the window, taken from Kitty.
+            if (mods.shift) break :report;
 
-        // In any other mouse button scenario without shift pressed we
-        // clear the selection since the underlying application can handle
-        // that in any way (i.e. "scrolling").
-        self.setSelection(null);
+            // In any other mouse button scenario without shift pressed we
+            // clear the selection since the underlying application can handle
+            // that in any way (i.e. "scrolling").
+            self.setSelection(null);
 
-        const pos = try self.rt_surface.getCursorPos();
+            const pos = try self.rt_surface.getCursorPos();
 
-        const report_action: MouseReportAction = switch (action) {
-            .press => .press,
-            .release => .release,
-        };
+            const report_action: MouseReportAction = switch (action) {
+                .press => .press,
+                .release => .release,
+            };
 
-        try self.mouseReport(
-            button,
-            report_action,
-            self.mouse.mods,
-            pos,
-        );
+            try self.mouseReport(
+                button,
+                report_action,
+                self.mouse.mods,
+                pos,
+            );
 
-        // If we're doing mouse reporting, we do not support any other
-        // selection or highlighting.
-        return;
+            // If we're doing mouse reporting, we do not support any other
+            // selection or highlighting.
+            return;
+        }
     }
 
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
         const pos = try self.rt_surface.getCursorPos();
 
         // If we move our cursor too much between clicks then we reset
@@ -1655,7 +1583,8 @@ pub fn mouseButtonCallback(
                 .clipboard => .standard,
                 .false => unreachable,
             };
-            try self.clipboardPaste(clipboard, false);
+
+            try self.startClipboardRequest(clipboard, .{ .paste = {} });
         }
     }
 }
@@ -2022,7 +1951,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
             }
         },
 
-        .paste_from_clipboard => try self.clipboardPaste(.standard, true),
+        .paste_from_clipboard => try self.startClipboardRequest(
+            .standard,
+            .{ .paste = {} },
+        ),
 
         .increase_font_size => |delta| {
             log.debug("increase font size={}", .{delta});
@@ -2200,6 +2132,103 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
 
         .quit => try self.app.setQuit(),
     }
+}
+
+/// Call this to complete a clipboard request sent to apprt. This should
+/// only be called once for each request. The data is immediately copied so
+/// it is safe to free the data after this call.
+pub fn completeClipboardRequest(
+    self: *Surface,
+    req: apprt.ClipboardRequest,
+    data: []const u8,
+) !void {
+    switch (req) {
+        .paste => try self.completeClipboardPaste(data),
+        .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind),
+    }
+}
+
+/// This starts a clipboard request, with some basic validation. For example,
+/// an OSC 52 request is not actually requested if OSC 52 is disabled.
+fn startClipboardRequest(
+    self: *Surface,
+    loc: apprt.Clipboard,
+    req: apprt.ClipboardRequest,
+) !void {
+    switch (req) {
+        .paste => {}, // always allowed
+        .osc_52 => if (!self.config.clipboard_read) {
+            log.info(
+                "application attempted to read clipboard, but 'clipboard-read' setting is off",
+                .{},
+            );
+            return;
+        },
+    }
+
+    try self.rt_surface.clipboardRequest(loc, req);
+}
+
+fn completeClipboardPaste(self: *Surface, data: []const u8) !void {
+    if (data.len == 0) return;
+
+    const bracketed = bracketed: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // With the lock held, we must scroll to the bottom.
+        // We always scroll to the bottom for these inputs.
+        self.scrollToBottom() catch |err| {
+            log.warn("error scrolling to bottom err={}", .{err});
+        };
+
+        break :bracketed self.io.terminal.modes.get(.bracketed_paste);
+    };
+
+    if (bracketed) {
+        _ = self.io_thread.mailbox.push(.{
+            .write_stable = "\x1B[200~",
+        }, .{ .forever = {} });
+    }
+
+    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+        self.alloc,
+        data,
+    ), .{ .forever = {} });
+
+    if (bracketed) {
+        _ = self.io_thread.mailbox.push(.{
+            .write_stable = "\x1B[201~",
+        }, .{ .forever = {} });
+    }
+
+    try self.io_thread.wakeup.notify();
+}
+
+fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8) !void {
+    // Even if the clipboard data is empty we reply, since presumably
+    // the client app is expecting a reply. We first allocate our buffer.
+    // This must hold the base64 encoded data PLUS the OSC code surrounding it.
+    const enc = std.base64.standard.Encoder;
+    const size = enc.calcSize(data.len);
+    var buf = try self.alloc.alloc(u8, size + 9); // const for OSC
+    defer self.alloc.free(buf);
+
+    // Wrap our data with the OSC code
+    const prefix = try std.fmt.bufPrint(buf, "\x1b]52;{c};", .{kind});
+    assert(prefix.len == 7);
+    buf[buf.len - 2] = '\x1b';
+    buf[buf.len - 1] = '\\';
+
+    // Do the base64 encoding
+    const encoded = enc.encode(buf[prefix.len..], data);
+    assert(encoded.len == size);
+
+    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+        self.alloc,
+        buf,
+    ), .{ .forever = {} });
+    self.io_thread.wakeup.notify() catch {};
 }
 
 const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");

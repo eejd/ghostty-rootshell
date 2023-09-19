@@ -75,7 +75,6 @@ font_size: ?font.face.DesiredSize = null,
 /// Cached metrics about the surface from GTK callbacks.
 size: apprt.SurfaceSize,
 cursor_pos: apprt.CursorPos,
-clipboard: c.GValue,
 
 /// Key input states. See gtkKeyPressed for detailed descriptions.
 in_keypress: bool = false,
@@ -151,7 +150,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .font_size = opts.font_size,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
-        .clipboard = std.mem.zeroes(c.GValue),
         .im_context = im_context,
     };
     errdefer self.* = undefined;
@@ -228,7 +226,6 @@ pub fn deinit(self: *Surface) void {
 
     // Free all our GTK stuff
     c.g_object_unref(self.im_context);
-    c.g_value_unset(&self.clipboard);
 
     if (self.cursor) |cursor| c.g_object_unref(cursor);
 }
@@ -419,35 +416,26 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
     c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.app.cursor_none);
 }
 
-pub fn getClipboardString(
+pub fn clipboardRequest(
     self: *Surface,
     clipboard_type: apprt.Clipboard,
-) ![:0]const u8 {
+    state: apprt.ClipboardRequest,
+) !void {
+    // We allocate for userdata for the clipboard request. Not ideal but
+    // clipboard requests aren't common so probably not a big deal.
+    const alloc = self.app.core_app.alloc;
+    const ud_ptr = try alloc.create(ClipboardRequest);
+    errdefer alloc.destroy(ud_ptr);
+    ud_ptr.* = .{ .self = self, .state = state };
+
+    // Start our async request
     const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
-    const content = c.gdk_clipboard_get_content(clipboard) orelse {
-        // On my machine, this NEVER works, so we fallback to glfw's
-        // implementation... I believe this never works because we need to
-        // use the async mechanism with GTK but that doesn't play nice
-        // with what our core expects.
-        log.debug("no GTK clipboard contents, falling back to glfw", .{});
-        return switch (clipboard_type) {
-            .standard => glfw.getClipboardString() orelse glfw.mustGetErrorCode(),
-            .selection => value: {
-                const raw = glfw_native.getX11SelectionString() orelse
-                    return glfw.mustGetErrorCode();
-                break :value std.mem.span(raw);
-            },
-        };
-    };
-
-    c.g_value_unset(&self.clipboard);
-    _ = c.g_value_init(&self.clipboard, c.G_TYPE_STRING);
-    if (c.gdk_content_provider_get_value(content, &self.clipboard, null) == 0) {
-        return "";
-    }
-
-    const ptr = c.g_value_get_string(&self.clipboard);
-    return std.mem.sliceTo(ptr, 0);
+    c.gdk_clipboard_read_text_async(
+        clipboard,
+        null,
+        &gtkClipboardRead,
+        ud_ptr,
+    );
 }
 
 pub fn setClipboardString(
@@ -457,6 +445,40 @@ pub fn setClipboardString(
 ) !void {
     const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
     c.gdk_clipboard_set_text(clipboard, val.ptr);
+}
+
+const ClipboardRequest = struct {
+    self: *Surface,
+    state: apprt.ClipboardRequest,
+};
+
+fn gtkClipboardRead(
+    source: ?*c.GObject,
+    res: ?*c.GAsyncResult,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const req: *ClipboardRequest = @ptrCast(@alignCast(ud orelse return));
+    const self = req.self;
+    const alloc = self.app.core_app.alloc;
+    defer alloc.destroy(req);
+
+    var gerr: ?*c.GError = null;
+    const cstr = c.gdk_clipboard_read_text_finish(
+        @ptrCast(source orelse return),
+        res,
+        &gerr,
+    );
+    if (gerr) |err| {
+        defer c.g_error_free(err);
+        log.warn("failed to read clipboard err={s}", .{err.message});
+        return;
+    }
+    defer c.g_free(cstr);
+
+    const str = std.mem.sliceTo(cstr, 0);
+    self.core_surface.completeClipboardRequest(req.state, str) catch |err| {
+        log.err("failed to complete clipboard request err={}", .{err});
+    };
 }
 
 fn getClipboard(widget: *c.GtkWidget, clipboard: apprt.Clipboard) ?*c.GdkClipboard {
