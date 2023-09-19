@@ -147,7 +147,7 @@ fn kitty(
             var it = view.iterator();
             const cp = it.nextCodepoint() orelse break :alternates;
             if (it.nextCodepoint() != null) break :alternates;
-            if (cp != seq.key) {
+            if (cp != seq.key and cp >= 0x20 and cp != 0x7F) {
                 seq.alternates = &.{cp};
             }
         }
@@ -587,19 +587,24 @@ const KittySequence = struct {
 
         // Text section
         if (self.text.len > 0) {
-            // We need to add our ";". We need to add two if we didn't emit
-            // the modifier section.
-            if (!emit_prior) try writer.writeByte(';');
-            try writer.writeByte(';');
-
-            // First one has no prefix
             const view = try std.unicode.Utf8View.init(self.text);
             var it = view.iterator();
-            if (it.nextCodepoint()) |cp| {
-                try writer.print("{d}", .{cp});
-            }
+            var count: usize = 0;
             while (it.nextCodepoint()) |cp| {
-                try writer.print(":{d}", .{cp});
+                // If the codepoint is non-printable ASCII character, skip.
+                if (cp < 0x20 or cp == 0x7F) continue;
+
+                // We need to add our ";". We need to add two if we didn't emit
+                // the modifier section. We only do this initially.
+                if (count == 0) {
+                    if (!emit_prior) try writer.writeByte(';');
+                    try writer.writeByte(';');
+                } else {
+                    try writer.writeByte(':');
+                }
+
+                try writer.print("{d}", .{cp});
+                count += 1;
             }
         }
 
@@ -693,6 +698,32 @@ test "KittySequence: text" {
         };
         const actual = try seq.encode(&buf);
         try testing.expectEqualStrings("\x1B[127;2;65u", actual);
+    }
+}
+
+test "KittySequence: text with control characters" {
+    var buf: [128]u8 = undefined;
+
+    // By itself
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .text = "\n",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1b[127u", actual);
+    }
+
+    // With other printables
+    {
+        var seq: KittySequence = .{
+            .key = 127,
+            .final = 'u',
+            .text = "A\n",
+        };
+        const actual = try seq.encode(&buf);
+        try testing.expectEqualStrings("\x1b[127;;65u", actual);
     }
 }
 
@@ -917,6 +948,25 @@ test "kitty: left shift with report all" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[57441u", actual);
+}
+
+test "kitty: alternates omit control characters" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .delete,
+            .mods = .{},
+            .utf8 = &.{0x7F},
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_alternates = true,
+            .report_all = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[3~", actual);
 }
 
 test "legacy: ctrl+alt+c" {
