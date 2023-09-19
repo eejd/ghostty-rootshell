@@ -58,7 +58,7 @@ pub const App = struct {
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
         /// value then this should return null.
-        read_clipboard: *const fn (SurfaceUD, c_int) callconv(.C) ?[*:0]const u8,
+        read_clipboard: *const fn (SurfaceUD, c_int, *apprt.ClipboardRequest) callconv(.C) void,
 
         /// Write the clipboard value.
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int) callconv(.C) void,
@@ -342,15 +342,25 @@ pub const Surface = struct {
         };
     }
 
-    pub fn getClipboardString(
-        self: *const Surface,
+    pub fn clipboardRequest(
+        self: *Surface,
         clipboard_type: apprt.Clipboard,
-    ) ![:0]const u8 {
-        const ptr = self.app.opts.read_clipboard(
+        state: apprt.ClipboardRequest,
+    ) !void {
+        // We need to allocate to get a pointer to store our clipboard request
+        // so that it is stable until the read_clipboard callback and call
+        // complete_clipboard_request. This sucks but clipboard requests aren't
+        // high throughput so it's probably fine.
+        const alloc = self.app.core_app.alloc;
+        const state_ptr = try alloc.create(apprt.ClipboardRequest);
+        errdefer alloc.destroy(state_ptr);
+        state_ptr.* = state;
+
+        self.app.opts.read_clipboard(
             self.opts.userdata,
             @intCast(@intFromEnum(clipboard_type)),
-        ) orelse return "";
-        return std.mem.sliceTo(ptr, 0);
+            state_ptr,
+        );
     }
 
     pub fn setClipboardString(
@@ -980,6 +990,26 @@ pub const CAPI = struct {
         };
 
         return true;
+    }
+
+    /// Complete a clipboard read request startd via the read callback.
+    /// This can only be called once for a given request. Once it is called
+    /// with a request the request pointer will be invalidated.
+    export fn ghostty_surface_complete_clipboard_request(
+        ptr: *Surface,
+        str_ptr: [*]const u8,
+        str_len: usize,
+        state: *apprt.ClipboardRequest,
+    ) void {
+        // The state is unusable after this
+        defer ptr.core_surface.app.alloc.destroy(state);
+
+        if (str_len == 0) return;
+        const str = str_ptr[0..str_len];
+        ptr.core_surface.completeClipboardRequest(state.*, str) catch |err| {
+            log.err("error completing clipboard request err={}", .{err});
+            return;
+        };
     }
 
     /// Sets the window background blur on macOS to the desired value.

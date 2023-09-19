@@ -316,7 +316,7 @@ typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef void (*ghostty_runtime_set_mouse_shape_cb)(void *, ghostty_mouse_shape_e);
 typedef void (*ghostty_runtime_set_mouse_visibility_cb)(void *, bool);
-typedef const char* (*ghostty_runtime_read_clipboard_cb)(void *, ghostty_clipboard_e);
+typedef void (*ghostty_runtime_read_clipboard_cb)(void *, ghostty_clipboard_e, void *);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty_clipboard_e);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_surface_config_s);
@@ -393,6 +393,7 @@ void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char *, uintptr_t);
+void ghostty_surface_complete_clipboard_request(ghostty_surface_t, const char *, uintptr_t, void *);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.
