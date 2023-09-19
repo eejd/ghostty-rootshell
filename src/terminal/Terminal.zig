@@ -1008,10 +1008,14 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
         return;
     }
 
-    if (self.status_display != .main) return; // TODO
+    if (self.status_display != .main) {
+        log.err("setCursorColAbsolute: not implemented on status display", .{});
+        return; // TODO
+    }
 
     const col = if (col_req == 0) 1 else col_req;
     self.screen.cursor.x = @min(self.cols, col) - 1;
+    self.screen.cursor.pending_wrap = false;
 }
 
 /// Erase the display.
@@ -2741,6 +2745,18 @@ test "Terminal: deleteChars should shift left" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ACDE", str);
     }
+}
+
+test "Terminal: setCursorColAbsolute resets pending wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.setCursorColAbsolute(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 }
 
 // https://github.com/mitchellh/ghostty/issues/272
