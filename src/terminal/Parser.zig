@@ -399,27 +399,20 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                         .none, .semicolon => .semicolon,
                         .colon => .colon,
 
-                        // This should never happen because of the checks below
-                        // but we have to exhaustively handle the switch.
+                        // There is nothing that treats mixed separators specially
+                        // afaik so we just treat it as a semicolon.
                         .mixed => .semicolon,
                     },
                 },
             };
 
-            // We only allow the colon separator for the 'm' command.
+            // We only allow colon or mixed separators for the 'm' command.
             switch (self.params_sep) {
                 .none => {},
                 .semicolon => {},
-                .colon => if (c != 'm') {
+                .colon, .mixed => if (c != 'm') {
                     log.warn(
-                        "CSI colon separator only allowed for 'm' command, got: {}",
-                        .{result},
-                    );
-                    break :csi_dispatch null;
-                },
-                .mixed => {
-                    log.warn(
-                        "CSI command had mixed colons and semicolons, got: {}",
+                        "CSI colon or mixed separators only allowed for 'm' command, got: {}",
                         .{result},
                     );
                     break :csi_dispatch null;
@@ -585,6 +578,25 @@ test "csi: SGR colon followed by semicolon" {
     }
 }
 
+test "csi: SGR mixed colon and semicolon" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("[38:5:1;48:5:0") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('m');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+    }
+}
+
 test "csi: SGR ESC [ 48 : 2 m" {
     var p = init();
     _ = p.next(0x1B);
@@ -666,19 +678,6 @@ test "csi: SGR with many blank and colon" {
         try testing.expectEqual(@as(u16, 143), d.params[4]);
         try testing.expectEqual(@as(u16, 104), d.params[5]);
     }
-}
-
-test "csi: mixing semicolon/colon" {
-    var p = init();
-    _ = p.next(0x1B);
-    for ("[38:2;4m") |c| {
-        const a = p.next(c);
-        try testing.expect(a[0] == null);
-        try testing.expect(a[1] == null);
-        try testing.expect(a[2] == null);
-    }
-
-    try testing.expect(p.state == .ground);
 }
 
 test "csi: colon for non-m final" {
