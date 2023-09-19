@@ -111,6 +111,7 @@ pub fn translate(
         .ctrl = if (mods.ctrl) true else false,
         .meta = if (mods.super) true else false,
         .shift = if (mods.shift) true else false,
+        .caps_lock = if (mods.caps_lock) true else false,
     }).ucKeyTranslate();
 
     // We use 4 here because the Chromium source code uses 4 and Chrome
