@@ -1688,6 +1688,23 @@ const StreamHandler = struct {
         self.terminal.screen.kitty_keyboard.set(mode, flags);
     }
 
+    pub fn reportXtversion(
+        self: *StreamHandler,
+    ) !void {
+        log.debug("reporting XTVERSION: ghostty {s}", .{build_config.version_string});
+        var msg: termio.Message = .{ .write_small = .{} };
+        const resp = try std.fmt.bufPrint(
+            &msg.write_small.data,
+            "\x1BP>|{s} {s}\x07",
+            .{
+                "ghostty",
+                build_config.version_string,
+            },
+        );
+        msg.write_small.len = @intCast(resp.len);
+        self.messageWriter(msg);
+    }
+
     //-------------------------------------------------------------------------
     // OSC
 

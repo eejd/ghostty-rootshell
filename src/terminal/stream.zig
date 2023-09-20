@@ -607,28 +607,32 @@ pub fn Stream(comptime Handler: type) type {
                     ),
                 },
 
-                // DECSCUSR - Select Cursor Style
-                // TODO: test
                 'q' => switch (action.intermediates.len) {
-                    1 => cursor: {
-                        if (action.intermediates[0] != ' ') {
+                    1 => switch (action.intermediates[0]) {
+                        // DECSCUSR - Select Cursor Style
+                        // TODO: test
+                        ' ' => {
+                            if (@hasDecl(T, "setCursorStyle")) try self.handler.setCursorStyle(
+                                switch (action.params.len) {
+                                    0 => ansi.CursorStyle.default,
+                                    1 => @enumFromInt(action.params[0]),
+                                    else => {
+                                        log.warn("invalid set curor style command: {}", .{action});
+                                        return;
+                                    },
+                                },
+                            ) else log.warn("unimplemented CSI callback: {}", .{action});
+                        },
+                        // XTVERSION
+                        '>' => {
+                            if (@hasDecl(T, "reportXtversion")) try self.handler.reportXtversion();
+                        },
+                        else => {
                             log.warn(
                                 "ignoring unimplemented CSI q with intermediates: {s}",
                                 .{action.intermediates},
                             );
-                            break :cursor;
-                        }
-
-                        if (@hasDecl(T, "setCursorStyle")) try self.handler.setCursorStyle(
-                            switch (action.params.len) {
-                                0 => ansi.CursorStyle.default,
-                                1 => @enumFromInt(action.params[0]),
-                                else => {
-                                    log.warn("invalid set curor style command: {}", .{action});
-                                    return;
-                                },
-                            },
-                        ) else log.warn("unimplemented CSI callback: {}", .{action});
+                        },
                     },
 
                     else => log.warn(
