@@ -6,7 +6,7 @@ import GhosttyKit
 // whether we launch from the app or not. A user can fake this if
 // they want but they're doing so at their own detriment...
 let process = ProcessInfo.processInfo
-if (process.environment["GHOSTTY_MAC_APP"] == "") {
+if ((process.environment["GHOSTTY_MAC_APP"] ?? "") == "") {
     ghostty_cli_main(UInt(CommandLine.argc), CommandLine.unsafeArgv)
     exit(1)
 }
