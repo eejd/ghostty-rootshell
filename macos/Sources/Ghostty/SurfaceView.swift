@@ -491,6 +491,12 @@ extension Ghostty {
         }
 
         override func mouseEntered(with event: NSEvent) {
+            // For reasons unknown (Cocoaaaaaaaaa), mouseEntered is called
+            // multiple times in an unbalanced way with mouseExited when a new
+            // tab is created. In this scenario, we only want to process our
+            // callback once since this is stateful and we expect balancing.
+            if (mouseEntered) { return }
+            
             mouseEntered = true
             
             // If our cursor is hidden, we hide it on upon entry and we unhide
@@ -501,6 +507,9 @@ extension Ghostty {
         }
 
         override func mouseExited(with event: NSEvent) {
+            // See mouseEntered
+            if (!mouseEntered) { return }
+            
             mouseEntered = false
             
             if (cursorVisible == .hidden) {
