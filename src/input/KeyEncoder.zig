@@ -1106,6 +1106,52 @@ test "legacy: keypad enter" {
     try testing.expectEqualStrings("\r", actual);
 }
 
+test "legacy: f1" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .f1,
+            .mods = .{ .ctrl = true },
+            .consumed_mods = .{},
+        },
+    };
+
+    // F1
+    {
+        enc.event.key = .f1;
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[1;5P", actual);
+    }
+
+    // F2
+    {
+        enc.event.key = .f2;
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[1;5Q", actual);
+    }
+
+    // F3
+    {
+        enc.event.key = .f3;
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[1;5R", actual);
+    }
+
+    // F4
+    {
+        enc.event.key = .f4;
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[1;5S", actual);
+    }
+
+    // F5 uses new encoding
+    {
+        enc.event.key = .f5;
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[15;5~", actual);
+    }
+}
+
 test "ctrlseq: normal ctrl c" {
     const seq = ctrlSeq(.c, .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
