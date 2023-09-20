@@ -743,25 +743,12 @@ fn keyEvent(
     // Get the unshifted unicode value of the keyval. This is used
     // by the Kitty keyboard protocol.
     const keyval_unicode_unshifted: u21 = unshifted: {
-        var n: c_int = undefined;
-        var keys: [*c]c.GdkKeymapKey = undefined;
-        var keyvals: [*c]c.guint = undefined;
-        if (c.gdk_display_map_keycode(
-            c.gdk_event_get_display(event),
-            keycode,
-            &keys,
-            &keyvals,
-            &n,
-        ) == 0) break :unshifted 0;
-
-        defer c.g_free(keys);
-        defer c.g_free(keyvals);
-        for (keys[0..@intCast(n)], 0..) |key, i| {
-            if (key.group == 0 and key.level == 0) {
-                break :unshifted @intCast(c.gdk_keyval_to_unicode(keyvals[i]));
-            }
-        }
-
+        // Note: this can't possibly always be right, specifically in the
+        // case of multi-level/group keyboards. But, this works for Dvorak,
+        // Norwegian, and French layouts and thats what we have real users for
+        // right now.
+        const lower = c.gdk_keyval_to_lower(keyval);
+        if (std.math.cast(u21, lower)) |val| break :unshifted val;
         break :unshifted 0;
     };
 
@@ -828,12 +815,19 @@ fn keyEvent(
             }
         }
 
-        // If that doesn't work then we try to translate they kevval..
+        // If that doesn't work then we try to translate the kevval..
         if (keyval_unicode != 0) {
             if (std.math.cast(u8, keyval_unicode)) |byte| {
                 if (input.Key.fromASCII(byte)) |key| {
                     break :key key;
                 }
+            }
+        }
+
+        // If that doesn't work we use the unshifted value...
+        if (std.math.cast(u8, keyval_unicode_unshifted)) |ascii| {
+            if (input.Key.fromASCII(ascii)) |key| {
+                break :key key;
             }
         }
 
