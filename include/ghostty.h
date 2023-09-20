@@ -351,6 +351,7 @@ typedef struct {
 // Published API
 
 int ghostty_init(void);
+void ghostty_cli_main(uintptr_t, char **);
 ghostty_info_s ghostty_info(void);
 
 ghostty_config_t ghostty_config_new();

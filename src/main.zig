@@ -23,7 +23,13 @@ const Ghostty = @import("main_c.zig").Ghostty;
 /// rely on allocators being passed in as parameters.
 pub var state: GlobalState = undefined;
 
-pub fn main() !void {
+/// The return type for main() depends on the build artifact.
+const MainReturn = switch (build_config.artifact) {
+    .lib => noreturn,
+    else => void,
+};
+
+pub fn main() !MainReturn {
     // We first start by initializing our global state. This will setup
     // process-level state we need to run the terminal. The reason we use
     // a global is because the C API needs to be able to access this state;
@@ -65,6 +71,24 @@ pub fn main() !void {
             break :err 1;
         });
         return;
+    }
+
+    if (comptime build_config.app_runtime == .none) {
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("Usage: ghostty +<action> [flags]\n\n", .{});
+        try stdout.print(
+            \\This is the Ghostty helper CLI that accompanies the graphical Ghostty app.
+            \\To launch the terminal directly, please launch the graphical app
+            \\(i.e. Ghostty.app on macOS). This CLI can be used to perform various
+            \\actions such as inspecting the version, listing fonts, etc.
+            \\
+            \\We don't have proper help output yet, sorry! Please refer to the
+            \\source code or Discord community for help for now. We'll fix this in time.
+        ,
+            .{},
+        );
+
+        std.os.exit(0);
     }
 
     // Create our app state
@@ -156,6 +180,7 @@ pub const GlobalState = struct {
         stderr: void,
     };
 
+    /// Initialize the global state.
     pub fn init(self: *GlobalState) !void {
         // Initialize ourself to nothing so we don't have any extra state.
         // IMPORTANT: this MUST be initialized before any log output because
@@ -201,14 +226,16 @@ pub const GlobalState = struct {
         };
 
         // We first try to parse any action that we may be executing.
-        // We do not execute this in the lib because os.argv is not set.
-        if (comptime build_config.artifact != .lib) {
-            self.action = try cli_action.Action.detectCLI(self.alloc);
+        self.action = try cli_action.Action.detectCLI(self.alloc);
 
-            // If we have an action executing, we disable logging by default
-            // since we write to stderr we don't want logs messing up our
-            // output.
-            if (self.action != null) self.logging = .{ .disabled = {} };
+        // If we have an action executing, we disable logging by default
+        // since we write to stderr we don't want logs messing up our
+        // output.
+        if (self.action != null) self.logging = .{ .disabled = {} };
+
+        // For lib mode we always disable stderr logging by default.
+        if (comptime build_config.app_runtime == .none) {
+            self.logging = .{ .disabled = {} };
         }
 
         // I don't love the env var name but I don't have it in my heart

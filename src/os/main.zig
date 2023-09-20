@@ -1,6 +1,7 @@
 //! The "os" package contains utilities for interfacing with the operating
 //! system.
 
+pub usingnamespace @import("env.zig");
 pub usingnamespace @import("file.zig");
 pub usingnamespace @import("flatpak.zig");
 pub usingnamespace @import("homedir.zig");

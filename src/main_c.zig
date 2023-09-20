@@ -42,13 +42,33 @@ const Info = extern struct {
 /// one global state but it has zero practical benefit.
 export fn ghostty_init() c_int {
     assert(builtin.link_libc);
+
+    // Since in the lib we don't go through start.zig, we need
+    // to populate argv so that inspecting std.os.argv doesn't
+    // touch uninitialized memory.
+    var argv: [0][*:0]u8 = .{};
+    std.os.argv = &argv;
+
     main.state.init() catch |err| {
         std.log.err("failed to initialize ghostty error={}", .{err});
         return 1;
     };
+
     return 0;
 }
 
+/// This is the entrypoint for the CLI version of Ghostty. This
+/// is mutually exclusive to ghostty_init. Do NOT run ghostty_init
+/// if you are going to run this. This will not return.
+export fn ghostty_cli_main(argc: usize, argv: [*][*:0]u8) noreturn {
+    std.os.argv = argv[0..argc];
+    main.main() catch |err| {
+        std.log.err("failed to run ghostty error={}", .{err});
+        std.os.exit(1);
+    };
+}
+
+/// Return metadata about Ghostty, such as version, build mode, etc.
 export fn ghostty_info() Info {
     return .{
         .mode = switch (builtin.mode) {

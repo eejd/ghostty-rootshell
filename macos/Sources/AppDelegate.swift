@@ -2,7 +2,6 @@ import AppKit
 import OSLog
 import GhosttyKit
 
-@NSApplicationMain
 class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyAppStateDelegate {
     // The application logger. We should probably move this at some point to a dedicated
     // class/struct but for now it lives here! 🤷‍♂️
