@@ -233,6 +233,11 @@ pub const GlobalState = struct {
         // output.
         if (self.action != null) self.logging = .{ .disabled = {} };
 
+        // For lib mode we always disable stderr logging by default.
+        if (comptime build_config.app_runtime == .none) {
+            self.logging = .{ .disabled = {} };
+        }
+
         // I don't love the env var name but I don't have it in my heart
         // to parse CLI args 3 times (once for actions, once for config,
         // maybe once for logging) so for now this is an easy way to do
