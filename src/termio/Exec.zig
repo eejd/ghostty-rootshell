@@ -695,6 +695,9 @@ const Subprocess = struct {
                 env.remove("SECURITYSESSIONID");
                 env.remove("XPC_SERVICE_NAME");
             }
+
+            // Remove this so that running `ghostty` within Ghostty works.
+            env.remove("GHOSTTY_MAC_APP");
         }
 
         // If we're NOT in a flatpak (usually!), then we just exec the
