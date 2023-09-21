@@ -15,6 +15,14 @@ class FocusedSurfaceWrapper {
 // such as non-native fullscreen.
 class PrimaryWindow: NSWindow {
     var focusedSurfaceWrapper: FocusedSurfaceWrapper = FocusedSurfaceWrapper()
+    
+    override var canBecomeKey: Bool {
+        return true
+    }
+
+    override var canBecomeMain: Bool {
+        return true
+    }
 
     static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
         let window = PrimaryWindow(
@@ -52,13 +60,5 @@ class PrimaryWindow: NSWindow {
         }
         
         return mask
-    }
-    
-    override var canBecomeKey: Bool {
-        return true
-    }
-
-    override var canBecomeMain: Bool {
-        return true
     }
 }

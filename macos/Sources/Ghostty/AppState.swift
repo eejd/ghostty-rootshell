@@ -81,7 +81,16 @@ extension Ghostty {
             guard let ptr = v else { return nil }
             return String(cString: ptr)
         }
-
+        
+        /// The background opacity.
+        var backgroundOpacity: Double {
+            guard let config = self.config else { return 1 }
+            var v: Double = 1
+            let key = "background-opacity"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v;
+        }
+        
         init() {
             // Initialize ghostty global state. This happens once per process.
             guard ghostty_init() == GHOSTTY_SUCCESS else {
