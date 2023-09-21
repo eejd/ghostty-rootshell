@@ -72,19 +72,25 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const cursor_none = c.gdk_cursor_new_from_name("none", null);
     errdefer if (cursor_none) |cursor| c.g_object_unref(cursor);
 
-    // Our uniqueness ID is based on whether we're in a debug mode or not.
-    // In debug mode we want to be separate so we can develop Ghostty in
-    // Ghostty.
-    const uniqueness_id: ?[*c]const u8 = uniqueness_id: {
-        if (!config.@"gtk-single-instance") break :uniqueness_id null;
+    // Setup the flags for our application.
+    const app_flags: c.GApplicationFlags = app_flags: {
+        var flags: c.GApplicationFlags = c.G_APPLICATION_DEFAULT_FLAGS;
+        if (!config.@"gtk-single-instance") flags |= c.G_APPLICATION_NON_UNIQUE;
+        break :app_flags flags;
+    };
 
-        break :uniqueness_id "com.mitchellh.ghostty" ++ if (builtin.mode == .Debug) "-debug" else "";
+    // Our app ID determines uniqueness and maps to our desktop file.
+    // We append "-debug" to the ID if we're in debug mode so that we
+    // can develop Ghostty in Ghostty.
+    const app_id: [:0]const u8 = comptime app_id: {
+        var id = "com.mitchellh.ghostty";
+        break :app_id if (builtin.mode == .Debug) id ++ "-debug" else id;
     };
 
     // Create our GTK Application which encapsulates our process.
     const app = @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-        uniqueness_id orelse null,
-        c.G_APPLICATION_DEFAULT_FLAGS,
+        app_id.ptr,
+        app_flags,
     ))) orelse return error.GtkInitFailed;
     errdefer c.g_object_unref(app);
     _ = c.g_signal_connect_data(
