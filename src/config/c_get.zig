@@ -19,7 +19,7 @@ pub fn get(config: *const Config, k: Key, ptr_raw: *anyopaque) bool {
             const value = fieldByKey(config, tag);
             switch (@TypeOf(value)) {
                 ?[:0]const u8 => {
-                    const ptr: *[*c]const u8 = @ptrCast(@alignCast(ptr_raw));
+                    const ptr: *?[*:0]const u8 = @ptrCast(@alignCast(ptr_raw));
                     ptr.* = if (value) |slice| @ptrCast(slice.ptr) else null;
                 },
 
@@ -38,7 +38,14 @@ pub fn get(config: *const Config, k: Key, ptr_raw: *anyopaque) bool {
                     ptr.* = @floatCast(value);
                 },
 
-                else => return false,
+                else => |T| switch (@typeInfo(T)) {
+                    .Enum => {
+                        const ptr: *[*:0]const u8 = @ptrCast(@alignCast(ptr_raw));
+                        ptr.* = @tagName(value);
+                    },
+
+                    else => return false,
+                },
             }
 
             return true;
@@ -73,4 +80,19 @@ test "u8" {
     var cval: c_uint = undefined;
     try testing.expect(get(&c, .@"font-size", &cval));
     try testing.expectEqual(@as(c_uint, 24), cval);
+}
+
+test "enum" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c = try Config.default(alloc);
+    defer c.deinit();
+    c.@"window-theme" = .dark;
+
+    var cval: [*:0]u8 = undefined;
+    try testing.expect(get(&c, .@"window-theme", @ptrCast(&cval)));
+
+    const str = std.mem.sliceTo(cval, 0);
+    try testing.expectEqualStrings("dark", str);
 }

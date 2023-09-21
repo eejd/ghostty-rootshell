@@ -187,6 +187,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // Config could change keybindings, so update our menu
         syncMenuShortcuts()
         
+        // Config could change window appearance
+        syncAppearance()
+        
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.model.errors = state.configErrors()
@@ -194,6 +197,23 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
             if (c.window == nil || !c.window!.isVisible) {
                 c.showWindow(self)
             }
+        }
+    }
+    
+    /// Sync the appearance of our app with the theme specified in the config.
+    private func syncAppearance() {
+        guard let theme = ghostty.windowTheme else { return }
+        switch (theme) {
+        case "dark":
+            let appearance = NSAppearance(named: .darkAqua)
+            NSApplication.shared.appearance = appearance
+            
+        case "light":
+            let appearance = NSAppearance(named: .aqua)
+            NSApplication.shared.appearance = appearance
+            
+        default:
+            NSApplication.shared.appearance = nil
         }
     }
     
