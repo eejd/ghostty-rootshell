@@ -584,6 +584,28 @@ test "OSC: change_window_title with 2" {
     try testing.expectEqualStrings("ab", cmd.change_window_title);
 }
 
+test "OSC: change_window_title with utf8" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+    p.next('2');
+    p.next(';');
+    // '—' EM DASH U+2014 (E2 80 94)
+    p.next(0xE2);
+    p.next(0x80);
+    p.next(0x94);
+
+    p.next(' ');
+    // '‐' HYPHEN U+2010 (E2 80 90)
+    // Intententionally chosen to conflict with the 0x90 C1 control
+    p.next(0xE2);
+    p.next(0x80);
+    p.next(0x90);
+    const cmd = p.end(null).?;
+    try testing.expect(cmd == .change_window_title);
+    try testing.expectEqualStrings("— ‐", cmd.change_window_title);
+}
+
 test "OSC: prompt_start" {
     const testing = std.testing;
 
