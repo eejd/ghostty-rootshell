@@ -92,6 +92,9 @@ pub const ghostty: Source = .{
         // verified with some other terminals (looks similar).
         .{ .name = "acsc", .value = .{ .string = "++\\,\\,--..00``aaffgghhiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~" } },
 
+        // Curly, dashed, etc underlines
+        .{ .name = "Smulx", .value = .{ .string = "\\E[4:%p1%dm" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
