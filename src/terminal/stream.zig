@@ -163,6 +163,7 @@ pub fn Stream(comptime Handler: type) type {
                             return;
                         },
                     },
+                    false,
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // CUD - Cursor Down
@@ -175,6 +176,7 @@ pub fn Stream(comptime Handler: type) type {
                             return;
                         },
                     },
+                    false,
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // CUF - Cursor Right
@@ -199,6 +201,32 @@ pub fn Stream(comptime Handler: type) type {
                             return;
                         },
                     },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                // CNL - Cursor Next Line
+                'E' => if (@hasDecl(T, "setCursorDown")) try self.handler.setCursorDown(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid cursor up command: {}", .{action});
+                            return;
+                        },
+                    },
+                    true,
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                // CPL - Cursor Previous Line
+                'F' => if (@hasDecl(T, "setCursorUp")) try self.handler.setCursorUp(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid cursor down command: {}", .{action});
+                            return;
+                        },
+                    },
+                    true,
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // HPA - Cursor Horizontal Position Absolute

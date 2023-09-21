@@ -1277,12 +1277,14 @@ const StreamHandler = struct {
         self.terminal.cursorRight(amount);
     }
 
-    pub fn setCursorDown(self: *StreamHandler, amount: u16) !void {
+    pub fn setCursorDown(self: *StreamHandler, amount: u16, carriage: bool) !void {
         self.terminal.cursorDown(amount);
+        if (carriage) self.terminal.carriageReturn();
     }
 
-    pub fn setCursorUp(self: *StreamHandler, amount: u16) !void {
+    pub fn setCursorUp(self: *StreamHandler, amount: u16, carriage: bool) !void {
         self.terminal.cursorUp(amount);
+        if (carriage) self.terminal.carriageReturn();
     }
 
     pub fn setCursorCol(self: *StreamHandler, col: u16) !void {
