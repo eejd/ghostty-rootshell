@@ -419,12 +419,13 @@ extension Ghostty {
                 options: [
                     .mouseEnteredAndExited,
                     .mouseMoved,
+                    
+                    // Only send mouse events that happen in our visible (not obscured) rect
                     .inVisibleRect,
 
-                    // It is possible this is incorrect when we have splits. This will make
-                    // mouse events only happen while the terminal is focused. Is that what
-                    // we want?
-                    .activeWhenFirstResponder,
+                    // We want active always because we want to still send mouse reports
+                    // even if we're not focused or key.
+                    .activeAlways,
                 ],
                 owner: self,
                 userInfo: nil))
