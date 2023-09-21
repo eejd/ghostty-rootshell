@@ -244,6 +244,14 @@ keybind: Keybinds = .{},
 /// borders.
 @"window-decoration": bool = true,
 
+/// The theme to use for the windows. The default is "system" which
+/// means that whatever the system theme is will be used. This can
+/// also be set to "light" or "dark" to force a specific theme regardless
+/// of the system settings.
+///
+/// This is currently only supported on macOS.
+@"window-theme": WindowTheme = .system,
+
 /// Whether to allow programs running in the terminal to read/write to
 /// the system clipboard (OSC 52, for googling). The default is to
 /// disallow clipboard reading but allow writing.
@@ -1506,4 +1514,11 @@ pub const OSCColorReportFormat = enum {
     none,
     @"8-bit",
     @"16-bit",
+};
+
+/// The default window theme.
+pub const WindowTheme = enum {
+    system,
+    light,
+    dark,
 };
