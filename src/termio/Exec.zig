@@ -1692,16 +1692,16 @@ const StreamHandler = struct {
         self: *StreamHandler,
     ) !void {
         log.debug("reporting XTVERSION: ghostty {s}", .{build_config.version_string});
-        var msg: termio.Message = .{ .write_small = .{} };
+        var buf: [288]u8 = undefined;
         const resp = try std.fmt.bufPrint(
-            &msg.write_small.data,
+            &buf,
             "\x1BP>|{s} {s}\x07",
             .{
                 "ghostty",
                 build_config.version_string,
             },
         );
-        msg.write_small.len = @intCast(resp.len);
+        var msg = try termio.Message.writeReq(self.alloc, resp);
         self.messageWriter(msg);
     }
 
