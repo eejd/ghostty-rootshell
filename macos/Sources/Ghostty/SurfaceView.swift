@@ -236,7 +236,7 @@ extension Ghostty {
                 return
             }
             self.surface = surface;
-
+            
             // Setup our tracking area so we get mouse moved events
             updateTrackingAreas()
         }
@@ -283,6 +283,25 @@ extension Ghostty {
             // The size represents our final size we're going for.
             let scaledSize = self.convertToBacking(size)
             ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
+            
+            // Frame changes do not always call mouseEntered/mouseExited, so we do some
+            // calculations ourself to call those events.
+            if let window = self.window {
+                let mouseScreen = NSEvent.mouseLocation
+                let mouseWindow = window.convertPoint(fromScreen: mouseScreen)
+                let mouseView = self.convert(mouseWindow, from: nil)
+                let isEntered = self.isMousePoint(mouseView, in: bounds)
+                if (isEntered) {
+                    mouseEntered(with: NSEvent())
+                } else {
+                    mouseExited(with: NSEvent())
+                }
+            } else {
+                // If we don't have a window, then our mouse can NOT be in our view.
+                // When the window comes back, I believe this event fires again so
+                // we'll get a mouseEntered.
+                mouseExited(with: NSEvent())
+            }
         }
 
         func setCursorShape(_ shape: ghostty_mouse_shape_e) {
@@ -562,20 +581,18 @@ extension Ghostty {
         }
 
         override func cursorUpdate(with event: NSEvent) {
-            if (focused) {
-                switch (cursorVisible) {
-                case .visible, .hidden:
-                    // Do nothing, stable state
-                    break
-                    
-                case .pendingHidden:
-                    NSCursor.hide()
-                    cursorVisible = .hidden
-                    
-                case .pendingVisible:
-                    NSCursor.unhide()
-                    cursorVisible = .visible
-                }
+            switch (cursorVisible) {
+            case .visible, .hidden:
+                // Do nothing, stable state
+                break
+                
+            case .pendingHidden:
+                NSCursor.hide()
+                cursorVisible = .hidden
+                
+            case .pendingVisible:
+                NSCursor.unhide()
+                cursorVisible = .visible
             }
             
             cursor.set()
