@@ -345,7 +345,7 @@ fn genTable() Table {
         range(&result, 0, 0x06, source, source, .ignore);
         range(&result, 0x08, 0x17, source, source, .ignore);
         range(&result, 0x1C, 0x1F, source, source, .ignore);
-        range(&result, 0x20, 0x7F, source, source, .osc_put);
+        range(&result, 0x20, 0xFF, source, source, .osc_put);
 
         // XTerm accepts either BEL  or ST  for terminating OSC
         // sequences, and when returning information, uses the same
@@ -381,7 +381,12 @@ fn single(t: *OptionalTable, c: u8, s0: State, s1: State, a: Action) void {
 
 fn range(t: *OptionalTable, from: u8, to: u8, s0: State, s1: State, a: Action) void {
     var i = from;
-    while (i <= to) : (i += 1) single(t, i, s0, s1, a);
+    while (i <= to) : (i += 1) {
+        single(t, i, s0, s1, a);
+        // If 'to' is 0xFF, our next pass will overflow. Return early to prevent
+        // the loop from executing it's continue expression
+        if (i == to) break;
+    }
 }
 
 fn transition(state: State, action: Action) Transition {
