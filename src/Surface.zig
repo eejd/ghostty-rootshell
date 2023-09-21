@@ -1296,7 +1296,7 @@ fn mouseReport(
         // X10 doesn't have modifiers
         if (self.io.terminal.flags.mouse_event != .x10) {
             if (mods.shift) acc += 4;
-            if (mods.super) acc += 8;
+            if (mods.alt) acc += 8;
             if (mods.ctrl) acc += 16;
         }
 
@@ -1469,10 +1469,7 @@ pub fn mouseButtonCallback(
     {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        if (self.io.terminal.flags.mouse_event != .none) report: {
-            // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-            if (mods.shift) break :report;
-
+        if (self.io.terminal.flags.mouse_event != .none) {
             // In any other mouse button scenario without shift pressed we
             // clear the selection since the underlying application can handle
             // that in any way (i.e. "scrolling").
