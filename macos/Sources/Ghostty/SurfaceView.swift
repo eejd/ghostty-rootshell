@@ -210,7 +210,7 @@ extension Ghostty {
 
         // State machine for mouse cursor visibility because every call to
         // NSCursor.hide/unhide must be balanced.
-        enum CursorVisibility: String {
+        enum CursorVisibility {
             case visible
             case hidden
             case pendingVisible
