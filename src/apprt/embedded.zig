@@ -557,7 +557,7 @@ pub const Surface = struct {
         // order to get the "unshifted_codepoint" for the key event.
         const unshifted_codepoint: u21 = unshifted: {
             var nomod_buf: [128]u8 = undefined;
-            var nomod_state: input.Keymap.State = undefined;
+            var nomod_state: input.Keymap.State = .{};
             const nomod = try self.app.keymap.translate(
                 &nomod_buf,
                 &nomod_state,
