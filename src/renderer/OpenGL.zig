@@ -17,19 +17,9 @@ const Terminal = terminal.Terminal;
 const gl = @import("opengl/main.zig");
 const trace = @import("tracy").trace;
 const math = @import("../math.zig");
-const lru = @import("../lru.zig");
 const Surface = @import("../Surface.zig");
 
 const log = std.log.scoped(.grid);
-
-/// The LRU is keyed by (screen, row_id) since we need to cache rows
-/// separately for alt screens. By storing that in the key, we very likely
-/// have the cache already for when the primary screen is reactivated.
-const CellsLRU = lru.AutoHashMap(struct {
-    selection: ?terminal.Selection,
-    screen: terminal.Terminal.ScreenType,
-    row_id: terminal.Screen.RowHeader.Id,
-}, std.ArrayListUnmanaged(GPUCell));
 
 /// The runtime can request a single-threaded draw by setting this boolean
 /// to true. In this case, the renderer.draw() call is expected to be called
@@ -57,10 +47,6 @@ screen_size: ?renderer.ScreenSize,
 /// a separate shader call.
 cells_bg: std.ArrayListUnmanaged(GPUCell),
 cells: std.ArrayListUnmanaged(GPUCell),
-
-/// The LRU that stores our GPU cells cached by row IDs. This is used to
-/// prevent high CPU activity when shaping rows.
-cells_lru: CellsLRU,
 
 /// The size of the cells list that was sent to the GPU. This is used
 /// to detect when the cells array was reallocated/resized and handle that
@@ -309,7 +295,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .config = options.config,
         .cells_bg = .{},
         .cells = .{},
-        .cells_lru = CellsLRU.init(0),
         .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
         .screen_size = null,
         .gl_state = gl_state,
@@ -329,31 +314,12 @@ pub fn deinit(self: *OpenGL) void {
 
     if (self.gl_state) |*v| v.deinit();
 
-    self.resetCellsLRU();
-    self.cells_lru.deinit(self.alloc);
-
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
 
     self.config.deinit();
 
     self.* = undefined;
-}
-
-fn resetCellsLRU(self: *OpenGL) void {
-    // Preserve the old capacity so that we have space in our LRU
-    const cap = self.cells_lru.capacity;
-
-    // Our LRU values are array lists so we need to deallocate those first
-    var it = self.cells_lru.queue.first;
-    while (it) |node| {
-        it = node.next;
-        node.data.value.deinit(self.alloc);
-    }
-    self.cells_lru.deinit(self.alloc);
-
-    // Initialize our new LRU
-    self.cells_lru = CellsLRU.init(cap);
 }
 
 /// Returns the hints that we want for this
@@ -535,9 +501,6 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     // Set our new size, this will also reset our font atlas.
     try self.font_group.setSize(size);
 
-    // Invalidate our cell cache.
-    self.resetCellsLRU();
-
     // Reset our GPU uniforms
     const metrics = try resetFontMetrics(
         self.alloc,
@@ -607,7 +570,6 @@ pub fn render(
     // Data we extract out of the critical area.
     const Critical = struct {
         gl_bg: terminal.color.RGB,
-        active_screen: terminal.Terminal.ScreenType,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
         preedit: ?renderer.State.Preedit,
@@ -668,7 +630,6 @@ pub fn render(
 
         break :critical .{
             .gl_bg = self.config.background,
-            .active_screen = state.terminal.active_screen,
             .selection = selection,
             .screen = screen_copy,
             .preedit = if (cursor_style != null) state.preedit else null,
@@ -687,7 +648,6 @@ pub fn render(
 
         // Build our GPU cells
         try self.rebuildCells(
-            critical.active_screen,
             critical.selection,
             &critical.screen,
             critical.preedit,
@@ -718,7 +678,6 @@ pub fn render(
 /// the renderer will do this when it needs more memory space.
 pub fn rebuildCells(
     self: *OpenGL,
-    active_screen: terminal.Terminal.ScreenType,
     term_selection: ?terminal.Selection,
     screen: *terminal.Screen,
     preedit: ?renderer.State.Preedit,
@@ -804,25 +763,6 @@ pub fn rebuildCells(
             }
         };
 
-        // Get our value from the cache.
-        const gop = try self.cells_lru.getOrPut(self.alloc, .{
-            .selection = selection,
-            .screen = active_screen,
-            .row_id = row.getId(),
-        });
-        if (!row.isDirty() and gop.found_existing) {
-            var i: usize = self.cells.items.len;
-            for (gop.value_ptr.items) |cell| {
-                self.cells.appendAssumeCapacity(cell);
-                self.cells.items[i].grid_row = @intCast(y);
-                i += 1;
-            }
-
-            continue;
-        }
-        // Get the starting index for our row so we can cache any new GPU cells.
-        const start = self.cells.items.len;
-
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(
             self.font_group,
@@ -851,23 +791,6 @@ pub fn rebuildCells(
                 }
             }
         }
-
-        // Initialize our list
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
-
-            // If we evicted another value in our LRU for this one, free it
-            if (gop.evicted) |kv| {
-                var list = kv.value;
-                list.deinit(self.alloc);
-            }
-        }
-        var row_cells = gop.value_ptr;
-
-        // Get our new length and cache the cells.
-        try row_cells.ensureTotalCapacity(self.alloc, screen.cols);
-        row_cells.clearRetainingCapacity();
-        try row_cells.appendSlice(self.alloc, self.cells.items[start..]);
 
         // Set row is not dirty anymore
         row.setDirty(false);
@@ -1330,15 +1253,6 @@ pub fn setScreenSize(
         self.cell_size,
         self.padding.explicit,
     });
-
-    // Update our LRU. We arbitrarily support a certain number of pages here.
-    // We also always support a minimum number of caching in case a user
-    // is resizing tiny then growing again we can save some of the renders.
-    const evicted = try self.cells_lru.resize(self.alloc, @max(80, grid_size.rows * 10));
-    if (evicted) |list| {
-        for (list) |*value| value.deinit(self.alloc);
-        self.alloc.free(list);
-    }
 
     // Update our shaper
     var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
