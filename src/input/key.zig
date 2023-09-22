@@ -422,4 +422,30 @@ pub const Key = enum(c_int) {
             else => false,
         };
     }
+
+    /// Returns true if this is a keypad key.
+    pub fn keypad(self: Key) bool {
+        return switch (self) {
+            .kp_0,
+            .kp_1,
+            .kp_2,
+            .kp_3,
+            .kp_4,
+            .kp_5,
+            .kp_6,
+            .kp_7,
+            .kp_8,
+            .kp_9,
+            .kp_decimal,
+            .kp_divide,
+            .kp_multiply,
+            .kp_subtract,
+            .kp_add,
+            .kp_enter,
+            .kp_equal,
+            => true,
+
+            else => false,
+        };
+    }
 };

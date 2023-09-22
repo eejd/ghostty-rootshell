@@ -595,6 +595,9 @@ pub const Surface = struct {
         //
         // We also only do key translation if this is not a dead key.
         const key = if (!result.composing) key: {
+            // If our physical key is a keypad key, we use that.
+            if (physical_key.keypad()) break :key physical_key;
+
             // A completed key. If the length of the key is one then we can
             // attempt to translate it to a key enum and call the key
             // callback. First try plain ASCII.
