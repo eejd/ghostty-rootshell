@@ -210,7 +210,7 @@ extension Ghostty {
 
         // State machine for mouse cursor visibility because every call to
         // NSCursor.hide/unhide must be balanced.
-        enum CursorVisibility {
+        enum CursorVisibility: String {
             case visible
             case hidden
             case pendingVisible
@@ -519,11 +519,9 @@ extension Ghostty {
             
             mouseEntered = true
             
-            // If our cursor is hidden, we hide it on upon entry and we unhide
-            // it on exit (mouseExited)
-            if (cursorVisible == .hidden) {
-                NSCursor.hide()
-            }
+            // Update our cursor when we enter so we fully process our
+            // cursorVisible state.
+            cursorUpdate(with: NSEvent())
         }
 
         override func mouseExited(with event: NSEvent) {
@@ -532,8 +530,17 @@ extension Ghostty {
             
             mouseEntered = false
             
+            // If the mouse is currently hidden, we want to show it when we exit
+            // this view. We go through the cursorVisible dance so that only
+            // cursorUpdate manages cursor state.
             if (cursorVisible == .hidden) {
-                NSCursor.unhide()
+                cursorVisible = .pendingVisible
+                cursorUpdate(with: NSEvent())
+                assert(cursorVisible == .visible)
+                
+                // We set the state to pending hidden again for the next time
+                // we enter.
+                cursorVisible = .pendingHidden
             }
         }
 
