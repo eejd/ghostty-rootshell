@@ -1434,9 +1434,6 @@ pub fn draw(self: *OpenGL) !void {
     defer if (single_threaded_draw) self.draw_mutex.unlock();
     const gl_state = self.gl_state orelse return;
 
-    // If we have no cells to render, then we render nothing.
-    if (self.cells.items.len == 0) return;
-
     // Try to flush our atlas, this will only do something if there
     // are changes to the atlas.
     try self.flushAtlas();
@@ -1499,6 +1496,9 @@ fn drawCells(
     binding: gl.Buffer.Binding,
     cells: std.ArrayListUnmanaged(GPUCell),
 ) !void {
+    // If we have no cells to render, then we render nothing.
+    if (cells.items.len == 0) return;
+
     // Todo: get rid of this completely
     self.gl_cells_written = 0;
 
