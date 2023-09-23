@@ -1028,8 +1028,13 @@ pub fn eraseDisplay(
     defer tracy.end();
 
     // Erasing clears all attributes / colors _except_ the background
-    const bg = self.screen.cursor.pen.bg;
-    self.screen.cursor.pen = .{ .bg = bg };
+    switch (self.screen.cursor.pen.attrs.has_bg) {
+        true => {
+            const bg = self.screen.cursor.pen.bg;
+            self.screen.cursor.pen = .{ .bg = bg, .attrs = .{ .has_bg = true } };
+        },
+        false => self.screen.cursor.pen = .{},
+    }
 
     switch (mode) {
         .complete => {
@@ -1118,9 +1123,7 @@ test "Terminal: eraseDisplay above" {
         .char = 'a',
         .bg = pink,
         .fg = pink,
-        .attrs = .{
-            .bold = true,
-        },
+        .attrs = .{ .bold = true, .has_bg = true },
     };
     const cell_ptr = t.screen.getCellPtr(.active, 0, 0);
     cell_ptr.* = t.screen.cursor.pen;
@@ -1141,6 +1144,7 @@ test "Terminal: eraseDisplay above" {
     try testing.expect(cell.fg.eql(.{}));
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
 
     // check that another cell got the correct bg
     cell = t.screen.getCell(.active, 0, 1);
@@ -1156,9 +1160,7 @@ test "Terminal: eraseDisplay below" {
         .char = 'a',
         .bg = pink,
         .fg = pink,
-        .attrs = .{
-            .bold = true,
-        },
+        .attrs = .{ .bold = true, .has_bg = true },
     };
     const cell_ptr = t.screen.getCellPtr(.active, 60, 60);
     cell_ptr.* = t.screen.cursor.pen;
@@ -1176,6 +1178,7 @@ test "Terminal: eraseDisplay below" {
     try testing.expect(cell.fg.eql(.{}));
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
 
     // check that another cell got the correct bg
     cell = t.screen.getCell(.active, 0, 1);
@@ -1191,9 +1194,7 @@ test "Terminal: eraseDisplay complete" {
         .char = 'a',
         .bg = pink,
         .fg = pink,
-        .attrs = .{
-            .bold = true,
-        },
+        .attrs = .{ .bold = true, .has_bg = true },
     };
     var cell_ptr = t.screen.getCellPtr(.active, 60, 60);
     cell_ptr.* = t.screen.cursor.pen;
@@ -1221,11 +1222,13 @@ test "Terminal: eraseDisplay complete" {
     try testing.expect(cell.fg.eql(.{}));
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
     cell = t.screen.getCell(.active, 0, 0);
     try testing.expect(cell.bg.eql(pink));
     try testing.expect(cell.fg.eql(.{}));
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
 }
 
 /// Erase the line.
