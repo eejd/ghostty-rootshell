@@ -1622,8 +1622,6 @@ pub fn kittyGraphics(
 pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.primaryScreen(alloc, .{ .clear_on_exit = true, .cursor_save = true });
     self.charset = .{};
-    self.eraseDisplay(alloc, .scrollback);
-    self.eraseDisplay(alloc, .complete);
     self.modes = .{};
     self.flags = .{};
     self.tabstops.reset(0);
@@ -1633,7 +1631,22 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.screen.kitty_keyboard = .{};
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
     self.previous_char = null;
+    self.eraseDisplay(alloc, .scrollback);
+    self.eraseDisplay(alloc, .complete);
     self.pwd.clearRetainingCapacity();
+}
+
+test "Terminal: fullReset with a non-empty pen" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    t.screen.cursor.pen.bg = .{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen.fg = .{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.fullReset(testing.allocator);
+
+    const cell = t.screen.getCell(.active, t.screen.cursor.y, t.screen.cursor.x);
+    try testing.expect(cell.bg.eql(.{}));
+    try testing.expect(cell.fg.eql(.{}));
 }
 
 test "Terminal: input with no control characters" {
