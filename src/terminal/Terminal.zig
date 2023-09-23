@@ -1028,13 +1028,10 @@ pub fn eraseDisplay(
     defer tracy.end();
 
     // Erasing clears all attributes / colors _except_ the background
-    switch (self.screen.cursor.pen.attrs.has_bg) {
-        true => {
-            const bg = self.screen.cursor.pen.bg;
-            self.screen.cursor.pen = .{ .bg = bg, .attrs = .{ .has_bg = true } };
-        },
-        false => self.screen.cursor.pen = .{},
-    }
+    self.screen.cursor.pen = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
+        .bg = self.screen.cursor.pen.bg,
+        .attrs = .{ .has_bg = true },
+    };
 
     switch (mode) {
         .complete => {
