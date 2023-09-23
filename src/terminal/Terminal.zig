@@ -1019,7 +1019,6 @@ pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
 }
 
 /// Erase the display.
-/// TODO: test
 pub fn eraseDisplay(
     self: *Terminal,
     alloc: Allocator,
@@ -1027,6 +1026,10 @@ pub fn eraseDisplay(
 ) void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    // Erasing clears all attributes / colors _except_ the background
+    const bg = self.screen.cursor.pen.bg;
+    self.screen.cursor.pen = .{ .bg = bg };
 
     switch (mode) {
         .complete => {
@@ -1104,6 +1107,125 @@ pub fn eraseDisplay(
             log.err("failed to clear scrollback: {}", .{err});
         },
     }
+}
+
+test "Terminal: eraseDisplay above" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen = Screen.Cell{
+        .char = 'a',
+        .bg = pink,
+        .fg = pink,
+        .attrs = .{
+            .bold = true,
+        },
+    };
+    const cell_ptr = t.screen.getCellPtr(.active, 0, 0);
+    cell_ptr.* = t.screen.cursor.pen;
+    // verify the cell was set
+    var cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // move the cursor below it
+    t.screen.cursor.y = 40;
+    t.screen.cursor.x = 40;
+    // erase above the cursor
+    t.eraseDisplay(testing.allocator, .above);
+    // check it was erased
+    cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+
+    // check that another cell got the correct bg
+    cell = t.screen.getCell(.active, 0, 1);
+    try testing.expect(cell.bg.eql(pink));
+}
+
+test "Terminal: eraseDisplay below" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen = Screen.Cell{
+        .char = 'a',
+        .bg = pink,
+        .fg = pink,
+        .attrs = .{
+            .bold = true,
+        },
+    };
+    const cell_ptr = t.screen.getCellPtr(.active, 60, 60);
+    cell_ptr.* = t.screen.cursor.pen;
+    // verify the cell was set
+    var cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // erase below the cursor
+    t.eraseDisplay(testing.allocator, .below);
+    // check it was erased
+    cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+
+    // check that another cell got the correct bg
+    cell = t.screen.getCell(.active, 0, 1);
+    try testing.expect(cell.bg.eql(pink));
+}
+
+test "Terminal: eraseDisplay complete" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen = Screen.Cell{
+        .char = 'a',
+        .bg = pink,
+        .fg = pink,
+        .attrs = .{
+            .bold = true,
+        },
+    };
+    var cell_ptr = t.screen.getCellPtr(.active, 60, 60);
+    cell_ptr.* = t.screen.cursor.pen;
+    cell_ptr = t.screen.getCellPtr(.active, 0, 0);
+    cell_ptr.* = t.screen.cursor.pen;
+    // verify the cell was set
+    var cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // verify the cell was set
+    cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // position our cursor between the cells
+    t.screen.cursor.y = 30;
+    // erase everything
+    t.eraseDisplay(testing.allocator, .complete);
+    // check they were erased
+    cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+    cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
 }
 
 /// Erase the line.
