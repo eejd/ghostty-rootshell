@@ -40,9 +40,10 @@ pub const Descriptor = struct {
     size: u16 = 0,
 
     /// True if we want to search specifically for a font that supports
-    /// bold, italic, or both.
+    /// specific styles.
     bold: bool = false,
     italic: bool = false,
+    monospace: bool = true,
 
     /// Variation axes to apply to the font. This also impacts searching
     /// for fonts since fonts with the ability to set these variations
@@ -131,6 +132,7 @@ pub const Descriptor = struct {
         const traits: macos.text.FontSymbolicTraits = .{
             .bold = self.bold,
             .italic = self.italic,
+            .monospace = self.monospace,
         };
         const traits_cval: u32 = @bitCast(traits);
         if (traits_cval > 0) {
