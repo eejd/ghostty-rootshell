@@ -33,6 +33,32 @@ const log = std.log.scoped(.font_group);
 // to the user so we can change this later.
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 
+/// Map of descriptors to faces. This is used with manual codepoint maps
+/// to ensure that we don't load the same font multiple times.
+///
+/// Note that the current implementation will load the same font multiple
+/// times if the font used for a codepoint map is identical to a font used
+/// for a regular style. That's just an inefficient choice made now because
+/// the implementation is simpler and codepoint maps matching a regular
+/// font is a rare case.
+const DescriptorCache = std.HashMapUnmanaged(
+    font.discovery.Descriptor,
+    FontIndex,
+    struct {
+        const KeyType = font.discovery.Descriptor;
+
+        pub fn hash(ctx: @This(), k: KeyType) u64 {
+            _ = ctx;
+            return k.hash();
+        }
+
+        pub fn eql(ctx: @This(), a: KeyType, b: KeyType) bool {
+            return ctx.hash(a) == ctx.hash(b);
+        }
+    },
+    std.hash_map.default_max_load_percentage,
+);
+
 /// The allocator for this group
 alloc: Allocator,
 
@@ -49,6 +75,15 @@ faces: StyleArray,
 /// If discovery is available, we'll look up fonts where we can't find
 /// the codepoint. This can be set after initialization.
 discover: ?*font.Discover = null,
+
+/// A map of codepoints to font requests for codepoint-level overrides.
+/// The memory associated with the map is owned by the caller and is not
+/// modified or freed by Group.
+codepoint_map: ?font.CodepointMap = null,
+
+/// The descriptor cache is used to cache the descriptor to font face
+/// mapping for codepoint maps.
+descriptor_cache: DescriptorCache = .{},
 
 /// Set this to a non-null value to enable sprite glyph drawing. If this
 /// isn't enabled we'll just fall through to trying to use regular fonts
@@ -87,11 +122,15 @@ pub fn init(
 }
 
 pub fn deinit(self: *Group) void {
-    var it = self.faces.iterator();
-    while (it.next()) |entry| {
-        for (entry.value.items) |*item| item.deinit();
-        entry.value.deinit(self.alloc);
+    {
+        var it = self.faces.iterator();
+        while (it.next()) |entry| {
+            for (entry.value.items) |*item| item.deinit();
+            entry.value.deinit(self.alloc);
+        }
     }
+
+    self.descriptor_cache.deinit(self.alloc);
 }
 
 /// Add a face to the list for the given style. This face will be added as
@@ -173,9 +212,12 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
 }
 
 /// This represents a specific font in the group.
-pub const FontIndex = packed struct(u8) {
+pub const FontIndex = packed struct(FontIndex.Backing) {
+    const Backing = u8;
+    const backing_bits = @typeInfo(Backing).Int.bits;
+
     /// The number of bits we use for the index.
-    const idx_bits = 8 - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
+    const idx_bits = backing_bits - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
     pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
 
     /// The special-case fonts that we support.
@@ -196,7 +238,7 @@ pub const FontIndex = packed struct(u8) {
     }
 
     /// Convert to int
-    pub fn int(self: FontIndex) u8 {
+    pub fn int(self: FontIndex) Backing {
         return @bitCast(self);
     }
 
@@ -212,7 +254,7 @@ pub const FontIndex = packed struct(u8) {
         // We never want to take up more than a byte since font indexes are
         // everywhere so if we increase the size of this we'll dramatically
         // increase our memory usage.
-        try std.testing.expectEqual(@sizeOf(u8), @sizeOf(FontIndex));
+        try std.testing.expectEqual(@sizeOf(Backing), @sizeOf(FontIndex));
     }
 };
 
