@@ -14,6 +14,9 @@ pub const Config = struct {
     /// matching this family will be listed.
     family: ?[:0]const u8 = null,
 
+    /// The style name to search for.
+    style: ?[:0]const u8 = null,
+
     /// Font styles to search for. If this is set, then only fonts that
     /// match the given styles will be listed.
     bold: bool = false,
@@ -84,6 +87,7 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     defer disco.deinit();
     var disco_it = try disco.discover(.{
         .family = config.family,
+        .style = config.style,
         .bold = config.bold,
         .italic = config.italic,
     });

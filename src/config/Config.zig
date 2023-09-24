@@ -29,6 +29,17 @@ const c = @cImport({
 @"font-family-italic": ?[:0]const u8 = null,
 @"font-family-bold-italic": ?[:0]const u8 = null,
 
+/// The named font style to use for each of the requested terminal font
+/// styles. This looks up the style based on the font style string advertised
+/// by the font itself. For example, "Iosevka Heavy" has a style of "Heavy".
+///
+/// These are only valid if there is an exact font-family also specified.
+/// If no font-family is specified, then the font-style is ignored.
+@"font-style": ?[:0]const u8 = null,
+@"font-style-bold": ?[:0]const u8 = null,
+@"font-style-italic": ?[:0]const u8 = null,
+@"font-style-bold-italic": ?[:0]const u8 = null,
+
 /// Apply a font feature. This can be repeated multiple times to enable
 /// multiple font features. You can NOT set multiple font features with
 /// a single value (yet).

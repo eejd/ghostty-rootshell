@@ -257,6 +257,7 @@ pub fn indexForCodepoint(
                 .size = self.size.points,
                 .bold = style == .bold or style == .bold_italic,
                 .italic = style == .italic or style == .bold_italic,
+                .monospace = false,
             }) catch break :discover;
             defer disco_it.deinit();
 
