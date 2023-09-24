@@ -31,6 +31,12 @@ pub const Descriptor = struct {
     /// fontconfig pattern, such as "Fira Code-14:bold".
     family: ?[:0]const u8 = null,
 
+    /// Specific font style to search for. This will filter the style
+    /// string the font advertises. The "bold/italic" booleans later in this
+    /// struct filter by the style trait the font has, not the string, so
+    /// these can be used in conjunction or not.
+    style: ?[:0]const u8 = null,
+
     /// A codepoint that this font must be able to render.
     codepoint: u32 = 0,
 
@@ -96,6 +102,16 @@ pub const Descriptor = struct {
             attrs.setValue(
                 macos.text.FontAttribute.family_name.key(),
                 family,
+            );
+        }
+
+        // Style
+        if (self.style) |style_bytes| {
+            const style = try macos.foundation.String.createWithBytes(style_bytes, .utf8, false);
+            defer style.release();
+            attrs.setValue(
+                macos.text.FontAttribute.style_name.key(),
+                style,
             );
         }
 
