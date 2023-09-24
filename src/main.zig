@@ -300,6 +300,5 @@ test {
     // TODO
     _ = @import("blocking_queue.zig");
     _ = @import("config.zig");
-    _ = @import("cli_args.zig");
     _ = @import("lru.zig");
 }

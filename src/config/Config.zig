@@ -10,7 +10,7 @@ const fontpkg = @import("../font/main.zig");
 const inputpkg = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
 const internal_os = @import("../os/main.zig");
-const cli_args = @import("../cli_args.zig");
+const cli = @import("../cli.zig");
 
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
@@ -765,8 +765,8 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
         std.log.info("reading configuration file path={s}", .{home_config_path});
 
         var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli_args.lineIterator(buf_reader.reader());
-        try cli_args.parse(Config, alloc, self, &iter);
+        var iter = cli.args.lineIterator(buf_reader.reader());
+        try cli.args.parse(Config, alloc, self, &iter);
     } else |err| switch (err) {
         error.FileNotFound => std.log.info(
             "homedir config not found, not loading path={s}",
@@ -792,7 +792,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // Parse the config from the CLI args
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
-    try cli_args.parse(Config, alloc_gpa, self, &iter);
+    try cli.args.parse(Config, alloc_gpa, self, &iter);
 }
 
 /// Load and parse the config files that were added in the "config-file" key.
@@ -819,8 +819,8 @@ pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
         defer file.close();
 
         var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli_args.lineIterator(buf_reader.reader());
-        try cli_args.parse(Config, alloc, self, &iter);
+        var iter = cli.args.lineIterator(buf_reader.reader());
+        try cli.args.parse(Config, alloc, self, &iter);
 
         // We don't currently support adding more config files to load
         // from within a loaded config file. This can be supported

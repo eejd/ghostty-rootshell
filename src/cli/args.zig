@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
-const ErrorList = @import("config/ErrorList.zig");
+const ErrorList = @import("../config/ErrorList.zig");
 
 // TODO:
 //   - Only `--long=value` format is accepted. Do we want to allow
