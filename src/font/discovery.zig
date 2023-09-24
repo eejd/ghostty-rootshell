@@ -64,6 +64,9 @@ pub const Descriptor = struct {
         if (self.family) |family| {
             assert(pat.add(.family, .{ .string = family }, false));
         }
+        if (self.style) |style| {
+            assert(pat.add(.style, .{ .string = style }, false));
+        }
         if (self.codepoint > 0) {
             const cs = fontconfig.CharSet.create();
             defer cs.destroy();
