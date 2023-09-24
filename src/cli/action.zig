@@ -49,10 +49,9 @@ pub const Action = enum {
 
     /// Run the action. This returns the exit code to exit with.
     pub fn run(self: Action, alloc: Allocator) !u8 {
-        _ = alloc;
         return switch (self) {
             .version => try version.run(),
-            .@"list-fonts" => try list_fonts.run(),
+            .@"list-fonts" => try list_fonts.run(alloc),
         };
     }
 };

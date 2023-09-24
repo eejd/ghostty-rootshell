@@ -55,7 +55,7 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
         break :arena dst._arena.?.allocator();
     } else fail: {
         // Note: this is... not safe...
-        var fail = std.testing.FailingAllocator.init(alloc, 0);
+        var fail = std.testing.FailingAllocator.init(alloc, .{});
         break :fail fail.allocator();
     };
     errdefer if (arena_available and arena_owned) {
