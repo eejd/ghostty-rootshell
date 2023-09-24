@@ -26,6 +26,10 @@ pub const Entry = struct {
 /// scenario where this will be a problem except people trying to fuck around.
 list: std.MultiArrayList(Entry) = .{},
 
+pub fn deinit(self: *CodepointMap, alloc: Allocator) void {
+    self.list.deinit(alloc);
+}
+
 /// Add an entry to the map.
 ///
 /// For conflicting codepoints, entries added later take priority over
@@ -37,7 +41,9 @@ pub fn add(self: *CodepointMap, alloc: Allocator, entry: Entry) !void {
 
 /// Get a descriptor for a codepoint.
 pub fn get(self: *const CodepointMap, cp: u21) ?discovery.Descriptor {
-    for (self.list.items(.range), 0..) |range, i| {
+    const items = self.list.items(.range);
+    for (items, 0..) |range, forward_i| {
+        const i = items.len - forward_i - 1;
         if (range[0] <= cp and cp <= range[1]) {
             const descs = self.list.items(.descriptor);
             return descs[i];
@@ -45,4 +51,31 @@ pub fn get(self: *const CodepointMap, cp: u21) ?discovery.Descriptor {
     }
 
     return null;
+}
+
+test "codepointmap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var m: CodepointMap = .{};
+    defer m.deinit(alloc);
+
+    // Exact range
+    try testing.expect(m.get(1) == null);
+    try m.add(alloc, .{ .range = .{ 1, 1 }, .descriptor = .{ .family = "A" } });
+    {
+        const d = m.get(1).?;
+        try testing.expectEqualStrings("A", d.family.?);
+    }
+
+    // Later entry takes priority
+    try m.add(alloc, .{ .range = .{ 1, 2 }, .descriptor = .{ .family = "B" } });
+    {
+        const d = m.get(1).?;
+        try testing.expectEqualStrings("B", d.family.?);
+    }
+
+    // Non-matching
+    try testing.expect(m.get(0) == null);
+    try testing.expect(m.get(3) == null);
 }
