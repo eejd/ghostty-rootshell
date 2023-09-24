@@ -49,7 +49,8 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
 
     // We'll be putting our fonts into a list categorized by family
     // so it is easier to read the output.
-    var map = std.StringArrayHashMap(std.ArrayListUnmanaged([]const u8)).init(alloc);
+    var families = std.ArrayList([]const u8).init(alloc);
+    var map = std.StringHashMap(std.ArrayListUnmanaged([]const u8)).init(alloc);
 
     // Look up all available fonts
     var disco = font.Discover.init();
@@ -59,44 +60,43 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     while (try disco_it.next()) |face| {
         var buf: [1024]u8 = undefined;
 
-        const family = face.familyName(&buf) catch |err| {
+        const family_buf = face.familyName(&buf) catch |err| {
             log.err("failed to get font family name: {}", .{err});
             continue;
         };
+        const family = try alloc.dupe(u8, family_buf);
 
-        const gop = try map.getOrPut(try alloc.dupe(u8, family));
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
-        }
-
-        const full_name = face.name(&buf) catch |err| {
+        const full_name_buf = face.name(&buf) catch |err| {
             log.err("failed to get font name: {}", .{err});
             continue;
         };
-        try gop.value_ptr.append(alloc, try alloc.dupe(u8, full_name));
+        const full_name = try alloc.dupe(u8, full_name_buf);
+
+        try families.append(family);
+        const gop = try map.getOrPut(family);
+        if (!gop.found_existing) gop.value_ptr.* = .{};
+        try gop.value_ptr.append(alloc, full_name);
     }
 
     // Sort our keys.
-    std.mem.sortUnstable([]const u8, map.keys(), {}, struct {
+    std.mem.sortUnstable([]const u8, families.items, {}, struct {
         fn lessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
             return std.mem.order(u8, lhs, rhs) == .lt;
         }
     }.lessThan);
-    try map.reIndex(); // Have to reindex since keys changed
 
     // Output each
-    var it = map.iterator();
-    while (it.next()) |entry| {
-        var items = entry.value_ptr.items;
-        if (items.len == 0) continue;
-        std.mem.sortUnstable([]const u8, items, {}, struct {
+    for (families.items) |family| {
+        const list = map.get(family) orelse continue;
+        if (list.items.len == 0) continue;
+        std.mem.sortUnstable([]const u8, list.items, {}, struct {
             fn lessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
                 return std.mem.order(u8, lhs, rhs) == .lt;
             }
         }.lessThan);
 
-        try stdout.print("{s}\n", .{entry.key_ptr.*});
-        for (items) |item| try stdout.print("  {s}\n", .{item});
+        try stdout.print("{s}\n", .{family});
+        for (list.items) |item| try stdout.print("  {s}\n", .{item});
         try stdout.print("\n", .{});
     }
 
