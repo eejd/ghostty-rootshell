@@ -908,6 +908,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
         var disco_it = try disco.discover(.{
             .family = "Apple Color Emoji",
             .size = 12,
+            .monospace = false,
         });
         defer disco_it.deinit();
         var face = (try disco_it.next()).?;
