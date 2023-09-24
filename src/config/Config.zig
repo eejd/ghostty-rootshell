@@ -32,6 +32,9 @@ const c = @cImport({
 /// The named font style to use for each of the requested terminal font
 /// styles. This looks up the style based on the font style string advertised
 /// by the font itself. For example, "Iosevka Heavy" has a style of "Heavy".
+///
+/// These are only valid if there is an exact font-family also specified.
+/// If no font-family is specified, then the font-style is ignored.
 @"font-style": ?[:0]const u8 = null,
 @"font-style-bold": ?[:0]const u8 = null,
 @"font-style-italic": ?[:0]const u8 = null,
