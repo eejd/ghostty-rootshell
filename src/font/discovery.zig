@@ -198,7 +198,7 @@ pub const Fontconfig = struct {
         pat.defaultSubstitute();
 
         // Search
-        const res = self.fc_config.fontSort(pat, true, null);
+        const res = self.fc_config.fontSort(pat, false, null);
         if (res.result != .match) return error.FontConfigFailed;
         errdefer res.fs.destroy();
 

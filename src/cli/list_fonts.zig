@@ -72,9 +72,11 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         };
         const full_name = try alloc.dupe(u8, full_name_buf);
 
-        try families.append(family);
         const gop = try map.getOrPut(family);
-        if (!gop.found_existing) gop.value_ptr.* = .{};
+        if (!gop.found_existing) {
+            try families.append(family);
+            gop.value_ptr.* = .{};
+        }
         try gop.value_ptr.append(alloc, full_name);
     }
 
