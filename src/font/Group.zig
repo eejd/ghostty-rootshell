@@ -213,7 +213,7 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
 
 /// This represents a specific font in the group.
 pub const FontIndex = packed struct(FontIndex.Backing) {
-    const Backing = u8;
+    const Backing = u16;
     const backing_bits = @typeInfo(Backing).Int.bits;
 
     /// The number of bits we use for the index.
@@ -255,6 +255,10 @@ pub const FontIndex = packed struct(FontIndex.Backing) {
         // everywhere so if we increase the size of this we'll dramatically
         // increase our memory usage.
         try std.testing.expectEqual(@sizeOf(Backing), @sizeOf(FontIndex));
+
+        // Just so we're aware when this changes. The current maximum number
+        // of fonts for a style is 13 bits or 8192 fonts.
+        try std.testing.expectEqual(13, idx_bits);
     }
 };
 
