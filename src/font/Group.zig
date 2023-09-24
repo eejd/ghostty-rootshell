@@ -32,6 +32,7 @@ const log = std.log.scoped(.font_group);
 // most important memory efficiency we can look for. This is totally opaque
 // to the user so we can change this later.
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
+
 /// The allocator for this group
 alloc: Allocator,
 
