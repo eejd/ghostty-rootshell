@@ -49,6 +49,14 @@ const c = @cImport({
 ///
 /// A valid value is the name of a feature. Prefix the feature with a
 /// "-" to explicitly disable it. Example: "ss20" or "-ss20".
+///
+/// To disable programming ligatures, use "-calt" since this is the typical
+/// feature name for programming ligatures. To look into what font features
+/// your font has and what they do, use a font inspection tool such as
+/// fontdrop.info.
+///
+/// To generally disable most ligatures, use "-calt", "-liga", and "-dlig"
+/// (as separate repetitive entries in your config).
 @"font-feature": RepeatableString = .{},
 
 /// Font size in points
