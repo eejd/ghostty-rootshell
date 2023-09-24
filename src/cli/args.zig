@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
-const ErrorList = @import("config/ErrorList.zig");
+const ErrorList = @import("../config/ErrorList.zig");
 
 // TODO:
 //   - Only `--long=value` format is accepted. Do we want to allow
@@ -55,7 +55,7 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
         break :arena dst._arena.?.allocator();
     } else fail: {
         // Note: this is... not safe...
-        var fail = std.testing.FailingAllocator.init(alloc, 0);
+        var fail = std.testing.FailingAllocator.init(alloc, .{});
         break :fail fail.allocator();
     };
     errdefer if (arena_available and arena_owned) {

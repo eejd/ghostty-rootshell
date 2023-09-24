@@ -1,5 +1,5 @@
 const std = @import("std");
-const cli_args = @import("../cli_args.zig");
+const cli = @import("../cli.zig");
 const inputpkg = @import("../input.zig");
 const global = &@import("../main.zig").state;
 
@@ -52,8 +52,8 @@ export fn ghostty_config_load_string(
 
 fn config_load_string_(self: *Config, str: []const u8) !void {
     var fbs = std.io.fixedBufferStream(str);
-    var iter = cli_args.lineIterator(fbs.reader());
-    try cli_args.parse(Config, global.alloc, self, &iter);
+    var iter = cli.args.lineIterator(fbs.reader());
+    try cli.args.parse(Config, global.alloc, self, &iter);
 }
 
 /// Load the configuration from the default file locations. This

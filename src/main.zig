@@ -6,7 +6,7 @@ const options = @import("build_options");
 const glfw = @import("glfw");
 const macos = @import("macos");
 const tracy = @import("tracy");
-const cli_action = @import("cli_action.zig");
+const cli = @import("cli.zig");
 const internal_os = @import("os/main.zig");
 const xev = @import("xev");
 const fontconfig = @import("fontconfig");
@@ -171,7 +171,7 @@ pub const GlobalState = struct {
     gpa: ?GPA,
     alloc: std.mem.Allocator,
     tracy: if (tracy.enabled) ?tracy.Allocator(null) else void,
-    action: ?cli_action.Action,
+    action: ?cli.Action,
     logging: Logging,
 
     /// Where logging should go
@@ -226,7 +226,7 @@ pub const GlobalState = struct {
         };
 
         // We first try to parse any action that we may be executing.
-        self.action = try cli_action.Action.detectCLI(self.alloc);
+        self.action = try cli.Action.detectCLI(self.alloc);
 
         // If we have an action executing, we disable logging by default
         // since we write to stderr we don't want logs messing up our
@@ -290,7 +290,7 @@ test {
     _ = @import("renderer.zig");
     _ = @import("termio.zig");
     _ = @import("input.zig");
-    _ = @import("cli_action.zig");
+    _ = @import("cli.zig");
 
     // Libraries
     _ = @import("segmented_pool.zig");
@@ -300,6 +300,5 @@ test {
     // TODO
     _ = @import("blocking_queue.zig");
     _ = @import("config.zig");
-    _ = @import("cli_args.zig");
     _ = @import("lru.zig");
 }

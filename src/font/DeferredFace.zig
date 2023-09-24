@@ -101,6 +101,28 @@ pub fn deinit(self: *DeferredFace) void {
     self.* = undefined;
 }
 
+/// Returns the family name of the font.
+pub fn familyName(self: DeferredFace, buf: []u8) ![]const u8 {
+    switch (options.backend) {
+        .freetype => {},
+
+        .fontconfig_freetype => if (self.fc) |fc|
+            return (try fc.pattern.get(.family, 0)).string,
+
+        .coretext, .coretext_freetype => if (self.ct) |ct| {
+            const family_name = ct.font.copyAttribute(.family_name);
+            return family_name.cstringPtr(.utf8) orelse unsupported: {
+                break :unsupported family_name.cstring(buf, .utf8) orelse
+                    return error.OutOfMemory;
+            };
+        },
+
+        .web_canvas => if (self.wc) |wc| return wc.font_str,
+    }
+
+    return "";
+}
+
 /// Returns the name of this face. The memory is always owned by the
 /// face so it doesn't have to be freed.
 pub fn name(self: DeferredFace, buf: []u8) ![]const u8 {
