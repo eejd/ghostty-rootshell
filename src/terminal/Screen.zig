@@ -1145,6 +1145,13 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req:
     // The total amount we're going to copy
     const total_copy = (height - count) * (self.cols + 1);
 
+    // The pen we'll use for new cells (only the BG attribute is applied to new
+    // cells)
+    const pen: Cell = if (!self.cursor.pen.attrs.has_bg) .{} else .{
+        .bg = self.cursor.pen.bg,
+        .attrs = .{ .has_bg = true },
+    };
+
     // Fast-path is that we have a contiguous buffer in our circular buffer.
     // In this case we can do some memmoves.
     if (slices[1].len == 0) {
@@ -1170,7 +1177,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req:
             // is a lot more of that.
             const dst_offset = total_copy;
             const dst = buf[dst_offset..];
-            @memset(dst, .{ .cell = self.cursor.pen });
+            @memset(dst, .{ .cell = pen });
 
             // Then we make sure our row headers are zeroed out. We set
             // the value to a dirty row header so that the renderer re-draws.
@@ -1250,7 +1257,7 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req:
         if (offset >= slices[i].len) continue;
 
         const dst = slices[i][offset..];
-        @memset(dst, .{ .cell = self.cursor.pen });
+        @memset(dst, .{ .cell = pen });
 
         var j: usize = offset;
         while (j < slices[i].len) : (j += self.cols + 1) {
@@ -4017,12 +4024,19 @@ test "Screen: scrollRegionUp single with pen" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
 
     s.cursor.pen = .{ .char = 'X' };
+    s.cursor.pen.bg = .{ .r = 155 };
+    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .active = 1 }, .{ .active = 2 }, 1);
     {
         // Test our contents rotated
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("1ABCD\n3IJKL\nXXXXX\n4ABCD", contents);
+        try testing.expectEqualStrings("1ABCD\n3IJKL\n\n4ABCD", contents);
+        const cell = s.getCell(.active, 2, 0);
+        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expect(!cell.attrs.bold);
+        try testing.expect(s.cursor.pen.attrs.bold);
     }
 }
 
@@ -4085,12 +4099,19 @@ test "Screen: scrollRegionUp fills with pen" {
     try s.testWriteString("A\nB\nC\nD");
 
     s.cursor.pen = .{ .char = 'X' };
+    s.cursor.pen.bg = .{ .r = 155 };
+    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .active = 0 }, .{ .active = 2 }, 1);
     {
         // Test our contents rotated
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("B\nC\nXXXXX\nD", contents);
+        try testing.expectEqualStrings("B\nC\n\nD", contents);
+        const cell = s.getCell(.active, 2, 0);
+        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expect(!cell.attrs.bold);
+        try testing.expect(s.cursor.pen.attrs.bold);
     }
 }
 
@@ -4110,13 +4131,20 @@ test "Screen: scrollRegionUp buffer wrap" {
 
     // Scroll
     s.cursor.pen = .{ .char = 'X' };
+    s.cursor.pen.bg = .{ .r = 155 };
+    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 2 }, 1);
 
     {
         // Test our contents rotated
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("3IJKL\n4ABCD\nXXXXX", contents);
+        try testing.expectEqualStrings("3IJKL\n4ABCD", contents);
+        const cell = s.getCell(.active, 2, 0);
+        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expect(!cell.attrs.bold);
+        try testing.expect(s.cursor.pen.attrs.bold);
     }
 }
 
@@ -4136,13 +4164,20 @@ test "Screen: scrollRegionUp buffer wrap alternate" {
 
     // Scroll
     s.cursor.pen = .{ .char = 'X' };
+    s.cursor.pen.bg = .{ .r = 155 };
+    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 2 }, 2);
 
     {
         // Test our contents rotated
         var contents = try s.testString(alloc, .screen);
         defer alloc.free(contents);
-        try testing.expectEqualStrings("4ABCD\nXXXXX\nXXXXX", contents);
+        try testing.expectEqualStrings("4ABCD", contents);
+        const cell = s.getCell(.active, 2, 0);
+        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expect(!cell.attrs.bold);
+        try testing.expect(s.cursor.pen.attrs.bold);
     }
 }
 
