@@ -77,6 +77,10 @@ pwd: std.ArrayList(u8),
 /// The charset state
 charset: CharsetState = .{},
 
+/// The saved charset state. This state is saved / restored along with the
+/// cursor state
+saved_charset: CharsetState = .{},
+
 /// The color palette to use
 color_palette: color.Palette = color.default,
 
@@ -419,6 +423,8 @@ fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
 /// was already saved it is overwritten.
 pub fn saveCursor(self: *Terminal) void {
     self.screen.saved_cursor = self.screen.cursor;
+    self.saved_charset = self.charset;
+    self.modes.save(.origin);
 }
 
 /// Restore cursor position and other state.
@@ -427,6 +433,8 @@ pub fn saveCursor(self: *Terminal) void {
 /// If no save was done before values are reset to their initial values.
 pub fn restoreCursor(self: *Terminal) void {
     self.screen.cursor = self.screen.saved_cursor;
+    self.charset = self.saved_charset;
+    _ = self.modes.restore(.origin);
 }
 
 /// TODO: test
@@ -1442,6 +1450,8 @@ pub fn linefeed(self: *Terminal) !void {
 /// region are lost. The cursor position is not changed.
 ///
 /// This unsets the pending wrap state without wrapping.
+///
+/// The inserted cells are colored according to the current SGR state.
 pub fn insertBlanks(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -2912,4 +2922,22 @@ test "Terminal: resize less cols with wide char then print" {
     try t.resize(alloc, 2, 3);
     t.setCursorPos(1, 2);
     try t.print('😀'); // 0x1F600
+}
+
+test "Terminal: saveCursor" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    t.screen.cursor.pen.attrs.bold = true;
+    t.charset.gr = .G3;
+    t.modes.set(.origin, true);
+    t.saveCursor();
+    t.charset.gr = .G0;
+    t.screen.cursor.pen.attrs.bold = false;
+    t.modes.set(.origin, false);
+    t.restoreCursor();
+    try testing.expect(t.screen.cursor.pen.attrs.bold);
+    try testing.expect(t.charset.gr == .G3);
+    try testing.expect(t.modes.get(.origin));
 }
