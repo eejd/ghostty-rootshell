@@ -213,7 +213,7 @@ pub fn alternateScreen(
     self.screen.selection = null;
 
     if (options.clear_on_enter) {
-        self.eraseDisplay(alloc, .complete);
+        self.eraseDisplay(alloc, .complete, false);
     }
 }
 
@@ -232,7 +232,7 @@ pub fn primaryScreen(
     // TODO(mitchellh): what happens if we enter alternate screen multiple times?
     if (self.active_screen == .primary) return;
 
-    if (options.clear_on_exit) self.eraseDisplay(alloc, .complete);
+    if (options.clear_on_exit) self.eraseDisplay(alloc, .complete, false);
 
     // Switch the screens
     const old = self.screen;
@@ -279,7 +279,7 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     try self.resize(alloc, 0, self.rows);
 
     // TODO: do not clear screen flag mode
-    self.eraseDisplay(alloc, .complete);
+    self.eraseDisplay(alloc, .complete, false);
     self.setCursorPos(1, 1);
 
     // TODO: left/right margins
@@ -1010,6 +1010,7 @@ pub fn eraseDisplay(
     self: *Terminal,
     alloc: Allocator,
     mode: csi.EraseDisplay,
+    protected: bool,
 ) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -1026,7 +1027,18 @@ pub fn eraseDisplay(
             while (it.next()) |row| {
                 row.setWrapped(false);
                 row.setDirty(true);
-                row.clear(pen);
+
+                if (!protected) {
+                    row.clear(pen);
+                    continue;
+                }
+
+                // Protected mode erase
+                for (0..row.lenCells()) |x| {
+                    const cell = row.getCellPtr(x);
+                    if (cell.attrs.protected) continue;
+                    cell.* = pen;
+                }
             }
 
             // Unsets pending wrap state
@@ -1045,6 +1057,7 @@ pub fn eraseDisplay(
                 for (self.screen.cursor.x..self.cols) |x| {
                     if (row.header().flags.grapheme) row.clearGraphemes(x);
                     const cell = row.getCellPtr(x);
+                    if (protected and cell.attrs.protected) continue;
                     cell.* = pen;
                     cell.char = 0;
                 }
@@ -1058,6 +1071,7 @@ pub fn eraseDisplay(
                 for (0..self.cols) |x| {
                     if (row.header().flags.grapheme) row.clearGraphemes(x);
                     const cell = row.getCellPtr(x);
+                    if (protected and cell.attrs.protected) continue;
                     cell.* = pen;
                     cell.char = 0;
                 }
@@ -1072,6 +1086,7 @@ pub fn eraseDisplay(
             var x: usize = 0;
             while (x <= self.screen.cursor.x) : (x += 1) {
                 const cell = self.screen.getCellPtr(.active, self.screen.cursor.y, x);
+                if (protected and cell.attrs.protected) continue;
                 cell.* = pen;
                 cell.char = 0;
             }
@@ -1082,6 +1097,7 @@ pub fn eraseDisplay(
                 x = 0;
                 while (x < self.cols) : (x += 1) {
                     const cell = self.screen.getCellPtr(.active, y, x);
+                    if (protected and cell.attrs.protected) continue;
                     cell.* = pen;
                     cell.char = 0;
                 }
@@ -1121,7 +1137,7 @@ test "Terminal: eraseDisplay above" {
     t.screen.cursor.y = 40;
     t.screen.cursor.x = 40;
     // erase above the cursor
-    t.eraseDisplay(testing.allocator, .above);
+    t.eraseDisplay(testing.allocator, .above, false);
     // check it was erased
     cell = t.screen.getCell(.active, 0, 0);
     try testing.expect(cell.bg.eql(pink));
@@ -1158,7 +1174,7 @@ test "Terminal: eraseDisplay below" {
     try testing.expect(cell.char == 'a');
     try testing.expect(cell.attrs.bold);
     // erase below the cursor
-    t.eraseDisplay(testing.allocator, .below);
+    t.eraseDisplay(testing.allocator, .below, false);
     // check it was erased
     cell = t.screen.getCell(.active, 60, 60);
     try testing.expect(cell.bg.eql(pink));
@@ -1202,7 +1218,7 @@ test "Terminal: eraseDisplay complete" {
     // position our cursor between the cells
     t.screen.cursor.y = 30;
     // erase everything
-    t.eraseDisplay(testing.allocator, .complete);
+    t.eraseDisplay(testing.allocator, .complete, false);
     // check they were erased
     cell = t.screen.getCell(.active, 60, 60);
     try testing.expect(cell.bg.eql(pink));
@@ -1781,8 +1797,8 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.screen.kitty_keyboard = .{};
     self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
     self.previous_char = null;
-    self.eraseDisplay(alloc, .scrollback);
-    self.eraseDisplay(alloc, .complete);
+    self.eraseDisplay(alloc, .scrollback, false);
+    self.eraseDisplay(alloc, .complete, false);
     self.pwd.clearRetainingCapacity();
 }
 
@@ -3064,5 +3080,71 @@ test "Terminal: eraseLine protected complete" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("     X", str);
+    }
+}
+
+test "Terminal: eraseDisplay protected complete" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    for ("123456789") |c| try t.print(c);
+    t.setCursorColAbsolute(6);
+    t.setProtectedMode(.dec);
+    try t.print('X');
+    t.setCursorColAbsolute(4);
+    t.eraseDisplay(alloc, .complete, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n     X", str);
+    }
+}
+
+test "Terminal: eraseDisplay protected below" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    for ("123456789") |c| try t.print(c);
+    t.setCursorColAbsolute(6);
+    t.setProtectedMode(.dec);
+    try t.print('X');
+    t.setCursorColAbsolute(4);
+    t.eraseDisplay(alloc, .below, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\n123  X", str);
+    }
+}
+
+test "Terminal: eraseDisplay protected above" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    for ("123456789") |c| try t.print(c);
+    t.setCursorColAbsolute(6);
+    t.setProtectedMode(.dec);
+    try t.print('X');
+    t.setCursorColAbsolute(8);
+    t.eraseDisplay(alloc, .above, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n     X  9", str);
     }
 }

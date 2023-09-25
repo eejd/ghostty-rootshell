@@ -1305,15 +1305,13 @@ const StreamHandler = struct {
     }
 
     pub fn eraseDisplay(self: *StreamHandler, mode: terminal.EraseDisplay, protected: bool) !void {
-        _ = protected;
-
         if (mode == .complete) {
             // Whenever we erase the full display, scroll to bottom.
             try self.terminal.scrollViewport(.{ .bottom = {} });
             try self.queueRender();
         }
 
-        self.terminal.eraseDisplay(self.alloc, mode);
+        self.terminal.eraseDisplay(self.alloc, mode, protected);
     }
 
     pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine, protected: bool) !void {
