@@ -1282,7 +1282,7 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
     for (self.screen.cursor.x..self.cols) |x| {
         const copy_x = x + count;
         if (copy_x >= self.cols) {
-            line.getCellPtr(x).* = self.screen.cursor.pen;
+            line.getCellPtr(x).* = .{};
             continue;
         }
 
@@ -2810,11 +2810,17 @@ test "Terminal: deleteChars" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    // the cells that shifted in should not have this attribute set
+    t.screen.cursor.pen = .{ .attrs = .{ .bold = true } };
+
     try t.deleteChars(2);
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ADE", str);
+
+        const cell = t.screen.getCell(.active, 0, 4);
+        try testing.expect(!cell.attrs.bold);
     }
 }
 
