@@ -1546,6 +1546,7 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
 
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
+    self.screen.cursor.pending_wrap = false;
 
     // Remaining rows from our cursor
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
@@ -2492,6 +2493,24 @@ test "Terminal: insertLines more than remaining" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A", str);
+    }
+}
+
+test "Terminal: insertLines resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.insertLines(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B\nABCDE", str);
     }
 }
 
