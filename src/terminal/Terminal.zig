@@ -1309,6 +1309,9 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 
     if (count == 0) return;
 
+    // This resets the pending wrap state
+    self.screen.cursor.pending_wrap = false;
+
     // We go from our cursor right to the end and either copy the cell
     // "count" away or clear it.
     const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
@@ -2975,6 +2978,24 @@ test "Terminal: deleteChars should shift left" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ACDE", str);
+    }
+}
+
+test "Terminal: deleteChars resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.deleteChars(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
     }
 }
 
