@@ -1697,7 +1697,7 @@ const StreamHandler = struct {
         var buf: [288]u8 = undefined;
         const resp = try std.fmt.bufPrint(
             &buf,
-            "\x1BP>|{s} {s}\x07",
+            "\x1BP>|{s} {s}\x1B\\",
             .{
                 "ghostty",
                 build_config.version_string,
