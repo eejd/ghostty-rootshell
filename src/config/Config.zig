@@ -104,6 +104,9 @@ const c = @cImport({
 ///
 /// This configuration can be repeated multiple times to specify multiple
 /// codepoint mappings.
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
 @"font-codepoint-map": RepeatableCodepointMap = .{},
 
 /// Draw fonts with a thicker stroke, if supported. This is only supported
