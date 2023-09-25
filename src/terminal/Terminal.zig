@@ -1283,10 +1283,15 @@ pub fn eraseLine(
         },
     };
 
+    const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
+        .bg = self.screen.cursor.pen.bg,
+        .attrs = .{ .has_bg = true },
+    };
+
     for (start..end) |x| {
         const cell = row.getCellPtr(x);
         if (cell.attrs.protected) continue;
-        cell.* = self.screen.cursor.pen;
+        cell.* = pen;
     }
 }
 
