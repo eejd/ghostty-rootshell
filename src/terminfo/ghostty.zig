@@ -95,6 +95,9 @@ pub const ghostty: Source = .{
         // Curly, dashed, etc underlines
         .{ .name = "Smulx", .value = .{ .string = "\\E[4:%p1%dm" } },
 
+        // Colored underlines
+        .{ .name = "Setulc", .value = .{ .string = "\\E[58:2::%p1%{65536}%/%d:%p1%{256}%/%{255}%&%d:%p1%{255}%&%d%;m" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
