@@ -1583,6 +1583,10 @@ const StreamHandler = struct {
         }
     }
 
+    pub fn setProtectedMode(self: *StreamHandler, mode: terminal.ProtectedMode) !void {
+        self.terminal.setProtectedMode(mode);
+    }
+
     pub fn decaln(self: *StreamHandler) !void {
         try self.terminal.decaln();
     }

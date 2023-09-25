@@ -651,6 +651,29 @@ pub fn Stream(comptime Handler: type) type {
                                 },
                             ) else log.warn("unimplemented CSI callback: {}", .{action});
                         },
+
+                        // DECSCA
+                        '"' => {
+                            if (@hasDecl(T, "setProtectedMode")) {
+                                const mode_: ?ansi.ProtectedMode = switch (action.params.len) {
+                                    else => null,
+                                    0 => .off,
+                                    1 => switch (action.params[0]) {
+                                        0, 2 => .off,
+                                        1 => .dec,
+                                        else => null,
+                                    },
+                                };
+
+                                const mode = mode_ orelse {
+                                    log.warn("invalid set protected mode command: {}", .{action});
+                                    return;
+                                };
+
+                                try self.handler.setProtectedMode(mode);
+                            } else log.warn("unimplemented CSI callback: {}", .{action});
+                        },
+
                         // XTVERSION
                         '>' => {
                             if (@hasDecl(T, "reportXtversion")) try self.handler.reportXtversion();
@@ -1201,4 +1224,33 @@ test "stream: pop kitty keyboard with no params defaults to 1" {
     var s: Stream(H) = .{ .handler = .{} };
     for ("\x1B[<u") |c| try s.next(c);
     try testing.expectEqual(@as(u16, 1), s.handler.n);
+}
+
+test "stream: DECSCA" {
+    const H = struct {
+        const Self = @This();
+        v: ?ansi.ProtectedMode = null,
+
+        pub fn setProtectedMode(self: *Self, v: ansi.ProtectedMode) !void {
+            self.v = v;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    {
+        for ("\x1B[\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.off, s.handler.v.?);
+    }
+    {
+        for ("\x1B[0\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.off, s.handler.v.?);
+    }
+    {
+        for ("\x1B[2\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.off, s.handler.v.?);
+    }
+    {
+        for ("\x1B[1\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.dec, s.handler.v.?);
+    }
 }
