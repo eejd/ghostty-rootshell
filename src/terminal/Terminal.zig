@@ -1728,6 +1728,24 @@ pub fn kittyGraphics(
     return kitty.graphics.execute(alloc, self, cmd);
 }
 
+/// Set the character protection mode for the terminal.
+pub fn setProtectedMode(self: *Terminal, mode: ansi.ProtectedMode) void {
+    switch (mode) {
+        .off => {
+            self.screen.cursor.pen.attrs.protected = false;
+        },
+
+        // TODO: ISO/DEC have very subtle differences, so we should track that.
+        .iso => {
+            self.screen.cursor.pen.attrs.protected = true;
+        },
+
+        .dec => {
+            self.screen.cursor.pen.attrs.protected = true;
+        },
+    }
+}
+
 /// Full reset
 pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.primaryScreen(alloc, .{ .clear_on_exit = true, .cursor_save = true });
@@ -2952,4 +2970,20 @@ test "Terminal: saveCursor with screen change" {
     try testing.expect(t.screen.cursor.pen.attrs.bold);
     try testing.expect(t.screen.charset.gr == .G3);
     try testing.expect(t.modes.get(.origin));
+}
+
+test "Terminal: setProtectedMode" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    try testing.expect(!t.screen.cursor.pen.attrs.protected);
+    t.setProtectedMode(.off);
+    try testing.expect(!t.screen.cursor.pen.attrs.protected);
+    t.setProtectedMode(.iso);
+    try testing.expect(t.screen.cursor.pen.attrs.protected);
+    t.setProtectedMode(.dec);
+    try testing.expect(t.screen.cursor.pen.attrs.protected);
+    t.setProtectedMode(.off);
+    try testing.expect(!t.screen.cursor.pen.attrs.protected);
 }
