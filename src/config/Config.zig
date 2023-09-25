@@ -91,6 +91,21 @@ const c = @cImport({
 @"font-variation-italic": RepeatableFontVariation = .{},
 @"font-variation-bold-italic": RepeatableFontVariation = .{},
 
+/// Force one or a range of Unicode codepoints to map to a specific named
+/// font. This is useful if you want to support special symbols or if you
+/// want to use specific glyphs that render better for your specific font.
+///
+/// The syntax is "codepoint=fontname" where "codepoint" is either a
+/// single codepoint or a range. Codepoints must be specified as full
+/// Unicode hex values, such as "U+ABCD". Codepoints ranges are specified
+/// as "U+ABCD-U+DEFG". You can specify multiple ranges for the same font
+/// separated by commas, such as "U+ABCD-U+DEFG,U+1234-U+5678=fontname".
+/// The font name is the same value as you would use for "font-family".
+///
+/// This configuration can be repeated multiple times to specify multiple
+/// codepoint mappings.
+@"font-codepoint-map": RepeatableCodepointMap = .{},
+
 /// Draw fonts with a thicker stroke, if supported. This is only supported
 /// currently on macOS.
 @"font-thicken": bool = false,
@@ -1505,6 +1520,187 @@ pub const Keybinds = struct {
         try set.parseCLI(alloc, "shift+a=copy_to_clipboard");
         try set.parseCLI(alloc, "shift+a=csi:hello");
     }
+};
+
+/// See "font-codepoint-map" for documentation.
+pub const RepeatableCodepointMap = struct {
+    const Self = @This();
+
+    map: fontpkg.CodepointMap = .{},
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input_: ?[]const u8) !void {
+        const input = input_ orelse return error.ValueRequired;
+        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return error.InvalidValue;
+        const whitespace = " \t";
+        const key = std.mem.trim(u8, input[0..eql_idx], whitespace);
+        const value = std.mem.trim(u8, input[eql_idx + 1 ..], whitespace);
+        const valueZ = try alloc.dupeZ(u8, value);
+
+        var p: UnicodeRangeParser = .{ .input = key };
+        while (try p.next()) |range| {
+            try self.map.add(alloc, .{
+                .range = range,
+                .descriptor = .{ .family = valueZ },
+            });
+        }
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        return .{
+            .map = .{ .list = try self.map.list.clone(alloc) },
+        };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        const itemsA = self.map.list.slice();
+        const itemsB = other.map.list.slice();
+        if (itemsA.len != itemsB.len) return false;
+        for (0..itemsA.len) |i| {
+            const a = itemsA.get(i);
+            const b = itemsB.get(i);
+            if (!std.meta.eql(a, b)) return false;
+        } else return true;
+    }
+
+    /// Parses the list of Unicode codepoint ranges. Valid syntax:
+    ///
+    ///   "" (empty returns null)
+    ///   U+1234
+    ///   U+1234-5678
+    ///   U+1234,U+5678
+    ///   U+1234-5678,U+5678
+    ///   U+1234,U+5678-9ABC
+    ///
+    /// etc.
+    const UnicodeRangeParser = struct {
+        input: []const u8,
+        i: usize = 0,
+
+        pub fn next(self: *UnicodeRangeParser) !?[2]u21 {
+            // Once we're EOF then we're done without an error.
+            if (self.eof()) return null;
+
+            // One codepoint no matter what
+            const start = try self.parseCodepoint();
+            if (self.eof()) return .{ start, start };
+
+            // Otherwise we expect either a range or a comma
+            switch (self.input[self.i]) {
+                // Comma means we have another codepoint but in a different
+                // range so we return our current codepoint.
+                ',' => {
+                    self.advance();
+                    if (self.eof()) return error.InvalidValue;
+                    return .{ start, start };
+                },
+
+                // Hyphen means we have a range.
+                '-' => {
+                    self.advance();
+                    if (self.eof()) return error.InvalidValue;
+                    const end = try self.parseCodepoint();
+                    if (!self.eof() and self.input[self.i] != ',') return error.InvalidValue;
+                    self.advance();
+                    return .{ start, end };
+                },
+
+                else => return error.InvalidValue,
+            }
+        }
+
+        fn parseCodepoint(self: *UnicodeRangeParser) !u21 {
+            if (self.input[self.i] != 'U') return error.InvalidValue;
+            self.advance();
+            if (self.eof()) return error.InvalidValue;
+            if (self.input[self.i] != '+') return error.InvalidValue;
+            self.advance();
+            if (self.eof()) return error.InvalidValue;
+
+            const start_i = self.i;
+            while (true) {
+                const current = self.input[self.i];
+                const is_hex = (current >= '0' and current <= '9') or
+                    (current >= 'A' and current <= 'F') or
+                    (current >= 'a' and current <= 'f');
+                if (!is_hex) break;
+
+                // Advance but break on EOF
+                self.advance();
+                if (self.eof()) break;
+            }
+
+            // If we didn't consume a single character, we have an error.
+            if (start_i == self.i) return error.InvalidValue;
+
+            return std.fmt.parseInt(u21, self.input[start_i..self.i], 16) catch
+                return error.InvalidValue;
+        }
+
+        fn advance(self: *UnicodeRangeParser) void {
+            self.i += 1;
+        }
+
+        fn eof(self: *const UnicodeRangeParser) bool {
+            return self.i >= self.input.len;
+        }
+    };
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "U+ABCD=Comic Sans");
+        try list.parseCLI(alloc, "U+0001-U+0005=Verdana");
+        try list.parseCLI(alloc, "U+0006-U+0009,U+ABCD=Courier");
+
+        try testing.expectEqual(@as(usize, 4), list.map.list.len);
+        {
+            const entry = list.map.list.get(0);
+            try testing.expectEqual([2]u21{ 0xABCD, 0xABCD }, entry.range);
+            try testing.expectEqualStrings("Comic Sans", entry.descriptor.family.?);
+        }
+        {
+            const entry = list.map.list.get(1);
+            try testing.expectEqual([2]u21{ 1, 5 }, entry.range);
+            try testing.expectEqualStrings("Verdana", entry.descriptor.family.?);
+        }
+        {
+            const entry = list.map.list.get(2);
+            try testing.expectEqual([2]u21{ 6, 9 }, entry.range);
+            try testing.expectEqualStrings("Courier", entry.descriptor.family.?);
+        }
+        {
+            const entry = list.map.list.get(3);
+            try testing.expectEqual([2]u21{ 0xABCD, 0xABCD }, entry.range);
+            try testing.expectEqualStrings("Courier", entry.descriptor.family.?);
+        }
+    }
+
+    // test "parseCLI with whitespace" {
+    //     const testing = std.testing;
+    //     var arena = ArenaAllocator.init(testing.allocator);
+    //     defer arena.deinit();
+    //     const alloc = arena.allocator();
+    //
+    //     var list: Self = .{};
+    //     try list.parseCLI(alloc, "wght =200");
+    //     try list.parseCLI(alloc, "slnt= -15");
+    //
+    //     try testing.expectEqual(@as(usize, 2), list.list.items.len);
+    //     try testing.expectEqual(fontpkg.face.Variation{
+    //         .id = fontpkg.face.Variation.Id.init("wght"),
+    //         .value = 200,
+    //     }, list.list.items[0]);
+    //     try testing.expectEqual(fontpkg.face.Variation{
+    //         .id = fontpkg.face.Variation.Id.init("slnt"),
+    //         .value = -15,
+    //     }, list.list.items[1]);
+    // }
 };
 
 /// Options for copy on select behavior.
