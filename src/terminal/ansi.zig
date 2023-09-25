@@ -111,3 +111,11 @@ pub const ModifyKeyFormat = union(enum) {
     function_keys: void,
     other_keys: enum { none, numeric_except, numeric },
 };
+
+/// The protection modes that can be set for the terminal. See DECSCA and
+/// ESC V, W.
+pub const ProtectedMode = enum {
+    off,
+    iso, // ESC V, W
+    dec, // CSI Ps " q
+};

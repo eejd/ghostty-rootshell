@@ -259,45 +259,58 @@ pub fn Stream(comptime Handler: type) type {
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // Erase Display
-                // TODO: test
-                'J' => if (@hasDecl(T, "eraseDisplay")) try self.handler.eraseDisplay(
-                    switch (action.params.len) {
-                        0 => .below,
-                        1 => mode: {
-                            // TODO: use meta to get enum max
-                            if (action.params[0] > 3) {
-                                log.warn("invalid erase display command: {}", .{action});
-                                return;
-                            }
+                'J' => if (@hasDecl(T, "eraseDisplay")) {
+                    const protected_: ?bool = switch (action.intermediates.len) {
+                        0 => false,
+                        1 => if (action.intermediates[0] == '?') true else null,
+                        else => null,
+                    };
 
-                            break :mode @enumFromInt(action.params[0]);
-                        },
-                        else => {
-                            log.warn("invalid erase display command: {}", .{action});
-                            return;
-                        },
-                    },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                    const protected = protected_ orelse {
+                        log.warn("invalid erase display command: {}", .{action});
+                        return;
+                    };
+
+                    const mode_: ?csi.EraseDisplay = switch (action.params.len) {
+                        0 => .below,
+                        1 => if (action.params[0] <= 3) @enumFromInt(action.params[0]) else null,
+                        else => null,
+                    };
+
+                    const mode = mode_ orelse {
+                        log.warn("invalid erase display command: {}", .{action});
+                        return;
+                    };
+
+                    try self.handler.eraseDisplay(mode, protected);
+                } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // Erase Line
-                'K' => if (@hasDecl(T, "eraseLine")) try self.handler.eraseLine(
-                    switch (action.params.len) {
-                        0 => .right,
-                        1 => mode: {
-                            // TODO: use meta to get enum max
-                            if (action.params[0] > 3) {
-                                log.warn("invalid erase line command: {}", .{action});
-                                return;
-                            }
+                'K' => if (@hasDecl(T, "eraseLine")) {
+                    const protected_: ?bool = switch (action.intermediates.len) {
+                        0 => false,
+                        1 => if (action.intermediates[0] == '?') true else null,
+                        else => null,
+                    };
 
-                            break :mode @enumFromInt(action.params[0]);
-                        },
-                        else => {
-                            log.warn("invalid erase line command: {}", .{action});
-                            return;
-                        },
-                    },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                    const protected = protected_ orelse {
+                        log.warn("invalid erase line command: {}", .{action});
+                        return;
+                    };
+
+                    const mode_: ?csi.EraseLine = switch (action.params.len) {
+                        0 => .right,
+                        1 => if (action.params[0] < 3) @enumFromInt(action.params[0]) else null,
+                        else => null,
+                    };
+
+                    const mode = mode_ orelse {
+                        log.warn("invalid erase line command: {}", .{action});
+                        return;
+                    };
+
+                    try self.handler.eraseLine(mode, protected);
+                } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // IL - Insert Lines
                 // TODO: test
@@ -651,6 +664,29 @@ pub fn Stream(comptime Handler: type) type {
                                 },
                             ) else log.warn("unimplemented CSI callback: {}", .{action});
                         },
+
+                        // DECSCA
+                        '"' => {
+                            if (@hasDecl(T, "setProtectedMode")) {
+                                const mode_: ?ansi.ProtectedMode = switch (action.params.len) {
+                                    else => null,
+                                    0 => .off,
+                                    1 => switch (action.params[0]) {
+                                        0, 2 => .off,
+                                        1 => .dec,
+                                        else => null,
+                                    },
+                                };
+
+                                const mode = mode_ orelse {
+                                    log.warn("invalid set protected mode command: {}", .{action});
+                                    return;
+                                };
+
+                                try self.handler.setProtectedMode(mode);
+                            } else log.warn("unimplemented CSI callback: {}", .{action});
+                        },
+
                         // XTVERSION
                         '>' => {
                             if (@hasDecl(T, "reportXtversion")) try self.handler.reportXtversion();
@@ -1201,4 +1237,163 @@ test "stream: pop kitty keyboard with no params defaults to 1" {
     var s: Stream(H) = .{ .handler = .{} };
     for ("\x1B[<u") |c| try s.next(c);
     try testing.expectEqual(@as(u16, 1), s.handler.n);
+}
+
+test "stream: DECSCA" {
+    const H = struct {
+        const Self = @This();
+        v: ?ansi.ProtectedMode = null,
+
+        pub fn setProtectedMode(self: *Self, v: ansi.ProtectedMode) !void {
+            self.v = v;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    {
+        for ("\x1B[\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.off, s.handler.v.?);
+    }
+    {
+        for ("\x1B[0\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.off, s.handler.v.?);
+    }
+    {
+        for ("\x1B[2\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.off, s.handler.v.?);
+    }
+    {
+        for ("\x1B[1\"q") |c| try s.next(c);
+        try testing.expectEqual(ansi.ProtectedMode.dec, s.handler.v.?);
+    }
+}
+
+test "stream: DECED, DECSED" {
+    const H = struct {
+        const Self = @This();
+        mode: ?csi.EraseDisplay = null,
+        protected: ?bool = null,
+
+        pub fn eraseDisplay(
+            self: *Self,
+            mode: csi.EraseDisplay,
+            protected: bool,
+        ) !void {
+            self.mode = mode;
+            self.protected = protected;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    {
+        for ("\x1B[?J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.below, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?0J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.below, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?1J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.above, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?2J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.complete, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?3J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.scrollback, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+
+    {
+        for ("\x1B[J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.below, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[0J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.below, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[1J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.above, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[2J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.complete, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[3J") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseDisplay.scrollback, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+}
+
+test "stream: DECEL, DECSEL" {
+    const H = struct {
+        const Self = @This();
+        mode: ?csi.EraseLine = null,
+        protected: ?bool = null,
+
+        pub fn eraseLine(
+            self: *Self,
+            mode: csi.EraseLine,
+            protected: bool,
+        ) !void {
+            self.mode = mode;
+            self.protected = protected;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    {
+        for ("\x1B[?K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.right, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?0K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.right, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?1K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.left, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+    {
+        for ("\x1B[?2K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.complete, s.handler.mode.?);
+        try testing.expect(s.handler.protected.?);
+    }
+
+    {
+        for ("\x1B[K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.right, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[0K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.right, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[1K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.left, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
+    {
+        for ("\x1B[2K") |c| try s.next(c);
+        try testing.expectEqual(csi.EraseLine.complete, s.handler.mode.?);
+        try testing.expect(!s.handler.protected.?);
+    }
 }

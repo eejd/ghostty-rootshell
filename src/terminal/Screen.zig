@@ -232,6 +232,7 @@ pub const Cell = struct {
         strikethrough: bool = false,
         underline: sgr.Attribute.Underline = .none,
         underline_color: bool = false,
+        protected: bool = false,
 
         /// True if this is a wide character. This char takes up
         /// two cells. The following cell ALWAYS is a space.

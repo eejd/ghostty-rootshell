@@ -1304,18 +1304,18 @@ const StreamHandler = struct {
         self.terminal.setCursorPos(row, col);
     }
 
-    pub fn eraseDisplay(self: *StreamHandler, mode: terminal.EraseDisplay) !void {
+    pub fn eraseDisplay(self: *StreamHandler, mode: terminal.EraseDisplay, protected: bool) !void {
         if (mode == .complete) {
             // Whenever we erase the full display, scroll to bottom.
             try self.terminal.scrollViewport(.{ .bottom = {} });
             try self.queueRender();
         }
 
-        self.terminal.eraseDisplay(self.alloc, mode);
+        self.terminal.eraseDisplay(self.alloc, mode, protected);
     }
 
-    pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine) !void {
-        self.terminal.eraseLine(mode);
+    pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine, protected: bool) !void {
+        self.terminal.eraseLine(mode, protected);
     }
 
     pub fn deleteChars(self: *StreamHandler, count: usize) !void {
@@ -1581,6 +1581,10 @@ const StreamHandler = struct {
 
             else => log.warn("unimplemented cursor style: {}", .{style}),
         }
+    }
+
+    pub fn setProtectedMode(self: *StreamHandler, mode: terminal.ProtectedMode) !void {
+        self.terminal.setProtectedMode(mode);
     }
 
     pub fn decaln(self: *StreamHandler) !void {
