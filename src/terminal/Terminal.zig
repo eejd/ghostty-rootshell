@@ -1333,6 +1333,9 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // This resets the pending wrap state
+    self.screen.cursor.pending_wrap = false;
+
     // Our last index is at most the end of the number of chars we have
     // in the current line.
     const end = @min(self.cols, self.screen.cursor.x + count);
@@ -2989,6 +2992,24 @@ test "Terminal: deleteChars resets wrap" {
     for ("ABCDE") |c| try t.print(c);
     try testing.expect(t.screen.cursor.pending_wrap);
     try t.deleteChars(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: eraseChars resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.eraseChars(1);
     try testing.expect(!t.screen.cursor.pending_wrap);
     try t.print('X');
 
