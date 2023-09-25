@@ -203,14 +203,22 @@ pub fn alternateScreen(
     self.secondary_screen = old;
     self.active_screen = .alternate;
 
-    // Clear our pen
-    self.screen.cursor = .{};
+    // Bring our pen with us
+    self.screen.cursor = old.cursor;
+
+    // Bring our charset state with us
+    self.screen.charset = old.charset;
 
     // Clear our selection
     self.screen.selection = null;
 
     if (options.clear_on_enter) {
         self.eraseDisplay(alloc, .complete);
+        // HACK: eraseDisplay needs to work properly here, but alters the state
+        // of our pen in doing so. Either way, we need to set pen state before
+        // erasing, use the semantics of erasing, and end up with the pen state
+        // where it was
+        self.screen.cursor = old.cursor;
     }
 }
 
@@ -2924,12 +2932,18 @@ test "Terminal: saveCursor with screen change" {
     defer t.deinit(alloc);
 
     t.screen.cursor.pen.attrs.bold = true;
+    t.screen.cursor.x = 2;
     t.screen.charset.gr = .G3;
     t.modes.set(.origin, true);
     t.alternateScreen(alloc, .{
         .cursor_save = true,
         .clear_on_enter = true,
     });
+    // make sure our cursor and charset have come with us
+    try testing.expect(t.screen.cursor.pen.attrs.bold);
+    try testing.expect(t.screen.cursor.x == 2);
+    try testing.expect(t.screen.charset.gr == .G3);
+    try testing.expect(t.modes.get(.origin));
     t.screen.charset.gr = .G0;
     t.screen.cursor.pen.attrs.bold = false;
     t.modes.set(.origin, false);
