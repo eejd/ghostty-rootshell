@@ -1543,7 +1543,10 @@ pub const RepeatableCodepointMap = struct {
         while (try p.next()) |range| {
             try self.map.add(alloc, .{
                 .range = range,
-                .descriptor = .{ .family = valueZ },
+                .descriptor = .{
+                    .family = valueZ,
+                    .monospace = false, // we allow any font
+                },
             });
         }
     }
