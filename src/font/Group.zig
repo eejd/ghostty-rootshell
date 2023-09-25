@@ -43,7 +43,7 @@ const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 /// font is a rare case.
 const DescriptorCache = std.HashMapUnmanaged(
     font.discovery.Descriptor,
-    FontIndex,
+    ?FontIndex,
     struct {
         const KeyType = font.discovery.Descriptor;
 
@@ -278,6 +278,13 @@ pub fn indexForCodepoint(
     style: Style,
     p: ?Presentation,
 ) ?FontIndex {
+    // Codepoint overrides.
+    if (self.indexForCodepointOverride(cp)) |idx_| {
+        if (idx_) |idx| return idx;
+    } else |err| {
+        log.warn("codepoint override failed codepoint={} err={}", .{ cp, err });
+    }
+
     // If we have sprite drawing enabled, check if our sprite face can
     // handle this.
     if (self.sprite) |sprite| {
@@ -351,6 +358,51 @@ fn indexForCodepointExact(self: Group, cp: u32, style: Style, p: ?Presentation) 
 
     // Not found
     return null;
+}
+
+/// Checks if the codepoint is in the map of codepoint overrides,
+/// finds the override font, and returns it.
+fn indexForCodepointOverride(self: *Group, cp: u32) !?FontIndex {
+    if (comptime font.Discover == void) return null;
+    const map = self.codepoint_map orelse return null;
+
+    // If we have a codepoint too large or isn't in the map, then we
+    // don't have an override.
+    const cp_u21 = std.math.cast(u21, cp) orelse return null;
+    const desc = map.get(cp_u21) orelse return null;
+
+    // Fast path: the descriptor is already loaded.
+    const idx_: ?FontIndex = self.descriptor_cache.get(desc) orelse idx: {
+        // Slow path: we have to find this descriptor and load the font
+        const discover = self.discover orelse return null;
+        var disco_it = try discover.discover(desc);
+        defer disco_it.deinit();
+
+        const face = (try disco_it.next()) orelse {
+            log.warn(
+                "font lookup for codepoint map failed codepoint={} err=FontNotFound",
+                .{cp},
+            );
+
+            // Add null to the cache so we don't do a lookup again later.
+            try self.descriptor_cache.put(self.alloc, desc, null);
+            return null;
+        };
+
+        // Add the font to our list of fonts so we can get an index for it,
+        // and ensure the index is stored in the descriptor cache for next time.
+        const idx = try self.addFace(.regular, .{ .deferred = face });
+        try self.descriptor_cache.put(self.alloc, desc, idx);
+
+        break :idx idx;
+    };
+
+    // The descriptor cache will populate null if the descriptor is not found
+    // to avoid expensive discoveries later.
+    const idx = idx_ orelse return null;
+
+    // We need to verify that this index has the codepoint we want.
+    return if (self.hasCodepoint(idx, cp, null)) idx else null;
 }
 
 /// Check if a specific font index has a specific codepoint. This does not
