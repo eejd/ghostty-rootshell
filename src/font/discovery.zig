@@ -56,6 +56,30 @@ pub const Descriptor = struct {
     /// will be preferred, but not guaranteed.
     variations: []const Variation = &.{},
 
+    /// Returns a hash code that can be used to uniquely identify this
+    /// action.
+    pub fn hash(self: Descriptor) u64 {
+        const autoHash = std.hash.autoHash;
+        var hasher = std.hash.Wyhash.init(0);
+        autoHash(&hasher, self.family);
+        autoHash(&hasher, self.style);
+        autoHash(&hasher, self.codepoint);
+        autoHash(&hasher, self.size);
+        autoHash(&hasher, self.bold);
+        autoHash(&hasher, self.italic);
+        autoHash(&hasher, self.monospace);
+        autoHash(&hasher, self.variations.len);
+        for (self.variations) |variation| {
+            autoHash(&hasher, variation.id);
+
+            // This is not correct, but we don't currently depend on the
+            // hash value being different based on decimal values of variations.
+            autoHash(&hasher, @as(u64, @intFromFloat(variation.value)));
+        }
+
+        return hasher.final();
+    }
+
     /// Convert to Fontconfig pattern to use for lookup. The pattern does
     /// not have defaults filled/substituted (Fontconfig thing) so callers
     /// must still do this.
@@ -349,6 +373,21 @@ pub const CoreText = struct {
         }
     };
 };
+
+test "descriptor hash" {
+    const testing = std.testing;
+
+    var d: Descriptor = .{};
+    try testing.expect(d.hash() != 0);
+}
+
+test "descriptor hash familiy names" {
+    const testing = std.testing;
+
+    var d1: Descriptor = .{ .family = "A" };
+    var d2: Descriptor = .{ .family = "B" };
+    try testing.expect(d1.hash() != d2.hash());
+}
 
 test "fontconfig" {
     if (options.backend != .fontconfig_freetype) return error.SkipZigTest;

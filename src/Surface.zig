@@ -224,6 +224,11 @@ pub fn init(
         var group = try font.Group.init(alloc, font_lib, font_size);
         errdefer group.deinit();
 
+        // If we have codepoint mappings, set those.
+        if (config.@"font-codepoint-map".map.list.len > 0) {
+            group.codepoint_map = config.@"font-codepoint-map".map;
+        }
+
         // Search for fonts
         if (font.Discover != void) discover: {
             const disco = try app.fontDiscover() orelse {

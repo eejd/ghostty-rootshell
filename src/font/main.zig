@@ -5,6 +5,7 @@ const build_config = @import("../build_config.zig");
 pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
 pub const face = @import("face.zig");
+pub const CodepointMap = @import("CodepointMap.zig");
 pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
 pub const Group = @import("Group.zig");
