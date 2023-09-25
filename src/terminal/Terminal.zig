@@ -1442,8 +1442,6 @@ pub fn linefeed(self: *Terminal) !void {
 /// region are lost. The cursor position is not changed.
 ///
 /// This unsets the pending wrap state without wrapping.
-///
-/// The inserted cells are colored according to the current SGR state.
 pub fn insertBlanks(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -1483,9 +1481,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     }
 
     // Insert zero
-    var pen = self.screen.cursor.pen;
-    pen.char = ' '; // NOTE: this should be 0 but we need space for tests
-    row.fillSlice(pen, start, pivot);
+    row.fillSlice(.{}, start, pivot);
 }
 
 /// Insert amount lines at the current cursor row. The contents of the line
@@ -2615,6 +2611,7 @@ test "Terminal: insertBlanks" {
     try t.print('A');
     try t.print('B');
     try t.print('C');
+    t.screen.cursor.pen.attrs.bold = true;
     t.setCursorPos(1, 1);
     t.insertBlanks(2);
 
@@ -2622,6 +2619,8 @@ test "Terminal: insertBlanks" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("  ABC", str);
+        const cell = t.screen.getCell(.active, 0, 0);
+        try testing.expect(!cell.attrs.bold);
     }
 }
 
