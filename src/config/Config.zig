@@ -1571,7 +1571,7 @@ pub const RepeatableCodepointMap = struct {
     ///   U+1234-5678
     ///   U+1234,U+5678
     ///   U+1234-5678,U+5678
-    ///   U+1234,U+5678-9ABC
+    ///   U+1234,U+5678-U+9ABC
     ///
     /// etc.
     const UnicodeRangeParser = struct {
@@ -1586,12 +1586,16 @@ pub const RepeatableCodepointMap = struct {
             const start = try self.parseCodepoint();
             if (self.eof()) return .{ start, start };
 
+            // We're allowed to have any whitespace here
+            self.consumeWhitespace();
+
             // Otherwise we expect either a range or a comma
             switch (self.input[self.i]) {
                 // Comma means we have another codepoint but in a different
                 // range so we return our current codepoint.
                 ',' => {
                     self.advance();
+                    self.consumeWhitespace();
                     if (self.eof()) return error.InvalidValue;
                     return .{ start, start };
                 },
@@ -1599,14 +1603,27 @@ pub const RepeatableCodepointMap = struct {
                 // Hyphen means we have a range.
                 '-' => {
                     self.advance();
+                    self.consumeWhitespace();
                     if (self.eof()) return error.InvalidValue;
                     const end = try self.parseCodepoint();
+                    self.consumeWhitespace();
                     if (!self.eof() and self.input[self.i] != ',') return error.InvalidValue;
                     self.advance();
+                    self.consumeWhitespace();
+                    if (start > end) return error.InvalidValue;
                     return .{ start, end };
                 },
 
                 else => return error.InvalidValue,
+            }
+        }
+
+        fn consumeWhitespace(self: *UnicodeRangeParser) void {
+            while (!self.eof()) {
+                switch (self.input[self.i]) {
+                    ' ', '\t' => self.advance(),
+                    else => return,
+                }
             }
         }
 
