@@ -402,7 +402,16 @@ fn indexForCodepointOverride(self: *Group, cp: u32) !?FontIndex {
     const idx = idx_ orelse return null;
 
     // We need to verify that this index has the codepoint we want.
-    return if (self.hasCodepoint(idx, cp, null)) idx else null;
+    if (self.hasCodepoint(idx, cp, null)) {
+        log.debug("codepoint override based on config codepoint={} family={s}", .{
+            cp,
+            desc.family orelse "",
+        });
+
+        return idx;
+    }
+
+    return null;
 }
 
 /// Check if a specific font index has a specific codepoint. This does not
