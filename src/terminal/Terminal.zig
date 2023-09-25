@@ -214,11 +214,6 @@ pub fn alternateScreen(
 
     if (options.clear_on_enter) {
         self.eraseDisplay(alloc, .complete);
-        // HACK: eraseDisplay needs to work properly here, but alters the state
-        // of our pen in doing so. Either way, we need to set pen state before
-        // erasing, use the semantics of erasing, and end up with the pen state
-        // where it was
-        self.screen.cursor = old.cursor;
     }
 }
 
@@ -1020,7 +1015,7 @@ pub fn eraseDisplay(
     defer tracy.end();
 
     // Erasing clears all attributes / colors _except_ the background
-    self.screen.cursor.pen = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
+    const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
         .bg = self.screen.cursor.pen.bg,
         .attrs = .{ .has_bg = true },
     };
@@ -1031,7 +1026,7 @@ pub fn eraseDisplay(
             while (it.next()) |row| {
                 row.setWrapped(false);
                 row.setDirty(true);
-                row.clear(self.screen.cursor.pen);
+                row.clear(pen);
             }
 
             // Unsets pending wrap state
@@ -1050,7 +1045,7 @@ pub fn eraseDisplay(
                 for (self.screen.cursor.x..self.cols) |x| {
                     if (row.header().flags.grapheme) row.clearGraphemes(x);
                     const cell = row.getCellPtr(x);
-                    cell.* = self.screen.cursor.pen;
+                    cell.* = pen;
                     cell.char = 0;
                 }
             }
@@ -1063,7 +1058,7 @@ pub fn eraseDisplay(
                 for (0..self.cols) |x| {
                     if (row.header().flags.grapheme) row.clearGraphemes(x);
                     const cell = row.getCellPtr(x);
-                    cell.* = self.screen.cursor.pen;
+                    cell.* = pen;
                     cell.char = 0;
                 }
             }
@@ -1077,7 +1072,7 @@ pub fn eraseDisplay(
             var x: usize = 0;
             while (x <= self.screen.cursor.x) : (x += 1) {
                 const cell = self.screen.getCellPtr(.active, self.screen.cursor.y, x);
-                cell.* = self.screen.cursor.pen;
+                cell.* = pen;
                 cell.char = 0;
             }
 
@@ -1087,7 +1082,7 @@ pub fn eraseDisplay(
                 x = 0;
                 while (x < self.cols) : (x += 1) {
                     const cell = self.screen.getCellPtr(.active, y, x);
-                    cell.* = self.screen.cursor.pen;
+                    cell.* = pen;
                     cell.char = 0;
                 }
             }
@@ -1134,6 +1129,9 @@ test "Terminal: eraseDisplay above" {
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
     try testing.expect(cell.attrs.has_bg);
+
+    // Check that our pen hasn't changed
+    try testing.expect(t.screen.cursor.pen.attrs.bold);
 
     // check that another cell got the correct bg
     cell = t.screen.getCell(.active, 0, 1);
