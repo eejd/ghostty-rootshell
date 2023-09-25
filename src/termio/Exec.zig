@@ -1317,8 +1317,7 @@ const StreamHandler = struct {
     }
 
     pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine, protected: bool) !void {
-        _ = protected;
-        self.terminal.eraseLine(mode);
+        self.terminal.eraseLine(mode, protected);
     }
 
     pub fn deleteChars(self: *StreamHandler, count: usize) !void {

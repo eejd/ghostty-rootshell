@@ -1219,36 +1219,58 @@ test "Terminal: eraseDisplay complete" {
 }
 
 /// Erase the line.
-/// TODO: test
 pub fn eraseLine(
     self: *Terminal,
     mode: csi.EraseLine,
+    protected: bool,
 ) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    switch (mode) {
-        .right => {
-            const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-            row.fillSlice(self.screen.cursor.pen, self.screen.cursor.x, self.cols);
-        },
+    // We always need a row no matter what
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
 
-        .left => {
-            const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-            row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
+    // Non-protected erase is much faster because we can just memset
+    // a contiguous block of memory.
+    if (!protected) {
+        switch (mode) {
+            .right => row.fillSlice(
+                self.screen.cursor.pen,
+                self.screen.cursor.x,
+                self.cols,
+            ),
 
-            // Unsets pending wrap state
-            self.screen.cursor.pending_wrap = false;
-        },
+            .left => {
+                row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
 
-        .complete => {
-            const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-            row.fill(self.screen.cursor.pen);
-        },
+                // Unsets pending wrap state
+                self.screen.cursor.pending_wrap = false;
+            },
 
+            .complete => row.fill(self.screen.cursor.pen),
+
+            else => log.err("unimplemented erase line mode: {}", .{mode}),
+        }
+
+        return;
+    }
+
+    // Protected mode we have to iterate over the cells to check their
+    // protection status and erase them individually.
+    const start, const end = switch (mode) {
+        .right => .{ self.screen.cursor.x, row.lenCells() },
+        .left => .{ 0, self.screen.cursor.x + 1 },
+        .complete => .{ 0, row.lenCells() },
         else => {
             log.err("unimplemented erase line mode: {}", .{mode});
+            return;
         },
+    };
+
+    for (start..end) |x| {
+        const cell = row.getCellPtr(x);
+        if (cell.attrs.protected) continue;
+        cell.* = self.screen.cursor.pen;
     }
 }
 
@@ -1443,7 +1465,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 
     // If our count is larger than the remaining amount, we just erase right.
     if (count > self.cols - self.screen.cursor.x) {
-        self.eraseLine(.right);
+        self.eraseLine(.right, false);
         return;
     }
 
@@ -2986,4 +3008,61 @@ test "Terminal: setProtectedMode" {
     try testing.expect(t.screen.cursor.pen.attrs.protected);
     t.setProtectedMode(.off);
     try testing.expect(!t.screen.cursor.pen.attrs.protected);
+}
+
+test "Terminal: eraseLine protected right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    for ("12345678") |c| try t.print(c);
+    t.setCursorColAbsolute(6);
+    t.setProtectedMode(.dec);
+    try t.print('X');
+    t.setCursorColAbsolute(4);
+    t.eraseLine(.right, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("123  X", str);
+    }
+}
+
+test "Terminal: eraseLine protected left" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    for ("123456789") |c| try t.print(c);
+    t.setCursorColAbsolute(6);
+    t.setProtectedMode(.dec);
+    try t.print('X');
+    t.setCursorColAbsolute(8);
+    t.eraseLine(.left, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("     X  9", str);
+    }
+}
+
+test "Terminal: eraseLine protected complete" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    for ("123456789") |c| try t.print(c);
+    t.setCursorColAbsolute(6);
+    t.setProtectedMode(.dec);
+    try t.print('X');
+    t.setCursorColAbsolute(8);
+    t.eraseLine(.complete, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("     X", str);
+    }
 }
