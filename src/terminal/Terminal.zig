@@ -1601,6 +1601,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
 
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
+    self.screen.cursor.pending_wrap = false;
 
     // Perform the scroll
     self.screen.scrollRegionUp(
@@ -2364,6 +2365,24 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A\nB\nC\nD", str);
+    }
+}
+
+test "Terminal: deleteLines resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.deleteLines(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B", str);
     }
 }
 
