@@ -1678,8 +1678,8 @@ pub const RepeatableCodepointMap = struct {
 
         var list: Self = .{};
         try list.parseCLI(alloc, "U+ABCD=Comic Sans");
-        try list.parseCLI(alloc, "U+0001-U+0005=Verdana");
-        try list.parseCLI(alloc, "U+0006-U+0009,U+ABCD=Courier");
+        try list.parseCLI(alloc, "U+0001 - U+0005=Verdana");
+        try list.parseCLI(alloc, "U+0006-U+0009, U+ABCD=Courier");
 
         try testing.expectEqual(@as(usize, 4), list.map.list.len);
         {
@@ -1703,27 +1703,6 @@ pub const RepeatableCodepointMap = struct {
             try testing.expectEqualStrings("Courier", entry.descriptor.family.?);
         }
     }
-
-    // test "parseCLI with whitespace" {
-    //     const testing = std.testing;
-    //     var arena = ArenaAllocator.init(testing.allocator);
-    //     defer arena.deinit();
-    //     const alloc = arena.allocator();
-    //
-    //     var list: Self = .{};
-    //     try list.parseCLI(alloc, "wght =200");
-    //     try list.parseCLI(alloc, "slnt= -15");
-    //
-    //     try testing.expectEqual(@as(usize, 2), list.list.items.len);
-    //     try testing.expectEqual(fontpkg.face.Variation{
-    //         .id = fontpkg.face.Variation.Id.init("wght"),
-    //         .value = 200,
-    //     }, list.list.items[0]);
-    //     try testing.expectEqual(fontpkg.face.Variation{
-    //         .id = fontpkg.face.Variation.Id.init("slnt"),
-    //         .value = -15,
-    //     }, list.list.items[1]);
-    // }
 };
 
 /// Options for copy on select behavior.
