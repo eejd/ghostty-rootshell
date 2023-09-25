@@ -63,8 +63,26 @@ const point = @import("point.zig");
 const CircBuf = @import("circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
 const fastmem = @import("../fastmem.zig");
+const charsets = @import("charsets.zig");
 
 const log = std.log.scoped(.screen);
+
+/// State required for all charset operations.
+const CharsetState = struct {
+    /// The list of graphical charsets by slot
+    charsets: CharsetArray = CharsetArray.initFill(charsets.Charset.utf8),
+
+    /// GL is the slot to use when using a 7-bit printable char (up to 127)
+    /// GR used for 8-bit printable chars.
+    gl: charsets.Slots = .G0,
+    gr: charsets.Slots = .G2,
+
+    /// Single shift where a slot is used for exactly one char.
+    single_shift: ?charsets.Slots = null,
+
+    /// An array to map a charset slot to a lookup table.
+    const CharsetArray = std.EnumArray(charsets.Slots, charsets.Charset);
+};
 
 /// Cursor represents the cursor state.
 pub const Cursor = struct {
@@ -896,6 +914,18 @@ kitty_keyboard: kitty.KeyFlagStack = .{},
 
 /// Kitty graphics protocol state.
 kitty_images: kitty.graphics.ImageStorage = .{},
+
+/// The charset state
+charset: CharsetState = .{},
+
+/// The saved charset state. This state is saved / restored along with the
+/// cursor state
+saved_charset: CharsetState = .{},
+
+/// The saved state of origin mode. This mode gets special handling in Screen
+/// because it's state is saved/restored with the cursor and must have a state
+/// independent to each screen (primary and alternate)
+saved_origin_mode: bool = false,
 
 /// Initialize a new screen.
 pub fn init(

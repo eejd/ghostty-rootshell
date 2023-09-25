@@ -74,13 +74,6 @@ scrolling_region: ScrollingRegion,
 /// The last reported pwd, if any.
 pwd: std.ArrayList(u8),
 
-/// The charset state
-charset: CharsetState = .{},
-
-/// The saved charset state. This state is saved / restored along with the
-/// cursor state
-saved_charset: CharsetState = .{},
-
 /// The color palette to use
 color_palette: color.Palette = color.default,
 
@@ -110,23 +103,6 @@ flags: packed struct {
     mouse_event: MouseEvents = .none,
     mouse_format: MouseFormat = .x10,
 } = .{},
-
-/// State required for all charset operations.
-const CharsetState = struct {
-    /// The list of graphical charsets by slot
-    charsets: CharsetArray = CharsetArray.initFill(charsets.Charset.utf8),
-
-    /// GL is the slot to use when using a 7-bit printable char (up to 127)
-    /// GR used for 8-bit printable chars.
-    gl: charsets.Slots = .G0,
-    gr: charsets.Slots = .G2,
-
-    /// Single shift where a slot is used for exactly one char.
-    single_shift: ?charsets.Slots = null,
-
-    /// An array to map a charset slot to a lookup table.
-    const CharsetArray = std.EnumArray(charsets.Slots, charsets.Charset);
-};
 
 /// The event types that can be reported for mouse-related activities.
 /// These are all mutually exclusive (hence in a single enum).
@@ -423,8 +399,8 @@ fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
 /// was already saved it is overwritten.
 pub fn saveCursor(self: *Terminal) void {
     self.screen.saved_cursor = self.screen.cursor;
-    self.saved_charset = self.charset;
-    self.modes.save(.origin);
+    self.screen.saved_charset = self.screen.charset;
+    self.screen.saved_origin_mode = self.modes.get(.origin);
 }
 
 /// Restore cursor position and other state.
@@ -433,8 +409,8 @@ pub fn saveCursor(self: *Terminal) void {
 /// If no save was done before values are reset to their initial values.
 pub fn restoreCursor(self: *Terminal) void {
     self.screen.cursor = self.screen.saved_cursor;
-    self.charset = self.saved_charset;
-    _ = self.modes.restore(.origin);
+    self.screen.charset = self.screen.saved_charset;
+    self.modes.set(.origin, self.screen.saved_origin_mode);
 }
 
 /// TODO: test
@@ -583,7 +559,7 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
 /// Set the charset into the given slot.
 pub fn configureCharset(self: *Terminal, slot: charsets.Slots, set: charsets.Charset) void {
-    self.charset.charsets.set(slot, set);
+    self.screen.charset.charsets.set(slot, set);
 }
 
 /// Invoke the charset in slot into the active slot. If single is true,
@@ -596,13 +572,13 @@ pub fn invokeCharset(
 ) void {
     if (single) {
         assert(active == .GL);
-        self.charset.single_shift = slot;
+        self.screen.charset.single_shift = slot;
         return;
     }
 
     switch (active) {
-        .GL => self.charset.gl = slot,
-        .GR => self.charset.gr = slot,
+        .GL => self.screen.charset.gl = slot,
+        .GR => self.screen.charset.gr = slot,
     }
 }
 
@@ -769,11 +745,11 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         // TODO: non-utf8 handling, gr
 
         // If we're single shifting, then we use the key exactly once.
-        const key = if (self.charset.single_shift) |key_once| blk: {
-            self.charset.single_shift = null;
+        const key = if (self.screen.charset.single_shift) |key_once| blk: {
+            self.screen.charset.single_shift = null;
             break :blk key_once;
-        } else self.charset.gl;
-        const set = self.charset.charsets.get(key);
+        } else self.screen.charset.gl;
+        const set = self.screen.charset.charsets.get(key);
 
         // UTF-8 or ASCII is used as-is
         if (set == .utf8 or set == .ascii) break :c unmapped_c;
@@ -1749,7 +1725,7 @@ pub fn kittyGraphics(
 /// Full reset
 pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.primaryScreen(alloc, .{ .clear_on_exit = true, .cursor_save = true });
-    self.charset = .{};
+    self.screen.charset = .{};
     self.modes = .{};
     self.flags = .{};
     self.tabstops.reset(0);
@@ -2930,14 +2906,38 @@ test "Terminal: saveCursor" {
     defer t.deinit(alloc);
 
     t.screen.cursor.pen.attrs.bold = true;
-    t.charset.gr = .G3;
+    t.screen.charset.gr = .G3;
     t.modes.set(.origin, true);
     t.saveCursor();
-    t.charset.gr = .G0;
+    t.screen.charset.gr = .G0;
     t.screen.cursor.pen.attrs.bold = false;
     t.modes.set(.origin, false);
     t.restoreCursor();
     try testing.expect(t.screen.cursor.pen.attrs.bold);
-    try testing.expect(t.charset.gr == .G3);
+    try testing.expect(t.screen.charset.gr == .G3);
+    try testing.expect(t.modes.get(.origin));
+}
+
+test "Terminal: saveCursor with screen change" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    t.screen.cursor.pen.attrs.bold = true;
+    t.screen.charset.gr = .G3;
+    t.modes.set(.origin, true);
+    t.alternateScreen(alloc, .{
+        .cursor_save = true,
+        .clear_on_enter = true,
+    });
+    t.screen.charset.gr = .G0;
+    t.screen.cursor.pen.attrs.bold = false;
+    t.modes.set(.origin, false);
+    t.primaryScreen(alloc, .{
+        .cursor_save = true,
+        .clear_on_enter = true,
+    });
+    try testing.expect(t.screen.cursor.pen.attrs.bold);
+    try testing.expect(t.screen.charset.gr == .G3);
     try testing.expect(t.modes.get(.origin));
 }
