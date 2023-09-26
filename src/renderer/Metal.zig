@@ -102,6 +102,7 @@ texture_color: objc.Object, // MTLTexture
 pub const DerivedConfig = struct {
     font_thicken: bool,
     font_features: std.ArrayList([]const u8),
+    font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_text: ?terminal.color.RGB,
     background: terminal.color.RGB,
@@ -121,10 +122,17 @@ pub const DerivedConfig = struct {
         };
         errdefer font_features.deinit();
 
+        // Get our font styles
+        var font_styles = font.Group.StyleStatus.initFill(true);
+        font_styles.set(.bold, config.@"font-style-bold" != .false);
+        font_styles.set(.italic, config.@"font-style-italic" != .false);
+        font_styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
+
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
             .font_features = font_features,
+            .font_styles = font_styles,
 
             .cursor_color = if (config.@"cursor-color") |col|
                 col.toTerminalRGB()
@@ -975,13 +983,15 @@ fn prepKittyGraphics(
 
 /// Update the configuration.
 pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
-    // If font thickening settings change, we need to reset our
-    // font texture completely because we need to re-render the glyphs.
-    if (self.config.font_thicken != config.font_thicken) {
-        self.font_group.reset();
-        self.font_group.atlas_greyscale.clear();
-        self.font_group.atlas_color.clear();
-    }
+    // On configuration change we always reset our font group. There
+    // are a variety of configurations that can change font settings
+    // so to be safe we just always reset it. This has a performance hit
+    // when its not necessary but config reloading shouldn't be so
+    // common to cause a problem.
+    self.font_group.reset();
+    self.font_group.group.styles = config.font_styles;
+    self.font_group.atlas_greyscale.clear();
+    self.font_group.atlas_color.clear();
 
     // We always redo the font shaper in case font features changed. We
     // could check to see if there was an actual config change but this is
