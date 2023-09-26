@@ -612,7 +612,11 @@ fn gtkMouseDown(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud.?);
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(gesture));
+    const gtk_mods = c.gdk_event_get_modifier_state(event);
+
     const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
+    const mods = translateMods(gtk_mods);
 
     // If we don't have focus, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
@@ -620,7 +624,7 @@ fn gtkMouseDown(
         _ = c.gtk_widget_grab_focus(gl_widget);
     }
 
-    self.core_surface.mouseButtonCallback(.press, button, .{}) catch |err| {
+    self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
@@ -633,9 +637,14 @@ fn gtkMouseUp(
     _: c.gdouble,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(gesture));
+    const gtk_mods = c.gdk_event_get_modifier_state(event);
+
     const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
+    const mods = translateMods(gtk_mods);
+
     const self = userdataSelf(ud.?);
-    self.core_surface.mouseButtonCallback(.release, button, .{}) catch |err| {
+    self.core_surface.mouseButtonCallback(.release, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
