@@ -411,6 +411,9 @@ keybind: Keybinds = .{},
 /// Debug builds of Ghostty have a separate single-instance ID.
 @"gtk-single-instance": bool = true,
 
+/// This will be used to set the TERM environment variable
+term: []const u8 = "ghostty",
+
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
 
@@ -897,6 +900,11 @@ pub fn finalize(self: *Config) !void {
                 @field(self, field) = family;
             }
         }
+    }
+
+    // Prevent setting TERM to an empty string
+    if (self.term.len == 0) {
+        self.term = "ghostty";
     }
 
     // The default for the working directory depends on the system.
