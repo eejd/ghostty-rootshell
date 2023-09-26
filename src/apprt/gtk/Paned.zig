@@ -19,7 +19,7 @@ const Child = union(enum) {
 const Parent = union(enum) {
     tab: *Tab,
     paned: *Paned,
-}
+};
 
 // We'll need to keep a reference to the Window this belongs to for various reasons
 window: *c.GtkWindow,
@@ -91,7 +91,7 @@ pub fn newSurface(self: *Paned, parent_: ?*CoreSurface) !*Surface {
     try surface.init(self.window.app, .{
         .window = self,
         .gl_area = @ptrCast(gl_area),
-        .title_label = @ptrCast(label_text),
+        .title_label = @ptrCast(self.label_text),
         .font_size = font_size,
     });
     return surface;
