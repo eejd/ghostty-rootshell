@@ -33,6 +33,9 @@ const log = std.log.scoped(.font_group);
 // to the user so we can change this later.
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 
+/// Packed array of booleans to indicate if a style is enabled or not.
+const StyleStatus = std.EnumArray(Style, bool);
+
 /// Map of descriptors to faces. This is used with manual codepoint maps
 /// to ensure that we don't load the same font multiple times.
 ///
@@ -71,6 +74,12 @@ size: font.face.DesiredSize,
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
 faces: StyleArray,
+
+/// The set of statuses and whether they're enabled or not. This defaults
+/// to true. This can be changed at runtime with no ill effect. If you
+/// change this at runtime and are using a GroupCache, the GroupCache
+/// must be reset.
+styles: StyleStatus = StyleStatus.initFill(true),
 
 /// If discovery is available, we'll look up fonts where we can't find
 /// the codepoint. This can be set after initialization.
@@ -148,13 +157,6 @@ pub fn addFace(self: *Group, style: Style, face: GroupFace) !FontIndex {
     const idx = list.items.len;
     try list.append(self.alloc, face);
     return .{ .style = style, .idx = @intCast(idx) };
-}
-
-/// Returns true if we have a face for the given style, though the face may
-/// not be loaded yet.
-pub fn hasFaceForStyle(self: Group, style: Style) bool {
-    const list = self.faces.get(style);
-    return list.items.len > 0;
 }
 
 /// This will automatically create an italicized font from the regular
@@ -278,6 +280,11 @@ pub fn indexForCodepoint(
     style: Style,
     p: ?Presentation,
 ) ?FontIndex {
+    // If we've disabled a font style, then fall back to regular.
+    if (style != .regular and !self.styles.get(style)) {
+        return self.indexForCodepoint(cp, .regular, p);
+    }
+
     // Codepoint overrides.
     if (self.indexForCodepointOverride(cp)) |idx_| {
         if (idx_) |idx| return idx;
@@ -666,6 +673,50 @@ test {
     // Box glyph should be null since we didn't set a box font
     {
         try testing.expect(group.indexForCodepoint(0x1FB00, .regular, null) == null);
+    }
+}
+
+test "disabled font style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var group = try init(alloc, lib, .{ .points = 12 });
+    defer group.deinit();
+
+    // Disable bold
+    group.styles.set(.bold, false);
+
+    // Same font but we can test the style in the index
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    _ = try group.addFace(.bold, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    _ = try group.addFace(.italic, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+
+    // Regular should work fine
+    {
+        const idx = group.indexForCodepoint('A', .regular, null).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
+    }
+
+    // Bold should go to regular
+    {
+        const idx = group.indexForCodepoint('A', .bold, null).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
+    }
+
+    // Italic should still work
+    {
+        const idx = group.indexForCodepoint('A', .italic, null).?;
+        try testing.expectEqual(Style.italic, idx.style);
+        try testing.expectEqual(@as(FontIndex.IndexInt, 0), idx.idx);
     }
 }
 
