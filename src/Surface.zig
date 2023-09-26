@@ -1447,6 +1447,8 @@ pub fn mouseButtonCallback(
     button: input.MouseButton,
     mods: input.Mods,
 ) !void {
+    // log.debug("mouse action={} button={} mods={}", .{ action, button, mods });
+
     const tracy = trace(@src());
     defer tracy.end();
 
