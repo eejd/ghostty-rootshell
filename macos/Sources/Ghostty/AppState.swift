@@ -334,7 +334,9 @@ extension Ghostty {
         }
         
         static private func completeClipboardRequest(_ surface: ghostty_surface_t, data: String, state: UnsafeMutableRawPointer?) {
-            ghostty_surface_complete_clipboard_request(surface, data, UInt(data.count), state)
+            data.withCString { ptr in
+                ghostty_surface_complete_clipboard_request(surface, ptr, UInt(data.utf8.count), state)
+            }
         }
 
         static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e) {
