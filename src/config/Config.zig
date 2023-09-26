@@ -33,8 +33,15 @@ const c = @cImport({
 /// styles. This looks up the style based on the font style string advertised
 /// by the font itself. For example, "Iosevka Heavy" has a style of "Heavy".
 ///
+/// You can also use these fields to completely disable a font style. If
+/// you set the value of the configuration below to literal "false" then
+/// that font style will be disabled. If the running program in the terminal
+/// requests a disabled font style, the regular font style will be used
+/// instead.
+///
 /// These are only valid if there is an exact font-family also specified.
-/// If no font-family is specified, then the font-style is ignored.
+/// If no font-family is specified, then the font-style is ignored unless
+/// you're disabling the font style.
 @"font-style": FontStyle = .{ .default = {} },
 @"font-style-bold": FontStyle = .{ .default = {} },
 @"font-style-italic": FontStyle = .{ .default = {} },
