@@ -24,42 +24,31 @@ pub fn ensureLocale() void {
         }
     }
 
-    // If we have a locale set in the env, we verify it is valid. If it isn't
-    // valid, then we set it to a default value of en_US.UTF-8. We don't touch
-    // the existing LANG value in the env so that child processes can use it,
-    // though.
-    const locale: []const u8 = locale: {
-        // If we don't have lang set, we use "" and let the default happen.
-        const new_lang = std.os.getenv("LANG") orelse break :locale "";
-
-        // If the locale is valid, we also use "" because LANG is already set.
-        if (localeIsValid(new_lang)) break :locale "";
-
-        // If the locale is not valid we fall back to en_US.UTF-8 and need to
-        // set LANG to this value too.
-        const default_locale = "en_US.UTF-8";
-        log.info("LANG is not valid according to libc, will use en_US.UTF-8", .{});
-
-        if (setenv("LANG", default_locale.ptr, 1) < 0) {
-            log.err("error setting LANG env var to {s}", .{default_locale});
-        }
-
-        // Use it as locale
-        break :locale default_locale;
-    };
-
-    // Set the locale
-    if (setlocale(LC_ALL, locale.ptr)) |v| {
+    // Set the locale to whatever is set in env vars.
+    if (setlocale(LC_ALL, "")) |v| {
         log.debug("setlocale result={s}", .{v});
-    } else log.warn("setlocale failed, locale may be incorrect", .{});
-}
+        return;
+    }
 
-/// Returns true if the given locale is valid according to libc. This value
-/// can be `en_US` or `en_US.utf-8` style of formatting.
-fn localeIsValid(locale: []const u8) bool {
-    const v = newlocale(LC_ALL_MASK, locale.ptr, null) orelse return false;
-    defer freelocale(v);
-    return true;
+    // setlocale failed. This is probably because the LANG env var is
+    // invalid. Try to set it without the LANG var set to use the system
+    // default.
+    if (std.os.getenv("LANG")) |old_lang| {
+        _ = unsetenv("LANG");
+        defer _ = setenv("LANG", old_lang.ptr, 1);
+
+        if (setlocale(LC_ALL, "")) |v| {
+            log.debug("setlocale result={s}", .{v});
+            return;
+        }
+    }
+
+    // Failure again... fallback to en_US.UTF-8
+    log.warn("setlocale failed with LANG and system default. Falling back to en_US.UTF-8", .{});
+    if (setlocale(LC_ALL, "en_US.UTF-8")) |v| {
+        log.debug("setlocale result={s}", .{v});
+        return;
+    } else log.err("setlocale failed even with the fallback, uncertain results", .{});
 }
 
 /// This sets the LANG environment variable based on the macOS system
@@ -107,6 +96,7 @@ const LC_ALL: c_int = 6; // from locale.h
 const LC_ALL_MASK: c_int = 0x7fffffff; // from locale.h
 const locale_t = ?*anyopaque;
 extern "c" fn setenv(name: ?[*]const u8, value: ?[*]const u8, overwrite: c_int) c_int;
+extern "c" fn unsetenv(name: ?[*]const u8) c_int;
 extern "c" fn setlocale(category: c_int, locale: ?[*]const u8) ?[*:0]u8;
 extern "c" fn newlocale(category: c_int, locale: ?[*]const u8, base: locale_t) locale_t;
 extern "c" fn freelocale(v: locale_t) void;
