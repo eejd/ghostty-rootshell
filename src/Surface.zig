@@ -229,6 +229,11 @@ pub fn init(
             group.codepoint_map = config.@"font-codepoint-map".map;
         }
 
+        // Set our styles
+        group.styles.set(.bold, config.@"font-style-bold" != .false);
+        group.styles.set(.italic, config.@"font-style-italic" != .false);
+        group.styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
+
         // Search for fonts
         if (font.Discover != void) discover: {
             const disco = try app.fontDiscover() orelse {
