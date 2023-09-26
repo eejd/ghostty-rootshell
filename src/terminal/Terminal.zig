@@ -1250,20 +1250,20 @@ pub fn eraseLine(
     // a contiguous block of memory.
     if (!protected) {
         switch (mode) {
-            .right => row.fillSlice(
-                self.screen.cursor.pen,
-                self.screen.cursor.x,
-                self.cols,
-            ),
-
-            .left => {
-                row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
-
-                // Unsets pending wrap state
+            .right => {
+                row.fillSlice(self.screen.cursor.pen, self.screen.cursor.x, self.cols);
                 self.screen.cursor.pending_wrap = false;
             },
 
-            .complete => row.fill(self.screen.cursor.pen),
+            .left => {
+                row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
+                self.screen.cursor.pending_wrap = false;
+            },
+
+            .complete => {
+                row.fill(self.screen.cursor.pen);
+                self.screen.cursor.pending_wrap = false;
+            },
 
             else => log.err("unimplemented erase line mode: {}", .{mode}),
         }
@@ -1282,6 +1282,9 @@ pub fn eraseLine(
             return;
         },
     };
+
+    // All modes will clear the pending wrap state
+    self.screen.cursor.pending_wrap = false;
 
     const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
         .bg = self.screen.cursor.pen.bg,
@@ -1309,6 +1312,9 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 
     if (count == 0) return;
 
+    // This resets the pending wrap state
+    self.screen.cursor.pending_wrap = false;
+
     // We go from our cursor right to the end and either copy the cell
     // "count" away or clear it.
     const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
@@ -1330,6 +1336,9 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // This resets the pending wrap state
+    self.screen.cursor.pending_wrap = false;
+
     // Our last index is at most the end of the number of chars we have
     // in the current line.
     const end = @min(self.cols, self.screen.cursor.x + count);
@@ -1347,9 +1356,9 @@ pub fn cursorLeft(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: scroll region, wrap
-
+    // TODO: scroll region
     self.screen.cursor.x -|= if (count == 0) 1 else count;
+    self.screen.cursor.pending_wrap = false;
 }
 
 /// Move the cursor right amount columns. If amount is greater than the
@@ -1376,6 +1385,7 @@ pub fn cursorDown(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    self.screen.cursor.pending_wrap = false;
     self.screen.cursor.y += if (count == 0) 1 else count;
     if (self.screen.cursor.y >= self.rows) {
         self.screen.cursor.y = self.rows - 1;
@@ -1546,6 +1556,7 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
 
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
+    self.screen.cursor.pending_wrap = false;
 
     // Remaining rows from our cursor
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
@@ -1601,6 +1612,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
 
     // Move the cursor to the left margin
     self.screen.cursor.x = 0;
+    self.screen.cursor.pending_wrap = false;
 
     // Perform the scroll
     self.screen.scrollRegionUp(
@@ -2367,6 +2379,24 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
     }
 }
 
+test "Terminal: deleteLines resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.deleteLines(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B", str);
+    }
+}
+
 test "Terminal: insertLines" {
     const alloc = testing.allocator;
     var t = try init(alloc, 2, 5);
@@ -2473,6 +2503,24 @@ test "Terminal: insertLines more than remaining" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A", str);
+    }
+}
+
+test "Terminal: insertLines resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.insertLines(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B\nABCDE", str);
     }
 }
 
@@ -2940,6 +2988,42 @@ test "Terminal: deleteChars should shift left" {
     }
 }
 
+test "Terminal: deleteChars resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.deleteChars(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: eraseChars resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.eraseChars(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
 test "Terminal: setCursorColAbsolute resets pending wrap" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
@@ -3029,6 +3113,24 @@ test "Terminal: setProtectedMode" {
     try testing.expect(t.screen.cursor.pen.attrs.protected);
     t.setProtectedMode(.off);
     try testing.expect(!t.screen.cursor.pen.attrs.protected);
+}
+
+test "Terminal: eraseLine resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.eraseLine(.right, false);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDB", str);
+    }
 }
 
 test "Terminal: eraseLine protected right" {
