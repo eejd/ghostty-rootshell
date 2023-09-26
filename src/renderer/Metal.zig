@@ -975,13 +975,14 @@ fn prepKittyGraphics(
 
 /// Update the configuration.
 pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
-    // If font thickening settings change, we need to reset our
-    // font texture completely because we need to re-render the glyphs.
-    if (self.config.font_thicken != config.font_thicken) {
-        self.font_group.reset();
-        self.font_group.atlas_greyscale.clear();
-        self.font_group.atlas_color.clear();
-    }
+    // On configuration change we always reset our font group. There
+    // are a variety of configurations that can change font settings
+    // so to be safe we just always reset it. This has a performance hit
+    // when its not necessary but config reloading shouldn't be so
+    // common to cause a problem.
+    self.font_group.reset();
+    self.font_group.atlas_greyscale.clear();
+    self.font_group.atlas_color.clear();
 
     // We always redo the font shaper in case font features changed. We
     // could check to see if there was an actual config change but this is
