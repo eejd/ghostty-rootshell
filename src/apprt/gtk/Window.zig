@@ -11,6 +11,7 @@ const font = @import("../../font/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
+const Paned = @import("Paned.zig");
 const Surface = @import("Surface.zig");
 const icon = @import("icon.zig");
 const c = @import("c.zig");
