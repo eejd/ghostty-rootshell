@@ -1478,7 +1478,10 @@ pub fn mouseButtonCallback(
     {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        if (self.io.terminal.flags.mouse_event != .none) {
+        if (self.io.terminal.flags.mouse_event != .none) report: {
+            // Shift overrides mouse "grabbing" in the window, taken from Kitty.
+            if (mods.shift) break :report;
+
             // In any other mouse button scenario without shift pressed we
             // clear the selection since the underlying application can handle
             // that in any way (i.e. "scrolling").
