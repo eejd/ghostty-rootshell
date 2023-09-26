@@ -34,7 +34,7 @@ const log = std.log.scoped(.font_group);
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 
 /// Packed array of booleans to indicate if a style is enabled or not.
-const StyleStatus = std.EnumArray(Style, bool);
+pub const StyleStatus = std.EnumArray(Style, bool);
 
 /// Map of descriptors to faces. This is used with manual codepoint maps
 /// to ensure that we don't load the same font multiple times.
