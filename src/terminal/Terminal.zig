@@ -1250,20 +1250,20 @@ pub fn eraseLine(
     // a contiguous block of memory.
     if (!protected) {
         switch (mode) {
-            .right => row.fillSlice(
-                self.screen.cursor.pen,
-                self.screen.cursor.x,
-                self.cols,
-            ),
-
-            .left => {
-                row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
-
-                // Unsets pending wrap state
+            .right => {
+                row.fillSlice(self.screen.cursor.pen, self.screen.cursor.x, self.cols);
                 self.screen.cursor.pending_wrap = false;
             },
 
-            .complete => row.fill(self.screen.cursor.pen),
+            .left => {
+                row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
+                self.screen.cursor.pending_wrap = false;
+            },
+
+            .complete => {
+                row.fill(self.screen.cursor.pen);
+                self.screen.cursor.pending_wrap = false;
+            },
 
             else => log.err("unimplemented erase line mode: {}", .{mode}),
         }
@@ -1282,6 +1282,9 @@ pub fn eraseLine(
             return;
         },
     };
+
+    // All modes will clear the pending wrap state
+    self.screen.cursor.pending_wrap = false;
 
     const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
         .bg = self.screen.cursor.pen.bg,
@@ -3109,6 +3112,24 @@ test "Terminal: setProtectedMode" {
     try testing.expect(t.screen.cursor.pen.attrs.protected);
     t.setProtectedMode(.off);
     try testing.expect(!t.screen.cursor.pen.attrs.protected);
+}
+
+test "Terminal: eraseLine resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.eraseLine(.right, false);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDB", str);
+    }
 }
 
 test "Terminal: eraseLine protected right" {
