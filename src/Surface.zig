@@ -2202,20 +2202,48 @@ fn completeClipboardPaste(self: *Surface, data: []const u8) !void {
     };
 
     if (bracketed) {
+        // If we're bracketd we write the data as-is to the terminal with
+        // the bracketed paste escape codes around it.
         _ = self.io_thread.mailbox.push(.{
             .write_stable = "\x1B[200~",
         }, .{ .forever = {} });
-    }
-
-    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
-        self.alloc,
-        data,
-    ), .{ .forever = {} });
-
-    if (bracketed) {
+        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+            self.alloc,
+            data,
+        ), .{ .forever = {} });
         _ = self.io_thread.mailbox.push(.{
             .write_stable = "\x1B[201~",
         }, .{ .forever = {} });
+    } else {
+        // If its not bracketed the input bytes are indistinguishable from
+        // keystrokes, so we must be careful. For example, we must replace
+        // any newlines with '\r'.
+
+        // We just do a heap allocation here because its easy and I don't think
+        // worth the optimization of using small messages.
+        var buf = try self.alloc.alloc(u8, data.len);
+        defer self.alloc.free(buf);
+
+        // This is super, super suboptimal. We can easily make use of SIMD
+        // here, but maybe LLVM in release mode is smart enough to figure
+        // out something clever. Either way, large non-bracketed pastes are
+        // increasingly rare for modern applications.
+        var len: usize = 0;
+        for (data, 0..) |ch, i| {
+            const dch = switch (ch) {
+                '\n' => '\r',
+                '\r' => if (i + 1 < data.len and data[i + 1] == '\n') continue else ch,
+                else => ch,
+            };
+
+            buf[len] = dch;
+            len += 1;
+        }
+
+        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+            self.alloc,
+            buf[0..len],
+        ), .{ .forever = {} });
     }
 
     try self.io_thread.wakeup.notify();
