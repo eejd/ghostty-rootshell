@@ -98,6 +98,12 @@ pub const ghostty: Source = .{
         // Colored underlines
         .{ .name = "Setulc", .value = .{ .string = "\\E[58:2::%p1%{65536}%/%d:%p1%{256}%/%{255}%&%d:%p1%{255}%&%d%;m" } },
 
+        // Cursor styles
+        .{ .name = "Ss", .value = .{ .string = "\\E[%p1%d q" } },
+
+        // Cursor style reset
+        .{ .name = "Se", .value = .{ .string = "\\E[2 q" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },

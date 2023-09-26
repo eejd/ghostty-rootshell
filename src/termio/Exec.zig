@@ -91,6 +91,7 @@ pub const DerivedConfig = struct {
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
+    term: []const u8,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -106,6 +107,7 @@ pub const DerivedConfig = struct {
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
+            .term = config.term,
         };
     }
 
@@ -663,7 +665,7 @@ const Subprocess = struct {
         if (opts.resources_dir) |base| {
             var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
             const dir = try std.fmt.bufPrint(&buf, "{s}/terminfo", .{base});
-            try env.put("TERM", "xterm-ghostty");
+            try env.put("TERM", opts.config.term);
             try env.put("COLORTERM", "truecolor");
             try env.put("TERMINFO", dir);
         } else {
