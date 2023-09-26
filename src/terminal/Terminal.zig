@@ -1356,9 +1356,9 @@ pub fn cursorLeft(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: scroll region, wrap
-
+    // TODO: scroll region
     self.screen.cursor.x -|= if (count == 0) 1 else count;
+    self.screen.cursor.pending_wrap = false;
 }
 
 /// Move the cursor right amount columns. If amount is greater than the
@@ -1385,6 +1385,7 @@ pub fn cursorDown(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    self.screen.cursor.pending_wrap = false;
     self.screen.cursor.y += if (count == 0) 1 else count;
     if (self.screen.cursor.y >= self.rows) {
         self.screen.cursor.y = self.rows - 1;
