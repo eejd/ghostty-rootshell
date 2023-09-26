@@ -154,10 +154,11 @@ fn parseIntoField(
                 else => field.type,
             };
 
-            // If we are a struct and have parseCLI, we call that and use
-            // that to set the value.
-            switch (@typeInfo(Field)) {
-                .Struct => if (@hasDecl(Field, "parseCLI")) {
+            // If we are a type that can have decls and have a parseCLI decl,
+            // we call that and use that to set the value.
+            const fieldInfo = @typeInfo(Field);
+            if (fieldInfo == .Struct or fieldInfo == .Union or fieldInfo == .Enum) {
+                if (@hasDecl(Field, "parseCLI")) {
                     const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
                     switch (fnInfo.params.len) {
                         // 1 arg = (input) => output
@@ -182,8 +183,10 @@ fn parseIntoField(
                     }
 
                     return;
-                },
+                }
+            }
 
+            switch (fieldInfo) {
                 .Enum => {
                     @field(dst, field.name) = std.meta.stringToEnum(
                         Field,
