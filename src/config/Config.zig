@@ -35,10 +35,10 @@ const c = @cImport({
 ///
 /// These are only valid if there is an exact font-family also specified.
 /// If no font-family is specified, then the font-style is ignored.
-@"font-style": ?[:0]const u8 = null,
-@"font-style-bold": ?[:0]const u8 = null,
-@"font-style-italic": ?[:0]const u8 = null,
-@"font-style-bold-italic": ?[:0]const u8 = null,
+@"font-style": FontStyle = .{ .default = {} },
+@"font-style-bold": FontStyle = .{ .default = {} },
+@"font-style-italic": FontStyle = .{ .default = {} },
+@"font-style-bold-italic": FontStyle = .{ .default = {} },
 
 /// Apply a font feature. This can be repeated multiple times to enable
 /// multiple font features. You can NOT set multiple font features with
@@ -1006,12 +1006,20 @@ fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
         else => {},
     }
 
+    // If we're a type that can have decls and we have clone, then
+    // call clone and be done.
+    const t = @typeInfo(T);
+    if (t == .Struct or t == .Enum or t == .Union) {
+        if (@hasDecl(T, "clone")) return try src.clone(alloc);
+    }
+
     // Back into types of types
-    switch (@typeInfo(T)) {
+    switch (t) {
         inline .Bool,
         .Int,
         .Float,
         .Enum,
+        .Union,
         => return src,
 
         .Optional => |info| return try cloneValue(
@@ -1702,6 +1710,63 @@ pub const RepeatableCodepointMap = struct {
             try testing.expectEqual([2]u21{ 0xABCD, 0xABCD }, entry.range);
             try testing.expectEqualStrings("Courier", entry.descriptor.family.?);
         }
+    }
+};
+
+pub const FontStyle = union(enum) {
+    const Self = @This();
+
+    /// Use the default font style that font discovery finds.
+    default: void,
+
+    /// Disable this font style completely. This will fall back to using
+    /// the regular font when this style is encountered.
+    false: void,
+
+    /// A specific named font style to use for this style.
+    name: [:0]const u8,
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
+        const value = input orelse return error.ValueRequired;
+
+        if (std.mem.eql(u8, value, "default")) {
+            self.* = .{ .default = {} };
+            return;
+        }
+
+        if (std.mem.eql(u8, value, "false")) {
+            self.* = .{ .false = {} };
+            return;
+        }
+
+        const nameZ = try alloc.dupeZ(u8, value);
+        self.* = .{ .name = nameZ };
+    }
+
+    /// Returns the string name value that can be used with a font
+    /// descriptor.
+    pub fn nameValue(self: Self) ?[:0]const u8 {
+        return switch (self) {
+            .default, .false => null,
+            .name => self.name,
+        };
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var p: Self = .{ .default = {} };
+        try p.parseCLI(alloc, "default");
+        try testing.expectEqual(Self{ .default = {} }, p);
+
+        try p.parseCLI(alloc, "false");
+        try testing.expectEqual(Self{ .false = {} }, p);
+
+        try p.parseCLI(alloc, "bold");
+        try testing.expectEqualStrings("bold", p.name);
     }
 };
 

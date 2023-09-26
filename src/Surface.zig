@@ -243,7 +243,7 @@ pub fn init(
             if (config.@"font-family") |family| {
                 var disco_it = try disco.discover(.{
                     .family = family,
-                    .style = config.@"font-style",
+                    .style = config.@"font-style".nameValue(),
                     .size = font_size.points,
                     .variations = config.@"font-variation".list.items,
                 });
@@ -256,7 +256,7 @@ pub fn init(
             if (config.@"font-family-bold") |family| {
                 var disco_it = try disco.discover(.{
                     .family = family,
-                    .style = config.@"font-style-bold",
+                    .style = config.@"font-style-bold".nameValue(),
                     .size = font_size.points,
                     .bold = true,
                     .variations = config.@"font-variation-bold".list.items,
@@ -270,7 +270,7 @@ pub fn init(
             if (config.@"font-family-italic") |family| {
                 var disco_it = try disco.discover(.{
                     .family = family,
-                    .style = config.@"font-style-italic",
+                    .style = config.@"font-style-italic".nameValue(),
                     .size = font_size.points,
                     .italic = true,
                     .variations = config.@"font-variation-italic".list.items,
@@ -284,7 +284,7 @@ pub fn init(
             if (config.@"font-family-bold-italic") |family| {
                 var disco_it = try disco.discover(.{
                     .family = family,
-                    .style = config.@"font-style-bold-italic",
+                    .style = config.@"font-style-bold-italic".nameValue(),
                     .size = font_size.points,
                     .bold = true,
                     .italic = true,
