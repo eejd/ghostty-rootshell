@@ -17,17 +17,21 @@ const log = std.log.scoped(.font_shaper);
 
 /// Shaper that uses Harfbuzz.
 pub const Shaper = struct {
+    /// The allocated used for the feature list and cell buf.
+    alloc: Allocator,
+
     /// The buffer used for text shaping. We reuse it across multiple shaping
     /// calls to prevent allocations.
     hb_buf: harfbuzz.Buffer,
 
     /// The shared memory used for shaping results.
-    cell_buf: []font.shape.Cell,
+    cell_buf: CellBuf,
 
     /// The features to use for shaping.
     hb_feats: FeatureList,
 
-    const FeatureList = std.ArrayList(harfbuzz.Feature);
+    const CellBuf = std.ArrayListUnmanaged(font.shape.Cell);
+    const FeatureList = std.ArrayListUnmanaged(harfbuzz.Feature);
 
     // These features are hardcoded to always be on by default. Users
     // can turn them off by setting the features to "-liga" for example.
@@ -39,34 +43,36 @@ pub const Shaper = struct {
         // Parse all the features we want to use. We use
         var hb_feats = hb_feats: {
             var list = try FeatureList.initCapacity(alloc, opts.features.len + hardcoded_features.len);
-            errdefer list.deinit();
+            errdefer list.deinit(alloc);
 
             for (hardcoded_features) |name| {
                 if (harfbuzz.Feature.fromString(name)) |feat| {
-                    try list.append(feat);
+                    try list.append(alloc, feat);
                 } else log.warn("failed to parse font feature: {s}", .{name});
             }
 
             for (opts.features) |name| {
                 if (harfbuzz.Feature.fromString(name)) |feat| {
-                    try list.append(feat);
+                    try list.append(alloc, feat);
                 } else log.warn("failed to parse font feature: {s}", .{name});
             }
 
             break :hb_feats list;
         };
-        errdefer hb_feats.deinit();
+        errdefer hb_feats.deinit(alloc);
 
         return Shaper{
+            .alloc = alloc,
             .hb_buf = try harfbuzz.Buffer.create(),
-            .cell_buf = opts.cell_buf,
+            .cell_buf = .{},
             .hb_feats = hb_feats,
         };
     }
 
     pub fn deinit(self: *Shaper) void {
         self.hb_buf.destroy();
-        self.hb_feats.deinit();
+        self.cell_buf.deinit(self.alloc);
+        self.hb_feats.deinit(self.alloc);
     }
 
     /// Returns an iterator that returns one text run at a time for the
@@ -99,7 +105,7 @@ pub const Shaper = struct {
     /// The return value is only valid until the next shape call is called.
     ///
     /// If there is not enough space in the cell buffer, an error is returned.
-    pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]font.shape.Cell {
+    pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
         const tracy = trace(@src());
         defer tracy.end();
 
@@ -119,7 +125,7 @@ pub const Shaper = struct {
 
         // If our buffer is empty, we short-circuit the rest of the work
         // return nothing.
-        if (self.hb_buf.getLength() == 0) return self.cell_buf[0..0];
+        if (self.hb_buf.getLength() == 0) return self.cell_buf.items[0..0];
         const info = self.hb_buf.getGlyphInfos();
         const pos = self.hb_buf.getGlyphPositions() orelse return error.HarfbuzzFailed;
 
@@ -128,19 +134,18 @@ pub const Shaper = struct {
         assert(info.len == pos.len);
 
         // Convert all our info/pos to cells and set it.
-        if (info.len > self.cell_buf.len) return error.OutOfMemory;
-        //log.warn("info={} pos={} run={}", .{ info.len, pos.len, run });
-
-        for (info, 0..) |v, i| {
-            self.cell_buf[i] = .{
+        self.cell_buf.clearRetainingCapacity();
+        try self.cell_buf.ensureTotalCapacity(self.alloc, info.len);
+        for (info) |v| {
+            self.cell_buf.appendAssumeCapacity(.{
                 .x = @intCast(v.cluster),
                 .glyph_index = v.codepoint,
-            };
+            });
 
             // log.warn("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
         }
 
-        return self.cell_buf[0..info.len];
+        return self.cell_buf.items;
     }
 
     /// The hooks for RunIterator.
@@ -178,7 +183,7 @@ test "run iterator" {
         try screen.testWriteString("ABCD");
 
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |_| count += 1;
@@ -191,7 +196,7 @@ test "run iterator" {
         defer screen.deinit();
         try screen.testWriteString("ABCD   EFG");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |_| count += 1;
@@ -205,7 +210,7 @@ test "run iterator" {
         try screen.testWriteString("A😃D");
 
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |_| {
@@ -239,7 +244,7 @@ test "run iterator: empty cells with background set" {
         row.getCellPtr(2).* = screen.cursor.pen;
 
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -274,7 +279,7 @@ test "shape" {
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -297,7 +302,7 @@ test "shape inconsolata ligs" {
         defer screen.deinit();
         try screen.testWriteString(">=");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -314,7 +319,7 @@ test "shape inconsolata ligs" {
         defer screen.deinit();
         try screen.testWriteString("===");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -339,7 +344,7 @@ test "shape emoji width" {
         defer screen.deinit();
         try screen.testWriteString("👍");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -373,7 +378,7 @@ test "shape emoji width long" {
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -404,7 +409,7 @@ test "shape variation selector VS15" {
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -435,7 +440,7 @@ test "shape variation selector VS16" {
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -463,7 +468,7 @@ test "shape with empty cells in between" {
     try screen.testWriteString("B");
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -495,7 +500,7 @@ test "shape Chinese characters" {
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -536,7 +541,7 @@ test "shape box glyphs" {
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
-    var shaper = testdata.shaper;
+    var shaper = &testdata.shaper;
     var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
@@ -567,7 +572,7 @@ test "shape selection boundary" {
     // Full line selection
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
             .start = .{ .x = 0, .y = 0 },
             .end = .{ .x = screen.cols - 1, .y = 0 },
@@ -583,7 +588,7 @@ test "shape selection boundary" {
     // Offset x, goes to end of line selection
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
             .start = .{ .x = 2, .y = 0 },
             .end = .{ .x = screen.cols - 1, .y = 0 },
@@ -599,7 +604,7 @@ test "shape selection boundary" {
     // Offset x, starts at beginning of line
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
             .start = .{ .x = 0, .y = 0 },
             .end = .{ .x = 3, .y = 0 },
@@ -615,7 +620,7 @@ test "shape selection boundary" {
     // Selection only subset of line
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
             .start = .{ .x = 1, .y = 0 },
             .end = .{ .x = 3, .y = 0 },
@@ -631,7 +636,7 @@ test "shape selection boundary" {
     // Selection only one character
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
             .start = .{ .x = 1, .y = 0 },
             .end = .{ .x = 1, .y = 0 },
@@ -660,7 +665,7 @@ test "shape cursor boundary" {
     // No cursor is full line
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -673,7 +678,7 @@ test "shape cursor boundary" {
     // Cursor at index 0 is two runs
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 0);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -686,7 +691,7 @@ test "shape cursor boundary" {
     // Cursor at index 1 is three runs
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 1);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -699,7 +704,7 @@ test "shape cursor boundary" {
     // Cursor at last col is two runs
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 9);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -725,7 +730,7 @@ test "shape cursor boundary and colored emoji" {
     // No cursor is full line
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -738,7 +743,7 @@ test "shape cursor boundary and colored emoji" {
     // Cursor on emoji does not split it
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 0);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -749,7 +754,7 @@ test "shape cursor boundary and colored emoji" {
     }
     {
         // Get our run iterator
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 1);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -773,7 +778,7 @@ test "shape cell attribute change" {
         defer screen.deinit();
         try screen.testWriteString(">=");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -791,7 +796,7 @@ test "shape cell attribute change" {
         screen.cursor.pen.attrs.bold = true;
         try screen.testWriteString("=");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -811,7 +816,7 @@ test "shape cell attribute change" {
         screen.cursor.pen.fg = .{ .r = 3, .g = 2, .b = 1 };
         try screen.testWriteString("=");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -831,7 +836,7 @@ test "shape cell attribute change" {
         screen.cursor.pen.bg = .{ .r = 3, .g = 2, .b = 1 };
         try screen.testWriteString("=");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -850,7 +855,7 @@ test "shape cell attribute change" {
         try screen.testWriteString(">");
         try screen.testWriteString("=");
 
-        var shaper = testdata.shaper;
+        var shaper = &testdata.shaper;
         var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
@@ -866,13 +871,11 @@ const TestShaper = struct {
     shaper: Shaper,
     cache: *GroupCache,
     lib: Library,
-    cell_buf: []font.shape.Cell,
 
     pub fn deinit(self: *TestShaper) void {
         self.shaper.deinit();
         self.cache.deinit(self.alloc);
         self.alloc.destroy(self.cache);
-        self.alloc.free(self.cell_buf);
         self.lib.deinit();
     }
 };
@@ -917,10 +920,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
     }
     _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
 
-    var cell_buf = try alloc.alloc(font.shape.Cell, 80);
-    errdefer alloc.free(cell_buf);
-
-    var shaper = try Shaper.init(alloc, .{ .cell_buf = cell_buf });
+    var shaper = try Shaper.init(alloc, .{});
     errdefer shaper.deinit();
 
     return TestShaper{
@@ -928,6 +928,5 @@ fn testShaper(alloc: Allocator) !TestShaper {
         .shaper = shaper,
         .cache = cache_ptr,
         .lib = lib,
-        .cell_buf = cell_buf,
     };
 }
