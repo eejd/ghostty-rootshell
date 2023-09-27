@@ -13,6 +13,7 @@ const Command = @import("../Command.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
+const terminfo = @import("../terminfo/main.zig");
 const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
@@ -1157,6 +1158,11 @@ const StreamHandler = struct {
     /// the kitty graphics protocol.
     apc: terminal.apc.Handler = .{},
 
+    /// The DCS handler maintains DCS state. DCS is like CSI or OSC,
+    /// but requires more stateful parsing. This is used by functionality
+    /// such as XTGETTCAP.
+    dcs: terminal.dcs.Handler = .{},
+
     /// This is set to true when a message was written to the writer
     /// mailbox. This can be used by callers to determine if they need
     /// to wake up the writer.
@@ -1173,6 +1179,7 @@ const StreamHandler = struct {
 
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
+        self.dcs.deinit();
     }
 
     inline fn queueRender(self: *StreamHandler) !void {
@@ -1197,6 +1204,30 @@ const StreamHandler = struct {
             log.warn("failed to set default cursor style: {}", .{err});
             return;
         };
+    }
+
+    pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
+        self.dcs.hook(self.alloc, dcs);
+    }
+
+    pub fn dcsPut(self: *StreamHandler, byte: u8) !void {
+        self.dcs.put(byte);
+    }
+
+    pub fn dcsUnhook(self: *StreamHandler) !void {
+        var cmd = self.dcs.unhook() orelse return;
+        defer cmd.deinit();
+
+        // log.warn("DCS command: {}", .{cmd});
+        switch (cmd) {
+            .xtgettcap => |*gettcap| {
+                const map = comptime terminfo.ghostty.xtgettcapMap();
+                while (gettcap.next()) |key| {
+                    const response = map.get(key) orelse continue;
+                    self.messageWriter(.{ .write_stable = response });
+                }
+            },
+        }
     }
 
     pub fn apcStart(self: *StreamHandler) !void {
