@@ -116,6 +116,13 @@ pub const ghostty: Source = .{
         // Synchronized output
         .{ .name = "Sync", .value = .{ .string = "\\E[?2026%?%p1%{1}%-%tl%eh" } },
 
+        // Bracketed paste mode
+        .{ .name = "BD", .value = .{ .string = "\\E[?2004l" } },
+        .{ .name = "BE", .value = .{ .string = "\\E[?2004h" } },
+        // Bracketed paste start/end
+        .{ .name = "PS", .value = .{ .string = "\\E[200~" } },
+        .{ .name = "PE", .value = .{ .string = "\\E[201~" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
