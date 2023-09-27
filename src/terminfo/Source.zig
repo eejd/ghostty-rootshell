@@ -65,6 +65,87 @@ pub fn encode(self: Source, writer: anytype) !void {
     }
 }
 
+/// Returns a ComptimeStringMap for all of the capabilities in this terminfo.
+/// The value is the value that should be sent as a response to XTGETTCAP.
+/// Important: the value is the FULL response included the escape sequences.
+pub fn xtgettcapMap(comptime self: Source) type {
+    const KV = struct { []const u8, []const u8 };
+
+    // We have all of our capabilities plus To, TN, and RGB which aren't
+    // in the capabilities list but are query-able.
+    const len = self.capabilities.len + 3;
+    var kvs: [len]KV = .{.{ "", "" }} ** len;
+
+    // We first build all of our entries with raw K=V pairs.
+    kvs[0] = .{ "TN", "ghostty" };
+    kvs[1] = .{ "Co", "256" };
+    kvs[2] = .{ "RGB", "8" };
+    for (self.capabilities, 3..) |cap, i| {
+        kvs[i] = .{ cap.name, switch (cap.value) {
+            .canceled => @compileError("canceled not handled yet"),
+            .boolean => "",
+            .string => |v| v,
+            .numeric => |v| numeric: {
+                var buf: [1024]u8 = undefined;
+                const num_len = std.fmt.formatIntBuf(&buf, v, 10, .upper, .{});
+                break :numeric buf[0..num_len];
+            },
+        } };
+    }
+
+    // Now go through and convert them all to hex-encoded strings.
+    for (&kvs) |*entry| {
+        // The key is just the raw hex-encoded string
+        entry[0] = hexencode(entry[0]);
+
+        // The value is more complex
+        var buf: [5 + entry[0].len + 1 + (entry[1].len * 2) + 2]u8 = undefined;
+        entry[1] = if (std.mem.eql(u8, entry[1], "")) std.fmt.bufPrint(
+            &buf,
+            "\x1bP1+r{s}\x1b\\",
+            .{entry[0]}, // important: hex-encoded name
+        ) catch unreachable else std.fmt.bufPrint(
+            &buf,
+            "\x1bP1+r{s}={s}\x1b\\",
+            .{ entry[0], hexencode(entry[1]) }, // important: hex-encoded name
+        ) catch unreachable;
+    }
+
+    return std.ComptimeStringMap([]const u8, kvs);
+}
+
+fn hexencode(comptime input: []const u8) []const u8 {
+    return comptime &(std.fmt.bytesToHex(input, .upper));
+}
+
+test "xtgettcap map" {
+    const testing = std.testing;
+
+    const src: Source = .{
+        .names = &.{
+            "ghostty",
+            "xterm-ghostty",
+            "Ghostty",
+        },
+
+        .capabilities = &.{
+            .{ .name = "am", .value = .{ .boolean = {} } },
+            .{ .name = "colors", .value = .{ .numeric = 256 } },
+            .{ .name = "Smulx", .value = .{ .string = "\\E[4:%p1%dm" } },
+        },
+    };
+
+    const map = comptime src.xtgettcapMap();
+    try testing.expectEqualStrings(
+        "\x1bP1+r616D\x1b\\",
+        map.get(hexencode("am")).?,
+    );
+    try testing.expectEqualStrings(
+        "\x1bP1+r536D756C78=5C455B343A25703125646D\x1b\\",
+        map.get(hexencode("Smulx")).?,
+    );
+}
+
 test "encode" {
     const src: Source = .{
         .names = &.{
