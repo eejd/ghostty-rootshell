@@ -115,7 +115,7 @@ fn kitty(
                 // the real world issue is usually control characters.
                 const view = try std.unicode.Utf8View.init(self.event.utf8);
                 var it = view.iterator();
-                while (it.nextCodepoint()) |cp| if (cp < 0x20) break :plain_text;
+                while (it.nextCodepoint()) |cp| if (isControl(cp)) break :plain_text;
 
                 return try copyToBuf(buf, self.event.utf8);
             }
@@ -147,7 +147,7 @@ fn kitty(
             var it = view.iterator();
             const cp = it.nextCodepoint() orelse break :alternates;
             if (it.nextCodepoint() != null) break :alternates;
-            if (cp != seq.key and cp >= 0x20 and cp != 0x7F) {
+            if (cp != seq.key and !isControl(cp)) {
                 seq.alternates = &.{cp};
             }
         }
@@ -415,6 +415,11 @@ fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
     };
 }
 
+/// Returns true if this is an ASCII control character, matches libc implementation.
+fn isControl(cp: u21) bool {
+    return cp < 0x20 or cp == 0x7F;
+}
+
 /// This is the bitmask for fixterm CSI u modifiers.
 const CsiUMods = packed struct(u3) {
     shift: bool = false,
@@ -592,7 +597,7 @@ const KittySequence = struct {
             var count: usize = 0;
             while (it.nextCodepoint()) |cp| {
                 // If the codepoint is non-printable ASCII character, skip.
-                if (cp < 0x20 or cp == 0x7F) continue;
+                if (isControl(cp)) continue;
 
                 // We need to add our ";". We need to add two if we didn't emit
                 // the modifier section. We only do this initially.
@@ -811,6 +816,18 @@ test "kitty: enter, backspace, tab" {
         };
         const actual = try enc.kitty(&buf);
         try testing.expectEqualStrings("\t", actual);
+    }
+}
+
+test "kitty: delete" {
+    var buf: [128]u8 = undefined;
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .key = .delete, .mods = .{}, .utf8 = "\x7F" },
+            .kitty_flags = .{ .disambiguate = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x1b[3~", actual);
     }
 }
 
