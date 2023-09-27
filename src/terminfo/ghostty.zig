@@ -57,6 +57,9 @@ pub const ghostty: Source = .{
         // newline ignored after 80 cols (???)
         .{ .name = "xenl", .value = .{ .boolean = {} } },
 
+        // Terminal supports default colors
+        .{ .name = "AX", .value = .{ .boolean = {} } },
+
         // Tmux "truecolor" mode. Other programs also use this to detect
         // if the terminal supports "truecolor". This means that the terminal
         // can display 24-bit RGB colors.
@@ -64,6 +67,9 @@ pub const ghostty: Source = .{
 
         // Colored underlines. https://sw.kovidgoyal.net/kitty/underlines/
         .{ .name = "Su", .value = .{ .boolean = {} } },
+
+        // Terminal supports a number of xterm extensions
+        .{ .name = "XT", .value = .{ .boolean = {} } },
 
         // Full keyboard support using Kitty's keyboard protocol:
         // https://sw.kovidgoyal.net/kitty/keyboard-protocol/
@@ -103,6 +109,12 @@ pub const ghostty: Source = .{
 
         // Cursor style reset
         .{ .name = "Se", .value = .{ .string = "\\E[2 q" } },
+
+        // OSC 52 Clipboard
+        .{ .name = "Ms", .value = .{ .string = "\\E]52;%p1%s;%p2%s\\007" } },
+
+        // Synchronized output
+        .{ .name = "Sync", .value = .{ .string = "\\E[?2026%?%p1%{1}%-%tl%eh" } },
 
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
