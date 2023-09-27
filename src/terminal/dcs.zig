@@ -123,13 +123,11 @@ pub const Command = union(enum) {
 
     pub const XTGETTCAP = struct {
         data: std.ArrayList(u8),
-
-        // Note: do not reset this. The next function mutates data so it is
-        // unsafe to reset this and reiterate.
         i: usize = 0,
 
         /// Returns the next terminfo key being requested and null
-        /// when there are no more keys.
+        /// when there are no more keys. The returned value is NOT hex-decoded
+        /// because we expect to use a comptime lookup table.
         pub fn next(self: *XTGETTCAP) ?[]const u8 {
             if (self.i >= self.data.items.len) return null;
 
@@ -141,9 +139,7 @@ pub const Command = union(enum) {
             // never read.
             self.i += idx + 1;
 
-            // HEX decode in-place so we don't have to allocate. If invalid
-            // hex is given then we just return null and stop processing.
-            return std.fmt.hexToBytes(rem, rem[0..idx]) catch null;
+            return rem[0..idx];
         }
     };
 };
@@ -183,7 +179,7 @@ test "XTGETTCAP command" {
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .xtgettcap);
-    try testing.expectEqualStrings("Smulx", cmd.xtgettcap.next().?);
+    try testing.expectEqualStrings("536D756C78", cmd.xtgettcap.next().?);
     try testing.expect(cmd.xtgettcap.next() == null);
 }
 
@@ -198,8 +194,8 @@ test "XTGETTCAP command multiple keys" {
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .xtgettcap);
-    try testing.expectEqualStrings("Smulx", cmd.xtgettcap.next().?);
-    try testing.expectEqualStrings("Smulx", cmd.xtgettcap.next().?);
+    try testing.expectEqualStrings("536D756C78", cmd.xtgettcap.next().?);
+    try testing.expectEqualStrings("536D756C78", cmd.xtgettcap.next().?);
     try testing.expect(cmd.xtgettcap.next() == null);
 }
 
@@ -214,5 +210,7 @@ test "XTGETTCAP command invalid data" {
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .xtgettcap);
+    try testing.expectEqualStrings("who", cmd.xtgettcap.next().?);
+    try testing.expectEqualStrings("536D756C78", cmd.xtgettcap.next().?);
     try testing.expect(cmd.xtgettcap.next() == null);
 }

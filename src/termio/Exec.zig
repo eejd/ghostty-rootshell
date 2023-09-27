@@ -13,6 +13,7 @@ const Command = @import("../Command.zig");
 const Pty = @import("../Pty.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
+const terminfo = @import("../terminfo/main.zig");
 const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const tracy = @import("tracy");
@@ -1219,8 +1220,12 @@ const StreamHandler = struct {
 
         // log.warn("DCS command: {}", .{cmd});
         switch (cmd) {
-            .xtgettcap => |gettcap| {
-                _ = gettcap;
+            .xtgettcap => |*gettcap| {
+                const map = comptime terminfo.ghostty.xtgettcapMap();
+                while (gettcap.next()) |key| {
+                    const response = map.get(key) orelse continue;
+                    self.messageWriter(.{ .write_stable = response });
+                }
             },
         }
     }
