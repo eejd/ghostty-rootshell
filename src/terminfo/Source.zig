@@ -77,7 +77,7 @@ pub fn xtgettcapMap(comptime self: Source) type {
     var kvs: [len]KV = .{.{ "", "" }} ** len;
 
     // We first build all of our entries with raw K=V pairs.
-    kvs[0] = .{ "TN", "ghostty" };
+    kvs[0] = .{ "TN", self.names[0] };
     kvs[1] = .{ "Co", "256" };
     kvs[2] = .{ "RGB", "8" };
     for (self.capabilities, 3..) |cap, i| {
