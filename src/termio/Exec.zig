@@ -1216,7 +1216,7 @@ const StreamHandler = struct {
 
     pub fn dcsUnhook(self: *StreamHandler) !void {
         var cmd = self.dcs.unhook() orelse return;
-        cmd.deinit();
+        defer cmd.deinit();
 
         // log.warn("DCS command: {}", .{cmd});
         switch (cmd) {
