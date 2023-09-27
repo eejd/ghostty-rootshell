@@ -1753,10 +1753,31 @@ fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) !void {
     }
 
     // Ensure we have "written" our last row so that it shows up
-    _ = self.storage.getPtrSlice(
+    const slices = self.storage.getPtrSlice(
         (rows_written_final - 1) * (self.cols + 1),
         self.cols + 1,
     );
+    // We should never be wrapped here
+    assert(slices[1].len == 0);
+
+    // We only grabbed our new row(s), copy cells into the whole slice
+    const dst = slices[0];
+    // The pen we'll use for new cells (only the BG attribute is applied to new
+    // cells)
+    const pen: Cell = if (!self.cursor.pen.attrs.has_bg) .{} else .{
+        .bg = self.cursor.pen.bg,
+        .attrs = .{ .has_bg = true },
+    };
+    @memset(dst, .{ .cell = pen });
+
+    // Then we make sure our row headers are zeroed out. We set
+    // the value to a dirty row header so that the renderer re-draws.
+    var i: usize = 0;
+    while (i < dst.len) : (i += self.cols + 1) {
+        dst[i] = .{ .header = .{
+            .flags = .{ .dirty = true },
+        } };
+    }
 
     if (start_viewport_bottom) {
         // If our viewport is on the bottom, we always update the viewport
@@ -3126,6 +3147,8 @@ test "Screen: scrolling" {
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
+    s.cursor.pen.bg = .{ .r = 155 };
+    s.cursor.pen.attrs.has_bg = true;
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     try testing.expect(s.viewportIsBottom());
 
@@ -3138,6 +3161,11 @@ test "Screen: scrolling" {
         var contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+    {
+        // Test that our new row has the correct background
+        const cell = s.getCell(.active, 2, 0);
+        try testing.expectEqual(@as(u8, 155), cell.bg.r);
     }
 
     // Scrolling to the bottom does nothing
