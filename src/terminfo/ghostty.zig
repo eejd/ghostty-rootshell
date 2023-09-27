@@ -104,6 +104,9 @@ pub const ghostty: Source = .{
         // Cursor style reset
         .{ .name = "Se", .value = .{ .string = "\\E[2 q" } },
 
+        // OSC 52 Clipboard
+        .{ .name = "Ms", .value = .{ .string = "\\E]52;%p1%s;%p2%s\\007" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
