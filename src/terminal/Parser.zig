@@ -127,8 +127,8 @@ pub const Action = union(enum) {
     };
 
     pub const DCS = struct {
-        intermediates: []u8,
-        params: []u16,
+        intermediates: []const u8 = "",
+        params: []const u16 = &.{},
         final: u8,
     };
 

@@ -1199,6 +1199,11 @@ const StreamHandler = struct {
         };
     }
 
+    pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
+        _ = self;
+        log.warn("DCS HOOK: {}", .{dcs});
+    }
+
     pub fn apcStart(self: *StreamHandler) !void {
         self.apc.start();
     }
