@@ -280,10 +280,7 @@ pub const DerivedConfig = struct {
 
 pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     // Create the initial font shaper
-    var shape_buf = try alloc.alloc(font.shape.Cell, 1);
-    errdefer alloc.free(shape_buf);
     var shaper = try font.Shaper.init(alloc, .{
-        .cell_buf = shape_buf,
         .features = options.config.font_features.items,
     });
     errdefer shaper.deinit();
@@ -318,7 +315,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
 
 pub fn deinit(self: *OpenGL) void {
     self.font_shaper.deinit();
-    self.alloc.free(self.font_shaper.cell_buf);
 
     if (self.gl_state) |*v| v.deinit();
 
@@ -524,15 +520,6 @@ pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
     const new_cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height };
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
-
-    // Resize our font shaping buffer to fit the new width.
-    if (self.screen_size) |dim| {
-        const grid_size = self.gridSize(dim);
-        var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
-        errdefer self.alloc.free(shape_buf);
-        self.alloc.free(self.font_shaper.cell_buf);
-        self.font_shaper.cell_buf = shape_buf;
-    }
 
     // Notify the window that the cell size changed.
     _ = self.surface_mailbox.push(.{
@@ -1228,7 +1215,6 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
     // easier and rare enough to not cause performance issues.
     {
         var font_shaper = try font.Shaper.init(self.alloc, .{
-            .cell_buf = self.font_shaper.cell_buf,
             .features = config.font_features.items,
         });
         errdefer font_shaper.deinit();
@@ -1263,12 +1249,6 @@ pub fn setScreenSize(
         self.cell_size,
         self.padding.explicit,
     });
-
-    // Update our shaper
-    var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
-    errdefer self.alloc.free(shape_buf);
-    self.alloc.free(self.font_shaper.cell_buf);
-    self.font_shaper.cell_buf = shape_buf;
 
     // Defer our OpenGL updates
     self.deferred_screen_size = .{ .size = dim };

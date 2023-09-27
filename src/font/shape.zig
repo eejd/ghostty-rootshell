@@ -33,10 +33,6 @@ pub const Cell = struct {
 
 /// Options for shapers.
 pub const Options = struct {
-    /// The cell_buf argument is the buffer to use for storing shaped results.
-    /// This should be at least the number of columns in the terminal.
-    cell_buf: []Cell,
-
     /// Font features to use when shaping. These can be in the following
     /// formats: "-feat" "+feat" "feat". A "-"-prefix is used to disable
     /// a feature and the others are used to enable a feature. If a feature

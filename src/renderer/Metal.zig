@@ -218,10 +218,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // Create the font shaper. We initially create a shaper that can support
     // a width of 160 which is a common width for modern screens to help
     // avoid allocations later.
-    var shape_buf = try alloc.alloc(font.shape.Cell, 160);
-    errdefer alloc.free(shape_buf);
     var font_shaper = try font.Shaper.init(alloc, .{
-        .cell_buf = shape_buf,
         .features = options.config.font_features.items,
     });
     errdefer font_shaper.deinit();
@@ -288,7 +285,6 @@ pub fn deinit(self: *Metal) void {
     self.cells_bg.deinit(self.alloc);
 
     self.font_shaper.deinit();
-    self.alloc.free(self.font_shaper.cell_buf);
 
     self.config.deinit();
 
@@ -416,14 +412,6 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     // nothing since the grid size couldn't have possibly changed.
     if (std.meta.eql(self.cell_size, new_cell_size)) return;
     self.cell_size = new_cell_size;
-
-    // Resize our font shaping buffer to fit the new width.
-    if (self.gridSize()) |grid_size| {
-        var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
-        errdefer self.alloc.free(shape_buf);
-        self.alloc.free(self.font_shaper.cell_buf);
-        self.font_shaper.cell_buf = shape_buf;
-    }
 
     // Set the sprite font up
     self.font_group.group.sprite = font.sprite.Face{
@@ -998,7 +986,6 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
     // easier and rare enough to not cause performance issues.
     {
         var font_shaper = try font.Shaper.init(self.alloc, .{
-            .cell_buf = self.font_shaper.cell_buf,
             .features = config.font_features.items,
         });
         errdefer font_shaper.deinit();
@@ -1032,13 +1019,6 @@ pub fn setScreenSize(
     else
         .{});
     const padded_dim = dim.subPadding(padding);
-
-    // Update our shaper
-    // TODO: don't reallocate if it is close enough (but bigger)
-    var shape_buf = try self.alloc.alloc(font.shape.Cell, grid_size.columns * 2);
-    errdefer self.alloc.free(shape_buf);
-    self.alloc.free(self.font_shaper.cell_buf);
-    self.font_shaper.cell_buf = shape_buf;
 
     // Set the size of the drawable surface to the bounds
     self.swapchain.setProperty("drawableSize", macos.graphics.Size{
