@@ -118,25 +118,8 @@ class FullScreenHandler {    var previousTabGroup: NSWindowTabGroup?
     
     func calculateFullscreenFrame(screenFrame: NSRect, subtractMenu: Bool)->NSRect {
         if (subtractMenu) {
-            if let menuHeight = NSApp.mainMenu?.menuBarHeight {
-                var padding: CGFloat = 0
-                if #available(macOS 14, *) {
-                    // Sonoma appears to return the menuBarHeight without including the
-                    // padding around it (that was added in macOS 14). I've reported this
-                    // bug as FB13210000. Until that is fixed, we just hardcode this value
-                    // that I measured using the screenshot tool. I don't know if the
-                    // padding can be changed in any way or if there is a way to get it
-                    // via API but I could not find a solution.
-                    padding = 13
-                }
-                
-                return NSMakeRect(
-                    screenFrame.minX,
-                    screenFrame.minY,
-                    screenFrame.width,
-                    screenFrame.height - (menuHeight + padding)
-                )
-            }
+            let menuHeight = NSApp.mainMenu?.menuBarHeight ?? 0
+            return NSMakeRect(screenFrame.minX, screenFrame.minY, screenFrame.width, screenFrame.height - menuHeight)
         }
         return screenFrame
     }
