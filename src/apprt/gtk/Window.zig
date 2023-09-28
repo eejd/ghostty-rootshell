@@ -203,8 +203,12 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
 
     // Build our tab label
     const label_box_widget = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
+    c.gtk_widget_set_hexpand(label_box_widget, 1);
+    c.gtk_widget_set_halign(label_box_widget, c.GTK_ALIGN_FILL);
     const label_box = @as(*c.GtkBox, @ptrCast(label_box_widget));
     const label_text = c.gtk_label_new("Ghostty");
+    c.gtk_widget_set_hexpand(label_text, 1);
+    c.gtk_widget_set_halign(label_text, c.GTK_ALIGN_FILL);
     c.gtk_box_append(label_box, label_text);
 
     const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
