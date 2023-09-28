@@ -123,6 +123,10 @@ pub const ghostty: Source = .{
         .{ .name = "PS", .value = .{ .string = "\\E[200~" } },
         .{ .name = "PE", .value = .{ .string = "\\E[201~" } },
 
+        // Mouse
+        .{ .name = "XM", .value = .{ .string = "\\E[?1006;1004;1000%?%p1%{1}%=%th%el%;" } },
+        .{ .name = "xm", .value = .{ .string = "\\E[<%i%p3%d;%p1%d;%p2%d;%?%p4%tM%em%;" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
@@ -346,7 +350,7 @@ pub const ghostty: Source = .{
         .{ .name = "khome", .value = .{ .string = "\\EOH" } },
         .{ .name = "kich1", .value = .{ .string = "\\E[2~" } },
         .{ .name = "kind", .value = .{ .string = "\\E[1;2B" } },
-        .{ .name = "kmous", .value = .{ .string = "\\E[M" } },
+        .{ .name = "kmous", .value = .{ .string = "\\E[<" } },
         .{ .name = "knp", .value = .{ .string = "\\E[6~" } },
         .{ .name = "kpp", .value = .{ .string = "\\E[5~" } },
         .{ .name = "kri", .value = .{ .string = "\\E[1;2A" } },
