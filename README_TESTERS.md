@@ -42,28 +42,28 @@ or even pair (time permitting) if you're interested.
 
 This is the priority of bugs:
 
-  1. Crashes. 💥 These are just unacceptable and I'll drop everything to
-     fix a crash.
+1. Crashes. 💥 These are just unacceptable and I'll drop everything to
+   fix a crash.
 
-  2. Escape sequence logic or rendering issues. These are almost as bad as
-     crashes because they usually make your workflow unusable. This includes
-     unsupported escape sequences that impact your workflow.
+2. Escape sequence logic or rendering issues. These are almost as bad as
+   crashes because they usually make your workflow unusable. This includes
+   unsupported escape sequences that impact your workflow.
 
-  3. Anything else...
+3. Anything else...
 
 ## Let's Talk!
 
 You likely landed in the Discord community first, if for some reason you're not
-in there, join [here](https://discord.gg/ghostty). Discord is a great place to 
+in there, join [here](https://discord.gg/ghostty). Discord is a great place to
 share feedback, discuss issues, ask questions and talk to other testers.
 
 ## Other FAQ
 
 ### Can I Invite a Friend?
 
-To the Discord, go for it! [discord.gg/ghostty](https://discord.gg/ghostty). 
-Initially, they'll land in a public Discord channel. As mentioned, testers 
-are being added slowly as bugs are fixed. Discord is being used as a sort-of 
+To the Discord, go for it! [discord.gg/ghostty](https://discord.gg/ghostty).
+Initially, they'll land in a public Discord channel. As mentioned, testers
+are being added slowly as bugs are fixed. Discord is being used as a sort-of
 waitlist, and people are added to the project as testers from there,
 so just send them the link and they will be added at some point.
 

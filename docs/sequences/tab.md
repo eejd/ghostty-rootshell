@@ -1,9 +1,9 @@
 # Tab
 
-|     |   |
-| --- | --- |
+|      |        |
+| ---- | ------ |
 | Text |        |
-| Hex  | `0x09`   |
+| Hex  | `0x09` |
 
 Move the cursor right to the next tab stop.
 
@@ -17,5 +17,5 @@ Initially, tab stops are set on every 8th column.
 
 ## TODO
 
-  * Integration with left/right margins of the scrolling region.
-  * How does horizontal tab interact with the pending wrap state?
+- Integration with left/right margins of the scrolling region.
+- How does horizontal tab interact with the pending wrap state?
