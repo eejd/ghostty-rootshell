@@ -260,6 +260,13 @@ extension Ghostty {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
+        
+        func toggleFullscreen(surface: ghostty_surface_t) {
+            let action = "toggle_fullscreen"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
 
         // Called when the selected keyboard changes. We have to notify Ghostty so that
         // it can reload the keyboard mapping for input.
