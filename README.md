@@ -395,9 +395,10 @@ $ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
 
 ### Linting
 
-Ghostty's docs are linted using [Prettier](https://prettier.io). There is also a CI check that will fail if the formatting is off. Therefore, if you are modifying the docs, you may want to install it locally and run this from the repo root
+Ghostty's docs and resources (not including Zig code) are linted using [Prettier](https://prettier.io) with out-of-the-box settings. A Prettier CI check will fail builds with improper formatting. Therefore, if you are modifying anything Prettier will lint, you may want to install it locally and run this from the repo root
 
 ```
+npm install -g prettier
 prettier --write .
 ```
 
