@@ -411,6 +411,12 @@ keybind: Keybinds = .{},
 /// Debug builds of Ghostty have a separate single-instance ID.
 @"gtk-single-instance": bool = true,
 
+/// If true (default), then the Ghostty GTK tabs will be "wide." Wide tabs
+/// are the new typical Gnome style where tabs fill their available space.
+/// If you set this to false then tabs will only take up space they need,
+/// which is the old style.
+@"gtk-wide-tabs": bool = true,
+
 /// This will be used to set the TERM environment variable.
 /// HACK: We set this with an "xterm" prefix because vim uses that to enable key
 /// protocols (specifically this will enable 'modifyOtherKeys'), among other
