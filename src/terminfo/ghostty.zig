@@ -361,7 +361,7 @@ pub const ghostty: Source = .{
 
 test "encode" {
     // Encode
-    var buf: [4096]u8 = undefined;
+    var buf: [1024 * 16]u8 = undefined;
     var buf_stream = std.io.fixedBufferStream(&buf);
     try ghostty.encode(buf_stream.writer());
     try std.testing.expect(buf_stream.getWritten().len > 0);
