@@ -392,3 +392,13 @@ as `Console.app`. The easiest way I've found to view these is to just use the CL
 $ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
 ...
 ```
+
+### Linting
+
+Ghostty's docs are linted using [Prettier](https://prettier.io). There is also a CI check that will fail if the formatting is off. Therefore, if you are modifying the docs, you may want to install it locally and run this from the repo root
+
+```
+prettier --write .
+```
+
+before you commit. Or simply install one of the many Prettier extensions out there for your editor of choice.
