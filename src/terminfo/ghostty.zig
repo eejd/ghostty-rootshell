@@ -127,6 +127,14 @@ pub const ghostty: Source = .{
         .{ .name = "XM", .value = .{ .string = "\\E[?1006;1004;1000%?%p1%{1}%=%th%el%;" } },
         .{ .name = "xm", .value = .{ .string = "\\E[<%i%p3%d;%p1%d;%p2%d;%?%p4%tM%em%;" } },
 
+        // Secondary device attributes request / response
+        .{ .name = "RV", .value = .{ .string = "\\E[>c" } },
+        .{ .name = "rv", .value = .{ .string = "\\E\\[[0-9]+;[0-9]+;[0-9]+c" } },
+
+        // XTVERSION
+        .{ .name = "XR", .value = .{ .string = "\\E[>0q" } },
+        .{ .name = "xr", .value = .{ .string = "\\EP>\\|[ -~]+a\\E\\\\" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
@@ -165,6 +173,7 @@ pub const ghostty: Source = .{
         .{ .name = "ht", .value = .{ .string = "^I" } },
         .{ .name = "hts", .value = .{ .string = "\\EH" } },
         .{ .name = "ich", .value = .{ .string = "\\E[%p1%d@" } },
+        .{ .name = "ich1", .value = .{ .string = "\\E[@" } },
         .{ .name = "il", .value = .{ .string = "\\E[%p1%dL" } },
         .{ .name = "il1", .value = .{ .string = "\\E[L" } },
         .{ .name = "ind", .value = .{ .string = "\\n" } },
@@ -183,7 +192,7 @@ pub const ghostty: Source = .{
         .{ .name = "rmam", .value = .{ .string = "\\E[?7l" } },
         .{ .name = "rmcup", .value = .{ .string = "\\E[?1049l" } },
         .{ .name = "rmir", .value = .{ .string = "\\E[4l" } },
-        .{ .name = "rmkx", .value = .{ .string = "\\E[?1l" } },
+        .{ .name = "rmkx", .value = .{ .string = "\\E[?1l\\E>" } },
         .{ .name = "rmso", .value = .{ .string = "\\E[27m" } },
         .{ .name = "rmul", .value = .{ .string = "\\E[24m" } },
         .{ .name = "rmxx", .value = .{ .string = "\\E[29m" } },
@@ -198,7 +207,7 @@ pub const ghostty: Source = .{
         .{ .name = "smam", .value = .{ .string = "\\E[?7h" } },
         .{ .name = "smcup", .value = .{ .string = "\\E[?1049h" } },
         .{ .name = "smir", .value = .{ .string = "\\E[4h" } },
-        .{ .name = "smkx", .value = .{ .string = "\\E[?1h" } },
+        .{ .name = "smkx", .value = .{ .string = "\\E[?1h\\E=" } },
         .{ .name = "smso", .value = .{ .string = "\\E[7m" } },
         .{ .name = "smul", .value = .{ .string = "\\E[4m" } },
         .{ .name = "smxx", .value = .{ .string = "\\E[9m" } },
