@@ -1150,19 +1150,25 @@ pub fn scrollCallback(
         // or have alternate scroll disabled. In this case, we just run
         // the normal logic.
 
+        // If we're scrolling up or down, then send a mouse event.
+        if (self.io.terminal.flags.mouse_event != .none) {
+            if (y.delta != 0) {
+                const pos = try self.rt_surface.getCursorPos();
+                try self.mouseReport(if (y.delta < 0) .four else .five, .press, self.mouse.mods, pos);
+            }
+
+            if (x.delta != 0) {
+                const pos = try self.rt_surface.getCursorPos();
+                try self.mouseReport(if (x.delta > 0) .six else .seven, .press, self.mouse.mods, pos);
+            }
+
+            // If mouse reporting is on, we do not want to scroll the
+            // viewport.
+            return;
+        }
+
         // Modify our viewport, this requires a lock since it affects rendering
         try self.io.terminal.scrollViewport(.{ .delta = y.delta });
-
-        // If we're scrolling up or down, then send a mouse event. This requires
-        // a lock since we read terminal state.
-        if (y.delta != 0) {
-            const pos = try self.rt_surface.getCursorPos();
-            try self.mouseReport(if (y.delta < 0) .four else .five, .press, self.mouse.mods, pos);
-        }
-        if (x.delta != 0) {
-            const pos = try self.rt_surface.getCursorPos();
-            try self.mouseReport(if (x.delta > 0) .six else .seven, .press, self.mouse.mods, pos);
-        }
     }
 
     try self.queueRender();
