@@ -5,6 +5,7 @@
 , glxinfo
 , ncurses
 , nodejs
+, nodePackages
 , parallel
 , pkg-config
 , python3
@@ -75,6 +76,9 @@ in mkShell rec {
 
     # For web and wasm stuff
     nodejs
+
+    # Linting
+    nodePackages.prettier
 
     # Testing
     parallel
