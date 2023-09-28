@@ -189,7 +189,7 @@ class PrimaryWindowManager {
         for (index, window) in windows.enumerated().prefix(9) {
             let action = "goto_tab:\(index + 1)"
             let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
-            guard let equiv = Ghostty.keyEquivalent(key: trigger.key, mods: trigger.mods) else {
+            guard let equiv = Ghostty.keyEquivalentLabel(key: trigger.key, mods: trigger.mods) else {
                 continue
             }
 

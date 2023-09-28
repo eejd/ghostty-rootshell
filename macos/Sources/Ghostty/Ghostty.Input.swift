@@ -7,24 +7,17 @@ extension Ghostty {
         return Self.keyToEquivalent[key]
     }
 
-    static func keyEquivalent(key: ghostty_input_key_e, mods: ghostty_input_mods_e) -> String? {
+    /// Returns the keyEquivalent label that includes the mods.
+    static func keyEquivalentLabel(key: ghostty_input_key_e, mods: ghostty_input_mods_e) -> String? {
         guard var key = Self.keyEquivalent(key: key) else { return nil }
         let flags = Self.eventModifierFlags(mods: mods)
-        if flags.contains(.command) {
-            key = "⌘\(key)"
-        }
-
-        if flags.contains(.shift) {
-            key = "⇧\(key)"
-        }
-
-        if flags.contains(.option) {
-            key = "⌥\(key)"
-        }
-
-        if flags.contains(.control) {
-            key = "⌃\(key)"
-        }
+        
+        // Note: the order below matters; it matches the ordering modifiers show for
+        // macOS menu shortcut labels.
+        if flags.contains(.command) { key = "⌘\(key)" }
+        if flags.contains(.shift) { key = "⇧\(key)" }
+        if flags.contains(.option) { key = "⌥\(key)" }
+        if flags.contains(.control) { key = "⌃\(key)" }
 
         return key
     }
