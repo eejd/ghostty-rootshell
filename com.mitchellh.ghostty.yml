@@ -3,7 +3,7 @@
 # we want to keep _trying_ but its something with known issues.
 app-id: com.mitchellh.ghostty
 runtime: org.gnome.Platform
-runtime-version: '43'
+runtime-version: "43"
 sdk: org.gnome.Sdk
 default-branch: tip
 command: ghostty

@@ -44,11 +44,11 @@ things, but I've been using it full time since April 2022.
 
 ## Download
 
-| Platform / Package  | Links | Notes |
-| ----------| ----- | ----- |
-| macOS | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip)  | MacOS 12+ Universal Binary |
-| Linux | [Build from Source](#developing-ghostty)  | |
-| Windows | n/a | Not supported yet |
+| Platform / Package | Links                                                                    | Notes                      |
+| ------------------ | ------------------------------------------------------------------------ | -------------------------- |
+| macOS              | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip) | MacOS 12+ Universal Binary |
+| Linux              | [Build from Source](#developing-ghostty)                                 |                            |
+| Windows            | n/a                                                                      | Not supported yet          |
 
 ### Configuration
 
@@ -134,12 +134,12 @@ to support many of the features that
 
 The currently support shell integration features in Ghostty:
 
-  * We do not confirm close for windows where the cursor is at a prompt.
-  * New terminals start in the working directory of the previously focused terminal.
-  * Complex prompts resize correctly by allowing the shell to redraw the prompt line.
-  * The cursor at the prompt is turned into a bar.
-  * The `jump_to_prompt` keybinding can be used to scroll the terminal window
-    forward and back through prompts.
+- We do not confirm close for windows where the cursor is at a prompt.
+- New terminals start in the working directory of the previously focused terminal.
+- Complex prompts resize correctly by allowing the shell to redraw the prompt line.
+- The cursor at the prompt is turned into a bar.
+- The `jump_to_prompt` keybinding can be used to scroll the terminal window
+  forward and back through prompts.
 
 #### Shell Integration Installation and Verification
 
@@ -208,15 +208,15 @@ goes for any other shell.
 
 The high-level ambitious plan for the project, in order:
 
-| # | Step | Status |
-|:---:|------|:------:|
-| 1 | [Standards-compliant terminal emulation](docs/sequences.md)     | ⚠️ |
-| 2 | Competitive performance | ✅ |
-| 3 | Basic customizability -- fonts, bg colors, etc. | ✅ |
-| 4 | Richer windowing features -- multi-window, tabbing, panes | ✅  |
-| 5 | Native Platform Experiences (i.e. Mac Preference Panel) | ⚠️ |
-| 6 | Windows Terminals (including PowerShell, Cmd, WSL) | ❌ |
-| N | Fancy features (to be expanded upon later) | ❌ |
+|  #  | Step                                                        | Status |
+| :-: | ----------------------------------------------------------- | :----: |
+|  1  | [Standards-compliant terminal emulation](docs/sequences.md) |   ⚠️   |
+|  2  | Competitive performance                                     |   ✅   |
+|  3  | Basic customizability -- fonts, bg colors, etc.             |   ✅   |
+|  4  | Richer windowing features -- multi-window, tabbing, panes   |   ✅   |
+|  5  | Native Platform Experiences (i.e. Mac Preference Panel)     |   ⚠️   |
+|  6  | Windows Terminals (including PowerShell, Cmd, WSL)          |   ❌   |
+|  N  | Fancy features (to be expanded upon later)                  |   ❌   |
 
 Additional details for each step in the big roadmap below:
 
@@ -261,10 +261,10 @@ Ghostty is a cross-platform terminal emulator but we don't aim for a
 least-common-denominator experience. There is a large, shared core written
 in Zig but we do a lot of platform-native things:
 
-* The macOS app is a true SwiftUI-based application with all the things you
+- The macOS app is a true SwiftUI-based application with all the things you
   would expect such as real windowing, menu bars, a settings GUI, etc.
-* macOS uses a true Metal renderer with CoreText for font discovery.
-* The Linux app is built with GTK.
+- macOS uses a true Metal renderer with CoreText for font discovery.
+- The Linux app is built with GTK.
 
 There are more improvements to be made. The macOS settings window is still
 a work-in-progress. Similar improvements will follow with Linux.
@@ -310,11 +310,11 @@ tasks.
 
 Other useful commands:
 
-  * `zig build test` for running unit tests.
-  * `zig build run -Dconformance=<name>` runs a conformance test case from
-    the `conformance` directory. The `name` is the name of the file. This runs
-    in the current running terminal emulator so if you want to check the
-    behavior of this project, you must run this command in ghostty.
+- `zig build test` for running unit tests.
+- `zig build run -Dconformance=<name>` runs a conformance test case from
+  the `conformance` directory. The `name` is the name of the file. This runs
+  in the current running terminal emulator so if you want to check the
+  behavior of this project, you must run this command in ghostty.
 
 ### Compiling a Release Build
 
@@ -392,3 +392,14 @@ as `Console.app`. The easiest way I've found to view these is to just use the CL
 $ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
 ...
 ```
+
+### Linting
+
+Ghostty's docs and resources (not including Zig code) are linted using [Prettier](https://prettier.io) with out-of-the-box settings. A Prettier CI check will fail builds with improper formatting. Therefore, if you are modifying anything Prettier will lint, you may want to install it locally and run this from the repo root before you commit:
+
+```
+npm install -g prettier
+prettier --write .
+```
+
+Or simply install one of the many Prettier extensions out there for your editor of choice.

@@ -1,15 +1,15 @@
 Performance:
 
-* for scrollback, investigate using segmented list for sufficiently large
+- for scrollback, investigate using segmented list for sufficiently large
   scrollback scenarios.
-* Loading fonts on startups should probably happen in multiple threads
-* `deleteLines` is very, very slow which makes scroll region benchmarks terrible
+- Loading fonts on startups should probably happen in multiple threads
+- `deleteLines` is very, very slow which makes scroll region benchmarks terrible
 
 Correctness:
 
-* test wrap against wraptest: https://github.com/mattiase/wraptest
+- test wrap against wraptest: https://github.com/mattiase/wraptest
   - automate this in some way
-* Charsets: UTF-8 vs. ASCII mode
+- Charsets: UTF-8 vs. ASCII mode
   - we only support UTF-8 input right now
   - need fallback glyphs if they're not supported
   - can effect a crash using `vttest` menu `3 10` since it tries to parse
@@ -17,13 +17,13 @@ Correctness:
 
 Improvements:
 
-* scrollback: configurable
+- scrollback: configurable
 
 Mac:
 
-* Preferences window
+- Preferences window
 
 Major Features:
 
-* Bell
-* Sixels: https://saitoha.github.io/libsixel/
+- Bell
+- Sixels: https://saitoha.github.io/libsixel/

@@ -38,4 +38,3 @@ the full test suite against only a single terminal emulator.
 This test suite expects the `ghostty` binary to be in _this directory_.
 You can manually copy it into place. Each time you modify the binary, you
 must rebuild the Docker image.
-

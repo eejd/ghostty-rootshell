@@ -1,0 +1,7 @@
+# Docs: https://prettier.io/docs/en/ignore.html
+vendor/
+# macos is managed by XCode GUI
+macos/
+**/*.html
+flake.lock
+
