@@ -411,8 +411,13 @@ keybind: Keybinds = .{},
 /// Debug builds of Ghostty have a separate single-instance ID.
 @"gtk-single-instance": bool = true,
 
-/// This will be used to set the TERM environment variable
-term: []const u8 = "ghostty",
+/// This will be used to set the TERM environment variable.
+/// HACK: We set this with an "xterm" prefix because vim uses that to enable key
+/// protocols (specifically this will enable 'modifyOtherKeys'), among other
+/// features. An option exists in vim to modify this: `:set
+/// keyprotocol=ghostty:kitty`, however a bug in the implementation prevents it
+/// from working properly. https://github.com/vim/vim/pull/13211 fixes this.
+term: []const u8 = "xterm-ghostty",
 
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
@@ -904,7 +909,8 @@ pub fn finalize(self: *Config) !void {
 
     // Prevent setting TERM to an empty string
     if (self.term.len == 0) {
-        self.term = "ghostty";
+        // HACK: See comment above at definition
+        self.term = "xterm-ghostty";
     }
 
     // The default for the working directory depends on the system.
