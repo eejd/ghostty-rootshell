@@ -143,12 +143,25 @@ fn kitty(
         }
 
         if (self.kitty_flags.report_alternates) alternates: {
-            const view = try std.unicode.Utf8View.init(self.event.utf8);
-            var it = view.iterator();
-            const cp = it.nextCodepoint() orelse break :alternates;
-            if (it.nextCodepoint() != null) break :alternates;
-            if (cp != seq.key and !isControl(cp)) {
-                seq.alternates = &.{cp};
+            // Break early if this is a control key
+            if (isControl(seq.key)) break :alternates;
+
+            // Set the first alternate (shifted version)
+            {
+                const view = try std.unicode.Utf8View.init(self.event.utf8);
+                var it = view.iterator();
+                // We break early if there are codepoints...there are no
+                // alternate key(s) to report
+                const shifted = it.nextCodepoint() orelse break :alternates;
+                // Only report the shifted key if we have a shift modifier
+                if (shifted != seq.key and seq.mods.shift) seq.alternates[0] = shifted;
+            }
+
+            // Set the base layout key
+            {
+                if (self.event.key.codepoint()) |base| {
+                    if (base != seq.key) seq.alternates[1] = base;
+                }
             }
         }
 
@@ -549,7 +562,7 @@ const KittySequence = struct {
     final: u8,
     mods: KittyMods = .{},
     event: Event = .none,
-    alternates: []const u21 = &.{},
+    alternates: [2]?u21 = .{ null, null },
     text: []const u8 = "",
 
     /// Values for the event code (see "event-type" in above comment).
@@ -577,7 +590,17 @@ const KittySequence = struct {
 
         // Key section
         try writer.print("\x1B[{d}", .{self.key});
-        for (self.alternates) |alt| try writer.print(":{d}", .{alt});
+        // Write our alternates
+        if (self.alternates[0]) |shifted| {
+            try writer.print(":{d}", .{shifted});
+        }
+        if (self.alternates[1]) |base| {
+            if (self.alternates[0] == null) {
+                try writer.print("::{d}", .{base});
+            } else {
+                try writer.print(":{d}", .{base});
+            }
+        }
 
         // Mods and events section
         const mods = self.mods.seqInt();
@@ -897,9 +920,115 @@ test "kitty: matching unshifted codepoint" {
 
     // WARNING: This is not a valid encoding. This is a hypothetical encoding
     // just to test that our logic is correct around matching unshifted
-    // codepoints.
+    // codepoints. We get an alternate here because the unshifted_codepoint does
+    // not match the base key
     const actual = try enc.kitty(&buf);
-    try testing.expectEqualStrings("\x1b[65;2u", actual);
+    try testing.expectEqualStrings("\x1b[65::97;2u", actual);
+}
+
+test "kitty: report alternates with caps" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .j,
+            .mods = .{ .caps_lock = true },
+            .utf8 = "J",
+            .unshifted_codepoint = 106,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[106;65;74u", actual);
+}
+
+test "kitty: report alternates colon (shift+';')" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .semicolon,
+            .mods = .{ .shift = true },
+            .utf8 = ":",
+            .unshifted_codepoint = ';',
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[59:58;2;58u", actual);
+}
+
+test "kitty: report alternates with ru layout" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .semicolon,
+            .mods = .{},
+            .utf8 = "ч",
+            .unshifted_codepoint = 1095,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[1095::59;;1095u", actual);
+}
+
+test "kitty: report alternates with ru layout shifted" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .semicolon,
+            .mods = .{ .shift = true },
+            .utf8 = "Ч",
+            .unshifted_codepoint = 1095,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[1095:1063:59;2;1063u", actual);
+}
+
+test "kitty: report alternates with ru layout caps lock" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .semicolon,
+            .mods = .{ .caps_lock = true },
+            .utf8 = "Ч",
+            .unshifted_codepoint = 1095,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[1095::59;65;1063u", actual);
 }
 
 // macOS generates utf8 text for arrow keys.
