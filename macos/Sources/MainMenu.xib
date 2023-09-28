@@ -164,7 +164,7 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="eu3-7i-yIM"/>
-                            <menuItem title="Enter Full Screen" id="8kY-Pi-KaY">
+                            <menuItem title="Toggle Full Screen" id="8kY-Pi-KaY">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="toggleFullScreen:" target="bbz-4X-AYv" id="PQq-1F-kpT"/>
