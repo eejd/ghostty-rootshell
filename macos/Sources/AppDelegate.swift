@@ -27,6 +27,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuCopy: NSMenuItem?
     @IBOutlet private var menuPaste: NSMenuItem?
 
+    @IBOutlet private var menuToggleFullScreen: NSMenuItem?
     @IBOutlet private var menuZoomSplit: NSMenuItem?
     @IBOutlet private var menuPreviousSplit: NSMenuItem?
     @IBOutlet private var menuNextSplit: NSMenuItem?
@@ -52,6 +53,14 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     //MARK: - NSApplicationDelegate
+    
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: [
+            // Disable the automatic full screen menu item because we handle
+            // it manually.
+            "NSFullScreenMenuItemEverywhere": false,
+        ])
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // System settings overrides
@@ -143,6 +152,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
         
+        syncMenuShortcut(action: "toggle_fullscreen", menuItem: self.menuToggleFullScreen)
         syncMenuShortcut(action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
         syncMenuShortcut(action: "goto_split:previous", menuItem: self.menuPreviousSplit)
         syncMenuShortcut(action: "goto_split:next", menuItem: self.menuNextSplit)
@@ -306,5 +316,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://github.com/mitchellh/ghostty") else { return }
         NSWorkspace.shared.open(url)
+    }
+    
+    @IBAction func toggleFullScreen(_ sender: Any) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.toggleFullscreen(surface: surface)
     }
 }
