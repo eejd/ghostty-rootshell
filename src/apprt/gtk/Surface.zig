@@ -757,8 +757,8 @@ fn keyEvent(
         // Norwegian, and French layouts and thats what we have real users for
         // right now.
         const lower = c.gdk_keyval_to_lower(keyval);
-        if (std.math.cast(u21, lower)) |val| break :unshifted val;
-        break :unshifted 0;
+        const lower_unicode = c.gdk_keyval_to_unicode(lower);
+        break :unshifted std.math.cast(u21, lower_unicode) orelse 0;
     };
 
     // We always reset our committed text when ending a keypress so that
