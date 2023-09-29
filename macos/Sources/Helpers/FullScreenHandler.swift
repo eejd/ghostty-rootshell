@@ -120,8 +120,11 @@ class FullScreenHandler {    var previousTabGroup: NSWindowTabGroup?
         if (subtractMenu) {
             if let menuHeight = NSApp.mainMenu?.menuBarHeight {
                 var padding: CGFloat = 0
-                if #available(macOS 12, *) {
-                    padding = screen.safeAreaInsets.top;
+                
+                // Detect the notch. If there is a safe area on top it includes the
+                // menu height as a safe area so we also subtract that from it.
+                if (screen.safeAreaInsets.top > 0) {
+                    padding = screen.safeAreaInsets.top - menuHeight;
                 }
 
                 return NSMakeRect(
