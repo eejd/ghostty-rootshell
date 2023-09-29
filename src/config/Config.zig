@@ -24,6 +24,8 @@ const c = @cImport({
 });
 
 /// The font families to use.
+/// You can generate the list of valid values using the CLI:
+///   path/to/ghostty/cli +list-fonts
 @"font-family": ?[:0]const u8 = null,
 @"font-family-bold": ?[:0]const u8 = null,
 @"font-family-italic": ?[:0]const u8 = null,
@@ -39,7 +41,7 @@ const c = @cImport({
 /// requests a disabled font style, the regular font style will be used
 /// instead.
 ///
-/// These are only valid if there is an exact font-family also specified.
+/// These are only valid if its corresponding font-family is also specified.
 /// If no font-family is specified, then the font-style is ignored unless
 /// you're disabling the font style.
 @"font-style": FontStyle = .{ .default = {} },
