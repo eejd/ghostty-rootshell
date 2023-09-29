@@ -967,9 +967,9 @@ pub fn keyCallback(
     }, .{ .forever = {} });
     try self.io_thread.wakeup.notify();
 
-    // If we have a sequence to emit then we always want to clear the
+    // If we have printable text to emit then we always want to clear the
     // selection and scroll to the bottom.
-    {
+    if (event.utf8.len > 0) {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         self.setSelection(null);
