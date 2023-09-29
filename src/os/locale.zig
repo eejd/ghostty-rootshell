@@ -35,17 +35,10 @@ pub fn ensureLocale() void {
     // default.
     if (std.os.getenv("LANG")) |old_lang| {
         if (old_lang.len > 0) {
-            // The old_lang pointer can be invalidated by unsetenv so we need
-            // to make a copy. LANG should never be longer than 128 bytes. If
-            // it is, we just set it to "".
-            var buf: [128]u8 = undefined;
-            var fba = std.heap.FixedBufferAllocator.init(&buf);
-            const alloc = fba.allocator();
-            const old_copy = alloc.dupeZ(u8, old_lang) catch "";
-
-            // Unset the lang and defer to reset the copy.
+            // We don't need to do both of these things but we do them
+            // both to be sure that lang is either empty or unset completely.
+            _ = setenv("LANG", "", 1);
             _ = unsetenv("LANG");
-            defer _ = setenv("LANG", old_copy.ptr, 1);
 
             if (setlocale(LC_ALL, "")) |v| {
                 log.info("setlocale after unset lang result={s}", .{v});
