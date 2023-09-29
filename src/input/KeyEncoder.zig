@@ -279,8 +279,12 @@ fn legacy(
 
     // If we have alt-pressed and alt-esc-prefix is enabled, then
     // we need to prefix the utf8 sequence with an esc.
-    if (binding_mods.alt and self.alt_esc_prefix) {
-        return try std.fmt.bufPrint(buf, "\x1B{s}", .{utf8});
+    if (binding_mods.alt and
+        self.alt_esc_prefix and
+        utf8.len == 1 and
+        utf8[0] < 0x7F)
+    {
+        return try std.fmt.bufPrint(buf, "\x1B{u}", .{utf8[0]});
     }
 
     return try copyToBuf(buf, utf8);
@@ -997,6 +1001,36 @@ test "legacy: ctrl+alt+c" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("\x1b\x03", actual);
+}
+
+test "legacy: alt+c" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .c,
+            .utf8 = "c",
+            .mods = .{ .alt = true },
+        },
+        .alt_esc_prefix = true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1Bc", actual);
+}
+
+test "legacy: alt+ф" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .f,
+            .utf8 = "ф",
+            .mods = .{ .alt = true },
+        },
+        .alt_esc_prefix = true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("ф", actual);
 }
 
 test "legacy: ctrl+c" {
