@@ -93,7 +93,7 @@ class FullScreenHandler {    var previousTabGroup: NSWindowTabGroup?
         window.styleMask.remove(.titled)
         
         // Set frame to screen size, accounting for the menu bar if needed
-        let frame = calculateFullscreenFrame(screenFrame: screen.frame, subtractMenu: !hideMenu)
+        let frame = calculateFullscreenFrame(screen: screen, subtractMenu: !hideMenu)
         window.setFrame(frame, display: true)
         
         // Focus window
@@ -116,12 +116,26 @@ class FullScreenHandler {    var previousTabGroup: NSWindowTabGroup?
         NSApp.presentationOptions.remove(.autoHideDock)
     }
     
-    func calculateFullscreenFrame(screenFrame: NSRect, subtractMenu: Bool)->NSRect {
+    func calculateFullscreenFrame(screen: NSScreen, subtractMenu: Bool)->NSRect {
         if (subtractMenu) {
-            let menuHeight = NSApp.mainMenu?.menuBarHeight ?? 0
-            return NSMakeRect(screenFrame.minX, screenFrame.minY, screenFrame.width, screenFrame.height - menuHeight)
+            if let menuHeight = NSApp.mainMenu?.menuBarHeight {
+                var padding: CGFloat = 0
+                
+                // Detect the notch. If there is a safe area on top it includes the
+                // menu height as a safe area so we also subtract that from it.
+                if (screen.safeAreaInsets.top > 0) {
+                    padding = screen.safeAreaInsets.top - menuHeight;
+                }
+
+                return NSMakeRect(
+                    screen.frame.minX,
+                    screen.frame.minY,
+                    screen.frame.width,
+                    screen.frame.height - (menuHeight + padding)
+                )
+            }
         }
-        return screenFrame
+        return screen.frame
     }
     
     func leaveFullscreen(window: NSWindow) {
