@@ -24,8 +24,8 @@ const c = @cImport({
 });
 
 /// The font families to use.
-/// You can generate list of valid values using the CLI
-/// path/to/ghostty/cli +list-fonts
+/// You can generate the list of valid values using the CLI:
+///   path/to/ghostty/cli +list-fonts
 @"font-family": ?[:0]const u8 = null,
 @"font-family-bold": ?[:0]const u8 = null,
 @"font-family-italic": ?[:0]const u8 = null,
