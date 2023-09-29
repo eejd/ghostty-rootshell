@@ -26,7 +26,7 @@ pub fn ensureLocale() void {
 
     // Set the locale to whatever is set in env vars.
     if (setlocale(LC_ALL, "")) |v| {
-        log.debug("setlocale result={s}", .{v});
+        log.info("setlocale from env result={s}", .{v});
         return;
     }
 
@@ -34,19 +34,23 @@ pub fn ensureLocale() void {
     // invalid. Try to set it without the LANG var set to use the system
     // default.
     if (std.os.getenv("LANG")) |old_lang| {
-        _ = unsetenv("LANG");
-        defer _ = setenv("LANG", old_lang.ptr, 1);
+        if (old_lang.len > 0) {
+            // We don't need to do both of these things but we do them
+            // both to be sure that lang is either empty or unset completely.
+            _ = setenv("LANG", "", 1);
+            _ = unsetenv("LANG");
 
-        if (setlocale(LC_ALL, "")) |v| {
-            log.debug("setlocale result={s}", .{v});
-            return;
+            if (setlocale(LC_ALL, "")) |v| {
+                log.info("setlocale after unset lang result={s}", .{v});
+                return;
+            }
         }
     }
 
     // Failure again... fallback to en_US.UTF-8
     log.warn("setlocale failed with LANG and system default. Falling back to en_US.UTF-8", .{});
     if (setlocale(LC_ALL, "en_US.UTF-8")) |v| {
-        log.debug("setlocale result={s}", .{v});
+        log.info("setlocale default result={s}", .{v});
         return;
     } else log.err("setlocale failed even with the fallback, uncertain results", .{});
 }
