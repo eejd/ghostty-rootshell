@@ -2,6 +2,7 @@
 //! system.
 
 pub usingnamespace @import("env.zig");
+pub usingnamespace @import("desktop.zig");
 pub usingnamespace @import("file.zig");
 pub usingnamespace @import("flatpak.zig");
 pub usingnamespace @import("homedir.zig");

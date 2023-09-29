@@ -212,8 +212,10 @@ command: ?[]const u8 = null,
 /// The directory to change to after starting the command.
 ///
 /// The default is "inherit" except in special scenarios listed next.
-/// If ghostty can detect it is launched on macOS from launchd
-/// (double-clicked), then it defaults to "home".
+/// On macOS, if Ghostty can detect it is launched from launchd
+/// (double-clicked) or `open`, then it defaults to "home".
+/// On Linux with GTK, if Ghostty can detect it was launched from
+/// a desktop launcher, then it defaults to "home".
 ///
 /// The value of this must be an absolute value or one of the special
 /// values below:
@@ -922,9 +924,14 @@ pub fn finalize(self: *Config) !void {
     }
 
     // The default for the working directory depends on the system.
-    const wd = self.@"working-directory" orelse switch (builtin.os.tag) {
-        .macos => if (c.getppid() == 1) "home" else "inherit",
-        else => "inherit",
+    const wd = self.@"working-directory" orelse wd: {
+        // If we have no working directory set, our default depends on
+        // whether we were launched from the desktop or CLI.
+        if (internal_os.launchedFromDesktop()) {
+            break :wd "home";
+        }
+
+        break :wd "inherit";
     };
 
     // If we are missing either a command or home directory, we need
