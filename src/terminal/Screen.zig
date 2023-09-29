@@ -1248,8 +1248,9 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req:
         const dst2 = slices[1];
         const src2_offset = bot_src_offset + src_len;
         const src2 = slices[1][src2_offset..];
-        fastmem.move(StorageCell, dst2, src2);
-        break :zero_offset .{ slices[0].len, src2_offset };
+        const src2_len = remaining;
+        fastmem.move(StorageCell, dst2, src2[0..src2_len]);
+        break :zero_offset .{ src_len, src2_len };
     };
 
     // Zero
@@ -4206,6 +4207,44 @@ test "Screen: scrollRegionUp buffer wrap alternate" {
         try testing.expectEqual(@as(u8, 155), cell.bg.r);
         try testing.expect(!cell.attrs.bold);
         try testing.expect(s.cursor.pen.attrs.bold);
+    }
+}
+
+test "Screen: scrollRegionUp buffer wrap alternative with extra lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // We artificially mess with the circular buffer here. This was discovered
+    // when debugging https://github.com/mitchellh/ghostty/issues/315. I
+    // don't know how to "naturally" get the circular buffer into this state
+    // although it is obviously possible, verified through various
+    // asciinema casts.
+    //
+    // I think the proper way to recreate this state would be to fill
+    // the screen, scroll the correct number of times, clear the screen
+    // with a fill. I can try that later to ensure we're hitting the same
+    // code path.
+    s.storage.head = 24;
+    s.storage.tail = 24;
+    s.storage.full = true;
+
+    // Scroll down, should still be bottom, but should wrap because
+    // we're out of space.
+    // try s.scroll(.{ .screen = 2 });
+    // s.cursor.x = 0;
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD\n5EFGH");
+
+    // Scroll
+    s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 3 }, 2);
+
+    {
+        // Test our contents rotated
+        var contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("3IJKL\n4ABCD\n\n\n5EFGH", contents);
     }
 }
 
