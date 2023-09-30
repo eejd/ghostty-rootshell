@@ -85,6 +85,7 @@ im_len: u7 = 0,
 
 pub fn init(self: *Surface, app: *App, opts: Options) !void {
     const widget = @as(*c.GtkWidget, @ptrCast(opts.gl_area));
+    c.gtk_widget_set_cursor_from_name(@ptrCast(opts.gl_area), "text");
     c.gtk_gl_area_set_required_version(opts.gl_area, 3, 3);
     c.gtk_gl_area_set_has_stencil_buffer(opts.gl_area, 0);
     c.gtk_gl_area_set_has_depth_buffer(opts.gl_area, 0);
@@ -355,7 +356,7 @@ pub fn setMouseShape(
     shape: terminal.MouseShape,
 ) !void {
     const name: [:0]const u8 = switch (shape) {
-        .default => "default",
+        .default => "text",
         .help => "help",
         .pointer => "pointer",
         .context_menu => "context-menu",
