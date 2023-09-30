@@ -1537,6 +1537,8 @@ pub const Keybinds = struct {
         return .{
             .set = .{
                 .bindings = try self.set.bindings.clone(alloc),
+                .reverse = try self.set.reverse.clone(alloc),
+                .unconsumed = try self.set.unconsumed.clone(alloc),
             },
         };
     }
