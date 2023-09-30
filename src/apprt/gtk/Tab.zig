@@ -9,6 +9,10 @@ const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const c = @import("c.zig");
 
+const log = std.log.scoped(.gtk);
+
+const GHOSTTY_TAB = "ghostty_tab";
+
 const Child = union(enum) {
     surface: *Surface,
     paned: *Paned,
@@ -30,7 +34,7 @@ focus_child: *Surface,
 pub fn create(alloc: Allocator, window: *Window, parent_: ?*CoreSurface) !*Tab {
     var tab = try alloc.create(Tab);
     errdefer alloc.destroy(tab);
-    try tab.init(window, _parent);
+    try tab.init(window, parent_);
 }
 
 pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
@@ -80,7 +84,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     const box_widget = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
     c.gtk_widget_set_hexpand(box_widget, 1);
     c.gtk_widget_set_vexpand(box_widget, 1);
-    self.box = ptrCast(box_widget);
+    self.box = @ptrCast(box_widget);
 
     // Initialize the GtkGLArea and attach it to our surface.
     // The surface starts in the "unrealized" state because we have to
@@ -114,7 +118,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     }
 
     // Set the userdata of the close button so it points to this page.
-    c.g_object_set_data(@ptrCast(box), GHOSTTY_TAB, self);
+    c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
 
     // Switch to the new tab
     c.gtk_notebook_set_current_page(self.notebook, page_idx);
@@ -122,4 +126,9 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // We need to grab focus after it is added to the window. When
     // creating a window we want to always focus on the widget.
     _ = c.gtk_widget_grab_focus(box_widget);
+}
+
+fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+    _ = ud;
+    // todo
 }

@@ -12,8 +12,12 @@ const terminal = @import("../../terminal/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
+const Paned = @import("Paned.zig");
+const Tab = @import("Tab.zig");
 const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
+const Position = @import("parent.zig").Position;
+const Parent = @import("parent.zig").Parent;
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
@@ -65,6 +69,9 @@ app: *App,
 
 /// The window we're part of
 window: *Window,
+
+/// Our parent widget
+parent: Parent,
 
 /// Our GTK area
 gl_area: *c.GtkGLArea,
@@ -154,6 +161,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     self.* = .{
         .app = app,
         .window = opts.window,
+        .parent = Parent.none,
         .gl_area = opts.gl_area,
         .title = if (opts.title_label) |label| .{
             .label = label,
