@@ -302,6 +302,9 @@ pub const Key = enum(c_int) {
                 return comptime result: {
                     @setEvalBranchQuota(100_000);
                     for (codepoint_map) |entry| {
+                        // No ASCII characters should ever map to a keypad key
+                        if (entry[1].keypad()) continue;
+
                         if (entry[0] == @as(u21, @intCast(comptime_ch))) {
                             break :result entry[1];
                         }
@@ -355,6 +358,12 @@ pub const Key = enum(c_int) {
                 };
             },
         };
+    }
+
+    test "fromASCII should not return keypad keys" {
+        const testing = std.testing;
+        try testing.expect(Key.fromASCII('0').? == .zero);
+        try testing.expect(Key.fromASCII('*') == null);
     }
 
     test "keypad keys" {

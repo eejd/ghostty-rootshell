@@ -897,7 +897,7 @@ pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !bool {
-    // log.debug("keyCallback event={}", .{event});
+    log.debug("keyCallback event={}", .{event});
 
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
