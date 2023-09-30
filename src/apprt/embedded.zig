@@ -987,7 +987,7 @@ pub const CAPI = struct {
             return false;
         };
 
-        ptr.core_surface.performBindingAction(action) catch |err| {
+        _ = ptr.core_surface.performBindingAction(action) catch |err| {
             log.err("error performing binding action action={} err={}", .{ action, err });
             return false;
         };
