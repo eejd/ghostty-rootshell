@@ -13,6 +13,10 @@ trigger: Trigger,
 /// The action to take if this binding matches
 action: Action,
 
+/// True if this binding should consume the input when the
+/// action is triggered.
+consumed: bool = true,
+
 pub const Error = error{
     InvalidFormat,
     InvalidAction,
@@ -22,9 +26,16 @@ pub const Error = error{
 /// specifically "trigger=action". Trigger is a "+"-delimited series of
 /// modifiers and keys. Action is the action name and optionally a
 /// parameter after a colon, i.e. "csi:A" or "ignore".
-pub fn parse(input: []const u8) !Binding {
+pub fn parse(raw_input: []const u8) !Binding {
     // NOTE(mitchellh): This is not the most efficient way to do any
     // of this, I welcome any improvements here!
+
+    // If our entire input is prefixed with "unconsumed:" then we are
+    // not consuming this keybind when the action is triggered.
+    const unconsumed_prefix = "unconsumed:";
+    const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
+    const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
+    const input = raw_input[start_idx..];
 
     // Find the first = which splits are mapping into the trigger
     // and action, respectively.
@@ -84,7 +95,11 @@ pub fn parse(input: []const u8) !Binding {
     // Find a matching action
     const action = try Action.parse(input[eqlIdx + 1 ..]);
 
-    return Binding{ .trigger = trigger, .action = action };
+    return Binding{
+        .trigger = trigger,
+        .action = action,
+        .consumed = !unconsumed,
+    };
 }
 
 /// The set of actions that a keybinding can take.
@@ -372,6 +387,13 @@ pub const Set = struct {
         std.hash_map.default_max_load_percentage,
     );
 
+    const UnconsumedMap = std.HashMapUnmanaged(
+        Trigger,
+        void,
+        Context(Trigger),
+        std.hash_map.default_max_load_percentage,
+    );
+
     /// The set of bindings.
     bindings: HashMap = .{},
 
@@ -380,9 +402,23 @@ pub const Set = struct {
     /// the most recently added binding for an action.
     reverse: ReverseMap = .{},
 
+    /// The map of triggers that explicitly do not want to be consumed
+    /// when matched. A trigger is "consumed" when it is not further
+    /// processed and potentially sent to the terminal. An "unconsumed"
+    /// trigger will perform both its action and also continue normal
+    /// encoding processing (if any).
+    ///
+    /// This is stored as a separate map since unconsumed triggers are
+    /// rare and we don't want to bloat our map with a byte per entry
+    /// (for boolean state) when most entries will be consumed.
+    ///
+    /// Assert: trigger in this map is also in bindings.
+    unconsumed: UnconsumedMap = .{},
+
     pub fn deinit(self: *Set, alloc: Allocator) void {
         self.bindings.deinit(alloc);
         self.reverse.deinit(alloc);
+        self.unconsumed.deinit(alloc);
         self.* = undefined;
     }
 
@@ -394,10 +430,35 @@ pub const Set = struct {
         t: Trigger,
         action: Action,
     ) Allocator.Error!void {
+        try self.put_(alloc, t, action, true);
+    }
+
+    /// Same as put but marks the trigger as unconsumed. An unconsumed
+    /// trigger will evaluate the action and continue to encode for the
+    /// terminal.
+    ///
+    /// This is a separate function because this case is rare.
+    pub fn putUnconsumed(
+        self: *Set,
+        alloc: Allocator,
+        t: Trigger,
+        action: Action,
+    ) Allocator.Error!void {
+        try self.put_(alloc, t, action, false);
+    }
+
+    fn put_(
+        self: *Set,
+        alloc: Allocator,
+        t: Trigger,
+        action: Action,
+        consumed: bool,
+    ) Allocator.Error!void {
         // unbind should never go into the set, it should be handled prior
         assert(action != .unbind);
 
         const gop = try self.bindings.getOrPut(alloc, t);
+        if (!consumed) try self.unconsumed.put(alloc, t, {});
 
         // If we have an existing binding for this trigger, we have to
         // update the reverse mapping to remove the old action.
@@ -410,6 +471,9 @@ pub const Set = struct {
                     break :it;
                 }
             }
+
+            // We also have to remove the unconsumed state if it exists.
+            if (consumed) _ = self.unconsumed.remove(t);
         }
 
         gop.value_ptr.* = action;
@@ -429,10 +493,18 @@ pub const Set = struct {
         return self.reverse.get(a);
     }
 
+    /// Returns true if the given trigger should be consumed. Requires
+    /// that trigger is in the set to be valid so this should only follow
+    /// a non-null get.
+    pub fn getConsumed(self: Set, t: Trigger) bool {
+        return self.unconsumed.get(t) == null;
+    }
+
     /// Remove a binding for a given trigger.
     pub fn remove(self: *Set, t: Trigger) void {
         const action = self.bindings.get(t) orelse return;
         _ = self.bindings.remove(t);
+        _ = self.unconsumed.remove(t);
 
         // Look for a matching action in bindings and use that.
         // Note: we'd LIKE to replace this with the most recent binding but
@@ -523,6 +595,27 @@ test "parse: triggers" {
         },
         .action = .{ .ignore = {} },
     }, try parse("shift+physical:a=ignore"));
+
+    // unconsumed keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+        .consumed = false,
+    }, try parse("unconsumed:shift+a=ignore"));
+
+    // unconsumed physical keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .a,
+            .physical = true,
+        },
+        .action = .{ .ignore = {} },
+        .consumed = false,
+    }, try parse("unconsumed:physical:a+shift=ignore"));
 
     // invalid key
     try testing.expectError(Error.InvalidFormat, parse("foo=ignore"));
@@ -653,4 +746,21 @@ test "set: overriding a mapping updates reverse" {
         const trigger = s.getTrigger(.{ .new_window = {} });
         try testing.expect(trigger == null);
     }
+}
+
+test "set: consumed state" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.put(alloc, .{ .key = .a }, .{ .new_window = {} });
+    try testing.expect(s.getConsumed(.{ .key = .a }));
+
+    try s.putUnconsumed(alloc, .{ .key = .a }, .{ .new_window = {} });
+    try testing.expect(!s.getConsumed(.{ .key = .a }));
+
+    try s.put(alloc, .{ .key = .a }, .{ .new_window = {} });
+    try testing.expect(s.getConsumed(.{ .key = .a }));
 }

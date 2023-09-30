@@ -902,7 +902,7 @@ pub fn keyCallback(
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     binding: {
-        const binding_action: input.Binding.Action = action: {
+        const binding_action: input.Binding.Action, const consumed = action: {
             const binding_mods = event.mods.binding();
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
@@ -910,11 +910,17 @@ pub fn keyCallback(
             };
 
             const set = self.config.keybind.set;
-            if (set.get(trigger)) |v| break :action v;
+            if (set.get(trigger)) |v| break :action .{
+                v,
+                set.getConsumed(trigger),
+            };
 
             trigger.key = event.physical_key;
             trigger.physical = true;
-            if (set.get(trigger)) |v| break :action v;
+            if (set.get(trigger)) |v| break :action .{
+                v,
+                set.getConsumed(trigger),
+            };
 
             break :binding;
         };
@@ -926,7 +932,10 @@ pub fn keyCallback(
             try self.performBindingAction(binding_action);
         }
 
-        return true;
+        // If we consume this event, then we are done. If we don't consume
+        // it, we processed the action but we still want to process our
+        // encodings, too.
+        if (consumed) return true;
     }
 
     // If this input event has text, then we hide the mouse if configured.
