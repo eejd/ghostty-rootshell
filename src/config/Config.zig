@@ -563,6 +563,16 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
+            .{ .key = .page_up, .mods = .{ .ctrl = true } },
+            .{ .previous_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .page_down, .mods = .{ .ctrl = true } },
+            .{ .next_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
             .{ .key = .o, .mods = .{ .ctrl = true, .shift = true } },
             .{ .new_split = .right },
         );
@@ -1537,6 +1547,8 @@ pub const Keybinds = struct {
         return .{
             .set = .{
                 .bindings = try self.set.bindings.clone(alloc),
+                .reverse = try self.set.reverse.clone(alloc),
+                .unconsumed = try self.set.unconsumed.clone(alloc),
             },
         };
     }

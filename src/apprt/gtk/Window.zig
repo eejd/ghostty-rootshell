@@ -290,6 +290,11 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
     self.closeTab(page);
 }
 
+/// Returns true if this window has any tabs.
+pub fn hasTabs(self: *const Window) bool {
+    return c.gtk_notebook_get_n_pages(self.notebook) > 1;
+}
+
 /// Go to the previous tab for a surface.
 pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
     const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
@@ -526,7 +531,7 @@ fn gtkActionClose(
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
-    surface.performBindingAction(.{ .close_surface = {} }) catch |err| {
+    _ = surface.performBindingAction(.{ .close_surface = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
@@ -539,7 +544,7 @@ fn gtkActionNewWindow(
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
-    surface.performBindingAction(.{ .new_window = {} }) catch |err| {
+    _ = surface.performBindingAction(.{ .new_window = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
@@ -552,7 +557,7 @@ fn gtkActionNewTab(
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
-    surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
+    _ = surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
