@@ -1524,7 +1524,11 @@ pub const Keybinds = struct {
         const binding = try inputpkg.Binding.parse(value);
         switch (binding.action) {
             .unbind => self.set.remove(binding.trigger),
-            else => try self.set.put(alloc, binding.trigger, binding.action),
+            else => if (binding.consumed) {
+                try self.set.put(alloc, binding.trigger, binding.action);
+            } else {
+                try self.set.putUnconsumed(alloc, binding.trigger, binding.action);
+            },
         }
     }
 

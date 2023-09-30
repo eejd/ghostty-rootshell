@@ -13,6 +13,10 @@ trigger: Trigger,
 /// The action to take if this binding matches
 action: Action,
 
+/// True if this binding should consume the input when the
+/// action is triggered.
+consumed: bool = true,
+
 pub const Error = error{
     InvalidFormat,
     InvalidAction,
@@ -22,9 +26,16 @@ pub const Error = error{
 /// specifically "trigger=action". Trigger is a "+"-delimited series of
 /// modifiers and keys. Action is the action name and optionally a
 /// parameter after a colon, i.e. "csi:A" or "ignore".
-pub fn parse(input: []const u8) !Binding {
+pub fn parse(raw_input: []const u8) !Binding {
     // NOTE(mitchellh): This is not the most efficient way to do any
     // of this, I welcome any improvements here!
+
+    // If our entire input is prefixed with "unconsumed:" then we are
+    // not consuming this keybind when the action is triggered.
+    const unconsumed_prefix = "unconsumed:";
+    const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
+    const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
+    const input = raw_input[start_idx..];
 
     // Find the first = which splits are mapping into the trigger
     // and action, respectively.
@@ -84,7 +95,11 @@ pub fn parse(input: []const u8) !Binding {
     // Find a matching action
     const action = try Action.parse(input[eqlIdx + 1 ..]);
 
-    return Binding{ .trigger = trigger, .action = action };
+    return Binding{
+        .trigger = trigger,
+        .action = action,
+        .consumed = !unconsumed,
+    };
 }
 
 /// The set of actions that a keybinding can take.
@@ -580,6 +595,27 @@ test "parse: triggers" {
         },
         .action = .{ .ignore = {} },
     }, try parse("shift+physical:a=ignore"));
+
+    // unconsumed keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+        .consumed = false,
+    }, try parse("unconsumed:shift+a=ignore"));
+
+    // unconsumed physical keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .a,
+            .physical = true,
+        },
+        .action = .{ .ignore = {} },
+        .consumed = false,
+    }, try parse("unconsumed:physical:a+shift=ignore"));
 
     // invalid key
     try testing.expectError(Error.InvalidFormat, parse("foo=ignore"));
