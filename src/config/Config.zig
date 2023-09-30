@@ -406,14 +406,19 @@ keybind: Keybinds = .{},
 /// This does not work with GLFW builds.
 @"macos-option-as-alt": OptionAsAlt = .false,
 
-/// If true (default), then the Ghostty GTK application will run in
-/// single-instance mode: each new `ghostty` process launched will result
-/// in a new window, if there is already a running process.
+/// If true, the Ghostty GTK application will run in single-instance mode:
+/// each new `ghostty` process launched will result in a new window if there
+/// is already a running process.
 ///
 /// If false, each new ghostty process will launch a separate application.
 ///
-/// Debug builds of Ghostty have a separate single-instance ID.
-@"gtk-single-instance": bool = true,
+/// The default value is "desktop" which will default to "true" if Ghostty
+/// detects it was launched from the .desktop file such as an app launcher.
+/// If Ghostty is launched from the command line, it will default to "false".
+///
+/// Note that debug builds of Ghostty have a separate single-instance ID
+/// so you can test single instance without conflicting with release builds.
+@"gtk-single-instance": GtkSingleInstance = .desktop,
 
 /// If true (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
@@ -1855,4 +1860,11 @@ pub const WindowTheme = enum {
     system,
     light,
     dark,
+};
+
+/// See gtk-single-instance
+pub const GtkSingleInstance = enum {
+    desktop,
+    false,
+    true,
 };
