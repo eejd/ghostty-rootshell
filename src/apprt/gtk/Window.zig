@@ -226,6 +226,7 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
     // wait for the "realize" callback from GTK to know that the OpenGL
     // context is ready. See Surface docs for more info.
     const gl_area = c.gtk_gl_area_new();
+    c.gtk_widget_set_cursor_from_name(gl_area, "text");
     try surface.init(self.app, .{
         .window = self,
         .gl_area = @ptrCast(gl_area),
