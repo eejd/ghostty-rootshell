@@ -563,6 +563,16 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
+            .{ .key = .page_up, .mods = .{ .ctrl = true } },
+            .{ .previous_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .page_down, .mods = .{ .ctrl = true } },
+            .{ .next_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
             .{ .key = .o, .mods = .{ .ctrl = true, .shift = true } },
             .{ .new_split = .right },
         );
@@ -600,17 +610,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .right, .mods = .{ .ctrl = true, .alt = true } },
             .{ .goto_split = .right },
-        );
-
-        try result.keybind.set.putUnconsumed(
-            alloc,
-            .{ .key = .page_up, .mods = .{ .ctrl = true } },
-            .{ .previous_tab = {} },
-        );
-        try result.keybind.set.putUnconsumed(
-            alloc,
-            .{ .key = .page_down, .mods = .{ .ctrl = true } },
-            .{ .next_tab = {} },
         );
 
         // Viewport scrolling

@@ -288,6 +288,10 @@ pub fn newTab(self: *Surface) !void {
     try self.window.newTab(&self.core_surface);
 }
 
+pub fn hasTabs(self: *const Surface) bool {
+    return self.window.hasTabs();
+}
+
 pub fn gotoPreviousTab(self: *Surface) void {
     self.window.gotoPreviousTab(self);
 }

@@ -928,14 +928,15 @@ pub fn keyCallback(
         // We only execute the binding on press/repeat but we still consume
         // the key on release so that we don't send any release events.
         log.debug("key event binding consumed={} action={}", .{ consumed, binding_action });
-        if (event.action == .press or event.action == .repeat) {
-            try self.performBindingAction(binding_action);
-        }
+        const performed = if (event.action == .press or event.action == .repeat)
+            try self.performBindingAction(binding_action)
+        else
+            false;
 
         // If we consume this event, then we are done. If we don't consume
         // it, we processed the action but we still want to process our
         // encodings, too.
-        if (consumed) return true;
+        if (consumed and performed) return true;
     }
 
     // If this input event has text, then we hide the mouse if configured.
@@ -1902,7 +1903,15 @@ fn showMouse(self: *Surface) void {
 
 /// Perform a binding action. A binding is a keybinding. This function
 /// must be called from the GUI thread.
-pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void {
+///
+/// This function returns true if the binding action was performed. This
+/// may return false if the binding action is not supported or if the
+/// binding action would do nothing (i.e. previous tab with no tabs).
+///
+/// NOTE: At the time of writing this comment, only previous/next tab
+/// will ever return false. We can expand this in the future if it becomes
+/// useful. We did previous/next tab so we could implement #498.
+pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool {
     switch (action) {
         .unbind => unreachable,
         .ignore => {},
@@ -1971,13 +1980,13 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
                     self.config.clipboard_trim_trailing_spaces,
                 ) catch |err| {
                     log.err("error reading selection string err={}", .{err});
-                    return;
+                    return true;
                 };
                 defer self.alloc.free(buf);
 
                 self.rt_surface.setClipboardString(buf, .standard) catch |err| {
                     log.err("error setting clipboard string err={}", .{err});
-                    return;
+                    return true;
                 };
             }
         },
@@ -2116,12 +2125,26 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
         },
 
         .previous_tab => {
+            if (@hasDecl(apprt.Surface, "hasTabs")) {
+                if (!self.rt_surface.hasTabs()) {
+                    log.debug("surface has no tabs, ignoring previous_tab binding", .{});
+                    return false;
+                }
+            }
+
             if (@hasDecl(apprt.Surface, "gotoPreviousTab")) {
                 self.rt_surface.gotoPreviousTab();
             } else log.warn("runtime doesn't implement gotoPreviousTab", .{});
         },
 
         .next_tab => {
+            if (@hasDecl(apprt.Surface, "hasTabs")) {
+                if (!self.rt_surface.hasTabs()) {
+                    log.debug("surface has no tabs, ignoring next_tab binding", .{});
+                    return false;
+                }
+            }
+
             if (@hasDecl(apprt.Surface, "gotoNextTab")) {
                 self.rt_surface.gotoNextTab();
             } else log.warn("runtime doesn't implement gotoNextTab", .{});
@@ -2163,6 +2186,8 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !void 
 
         .quit => try self.app.setQuit(),
     }
+
+    return true;
 }
 
 /// Call this to complete a clipboard request sent to apprt. This should
