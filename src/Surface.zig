@@ -927,7 +927,7 @@ pub fn keyCallback(
 
         // We only execute the binding on press/repeat but we still consume
         // the key on release so that we don't send any release events.
-        log.debug("key event consumed by binding action={}", .{binding_action});
+        log.debug("key event binding consumed={} action={}", .{ consumed, binding_action });
         if (event.action == .press or event.action == .repeat) {
             try self.performBindingAction(binding_action);
         }
