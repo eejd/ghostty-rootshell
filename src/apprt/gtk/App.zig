@@ -16,6 +16,7 @@ const builtin = @import("builtin");
 const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
 const input = @import("../../input.zig");
+const internal_os = @import("../../os/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
@@ -72,10 +73,16 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const cursor_none = c.gdk_cursor_new_from_name("none", null);
     errdefer if (cursor_none) |cursor| c.g_object_unref(cursor);
 
+    const single_instance = switch (config.@"gtk-single-instance") {
+        .true => true,
+        .false => false,
+        .desktop => internal_os.launchedFromDesktop(),
+    };
+
     // Setup the flags for our application.
     const app_flags: c.GApplicationFlags = app_flags: {
         var flags: c.GApplicationFlags = c.G_APPLICATION_DEFAULT_FLAGS;
-        if (!config.@"gtk-single-instance") flags |= c.G_APPLICATION_NON_UNIQUE;
+        if (!single_instance) flags |= c.G_APPLICATION_NON_UNIQUE;
         break :app_flags flags;
     };
 
@@ -88,6 +95,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     // Create our GTK Application which encapsulates our process.
+    log.debug("creating GTK application id={s} single-instance={}", .{
+        app_id,
+        single_instance,
+    });
     const app = @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
         app_id.ptr,
         app_flags,
