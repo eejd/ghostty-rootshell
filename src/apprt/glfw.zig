@@ -376,15 +376,6 @@ pub const Surface = struct {
             self,
         );
         errdefer self.core_surface.deinit();
-
-        // If we have a desired window size, we can now calculate the size
-        // because we have the cell size.
-        if (config.@"window-height" > 0 or config.@"window-width" > 0) {
-            self.window.setSize(.{
-                .height = @max(config.@"window-height" * self.core_surface.cell_size.height, 480),
-                .width = @max(config.@"window-width" * self.core_surface.cell_size.width, 640),
-            });
-        }
     }
 
     pub fn deinit(self: *Surface) void {
@@ -454,6 +445,13 @@ pub const Surface = struct {
         self.setShouldClose();
         self.deinit();
         self.app.app.alloc.destroy(self);
+    }
+
+    /// Set the initial window size. This is called exactly once at
+    /// surface initialization time. This may be called before "self"
+    /// is fully initialized.
+    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+        self.window.setSize(.{ .width = width, .height = height });
     }
 
     /// Set the size limits of the window.

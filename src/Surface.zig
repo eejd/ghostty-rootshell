@@ -471,6 +471,36 @@ pub fn init(
         .{&self.io_thread},
     );
     self.io_thr.setName("io") catch {};
+
+    // Determine our initial window size if configured. We need to do this
+    // quite late in the process because our height/width are in grid dimensions,
+    // so we need to know our cell sizes first.
+    //
+    // Note: it is important to do this after the renderer is setup above.
+    // This allows the apprt to fully initialize the surface before we
+    // start messing with the window.
+    if (config.@"window-height" > 0 and config.@"window-width" > 0) init: {
+        const scale = rt_surface.getContentScale() catch break :init;
+        const height = @max(config.@"window-height" * cell_size.height, 480);
+        const width = @max(config.@"window-width" * cell_size.width, 640);
+        const width_f32: f32 = @floatFromInt(width);
+        const height_f32: f32 = @floatFromInt(height);
+
+        // The final values are affected by content scale and we need to
+        // account for the padding so we get the exact correct grid size.
+        const final_width: u32 =
+            @as(u32, @intFromFloat(@ceil(width_f32 / scale.x))) +
+            padding.left +
+            padding.right;
+        const final_height: u32 =
+            @as(u32, @intFromFloat(@ceil(height_f32 / scale.y))) +
+            padding.top +
+            padding.bottom;
+
+        rt_surface.setInitialWindowSize(final_width, final_height) catch |err| {
+            log.warn("unable to set initial window size: {s}", .{err});
+        };
+    }
 }
 
 pub fn deinit(self: *Surface) void {

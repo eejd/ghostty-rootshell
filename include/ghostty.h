@@ -291,15 +291,6 @@ typedef enum {
     GHOSTTY_BUILD_MODE_RELEASE_SMALL,
 } ghostty_build_mode_e;
 
-typedef struct {
-    bool origin;
-    bool size;
-    uint32_t x;
-    uint32_t y;
-    uint32_t w;
-    uint32_t h;
-} ghostty_rect_s;
-
 // Fully defined types. This MUST be kept in sync with equivalent Zig
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
@@ -335,6 +326,7 @@ typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direc
 typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void *);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, ghostty_non_native_fullscreen_e);
+typedef void (*ghostty_runtime_set_initial_window_size_cb)(void *, uint32_t, uint32_t);
 
 typedef struct {
     void *userdata;
@@ -354,6 +346,7 @@ typedef struct {
     ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
+    ghostty_runtime_set_initial_window_size_cb set_initial_window_size_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------
@@ -389,7 +382,6 @@ ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 bool ghostty_surface_transparent(ghostty_surface_t);
-ghostty_rect_s ghostty_surface_window_frame(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);

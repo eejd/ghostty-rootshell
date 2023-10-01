@@ -87,6 +87,10 @@ pub const App = struct {
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
+
+        /// Set the initial window size. It is up to the user of libghostty to
+        /// determine if it is the initial window and set this appropriately.
+        set_initial_window_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -734,6 +738,15 @@ pub const Surface = struct {
         func(self.opts.userdata, options);
     }
 
+    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+        const func = self.app.opts.set_initial_window_size orelse {
+            log.info("runtime embedder does not set_initial_window_size", .{});
+            return;
+        };
+
+        func(self.opts.userdata, width, height);
+    }
+
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
         const font_size: u16 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
@@ -756,16 +769,6 @@ pub const Surface = struct {
 // C API
 pub const CAPI = struct {
     const global = &@import("../main.zig").state;
-
-    /// ghostty_rect_s
-    const Rect = extern struct {
-        origin: bool = false,
-        size: bool = false,
-        x: u32 = 0,
-        y: u32 = 0,
-        w: u32 = 0,
-        h: u32 = 0,
-    };
 
     /// Create a new app.
     export fn ghostty_app_new(
@@ -872,21 +875,6 @@ pub const CAPI = struct {
     /// Returns true if the surface has transparency set.
     export fn ghostty_surface_transparent(surface: *Surface) bool {
         return surface.app.config.@"background-opacity" < 1.0;
-    }
-
-    /// The desired window frame for a new window.
-    export fn ghostty_surface_window_frame(surface: *Surface) Rect {
-        const config = surface.app.config;
-
-        // If the desired height/width isn't configured, return 0.
-        if (config.@"window-height" == 0 or config.@"window-width" == 0) return .{};
-
-        // Return the desired rect
-        return .{
-            .size = true,
-            .h = @max(config.@"window-height" * surface.core_surface.cell_size.height, 480),
-            .w = @max(config.@"window-width" * surface.core_surface.cell_size.width, 640),
-        };
     }
 
     /// Tell the surface that it needs to schedule a render
