@@ -16,12 +16,9 @@ const Version = @import("src/build/Version.zig");
 
 const glfw = @import("vendor/mach-glfw/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
-const macos = @import("pkg/macos/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
-const freetype = @import("pkg/freetype/build.old.zig");
-const harfbuzz = @import("pkg/harfbuzz/build.old.zig");
 const libpng = @import("pkg/libpng/build.old.zig");
 const pixman = @import("pkg/pixman/build.old.zig");
 const utf8proc = @import("pkg/utf8proc/build.old.zig");
@@ -673,6 +670,10 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const macos_dep = b.dependency("macos", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const pixman_dep = b.dependency("pixman", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -733,13 +734,8 @@ fn addDeps(
         "fontconfig",
         fontconfig_dep.module("fontconfig"),
     );
-    const mod_freetype = freetype.module(b);
-    const mod_macos = macos.module(b);
-    step.addModule("freetype", mod_freetype);
-    step.addModule("harfbuzz", harfbuzz.module(b, .{
-        .freetype = mod_freetype,
-        .macos = mod_macos,
-    }));
+    step.addModule("freetype", freetype_dep.module("freetype"));
+    step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
     step.addModule("pixman", pixman.module(b));
     step.addModule("utf8proc", utf8proc.module(b));
@@ -747,8 +743,8 @@ fn addDeps(
     // Mac Stuff
     if (step.target.isDarwin()) {
         step.addModule("objc", objc_dep.module("objc"));
-        step.addModule("macos", mod_macos);
-        _ = try macos.link(b, step, .{});
+        step.addModule("macos", macos_dep.module("macos"));
+        //_ = try macos.link(b, step, .{});
 
         // todo: do this is in zig-objc instead.
         step.linkSystemLibraryName("objc");
@@ -767,7 +763,7 @@ fn addDeps(
 
     // Dynamic link
     if (!static) {
-        step.addIncludePath(.{ .path = freetype.include_path_self });
+        // step.addIncludePath(.{ .path = freetype.include_path_self });
         step.linkSystemLibrary2("bzip2", dynamic_link_opts);
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
         step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);

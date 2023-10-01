@@ -1,6 +1,15 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+    _ = target;
+    _ = optimize;
+
+    _ = b.addModule("macos", .{ .source_file = .{ .path = "main.zig" } });
+}
+
 pub fn module(b: *std.Build) *std.build.Module {
     return b.createModule(.{
         .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },

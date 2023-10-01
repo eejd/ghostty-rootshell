@@ -8,6 +8,17 @@ pub fn build(b: *std.Build) !void {
     const coretext_enabled = b.option(bool, "enable-coretext", "Build coretext") orelse false;
     const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse false;
 
+    const freetype = b.dependency("freetype", .{ .target = target, .optimize = optimize });
+    const macos = b.dependency("macos", .{ .target = target, .optimize = optimize });
+
+    _ = b.addModule("harfbuzz", .{
+        .source_file = .{ .path = "main.zig" },
+        .dependencies = &.{
+            .{ .name = "freetype", .module = freetype.module("freetype") },
+            .{ .name = "macos", .module = macos.module("macos") },
+        },
+    });
+
     const upstream_root = "../../vendor/harfbuzz";
 
     const lib = b.addStaticLibrary(.{

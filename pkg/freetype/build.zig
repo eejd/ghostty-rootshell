@@ -5,8 +5,9 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const libpng_enabled = b.option(bool, "enable-libpng", "Build libpng") orelse false;
 
-    const upstream = b.dependency("freetype", .{});
+    _ = b.addModule("freetype", .{ .source_file = .{ .path = "main.zig" } });
 
+    const upstream = b.dependency("freetype", .{});
     const lib = b.addStaticLibrary(.{
         .name = "freetype",
         .target = target,
