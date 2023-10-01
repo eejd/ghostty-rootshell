@@ -42,10 +42,7 @@ pub fn build(b: *std.Build) !void {
         "-DHAVE_FT_DONE_MM_VAR=1",
         "-DHAVE_FT_GET_TRANSFORM=1",
     });
-    if (coretext_enabled) {
-        try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
-        lib.linkFramework("ApplicationServices");
-    }
+    if (coretext_enabled) try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
 
     lib.addCSourceFile(.{
         .file = .{ .path = upstream_root ++ "/src/harfbuzz.cc" },

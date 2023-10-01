@@ -675,6 +675,26 @@ fn addDeps(
         .search_strategy = .mode_first,
     };
 
+    // Dependencies
+    const freetype_dep = b.dependency("freetype", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const libpng_dep = b.dependency("libpng", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const zlib_dep = b.dependency("zlib", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const harfbuzz_dep = b.dependency("harfbuzz", .{
+        .target = step.target,
+        .optimize = step.optimize,
+        .@"enable-freetype" = true,
+        .@"enable-coretext" = font_backend.hasCoretext(),
+    });
+
     // On Linux, we need to add a couple common library paths that aren't
     // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
     // on x86_64.
@@ -751,79 +771,93 @@ fn addDeps(
 
     // Other dependencies, we may dynamically link
     if (static) {
-        const zlib_step = try zlib.link(b, step);
-        try static_libs.append(zlib_step.getEmittedBin());
+        step.linkLibrary(zlib_dep.artifact("z"));
+        try static_libs.append(zlib_dep.artifact("z").getEmittedBin());
 
-        const libpng_step = try libpng.link(b, step, .{
-            .zlib = .{
-                .step = zlib_step,
-                .include = &zlib.include_paths,
-            },
-        });
-        try static_libs.append(libpng_step.getEmittedBin());
+        step.linkLibrary(libpng_dep.artifact("png"));
+        try static_libs.append(libpng_dep.artifact("png").getEmittedBin());
 
         // Freetype
-        const freetype_step = try freetype.link(b, step, .{
-            .libpng = freetype.Options.Libpng{
-                .enabled = true,
-                .step = libpng_step,
-                .include = &libpng.include_paths,
-            },
-
-            .zlib = .{
-                .enabled = true,
-                .step = zlib_step,
-                .include = &zlib.include_paths,
-            },
-        });
-        try static_libs.append(freetype_step.getEmittedBin());
+        step.linkLibrary(freetype_dep.artifact("freetype"));
+        try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
 
         // Harfbuzz
-        const harfbuzz_step = try harfbuzz.link(b, step, .{
-            .freetype = .{
-                .enabled = true,
-                .step = freetype_step,
-                .include = &freetype.include_paths,
-            },
+        step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
+        try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
 
-            .coretext = .{
-                .enabled = font_backend.hasCoretext(),
-            },
-        });
-        system_sdk.include(b, harfbuzz_step, .{});
-        try static_libs.append(harfbuzz_step.getEmittedBin());
+        // const zlib_step = try zlib.link(b, step);
+        // try static_libs.append(zlib_step.getEmittedBin());
+        //
+        // const libpng_step = try libpng.link(b, step, .{
+        //     .zlib = .{
+        //         .step = zlib_step,
+        //         .include = &zlib.include_paths,
+        //     },
+        // });
+        // try static_libs.append(libpng_step.getEmittedBin());
+        //
+        // // Freetype
+        // const freetype_step = try freetype.link(b, step, .{
+        //     .libpng = freetype.Options.Libpng{
+        //         .enabled = true,
+        //         .step = libpng_step,
+        //         .include = &libpng.include_paths,
+        //     },
+        //
+        //     .zlib = .{
+        //         .enabled = true,
+        //         .step = zlib_step,
+        //         .include = &zlib.include_paths,
+        //     },
+        // });
+        // try static_libs.append(freetype_step.getEmittedBin());
+        //
+        // // Harfbuzz
+        // const harfbuzz_step = try harfbuzz.link(b, step, .{
+        //     .freetype = .{
+        //         .enabled = true,
+        //         .step = freetype_step,
+        //         .include = &freetype.include_paths,
+        //     },
+        //
+        //     .coretext = .{
+        //         .enabled = font_backend.hasCoretext(),
+        //     },
+        // });
+        // system_sdk.include(b, harfbuzz_step, .{});
+        // try static_libs.append(harfbuzz_step.getEmittedBin());
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
         try static_libs.append(pixman_step.getEmittedBin());
 
         // Only Linux gets fontconfig
-        if (font_backend.hasFontconfig()) {
-            // Libxml2
-            const libxml2_lib = try libxml2.create(
-                b,
-                step.target,
-                step.optimize,
-                .{
-                    .lzma = false,
-                    .zlib = false,
-                    .iconv = !step.target.isWindows(),
-                },
-            );
-            libxml2_lib.link(step);
-
-            // Fontconfig
-            const fontconfig_step = try fontconfig.link(b, step, .{
-                .freetype = .{
-                    .enabled = true,
-                    .step = freetype_step,
-                    .include = &freetype.include_paths,
-                },
-
-                .libxml2 = true,
-            });
-            libxml2_lib.link(fontconfig_step);
-        }
+        // if (font_backend.hasFontconfig()) {
+        //     // Libxml2
+        //     const libxml2_lib = try libxml2.create(
+        //         b,
+        //         step.target,
+        //         step.optimize,
+        //         .{
+        //             .lzma = false,
+        //             .zlib = false,
+        //             .iconv = !step.target.isWindows(),
+        //         },
+        //     );
+        //     libxml2_lib.link(step);
+        //
+        //     // Fontconfig
+        //     const fontconfig_step = try fontconfig.link(b, step, .{
+        //         .freetype = .{
+        //             .enabled = true,
+        //             .step = freetype_step,
+        //             .include = &freetype.include_paths,
+        //         },
+        //
+        //         .libxml2 = true,
+        //     });
+        //     libxml2_lib.link(fontconfig_step);
+        // }
     }
 
     if (!lib) {
