@@ -20,7 +20,6 @@ const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const macos = @import("pkg/macos/build.zig");
 const objc = @import("vendor/zig-objc/build.zig");
-const pixman = @import("pkg/pixman/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
@@ -29,6 +28,7 @@ const fontconfig = @import("pkg/fontconfig/build.old.zig");
 const freetype = @import("pkg/freetype/build.old.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.old.zig");
 const libpng = @import("pkg/libpng/build.old.zig");
+const pixman = @import("pkg/pixman/build.old.zig");
 const zlib = @import("pkg/zlib/build.old.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
@@ -688,6 +688,10 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const pixman_dep = b.dependency("pixman", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const zlib_dep = b.dependency("zlib", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -790,8 +794,8 @@ fn addDeps(
         try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
 
         // Pixman
-        const pixman_step = try pixman.link(b, step, .{});
-        try static_libs.append(pixman_step.getEmittedBin());
+        step.linkLibrary(pixman_dep.artifact("pixman"));
+        try static_libs.append(pixman_dep.artifact("pixman").getEmittedBin());
 
         // Only Linux gets fontconfig
         if (font_backend.hasFontconfig()) {
