@@ -4,8 +4,9 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("utf8proc", .{});
+    _ = b.addModule("utf8proc", .{ .source_file = .{ .path = "main.zig" } });
 
+    const upstream = b.dependency("utf8proc", .{});
     const lib = b.addStaticLibrary(.{
         .name = "utf8proc",
         .target = target,

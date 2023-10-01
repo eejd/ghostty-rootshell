@@ -4,8 +4,9 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("pixman", .{});
+    _ = b.addModule("pixman", .{ .source_file = .{ .path = "main.zig" } });
 
+    const upstream = b.dependency("pixman", .{});
     const lib = b.addStaticLibrary(.{
         .name = "pixman",
         .target = target,

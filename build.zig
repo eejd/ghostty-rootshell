@@ -19,11 +19,6 @@ const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
-const libpng = @import("pkg/libpng/build.old.zig");
-const pixman = @import("pkg/pixman/build.old.zig");
-const utf8proc = @import("pkg/utf8proc/build.old.zig");
-const zlib = @import("pkg/zlib/build.old.zig");
-
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
 // but we liberally update it. In the future, we'll be more careful about
@@ -698,7 +693,7 @@ fn addDeps(
         // We link this package but its a no-op since Tracy
         // never actually WORKS with wasm.
         step.addModule("tracy", tracylib.module(b));
-        step.addModule("utf8proc", utf8proc.module(b));
+        step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
         step.addModule("zig-js", js_dep.module("zig-js"));
 
         // utf8proc
@@ -737,8 +732,8 @@ fn addDeps(
     step.addModule("freetype", freetype_dep.module("freetype"));
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
-    step.addModule("pixman", pixman.module(b));
-    step.addModule("utf8proc", utf8proc.module(b));
+    step.addModule("pixman", pixman_dep.module("pixman"));
+    step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
 
     // Mac Stuff
     if (step.target.isDarwin()) {
