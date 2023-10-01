@@ -1,107 +1,51 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const NativeTargetInfo = std.zig.system.NativeTargetInfo;
 
-/// Directories with our includes.
-const root = thisDir() ++ "../../../vendor/fontconfig-2.14.0/";
-const include_path = root;
-const include_path_self = thisDir();
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-pub const include_paths = .{ include_path, include_path_self };
+    const libxml2_enabled = b.option(bool, "enable-libxml2", "Build libxml2") orelse true;
+    const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse true;
 
-pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
-        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
-    });
-}
+    const upstream = b.dependency("fontconfig", .{});
 
-fn thisDir() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-pub const Options = struct {
-    freetype: Freetype = .{},
-    expat: Expat = .{},
-    libxml2: bool = false,
-
-    pub const Freetype = struct {
-        enabled: bool = false,
-        step: ?*std.build.LibExeObjStep = null,
-        include: ?[]const []const u8 = null,
-    };
-
-    pub const Expat = struct {
-        enabled: bool = false,
-        step: ?*std.build.LibExeObjStep = null,
-        include: ?[]const []const u8 = null,
-    };
-};
-
-pub fn link(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    const lib = try buildFontconfig(b, step, opt);
-    step.linkLibrary(lib);
-    step.addIncludePath(.{ .path = include_path });
-    step.addIncludePath(.{ .path = include_path_self });
-    return lib;
-}
-
-pub fn buildFontconfig(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    const target = step.target;
     const lib = b.addStaticLibrary(.{
         .name = "fontconfig",
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target,
+        .optimize = optimize,
     });
-
-    // Include
-    lib.addIncludePath(.{ .path = include_path });
-    lib.addIncludePath(.{ .path = include_path_self });
-
-    // Link
     lib.linkLibC();
-    if (opt.expat.enabled) {
-        if (opt.expat.step) |expat|
-            lib.linkLibrary(expat)
-        else
-            lib.linkSystemLibrary("expat");
-
-        if (opt.expat.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
-    }
-    if (opt.freetype.enabled) {
-        if (opt.freetype.step) |freetype|
-            lib.linkLibrary(freetype)
-        else
-            lib.linkSystemLibrary("freetype2");
-
-        if (opt.freetype.include) |dirs|
-            for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
-    }
     if (!target.isWindows()) {
         lib.linkSystemLibrary("pthread");
     }
+    if (freetype_enabled) {
+        const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
+        lib.linkLibrary(freetype_dep.artifact("freetype"));
+    }
+    if (libxml2_enabled) {
+        // const libxml2_dep = b.dependency("libxml2", .{ .target = target, .optimize = optimize });
+        // lib.linkLibrary(libxml2_dep.artifact("xml2"));
+    }
 
-    // Compile
+    lib.addIncludePath(upstream.path(""));
+    lib.addIncludePath(.{ .path = "override/include" });
+
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
-
     try flags.appendSlice(&.{
         "-DHAVE_DIRENT_H",
         "-DHAVE_FCNTL_H",
         "-DHAVE_STDLIB_H",
         "-DHAVE_STRING_H",
         "-DHAVE_UNISTD_H",
+        "-DHAVE_SYS_STATVFS_H",
         "-DHAVE_SYS_PARAM_H",
+        "-DHAVE_SYS_MOUNT_H",
 
+        "-DHAVE_LINK",
         "-DHAVE_MKSTEMP",
+        "-DHAVE_MKOSTEMP",
         "-DHAVE__MKTEMP_S",
         "-DHAVE_MKDTEMP",
         "-DHAVE_GETOPT",
@@ -109,9 +53,15 @@ pub fn buildFontconfig(
         //"-DHAVE_GETPROGNAME",
         //"-DHAVE_GETEXECNAME",
         "-DHAVE_RAND",
+        "-DHAVE_RANDOM",
+        "-DHAVE_LRAND48",
         //"-DHAVE_RANDOM_R",
+        "-DHAVE_RAND_R",
+        "-DHAVE_READLINK",
         "-DHAVE_FSTATVFS",
         "-DHAVE_FSTATFS",
+        "-DHAVE_LSTAT",
+        "-DHAVE_MMAP",
         "-DHAVE_VPRINTF",
 
         "-DHAVE_FT_GET_BDF_PROPERTY",
@@ -156,21 +106,6 @@ pub fn buildFontconfig(
 
         else => @panic("unsupported arch"),
     }
-
-    if (opt.libxml2) {
-        try flags.appendSlice(&.{
-            "-DENABLE_LIBXML2",
-            "-DLIBXML_STATIC",
-            "-DLIBXML_PUSH_ENABLED",
-        });
-        if (target.isWindows()) {
-            // NOTE: this should be defined on all targets
-            try flags.appendSlice(&.{
-                "-Werror=implicit-function-declaration",
-            });
-        }
-    }
-
     if (target.isWindows()) {
         try flags.appendSlice(&.{
             "-DFC_CACHEDIR=\"LOCAL_APPDATA_FONTCONFIG_CACHE\"",
@@ -181,8 +116,6 @@ pub fn buildFontconfig(
     } else {
         try flags.appendSlice(&.{
             "-DHAVE_SYS_STATVFS_H",
-            "-DHAVE_SYS_VFS_H",
-            "-DHAVE_SYS_STATFS_H",
             "-DHAVE_SYS_MOUNT_H",
             "-DHAVE_LINK",
             "-DHAVE_MKOSTEMP",
@@ -200,41 +133,77 @@ pub fn buildFontconfig(
             "-DCONFIGDIR=\"/usr/local/fontconfig/conf.d\"",
             "-DFC_DEFAULT_FONTS=\"<dir>/usr/share/fonts</dir><dir>/usr/local/share/fonts</dir>\"",
         });
+        if (target.isLinux()) {
+            try flags.appendSlice(&.{
+                "-DHAVE_SYS_STATFS_H",
+                "-DHAVE_SYS_VFS_H",
+            });
+        }
+    }
+    if (libxml2_enabled) {
+        try flags.appendSlice(&.{
+            "-DENABLE_LIBXML2",
+            "-DLIBXML_STATIC",
+            "-DLIBXML_PUSH_ENABLED",
+        });
+        if (target.isWindows()) {
+            // NOTE: this should be defined on all targets
+            try flags.appendSlice(&.{
+                "-Werror=implicit-function-declaration",
+            });
+        }
     }
 
-    // C files
-    lib.addCSourceFiles(srcs, flags.items);
+    for (srcs) |src| {
+        lib.addCSourceFile(.{
+            .file = upstream.path(src),
+            .flags = flags.items,
+        });
+    }
 
-    return lib;
+    lib.installHeadersDirectoryOptions(.{
+        .source_dir = upstream.path("fontconfig"),
+        .install_dir = .header,
+        .install_subdir = "",
+        .include_extensions = &.{".h"},
+    });
+
+    b.installArtifact(lib);
 }
 
-const srcs = &.{
-    root ++ "src/fcatomic.c",
-    root ++ "src/fccache.c",
-    root ++ "src/fccfg.c",
-    root ++ "src/fccharset.c",
-    root ++ "src/fccompat.c",
-    root ++ "src/fcdbg.c",
-    root ++ "src/fcdefault.c",
-    root ++ "src/fcdir.c",
-    root ++ "src/fcformat.c",
-    root ++ "src/fcfreetype.c",
-    root ++ "src/fcfs.c",
-    root ++ "src/fcptrlist.c",
-    root ++ "src/fchash.c",
-    root ++ "src/fcinit.c",
-    root ++ "src/fclang.c",
-    root ++ "src/fclist.c",
-    root ++ "src/fcmatch.c",
-    root ++ "src/fcmatrix.c",
-    root ++ "src/fcname.c",
-    root ++ "src/fcobjs.c",
-    root ++ "src/fcpat.c",
-    root ++ "src/fcrange.c",
-    root ++ "src/fcserialize.c",
-    root ++ "src/fcstat.c",
-    root ++ "src/fcstr.c",
-    root ++ "src/fcweight.c",
-    root ++ "src/fcxml.c",
-    root ++ "src/ftglue.c",
+const headers = &.{
+    "fontconfig/fontconfig.h",
+    "fontconfig/fcprivate.h",
+    "fontconfig/fcfreetype.h",
+};
+
+const srcs: []const []const u8 = &.{
+    "src/fcatomic.c",
+    "src/fccache.c",
+    "src/fccfg.c",
+    "src/fccharset.c",
+    "src/fccompat.c",
+    "src/fcdbg.c",
+    "src/fcdefault.c",
+    "src/fcdir.c",
+    "src/fcformat.c",
+    "src/fcfreetype.c",
+    "src/fcfs.c",
+    "src/fcptrlist.c",
+    "src/fchash.c",
+    "src/fcinit.c",
+    "src/fclang.c",
+    "src/fclist.c",
+    "src/fcmatch.c",
+    "src/fcmatrix.c",
+    "src/fcname.c",
+    "src/fcobjs.c",
+    "src/fcpat.c",
+    "src/fcrange.c",
+    "src/fcserialize.c",
+    "src/fcstat.c",
+    "src/fcstr.c",
+    "src/fcweight.c",
+    "src/fcxml.c",
+    "src/ftglue.c",
 };

@@ -15,7 +15,6 @@ const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
 const glfw = @import("vendor/mach-glfw/build.zig");
-const fontconfig = @import("pkg/fontconfig/build.zig");
 const js = @import("vendor/zig-js/build.zig");
 const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
@@ -26,6 +25,7 @@ const utf8proc = @import("pkg/utf8proc/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
+const fontconfig = @import("pkg/fontconfig/build.old.zig");
 const freetype = @import("pkg/freetype/build.old.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.old.zig");
 const libpng = @import("pkg/libpng/build.old.zig");
@@ -784,48 +784,6 @@ fn addDeps(
         // Harfbuzz
         step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
         try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
-
-        // const zlib_step = try zlib.link(b, step);
-        // try static_libs.append(zlib_step.getEmittedBin());
-        //
-        // const libpng_step = try libpng.link(b, step, .{
-        //     .zlib = .{
-        //         .step = zlib_step,
-        //         .include = &zlib.include_paths,
-        //     },
-        // });
-        // try static_libs.append(libpng_step.getEmittedBin());
-        //
-        // // Freetype
-        // const freetype_step = try freetype.link(b, step, .{
-        //     .libpng = freetype.Options.Libpng{
-        //         .enabled = true,
-        //         .step = libpng_step,
-        //         .include = &libpng.include_paths,
-        //     },
-        //
-        //     .zlib = .{
-        //         .enabled = true,
-        //         .step = zlib_step,
-        //         .include = &zlib.include_paths,
-        //     },
-        // });
-        // try static_libs.append(freetype_step.getEmittedBin());
-        //
-        // // Harfbuzz
-        // const harfbuzz_step = try harfbuzz.link(b, step, .{
-        //     .freetype = .{
-        //         .enabled = true,
-        //         .step = freetype_step,
-        //         .include = &freetype.include_paths,
-        //     },
-        //
-        //     .coretext = .{
-        //         .enabled = font_backend.hasCoretext(),
-        //     },
-        // });
-        // system_sdk.include(b, harfbuzz_step, .{});
-        // try static_libs.append(harfbuzz_step.getEmittedBin());
 
         // Pixman
         const pixman_step = try pixman.link(b, step, .{});
