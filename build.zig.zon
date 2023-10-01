@@ -1,0 +1,10 @@
+.{
+    .name = "ghostty",
+    .version = "0.1.0",
+    .dependencies = .{
+        .freetype = .{ .path = "./pkg/freetype" },
+        .harfbuzz = .{ .path = "./pkg/harfbuzz" },
+        .libpng = .{ .path = "./pkg/libpng" },
+        .zlib = .{ .path = "./pkg/zlib" },
+    },
+}
