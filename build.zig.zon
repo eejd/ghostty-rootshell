@@ -7,6 +7,7 @@
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .libpng = .{ .path = "./pkg/libpng" },
         .pixman = .{ .path = "./pkg/pixman" },
+        .utf8proc = .{ .path = "./pkg/utf8proc" },
         .zlib = .{ .path = "./pkg/zlib" },
     },
 }

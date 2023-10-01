@@ -20,7 +20,6 @@ const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const macos = @import("pkg/macos/build.zig");
 const objc = @import("vendor/zig-objc/build.zig");
-const utf8proc = @import("pkg/utf8proc/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
@@ -29,6 +28,7 @@ const freetype = @import("pkg/freetype/build.old.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.old.zig");
 const libpng = @import("pkg/libpng/build.old.zig");
 const pixman = @import("pkg/pixman/build.old.zig");
+const utf8proc = @import("pkg/utf8proc/build.old.zig");
 const zlib = @import("pkg/zlib/build.old.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
@@ -653,20 +653,6 @@ fn addDeps(
     var static_libs = FileSourceList.init(b.allocator);
     errdefer static_libs.deinit();
 
-    // Wasm we do manually since it is such a different build.
-    if (step.target.getCpuArch() == .wasm32) {
-        // We link this package but its a no-op since Tracy
-        // never actually WORKS with wasm.
-        step.addModule("tracy", tracylib.module(b));
-        step.addModule("utf8proc", utf8proc.module(b));
-        step.addModule("zig-js", js.module(b));
-
-        // utf8proc
-        _ = try utf8proc.link(b, step);
-
-        return static_libs;
-    }
-
     // For dynamic linking, we prefer dynamic linking and to search by
     // mode first. Mode first will search all paths for a dynamic library
     // before falling back to static.
@@ -696,12 +682,30 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const utf8proc_dep = b.dependency("utf8proc", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const harfbuzz_dep = b.dependency("harfbuzz", .{
         .target = step.target,
         .optimize = step.optimize,
         .@"enable-freetype" = true,
         .@"enable-coretext" = font_backend.hasCoretext(),
     });
+
+    // Wasm we do manually since it is such a different build.
+    if (step.target.getCpuArch() == .wasm32) {
+        // We link this package but its a no-op since Tracy
+        // never actually WORKS with wasm.
+        step.addModule("tracy", tracylib.module(b));
+        step.addModule("utf8proc", utf8proc.module(b));
+        step.addModule("zig-js", js.module(b));
+
+        // utf8proc
+        step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
+
+        return static_libs;
+    }
 
     // On Linux, we need to add a couple common library paths that aren't
     // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
@@ -759,8 +763,8 @@ fn addDeps(
     }
 
     // utf8proc
-    const utf8proc_step = try utf8proc.link(b, step);
-    try static_libs.append(utf8proc_step.getEmittedBin());
+    step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
+    try static_libs.append(utf8proc_dep.artifact("utf8proc").getEmittedBin());
 
     // Dynamic link
     if (!static) {
