@@ -15,11 +15,8 @@ const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
 const glfw = @import("vendor/mach-glfw/build.zig");
-const js = @import("vendor/zig-js/build.zig");
-const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const macos = @import("pkg/macos/build.zig");
-const objc = @import("vendor/zig-objc/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
@@ -662,6 +659,9 @@ fn addDeps(
     };
 
     // Dependencies
+    const js_dep = b.dependency("zig_js", .{ .target = step.target, .optimize = step.optimize });
+    const libxev_dep = b.dependency("libxev", .{ .target = step.target, .optimize = step.optimize });
+    const objc_dep = b.dependency("zig_objc", .{ .target = step.target, .optimize = step.optimize });
     const fontconfig_dep = b.dependency("fontconfig", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -699,7 +699,7 @@ fn addDeps(
         // never actually WORKS with wasm.
         step.addModule("tracy", tracylib.module(b));
         step.addModule("utf8proc", utf8proc.module(b));
-        step.addModule("zig-js", js.module(b));
+        step.addModule("zig-js", js_dep.module("zig-js"));
 
         // utf8proc
         step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
@@ -733,21 +733,18 @@ fn addDeps(
     if (font_backend.hasFontconfig()) step.addModule("fontconfig", fontconfig.module(b));
     const mod_freetype = freetype.module(b);
     const mod_macos = macos.module(b);
-    const mod_libxev = b.createModule(.{
-        .source_file = .{ .path = "vendor/libxev/src/main.zig" },
-    });
     step.addModule("freetype", mod_freetype);
     step.addModule("harfbuzz", harfbuzz.module(b, .{
         .freetype = mod_freetype,
         .macos = mod_macos,
     }));
-    step.addModule("xev", mod_libxev);
+    step.addModule("xev", libxev_dep.module("xev"));
     step.addModule("pixman", pixman.module(b));
     step.addModule("utf8proc", utf8proc.module(b));
 
     // Mac Stuff
     if (step.target.isDarwin()) {
-        step.addModule("objc", objc.module(b));
+        step.addModule("objc", objc_dep.module("objc"));
         step.addModule("macos", mod_macos);
         _ = try macos.link(b, step, .{});
 

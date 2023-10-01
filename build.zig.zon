@@ -2,6 +2,21 @@
     .name = "ghostty",
     .version = "0.1.0",
     .dependencies = .{
+        // Zig libs
+        .libxev = .{
+            .url = "https://github.com/mitchellh/libxev/archive/ecbc161a5dace26a1fd47e494f8be2cfd051cbfb.tar.gz",
+            .hash = "1220f34357168affd9aab1a3fcafcaff093c44beb75ce1d4d4b75490e90729221771",
+        },
+        .zig_objc = .{
+            .url = "https://github.com/mitchellh/zig-objc/archive/01c16aaeeb674622f4a0e715aeeb16c8ce0bc30e.tar.gz",
+            .hash = "1220f9c919a1171ecf5d097a0d0349e8a9a01b45afa41006dd7eb0afa6243a5fa21f",
+        },
+        .zig_js = .{
+            .url = "https://github.com/mitchellh/zig-js/archive/60ac42ab137461cdba2b38cc6c5e16376470aae6.tar.gz",
+            .hash = "1220319b42fbc0116f3f198343256018e9f1da9483cef259201afe4ebab0ce0d8f6a",
+        },
+
+        // C libs
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
