@@ -676,6 +676,10 @@ fn addDeps(
     };
 
     // Dependencies
+    const fontconfig_dep = b.dependency("fontconfig", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const freetype_dep = b.dependency("freetype", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -790,32 +794,10 @@ fn addDeps(
         try static_libs.append(pixman_step.getEmittedBin());
 
         // Only Linux gets fontconfig
-        // if (font_backend.hasFontconfig()) {
-        //     // Libxml2
-        //     const libxml2_lib = try libxml2.create(
-        //         b,
-        //         step.target,
-        //         step.optimize,
-        //         .{
-        //             .lzma = false,
-        //             .zlib = false,
-        //             .iconv = !step.target.isWindows(),
-        //         },
-        //     );
-        //     libxml2_lib.link(step);
-        //
-        //     // Fontconfig
-        //     const fontconfig_step = try fontconfig.link(b, step, .{
-        //         .freetype = .{
-        //             .enabled = true,
-        //             .step = freetype_step,
-        //             .include = &freetype.include_paths,
-        //         },
-        //
-        //         .libxml2 = true,
-        //     });
-        //     libxml2_lib.link(fontconfig_step);
-        // }
+        if (font_backend.hasFontconfig()) {
+            // Fontconfig
+            step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
+        }
     }
 
     if (!lib) {

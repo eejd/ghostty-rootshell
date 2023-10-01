@@ -2,6 +2,7 @@
     .name = "ghostty",
     .version = "0.1.0",
     .dependencies = .{
+        .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .libpng = .{ .path = "./pkg/libpng" },
