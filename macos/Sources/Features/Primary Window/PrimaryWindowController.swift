@@ -4,6 +4,9 @@ class PrimaryWindowController: NSWindowController, NSWindowDelegate {
     // This is used to programmatically control tabs.
     weak var windowManager: PrimaryWindowManager?
     
+    // This should be set to true once a surface has been initialized once.
+    var didInitializeFromSurface: Bool = false
+    
     // This is required for the "+" button to show up in the tab bar to add a
     // new tab.
     override func newWindowForTab(_ sender: Any?) {

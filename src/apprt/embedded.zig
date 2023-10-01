@@ -757,6 +757,16 @@ pub const Surface = struct {
 pub const CAPI = struct {
     const global = &@import("../main.zig").state;
 
+    /// ghostty_rect_s
+    const Rect = extern struct {
+        origin: bool = false,
+        size: bool = false,
+        x: u32 = 0,
+        y: u32 = 0,
+        w: u32 = 0,
+        h: u32 = 0,
+    };
+
     /// Create a new app.
     export fn ghostty_app_new(
         opts: *const apprt.runtime.App.Options,
@@ -862,6 +872,21 @@ pub const CAPI = struct {
     /// Returns true if the surface has transparency set.
     export fn ghostty_surface_transparent(surface: *Surface) bool {
         return surface.app.config.@"background-opacity" < 1.0;
+    }
+
+    /// The desired window frame for a new window.
+    export fn ghostty_surface_window_frame(surface: *Surface) Rect {
+        const config = surface.app.config;
+
+        // If the desired height/width isn't configured, return 0.
+        if (config.@"window-height" == 0 or config.@"window-width" == 0) return .{};
+
+        // Return the desired rect
+        return .{
+            .size = true,
+            .h = @max(config.@"window-height" * surface.core_surface.cell_size.height, 480),
+            .w = @max(config.@"window-width" * surface.core_surface.cell_size.width, 640),
+        };
     }
 
     /// Tell the surface that it needs to schedule a render

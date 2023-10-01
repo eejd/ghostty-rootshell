@@ -71,6 +71,7 @@ extension Ghostty {
                     // We use these notifications to determine when the window our surface is
                     // attached to is or is not focused.
                     let pubBecomeFocused = NotificationCenter.default.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
+                    let pubInitialFrame = NotificationCenter.default.publisher(for: Notification.didReceiveInitialWindowFrame, object: surfaceView)
                     let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
                     let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
 
@@ -99,6 +100,26 @@ extension Ghostty {
                             DispatchQueue.main.async {
                                 surfaceFocus = true
                             }
+                        }
+                        .onReceive(pubInitialFrame) { notification in
+                            // We never set the initial frame if we're a split
+                            guard !isSplit else { return }
+                            
+                            // We need a window to set the frame
+                            guard let surfaceWindow = surfaceView.window else { return }
+                            guard let frameAny = notification.userInfo?[Ghostty.Notification.FrameKey] else { return }
+                            guard let frame = frameAny as? NSRect else { return }
+                            
+                            // If we have tabs, then do not change the window size
+                            guard let windowControllerRaw = surfaceWindow.windowController else { return }
+                            guard let windowController = windowControllerRaw as? PrimaryWindowController else { return }
+                            guard !windowController.didInitializeFromSurface else { return }
+                            
+                            // We have no tabs and we are not a split, so set the initial size of the window.
+                            surfaceWindow.setFrame(frame, display: true)
+                            
+                            // Note that we did initialize
+                            windowController.didInitializeFromSurface = true
                         }
                         .onAppear() {
                             // Welcome to the SwiftUI bug house of horrors. On macOS 12 (at least
@@ -191,7 +212,7 @@ extension Ghostty {
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
         @Published var title: String = "👻"
-
+        
         private(set) var surface: ghostty_surface_t?
         var error: Error? = nil
 
@@ -407,6 +428,28 @@ extension Ghostty {
 
             // If we have a blur, set the blur
             ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
+            
+            // Set the window size
+            let rect = ghostty_surface_window_frame(surface)
+            if (rect.size || rect.origin) {
+                var frame = window.frame
+                if (rect.origin) {
+                    frame.origin.x = Double(rect.x)
+                    frame.origin.y = Double(rect.y)
+                }
+                if (rect.size) {
+                    frame.size.width = Double(rect.w)
+                    frame.size.height = Double(rect.h)
+                }
+                
+                NotificationCenter.default.post(
+                    name: Notification.didReceiveInitialWindowFrame,
+                    object: self,
+                    userInfo: [
+                        Notification.FrameKey: frame,
+                    ]
+                )
+            }
         }
         
         override func becomeFirstResponder() -> Bool {
