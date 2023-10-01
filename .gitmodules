@@ -40,3 +40,6 @@
 [submodule "vendor/mach-glfw"]
 	path = vendor/mach-glfw
 	url = https://github.com/mitchellh/mach-glfw.git
+[submodule "vendor/libxml2"]
+	path = vendor/libxml2
+	url = https://github.com/GNOME/libxml2.git
