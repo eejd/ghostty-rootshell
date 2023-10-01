@@ -16,8 +16,6 @@ const c = @cImport({
 ///
 /// For other platforms and app runtimes, this returns false.
 pub fn launchedFromDesktop() bool {
-    if (comptime build_config.artifact != .exe) return false;
-
     return switch (builtin.os.tag) {
         // macOS apps launched from finder or `open` always have the init
         // process as their parent.
