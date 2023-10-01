@@ -8,8 +8,9 @@ pub fn build(b: *std.Build) !void {
     const libxml2_enabled = b.option(bool, "enable-libxml2", "Build libxml2") orelse true;
     const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse true;
 
-    const upstream = b.dependency("fontconfig", .{});
+    _ = b.addModule("fontconfig", .{ .source_file = .{ .path = "main.zig" } });
 
+    const upstream = b.dependency("fontconfig", .{});
     const lib = b.addStaticLibrary(.{
         .name = "fontconfig",
         .target = target,

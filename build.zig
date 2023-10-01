@@ -20,7 +20,6 @@ const macos = @import("pkg/macos/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
-const fontconfig = @import("pkg/fontconfig/build.old.zig");
 const freetype = @import("pkg/freetype/build.old.zig");
 const harfbuzz = @import("pkg/harfbuzz/build.old.zig");
 const libpng = @import("pkg/libpng/build.old.zig");
@@ -730,7 +729,10 @@ fn addDeps(
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
     // so take a closer look at this again later.
-    if (font_backend.hasFontconfig()) step.addModule("fontconfig", fontconfig.module(b));
+    if (font_backend.hasFontconfig()) step.addModule(
+        "fontconfig",
+        fontconfig_dep.module("fontconfig"),
+    );
     const mod_freetype = freetype.module(b);
     const mod_macos = macos.module(b);
     step.addModule("freetype", mod_freetype);
