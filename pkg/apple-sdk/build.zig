@@ -34,7 +34,7 @@ pub fn addPaths(b: *std.Build, step: *std.build.CompileStep) !void {
         xSdkPath("/zig-cache/xcode_frameworks"),
     );
 
-    // This may be a bug in Zig.
+    // https://github.com/ziglang/zig/issues/17358
     b.sysroot = xSdkPath("/zig-cache/xcode_frameworks");
 
     step.addSystemFrameworkPath(.{ .path = xSdkPath("/zig-cache/xcode_frameworks/Frameworks") });
