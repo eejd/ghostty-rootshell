@@ -325,6 +325,16 @@ pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
     return self.size;
 }
 
+pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+    // Note: this doesn't properly take into account the window decorations.
+    // I'm not currently sure how to do that.
+    c.gtk_window_set_default_size(
+        @ptrCast(self.window.window),
+        @intCast(width),
+        @intCast(height),
+    );
+}
+
 pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
     _ = self;
     _ = min;

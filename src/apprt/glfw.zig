@@ -447,6 +447,13 @@ pub const Surface = struct {
         self.app.app.alloc.destroy(self);
     }
 
+    /// Set the initial window size. This is called exactly once at
+    /// surface initialization time. This may be called before "self"
+    /// is fully initialized.
+    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+        self.window.setSize(.{ .width = width, .height = height });
+    }
+
     /// Set the size limits of the window.
     /// Note: this interface is not good, we should redo it if we plan
     /// to use this more. i.e. you can't set max width but no max height,

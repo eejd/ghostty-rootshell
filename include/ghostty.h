@@ -326,6 +326,7 @@ typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direc
 typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void *);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, ghostty_non_native_fullscreen_e);
+typedef void (*ghostty_runtime_set_initial_window_size_cb)(void *, uint32_t, uint32_t);
 
 typedef struct {
     void *userdata;
@@ -345,6 +346,7 @@ typedef struct {
     ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
+    ghostty_runtime_set_initial_window_size_cb set_initial_window_size_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------

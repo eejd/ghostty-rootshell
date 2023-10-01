@@ -300,6 +300,31 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS.
 @"window-theme": WindowTheme = .system,
 
+/// The initial window size. This size is in terminal grid cells by default.
+///
+/// We don't currently support specifying a size in pixels but a future
+/// change can enable that. If this isn't specified, the app runtime will
+/// determine some default size.
+///
+/// Note that the window manager may put limits on the size or override
+/// the size. For example, a tiling window manager may force the window
+/// to be a certain size to fit within the grid. There is nothing Ghostty
+/// will do about this, but it will make an effort.
+///
+/// This will not affect new tabs, splits, or other nested terminal
+/// elements. This only affects the initial window size of any new window.
+/// Changing this value will not affect the size of the window after
+/// it has been created. This is only used for the initial size.
+///
+/// BUG: On Linux with GTK, the calculated window size will not properly
+/// take into account window decorations. As a result, the grid dimensions
+/// will not exactly match this configuration. If window decorations are
+/// disabled (see window-decorations), then this will work as expected.
+///
+/// Windows smaller than 10 wide by 4 high are not allowed.
+@"window-height": u32 = 0,
+@"window-width": u32 = 0,
+
 /// Whether to allow programs running in the terminal to read/write to
 /// the system clipboard (OSC 52, for googling). The default is to
 /// disallow clipboard reading but allow writing.
@@ -1007,6 +1032,10 @@ pub fn finalize(self: *Config) !void {
 
     // Clamp our split opacity
     self.@"unfocused-split-opacity" = @min(1.0, @max(0.15, self.@"unfocused-split-opacity"));
+
+    // Minimmum window size
+    if (self.@"window-width" > 0) self.@"window-width" = @max(10, self.@"window-width");
+    if (self.@"window-height" > 0) self.@"window-height" = @max(4, self.@"window-height");
 }
 
 /// Create a shallow copy of this config. This will share all the memory

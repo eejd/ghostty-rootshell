@@ -87,6 +87,10 @@ pub const App = struct {
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
+
+        /// Set the initial window size. It is up to the user of libghostty to
+        /// determine if it is the initial window and set this appropriately.
+        set_initial_window_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -732,6 +736,15 @@ pub const Surface = struct {
 
         const options = self.newSurfaceOptions();
         func(self.opts.userdata, options);
+    }
+
+    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+        const func = self.app.opts.set_initial_window_size orelse {
+            log.info("runtime embedder does not set_initial_window_size", .{});
+            return;
+        };
+
+        func(self.opts.userdata, width, height);
     }
 
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {

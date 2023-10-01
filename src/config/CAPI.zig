@@ -86,6 +86,7 @@ export fn ghostty_config_get(
     key_str: [*]const u8,
     len: usize,
 ) bool {
+    @setEvalBranchQuota(10_000);
     const key = std.meta.stringToEnum(Key, key_str[0..len]) orelse return false;
     return c_get.get(self, key, ptr);
 }
