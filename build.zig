@@ -16,7 +16,6 @@ const Version = @import("src/build/Version.zig");
 
 const glfw = @import("vendor/mach-glfw/build.zig");
 const fontconfig = @import("pkg/fontconfig/build.zig");
-const harfbuzz = @import("pkg/harfbuzz/build.zig");
 const js = @import("vendor/zig-js/build.zig");
 const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
@@ -28,6 +27,7 @@ const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
 const freetype = @import("pkg/freetype/build.old.zig");
+const harfbuzz = @import("pkg/harfbuzz/build.old.zig");
 const libpng = @import("pkg/libpng/build.old.zig");
 const zlib = @import("pkg/zlib/build.old.zig");
 
