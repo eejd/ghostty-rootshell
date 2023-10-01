@@ -21,14 +21,15 @@ const harfbuzz = @import("pkg/harfbuzz/build.zig");
 const js = @import("vendor/zig-js/build.zig");
 const libxev = @import("vendor/libxev/build.zig");
 const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
-const libpng = @import("pkg/libpng/build.zig");
 const macos = @import("pkg/macos/build.zig");
 const objc = @import("vendor/zig-objc/build.zig");
 const pixman = @import("pkg/pixman/build.zig");
 const utf8proc = @import("pkg/utf8proc/build.zig");
-const zlib = @import("pkg/zlib/build.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
+
+const libpng = @import("pkg/libpng/build.old.zig");
+const zlib = @import("pkg/zlib/build.old.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
