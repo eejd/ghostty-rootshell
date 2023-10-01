@@ -3,5 +3,6 @@
     .version = "2.13.2",
     .dependencies = .{
         .freetype = .{ .path = "../freetype" },
+        .apple_sdk = .{ .path = "../apple-sdk" },
     },
 }
