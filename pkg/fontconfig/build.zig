@@ -24,8 +24,8 @@ pub fn build(b: *std.Build) !void {
         lib.linkLibrary(freetype_dep.artifact("freetype"));
     }
     if (libxml2_enabled) {
-        // const libxml2_dep = b.dependency("libxml2", .{ .target = target, .optimize = optimize });
-        // lib.linkLibrary(libxml2_dep.artifact("xml2"));
+        const libxml2_dep = b.dependency("libxml2", .{ .target = target, .optimize = optimize });
+        lib.linkLibrary(libxml2_dep.artifact("xml2"));
     }
 
     lib.addIncludePath(upstream.path(""));
