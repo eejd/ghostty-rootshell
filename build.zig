@@ -15,7 +15,6 @@ const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
 const glfw = @import("vendor/mach-glfw/build.zig");
-const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
 const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
