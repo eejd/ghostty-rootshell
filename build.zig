@@ -14,8 +14,6 @@ const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
-const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
-
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
 // but we liberally update it. In the future, we'll be more careful about
@@ -851,7 +849,6 @@ fn addSystemSDK(
     step: *std.Build.CompileStep,
 ) !void {
     if (step.target.isDarwin()) {
-        system_sdk.include(b, step, .{});
         try @import("apple_sdk").addPaths(b, step);
     }
 
