@@ -2024,6 +2024,7 @@ const StreamHandler = struct {
         self: *StreamHandler,
         shape: terminal.MouseShape,
     ) !void {
+        self.terminal.mouse_shape = shape;
         _ = self.ev.surface_mailbox.push(.{
             .set_mouse_shape = shape,
         }, .{ .forever = {} });
