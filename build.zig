@@ -855,6 +855,13 @@ fn addSystemSDK(
         try @import("apple_sdk").addPaths(b, step);
     }
 
+    if (step.target.isLinux()) {
+        step.linkLibrary(b.dependency("x11_headers", .{
+            .target = step.target,
+            .optimize = step.optimize,
+        }).artifact("x11-headers"));
+    }
+
     // GLFW requires these on all platforms so we just add them here. It
     // doesn't hurt to add them if we don't use GLFW since they're all
     // namespaced.
@@ -862,10 +869,6 @@ fn addSystemSDK(
         .target = step.target,
         .optimize = step.optimize,
     }).artifact("vulkan-headers"));
-    // step.linkLibrary(b.dependency("x11_headers", .{
-    //     .target = step.target,
-    //     .optimize = step.optimize,
-    // }).artifact("x11-headers"));
 }
 
 fn benchSteps(

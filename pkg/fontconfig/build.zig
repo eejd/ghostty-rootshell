@@ -165,7 +165,7 @@ pub fn build(b: *std.Build) !void {
     lib.installHeadersDirectoryOptions(.{
         .source_dir = upstream.path("fontconfig"),
         .install_dir = .header,
-        .install_subdir = "",
+        .install_subdir = "fontconfig",
         .include_extensions = &.{".h"},
     });
 
