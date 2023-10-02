@@ -13,7 +13,7 @@ const c = switch (builtin.os.tag) {
         @cInclude("sys/ioctl.h"); // ioctl and constants
         @cInclude("util.h"); // openpty()
     }),
-    .windows => { },
+    .windows => {},
     else => @cImport({
         @cInclude("sys/ioctl.h"); // ioctl and constants
         @cInclude("pty.h");

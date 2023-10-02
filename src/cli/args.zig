@@ -82,7 +82,7 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
                 // The error set is dependent on comptime T, so we always add
                 // an extra error so we can have the "else" below.
                 const ErrSet = @TypeOf(err) || error{Unknown};
-                switch (@as(ErrSet, @errSetCast(err))) {
+                switch (@as(ErrSet, @errorCast(err))) {
                     // OOM is not recoverable since we need to allocate to
                     // track more error messages.
                     error.OutOfMemory => return err,

@@ -38,7 +38,7 @@ pub fn main() !MainReturn {
         const stderr = std.io.getStdErr().writer();
         defer std.os.exit(1);
         const ErrSet = @TypeOf(err) || error{Unknown};
-        switch (@as(ErrSet, @errSetCast(err))) {
+        switch (@as(ErrSet, @errorCast(err))) {
             error.MultipleActions => try stderr.print(
                 "Error: multiple CLI actions specified. You must specify only one\n" ++
                     "action starting with the `+` character.\n",

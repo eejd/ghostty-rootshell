@@ -15,11 +15,11 @@ comptime {
 }
 
 /// Used to determine the default shell and directory on Unixes.
-const c = if (builtin.os.tag == .windows) { } else @cImport({
+const c = if (builtin.os.tag != .windows) @cImport({
     @cInclude("sys/types.h");
     @cInclude("unistd.h");
     @cInclude("pwd.h");
-});
+}) else {};
 
 // Entry that is retrieved from the passwd API. This only contains the fields
 // we care about.
