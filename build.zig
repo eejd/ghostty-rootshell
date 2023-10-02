@@ -655,6 +655,7 @@ fn addDeps(
     const freetype_dep = b.dependency("freetype", .{
         .target = step.target,
         .optimize = step.optimize,
+        .@"enable-libpng" = true,
     });
     const mach_glfw_dep = b.dependency("mach_glfw", .{
         .target = step.target,

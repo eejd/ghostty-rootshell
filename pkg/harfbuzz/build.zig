@@ -8,7 +8,11 @@ pub fn build(b: *std.Build) !void {
     const coretext_enabled = b.option(bool, "enable-coretext", "Build coretext") orelse false;
     const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse false;
 
-    const freetype = b.dependency("freetype", .{ .target = target, .optimize = optimize });
+    const freetype = b.dependency("freetype", .{
+        .target = target,
+        .optimize = optimize,
+        .@"enable-libpng" = true,
+    });
     const macos = b.dependency("macos", .{ .target = target, .optimize = optimize });
 
     _ = b.addModule("harfbuzz", .{
