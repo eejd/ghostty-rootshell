@@ -1,52 +1,34 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const apple_sdk = @import("apple_sdk");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    _ = target;
-    _ = optimize;
 
     _ = b.addModule("macos", .{ .source_file = .{ .path = "main.zig" } });
-}
-
-pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
-        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
-    });
-}
-
-fn thisDir() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-pub const Options = struct {};
-
-pub fn link(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    _ = opt;
-    var flags = std.ArrayList([]const u8).init(b.allocator);
-    defer flags.deinit();
 
     const lib = b.addStaticLibrary(.{
         .name = "macos",
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target,
+        .optimize = optimize,
     });
-    step.addCSourceFile(.{
-        .file = .{ .path = comptime thisDir() ++ "/os/log.c" },
+
+    var flags = std.ArrayList([]const u8).init(b.allocator);
+    defer flags.deinit();
+    lib.addCSourceFile(.{
+        .file = .{ .path = "os/log.c" },
         .flags = flags.items,
     });
-    step.addCSourceFile(.{
-        .file = .{ .path = comptime thisDir() ++ "/text/ext.c" },
+    lib.addCSourceFile(.{
+        .file = .{ .path = "text/ext.c" },
         .flags = flags.items,
     });
-    step.linkFramework("Carbon");
-    step.linkFramework("CoreFoundation");
-    step.linkFramework("CoreGraphics");
-    step.linkFramework("CoreText");
-    return lib;
+    lib.linkFramework("Carbon");
+    lib.linkFramework("CoreFoundation");
+    lib.linkFramework("CoreGraphics");
+    lib.linkFramework("CoreText");
+    try apple_sdk.addPaths(b, lib);
+
+    b.installArtifact(lib);
 }

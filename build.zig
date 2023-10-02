@@ -739,7 +739,7 @@ fn addDeps(
     if (step.target.isDarwin()) {
         step.addModule("objc", objc_dep.module("objc"));
         step.addModule("macos", macos_dep.module("macos"));
-        //_ = try macos.link(b, step, .{});
+        step.linkLibrary(macos_dep.artifact("macos"));
 
         // todo: do this is in zig-objc instead.
         step.linkSystemLibraryName("objc");
