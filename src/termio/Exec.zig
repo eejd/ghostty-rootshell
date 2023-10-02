@@ -1698,10 +1698,42 @@ const StreamHandler = struct {
                 self.messageWriter(.{ .linefeed_mode = enabled });
             },
 
-            .mouse_event_x10 => self.terminal.flags.mouse_event = if (enabled) .x10 else .none,
-            .mouse_event_normal => self.terminal.flags.mouse_event = if (enabled) .normal else .none,
-            .mouse_event_button => self.terminal.flags.mouse_event = if (enabled) .button else .none,
-            .mouse_event_any => self.terminal.flags.mouse_event = if (enabled) .any else .none,
+            .mouse_event_x10 => {
+                if (enabled) {
+                    self.terminal.flags.mouse_event = .x10;
+                    try self.setMouseShape(.default);
+                } else {
+                    self.terminal.flags.mouse_event = .none;
+                    try self.setMouseShape(.text);
+                }
+            },
+            .mouse_event_normal => {
+                if (enabled) {
+                    self.terminal.flags.mouse_event = .normal;
+                    try self.setMouseShape(.default);
+                } else {
+                    self.terminal.flags.mouse_event = .none;
+                    try self.setMouseShape(.text);
+                }
+            },
+            .mouse_event_button => {
+                if (enabled) {
+                    self.terminal.flags.mouse_event = .button;
+                    try self.setMouseShape(.default);
+                } else {
+                    self.terminal.flags.mouse_event = .none;
+                    try self.setMouseShape(.text);
+                }
+            },
+            .mouse_event_any => {
+                if (enabled) {
+                    self.terminal.flags.mouse_event = .any;
+                    try self.setMouseShape(.default);
+                } else {
+                    self.terminal.flags.mouse_event = .none;
+                    try self.setMouseShape(.text);
+                }
+            },
 
             .mouse_format_utf8 => self.terminal.flags.mouse_format = if (enabled) .utf8 else .x10,
             .mouse_format_sgr => self.terminal.flags.mouse_format = if (enabled) .sgr else .x10,
