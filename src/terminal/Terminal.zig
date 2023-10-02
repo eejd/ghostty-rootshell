@@ -592,25 +592,27 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
-    // Get the previous cell so we can detect grapheme clusters. We only
-    // do this if c is outside of Latin-1 because characters in the Latin-1
-    // range cannot possibly be grapheme joiners. This helps keep non-graphemes
-    // extremely fast and we take this much slower path for graphemes. No hate
-    // on graphemes, I'd love to make them much faster, but I wanted to focus
-    // on correctness first.
-    //
-    // NOTE: This is disabled because no shells handle this correctly. We'll
-    // need to work with shells and other emulators to probably figure out
-    // a way to support this. In the mean time, I'm going to keep all the
-    // grapheme detection and keep it up to date so we're ready to go.
-    if (false and c > 255 and self.screen.cursor.x > 0) {
-        // TODO: test this!
-
+    // Perform grapheme clustering if grapheme support is enabled (mode 2027).
+    // This is MUCH slower than the normal path so the conditional below is
+    // purposely ordered in least-likely to most-likely so we can drop out
+    // as quickly as possible.
+    if (c > 255 and
+        self.modes.get(.grapheme_cluster) and
+        self.screen.cursor.x > 0)
+    {
         const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+
+        // We need the previous cell to determine if we're at a grapheme
+        // break or not. If we are NOT, then we are still combining the
+        // same grapheme. Otherwise, we can stay in this cell.
         const Prev = struct { cell: *Screen.Cell, x: usize };
         const prev: Prev = prev: {
             const x = self.screen.cursor.x - 1;
             const immediate = row.getCellPtr(x);
+
+            // If the previous cell is a wide spacer tail, then we actually
+            // want to use the cell before that because that has the actual
+            // content.
             if (!immediate.attrs.wide_spacer_tail) break :prev .{
                 .cell = immediate,
                 .x = x,
@@ -1871,7 +1873,7 @@ test "Terminal: print over wide char at 0,0" {
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
 }
 
-test "Terminal: print multicodepoint grapheme" {
+test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);
 
@@ -1923,6 +1925,42 @@ test "Terminal: print multicodepoint grapheme" {
         const cell = row.getCell(5);
         try testing.expectEqual(@as(u32, ' '), cell.char);
         try testing.expect(cell.attrs.wide_spacer_tail);
+    }
+}
+
+test "Terminal: print multicodepoint grapheme, mode 2027" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/289
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    try t.print(0x1F468);
+    try t.print(0x200D);
+    try t.print(0x1F469);
+    try t.print(0x200D);
+    try t.print(0x1F467);
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    // Assert various properties about our screen to verify
+    // we have all expected cells.
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x1F468), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 5), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, ' '), cell.char);
+        try testing.expect(cell.attrs.wide_spacer_tail);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
     }
 }
 
