@@ -424,7 +424,7 @@ pub fn setMouseShape(
     shape: terminal.MouseShape,
 ) !void {
     const name: [:0]const u8 = switch (shape) {
-        .default => "text",
+        .default => "default",
         .help => "help",
         .pointer => "pointer",
         .context_menu => "context-menu",

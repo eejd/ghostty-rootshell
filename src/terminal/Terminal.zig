@@ -21,6 +21,7 @@ const Tabstops = @import("Tabstops.zig");
 const trace = @import("tracy").trace;
 const color = @import("color.zig");
 const Screen = @import("Screen.zig");
+const mouse_shape = @import("mouse_shape.zig");
 
 const log = std.log.scoped(.terminal);
 
@@ -83,6 +84,8 @@ previous_char: ?u21 = null,
 
 /// The modes that this terminal currently has active.
 modes: modes.ModeState = .{},
+
+mouse_shape: mouse_shape.MouseShape = .text,
 
 /// These are just a packed set of flags we may set on the terminal.
 flags: packed struct {

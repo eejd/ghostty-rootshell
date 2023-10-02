@@ -1902,7 +1902,7 @@ const StreamHandler = struct {
         self: *StreamHandler,
     ) !void {
         self.terminal.fullReset(self.alloc);
-        try self.setMouseShape(.default);
+        try self.setMouseShape(.text);
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
