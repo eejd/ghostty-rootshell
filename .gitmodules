@@ -1,12 +1,6 @@
-[submodule "vendor/mach-sdk/sdk-linux-aarch64"]
-	path = vendor/mach-sdk/sdk-linux-aarch64
-	url = https://github.com/hexops/sdk-linux-aarch64.git
 [submodule "vendor/harfbuzz"]
 	path = vendor/harfbuzz
 	url = https://github.com/harfbuzz/harfbuzz.git
-[submodule "vendor/mach-sdk/sdk-linux-x86_64"]
-	path = vendor/mach-sdk/sdk-linux-x86_64
-	url = https://github.com/hexops/sdk-linux-x86_64.git
 [submodule "vendor/libxml2"]
 	path = vendor/libxml2
 	url = https://github.com/GNOME/libxml2.git
