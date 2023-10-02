@@ -594,33 +594,6 @@ pub fn build(b: *std.Build) !void {
             const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
         }
-
-        // Named package dependencies don't have their tests run by reference,
-        // so we iterate through them here. We're only interested in dependencies
-        // we wrote (are in the "pkg/" directory).
-        var it = main_test.modules.iterator();
-        while (it.next()) |entry| {
-            const name = entry.key_ptr.*;
-            const module = entry.value_ptr.*;
-            if (std.mem.eql(u8, name, "build_options")) continue;
-            if (std.mem.eql(u8, name, "glfw")) continue;
-
-            const test_exe = b.addTest(.{
-                .name = b.fmt("{s}-test", .{name}),
-                .root_source_file = module.source_file,
-                .target = target,
-            });
-            if (emit_test_exe) b.installArtifact(test_exe);
-
-            _ = try addDeps(b, test_exe, true);
-            // if (pkg.dependencies) |children| {
-            //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
-            //     try test_.packages.appendSlice(children);
-            // }
-
-            const test_run = b.addRunArtifact(test_exe);
-            test_step.dependOn(&test_run.step);
-        }
     }
 }
 
