@@ -172,6 +172,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "alt_screen_save_cursor_clear_enter", .value = 1049 },
     .{ .name = "bracketed_paste", .value = 2004 },
     .{ .name = "synchronized_output", .value = 2026 },
+    .{ .name = "grapheme_cluster", .value = 2027 },
 };
 
 test {
