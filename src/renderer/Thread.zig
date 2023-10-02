@@ -385,7 +385,7 @@ fn cursorCancelCallback(
         Unexpected,
     };
 
-    _ = r catch |err| switch (@as(CancelError, @errSetCast(err))) {
+    _ = r catch |err| switch (@as(CancelError, @errorCast(err))) {
         error.Canceled => {},
         else => {
             log.warn("error in cursor cancel callback err={}", .{err});
