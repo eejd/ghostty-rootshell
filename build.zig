@@ -15,7 +15,6 @@ const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
 const glfw = @import("vendor/mach-glfw/build.zig");
-const tracylib = @import("pkg/tracy/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
@@ -672,6 +671,10 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const tracy_dep = b.dependency("tracy", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const zlib_dep = b.dependency("zlib", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -691,7 +694,7 @@ fn addDeps(
     if (step.target.getCpuArch() == .wasm32) {
         // We link this package but its a no-op since Tracy
         // never actually WORKS with wasm.
-        step.addModule("tracy", tracylib.module(b));
+        step.addModule("tracy", tracy_dep.module("tracy"));
         step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
         step.addModule("zig-js", js_dep.module("zig-js"));
 
@@ -743,10 +746,10 @@ fn addDeps(
     }
 
     // Tracy
-    step.addModule("tracy", tracylib.module(b));
+    step.addModule("tracy", tracy_dep.module("tracy"));
     if (tracy) {
-        var tracy_step = try tracylib.link(b, step);
-        system_sdk.include(b, tracy_step, .{});
+        step.linkLibrary(tracy_dep.artifact("tracy"));
+        try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
     }
 
     // utf8proc

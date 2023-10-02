@@ -1,68 +1,91 @@
 const std = @import("std");
 
-/// Directories with our includes.
-const root = thisDir() ++ "../../../vendor/tracy/";
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
-        .source_file = .{ .path = (comptime thisDir()) ++ "/tracy.zig" },
-    });
-}
+    _ = b.addModule("tracy", .{ .source_file = .{ .path = "tracy.zig" } });
 
-fn thisDir() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-pub fn link(b: *std.Build, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
-    const tracy = try buildTracy(b, step);
-    step.linkLibrary(tracy);
-    step.addIncludePath(.{ .path = root });
-    return tracy;
-}
-
-pub fn buildTracy(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-) !*std.build.LibExeObjStep {
-    const target = step.target;
+    const upstream = b.dependency("tracy", .{});
     const lib = b.addStaticLibrary(.{
         .name = "tracy",
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target,
+        .optimize = optimize,
     });
-
-    var flags = std.ArrayList([]const u8).init(b.allocator);
-    defer flags.deinit();
-
-    try flags.appendSlice(&.{
-        "-DTRACY_ENABLE",
-        "-fno-sanitize=undefined",
-    });
-
-    if (target.isWindows()) {
-        try flags.appendSlice(&.{
-            "-D_WIN32_WINNT=0x601",
-        });
-    }
-
-    lib.addIncludePath(.{ .path = root });
-    lib.addCSourceFile(.{
-        .file = .{ .path = try std.fs.path.join(
-            b.allocator,
-            &.{ root, "TracyClient.cpp" },
-        ) },
-        .flags = flags.items,
-    });
-
     lib.linkLibC();
-    lib.linkSystemLibrary("c++");
-
-    if (lib.target.isWindows()) {
+    lib.linkLibCpp();
+    if (target.isWindows()) {
         lib.linkSystemLibrary("Advapi32");
         lib.linkSystemLibrary("User32");
         lib.linkSystemLibrary("Ws2_32");
         lib.linkSystemLibrary("DbgHelp");
     }
 
-    return lib;
+    lib.addIncludePath(upstream.path(""));
+
+    var flags = std.ArrayList([]const u8).init(b.allocator);
+    defer flags.deinit();
+    try flags.appendSlice(&.{
+        "-DTRACY_ENABLE",
+        "-fno-sanitize=undefined",
+    });
+    if (target.isWindows()) {
+        try flags.appendSlice(&.{
+            "-D_WIN32_WINNT=0x601",
+        });
+    }
+
+    lib.addCSourceFile(.{
+        .file = upstream.path("TracyClient.cpp"),
+        .flags = flags.items,
+    });
+
+    lib.installHeadersDirectoryOptions(.{
+        .source_dir = upstream.path(""),
+        .install_dir = .header,
+        .install_subdir = "",
+        .include_extensions = &.{ ".h", ".hpp" },
+    });
+
+    b.installArtifact(lib);
 }
+
+const headers = &.{
+    "TracyC.h",
+    "TracyOpenGL.hpp",
+    "Tracy.hpp",
+    "TracyD3D11.hpp",
+    "TracyD3D12.hpp",
+    "TracyOpenCL.hpp",
+    "TracyVulkan.hpp",
+    "client/TracyCallstack.h",
+    "client/TracyScoped.hpp",
+    "client/TracyStringHelpers.hpp",
+    "client/TracySysTrace.hpp",
+    "client/TracyDxt1.hpp",
+    "client/TracyRingBuffer.hpp",
+    "client/tracy_rpmalloc.hpp",
+    "client/TracyDebug.hpp",
+    "client/TracyLock.hpp",
+    "client/TracyThread.hpp",
+    "client/TracyArmCpuTable.hpp",
+    "client/TracyProfiler.hpp",
+    "client/TracyCallstack.hpp",
+    "client/TracySysTime.hpp",
+    "client/TracyFastVector.hpp",
+    "common/TracyApi.h",
+    "common/TracyYield.hpp",
+    "common/tracy_lz4hc.hpp",
+    "common/TracySystem.hpp",
+    "common/TracyProtocol.hpp",
+    "common/TracyQueue.hpp",
+    "common/TracyUwp.hpp",
+    "common/TracyAlloc.hpp",
+    "common/TracyAlign.hpp",
+    "common/TracyForceInline.hpp",
+    "common/TracyColor.hpp",
+    "common/tracy_lz4.hpp",
+    "common/TracyStackFrames.hpp",
+    "common/TracySocket.hpp",
+    "common/TracyMutex.hpp",
+};
