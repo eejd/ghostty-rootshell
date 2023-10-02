@@ -14,7 +14,6 @@ const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
-const glfw = @import("vendor/mach-glfw/build.zig");
 const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
@@ -659,6 +658,10 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const mach_glfw_dep = b.dependency("mach_glfw", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const libpng_dep = b.dependency("libpng", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -722,7 +725,7 @@ fn addDeps(
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
-    system_sdk.include(b, step, .{});
+    try addSystemSDK(b, step);
 
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
@@ -810,26 +813,29 @@ fn addDeps(
         // get access to glib for dbus.
         if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
+        // We may link GLFW below
+        const glfw_dep = b.dependency("glfw", .{
+            .target = step.target,
+            .optimize = step.optimize,
+            .x11 = step.target.isLinux(),
+            .wayland = step.target.isLinux(),
+            .metal = step.target.isDarwin(),
+        });
+
         switch (app_runtime) {
             .none => {},
 
             .glfw => {
-                step.addModule("glfw", glfw.module(b));
-                const glfw_opts: glfw.Options = .{
-                    .metal = step.target.isDarwin(),
-                    .opengl = false,
-                };
-                try glfw.link(b, step, glfw_opts);
+                step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
+                step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
+                step.linkLibrary(glfw_dep.artifact("glfw"));
             },
 
             .gtk => {
                 // We need glfw for GTK because we use GLFW to get DPI.
-                step.addModule("glfw", glfw.module(b));
-                const glfw_opts: glfw.Options = .{
-                    .metal = step.target.isDarwin(),
-                    .opengl = false,
-                };
-                try glfw.link(b, step, glfw_opts);
+                step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
+                step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
+                step.linkLibrary(glfw_dep.artifact("glfw"));
 
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
             },
@@ -837,6 +843,29 @@ fn addDeps(
     }
 
     return static_libs;
+}
+
+/// Adds the proper system headers for the target.
+fn addSystemSDK(
+    b: *std.Build,
+    step: *std.Build.CompileStep,
+) !void {
+    if (step.target.isDarwin()) {
+        system_sdk.include(b, step, .{});
+        try @import("apple_sdk").addPaths(b, step);
+    }
+
+    // GLFW requires these on all platforms so we just add them here. It
+    // doesn't hurt to add them if we don't use GLFW since they're all
+    // namespaced.
+    step.linkLibrary(b.dependency("vulkan_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("vulkan-headers"));
+    // step.linkLibrary(b.dependency("x11_headers", .{
+    //     .target = step.target,
+    //     .optimize = step.optimize,
+    // }).artifact("x11-headers"));
 }
 
 fn benchSteps(
