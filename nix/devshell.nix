@@ -51,6 +51,7 @@ let
     freetype
     harfbuzz
     libpng
+    pixman
     zlib
 
     libX11

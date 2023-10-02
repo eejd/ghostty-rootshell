@@ -759,7 +759,7 @@ fn addDeps(
 
     // Dynamic link
     if (!static) {
-        // step.addIncludePath(.{ .path = freetype.include_path_self });
+        step.addIncludePath(freetype_dep.path(""));
         step.linkSystemLibrary2("bzip2", dynamic_link_opts);
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
         step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
