@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const coretext_enabled = b.option(bool, "enable-coretext", "Build coretext") orelse false;
-    const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse false;
+    const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse true;
 
     const freetype = b.dependency("freetype", .{
         .target = target,
@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) !void {
     });
     const macos = b.dependency("macos", .{ .target = target, .optimize = optimize });
 
-    _ = b.addModule("harfbuzz", .{
+    const module = b.addModule("harfbuzz", .{
         .source_file = .{ .path = "main.zig" },
         .dependencies = &.{
             .{ .name = "freetype", .module = freetype.module("freetype") },
@@ -76,4 +76,21 @@ pub fn build(b: *std.Build) !void {
     });
 
     b.installArtifact(lib);
+
+    {
+        const test_exe = b.addTest(.{
+            .name = "test",
+            .root_source_file = .{ .path = "main.zig" },
+            .target = target,
+            .optimize = optimize,
+        });
+        test_exe.linkLibrary(lib);
+
+        var it = module.dependencies.iterator();
+        while (it.next()) |entry| test_exe.addModule(entry.key_ptr.*, entry.value_ptr.*);
+        test_exe.linkLibrary(freetype_dep.artifact("freetype"));
+        const tests_run = b.addRunArtifact(test_exe);
+        const test_step = b.step("test", "Run tests");
+        test_step.dependOn(&tests_run.step);
+    }
 }

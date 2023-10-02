@@ -84,6 +84,19 @@ pub fn build(b: *std.Build) !void {
     });
 
     b.installArtifact(lib);
+
+    {
+        const test_exe = b.addTest(.{
+            .name = "test",
+            .root_source_file = .{ .path = "main.zig" },
+            .target = target,
+            .optimize = optimize,
+        });
+        test_exe.linkLibrary(lib);
+        const tests_run = b.addRunArtifact(test_exe);
+        const test_step = b.step("test", "Run tests");
+        test_step.dependOn(&tests_run.step);
+    }
 }
 
 const srcs: []const []const u8 = &.{
