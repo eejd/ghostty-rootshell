@@ -740,9 +740,7 @@ fn addDeps(
         step.addModule("objc", objc_dep.module("objc"));
         step.addModule("macos", macos_dep.module("macos"));
         step.linkLibrary(macos_dep.artifact("macos"));
-
-        // todo: do this is in zig-objc instead.
-        step.linkSystemLibraryName("objc");
+        try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
     }
 
     // Tracy
