@@ -1,55 +1,39 @@
 const std = @import("std");
 
-/// Directories with our includes.
-const root = thisDir() ++ "../../../vendor/utf8proc/";
-const include_path = root;
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-pub const include_paths = .{include_path};
+    _ = b.addModule("utf8proc", .{ .source_file = .{ .path = "main.zig" } });
 
-pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
-        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
-    });
-}
-
-fn thisDir() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-pub fn link(b: *std.Build, step: *std.build.LibExeObjStep) !*std.build.LibExeObjStep {
-    const lib = try buildLib(b, step);
-    step.linkLibrary(lib);
-    step.addIncludePath(.{ .path = include_path });
-    return lib;
-}
-
-pub fn buildLib(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-) !*std.build.LibExeObjStep {
+    const upstream = b.dependency("utf8proc", .{});
     const lib = b.addStaticLibrary(.{
         .name = "utf8proc",
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.linkLibC();
+    lib.addIncludePath(upstream.path(""));
+    lib.installHeadersDirectoryOptions(.{
+        .source_dir = upstream.path(""),
+        .install_dir = .header,
+        .install_subdir = "",
+        .include_extensions = &.{".h"},
     });
 
-    // Include
-    lib.addIncludePath(.{ .path = include_path });
-
-    // Link
-    lib.linkLibC();
-
-    // Compile
     var flags = std.ArrayList([]const u8).init(b.allocator);
     try flags.append("-DUTF8PROC_EXPORTS");
     defer flags.deinit();
+    for (srcs) |src| {
+        lib.addCSourceFile(.{
+            .file = upstream.path(src),
+            .flags = flags.items,
+        });
+    }
 
-    // C files
-    lib.addCSourceFiles(srcs, flags.items);
-
-    return lib;
+    b.installArtifact(lib);
 }
 
-const srcs = &.{
-    root ++ "utf8proc.c",
+const srcs: []const []const u8 = &.{
+    "utf8proc.c",
 };

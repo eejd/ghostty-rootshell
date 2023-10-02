@@ -1,80 +1,27 @@
 const std = @import("std");
-const builtin = @import("builtin");
-
-/// Directories with our includes.
-const root = thisDir() ++ "../../../vendor/pixman/";
-const include_path = root ++ "pixman/";
-const include_path_self = thisDir();
-
-pub const include_paths = .{ include_path, include_path_self };
-
-pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
-        .source_file = .{ .path = (comptime thisDir()) ++ "/main.zig" },
-    });
-}
-
-fn thisDir() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-pub const Options = struct {};
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
-    const tests = b.addTestExe("pixman-test", "main.zig");
-    tests.setBuildMode(mode);
-    tests.setTarget(target);
-    _ = try link(b, tests, .{});
-    b.installArtifact(tests);
+    const module = b.addModule("pixman", .{ .source_file = .{ .path = "main.zig" } });
 
-    const test_step = b.step("test", "Run tests");
-    const tests_run = b.addRunArtifact(tests);
-    test_step.dependOn(&tests_run.step);
-}
-
-pub fn link(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    const lib = try buildPixman(b, step, opt);
-    step.linkLibrary(lib);
-    step.addIncludePath(.{ .path = include_path });
-    step.addIncludePath(.{ .path = include_path_self });
-    return lib;
-}
-
-pub fn buildPixman(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    _ = opt;
-
-    const target = step.target;
+    const upstream = b.dependency("pixman", .{});
     const lib = b.addStaticLibrary(.{
         .name = "pixman",
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target,
+        .optimize = optimize,
     });
-
-    // Include
-    lib.addIncludePath(.{ .path = include_path });
-    lib.addIncludePath(.{ .path = include_path_self });
-
-    // Link
     lib.linkLibC();
     if (!target.isWindows()) {
         lib.linkSystemLibrary("pthread");
     }
 
-    // Compile
+    lib.addIncludePath(upstream.path(""));
+    lib.addIncludePath(.{ .path = "" });
+
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
-
     try flags.appendSlice(&.{
         "-DHAVE_SIGACTION=1",
         "-DHAVE_ALARM=1",
@@ -95,7 +42,6 @@ pub fn buildPixman(
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",
     });
-
     if (!target.isWindows()) {
         try flags.appendSlice(&.{
             "-DHAVE_PTHREADS=1",
@@ -104,41 +50,69 @@ pub fn buildPixman(
         });
     }
 
-    // C files
-    lib.addCSourceFiles(srcs, flags.items);
+    for (srcs) |src| {
+        lib.addCSourceFile(.{
+            .file = upstream.path(src),
+            .flags = flags.items,
+        });
+    }
 
-    return lib;
+    lib.installHeader("pixman-version.h", "pixman-version.h");
+    lib.installHeadersDirectoryOptions(.{
+        .source_dir = upstream.path("pixman"),
+        .install_dir = .header,
+        .install_subdir = "",
+        .include_extensions = &.{".h"},
+    });
+
+    b.installArtifact(lib);
+
+    {
+        const test_exe = b.addTest(.{
+            .name = "test",
+            .root_source_file = .{ .path = "main.zig" },
+            .target = target,
+            .optimize = optimize,
+        });
+        test_exe.linkLibrary(lib);
+        var it = module.dependencies.iterator();
+        while (it.next()) |entry| test_exe.addModule(entry.key_ptr.*, entry.value_ptr.*);
+
+        const tests_run = b.addRunArtifact(test_exe);
+        const test_step = b.step("test", "Run tests");
+        test_step.dependOn(&tests_run.step);
+    }
 }
 
-const srcs = &.{
-    root ++ "pixman/pixman.c",
-    root ++ "pixman/pixman-access.c",
-    root ++ "pixman/pixman-access-accessors.c",
-    root ++ "pixman/pixman-bits-image.c",
-    root ++ "pixman/pixman-combine32.c",
-    root ++ "pixman/pixman-combine-float.c",
-    root ++ "pixman/pixman-conical-gradient.c",
-    root ++ "pixman/pixman-filter.c",
-    root ++ "pixman/pixman-x86.c",
-    root ++ "pixman/pixman-mips.c",
-    root ++ "pixman/pixman-arm.c",
-    root ++ "pixman/pixman-ppc.c",
-    root ++ "pixman/pixman-edge.c",
-    root ++ "pixman/pixman-edge-accessors.c",
-    root ++ "pixman/pixman-fast-path.c",
-    root ++ "pixman/pixman-glyph.c",
-    root ++ "pixman/pixman-general.c",
-    root ++ "pixman/pixman-gradient-walker.c",
-    root ++ "pixman/pixman-image.c",
-    root ++ "pixman/pixman-implementation.c",
-    root ++ "pixman/pixman-linear-gradient.c",
-    root ++ "pixman/pixman-matrix.c",
-    root ++ "pixman/pixman-noop.c",
-    root ++ "pixman/pixman-radial-gradient.c",
-    root ++ "pixman/pixman-region16.c",
-    root ++ "pixman/pixman-region32.c",
-    root ++ "pixman/pixman-solid-fill.c",
-    //root ++ "pixman/pixman-timer.c",
-    root ++ "pixman/pixman-trap.c",
-    root ++ "pixman/pixman-utils.c",
+const srcs: []const []const u8 = &.{
+    "pixman/pixman.c",
+    "pixman/pixman-access.c",
+    "pixman/pixman-access-accessors.c",
+    "pixman/pixman-bits-image.c",
+    "pixman/pixman-combine32.c",
+    "pixman/pixman-combine-float.c",
+    "pixman/pixman-conical-gradient.c",
+    "pixman/pixman-filter.c",
+    "pixman/pixman-x86.c",
+    "pixman/pixman-mips.c",
+    "pixman/pixman-arm.c",
+    "pixman/pixman-ppc.c",
+    "pixman/pixman-edge.c",
+    "pixman/pixman-edge-accessors.c",
+    "pixman/pixman-fast-path.c",
+    "pixman/pixman-glyph.c",
+    "pixman/pixman-general.c",
+    "pixman/pixman-gradient-walker.c",
+    "pixman/pixman-image.c",
+    "pixman/pixman-implementation.c",
+    "pixman/pixman-linear-gradient.c",
+    "pixman/pixman-matrix.c",
+    "pixman/pixman-noop.c",
+    "pixman/pixman-radial-gradient.c",
+    "pixman/pixman-region16.c",
+    "pixman/pixman-region32.c",
+    "pixman/pixman-solid-fill.c",
+    //"pixman/pixman-timer.c",
+    "pixman/pixman-trap.c",
+    "pixman/pixman-utils.c",
 };

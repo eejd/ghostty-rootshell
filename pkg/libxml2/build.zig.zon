@@ -1,0 +1,5 @@
+.{
+    .name = "libxml2",
+    .version = "2.11.5",
+    .dependencies = .{},
+}

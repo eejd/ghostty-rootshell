@@ -1,102 +1,66 @@
 const std = @import("std");
 
-/// Directories with our includes.
-const root = thisDir() ++ "../../../vendor/libpng/";
-const include_path = root;
-const include_path_pnglibconf = thisDir();
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-pub const include_paths = .{ include_path, include_path_pnglibconf };
+    const upstream = b.dependency("libpng", .{});
 
-pub const pkg = std.build.Pkg{
-    .name = "libpng",
-    .source = .{ .path = thisDir() ++ "/main.zig" },
-};
-
-fn thisDir() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-pub const Options = struct {
-    zlib: Zlib = .{},
-
-    pub const Zlib = struct {
-        step: ?*std.build.LibExeObjStep = null,
-        include: ?[]const []const u8 = null,
-    };
-};
-
-pub fn link(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    const lib = try buildLib(b, step, opt);
-    step.linkLibrary(lib);
-    step.addIncludePath(.{ .path = include_path });
-    return lib;
-}
-
-pub fn buildLib(
-    b: *std.Build,
-    step: *std.build.LibExeObjStep,
-    opt: Options,
-) !*std.build.LibExeObjStep {
-    const target = step.target;
     const lib = b.addStaticLibrary(.{
         .name = "png",
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target,
+        .optimize = optimize,
     });
-
-    // Include
-    lib.addIncludePath(.{ .path = include_path });
-    lib.addIncludePath(.{ .path = include_path_pnglibconf });
-
-    // Link
     lib.linkLibC();
     if (target.isLinux()) {
         lib.linkSystemLibrary("m");
     }
 
-    if (opt.zlib.step) |zlib|
-        lib.linkLibrary(zlib)
-    else
-        lib.linkSystemLibrary("z");
+    const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
+    lib.linkLibrary(zlib_dep.artifact("z"));
+    lib.addIncludePath(upstream.path(""));
+    lib.addIncludePath(.{ .path = "" });
 
-    if (opt.zlib.include) |dirs|
-        for (dirs) |dir| lib.addIncludePath(.{ .path = dir });
-
-    // Compile
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
-
     try flags.appendSlice(&.{
         "-DPNG_ARM_NEON_OPT=0",
         "-DPNG_POWERPC_VSX_OPT=0",
         "-DPNG_INTEL_SSE_OPT=0",
         "-DPNG_MIPS_MSA_OPT=0",
     });
+    for (srcs) |src| {
+        lib.addCSourceFile(.{
+            .file = upstream.path(src),
+            .flags = flags.items,
+        });
+    }
 
-    // C files
-    lib.addCSourceFiles(srcs, flags.items);
+    lib.installHeader("pnglibconf.h", "pnglibconf.h");
+    lib.installHeadersDirectoryOptions(.{
+        .source_dir = upstream.path(""),
+        .install_dir = .header,
+        .install_subdir = "",
+        .include_extensions = &.{".h"},
+    });
 
-    return lib;
+    b.installArtifact(lib);
 }
 
-const srcs = &.{
-    root ++ "png.c",
-    root ++ "pngerror.c",
-    root ++ "pngget.c",
-    root ++ "pngmem.c",
-    root ++ "pngpread.c",
-    root ++ "pngread.c",
-    root ++ "pngrio.c",
-    root ++ "pngrtran.c",
-    root ++ "pngrutil.c",
-    root ++ "pngset.c",
-    root ++ "pngtrans.c",
-    root ++ "pngwio.c",
-    root ++ "pngwrite.c",
-    root ++ "pngwtran.c",
-    root ++ "pngwutil.c",
+const srcs: []const []const u8 = &.{
+    "png.c",
+    "pngerror.c",
+    "pngget.c",
+    "pngmem.c",
+    "pngpread.c",
+    "pngread.c",
+    "pngrio.c",
+    "pngrtran.c",
+    "pngrutil.c",
+    "pngset.c",
+    "pngtrans.c",
+    "pngwio.c",
+    "pngwrite.c",
+    "pngwtran.c",
+    "pngwutil.c",
 };

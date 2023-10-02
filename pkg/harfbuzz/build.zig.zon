@@ -1,0 +1,9 @@
+.{
+    .name = "harfbuzz",
+    .version = "2.13.2",
+    .dependencies = .{
+        .freetype = .{ .path = "../freetype" },
+        .macos = .{ .path = "../macos" },
+        .apple_sdk = .{ .path = "../apple-sdk" },
+    },
+}

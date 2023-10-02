@@ -14,22 +14,6 @@ const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 
-const glfw = @import("vendor/mach-glfw/build.zig");
-const fontconfig = @import("pkg/fontconfig/build.zig");
-const freetype = @import("pkg/freetype/build.zig");
-const harfbuzz = @import("pkg/harfbuzz/build.zig");
-const js = @import("vendor/zig-js/build.zig");
-const libxev = @import("vendor/libxev/build.zig");
-const libxml2 = @import("vendor/zig-libxml2/libxml2.zig");
-const libpng = @import("pkg/libpng/build.zig");
-const macos = @import("pkg/macos/build.zig");
-const objc = @import("vendor/zig-objc/build.zig");
-const pixman = @import("pkg/pixman/build.zig");
-const utf8proc = @import("pkg/utf8proc/build.zig");
-const zlib = @import("pkg/zlib/build.zig");
-const tracylib = @import("pkg/tracy/build.zig");
-const system_sdk = @import("vendor/mach-glfw/system_sdk.zig");
-
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
 // but we liberally update it. In the future, we'll be more careful about
@@ -610,33 +594,6 @@ pub fn build(b: *std.Build) !void {
             const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
         }
-
-        // Named package dependencies don't have their tests run by reference,
-        // so we iterate through them here. We're only interested in dependencies
-        // we wrote (are in the "pkg/" directory).
-        var it = main_test.modules.iterator();
-        while (it.next()) |entry| {
-            const name = entry.key_ptr.*;
-            const module = entry.value_ptr.*;
-            if (std.mem.eql(u8, name, "build_options")) continue;
-            if (std.mem.eql(u8, name, "glfw")) continue;
-
-            const test_exe = b.addTest(.{
-                .name = b.fmt("{s}-test", .{name}),
-                .root_source_file = module.source_file,
-                .target = target,
-            });
-            if (emit_test_exe) b.installArtifact(test_exe);
-
-            _ = try addDeps(b, test_exe, true);
-            // if (pkg.dependencies) |children| {
-            //     test_.packages = std.ArrayList(std.build.Pkg).init(b.allocator);
-            //     try test_.packages.appendSlice(children);
-            // }
-
-            const test_run = b.addRunArtifact(test_exe);
-            test_step.dependOn(&test_run.step);
-        }
     }
 }
 
@@ -652,20 +609,6 @@ fn addDeps(
     var static_libs = FileSourceList.init(b.allocator);
     errdefer static_libs.deinit();
 
-    // Wasm we do manually since it is such a different build.
-    if (step.target.getCpuArch() == .wasm32) {
-        // We link this package but its a no-op since Tracy
-        // never actually WORKS with wasm.
-        step.addModule("tracy", tracylib.module(b));
-        step.addModule("utf8proc", utf8proc.module(b));
-        step.addModule("zig-js", js.module(b));
-
-        // utf8proc
-        _ = try utf8proc.link(b, step);
-
-        return static_libs;
-    }
-
     // For dynamic linking, we prefer dynamic linking and to search by
     // mode first. Mode first will search all paths for a dynamic library
     // before falling back to static.
@@ -673,6 +616,68 @@ fn addDeps(
         .preferred_link_mode = .Dynamic,
         .search_strategy = .mode_first,
     };
+
+    // Dependencies
+    const js_dep = b.dependency("zig_js", .{ .target = step.target, .optimize = step.optimize });
+    const libxev_dep = b.dependency("libxev", .{ .target = step.target, .optimize = step.optimize });
+    const objc_dep = b.dependency("zig_objc", .{ .target = step.target, .optimize = step.optimize });
+    const fontconfig_dep = b.dependency("fontconfig", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const freetype_dep = b.dependency("freetype", .{
+        .target = step.target,
+        .optimize = step.optimize,
+        .@"enable-libpng" = true,
+    });
+    const mach_glfw_dep = b.dependency("mach_glfw", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const libpng_dep = b.dependency("libpng", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const macos_dep = b.dependency("macos", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const pixman_dep = b.dependency("pixman", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const tracy_dep = b.dependency("tracy", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const zlib_dep = b.dependency("zlib", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const utf8proc_dep = b.dependency("utf8proc", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const harfbuzz_dep = b.dependency("harfbuzz", .{
+        .target = step.target,
+        .optimize = step.optimize,
+        .@"enable-freetype" = true,
+        .@"enable-coretext" = font_backend.hasCoretext(),
+    });
+
+    // Wasm we do manually since it is such a different build.
+    if (step.target.getCpuArch() == .wasm32) {
+        // We link this package but its a no-op since Tracy
+        // never actually WORKS with wasm.
+        step.addModule("tracy", tracy_dep.module("tracy"));
+        step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
+        step.addModule("zig-js", js_dep.module("zig-js"));
+
+        // utf8proc
+        step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
+
+        return static_libs;
+    }
 
     // On Linux, we need to add a couple common library paths that aren't
     // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
@@ -692,50 +697,43 @@ fn addDeps(
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
-    system_sdk.include(b, step, .{});
+    try addSystemSDK(b, step);
 
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
     // so take a closer look at this again later.
-    if (font_backend.hasFontconfig()) step.addModule("fontconfig", fontconfig.module(b));
-    const mod_freetype = freetype.module(b);
-    const mod_macos = macos.module(b);
-    const mod_libxev = b.createModule(.{
-        .source_file = .{ .path = "vendor/libxev/src/main.zig" },
-    });
-    step.addModule("freetype", mod_freetype);
-    step.addModule("harfbuzz", harfbuzz.module(b, .{
-        .freetype = mod_freetype,
-        .macos = mod_macos,
-    }));
-    step.addModule("xev", mod_libxev);
-    step.addModule("pixman", pixman.module(b));
-    step.addModule("utf8proc", utf8proc.module(b));
+    if (font_backend.hasFontconfig()) step.addModule(
+        "fontconfig",
+        fontconfig_dep.module("fontconfig"),
+    );
+    step.addModule("freetype", freetype_dep.module("freetype"));
+    step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
+    step.addModule("xev", libxev_dep.module("xev"));
+    step.addModule("pixman", pixman_dep.module("pixman"));
+    step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
 
     // Mac Stuff
     if (step.target.isDarwin()) {
-        step.addModule("objc", objc.module(b));
-        step.addModule("macos", mod_macos);
-        _ = try macos.link(b, step, .{});
-
-        // todo: do this is in zig-objc instead.
-        step.linkSystemLibraryName("objc");
+        step.addModule("objc", objc_dep.module("objc"));
+        step.addModule("macos", macos_dep.module("macos"));
+        step.linkLibrary(macos_dep.artifact("macos"));
+        try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
     }
 
     // Tracy
-    step.addModule("tracy", tracylib.module(b));
+    step.addModule("tracy", tracy_dep.module("tracy"));
     if (tracy) {
-        var tracy_step = try tracylib.link(b, step);
-        system_sdk.include(b, tracy_step, .{});
+        step.linkLibrary(tracy_dep.artifact("tracy"));
+        try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
     }
 
     // utf8proc
-    const utf8proc_step = try utf8proc.link(b, step);
-    try static_libs.append(utf8proc_step.getEmittedBin());
+    step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
+    try static_libs.append(utf8proc_dep.artifact("utf8proc").getEmittedBin());
 
     // Dynamic link
     if (!static) {
-        step.addIncludePath(.{ .path = freetype.include_path_self });
+        step.addIncludePath(freetype_dep.path(""));
         step.linkSystemLibrary2("bzip2", dynamic_link_opts);
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
         step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
@@ -750,78 +748,28 @@ fn addDeps(
 
     // Other dependencies, we may dynamically link
     if (static) {
-        const zlib_step = try zlib.link(b, step);
-        try static_libs.append(zlib_step.getEmittedBin());
+        step.linkLibrary(zlib_dep.artifact("z"));
+        try static_libs.append(zlib_dep.artifact("z").getEmittedBin());
 
-        const libpng_step = try libpng.link(b, step, .{
-            .zlib = .{
-                .step = zlib_step,
-                .include = &zlib.include_paths,
-            },
-        });
-        try static_libs.append(libpng_step.getEmittedBin());
+        step.linkLibrary(libpng_dep.artifact("png"));
+        try static_libs.append(libpng_dep.artifact("png").getEmittedBin());
 
         // Freetype
-        const freetype_step = try freetype.link(b, step, .{
-            .libpng = freetype.Options.Libpng{
-                .enabled = true,
-                .step = libpng_step,
-                .include = &libpng.include_paths,
-            },
-
-            .zlib = .{
-                .enabled = true,
-                .step = zlib_step,
-                .include = &zlib.include_paths,
-            },
-        });
-        try static_libs.append(freetype_step.getEmittedBin());
+        step.linkLibrary(freetype_dep.artifact("freetype"));
+        try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
 
         // Harfbuzz
-        const harfbuzz_step = try harfbuzz.link(b, step, .{
-            .freetype = .{
-                .enabled = true,
-                .step = freetype_step,
-                .include = &freetype.include_paths,
-            },
-
-            .coretext = .{
-                .enabled = font_backend.hasCoretext(),
-            },
-        });
-        system_sdk.include(b, harfbuzz_step, .{});
-        try static_libs.append(harfbuzz_step.getEmittedBin());
+        step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
+        try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
 
         // Pixman
-        const pixman_step = try pixman.link(b, step, .{});
-        try static_libs.append(pixman_step.getEmittedBin());
+        step.linkLibrary(pixman_dep.artifact("pixman"));
+        try static_libs.append(pixman_dep.artifact("pixman").getEmittedBin());
 
         // Only Linux gets fontconfig
         if (font_backend.hasFontconfig()) {
-            // Libxml2
-            const libxml2_lib = try libxml2.create(
-                b,
-                step.target,
-                step.optimize,
-                .{
-                    .lzma = false,
-                    .zlib = false,
-                    .iconv = !step.target.isWindows(),
-                },
-            );
-            libxml2_lib.link(step);
-
             // Fontconfig
-            const fontconfig_step = try fontconfig.link(b, step, .{
-                .freetype = .{
-                    .enabled = true,
-                    .step = freetype_step,
-                    .include = &freetype.include_paths,
-                },
-
-                .libxml2 = true,
-            });
-            libxml2_lib.link(fontconfig_step);
+            step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
         }
     }
 
@@ -837,26 +785,29 @@ fn addDeps(
         // get access to glib for dbus.
         if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
+        // We may link GLFW below
+        const glfw_dep = b.dependency("glfw", .{
+            .target = step.target,
+            .optimize = step.optimize,
+            .x11 = step.target.isLinux(),
+            .wayland = step.target.isLinux(),
+            .metal = step.target.isDarwin(),
+        });
+
         switch (app_runtime) {
             .none => {},
 
             .glfw => {
-                step.addModule("glfw", glfw.module(b));
-                const glfw_opts: glfw.Options = .{
-                    .metal = step.target.isDarwin(),
-                    .opengl = false,
-                };
-                try glfw.link(b, step, glfw_opts);
+                step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
+                step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
+                step.linkLibrary(glfw_dep.artifact("glfw"));
             },
 
             .gtk => {
                 // We need glfw for GTK because we use GLFW to get DPI.
-                step.addModule("glfw", glfw.module(b));
-                const glfw_opts: glfw.Options = .{
-                    .metal = step.target.isDarwin(),
-                    .opengl = false,
-                };
-                try glfw.link(b, step, glfw_opts);
+                step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
+                step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
+                step.linkLibrary(glfw_dep.artifact("glfw"));
 
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
             },
@@ -864,6 +815,31 @@ fn addDeps(
     }
 
     return static_libs;
+}
+
+/// Adds the proper system headers for the target.
+fn addSystemSDK(
+    b: *std.Build,
+    step: *std.Build.CompileStep,
+) !void {
+    if (step.target.isDarwin()) {
+        try @import("apple_sdk").addPaths(b, step);
+    }
+
+    if (step.target.isLinux()) {
+        step.linkLibrary(b.dependency("x11_headers", .{
+            .target = step.target,
+            .optimize = step.optimize,
+        }).artifact("x11-headers"));
+    }
+
+    // GLFW requires these on all platforms so we just add them here. It
+    // doesn't hurt to add them if we don't use GLFW since they're all
+    // namespaced.
+    step.linkLibrary(b.dependency("vulkan_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("vulkan-headers"));
 }
 
 fn benchSteps(
