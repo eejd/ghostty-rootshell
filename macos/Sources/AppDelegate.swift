@@ -10,9 +10,6 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         category: String(describing: AppDelegate.self)
     )
     
-    // confirmQuit published so other views can check whether quit needs to be confirmed.
-    @Published var confirmQuit: Bool = false
-    
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
     @IBOutlet private var menuReloadConfig: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
@@ -113,9 +110,20 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // If our app says we don't need to confirm, we can exit now.
         if (!ghostty.needsConfirmQuit) { return .terminateNow }
         
-        // We have some visible window, and all our windows will watch the confirmQuit.
-        confirmQuit = true
-        return .terminateLater
+        // We have some visible window. Show an app-wide modal to confirm quitting.
+        let alert = NSAlert()
+        alert.messageText = "Quit Ghostty?"
+        alert.informativeText = "All terminal sessions will be terminated."
+        alert.addButton(withTitle: "Close Ghostty")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        switch (alert.runModal()) {
+        case .alertFirstButtonReturn:
+            return .terminateNow
+            
+        default:
+            return .terminateCancel
+        }
     }
     
     /// This is called when the application is already open and someone double-clicks the icon

@@ -21,10 +21,6 @@ struct SettingsView: View {
         }
         .padding()
         .frame(minWidth: 500, maxWidth: 500, minHeight: 156, maxHeight: 156)
-        .onChange(of: appDelegate.confirmQuit) { value in
-            guard value else { return }
-            NSApplication.shared.reply(toApplicationShouldTerminate: true)
-        }
     }
 }
 
