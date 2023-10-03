@@ -908,7 +908,7 @@ fn testShaper(alloc: Allocator) !TestShaper {
         // On CoreText we want to load Apple Emoji, we should have it.
         var disco = font.Discover.init();
         defer disco.deinit();
-        var disco_it = try disco.discover(.{
+        var disco_it = try disco.discover(alloc, .{
             .family = "Apple Color Emoji",
             .size = 12,
             .monospace = false,

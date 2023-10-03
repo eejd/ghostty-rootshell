@@ -46,18 +46,22 @@ pub const FontDescriptor = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn retain(self: *FontDescriptor) void {
+        _ = c.CFRetain(self);
+    }
+
     pub fn release(self: *FontDescriptor) void {
         c.CFRelease(self);
     }
 
-    pub fn copyAttribute(self: *FontDescriptor, comptime attr: FontAttribute) attr.Value() {
+    pub fn copyAttribute(self: *const FontDescriptor, comptime attr: FontAttribute) attr.Value() {
         return @ptrFromInt(@intFromPtr(c.CTFontDescriptorCopyAttribute(
             @ptrCast(self),
             @ptrCast(attr.key()),
         )));
     }
 
-    pub fn copyAttributes(self: *FontDescriptor) *foundation.Dictionary {
+    pub fn copyAttributes(self: *const FontDescriptor) *foundation.Dictionary {
         return @ptrFromInt(@intFromPtr(c.CTFontDescriptorCopyAttributes(
             @ptrCast(self),
         )));

@@ -1,6 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const base = @import("base.zig");
 const cftype = @import("type.zig");
+const ComparisonResult = base.ComparisonResult;
+const Range = base.Range;
 
 pub const Array = opaque {
     pub fn create(comptime T: type, values: []*const T) Allocator.Error!*Array {
@@ -38,6 +41,52 @@ pub const Array = opaque {
     extern "c" var kCFTypeArrayCallBacks: anyopaque;
 };
 
+pub const MutableArray = opaque {
+    pub fn createCopy(array: *Array) Allocator.Error!*MutableArray {
+        return CFArrayCreateMutableCopy(
+            null,
+            0,
+            array,
+        ) orelse error.OutOfMemory;
+    }
+
+    pub fn release(self: *MutableArray) void {
+        cftype.CFRelease(self);
+    }
+
+    pub fn sortValues(
+        self: *MutableArray,
+        comptime Elem: type,
+        comptime Context: type,
+        context: ?*Context,
+        comptime comparator: ?*const fn (
+            a: *const Elem,
+            b: *const Elem,
+            context: ?*Context,
+        ) callconv(.C) ComparisonResult,
+    ) void {
+        CFArraySortValues(
+            self,
+            Range.init(0, Array.CFArrayGetCount(@ptrCast(self))),
+            comparator,
+            context,
+        );
+    }
+
+    extern "c" fn CFArrayCreateMutableCopy(
+        allocator: ?*anyopaque,
+        capacity: usize,
+        array: *Array,
+    ) ?*MutableArray;
+
+    extern "c" fn CFArraySortValues(
+        array: *MutableArray,
+        range: Range,
+        comparator: ?*const anyopaque,
+        context: ?*anyopaque,
+    ) void;
+};
+
 test "array" {
     const testing = std.testing;
 
@@ -50,6 +99,45 @@ test "array" {
 
     {
         const ch = arr.getValueAtIndex(u8, 0);
+        try testing.expectEqual(@as(u8, 'h'), ch.*);
+    }
+
+    // Can make it mutable
+    var mut = try MutableArray.createCopy(arr);
+    defer mut.release();
+}
+
+test "array sorting" {
+    const testing = std.testing;
+
+    const str = "hello";
+    var values = [_]*const u8{ &str[0], &str[1] };
+    const arr = try Array.create(u8, &values);
+    defer arr.release();
+    const mut = try MutableArray.createCopy(arr);
+    defer mut.release();
+
+    mut.sortValues(
+        u8,
+        void,
+        null,
+        struct {
+            fn compare(a: *const u8, b: *const u8, _: ?*void) callconv(.C) ComparisonResult {
+                if (a.* > b.*) return .greater;
+                if (a.* == b.*) return .equal;
+                return .less;
+            }
+        }.compare,
+    );
+
+    {
+        const mutarr: *Array = @ptrCast(mut);
+        const ch = mutarr.getValueAtIndex(u8, 0);
+        try testing.expectEqual(@as(u8, 'e'), ch.*);
+    }
+    {
+        const mutarr: *Array = @ptrCast(mut);
+        const ch = mutarr.getValueAtIndex(u8, 1);
         try testing.expectEqual(@as(u8, 'h'), ch.*);
     }
 }

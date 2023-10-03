@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) !void {
     lib.linkFramework("CoreFoundation");
     lib.linkFramework("CoreGraphics");
     lib.linkFramework("CoreText");
-    try apple_sdk.addPaths(b, lib);
+    if (!target.isNative()) try apple_sdk.addPaths(b, lib);
 
     b.installArtifact(lib);
 
