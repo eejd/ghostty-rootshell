@@ -234,7 +234,9 @@ pub const Fontconfig = struct {
 
     /// Discover fonts from a descriptor. This returns an iterator that can
     /// be used to build up the deferred fonts.
-    pub fn discover(self: *const Fontconfig, desc: Descriptor) !DiscoverIterator {
+    pub fn discover(self: *const Fontconfig, alloc: Allocator, desc: Descriptor) !DiscoverIterator {
+        _ = alloc;
+
         // Build our pattern that we'll search for
         const pat = desc.toFcPattern();
         errdefer pat.destroy();

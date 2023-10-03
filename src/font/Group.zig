@@ -835,7 +835,7 @@ test "discover monospace with fontconfig and freetype" {
 
     // Search for fonts
     var fc = Discover.init();
-    var it = try fc.discover(.{ .family = "monospace", .size = 12 });
+    var it = try fc.discover(alloc, .{ .family = "monospace", .size = 12 });
     defer it.deinit();
 
     // Initialize the group with the deferred face
