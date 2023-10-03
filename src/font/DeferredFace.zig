@@ -408,6 +408,7 @@ test "coretext" {
 
     const discovery = @import("main.zig").discovery;
     const testing = std.testing;
+    const alloc = testing.allocator;
 
     // Load freetype
     var lib = try Library.init();
@@ -416,7 +417,7 @@ test "coretext" {
     // Get a deferred face from fontconfig
     var def = def: {
         var fc = discovery.CoreText.init();
-        var it = try fc.discover(.{ .family = "Monaco", .size = 12 });
+        var it = try fc.discover(alloc, .{ .family = "Monaco", .size = 12 });
         defer it.deinit();
         break :def (try it.next()).?;
     };

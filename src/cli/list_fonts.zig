@@ -85,7 +85,7 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     // Look up all available fonts
     var disco = font.Discover.init();
     defer disco.deinit();
-    var disco_it = try disco.discover(.{
+    var disco_it = try disco.discover(alloc, .{
         .family = config.family,
         .style = config.style,
         .bold = config.bold,

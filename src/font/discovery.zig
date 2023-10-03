@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const fontconfig = @import("fontconfig");
 const macos = @import("macos");
@@ -307,7 +308,7 @@ pub const CoreText = struct {
 
     /// Discover fonts from a descriptor. This returns an iterator that can
     /// be used to build up the deferred fonts.
-    pub fn discover(self: *const CoreText, desc: Descriptor) !DiscoverIterator {
+    pub fn discover(self: *const CoreText, alloc: Allocator, desc: Descriptor) !DiscoverIterator {
         _ = self;
 
         // Build our pattern that we'll search for
@@ -323,25 +324,104 @@ pub const CoreText = struct {
         const set = try macos.text.FontCollection.createWithFontDescriptors(desc_arr);
         defer set.release();
         const list = set.createMatchingFontDescriptors();
-        errdefer list.release();
+        defer list.release();
+
+        // Sort our descriptors
+        const zig_list = try copyMatchingDescriptors(alloc, list);
+        errdefer alloc.free(zig_list);
+        sortMatchingDescriptors(&desc, zig_list);
 
         return DiscoverIterator{
-            .list = list,
+            .alloc = alloc,
+            .list = zig_list,
             .i = 0,
         };
     }
 
-    pub const DiscoverIterator = struct {
+    fn copyMatchingDescriptors(
+        alloc: Allocator,
         list: *macos.foundation.Array,
+    ) ![]*macos.text.FontDescriptor {
+        var result = try alloc.alloc(*macos.text.FontDescriptor, list.getCount());
+        errdefer alloc.free(result);
+        for (0..result.len) |i| {
+            result[i] = list.getValueAtIndex(macos.text.FontDescriptor, i);
+
+            // We need to retain becauseonce the list is freed it will
+            // release all its members.
+            result[i].retain();
+        }
+        return result;
+    }
+
+    fn sortMatchingDescriptors(
+        desc: *const Descriptor,
+        list: []*macos.text.FontDescriptor,
+    ) void {
+        var desc_mut = desc.*;
+        if (desc_mut.style == null) {
+            // If there is no explicit style set, we set a preferred
+            // based on the style bool attributes.
+            //
+            // TODO: doesn't handle i18n font names well, we should have
+            // another mechanism that uses the weight attribute if it exists.
+            // Wait for this to be a real problem.
+            desc_mut.style = if (desc_mut.bold and desc_mut.italic)
+                "Bold Italic"
+            else if (desc_mut.bold)
+                "Bold"
+            else if (desc_mut.italic)
+                "Italic"
+            else
+                null;
+        }
+
+        std.mem.sortUnstable(*macos.text.FontDescriptor, list, &desc_mut, struct {
+            fn lessThan(
+                desc_inner: *const Descriptor,
+                lhs: *macos.text.FontDescriptor,
+                rhs: *macos.text.FontDescriptor,
+            ) bool {
+                const lhs_score = score(desc_inner, lhs);
+                const rhs_score = score(desc_inner, rhs);
+                // Higher score is "less" (earlier)
+                return lhs_score > rhs_score;
+            }
+        }.lessThan);
+    }
+
+    fn score(desc: *const Descriptor, ct_desc: *const macos.text.FontDescriptor) i32 {
+        var score_acc: i32 = 0;
+
+        score_acc += if (desc.style) |desired_style| style: {
+            const style = ct_desc.copyAttribute(.style_name);
+            defer style.release();
+            var buf: [128]u8 = undefined;
+            const style_str = style.cstring(&buf, .utf8) orelse break :style 0;
+
+            // Matching style string gets highest score
+            if (std.mem.eql(u8, desired_style, style_str)) break :style 100;
+
+            // Otherwise the score is based on the length of the style string.
+            // Shorter styles are scored higher.
+            break :style -1 * @as(i32, @intCast(style_str.len));
+        } else 0;
+
+        return score_acc;
+    }
+
+    pub const DiscoverIterator = struct {
+        alloc: Allocator,
+        list: []const *macos.text.FontDescriptor,
         i: usize,
 
         pub fn deinit(self: *DiscoverIterator) void {
-            self.list.release();
+            self.alloc.free(self.list);
             self.* = undefined;
         }
 
         pub fn next(self: *DiscoverIterator) !?DeferredFace {
-            if (self.i >= self.list.getCount()) return null;
+            if (self.i >= self.list.len) return null;
 
             // Get our descriptor. We need to remove the character set
             // limitation because we may have used that to filter but we
@@ -349,7 +429,7 @@ pub const CoreText = struct {
             // available.
             //const desc = self.list.getValueAtIndex(macos.text.FontDescriptor, self.i);
             const desc = desc: {
-                const original = self.list.getValueAtIndex(macos.text.FontDescriptor, self.i);
+                const original = self.list[self.i];
 
                 // For some reason simply copying the attributes and recreating
                 // the descriptor removes the charset restriction. This is tested.
@@ -392,8 +472,11 @@ test "descriptor hash familiy names" {
 test "fontconfig" {
     if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
 
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
     var fc = Fontconfig.init();
-    var it = try fc.discover(.{ .family = "monospace", .size = 12 });
+    var it = try fc.discover(alloc, .{ .family = "monospace", .size = 12 });
     defer it.deinit();
 }
 
@@ -401,9 +484,10 @@ test "fontconfig codepoint" {
     if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
 
     const testing = std.testing;
+    const alloc = testing.allocator;
 
     var fc = Fontconfig.init();
-    var it = try fc.discover(.{ .codepoint = 'A', .size = 12 });
+    var it = try fc.discover(alloc, .{ .codepoint = 'A', .size = 12 });
     defer it.deinit();
 
     // The first result should have the codepoint. Later ones may not
@@ -420,10 +504,11 @@ test "coretext" {
         return error.SkipZigTest;
 
     const testing = std.testing;
+    const alloc = testing.allocator;
 
     var ct = CoreText.init();
     defer ct.deinit();
-    var it = try ct.discover(.{ .family = "Monaco", .size = 12 });
+    var it = try ct.discover(alloc, .{ .family = "Monaco", .size = 12 });
     defer it.deinit();
     var count: usize = 0;
     while (try it.next()) |_| {
@@ -437,10 +522,11 @@ test "coretext codepoint" {
         return error.SkipZigTest;
 
     const testing = std.testing;
+    const alloc = testing.allocator;
 
     var ct = CoreText.init();
     defer ct.deinit();
-    var it = try ct.discover(.{ .codepoint = 'A', .size = 12 });
+    var it = try ct.discover(alloc, .{ .codepoint = 'A', .size = 12 });
     defer it.deinit();
 
     // The first result should have the codepoint. Later ones may not

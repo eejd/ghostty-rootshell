@@ -313,7 +313,7 @@ pub fn indexForCodepoint(
     // If we are regular, try looking for a fallback using discovery.
     if (style == .regular and font.Discover != void) {
         if (self.discover) |disco| discover: {
-            var disco_it = disco.discover(.{
+            var disco_it = disco.discover(self.alloc, .{
                 .codepoint = cp,
                 .size = self.size.points,
                 .bold = style == .bold or style == .bold_italic,
@@ -382,7 +382,7 @@ fn indexForCodepointOverride(self: *Group, cp: u32) !?FontIndex {
     const idx_: ?FontIndex = self.descriptor_cache.get(desc) orelse idx: {
         // Slow path: we have to find this descriptor and load the font
         const discover = self.discover orelse return null;
-        var disco_it = try discover.discover(desc);
+        var disco_it = try discover.discover(self.alloc, desc);
         defer disco_it.deinit();
 
         const face = (try disco_it.next()) orelse {

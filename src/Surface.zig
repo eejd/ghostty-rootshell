@@ -246,7 +246,7 @@ pub fn init(
             var name_buf: [256]u8 = undefined;
 
             if (config.@"font-family") |family| {
-                var disco_it = try disco.discover(.{
+                var disco_it = try disco.discover(alloc, .{
                     .family = family,
                     .style = config.@"font-style".nameValue(),
                     .size = font_size.points,
@@ -259,7 +259,7 @@ pub fn init(
                 } else log.warn("font-family not found: {s}", .{family});
             }
             if (config.@"font-family-bold") |family| {
-                var disco_it = try disco.discover(.{
+                var disco_it = try disco.discover(alloc, .{
                     .family = family,
                     .style = config.@"font-style-bold".nameValue(),
                     .size = font_size.points,
@@ -273,7 +273,7 @@ pub fn init(
                 } else log.warn("font-family-bold not found: {s}", .{family});
             }
             if (config.@"font-family-italic") |family| {
-                var disco_it = try disco.discover(.{
+                var disco_it = try disco.discover(alloc, .{
                     .family = family,
                     .style = config.@"font-style-italic".nameValue(),
                     .size = font_size.points,
@@ -287,7 +287,7 @@ pub fn init(
                 } else log.warn("font-family-italic not found: {s}", .{family});
             }
             if (config.@"font-family-bold-italic") |family| {
-                var disco_it = try disco.discover(.{
+                var disco_it = try disco.discover(alloc, .{
                     .family = family,
                     .style = config.@"font-style-bold-italic".nameValue(),
                     .size = font_size.points,
