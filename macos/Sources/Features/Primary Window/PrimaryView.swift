@@ -28,28 +28,6 @@ struct PrimaryView: View {
     @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle
     @FocusedValue(\.ghosttySurfaceZoomed) private var zoomedSplit
     
-    // This is true if this view should be the one to show the quit confirmation.
-    var ownsQuitConfirmation: Bool {
-        // We need to have a window to show a confirmation.
-        guard let window = self.window else { return false }
-        
-        // If we are the key window then definitely yes.
-        if (window.isKeyWindow) { return true }
-        
-        // If there is some other PrimaryWindow that is key, let it handle it.
-        let windows = NSApplication.shared.windows
-        if (windows.contains {
-            guard let primary = $0 as? PrimaryWindow else { return false }
-            return primary.isKeyWindow
-        }) { return false }
-        
-        // We aren't the key window but also there is no key PrimaryWindow.
-        // If we are the FIRST PrimaryWindow in the windows array, then
-        // we take the job.
-        guard let firstWindow = (windows.first { $0 is PrimaryWindow }) else { return false }
-        return window == firstWindow
-    }
-    
     // The title for our window
     private var title: String {
         var title = "👻"
@@ -73,26 +51,12 @@ struct PrimaryView: View {
         switch ghostty.readiness {
         case .loading:
             Text("Loading")
-                .onChange(of: appDelegate.confirmQuit) { value in
-                    guard value else { return }
-                    NSApplication.shared.reply(toApplicationShouldTerminate: true)
-                }
         case .error:
             ErrorView()
-                .onChange(of: appDelegate.confirmQuit) { value in
-                    guard value else { return }
-                    NSApplication.shared.reply(toApplicationShouldTerminate: true)
-                }
         case .ready:
             let center = NotificationCenter.default
             let gotoTab = center.publisher(for: Ghostty.Notification.ghosttyGotoTab)
             let toggleFullscreen = center.publisher(for: Ghostty.Notification.ghosttyToggleFullscreen)
-            
-            let confirmQuitting = Binding<Bool>(get: {
-                self.appDelegate.confirmQuit && self.ownsQuitConfirmation
-            }, set: {
-                self.appDelegate.confirmQuit = $0
-            })
             
             VStack(spacing: 0) {
                 // If we're running in debug mode we show a warning so that users
@@ -118,21 +82,6 @@ struct PrimaryView: View {
                         guard let window = self.window else { return }
                         window.title = newValue
                     }
-                    .confirmationDialog(
-                        "Quit Ghostty?",
-                        isPresented: confirmQuitting) {
-                            Button("Close Ghostty") {
-                                NSApplication.shared.reply(toApplicationShouldTerminate: true)
-                            }
-                            .keyboardShortcut(.defaultAction)
-                            
-                            Button("Cancel", role: .cancel) {
-                                NSApplication.shared.reply(toApplicationShouldTerminate: false)
-                            }
-                            .keyboardShortcut(.cancelAction)
-                        } message: {
-                            Text("All terminal sessions will be terminated.")
-                        }
             }
         }
     }

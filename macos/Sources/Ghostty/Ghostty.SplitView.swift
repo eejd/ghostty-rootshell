@@ -337,9 +337,6 @@ extension Ghostty {
         ///  This will be set to true when the split requests that is become closed.
         @Binding var requestClose: Bool
 
-        /// This controls whether we're actively confirming if we want to close or not.
-        @State private var confirmClose: Bool = false
-
         var body: some View {
             let center = NotificationCenter.default
             let pub = center.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
@@ -350,18 +347,6 @@ extension Ghostty {
                 .onReceive(pub) { onNewSplit(notification: $0) }
                 .onReceive(pubClose) { onClose(notification: $0) }
                 .onReceive(pubFocus) { onMoveFocus(notification: $0) }
-                .confirmationDialog(
-                    "Close Terminal?",
-                    isPresented: $confirmClose) {
-                        Button("Close the Terminal") {
-                            confirmClose = false
-                            requestClose = true
-                        }
-                        .keyboardShortcut(.defaultAction)
-                    } message: {
-                        Text("The terminal still has a running process. If you close the terminal " +
-                             "the process will be killed.")
-                    }
         }
 
         private func onClose(notification: SwiftUI.Notification) {
@@ -377,9 +362,35 @@ extension Ghostty {
                 requestClose = true
                 return
             }
-
-            // Child process is alive, so we want to show a confirmation.
-            confirmClose = true
+            
+            // If we don't have a window to attach our modal to, we also exit immediately.
+            // This should NOT happen.
+            guard let window = leaf.surface.window else {
+                requestClose = true
+                return
+            }
+            
+            // Confirm close. We use an NSAlert instead of a SwiftUI confirmationDialog
+            // due to SwiftUI bugs (see Ghostty #560). To repeat from #560, the bug is that
+            // confirmationDialog allows the user to Cmd-W close the alert, but when doing
+            // so SwiftUI does not update any of the bindings to note that window is no longer
+            // being shown, and provides no callback to detect this.
+            let alert = NSAlert()
+            alert.messageText = "Close Terminal?"
+            alert.informativeText = "The terminal still has a running process. If you close the " +
+                "terminal the process will be killed."
+            alert.addButton(withTitle: "Close the Terminal")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            alert.beginSheetModal(for: window, completionHandler: { response in
+                switch (response) {
+                case .alertFirstButtonReturn:
+                    requestClose = true
+                    
+                default:
+                    break
+                }
+            })
         }
 
         private func onNewSplit(notification: SwiftUI.Notification) {
