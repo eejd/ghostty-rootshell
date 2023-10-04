@@ -22,5 +22,33 @@
 		<key>GHOSTTY_MAC_APP</key>
 		<string>1</string>
 	</dict>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A program in Ghostty wants to use AppleScript.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>A program in Ghostty wants to use your calendar.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A program in Ghostty wants to use the camera.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>A program in Ghostty wants to use your contacts.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>A program in Ghostty wants to access the local network.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<string>A program in Ghostty wants to use your location temporarily.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>A program in Ghostty wants to use your location information.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A program in Ghostty wants to use your microphone.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>A program in Ghostty wants to access motion data.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A program in Ghostty wants to use your photo library.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>A program in Ghostty wants to access your reminders.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>A program in Ghostty wants to use speech recognition.</string>
+	<key>NSSystemAdministrationUsageDescription</key>
+	<string>A program in Ghostty requires elevated privileges.</string>
 </dict>
 </plist>
