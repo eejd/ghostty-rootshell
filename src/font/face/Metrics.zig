@@ -21,6 +21,23 @@ underline_thickness: u32,
 strikethrough_position: u32,
 strikethrough_thickness: u32,
 
+/// Apply a set of modifiers.
+pub fn apply(self: *Metrics, mods: ModifierSet) void {
+    var it = mods.iterator();
+    while (it.next()) |entry| {
+        switch (entry.key_ptr.*) {
+            inline else => |tag| {
+                @field(self, @tagName(tag)) = entry.value_ptr.apply(@field(self, @tagName(tag)));
+            },
+        }
+    }
+}
+
+/// A set of modifiers to apply to metrics. We use a hash map because
+/// we expect most metrics to be unmodified and want to take up as
+/// little space as possible.
+pub const ModifierSet = std.AutoHashMapUnmanaged(Key, Modifier);
+
 /// A modifier to apply to a metrics value. The modifier value represents
 /// a delta, so percent is a percentage to change, not a percentage of.
 /// For example, "20%" is 20% larger, not 20% of the value. Likewise,
@@ -52,6 +69,11 @@ pub const Modifier = union(enum) {
         };
     }
 
+    /// So it works with the config framework.
+    pub fn parseCLI(input: ?[]const u8) !Modifier {
+        return try parse(input orelse return error.ValueRequired);
+    }
+
     /// Apply a modifier to a numeric value.
     pub fn apply(self: Modifier, v: u32) u32 {
         return switch (self) {
@@ -74,6 +96,56 @@ pub const Modifier = union(enum) {
         };
     }
 };
+
+/// Key is an enum of all the available metrics keys.
+pub const Key = key: {
+    const field_infos = std.meta.fields(Metrics);
+    var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
+    for (field_infos, 0..) |field, i| {
+        enumFields[i] = .{
+            .name = field.name,
+            .value = i,
+        };
+    }
+
+    var decls = [_]std.builtin.Type.Declaration{};
+    break :key @Type(.{
+        .Enum = .{
+            .tag_type = std.math.IntFittingRange(0, field_infos.len - 1),
+            .fields = &enumFields,
+            .decls = &decls,
+            .is_exhaustive = true,
+        },
+    });
+};
+
+// NOTE: This is purposely not pub because we want to force outside callers
+// to use the `.{}` syntax so unused fields are detected by the compiler.
+fn init() Metrics {
+    return .{
+        .cell_width = 0,
+        .cell_height = 0,
+        .cell_baseline = 0,
+        .underline_position = 0,
+        .underline_thickness = 0,
+        .strikethrough_position = 0,
+        .strikethrough_thickness = 0,
+    };
+}
+
+test "Metrics: apply modifiers" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var set: ModifierSet = .{};
+    defer set.deinit(alloc);
+    try set.put(alloc, .cell_width, .{ .percent = 1.2 });
+
+    var m: Metrics = init();
+    m.cell_width = 100;
+    m.apply(set);
+    try testing.expectEqual(@as(u32, 120), m.cell_width);
+}
 
 test "Modifier: parse absolute" {
     const testing = std.testing;
