@@ -686,19 +686,7 @@ pub const Surface = struct {
             return;
         };
 
-        // For a char callback we just construct a key event with invalid
-        // keys but with text. This should result in the text being sent
-        // as-is.
-        _ = self.core_surface.keyCallback(.{
-            .action = .press,
-            .key = .invalid,
-            .physical_key = .invalid,
-            .mods = .{},
-            .consumed_mods = .{},
-            .composing = false,
-            .utf8 = buf[0..len],
-            .unshifted_codepoint = 0,
-        }) catch |err| {
+        _ = self.core_surface.textCallback(buf[0..len]) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
