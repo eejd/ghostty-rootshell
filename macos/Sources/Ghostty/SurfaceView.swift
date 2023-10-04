@@ -199,8 +199,6 @@ extension Ghostty {
         init(from config: ghostty_surface_config_s) {
             self.fontSize = config.font_size
             self.workingDirectory = String.init(cString: config.working_directory, encoding: .utf8)
-            let blah = workingDirectory!
-            AppDelegate.logger.warning("OPEN from=\(blah)")
         }
         
         /// Returns the ghostty configuration for this surface configuration struct. The memory

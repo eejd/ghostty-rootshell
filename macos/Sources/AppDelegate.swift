@@ -138,6 +138,23 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         return false
     }
     
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        AppDelegate.logger.warning("OPEN FILE=\(filename)")
+        
+        // Build our config
+        var config = Ghostty.SurfaceConfiguration()
+        config.workingDirectory = filename
+            
+        // If we don't have a window open through the window manager, we launch
+        // a new window.
+        guard let mainWindow = windowManager.mainWindow else {
+            windowManager.addNewWindow(withBaseConfig: config)
+            return true
+        }
+        
+        return false
+    }
+    
     /// This is called for the dock right-click menu.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         return dockMenu
