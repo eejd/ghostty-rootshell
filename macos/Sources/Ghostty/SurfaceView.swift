@@ -129,6 +129,16 @@ extension Ghostty {
                             // I don't know how older macOS versions behave but Ghostty only
                             // supports back to macOS 12 so its moot.
                         }
+                        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                            providers.forEach { provider in
+                                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                                    guard let url = url else { return }
+                                    AppDelegate.logger.warning("OPEN url=\(url.path)")
+                                }
+                            }
+                            
+                            return true
+                        }
                 }
                 .ghosttySurfaceView(surfaceView)
 
