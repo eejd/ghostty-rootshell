@@ -133,9 +133,10 @@ extension Ghostty {
                             providers.forEach { provider in
                                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                                     guard let url = url else { return }
+                                    let path = Shell.escape(url.path)
                                     DispatchQueue.main.async {
                                         surfaceView.insertText(
-                                            url.path,
+                                            path,
                                             replacementRange: NSMakeRange(0, 0)
                                         )
                                     }
