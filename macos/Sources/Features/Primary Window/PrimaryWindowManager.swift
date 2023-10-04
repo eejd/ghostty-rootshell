@@ -94,7 +94,7 @@ class PrimaryWindowManager {
         ghostty.newWindow(surface: surface)
     }
     
-    func addNewWindow(withBaseConfig config: ghostty_surface_config_s? = nil) {
+    func addNewWindow(withBaseConfig config: Ghostty.SurfaceConfiguration? = nil) {
         guard let controller = createWindowController(withBaseConfig: config) else { return }
         controller.showWindow(self)
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return }
@@ -103,7 +103,7 @@ class PrimaryWindowManager {
     
     @objc private func onNewWindow(notification: SwiftUI.Notification) {
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
-        let config = configAny as? ghostty_surface_config_s
+        let config = configAny as? Ghostty.SurfaceConfiguration
         
         self.addNewWindow(withBaseConfig: config)
     }
@@ -128,19 +128,19 @@ class PrimaryWindowManager {
         guard let window = surfaceView.window else { return }
         
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
-        let config = configAny as? ghostty_surface_config_s
+        let config = configAny as? Ghostty.SurfaceConfiguration
         
         self.addNewTab(to: window, withBaseConfig: config)
     }
     
-    private func addNewTab(to window: NSWindow, withBaseConfig config: ghostty_surface_config_s? = nil) {
+    private func addNewTab(to window: NSWindow, withBaseConfig config: Ghostty.SurfaceConfiguration? = nil) {
         guard let controller = createWindowController(withBaseConfig: config, cascade: false) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)
         newWindow.makeKeyAndOrderFront(nil)
     }
 
-    private func createWindowController(withBaseConfig config: ghostty_surface_config_s? = nil, cascade: Bool = true) -> PrimaryWindowController? {
+    private func createWindowController(withBaseConfig config: Ghostty.SurfaceConfiguration? = nil, cascade: Bool = true) -> PrimaryWindowController? {
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
         
         let window = PrimaryWindow.create(ghostty: ghostty, appDelegate: appDelegate, baseConfig: config)
