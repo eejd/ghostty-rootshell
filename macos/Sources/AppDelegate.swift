@@ -139,7 +139,20 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        AppDelegate.logger.warning("OPEN FILE=\(filename)")
+        // Ghostty will validate as well but we can avoid creating an entirely new
+        // surface by doing our own validation here. We can also show a useful error
+        // this way.
+        var isDirectory = ObjCBool(true)
+        guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
+        guard isDirectory.boolValue else {
+            let alert = NSAlert()
+            alert.messageText = "Dropped File is Not a Directory"
+            alert.informativeText = "Ghostty can currently only open directory paths."
+            alert.addButton(withTitle: "OK")
+            alert.alertStyle = .warning
+            _ = alert.runModal()
+            return false
+        }
         
         // Build our config
         var config = Ghostty.SurfaceConfiguration()
