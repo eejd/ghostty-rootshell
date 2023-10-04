@@ -388,7 +388,7 @@ void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 void ghostty_surface_key(ghostty_surface_t, ghostty_input_action_e, uint32_t, ghostty_input_mods_e);
-void ghostty_surface_char(ghostty_surface_t, uint32_t);
+void ghostty_surface_text(ghostty_surface_t, const char *, uintptr_t);
 void ghostty_surface_mouse_button(ghostty_surface_t, ghostty_input_mouse_state_e, ghostty_input_mouse_button_e, ghostty_input_mods_e);
 void ghostty_surface_mouse_pos(ghostty_surface_t, double, double);
 void ghostty_surface_mouse_scroll(ghostty_surface_t, double, double, ghostty_input_scroll_mods_t);

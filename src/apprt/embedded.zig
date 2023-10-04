@@ -678,27 +678,8 @@ pub const Surface = struct {
         }
     }
 
-    pub fn charCallback(self: *Surface, cp_: u32) void {
-        const cp = std.math.cast(u21, cp_) orelse return;
-        var buf: [4]u8 = undefined;
-        const len = std.unicode.utf8Encode(cp, &buf) catch |err| {
-            log.err("error encoding codepoint={} err={}", .{ cp, err });
-            return;
-        };
-
-        // For a char callback we just construct a key event with invalid
-        // keys but with text. This should result in the text being sent
-        // as-is.
-        _ = self.core_surface.keyCallback(.{
-            .action = .press,
-            .key = .invalid,
-            .physical_key = .invalid,
-            .mods = .{},
-            .consumed_mods = .{},
-            .composing = false,
-            .utf8 = buf[0..len],
-            .unshifted_codepoint = 0,
-        }) catch |err| {
+    pub fn textCallback(self: *Surface, text: []const u8) void {
+        _ = self.core_surface.textCallback(text) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
@@ -958,11 +939,15 @@ pub const CAPI = struct {
         };
     }
 
-    /// Send for a unicode character. This is used for IME input. This
-    /// should only be sent for characters that are not the result of
-    /// key events.
-    export fn ghostty_surface_char(surface: *Surface, codepoint: u32) void {
-        surface.charCallback(codepoint);
+    /// Send raw text to the terminal. This is treated like a paste
+    /// so this isn't useful for sending escape sequences. For that,
+    /// individual key input should be used.
+    export fn ghostty_surface_text(
+        surface: *Surface,
+        ptr: [*]const u8,
+        len: usize,
+    ) void {
+        surface.textCallback(ptr[0..len]);
     }
 
     /// Tell the surface that it needs to schedule a render

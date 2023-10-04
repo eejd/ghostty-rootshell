@@ -1020,6 +1020,15 @@ pub fn keyCallback(
     return true;
 }
 
+/// Sends text as-is to the terminal without triggering any keyboard
+/// protocol. This will treat the input text as if it was pasted
+/// from the clipboard so the same logic will be applied. Namely,
+/// if bracketed mode is on this will do a bracketed paste. Otherwise,
+/// this will filter newlines to '\r'.
+pub fn textCallback(self: *Surface, text: []const u8) !void {
+    try self.completeClipboardPaste(text);
+}
+
 pub fn focusCallback(self: *Surface, focused: bool) !void {
     // Notify our render thread of the new state
     _ = self.renderer_thread.mailbox.push(.{

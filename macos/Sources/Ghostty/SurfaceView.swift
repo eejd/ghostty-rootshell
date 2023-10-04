@@ -129,6 +129,21 @@ extension Ghostty {
                             // I don't know how older macOS versions behave but Ghostty only
                             // supports back to macOS 12 so its moot.
                         }
+                        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                            providers.forEach { provider in
+                                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                                    guard let url = url else { return }
+                                    DispatchQueue.main.async {
+                                        surfaceView.insertText(
+                                            url.path,
+                                            replacementRange: NSMakeRange(0, 0)
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            return true
+                        }
                 }
                 .ghosttySurfaceView(surfaceView)
 
@@ -826,8 +841,9 @@ extension Ghostty {
                 return
             }
 
-            for codepoint in chars.unicodeScalars {
-                ghostty_surface_char(surface, codepoint.value)
+            let len = chars.utf8CString.count
+            chars.withCString { ptr in
+                ghostty_surface_text(surface, ptr, UInt(len))
             }
         }
 
