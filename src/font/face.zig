@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
+pub const Metrics = @import("face/Metrics.zig");
 const freetype = @import("face/freetype.zig");
 const coretext = @import("face/coretext.zig");
 pub const web_canvas = @import("face/web_canvas.zig");
@@ -60,28 +61,6 @@ pub const Variation = struct {
             return .{ self.a, self.b, self.c, self.d };
         }
     };
-};
-
-/// Metrics associated with the font that are useful for renderers to know.
-pub const Metrics = struct {
-    /// Recommended cell width and height for a monospace grid using this font.
-    cell_width: u32,
-    cell_height: u32,
-
-    /// For monospace grids, the recommended y-value from the bottom to set
-    /// the baseline for font rendering. This is chosen so that things such
-    /// as the bottom of a "g" or "y" do not drop below the cell.
-    cell_baseline: u32,
-
-    /// The position of the underline from the top of the cell and the
-    /// thickness in pixels.
-    underline_position: u32,
-    underline_thickness: u32,
-
-    /// The position and thickness of a strikethrough. Same units/style
-    /// as the underline fields.
-    strikethrough_position: u32,
-    strikethrough_thickness: u32,
 };
 
 /// Additional options for rendering glyphs.
