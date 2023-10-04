@@ -133,7 +133,7 @@ class PrimaryWindowManager {
         self.addNewTab(to: window, withBaseConfig: config)
     }
     
-    private func addNewTab(to window: NSWindow, withBaseConfig config: Ghostty.SurfaceConfiguration? = nil) {
+    func addNewTab(to window: NSWindow, withBaseConfig config: Ghostty.SurfaceConfiguration? = nil) {
         guard let controller = createWindowController(withBaseConfig: config, cascade: false) else { return }
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return  }
         window.addTabbedWindow(newWindow, ordered: .above)

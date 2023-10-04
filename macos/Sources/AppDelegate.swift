@@ -152,7 +152,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
             return true
         }
         
-        return false
+        // Add a new tab
+        windowManager.addNewTab(to: mainWindow, withBaseConfig: config)
+        return true
     }
     
     /// This is called for the dock right-click menu.
