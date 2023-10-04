@@ -40,7 +40,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     private var ghostty: Ghostty.AppState = Ghostty.AppState()
     
     /// Manages windows and tabs, ensuring they're allocated/deallocated correctly
-    private var windowManager: PrimaryWindowManager!
+    var windowManager: PrimaryWindowManager!
     
     override init() {
         super.init()
@@ -72,6 +72,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         
         // Initial config loading
         configDidReload(ghostty)
+        
+        // Register our service provider. This must happen after everything
+        // else is initialized.
+        NSApp.servicesProvider = ServiceProvider()
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

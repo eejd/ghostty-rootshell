@@ -22,6 +22,47 @@
 		<key>GHOSTTY_MAC_APP</key>
 		<string>1</string>
 	</dict>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>New Ghostty Tab Here</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>openTab</string>
+            <key>NSRequiredContext</key>
+            <dict>
+                <key>NSTextContent</key>
+                <string>FilePath</string>
+            </dict>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+                <string>public.plain-text</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>New Ghostty Window Here</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>openWindow</string>
+            <key>NSRequiredContext</key>
+            <dict>
+                <key>NSTextContent</key>
+                <string>FilePath</string>
+            </dict>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+                <string>public.plain-text</string>
+            </array>
+        </dict>
+    </array>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
