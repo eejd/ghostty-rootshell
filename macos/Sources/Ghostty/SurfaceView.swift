@@ -836,8 +836,9 @@ extension Ghostty {
                 return
             }
 
-            for codepoint in chars.unicodeScalars {
-                ghostty_surface_char(surface, codepoint.value)
+            let len = chars.utf8CString.count
+            chars.withCString { ptr in
+                ghostty_surface_text(surface, ptr, UInt(len))
             }
         }
 
