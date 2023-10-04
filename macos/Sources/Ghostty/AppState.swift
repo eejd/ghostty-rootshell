@@ -282,7 +282,7 @@ extension Ghostty {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
             NotificationCenter.default.post(name: Notification.ghosttyNewSplit, object: surface, userInfo: [
                 "direction": direction,
-                Notification.NewSurfaceConfigKey: config,
+                Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
             ])
         }
 
@@ -434,12 +434,12 @@ extension Ghostty {
                 _ = alert.runModal()
                 return
             }
-
+            
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewTab,
                 object: surface,
                 userInfo: [
-                    Notification.NewSurfaceConfigKey: config
+                    Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
                 ]
             )
         }
@@ -451,7 +451,7 @@ extension Ghostty {
                 name: Notification.ghosttyNewWindow,
                 object: surface,
                 userInfo: [
-                    Notification.NewSurfaceConfigKey: config
+                    Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
                 ]
             )
         }

@@ -184,6 +184,39 @@ extension Ghostty {
             view.sizeDidChange(size)
         }
     }
+    
+    /// The configuration for a surface. For any configuration not set, defaults will be chosen from
+    /// libghostty, usually from the Ghostty configuration.
+    struct SurfaceConfiguration {
+        /// Explicit font size to use in points
+        var fontSize: UInt16? = nil
+        
+        /// Explicit working directory to set
+        var workingDirectory: String? = nil
+        
+        init() {}
+        
+        init(from config: ghostty_surface_config_s) {
+            self.fontSize = config.font_size
+            self.workingDirectory = String.init(cString: config.working_directory, encoding: .utf8)
+        }
+        
+        /// Returns the ghostty configuration for this surface configuration struct. The memory
+        /// in the returned struct is only valid as long as this struct is retained.
+        func ghosttyConfig(view: SurfaceView) -> ghostty_surface_config_s {
+            var config = ghostty_surface_config_new()
+            config.userdata = Unmanaged.passUnretained(view).toOpaque()
+            config.nsview = Unmanaged.passUnretained(view).toOpaque()
+            config.scale_factor = NSScreen.main!.backingScaleFactor
+
+            if let fontSize = fontSize { config.font_size = fontSize }
+            if let workingDirectory = workingDirectory {
+                config.working_directory = (workingDirectory as NSString).utf8String
+            }
+            
+            return config
+        }
+    }
 
     /// The NSView implementation for a terminal surface.
     class SurfaceView: NSView, NSTextInputClient, ObservableObject {
@@ -221,7 +254,7 @@ extension Ghostty {
             case pendingHidden
         }
 
-        init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
+        init(_ app: ghostty_app_t, _ baseConfig: SurfaceConfiguration?) {
             self.markedText = NSMutableAttributedString()
 
             // Initialize with some default frame size. The important thing is that this
@@ -230,12 +263,10 @@ extension Ghostty {
             super.init(frame: NSMakeRect(0, 0, 800, 600))
 
             // Setup our surface. This will also initialize all the terminal IO.
-            var surface_cfg = baseConfig ?? ghostty_surface_config_new()
-            surface_cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
-            surface_cfg.nsview = Unmanaged.passUnretained(self).toOpaque()
-            surface_cfg.scale_factor = NSScreen.main!.backingScaleFactor
+            var surface_cfg = baseConfig ?? SurfaceConfiguration()
+            var surface_cfg_c = surface_cfg.ghosttyConfig(view: self)
 
-            guard let surface = ghostty_surface_new(app, &surface_cfg) else {
+            guard let surface = ghostty_surface_new(app, &surface_cfg_c) else {
                 self.error = AppError.surfaceCreateError
                 return
             }

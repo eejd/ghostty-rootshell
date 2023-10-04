@@ -24,7 +24,7 @@ class PrimaryWindow: NSWindow {
         return true
     }
 
-    static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: ghostty_surface_config_s? = nil) -> PrimaryWindow {
+    static func create(ghostty: Ghostty.AppState, appDelegate: AppDelegate, baseConfig: Ghostty.SurfaceConfiguration? = nil) -> PrimaryWindow {
         let window = PrimaryWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: getStyleMask(renderDecoration: ghostty.windowDecorations),

@@ -12,7 +12,7 @@ struct PrimaryView: View {
     let focusedSurfaceWrapper: FocusedSurfaceWrapper
     
     // If this is set, this is the base configuration that we build our surface out of.
-    let baseConfig: ghostty_surface_config_s?
+    let baseConfig: Ghostty.SurfaceConfiguration?
     
     // We need access to our window to know if we're the key window to determine
     // if we show the quit confirmation or not.

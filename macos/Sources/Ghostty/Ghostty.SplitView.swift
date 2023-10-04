@@ -7,7 +7,7 @@ extension Ghostty {
     /// split direction by splitting the terminal.
     struct TerminalSplit: View {
         let onClose: (() -> Void)?
-        let baseConfig: ghostty_surface_config_s?
+        let baseConfig: SurfaceConfiguration?
 
         @Environment(\.ghosttyApp) private var app
 
@@ -118,7 +118,7 @@ extension Ghostty {
             @Published var surface: SurfaceView
 
             /// Initialize a new leaf which creates a new terminal surface.
-            init(_ app: ghostty_app_t, _ baseConfig: ghostty_surface_config_s?) {
+            init(_ app: ghostty_app_t, _ baseConfig: SurfaceConfiguration?) {
                 self.app = app
                 self.surface = SurfaceView(app, baseConfig)
             }
@@ -132,7 +132,7 @@ extension Ghostty {
             /// A container is always initialized from some prior leaf because a split has to originate
             /// from a non-split value. When initializing, we inherit the leaf's surface and then
             /// initialize a new surface for the new pane.
-            init(from: Leaf, baseConfig: ghostty_surface_config_s? = nil) {
+            init(from: Leaf, baseConfig: SurfaceConfiguration? = nil) {
                 self.app = from.app
 
                 // Initially, both topLeft and bottomRight are in the "nosplit"
@@ -197,7 +197,7 @@ extension Ghostty {
         @State private var node: SplitNode
         @State private var requestClose: Bool = false
         let onClose: (() -> Void)?
-        let baseConfig: ghostty_surface_config_s?
+        let baseConfig: SurfaceConfiguration?
 
         /// Keeps track of whether we're in a zoomed split state or not. If one of the splits we own
         /// is in the zoomed state, we clear our body since we expect a zoomed split to overlay
@@ -209,7 +209,7 @@ extension Ghostty {
         init(app: ghostty_app_t,
              zoomedSurface: Binding<SurfaceView?>,
              onClose: (() ->Void)? = nil,
-             baseConfig: ghostty_surface_config_s? = nil) {
+             baseConfig: SurfaceConfiguration? = nil) {
             self.onClose = onClose
             self.baseConfig = baseConfig
             self._zoomedSurface = zoomedSurface
@@ -395,7 +395,7 @@ extension Ghostty {
 
         private func onNewSplit(notification: SwiftUI.Notification) {
             let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
-            let config = configAny as? ghostty_surface_config_s
+            let config = configAny as? SurfaceConfiguration
 
             // Determine our desired direction
             guard let directionAny = notification.userInfo?["direction"] else { return }

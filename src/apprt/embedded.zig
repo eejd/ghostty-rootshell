@@ -208,6 +208,9 @@ pub const Surface = struct {
 
         /// The font size to inherit. If 0, default font size will be used.
         font_size: u16 = 0,
+
+        /// The working directory to load into.
+        working_directory: [*:0]const u8 = "",
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -235,6 +238,37 @@ pub const Surface = struct {
         // Shallow copy the config so that we can modify it.
         var config = try apprt.surface.newConfig(app.core_app, app.config);
         defer config.deinit();
+
+        // If we have a working directory from the options then we set it.
+        const wd = std.mem.sliceTo(opts.working_directory, 0);
+        if (wd.len > 0) wd: {
+            var dir = std.fs.openDirAbsolute(wd, .{}) catch |err| {
+                log.warn(
+                    "error opening requested working directory dir={s} err={}",
+                    .{ wd, err },
+                );
+                break :wd;
+            };
+            defer dir.close();
+
+            const stat = dir.stat() catch |err| {
+                log.warn(
+                    "failed to stat requested working directory dir={s} err={}",
+                    .{ wd, err },
+                );
+                break :wd;
+            };
+
+            if (stat.kind != .directory) {
+                log.warn(
+                    "requested working directory is not a directory dir={s}",
+                    .{wd},
+                );
+                break :wd;
+            }
+
+            config.@"working-directory" = wd;
+        }
 
         // Initialize our surface right away. We're given a view that is
         // ready to use.
