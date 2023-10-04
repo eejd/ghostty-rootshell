@@ -22,6 +22,7 @@
 		A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */; };
 		A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */; };
 		A56B880B2A840447007A0E29 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A56B880A2A840447007A0E29 /* Carbon.framework */; };
+		A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */; };
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
@@ -53,6 +54,7 @@
 		A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView.swift; sourceTree = "<group>"; };
 		A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.SplitView.swift; sourceTree = "<group>"; };
 		A56B880A2A840447007A0E29 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = System/Library/Frameworks/Carbon.framework; sourceTree = SDKROOT; };
+		A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Shell.swift; sourceTree = "<group>"; };
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A5A1F8842A489D6800D1E8BC /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "../zig-out/share/terminfo"; sourceTree = "<group>"; };
@@ -147,6 +149,7 @@
 				A55B7BB529B6F47F0055DE60 /* AppState.swift */,
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
 				A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */,
+				A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */,
 				A55B7BBD29B701360055DE60 /* Ghostty.SplitView.swift */,
 				A55685DF29A03A9F004303CE /* AppError.swift */,
 			);
@@ -281,6 +284,7 @@
 				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
+				A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */,
 				A5FECBD729D1FC3900022361 /* PrimaryView.swift in Sources */,
 				A5FEB3002ABB69450068369E /* main.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
