@@ -240,9 +240,35 @@ pub const Surface = struct {
         defer config.deinit();
 
         // If we have a working directory from the options then we set it.
-        // TODO: validate the working directory
         const wd = std.mem.sliceTo(opts.working_directory, 0);
-        if (wd.len > 0) config.@"working-directory" = wd;
+        if (wd.len > 0) wd: {
+            var dir = std.fs.openDirAbsolute(wd, .{}) catch |err| {
+                log.warn(
+                    "error opening requested working directory dir={s} err={}",
+                    .{ wd, err },
+                );
+                break :wd;
+            };
+            defer dir.close();
+
+            const stat = dir.stat() catch |err| {
+                log.warn(
+                    "failed to stat requested working directory dir={s} err={}",
+                    .{ wd, err },
+                );
+                break :wd;
+            };
+
+            if (stat.kind != .directory) {
+                log.warn(
+                    "requested working directory is not a directory dir={s}",
+                    .{wd},
+                );
+                break :wd;
+            }
+
+            config.@"working-directory" = wd;
+        }
 
         // Initialize our surface right away. We're given a view that is
         // ready to use.
