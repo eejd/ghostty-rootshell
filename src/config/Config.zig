@@ -138,6 +138,10 @@ const c = @cImport({
 @"adjust-cell-width": ?MetricModifier = null,
 @"adjust-cell-height": ?MetricModifier = null,
 @"adjust-font-baseline": ?MetricModifier = null,
+@"adjust-underline-position": ?MetricModifier = null,
+@"adjust-underline-thickness": ?MetricModifier = null,
+@"adjust-strikethrough-position": ?MetricModifier = null,
+@"adjust-strikethrough-thickness": ?MetricModifier = null,
 
 /// Background color for the window.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },

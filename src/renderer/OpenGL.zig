@@ -548,7 +548,7 @@ fn resetFontMetrics(
     font_group.group.sprite = font.sprite.Face{
         .width = metrics.cell_width,
         .height = metrics.cell_height,
-        .thickness = 2 * @as(u32, if (font_thicken) 2 else 1),
+        .thickness = metrics.underline_thickness * @as(u32, if (font_thicken) 2 else 1),
         .underline_position = metrics.underline_position,
     };
 

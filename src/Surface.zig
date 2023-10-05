@@ -231,6 +231,10 @@ pub fn init(
             if (config.@"adjust-cell-width") |m| try set.put(alloc, .cell_width, m);
             if (config.@"adjust-cell-height") |m| try set.put(alloc, .cell_height, m);
             if (config.@"adjust-font-baseline") |m| try set.put(alloc, .cell_baseline, m);
+            if (config.@"adjust-underline-position") |m| try set.put(alloc, .underline_position, m);
+            if (config.@"adjust-underline-thickness") |m| try set.put(alloc, .underline_thickness, m);
+            if (config.@"adjust-strikethrough-position") |m| try set.put(alloc, .strikethrough_position, m);
+            if (config.@"adjust-strikethrough-thickness") |m| try set.put(alloc, .strikethrough_thickness, m);
             break :set set;
         };
 

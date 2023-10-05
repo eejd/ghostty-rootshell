@@ -26,6 +26,18 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
     var it = mods.iterator();
     while (it.next()) |entry| {
         switch (entry.key_ptr.*) {
+            // We clamp these values to a minimum of 1 to prevent divide-by-zero
+            // in downstream operations.
+            inline .cell_width,
+            .cell_height,
+            => |tag| {
+                const original = @field(self, @tagName(tag));
+                @field(self, @tagName(tag)) = @max(
+                    entry.value_ptr.apply(original),
+                    1,
+                );
+            },
+
             inline else => |tag| {
                 @field(self, @tagName(tag)) = entry.value_ptr.apply(@field(self, @tagName(tag)));
             },
