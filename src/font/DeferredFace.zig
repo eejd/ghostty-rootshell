@@ -431,6 +431,6 @@ test "coretext" {
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    const face = try def.load(lib, .{ .points = 12 });
+    const face = try def.load(lib, .{ .size = .{ .points = 12 } });
     try testing.expect(face.glyphIndex(' ') != null);
 }

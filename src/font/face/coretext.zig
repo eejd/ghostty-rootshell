@@ -182,6 +182,7 @@ pub const Face = struct {
     pub fn setVariations(
         self: *Face,
         vs: []const font.face.Variation,
+        opts: font.face.Options,
     ) !void {
         // Create a new font descriptor with all the variations set.
         var desc = self.font.copyDescriptor();
@@ -197,7 +198,7 @@ pub const Face = struct {
         // Initialize a font based on these attributes.
         const ct_font = try self.font.copyWithAttributes(0, null, desc);
         errdefer ct_font.release();
-        const face = try initFont(ct_font);
+        const face = try initFont(ct_font, opts);
         self.deinit();
         self.* = face;
     }
@@ -622,7 +623,7 @@ test "variable set variation" {
 
     try face.setVariations(&.{
         .{ .id = font.face.Variation.Id.init("wght"), .value = 400 },
-    });
+    }, .{ .size = .{ .points = 12 } });
 
     // Generate all visible ASCII
     var i: u8 = 32;
