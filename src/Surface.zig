@@ -224,6 +224,20 @@ pub fn init(
         var group = try font.Group.init(alloc, font_lib, font_size);
         errdefer group.deinit();
 
+        // Setup our font metric modifiers if we have any.
+        group.metric_modifiers = set: {
+            var set: font.face.Metrics.ModifierSet = .{};
+            errdefer set.deinit(alloc);
+            if (config.@"adjust-cell-width") |m| try set.put(alloc, .cell_width, m);
+            if (config.@"adjust-cell-height") |m| try set.put(alloc, .cell_height, m);
+            if (config.@"adjust-font-baseline") |m| try set.put(alloc, .cell_baseline, m);
+            if (config.@"adjust-underline-position") |m| try set.put(alloc, .underline_position, m);
+            if (config.@"adjust-underline-thickness") |m| try set.put(alloc, .underline_thickness, m);
+            if (config.@"adjust-strikethrough-position") |m| try set.put(alloc, .strikethrough_position, m);
+            if (config.@"adjust-strikethrough-thickness") |m| try set.put(alloc, .strikethrough_thickness, m);
+            break :set set;
+        };
+
         // If we have codepoint mappings, set those.
         if (config.@"font-codepoint-map".map.list.len > 0) {
             group.codepoint_map = config.@"font-codepoint-map".map;
@@ -306,11 +320,11 @@ pub fn init(
         // Our built-in font will be used as a backup
         _ = try group.addFace(
             .regular,
-            .{ .loaded = try font.Face.init(font_lib, face_ttf, font_size) },
+            .{ .loaded = try font.Face.init(font_lib, face_ttf, group.faceOptions()) },
         );
         _ = try group.addFace(
             .bold,
-            .{ .loaded = try font.Face.init(font_lib, face_bold_ttf, font_size) },
+            .{ .loaded = try font.Face.init(font_lib, face_bold_ttf, group.faceOptions()) },
         );
 
         // Auto-italicize if we have to.
@@ -321,11 +335,11 @@ pub fn init(
         if (builtin.os.tag != .macos or font.Discover == void) {
             _ = try group.addFace(
                 .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, font_size) },
+                .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
             );
             _ = try group.addFace(
                 .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, font_size) },
+                .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, group.faceOptions()) },
             );
         }
 

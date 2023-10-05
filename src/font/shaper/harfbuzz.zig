@@ -899,11 +899,19 @@ fn testShaper(alloc: Allocator) !TestShaper {
     errdefer cache_ptr.*.deinit(alloc);
 
     // Setup group
-    _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12 } },
+    ) });
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
-        _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
+        _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(
+            lib,
+            testEmoji,
+            .{ .size = .{ .points = 12 } },
+        ) });
     } else {
         // On CoreText we want to load Apple Emoji, we should have it.
         var disco = font.Discover.init();
@@ -918,7 +926,11 @@ fn testShaper(alloc: Allocator) !TestShaper {
         errdefer face.deinit();
         _ = try cache_ptr.group.addFace(.regular, .{ .deferred = face });
     }
-    _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
+    _ = try cache_ptr.group.addFace(.regular, .{ .loaded = try Face.init(
+        lib,
+        testEmojiText,
+        .{ .size = .{ .points = 12 } },
+    ) });
 
     var shaper = try Shaper.init(alloc, .{});
     errdefer shaper.deinit();

@@ -71,6 +71,10 @@ lib: Library,
 /// The desired font size. All fonts in a group must share the same size.
 size: font.face.DesiredSize,
 
+/// Metric modifiers to apply to loaded fonts. The Group takes ownership
+/// over the memory and will use the associated allocator to free it.
+metric_modifiers: ?font.face.Metrics.ModifierSet = null,
+
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
 faces: StyleArray,
@@ -139,7 +143,18 @@ pub fn deinit(self: *Group) void {
         }
     }
 
+    if (self.metric_modifiers) |*v| v.deinit(self.alloc);
+
     self.descriptor_cache.deinit(self.alloc);
+}
+
+/// Returns the options for initializing a face based on the options associated
+/// with this font group.
+pub fn faceOptions(self: *const Group) font.face.Options {
+    return .{
+        .size = self.size,
+        .metric_modifiers = if (self.metric_modifiers) |*v| v else null,
+    };
 }
 
 /// Add a face to the list for the given style. This face will be added as
@@ -185,7 +200,7 @@ pub fn italicize(self: *Group) !void {
     };
 
     // Try to italicize it.
-    const face = try regular.italicize();
+    const face = try regular.italicize(self.faceOptions());
     try italic_list.append(self.alloc, .{ .loaded = face });
 
     var buf: [128]u8 = undefined;
@@ -200,17 +215,17 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
     // currently handle it in any meaningful way if one face can resize
     // but another can't.
 
+    // Set our size for future loads
+    self.size = size;
+
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
     while (it.next()) |entry| {
         for (entry.value.items) |*elem| switch (elem.*) {
             .deferred => continue,
-            .loaded => |*f| try f.setSize(size),
+            .loaded => |*f| try f.setSize(self.faceOptions()),
         };
     }
-
-    // Set our size for future loads
-    self.size = size;
 }
 
 /// This represents a specific font in the group.
@@ -456,7 +471,7 @@ pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
     const item = &list.items[index.idx];
     return switch (item.*) {
         .deferred => |*d| deferred: {
-            const face = try d.load(self.lib, self.size);
+            const face = try d.load(self.lib, self.faceOptions());
             d.deinit();
             item.* = .{ .loaded = face };
             break :deferred &item.loaded;
@@ -623,13 +638,22 @@ test {
     var group = try init(alloc, lib, .{ .points = 12 });
     defer group.deinit();
 
-    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    _ = try group.addFace(
+        .regular,
+        .{ .loaded = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } }) },
+    );
 
     if (font.options.backend != .coretext) {
         // Coretext doesn't support Noto's format
-        _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmoji, .{ .points = 12 }) });
+        _ = try group.addFace(
+            .regular,
+            .{ .loaded = try Face.init(lib, testEmoji, .{ .size = .{ .points = 12 } }) },
+        );
     }
-    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testEmojiText, .{ .points = 12 }) });
+    _ = try group.addFace(
+        .regular,
+        .{ .loaded = try Face.init(lib, testEmojiText, .{ .size = .{ .points = 12 } }) },
+    );
 
     // Should find all visible ASCII
     var i: u32 = 32;
@@ -694,9 +718,10 @@ test "disabled font style" {
     group.styles.set(.bold, false);
 
     // Same font but we can test the style in the index
-    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
-    _ = try group.addFace(.bold, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
-    _ = try group.addFace(.italic, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+    const opts: font.face.Options = .{ .size = .{ .points = 12 } };
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, opts) });
+    _ = try group.addFace(.bold, .{ .loaded = try Face.init(lib, testFont, opts) });
+    _ = try group.addFace(.italic, .{ .loaded = try Face.init(lib, testFont, opts) });
 
     // Regular should work fine
     {
@@ -731,16 +756,17 @@ test "face count limit" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var group = try init(alloc, lib, .{ .points = 12 });
+    const opts: font.face.Options = .{ .size = .{ .points = 12 } };
+    var group = try init(alloc, lib, opts.size);
     defer group.deinit();
 
     for (0..FontIndex.Special.start - 1) |_| {
-        _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) });
+        _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, opts) });
     }
 
     try testing.expectError(error.GroupFull, group.addFace(
         .regular,
-        .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) },
+        .{ .loaded = try Face.init(lib, testFont, opts) },
     ));
 }
 
@@ -790,7 +816,11 @@ test "resize" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
 
     // Load a letter
     {
@@ -881,7 +911,11 @@ test "faceFromIndex returns pointer" {
     var group = try init(alloc, lib, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
     defer group.deinit();
 
-    _ = try group.addFace(.regular, .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) });
+    _ = try group.addFace(.regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
 
     {
         const idx = group.indexForCodepoint('A', .regular, null).?;

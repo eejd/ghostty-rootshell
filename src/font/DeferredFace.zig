@@ -154,13 +154,13 @@ pub fn name(self: DeferredFace, buf: []u8) ![]const u8 {
 pub fn load(
     self: *DeferredFace,
     lib: Library,
-    size: font.face.DesiredSize,
+    opts: font.face.Options,
 ) !Face {
     return switch (options.backend) {
-        .fontconfig_freetype => try self.loadFontconfig(lib, size),
-        .coretext => try self.loadCoreText(lib, size),
-        .coretext_freetype => try self.loadCoreTextFreetype(lib, size),
-        .web_canvas => try self.loadWebCanvas(size),
+        .fontconfig_freetype => try self.loadFontconfig(lib, opts),
+        .coretext => try self.loadCoreText(lib, opts),
+        .coretext_freetype => try self.loadCoreTextFreetype(lib, opts),
+        .web_canvas => try self.loadWebCanvas(opts),
 
         // Unreachable because we must be already loaded or have the
         // proper configuration for one of the other deferred mechanisms.
@@ -171,7 +171,7 @@ pub fn load(
 fn loadFontconfig(
     self: *DeferredFace,
     lib: Library,
-    size: font.face.DesiredSize,
+    opts: font.face.Options,
 ) !Face {
     const fc = self.fc.?;
 
@@ -179,26 +179,26 @@ fn loadFontconfig(
     const filename = (try fc.pattern.get(.file, 0)).string;
     const face_index = (try fc.pattern.get(.index, 0)).integer;
 
-    var face = try Face.initFile(lib, filename, face_index, size);
+    var face = try Face.initFile(lib, filename, face_index, opts);
     errdefer face.deinit();
-    try face.setVariations(fc.variations);
+    try face.setVariations(fc.variations, opts);
     return face;
 }
 
 fn loadCoreText(
     self: *DeferredFace,
     lib: Library,
-    size: font.face.DesiredSize,
+    opts: font.face.Options,
 ) !Face {
     _ = lib;
     const ct = self.ct.?;
-    return try Face.initFontCopy(ct.font, size);
+    return try Face.initFontCopy(ct.font, opts);
 }
 
 fn loadCoreTextFreetype(
     self: *DeferredFace,
     lib: Library,
-    size: font.face.DesiredSize,
+    opts: font.face.Options,
 ) !Face {
     const ct = self.ct.?;
 
@@ -231,15 +231,15 @@ fn loadCoreTextFreetype(
     // TODO: face index 0 is not correct long term and we should switch
     // to using CoreText for rendering, too.
     //std.log.warn("path={s}", .{path_slice});
-    return try Face.initFile(lib, buf[0..path_slice.len :0], 0, size);
+    return try Face.initFile(lib, buf[0..path_slice.len :0], 0, opts);
 }
 
 fn loadWebCanvas(
     self: *DeferredFace,
-    size: font.face.DesiredSize,
+    opts: font.face.Options,
 ) !Face {
     const wc = self.wc.?;
-    return try Face.initNamed(wc.alloc, wc.font_str, size, wc.presentation);
+    return try Face.initNamed(wc.alloc, wc.font_str, opts, wc.presentation);
 }
 
 /// Returns true if this face can satisfy the given codepoint and
@@ -400,7 +400,7 @@ test "fontconfig" {
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    const face = try def.load(lib, .{ .points = 12 });
+    const face = try def.load(lib, .{ .size = .{ .points = 12 } });
     try testing.expect(face.glyphIndex(' ') != null);
 }
 

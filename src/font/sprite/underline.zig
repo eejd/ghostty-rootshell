@@ -171,8 +171,9 @@ const Draw = struct {
         // wave. This constant is arbitrary, change it for aesthetics.
         const pos = pos: {
             const MIN_HEIGHT = 7;
-            const height = y_max - self.pos;
-            break :pos if (height < MIN_HEIGHT) self.pos -| MIN_HEIGHT else self.pos;
+            const clamped_pos = @min(y_max, self.pos);
+            const height = y_max - clamped_pos;
+            break :pos if (height < MIN_HEIGHT) clamped_pos -| MIN_HEIGHT else clamped_pos;
         };
 
         // The full heightof the wave can be from the bottom to the
