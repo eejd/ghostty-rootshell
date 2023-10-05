@@ -200,7 +200,7 @@ pub fn italicize(self: *Group) !void {
     };
 
     // Try to italicize it.
-    const face = try regular.italicize();
+    const face = try regular.italicize(self.faceOptions());
     try italic_list.append(self.alloc, .{ .loaded = face });
 
     var buf: [128]u8 = undefined;
@@ -215,17 +215,17 @@ pub fn setSize(self: *Group, size: font.face.DesiredSize) !void {
     // currently handle it in any meaningful way if one face can resize
     // but another can't.
 
+    // Set our size for future loads
+    self.size = size;
+
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
     while (it.next()) |entry| {
         for (entry.value.items) |*elem| switch (elem.*) {
             .deferred => continue,
-            .loaded => |*f| try f.setSize(.{ .size = size }),
+            .loaded => |*f| try f.setSize(self.faceOptions()),
         };
     }
-
-    // Set our size for future loads
-    self.size = size;
 }
 
 /// This represents a specific font in the group.
@@ -471,7 +471,7 @@ pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
     const item = &list.items[index.idx];
     return switch (item.*) {
         .deferred => |*d| deferred: {
-            const face = try d.load(self.lib, self.size);
+            const face = try d.load(self.lib, self.faceOptions());
             d.deinit();
             item.* = .{ .loaded = face };
             break :deferred &item.loaded;

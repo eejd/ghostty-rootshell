@@ -69,22 +69,27 @@ pub const Face = struct {
         );
         errdefer ct_font.release();
 
-        return try initFont(ct_font);
+        return try initFont(ct_font, opts);
     }
 
     /// Initialize a face with a CTFont. This will take ownership over
     /// the CTFont. This does NOT copy or retain the CTFont.
-    pub fn initFont(ct_font: *macos.text.Font) !Face {
+    pub fn initFont(ct_font: *macos.text.Font, opts: font.face.Options) !Face {
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
         errdefer hb_font.destroy();
 
         const traits = ct_font.getSymbolicTraits();
+        const metrics = metrics: {
+            var metrics = try calcMetrics(ct_font);
+            if (opts.metric_modifiers) |v| metrics.apply(v.*);
+            break :metrics metrics;
+        };
 
         var result: Face = .{
             .font = ct_font,
             .hb_font = hb_font,
             .presentation = if (traits.color_glyphs) .emoji else .text,
-            .metrics = try calcMetrics(ct_font),
+            .metrics = metrics,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
@@ -144,10 +149,10 @@ pub const Face = struct {
 
     /// Return a new face that is the same as this but has a transformation
     /// matrix applied to italicize it.
-    pub fn italicize(self: *const Face) !Face {
+    pub fn italicize(self: *const Face, opts: font.face.Options) !Face {
         const ct_font = try self.font.copyWithAttributes(0.0, &italic_skew, null);
         errdefer ct_font.release();
-        return try initFont(ct_font);
+        return try initFont(ct_font, opts);
     }
 
     /// Returns the font name. If allocation is required, buf will be used,

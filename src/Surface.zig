@@ -228,7 +228,10 @@ pub fn init(
         group.metric_modifiers = set: {
             var set: font.face.Metrics.ModifierSet = .{};
             errdefer set.deinit(alloc);
-            break :set null;
+            if (config.@"adjust-cell-width") |m| try set.put(alloc, .cell_width, m);
+            if (config.@"adjust-cell-height") |m| try set.put(alloc, .cell_height, m);
+            if (config.@"adjust-font-baseline") |m| try set.put(alloc, .cell_baseline, m);
+            break :set set;
         };
 
         // If we have codepoint mappings, set those.
