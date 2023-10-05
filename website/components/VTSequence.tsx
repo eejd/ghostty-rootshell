@@ -1,4 +1,4 @@
-export default function VTSequence({ sequence }) {
+export default function VTSequence({ sequence }: { sequence: string }) {
   return (
     <div className="flex my-2.5">
       <div className="border shrink px-1 grid grid-rows-2 grid-cols-1 text-center">
