@@ -135,6 +135,12 @@ const c = @cImport({
 /// There is little to no validation on these values so the wrong values
 /// (i.e. "-100%") can cause the terminal to be unusable. Use with caution
 /// and reason.
+///
+/// Some values are clamped to minimum or maximum values. This can make it
+/// appear that certain values are ignored. For example, the underline
+/// position is clamped to the height of a cell. If you set the underline
+/// position so high that it extends beyond the bottom of the cell size,
+/// it will be clamped to the bottom of the cell.
 @"adjust-cell-width": ?MetricModifier = null,
 @"adjust-cell-height": ?MetricModifier = null,
 @"adjust-font-baseline": ?MetricModifier = null,
