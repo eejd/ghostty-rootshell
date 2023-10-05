@@ -43,22 +43,22 @@ pub const Face = struct {
     quirks_disable_default_font_features: bool = false,
 
     /// Initialize a new font face with the given source in-memory.
-    pub fn initFile(lib: Library, path: [:0]const u8, index: i32, size: font.face.DesiredSize) !Face {
+    pub fn initFile(lib: Library, path: [:0]const u8, index: i32, opts: font.face.Options) !Face {
         const face = try lib.lib.initFace(path, index);
         errdefer face.deinit();
-        return try initFace(lib, face, size);
+        return try initFace(lib, face, opts);
     }
 
     /// Initialize a new font face with the given source in-memory.
-    pub fn init(lib: Library, source: [:0]const u8, size: font.face.DesiredSize) !Face {
+    pub fn init(lib: Library, source: [:0]const u8, opts: font.face.Options) !Face {
         const face = try lib.lib.initMemoryFace(source, 0);
         errdefer face.deinit();
-        return try initFace(lib, face, size);
+        return try initFace(lib, face, opts);
     }
 
-    fn initFace(lib: Library, face: freetype.Face, size: font.face.DesiredSize) !Face {
+    fn initFace(lib: Library, face: freetype.Face, opts: font.face.Options) !Face {
         try face.selectCharmap(.unicode);
-        try setSize_(face, size);
+        try setSize_(face, opts.size);
 
         var hb_font = try harfbuzz.freetype.createFont(face.handle);
         errdefer hb_font.destroy();
@@ -68,7 +68,7 @@ pub const Face = struct {
             .face = face,
             .hb_font = hb_font,
             .presentation = if (face.hasColor()) .emoji else .text,
-            .metrics = calcMetrics(face),
+            .metrics = calcMetrics(face, opts.metric_modifiers),
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
@@ -127,9 +127,9 @@ pub const Face = struct {
 
     /// Resize the font in-place. If this succeeds, the caller is responsible
     /// for clearing any glyph caches, font atlas data, etc.
-    pub fn setSize(self: *Face, size: font.face.DesiredSize) !void {
-        try setSize_(self.face, size);
-        self.metrics = calcMetrics(self.face);
+    pub fn setSize(self: *Face, opts: font.face.Options) !void {
+        try setSize_(self.face, opts.size);
+        self.metrics = calcMetrics(self.face, opts.metric_modifiers);
     }
 
     fn setSize_(face: freetype.Face, size: font.face.DesiredSize) !void {
@@ -165,6 +165,7 @@ pub const Face = struct {
     pub fn setVariations(
         self: *Face,
         vs: []const font.face.Variation,
+        opts: font.face.Options,
     ) !void {
         // If this font doesn't support variations, we can't do anything.
         if (!self.face.hasMultipleMasters() or vs.len == 0) return;
@@ -201,7 +202,7 @@ pub const Face = struct {
         try self.face.setVarDesignCoordinates(coords);
 
         // We need to recalculate font metrics which may have changed.
-        self.metrics = calcMetrics(self.face);
+        self.metrics = calcMetrics(self.face, opts.metric_modifiers);
     }
 
     /// Returns the glyph index for the given Unicode code point. If this
@@ -470,7 +471,10 @@ pub const Face = struct {
     /// the faces with DeferredFaces and reload on demand. A Face can't be converted
     /// into a DeferredFace but a Face that comes from a DeferredFace can be
     /// deinitialized anytime and reloaded with the deferred face.
-    fn calcMetrics(face: freetype.Face) font.face.Metrics {
+    fn calcMetrics(
+        face: freetype.Face,
+        modifiers: ?*const font.face.Metrics.ModifierSet,
+    ) font.face.Metrics {
         const size_metrics = face.handle.*.size.*.metrics;
 
         // Cell width is calculated by preferring to use 'M' as the width of a
@@ -574,7 +578,7 @@ pub const Face = struct {
             .thickness = underline_thickness,
         };
 
-        const result = font.face.Metrics{
+        var result = font.face.Metrics{
             .cell_width = @intFromFloat(cell_width),
             .cell_height = @intFromFloat(cell_height),
             .cell_baseline = @intFromFloat(cell_baseline),
@@ -583,6 +587,7 @@ pub const Face = struct {
             .strikethrough_position = @intFromFloat(strikethrough.pos),
             .strikethrough_thickness = @intFromFloat(strikethrough.thickness),
         };
+        if (modifiers) |m| result.apply(m.*);
 
         // std.log.warn("font metrics={}", .{result});
 
@@ -607,7 +612,11 @@ test {
     var atlas = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
+    var ft_font = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    );
     defer ft_font.deinit();
 
     try testing.expectEqual(Presentation.text, ft_font.presentation);
@@ -623,7 +632,7 @@ test {
         const g1 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, .{});
         try testing.expectEqual(@as(u32, 11), g1.height);
 
-        try ft_font.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
+        try ft_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
         const g2 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, .{});
         try testing.expectEqual(@as(u32, 21), g2.height);
     }
@@ -639,7 +648,11 @@ test "color emoji" {
     var atlas = try font.Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
+    var ft_font = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    );
     defer ft_font.deinit();
 
     try testing.expectEqual(Presentation.emoji, ft_font.presentation);
@@ -665,7 +678,11 @@ test "metrics" {
     var atlas = try font.Atlas.init(alloc, 512, .greyscale);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 });
+    var ft_font = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    );
     defer ft_font.deinit();
 
     try testing.expectEqual(font.face.Metrics{
@@ -679,7 +696,7 @@ test "metrics" {
     }, ft_font.metrics);
 
     // Resize should change metrics
-    try ft_font.setSize(.{ .points = 24, .xdpi = 96, .ydpi = 96 });
+    try ft_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
     try testing.expectEqual(font.face.Metrics{
         .cell_width = 16,
         .cell_height = 35,
@@ -701,7 +718,7 @@ test "mono to rgba" {
     var atlas = try font.Atlas.init(alloc, 512, .rgba);
     defer atlas.deinit(alloc);
 
-    var ft_font = try Face.init(lib, testFont, .{ .points = 12 });
+    var ft_font = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer ft_font.deinit();
 
     // glyph 3 is mono in Noto

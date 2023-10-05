@@ -181,7 +181,7 @@ fn loadFontconfig(
 
     var face = try Face.initFile(lib, filename, face_index, opts);
     errdefer face.deinit();
-    try face.setVariations(fc.variations);
+    try face.setVariations(fc.variations, opts);
     return face;
 }
 
@@ -400,7 +400,7 @@ test "fontconfig" {
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    const face = try def.load(lib, .{ .points = 12 });
+    const face = try def.load(lib, .{ .size = .{ .points = 12 } });
     try testing.expect(face.glyphIndex(' ') != null);
 }
 
