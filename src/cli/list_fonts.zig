@@ -90,6 +90,7 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         .style = config.style,
         .bold = config.bold,
         .italic = config.italic,
+        .monospace = config.family == null,
     });
     defer disco_it.deinit();
     while (try disco_it.next()) |face| {

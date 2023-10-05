@@ -50,7 +50,7 @@ pub const Descriptor = struct {
     /// specific styles.
     bold: bool = false,
     italic: bool = false,
-    monospace: bool = true,
+    monospace: bool = false,
 
     /// Variation axes to apply to the font. This also impacts searching
     /// for fonts since fonts with the ability to set these variations
@@ -387,27 +387,57 @@ pub const CoreText = struct {
                 const lhs_score = score(desc_inner, lhs);
                 const rhs_score = score(desc_inner, rhs);
                 // Higher score is "less" (earlier)
-                return lhs_score > rhs_score;
+                return lhs_score.int() > rhs_score.int();
             }
         }.lessThan);
     }
 
-    fn score(desc: *const Descriptor, ct_desc: *const macos.text.FontDescriptor) i32 {
-        var score_acc: i32 = 0;
+    /// We represent our sorting score as a packed struct so that we can
+    /// compare scores numerically but build scores symbolically.
+    const Score = packed struct {
+        const Backing = @typeInfo(@This()).Struct.backing_integer.?;
 
-        score_acc += if (desc.style) |desired_style| style: {
+        style: Style = .unmatched,
+        monospace: bool = false,
+
+        const Style = enum(u8) { unmatched = 0, match = 0xFF, _ };
+
+        pub fn int(self: Score) Backing {
+            return @bitCast(self);
+        }
+    };
+
+    fn score(desc: *const Descriptor, ct_desc: *const macos.text.FontDescriptor) Score {
+        var score_acc: Score = .{};
+
+        // Get our symbolic traits for the descriptor so we can compare
+        // boolean attributes like bold, monospace, etc.
+        const symbolic_traits: macos.text.FontSymbolicTraits = traits: {
+            const traits = ct_desc.copyAttribute(.traits);
+            defer traits.release();
+
+            const key = macos.text.FontTraitKey.symbolic.key();
+            const symbolic = traits.getValue(macos.foundation.Number, key) orelse
+                break :traits .{};
+
+            break :traits macos.text.FontSymbolicTraits.init(symbolic);
+        };
+
+        score_acc.monospace = symbolic_traits.monospace;
+
+        score_acc.style = if (desc.style) |desired_style| style: {
             const style = ct_desc.copyAttribute(.style_name);
             defer style.release();
             var buf: [128]u8 = undefined;
-            const style_str = style.cstring(&buf, .utf8) orelse break :style 0;
+            const style_str = style.cstring(&buf, .utf8) orelse break :style .unmatched;
 
             // Matching style string gets highest score
-            if (std.mem.eql(u8, desired_style, style_str)) break :style 100;
+            if (std.mem.eql(u8, desired_style, style_str)) break :style .match;
 
             // Otherwise the score is based on the length of the style string.
             // Shorter styles are scored higher.
-            break :style -1 * @as(i32, @intCast(style_str.len));
-        } else 0;
+            break :style @enumFromInt(100 -| style_str.len);
+        } else .unmatched;
 
         return score_acc;
     }
