@@ -184,7 +184,7 @@ test {
     // Setup group
     _ = try cache.group.addFace(
         .regular,
-        .{ .loaded = try Face.init(lib, testFont, .{ .points = 12 }) },
+        .{ .loaded = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } }) },
     );
     var group = cache.group;
 
@@ -340,7 +340,11 @@ test "resize" {
     // Setup group
     _ = try cache.group.addFace(
         .regular,
-        .{ .loaded = try Face.init(lib, testFont, .{ .points = 12, .xdpi = 96, .ydpi = 96 }) },
+        .{ .loaded = try Face.init(
+            lib,
+            testFont,
+            .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+        ) },
     );
 
     // Load a letter

@@ -192,7 +192,8 @@ fn loadCoreText(
 ) !Face {
     _ = lib;
     const ct = self.ct.?;
-    return try Face.initFontCopy(ct.font, size);
+    // TODO: make options
+    return try Face.initFontCopy(ct.font, .{ .size = size });
 }
 
 fn loadCoreTextFreetype(

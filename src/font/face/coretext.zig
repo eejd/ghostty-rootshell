@@ -36,7 +36,7 @@ pub const Face = struct {
     };
 
     /// Initialize a CoreText-based font from a TTF/TTC in memory.
-    pub fn init(lib: font.Library, source: [:0]const u8, size: font.face.DesiredSize) !Face {
+    pub fn init(lib: font.Library, source: [:0]const u8, opts: font.face.Options) !Face {
         _ = lib;
 
         const data = try macos.foundation.Data.createWithBytesNoCopy(source);
@@ -51,18 +51,22 @@ pub const Face = struct {
         const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
         defer ct_font.release();
 
-        return try initFontCopy(ct_font, size);
+        return try initFontCopy(ct_font, opts);
     }
 
     /// Initialize a CoreText-based face from another initialized font face
     /// but with a new size. This is often how CoreText fonts are initialized
     /// because the font is loaded at a default size during discovery, and then
     /// adjusted to the final size for final load.
-    pub fn initFontCopy(base: *macos.text.Font, size: font.face.DesiredSize) !Face {
+    pub fn initFontCopy(base: *macos.text.Font, opts: font.face.Options) !Face {
         // Create a copy. The copyWithAttributes docs say the size is in points,
         // but we need to scale the points by the DPI and to do that we use our
         // function called "pixels".
-        const ct_font = try base.copyWithAttributes(@floatFromInt(size.pixels()), null, null);
+        const ct_font = try base.copyWithAttributes(
+            @floatFromInt(opts.size.pixels()),
+            null,
+            null,
+        );
         errdefer ct_font.release();
 
         return try initFont(ct_font);
@@ -161,9 +165,9 @@ pub const Face = struct {
 
     /// Resize the font in-place. If this succeeds, the caller is responsible
     /// for clearing any glyph caches, font atlas data, etc.
-    pub fn setSize(self: *Face, size: font.face.DesiredSize) !void {
+    pub fn setSize(self: *Face, opts: font.face.Options) !void {
         // We just create a copy and replace ourself
-        const face = try initFontCopy(self.font, size);
+        const face = try initFontCopy(self.font, opts);
         self.deinit();
         self.* = face;
     }
@@ -514,7 +518,7 @@ test {
     const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
     defer ct_font.release();
 
-    var face = try Face.initFontCopy(ct_font, .{ .points = 12 });
+    var face = try Face.initFontCopy(ct_font, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
@@ -537,7 +541,7 @@ test "emoji" {
     const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
     defer ct_font.release();
 
-    var face = try Face.initFontCopy(ct_font, .{ .points = 18 });
+    var face = try Face.initFontCopy(ct_font, .{ .size = .{ .points = 18 } });
     defer face.deinit();
 
     // Presentation
@@ -558,7 +562,7 @@ test "in-memory" {
     var lib = try font.Library.init();
     defer lib.deinit();
 
-    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
@@ -582,7 +586,7 @@ test "variable" {
     var lib = try font.Library.init();
     defer lib.deinit();
 
-    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);
@@ -606,7 +610,7 @@ test "variable set variation" {
     var lib = try font.Library.init();
     defer lib.deinit();
 
-    var face = try Face.init(lib, testFont, .{ .points = 12 });
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
     try testing.expectEqual(font.Presentation.text, face.presentation);

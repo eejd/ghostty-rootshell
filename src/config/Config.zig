@@ -15,6 +15,7 @@ const cli = @import("../cli.zig");
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
+const MetricModifier = fontpkg.face.Metrics.Modifier;
 
 const log = std.log.scoped(.config);
 
@@ -121,6 +122,22 @@ const c = @cImport({
 /// Draw fonts with a thicker stroke, if supported. This is only supported
 /// currently on macOS.
 @"font-thicken": bool = false,
+
+/// All of the configurations behavior adjust various metrics determined
+/// by the font. The values can be integers (1, -1, etc.) or a percentage
+/// (20%, -15%, etc.). In each case, the values represent the amount to
+/// change the original value.
+///
+/// For example, a value of "1" increases the value by 1; it does not set
+/// it to literally 1. A value of "20%" increases the value by 20%. And so
+/// on.
+///
+/// There is little to no validation on these values so the wrong values
+/// (i.e. "-100%") can cause the terminal to be unusable. Use with caution
+/// and reason.
+@"adjust-cell-width": ?MetricModifier = null,
+@"adjust-cell-height": ?MetricModifier = null,
+@"adjust-font-baseline": ?MetricModifier = null,
 
 /// Background color for the window.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },

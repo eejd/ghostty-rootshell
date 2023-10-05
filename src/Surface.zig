@@ -224,6 +224,13 @@ pub fn init(
         var group = try font.Group.init(alloc, font_lib, font_size);
         errdefer group.deinit();
 
+        // Setup our font metric modifiers if we have any.
+        group.metric_modifiers = set: {
+            var set: font.face.Metrics.ModifierSet = .{};
+            errdefer set.deinit(alloc);
+            break :set null;
+        };
+
         // If we have codepoint mappings, set those.
         if (config.@"font-codepoint-map".map.list.len > 0) {
             group.codepoint_map = config.@"font-codepoint-map".map;
@@ -306,11 +313,11 @@ pub fn init(
         // Our built-in font will be used as a backup
         _ = try group.addFace(
             .regular,
-            .{ .loaded = try font.Face.init(font_lib, face_ttf, font_size) },
+            .{ .loaded = try font.Face.init(font_lib, face_ttf, group.faceOptions()) },
         );
         _ = try group.addFace(
             .bold,
-            .{ .loaded = try font.Face.init(font_lib, face_bold_ttf, font_size) },
+            .{ .loaded = try font.Face.init(font_lib, face_bold_ttf, group.faceOptions()) },
         );
 
         // Auto-italicize if we have to.
@@ -321,11 +328,11 @@ pub fn init(
         if (builtin.os.tag != .macos or font.Discover == void) {
             _ = try group.addFace(
                 .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, font_size) },
+                .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
             );
             _ = try group.addFace(
                 .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, font_size) },
+                .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, group.faceOptions()) },
             );
         }
 

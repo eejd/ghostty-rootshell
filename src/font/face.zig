@@ -22,6 +22,12 @@ pub const Face = switch (options.backend) {
 /// using whatever platform method you can.
 pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
 
+/// Options for initializing a font face.
+pub const Options = struct {
+    size: DesiredSize,
+    metric_modifiers: ?*const Metrics.ModifierSet = null,
+};
+
 /// The desired size for loading a font.
 pub const DesiredSize = struct {
     // Desired size in points
