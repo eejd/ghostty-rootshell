@@ -1380,7 +1380,9 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         return;
     }
 
-    // The leftmost column we can move left to.
+    // The margins we can move to.
+    // TODO: if cursor is left of the left margin, assume left margin to be 0.
+    // verified with xterm. don't forget when left margins are implemented!
     const left_margin = 0;
     const right_margin = self.cols - 1;
     const top = self.scrolling_region.top;
