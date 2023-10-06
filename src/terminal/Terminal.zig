@@ -1497,7 +1497,7 @@ pub fn horizontalTab(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    while (self.screen.cursor.x < self.cols - 1) {
+    while (self.screen.cursor.x < self.scrolling_region.right) {
         // Move the cursor right
         self.screen.cursor.x += 1;
 
@@ -2292,6 +2292,43 @@ test "Terminal: horizontal tabs" {
     try testing.expectEqual(@as(usize, 19), t.screen.cursor.x);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 19), t.screen.cursor.x);
+}
+
+test "Terminal: horizontal tabs starting on tabstop" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    t.screen.cursor.x = 8;
+    try t.print('X');
+    t.screen.cursor.x = 8;
+    try t.horizontalTab();
+    try t.print('A');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("        X       A", str);
+    }
+}
+
+test "Terminal: horizontal tabs with right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 5;
+    t.screen.cursor.x = 0;
+    try t.print('X');
+    try t.horizontalTab();
+    try t.print('A');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X    A", str);
+    }
 }
 
 test "Terminal: horizontal tabs back" {
