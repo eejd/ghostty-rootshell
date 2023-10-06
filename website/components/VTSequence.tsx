@@ -36,7 +36,7 @@ function VTElem({ elem }: { elem: string }) {
 
   return (
     <div className="border px-1 grid grid-rows-2 grid-cols-1 text-center">
-      <div>0x{hex}</div>
+      <div>{param ? "____" : `0x${hex}`}</div>
       <div>{elem}</div>
     </div>
   );
