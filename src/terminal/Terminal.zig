@@ -1353,7 +1353,6 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
 }
 
 /// Move the cursor to the left amount cells. If amount is 0, adjust it to 1.
-/// TODO: test
 pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -1362,8 +1361,8 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     const WrapMode = enum { none, reverse, reverse_extended };
     const wrap_mode: WrapMode = wrap_mode: {
         if (!self.modes.get(.wraparound)) break :wrap_mode .none;
-        if (self.modes.get(.reverse_wrap)) break :wrap_mode .reverse;
         if (self.modes.get(.reverse_wrap_extended)) break :wrap_mode .reverse_extended;
+        if (self.modes.get(.reverse_wrap)) break :wrap_mode .reverse;
         break :wrap_mode .none;
     };
 
@@ -1385,7 +1384,7 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     const left_margin = 0;
     const right_margin = self.cols - 1;
     const top = self.scrolling_region.top;
-    //const bottom = self.screen.scroll_region.bottom;
+    const bottom = self.scrolling_region.bottom;
 
     while (true) {
         // We can move at most to the left margin.
@@ -1401,11 +1400,18 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         if (count == 0) break;
 
         // If we are at the top, then we are done.
-        if (self.screen.cursor.y == top) break;
+        if (self.screen.cursor.y == top) {
+            if (wrap_mode != .reverse_extended) break;
+
+            self.screen.cursor.y = bottom;
+            self.screen.cursor.x = right_margin;
+            count -= 1;
+            continue;
+        }
 
         // If our previous line is not wrapped then we are done.
         const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
-        if (!row.isWrapped()) break;
+        if (wrap_mode != .reverse_extended and !row.isWrapped()) break;
         self.screen.cursor.y -= 1;
         self.screen.cursor.x = right_margin;
         count -= 1;
@@ -3436,5 +3442,49 @@ test "Terminal: cursorLeft reverse wrap with no soft wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDE\nX", str);
+    }
+}
+
+test "Terminal: cursorLeft extended reverse wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap_extended, true);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('1');
+    t.cursorLeft(2);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX\n1", str);
+    }
+}
+
+test "Terminal: cursorLeft extended reverse wrap bottom wraparound" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 3);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap_extended, true);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('1');
+    t.cursorLeft(1 + t.cols + 1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDE\n1\n    X", str);
     }
 }
