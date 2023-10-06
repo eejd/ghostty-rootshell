@@ -20,8 +20,8 @@ export default function VTSequence({
   return (
     <div className="flex my-2.5">
       {arr.map((elem, i) => (
-        <div className="shrink">
-          <VTElem key={`${i}${elem}`} elem={elem} />
+        <div key={`${i}${elem}`} className="shrink">
+          <VTElem elem={elem} />
         </div>
       ))}
     </div>
