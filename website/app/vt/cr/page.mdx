@@ -1,0 +1,36 @@
+import VTSequence from "@/components/VTSequence";
+
+# Carriage Return (CR)
+
+<VTSequence sequence="CR" />
+
+Move the cursor to the leftmost column.
+
+This sequence always unsets the pending wrap state.
+
+If [origin mode (mode 6)](#TODO) is enabled, the cursor is set to the
+[left margin](#TODO) of the scroll region and the operation is complete.
+
+If origin mode is _not_ set and the cursor is on or to the right of the
+left margin, the cursor is set to the left margin. If the cursor is to the left
+of the left margin, the cursor is moved to the leftmost column in the terminal.
+
+## Validation
+
+### CR V-1: Pending Wrap is Unset
+
+```bash
+cols=$(tput cols)
+printf "\033[${cols}G" # move to last column
+printf "A" # set pending wrap state
+printf "\r"
+printf "X"
+echo
+```
+
+```
+|X________A|
+|c_________|
+```
+
+### TODO: left/right margins
