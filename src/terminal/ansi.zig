@@ -21,6 +21,8 @@ pub const C0 = enum(u7) {
     LF = 0x0A,
     /// Vertical Tab
     VT = 0x0B,
+    /// Form feed
+    FF = 0x0C,
     /// Carriage return
     CR = 0x0D,
     /// Shift out
