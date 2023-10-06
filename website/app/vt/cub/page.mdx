@@ -6,6 +6,9 @@ import VTSequence from "@/components/VTSequence";
 
 Move the cursor `n` cells left.
 
+The parameter `n` must be an integer greater than or equal to 1. If `n` is less than
+or equal to 0, adjust `n` to be 1. If `n` is omitted, `n` defaults to 1.
+
 This sequence always unsets the pending wrap state.
 
 The leftmost boundary the cursor can move to is determined by the current
