@@ -1513,9 +1513,12 @@ pub fn horizontalTabBack(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // With origin mode enabled, our leftmost limit is the left margin.
+    const left_limit = if (self.modes.get(.origin)) self.scrolling_region.left else 0;
+
     while (true) {
         // If we're already at the edge of the screen, then we're done.
-        if (self.screen.cursor.x == 0) return;
+        if (self.screen.cursor.x == left_limit) return;
 
         // Move the cursor left
         self.screen.cursor.x -= 1;
@@ -2312,6 +2315,44 @@ test "Terminal: horizontal tabs back" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try t.horizontalTabBack();
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+}
+
+test "Terminal: horizontal tabs back starting on tabstop" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    t.screen.cursor.x = 8;
+    try t.print('X');
+    t.screen.cursor.x = 8;
+    try t.horizontalTabBack();
+    try t.print('A');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A       X", str);
+    }
+}
+
+test "Terminal: horizontal tabs with left margin in origin mode" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.origin, true);
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 5;
+    t.screen.cursor.x = 3;
+    try t.print('X');
+    try t.horizontalTabBack();
+    try t.print('A');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  AX", str);
+    }
 }
 
 test "Terminal: setCursorPosition" {
