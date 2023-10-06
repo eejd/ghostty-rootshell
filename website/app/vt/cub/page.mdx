@@ -120,4 +120,25 @@ printf "X"
 |B_________|
 ```
 
-### TODO: Reverse Wrap, Scroll Region Validations
+### CUB V-5: Extended Reverse Wrap Wraps to Bottom
+
+```bash
+cols=$(tput cols)
+printf "\033[?7h" # enable wraparound
+printf "\033[?1045h" # enable extended reverse wrap
+printf "\033[1;1H" # move to top-left
+printf "\033[0J" # clear screen
+printf "\033[1;3r" # set scrolling region
+echo "A"
+printf "B"
+printf "\033[D" # move back one
+printf "\033[${cols}D" # move back entire width
+printf "\033[D" # move back one
+printf "X"
+```
+
+```
+|A_________|
+|B_________|
+|_________Xc
+```
