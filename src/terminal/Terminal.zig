@@ -898,11 +898,16 @@ pub fn index(self: *Terminal) !void {
     // If the cursor is inside the scrolling region and on the bottom-most
     // line, then we scroll up. If our scrolling region is the full screen
     // we create scrollback.
-    if (self.screen.cursor.y == self.scrolling_region.bottom) {
+    if (self.screen.cursor.y == self.scrolling_region.bottom and
+        self.screen.cursor.x >= self.scrolling_region.left and
+        self.screen.cursor.x <= self.scrolling_region.right)
+    {
         // If our scrolling region is the full screen, we create scrollback.
         // Otherwise, we simply scroll the region.
         if (self.scrolling_region.top == 0 and
-            self.scrolling_region.bottom == self.rows - 1)
+            self.scrolling_region.bottom == self.rows - 1 and
+            self.scrolling_region.left == 0 and
+            self.scrolling_region.right == self.cols - 1)
         {
             try self.screen.scroll(.{ .screen = 1 });
         } else {
@@ -2916,6 +2921,47 @@ test "Terminal: index bottom of primary screen with scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\n\nA\n\nX", str);
+    }
+}
+
+test "Terminal: index outside left/right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    t.setScrollingRegion(1, 3);
+    t.scrolling_region.left = 3;
+    t.scrolling_region.right = 5;
+    t.setCursorPos(3, 3);
+    try t.print('A');
+    t.setCursorPos(3, 1);
+    try t.index();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\nX A", str);
+    }
+}
+
+test "Terminal: index inside left/right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    t.setScrollingRegion(1, 3);
+    t.scrolling_region.left = 3;
+    t.scrolling_region.right = 5;
+    t.setCursorPos(3, 3);
+    try t.print('A');
+    try t.index();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n  A\n   X", str);
     }
 }
 
