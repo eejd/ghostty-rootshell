@@ -38,7 +38,9 @@ leftmost boundary, if `n > 0` then move the cursor to the [right margin](#TODO)
 of the line above the cursor. If the cursor is already on the
 [top margin](#TODO), move the cursor to the right margin of the
 [bottom margin](#TODO). Both the cursor column and row can change in this
-mode.
+mode. Compared to non-extended reverse wrap, the two critical differences are
+that extended reverse wrap doesn't require the previous line to be wrapped
+and extended reverse wrap will wrap around to the bottom margin.
 
 For the **reverse wrap** (non-extended) behavior, moe the cursor to the left `n`
 cells while respecting the aforementioned leftmost boundary. Upon reaching the
@@ -97,6 +99,24 @@ printf "X"
 
 ```
 |_________Xc
+|B_________|
+```
+
+### CUB V-4: Extended Reverse Wrap Single Line
+
+```bash
+printf "\033[?7h" # enable wraparound
+printf "\033[?1045h" # enable extended reverse wrap
+printf "\033[1;1H" # move to top-left
+printf "\033[0J" # clear screen
+echo "A"
+printf "B"
+printf "\033[2D" # move back two
+printf "X"
+```
+
+```
+|A________Xc
 |B_________|
 ```
 
