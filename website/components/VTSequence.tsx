@@ -1,21 +1,43 @@
 // Draw a diagram showing the VT sequence.
+//
+// There are some special sequence elements that can be used:
+//
+//   - CSI will be replaced with ESC [.
+//   - Pn will be considered a parameter
+//
 export default function VTSequence({
   sequence,
 }: {
   sequence: string | [string];
 }) {
-  // TODO: handle sequence array
-  const elem = typeof sequence === "string" ? sequence : sequence[0];
+  let arr: [string] = typeof sequence === "string" ? [sequence] : sequence;
 
-  const specialChar = special[elem] ?? 0;
-  const hex = specialChar.toString(16).padStart(2, "0");
+  if (arr[0] === "CSI") {
+    arr.shift();
+    arr.unshift("ESC", "[");
+  }
 
   return (
     <div className="flex my-2.5">
-      <div className="border shrink px-1 grid grid-rows-2 grid-cols-1 text-center">
-        <div>0x{hex}</div>
-        <div>{sequence}</div>
-      </div>
+      {arr.map((elem, i) => (
+        <div className="shrink">
+          <VTElem key={`${i}${elem}`} elem={elem} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VTElem({ elem }: { elem: string }) {
+  const param = elem === "Pn";
+  elem = param ? elem[1] : elem;
+  const specialChar = special[elem] ?? elem.charCodeAt(0);
+  const hex = specialChar.toString(16).padStart(2, "0").toUpperCase();
+
+  return (
+    <div className="border px-1 grid grid-rows-2 grid-cols-1 text-center">
+      <div>0x{hex}</div>
+      <div>{elem}</div>
     </div>
   );
 }
@@ -23,4 +45,5 @@ export default function VTSequence({
 const special: { [key: string]: number } = {
   BEL: 0x07,
   BS: 0x08,
+  ESC: 0x1b,
 };
