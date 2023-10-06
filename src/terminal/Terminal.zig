@@ -136,6 +136,12 @@ const ScrollingRegion = struct {
     // Precondition: top < bottom
     top: usize,
     bottom: usize,
+
+    // Left/right scroll regions.
+    // Precondition: right > left
+    // Precondition: right <= cols - 1
+    left: usize,
+    right: usize,
 };
 
 /// Initialize a new terminal.
@@ -152,6 +158,8 @@ pub fn init(alloc: Allocator, cols: usize, rows: usize) !Terminal {
         .scrolling_region = .{
             .top = 0,
             .bottom = rows - 1,
+            .left = 0,
+            .right = cols - 1,
         },
         .pwd = std.ArrayList(u8).init(alloc),
     };
@@ -326,6 +334,8 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !
     self.scrolling_region = .{
         .top = 0,
         .bottom = rows - 1,
+        .left = 0,
+        .right = cols - 1,
     };
 }
 
@@ -1759,11 +1769,8 @@ pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
         b = self.rows;
     }
 
-    self.scrolling_region = .{
-        .top = t - 1,
-        .bottom = b - 1,
-    };
-
+    self.scrolling_region.top = t - 1;
+    self.scrolling_region.bottom = b - 1;
     self.setCursorPos(1, 1);
 }
 
@@ -1871,7 +1878,12 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.screen.saved_cursor = .{};
     self.screen.selection = null;
     self.screen.kitty_keyboard = .{};
-    self.scrolling_region = .{ .top = 0, .bottom = self.rows - 1 };
+    self.scrolling_region = .{
+        .top = 0,
+        .bottom = self.rows - 1,
+        .left = 0,
+        .right = self.cols - 1,
+    };
     self.previous_char = null;
     self.eraseDisplay(alloc, .scrollback, false);
     self.eraseDisplay(alloc, .complete, false);
