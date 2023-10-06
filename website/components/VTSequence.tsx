@@ -45,6 +45,7 @@ function VTElem({ elem }: { elem: string }) {
 const special: { [key: string]: number } = {
   BEL: 0x07,
   BS: 0x08,
+  LF: 0x0a,
   CR: 0x0d,
   ESC: 0x1b,
 };
