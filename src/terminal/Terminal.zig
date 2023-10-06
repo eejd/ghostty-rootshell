@@ -1534,11 +1534,16 @@ pub fn carriageReturn(self: *Terminal) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: left/right margin mode
-    // TODO: origin mode
-
-    self.screen.cursor.x = 0;
+    // Always reset pending wrap state
     self.screen.cursor.pending_wrap = false;
+
+    // In origin mode we always move to the left margin
+    self.screen.cursor.x = if (self.modes.get(.origin))
+        self.scrolling_region.left
+    else if (self.screen.cursor.x >= self.scrolling_region.left)
+        self.scrolling_region.left
+    else
+        0;
 }
 
 /// Linefeed moves the cursor to the next line.
@@ -2205,6 +2210,37 @@ test "Terminal: carriage return unsets pending wrap" {
     try testing.expect(t.screen.cursor.pending_wrap == true);
     t.carriageReturn();
     try testing.expect(t.screen.cursor.pending_wrap == false);
+}
+
+test "Terminal: carriage return origin mode moves to left margin" {
+    var t = try init(testing.allocator, 5, 80);
+    defer t.deinit(testing.allocator);
+
+    t.modes.set(.origin, true);
+    t.screen.cursor.x = 0;
+    t.scrolling_region.left = 2;
+    t.carriageReturn();
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+}
+
+test "Terminal: carriage return left of left margin moves to zero" {
+    var t = try init(testing.allocator, 5, 80);
+    defer t.deinit(testing.allocator);
+
+    t.screen.cursor.x = 1;
+    t.scrolling_region.left = 2;
+    t.carriageReturn();
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+}
+
+test "Terminal: carriage return right of left margin moves to left margin" {
+    var t = try init(testing.allocator, 5, 80);
+    defer t.deinit(testing.allocator);
+
+    t.screen.cursor.x = 3;
+    t.scrolling_region.left = 2;
+    t.carriageReturn();
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
 }
 
 test "Terminal: backspace" {
