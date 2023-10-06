@@ -3488,3 +3488,26 @@ test "Terminal: cursorLeft extended reverse wrap bottom wraparound" {
         try testing.expectEqualStrings("ABCDE\n1\n    X", str);
     }
 }
+
+test "Terminal: cursorLeft extended reverse wrap is priority if both set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 3);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap, true);
+    t.modes.set(.reverse_wrap_extended, true);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('1');
+    t.cursorLeft(1 + t.cols + 1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDE\n1\n    X", str);
+    }
+}
