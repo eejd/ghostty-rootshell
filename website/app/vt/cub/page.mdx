@@ -18,11 +18,12 @@ for the duration of the sequence. The leftmost column the cursor can be on
 is the left margin.
 
 With the above in place, there are three different cursor backward behaviors
-depending on the mode state of the terminal:
+depending on the mode state of the terminal. The possible behaviors are listed
+below. In the case of a conflict, the top-most behavior takes priority.
 
-- **Reverse wrap**: [wraparound (mode 7)](#TODO) and [reverse wrap (mode 45)](#TODO)
-  are **BOTH** enabled
 - **Extended reverse wrap**: [wraparound (mode 7)](#TODO) and [extended reverse wrap (mode 1045)](#TODO)
+  are **BOTH** enabled
+- **Reverse wrap**: [wraparound (mode 7)](#TODO) and [reverse wrap (mode 45)](#TODO)
   are **BOTH** enabled
 - **No wrap**: The default behavior if the above wrapping behaviors
   do not have their conditions met.
@@ -42,7 +43,7 @@ mode. Compared to non-extended reverse wrap, the two critical differences are
 that extended reverse wrap doesn't require the previous line to be wrapped
 and extended reverse wrap will wrap around to the bottom margin.
 
-For the **reverse wrap** (non-extended) behavior, moe the cursor to the left `n`
+For the **reverse wrap** (non-extended) behavior, move the cursor to the left `n`
 cells while respecting the aforementioned leftmost boundary. Upon reaching the
 leftmost boundary, if `n > 0` and the previous line was wrapped, then move the
 cursor to the [right margin](#TODO) of the line above the cursor. If the previous
@@ -141,4 +142,4 @@ printf "X"
 |A_________|
 |B_________|
 |_________Xc
-```
+``g
