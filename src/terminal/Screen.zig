@@ -350,6 +350,10 @@ pub const Row = struct {
         return self.storage[0].header.flags.dirty;
     }
 
+    pub inline fn isWrapped(self: Row) bool {
+        return self.storage[0].header.flags.wrap;
+    }
+
     /// Set the semantic prompt state for this row.
     pub fn setSemanticPrompt(self: Row, p: RowHeader.SemanticPrompt) void {
         self.storage[0].header.flags.semantic_prompt = p;
