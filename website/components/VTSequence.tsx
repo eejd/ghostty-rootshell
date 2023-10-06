@@ -1,6 +1,13 @@
 // Draw a diagram showing the VT sequence.
-export default function VTSequence({ sequence }: { sequence: string }) {
-  const specialChar = special[sequence] ?? 0;
+export default function VTSequence({
+  sequence,
+}: {
+  sequence: string | [string];
+}) {
+  // TODO: handle sequence array
+  const elem = typeof sequence === "string" ? sequence : sequence[0];
+
+  const specialChar = special[elem] ?? 0;
   const hex = specialChar.toString(16).padStart(2, "0");
 
   return (
@@ -13,7 +20,7 @@ export default function VTSequence({ sequence }: { sequence: string }) {
   );
 }
 
-const special = {
+const special: { [key: string]: number } = {
   BEL: 0x07,
   BS: 0x08,
 };
