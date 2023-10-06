@@ -685,7 +685,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     self.previous_char = c;
 
     // If we're soft-wrapping, then handle that first.
-    if (self.screen.cursor.pending_wrap and self.modes.get(.autowrap))
+    if (self.screen.cursor.pending_wrap and self.modes.get(.wraparound))
         try self.printWrap();
 
     // If we have insert mode enabled then we need to handle that. We
@@ -1354,13 +1354,19 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
 
 /// Move the cursor to the left amount cells. If amount is 0, adjust it to 1.
 /// TODO: test
-pub fn cursorLeft(self: *Terminal, count: usize) void {
+pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If we have a pending wrap state on, we reset it and reduce our count.
+    var count: usize = @max(count_req, 1);
+    if (self.screen.cursor.pending_wrap) {
+        self.screen.cursor.pending_wrap = false;
+        count -= 1;
+    }
+
     // TODO: scroll region
-    self.screen.cursor.x -|= if (count == 0) 1 else count;
-    self.screen.cursor.pending_wrap = false;
+    self.screen.cursor.x -|= count;
 }
 
 /// Move the cursor right amount columns. If amount is greater than the
@@ -3291,5 +3297,59 @@ test "Terminal: eraseDisplay protected above" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\n     X  9", str);
+    }
+}
+
+test "Terminal: cursorLeft no wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    try t.print('B');
+    t.cursorLeft(10);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\nB", str);
+    }
+}
+
+test "Terminal: cursorLeft unsets pending wrap state" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.cursorLeft(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: cursorLeft unsets pending wrap state with longer jump" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.cursorLeft(3);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABXDE", str);
     }
 }
