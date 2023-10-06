@@ -309,6 +309,12 @@ keybind: Keybinds = .{},
 /// to balance the padding given a certain viewport size and grid cell size.
 @"window-padding-balance": bool = false,
 
+/// If true, new windows and tabs will inherit the working directory of
+/// the previously focused window. If no window was previously focused,
+/// the default working directory will be used (the "working-directory"
+/// option).
+@"window-inherit-working-directory": bool = true,
+
 /// If true, new windows and tabs will inherit the font size of the previously
 /// focused window. If no window was previously focused, the default
 /// font size will be used. If this is false, the default font size

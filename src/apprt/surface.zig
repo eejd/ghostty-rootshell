@@ -79,8 +79,10 @@ pub fn newConfig(app: *const App, config: *const Config) !Config {
     // Get our previously focused surface for some inherited values.
     const prev = app.focusedSurface();
     if (prev) |p| {
-        if (try p.pwd(alloc)) |pwd| {
-            copy.@"working-directory" = pwd;
+        if (config.@"window-inherit-working-directory") {
+            if (try p.pwd(alloc)) |pwd| {
+                copy.@"working-directory" = pwd;
+            }
         }
     }
 
