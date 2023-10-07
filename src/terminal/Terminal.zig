@@ -1439,16 +1439,21 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
 /// maximum move distance then it is internally adjusted to the maximum.
 /// This sequence will not scroll the screen or scroll region. If amount is
 /// 0, adjust it to 1.
-/// TODO: test
-pub fn cursorRight(self: *Terminal, count: usize) void {
+pub fn cursorRight(self: *Terminal, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.cursor.x += if (count == 0) 1 else count;
+    // Always resets pending wrap
     self.screen.cursor.pending_wrap = false;
-    if (self.screen.cursor.x >= self.cols) {
-        self.screen.cursor.x = self.cols - 1;
-    }
+
+    // The max the cursor can move to depends where the cursor currently is
+    const max = if (self.screen.cursor.x <= self.scrolling_region.right)
+        self.scrolling_region.right
+    else
+        self.cols - 1;
+
+    const count = @max(count_req, 1);
+    self.screen.cursor.x = @min(max, self.screen.cursor.x +| count);
 }
 
 /// Move the cursor down amount lines. If amount is greater than the maximum
@@ -4042,5 +4047,71 @@ test "Terminal: cursorUp resets wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: cursorRight resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.cursorRight(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: cursorRight to the edge of screen" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.cursorRight(100);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    X", str);
+    }
+}
+
+test "Terminal: cursorRight left of right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.right = 2;
+    t.cursorRight(100);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  X", str);
+    }
+}
+
+test "Terminal: cursorRight right of right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.right = 2;
+    t.screen.cursor.x = 3;
+    t.cursorRight(100);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    X", str);
     }
 }
