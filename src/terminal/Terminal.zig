@@ -975,9 +975,9 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
         x_max: usize,
         y_max: usize,
     } = if (self.modes.get(.origin)) .{
-        .x_offset = 0, // TODO: left/right margins
+        .x_offset = self.scrolling_region.left,
         .y_offset = self.scrolling_region.top,
-        .x_max = self.cols, // TODO: left/right margins
+        .x_max = self.scrolling_region.right + 1, // We need this 1-indexed
         .y_max = self.scrolling_region.bottom + 1, // We need this 1-indexed
     } else .{
         .x_max = self.cols,
@@ -986,7 +986,7 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
 
     const row = if (row_req == 0) 1 else row_req;
     const col = if (col_req == 0) 1 else col_req;
-    self.screen.cursor.x = @min(params.x_max, col) -| 1;
+    self.screen.cursor.x = @min(params.x_max, col + params.x_offset) -| 1;
     self.screen.cursor.y = @min(params.y_max, row + params.y_offset) -| 1;
     // log.info("set cursor position: col={} row={}", .{ self.screen.cursor.x, self.screen.cursor.y });
 
@@ -2422,7 +2422,98 @@ test "Terminal: horizontal tabs with left margin in origin mode" {
     }
 }
 
-test "Terminal: setCursorPosition" {
+test "Terminal: cursorPos resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.setCursorPos(1, 1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XBCDE", str);
+    }
+}
+
+test "Terminal: cursorPos off the screen" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(500, 500);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\n\n\n    X", str);
+    }
+}
+
+test "Terminal: cursorPos relative to origin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.top = 2;
+    t.scrolling_region.bottom = 3;
+    t.modes.set(.origin, true);
+    t.setCursorPos(1, 1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\nX", str);
+    }
+}
+
+test "Terminal: cursorPos relative to origin with left/right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.top = 2;
+    t.scrolling_region.bottom = 3;
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 4;
+    t.modes.set(.origin, true);
+    t.setCursorPos(1, 1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\n  X", str);
+    }
+}
+
+test "Terminal: cursorPos limits with full scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.top = 2;
+    t.scrolling_region.bottom = 3;
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 4;
+    t.modes.set(.origin, true);
+    t.setCursorPos(500, 500);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\n\n    X", str);
+    }
+}
+
+test "Terminal: setCursorPos (original test)" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);
 
