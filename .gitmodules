@@ -1,3 +1,0 @@
-[submodule "vendor/harfbuzz"]
-	path = vendor/harfbuzz
-	url = https://github.com/harfbuzz/harfbuzz.git
