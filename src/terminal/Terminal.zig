@@ -1620,7 +1620,9 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
         while (i < copyable) : (i += 1) {
             const to = right_limit - 1 - i;
             const from = copyable_end - i;
-            row.getCellPtr(to).* = row.getCell(from);
+            const src = row.getCell(from);
+            const dst = row.getCellPtr(to);
+            dst.* = src;
         }
     }
 
