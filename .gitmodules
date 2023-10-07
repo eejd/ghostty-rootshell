@@ -1,6 +1,0 @@
-[submodule "vendor/harfbuzz"]
-	path = vendor/harfbuzz
-	url = https://github.com/harfbuzz/harfbuzz.git
-[submodule "vendor/libxml2"]
-	path = vendor/libxml2
-	url = https://github.com/GNOME/libxml2.git

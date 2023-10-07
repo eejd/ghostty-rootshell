@@ -282,12 +282,6 @@ closer to generally releasing this to ease downstream packagers. During
 development, I'm sticking to nightly Zig. You can find binary releases of nightly builds
 on the [Zig downloads page](https://ziglang.org/download/).
 
-Install dependencies by running `make`:
-
-```shell-session
-$ make
-```
-
 With Zig installed, a binary can be built using `zig build`:
 
 ```shell-session

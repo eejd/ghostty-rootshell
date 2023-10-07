@@ -2,6 +2,11 @@
     .name = "harfbuzz",
     .version = "2.13.2",
     .dependencies = .{
+        .harfbuzz = .{
+            .url = "https://github.com/harfbuzz/harfbuzz/archive/refs/tags/8.2.1.tar.gz",
+            .hash = "12203c1b09a2cf778367376076301322235816598eaf0639da08b233ab852548df92",
+        },
+
         .freetype = .{ .path = "../freetype" },
         .macos = .{ .path = "../macos" },
         .apple_sdk = .{ .path = "../apple-sdk" },

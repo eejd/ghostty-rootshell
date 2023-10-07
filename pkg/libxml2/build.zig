@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream_root = "../../vendor/libxml2";
+    const upstream = b.dependency("libxml2", .{});
 
     const lib = b.addStaticLibrary(.{
         .name = "xml2",
@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibC();
 
-    lib.addIncludePath(.{ .path = upstream_root ++ "/include" });
+    lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(.{ .path = "override/include" });
     if (target.isWindows()) {
         lib.addIncludePath(.{ .path = "override/config/win32" });
@@ -96,14 +96,14 @@ pub fn build(b: *std.Build) !void {
 
     inline for (srcs) |src| {
         lib.addCSourceFile(.{
-            .file = .{ .path = upstream_root ++ "/" ++ src },
+            .file = upstream.path(src),
             .flags = flags.items,
         });
     }
 
     lib.installHeader("override/include/libxml/xmlversion.h", "libxml/xmlversion.h");
     lib.installHeadersDirectoryOptions(.{
-        .source_dir = .{ .path = upstream_root ++ "/include" },
+        .source_dir = upstream.path("include"),
         .install_dir = .header,
         .install_subdir = "",
         .include_extensions = &.{".h"},

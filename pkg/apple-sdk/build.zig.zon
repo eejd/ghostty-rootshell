@@ -1,0 +1,10 @@
+.{
+    .name = "apple-sdk",
+    .version = "0.1.0",
+    .dependencies = .{
+        .macos_sdk = .{
+            .url = "https://github.com/mitchellh/zig-build-macos-sdk/archive/166ff65bb7688c0a08c4ea98166ec8300aa34128.tar.gz",
+            .hash = "1220bfe1b32491a3448dff55c1dc0c12aa573f1e5bdb0a962bfbadaaa59e4833798b",
+        },
+    },
+}

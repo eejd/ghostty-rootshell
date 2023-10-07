@@ -1,15 +1,6 @@
-# Init initializes the repo for development.
 init:
-	git submodule update --init --recursive
+	@echo You probably want to run "zig build" instead.
 .PHONY: init
-
-# Slightly cursed way that we setup a dev version of this locally on NixOS.
-dev/install:
-	zig build -Dcpu=baseline -Doptimize=ReleaseFast
-	if [ -f "/etc/NIXOS" ]; then patchelf --set-rpath "${LD_LIBRARY_PATH}" zig-out/bin/ghostty; fi
-	mkdir -p ${HOME}/bin
-	cp zig-out/bin/ghostty ${HOME}/bin/devtty
-.PHONY: dev/install
 
 # glad updates the GLAD loader. To use this, place the generated glad.zip
 # in this directory next to the Makefile, remove vendor/glad and run this target.
