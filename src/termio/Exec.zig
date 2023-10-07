@@ -1316,8 +1316,22 @@ const StreamHandler = struct {
         self.terminal.setCursorPos(self.terminal.screen.cursor.y + 1, col);
     }
 
+    pub fn setCursorColRelative(self: *StreamHandler, offset: u16) !void {
+        self.terminal.setCursorPos(
+            self.terminal.screen.cursor.y + 1,
+            self.terminal.screen.cursor.x + 1 + offset,
+        );
+    }
+
     pub fn setCursorRow(self: *StreamHandler, row: u16) !void {
         self.terminal.setCursorPos(row, self.terminal.screen.cursor.x + 1);
+    }
+
+    pub fn setCursorRowRelative(self: *StreamHandler, offset: u16) !void {
+        self.terminal.setCursorPos(
+            self.terminal.screen.cursor.y + 1 + offset,
+            self.terminal.screen.cursor.x + 1,
+        );
     }
 
     pub fn setCursorPos(self: *StreamHandler, row: u16, col: u16) !void {
