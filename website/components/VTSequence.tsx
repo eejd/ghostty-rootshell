@@ -29,7 +29,7 @@ export default function VTSequence({
 }
 
 function VTElem({ elem }: { elem: string }) {
-  const param = elem === "Pn";
+  const param = elem.length > 1 && elem[0] === "P";
   elem = param ? elem[1] : elem;
   const specialChar = special[elem] ?? elem.charCodeAt(0);
   const hex = specialChar.toString(16).padStart(2, "0").toUpperCase();
