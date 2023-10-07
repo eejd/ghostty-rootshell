@@ -432,6 +432,18 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
+                // HPR - Cursor Horizontal Position Relative
+                'a' => if (@hasDecl(T, "setCursorColRelative")) try self.handler.setCursorColRelative(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid HPR command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
                 // Repeat Previous Char (REP)
                 'b' => if (@hasDecl(T, "printRepeat")) try self.handler.printRepeat(
                     switch (action.params.len) {
@@ -469,6 +481,18 @@ pub fn Stream(comptime Handler: type) type {
                         1 => action.params[0],
                         else => {
                             log.warn("invalid VPA command: {}", .{action});
+                            return;
+                        },
+                    },
+                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                // VPR - Cursor Vertical Position Relative
+                'e' => if (@hasDecl(T, "setCursorRowRelative")) try self.handler.setCursorRowRelative(
+                    switch (action.params.len) {
+                        0 => 1,
+                        1 => action.params[0],
+                        else => {
+                            log.warn("invalid VPR command: {}", .{action});
                             return;
                         },
                     },
