@@ -1195,15 +1195,6 @@ pub fn scrollCallback(
                 }
             }
 
-            if (x.delta_unsigned > 0) {
-                const seq = if (x.delta < 0) "\x1bOC" else "\x1bOD";
-                for (0..x.delta_unsigned) |_| {
-                    _ = self.io_thread.mailbox.push(.{
-                        .write_stable = seq,
-                    }, .{ .forever = {} });
-                }
-            }
-
             // After sending all our messages we have to notify our IO thread
             try self.io_thread.wakeup.notify();
             return;
