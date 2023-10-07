@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) !void {
         .@"enable-libpng" = true,
     });
     const macos = b.dependency("macos", .{ .target = target, .optimize = optimize });
+    const upstream = b.dependency("harfbuzz", .{});
 
     const module = b.addModule("harfbuzz", .{
         .source_file = .{ .path = "main.zig" },
@@ -23,8 +24,6 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    const upstream_root = "../../vendor/harfbuzz";
-
     const lib = b.addStaticLibrary(.{
         .name = "harfbuzz",
         .target = target,
@@ -32,7 +31,7 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibC();
     lib.linkLibCpp();
-    lib.addIncludePath(.{ .path = upstream_root ++ "/src" });
+    lib.addIncludePath(upstream.path("src"));
 
     const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
     lib.linkLibrary(freetype_dep.artifact("freetype"));
@@ -65,11 +64,11 @@ pub fn build(b: *std.Build) !void {
     }
 
     lib.addCSourceFile(.{
-        .file = .{ .path = upstream_root ++ "/src/harfbuzz.cc" },
+        .file = upstream.path("src/harfbuzz.cc"),
         .flags = flags.items,
     });
     lib.installHeadersDirectoryOptions(.{
-        .source_dir = .{ .path = upstream_root ++ "/src" },
+        .source_dir = upstream.path("src"),
         .install_dir = .header,
         .install_subdir = "",
         .include_extensions = &.{".h"},
