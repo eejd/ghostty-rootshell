@@ -994,34 +994,6 @@ pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
     self.screen.cursor.pending_wrap = false;
 }
 
-/// Move the cursor to column `col_req` (1-indexed) without modifying the row.
-/// If `col_req` is 0, it is changed to 1. If `col_req` is greater than the
-/// total number of columns, it is set to the right-most column.
-///
-/// If cursor origin mode is set, the cursor row will be set inside the
-/// current scroll region.
-pub fn setCursorColAbsolute(self: *Terminal, col_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    // TODO: test
-
-    // TODO
-    if (self.modes.get(.origin)) {
-        log.err("setCursorColAbsolute: cursor origin mode handling not implemented yet", .{});
-        return;
-    }
-
-    if (self.status_display != .main) {
-        log.err("setCursorColAbsolute: not implemented on status display", .{});
-        return; // TODO
-    }
-
-    const col = if (col_req == 0) 1 else col_req;
-    self.screen.cursor.x = @min(self.cols, col) - 1;
-    self.screen.cursor.pending_wrap = false;
-}
-
 /// Erase the display.
 pub fn eraseDisplay(
     self: *Terminal,
@@ -3605,18 +3577,6 @@ test "Terminal: eraseChars resets wrap" {
     }
 }
 
-test "Terminal: setCursorColAbsolute resets pending wrap" {
-    const alloc = testing.allocator;
-    var t = try init(alloc, 5, 5);
-    defer t.deinit(alloc);
-
-    for ("ABCDE") |c| try t.print(c);
-    try testing.expect(t.screen.cursor.pending_wrap);
-    t.setCursorColAbsolute(1);
-    try testing.expect(!t.screen.cursor.pending_wrap);
-    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
-}
-
 // https://github.com/mitchellh/ghostty/issues/272
 // This is also tested in depth in screen resize tests but I want to keep
 // this test around to ensure we don't regress at multiple layers.
@@ -3720,10 +3680,10 @@ test "Terminal: eraseLine protected right" {
     defer t.deinit(alloc);
 
     for ("12345678") |c| try t.print(c);
-    t.setCursorColAbsolute(6);
+    t.setCursorPos(t.screen.cursor.y + 1, 6);
     t.setProtectedMode(.dec);
     try t.print('X');
-    t.setCursorColAbsolute(4);
+    t.setCursorPos(t.screen.cursor.y + 1, 4);
     t.eraseLine(.right, true);
 
     {
@@ -3739,10 +3699,10 @@ test "Terminal: eraseLine protected left" {
     defer t.deinit(alloc);
 
     for ("123456789") |c| try t.print(c);
-    t.setCursorColAbsolute(6);
+    t.setCursorPos(t.screen.cursor.y + 1, 6);
     t.setProtectedMode(.dec);
     try t.print('X');
-    t.setCursorColAbsolute(8);
+    t.setCursorPos(t.screen.cursor.y + 1, 8);
     t.eraseLine(.left, true);
 
     {
@@ -3758,10 +3718,10 @@ test "Terminal: eraseLine protected complete" {
     defer t.deinit(alloc);
 
     for ("123456789") |c| try t.print(c);
-    t.setCursorColAbsolute(6);
+    t.setCursorPos(t.screen.cursor.y + 1, 6);
     t.setProtectedMode(.dec);
     try t.print('X');
-    t.setCursorColAbsolute(8);
+    t.setCursorPos(t.screen.cursor.y + 1, 8);
     t.eraseLine(.complete, true);
 
     {
@@ -3780,10 +3740,10 @@ test "Terminal: eraseDisplay protected complete" {
     t.carriageReturn();
     try t.linefeed();
     for ("123456789") |c| try t.print(c);
-    t.setCursorColAbsolute(6);
+    t.setCursorPos(t.screen.cursor.y + 1, 6);
     t.setProtectedMode(.dec);
     try t.print('X');
-    t.setCursorColAbsolute(4);
+    t.setCursorPos(t.screen.cursor.y + 1, 4);
     t.eraseDisplay(alloc, .complete, true);
 
     {
@@ -3802,10 +3762,10 @@ test "Terminal: eraseDisplay protected below" {
     t.carriageReturn();
     try t.linefeed();
     for ("123456789") |c| try t.print(c);
-    t.setCursorColAbsolute(6);
+    t.setCursorPos(t.screen.cursor.y + 1, 6);
     t.setProtectedMode(.dec);
     try t.print('X');
-    t.setCursorColAbsolute(4);
+    t.setCursorPos(t.screen.cursor.y + 1, 4);
     t.eraseDisplay(alloc, .below, true);
 
     {
@@ -3824,10 +3784,10 @@ test "Terminal: eraseDisplay protected above" {
     t.carriageReturn();
     try t.linefeed();
     for ("123456789") |c| try t.print(c);
-    t.setCursorColAbsolute(6);
+    t.setCursorPos(t.screen.cursor.y + 1, 6);
     t.setProtectedMode(.dec);
     try t.print('X');
-    t.setCursorColAbsolute(8);
+    t.setCursorPos(t.screen.cursor.y + 1, 8);
     t.eraseDisplay(alloc, .above, true);
 
     {
