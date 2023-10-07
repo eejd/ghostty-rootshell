@@ -1581,8 +1581,20 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     // Unset pending wrap state without wrapping
     self.screen.cursor.pending_wrap = false;
 
+    // If our cursor is outside the margins then do nothing. We DO reset
+    // wrap state still so this must remain below the above logic.
+    if (self.screen.cursor.x < self.scrolling_region.left or
+        self.screen.cursor.x > self.scrolling_region.right) return;
+
+    // The limit we can shift to is our right margin. We add 1 since the
+    // math around this is 1-indexed.
+    const right_limit = self.scrolling_region.right + 1;
+
     // If our count is larger than the remaining amount, we just erase right.
-    if (count > self.cols - self.screen.cursor.x) {
+    // We only do this if we can erase the entire line (no right margin).
+    if (right_limit == self.cols and
+        count > right_limit - self.screen.cursor.x)
+    {
         self.eraseLine(.right, false);
         return;
     }
@@ -1597,7 +1609,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     // This is the number of spaces we have left to shift existing data.
     // If count is bigger than the available space left after the cursor,
     // we may have no space at all for copying.
-    const copyable = self.screen.cols - pivot;
+    const copyable = right_limit - pivot;
     if (copyable > 0) {
         // This is the index of the final copyable value that we need to copy.
         const copyable_end = start + copyable - 1;
@@ -1606,14 +1618,17 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
         // allocated new space, otherwise we'll copy duplicates.
         var i: usize = 0;
         while (i < copyable) : (i += 1) {
-            const to = self.screen.cols - 1 - i;
+            const to = right_limit - 1 - i;
             const from = copyable_end - i;
             row.getCellPtr(to).* = row.getCell(from);
         }
     }
 
-    // Insert zero
-    row.fillSlice(.{}, start, pivot);
+    // Insert blanks. The blanks preserve the background color.
+    row.fillSlice(.{
+        .bg = self.screen.cursor.pen.bg,
+        .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
+    }, start, pivot);
 }
 
 /// Insert amount lines at the current cursor row. The contents of the line
@@ -3125,6 +3140,103 @@ test "Terminal: insertBlanks more than size" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("", str);
+    }
+}
+
+test "Terminal: insertBlanks no scroll region, fits" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.insertBlanks(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  ABC", str);
+    }
+}
+
+test "Terminal: insertBlanks preserves background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.screen.cursor.pen = pen;
+    t.insertBlanks(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  ABC", str);
+        const cell = t.screen.getCell(.active, 0, 0);
+        try testing.expectEqual(pen, cell);
+    }
+}
+
+test "Terminal: insertBlanks shift off screen" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 10);
+    defer t.deinit(alloc);
+
+    for ("  ABC") |c| try t.print(c);
+    t.setCursorPos(1, 3);
+    t.insertBlanks(2);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  X A", str);
+    }
+}
+
+test "Terminal: insertBlanks inside left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 4;
+    t.setCursorPos(1, 3);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 3);
+    t.insertBlanks(2);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  X A", str);
+    }
+}
+
+test "Terminal: insertBlanks outside left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 4;
+    t.setCursorPos(1, 3);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.insertBlanks(2);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X ABC", str);
     }
 }
 
