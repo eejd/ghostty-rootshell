@@ -1474,13 +1474,21 @@ pub fn cursorDown(self: *Terminal, count_req: usize) void {
 /// Move the cursor up amount lines. If amount is greater than the maximum
 /// move distance then it is internally adjusted to the maximum. If amount is
 /// 0, adjust it to 1.
-// TODO: test
-pub fn cursorUp(self: *Terminal, count: usize) void {
+pub fn cursorUp(self: *Terminal, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    self.screen.cursor.y -|= if (count == 0) 1 else count;
+    // Always resets pending wrap
     self.screen.cursor.pending_wrap = false;
+
+    // The min the cursor can move to depends where the cursor currently is
+    const min = if (self.screen.cursor.y >= self.scrolling_region.top)
+        self.scrolling_region.top
+    else
+        0;
+
+    const count = @max(count_req, 1);
+    self.screen.cursor.y = @max(min, self.screen.cursor.y -| count);
 }
 
 /// Backspace moves the cursor back a column (but not less than 0).
@@ -3962,5 +3970,77 @@ test "Terminal: cursorDown resets wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDE\n    X", str);
+    }
+}
+
+test "Terminal: cursorUp basic" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(3, 1);
+    try t.print('A');
+    t.cursorUp(10);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(" X\n\nA", str);
+    }
+}
+
+test "Terminal: cursorUp below top scroll margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setScrollingRegion(2, 4);
+    t.setCursorPos(3, 1);
+    try t.print('A');
+    t.cursorUp(5);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n X\nA", str);
+    }
+}
+
+test "Terminal: cursorUp above top scroll margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setScrollingRegion(3, 5);
+    t.setCursorPos(3, 1);
+    try t.print('A');
+    t.setCursorPos(2, 1);
+    t.cursorUp(10);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X\n\nA", str);
+    }
+}
+
+test "Terminal: cursorUp resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.cursorUp(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
     }
 }
