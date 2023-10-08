@@ -1343,11 +1343,25 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
         break :end end;
     };
 
-    // Shift
-    row.fillSlice(.{
+    const pen: Screen.Cell = .{
         .bg = self.screen.cursor.pen.bg,
         .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
-    }, self.screen.cursor.x, end);
+    };
+
+    // If we never had a protection mode, then we can assume no cells
+    // are protected and go with the fast path. If the last protection
+    // mode was not ISO we also always ignore protection attributes.
+    if (self.screen.protected_mode != .iso) {
+        row.fillSlice(pen, self.screen.cursor.x, end);
+    }
+
+    // We had a protection mode at some point. We must go through each
+    // cell and check its protection attribute.
+    for (self.screen.cursor.x..end) |x| {
+        const cell = row.getCellPtr(x);
+        if (cell.attrs.protected) continue;
+        cell.* = pen;
+    }
 }
 
 /// Move the cursor to the left amount cells. If amount is 0, adjust it to 1.
@@ -1885,15 +1899,20 @@ pub fn setProtectedMode(self: *Terminal, mode: ansi.ProtectedMode) void {
     switch (mode) {
         .off => {
             self.screen.cursor.pen.attrs.protected = false;
+
+            // screen.protected_mode is NEVER reset to ".off" because
+            // logic such as eraseChars depends on knowing what the
+            // _most recent_ mode was.
         },
 
-        // TODO: ISO/DEC have very subtle differences, so we should track that.
         .iso => {
             self.screen.cursor.pen.attrs.protected = true;
+            self.screen.protected_mode = .iso;
         },
 
         .dec => {
             self.screen.cursor.pen.attrs.protected = true;
+            self.screen.protected_mode = .dec;
         },
     }
 }
@@ -1909,6 +1928,7 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.screen.saved_cursor = .{};
     self.screen.selection = null;
     self.screen.kitty_keyboard = .{};
+    self.screen.protected_mode = .off;
     self.scrolling_region = .{
         .top = 0,
         .bottom = self.rows - 1,
@@ -3666,6 +3686,58 @@ test "Terminal: eraseChars wide character" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("X BC", str);
+    }
+}
+
+test "Terminal: eraseChars protected attributes respected with iso" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseChars(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC", str);
+    }
+}
+
+test "Terminal: eraseChars protected attributes ignored with dec most recent" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setProtectedMode(.dec);
+    t.setProtectedMode(.off);
+    t.setCursorPos(1, 1);
+    t.eraseChars(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C", str);
+    }
+}
+test "Terminal: eraseChars protected attributes ignored with dec set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseChars(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C", str);
     }
 }
 

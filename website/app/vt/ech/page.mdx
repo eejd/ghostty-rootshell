@@ -25,16 +25,16 @@ Both erased cells are colored with the current background color according
 to the current SGR state.
 
 If [Select Character Selection Attribute (DECSCA)](#TODO) is enabled
-or was the most recently enabled protection mode,
+or was the most recently enabled protection mode on the currently active screen,
 protected attributes are ignored as if they were never set and the cells
 with them are erased. It does not matter if DECSCA is currently disabled,
 protected attributes are still ignored so long as DECSCA was the
 _most recently enabled_ protection mode.
 
 If DECSCA is not currently enabled and was not the most recently enabled protection
-mode, cells with the protected attribute set are respected and not erased but
-still count towards `n`. It does not matter if the protection attribute for a
-cell was originally set from DECSCA.
+mode on the currently active screen, cells with the protected attribute set are
+respected and not erased but still count towards `n`. It does not matter if the
+protection attribute for a cell was originally set from DECSCA.
 
 ## Validation
 

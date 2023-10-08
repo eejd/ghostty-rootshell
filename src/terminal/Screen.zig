@@ -56,6 +56,7 @@ const Allocator = std.mem.Allocator;
 
 const utf8proc = @import("utf8proc");
 const trace = @import("tracy").trace;
+const ansi = @import("ansi.zig");
 const sgr = @import("sgr.zig");
 const color = @import("color.zig");
 const kitty = @import("kitty.zig");
@@ -931,6 +932,13 @@ saved_charset: CharsetState = .{},
 /// because it's state is saved/restored with the cursor and must have a state
 /// independent to each screen (primary and alternate)
 saved_origin_mode: bool = false,
+
+/// The current or most recent protected mode. Once a protection mode is
+/// set, this will never become "off" again until the screen is reset.
+/// The current state of whether protection attributes should be set is
+/// set on the Cell pen; this is only used to determine the most recent
+/// protection mode since some sequences such as ECH depend on this.
+protected_mode: ansi.ProtectedMode = .off,
 
 /// Initialize a new screen.
 pub fn init(
