@@ -1320,7 +1320,6 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
     }
 }
 
-// TODO: test, docs
 pub fn eraseChars(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -1330,13 +1329,25 @@ pub fn eraseChars(self: *Terminal, count: usize) void {
 
     // Our last index is at most the end of the number of chars we have
     // in the current line.
-    const end = @min(self.cols, self.screen.cursor.x + count);
+    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    const end = end: {
+        var end = @min(self.cols, self.screen.cursor.x + count);
+
+        // If our last cell is a wide char then we need to also clear the
+        // cell beyond it since we can't just split a wide char.
+        if (end != self.cols) {
+            const last = row.getCellPtr(end - 1);
+            if (last.attrs.wide) end += 1;
+        }
+
+        break :end end;
+    };
 
     // Shift
-    var pen = self.screen.cursor.pen;
-    pen.char = 0;
-    const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-    row.fillSlice(pen, self.screen.cursor.x, end);
+    row.fillSlice(.{
+        .bg = self.screen.cursor.pen.bg,
+        .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
+    }, self.screen.cursor.x, end);
 }
 
 /// Move the cursor to the left amount cells. If amount is 0, adjust it to 1.
@@ -3574,6 +3585,87 @@ test "Terminal: eraseChars resets wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: eraseChars simple operation" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseChars(2);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X C", str);
+    }
+}
+
+test "Terminal: eraseChars beyond screen edge" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("  ABC") |c| try t.print(c);
+    t.setCursorPos(1, 4);
+    t.eraseChars(10);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  A", str);
+    }
+}
+
+test "Terminal: eraseChars preserves background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.screen.cursor.pen = pen;
+    t.eraseChars(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C", str);
+        {
+            const cell = t.screen.getCell(.active, 0, 0);
+            try testing.expectEqual(pen, cell);
+        }
+        {
+            const cell = t.screen.getCell(.active, 0, 1);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: eraseChars wide character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.print('橋');
+    for ("BC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseChars(1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X BC", str);
     }
 }
 
