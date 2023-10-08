@@ -1227,58 +1227,70 @@ test "Terminal: eraseDisplay complete" {
 pub fn eraseLine(
     self: *Terminal,
     mode: csi.EraseLine,
-    protected: bool,
+    protected_req: bool,
 ) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // We always need a row no matter what
+    // We always fill with the background
+    const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
+        .bg = self.screen.cursor.pen.bg,
+        .attrs = .{ .has_bg = true },
+    };
+
+    // Get our start/end positions depending on mode.
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-
-    // Non-protected erase is much faster because we can just memset
-    // a contiguous block of memory.
-    if (!protected) {
-        switch (mode) {
-            .right => {
-                row.fillSlice(self.screen.cursor.pen, self.screen.cursor.x, self.cols);
-                self.screen.cursor.pending_wrap = false;
-            },
-
-            .left => {
-                row.fillSlice(self.screen.cursor.pen, 0, self.screen.cursor.x + 1);
-                self.screen.cursor.pending_wrap = false;
-            },
-
-            .complete => {
-                row.fill(self.screen.cursor.pen);
-                self.screen.cursor.pending_wrap = false;
-            },
-
-            else => log.err("unimplemented erase line mode: {}", .{mode}),
-        }
-
-        return;
-    }
-
-    // Protected mode we have to iterate over the cells to check their
-    // protection status and erase them individually.
     const start, const end = switch (mode) {
-        .right => .{ self.screen.cursor.x, row.lenCells() },
-        .left => .{ 0, self.screen.cursor.x + 1 },
+        .right => right: {
+            var x = self.screen.cursor.x;
+
+            // If our X is a wide spacer tail then we need to erase the
+            // previous cell too so we don't split a multi-cell character.
+            if (x > 0) {
+                const cell = row.getCellPtr(x);
+                if (cell.attrs.wide_spacer_tail) x -= 1;
+            }
+
+            break :right .{ x, row.lenCells() };
+        },
+
+        .left => left: {
+            var x = self.screen.cursor.x;
+
+            // If our x is a wide char we need to delete the tail too.
+            const cell = row.getCellPtr(x);
+            if (cell.attrs.wide) {
+                if (row.getCellPtr(x + 1).attrs.wide_spacer_tail) {
+                    x += 1;
+                }
+            }
+
+            break :left .{ 0, x + 1 };
+        },
+
         .complete => .{ 0, row.lenCells() },
+
         else => {
             log.err("unimplemented erase line mode: {}", .{mode});
             return;
         },
     };
 
-    // All modes will clear the pending wrap state
+    // All modes will clear the pending wrap state and we know we have
+    // a valid mode at this point.
     self.screen.cursor.pending_wrap = false;
 
-    const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
-        .bg = self.screen.cursor.pen.bg,
-        .attrs = .{ .has_bg = true },
-    };
+    // We respect protected attributes if explicitly requested (probably
+    // a DECSEL sequence) or if our last protected mode was ISO even if its
+    // not currently set.
+    const protected = self.screen.protected_mode == .iso or protected_req;
+
+    // If we're not respecting protected attributes, we can use a fast-path
+    // to fill the entire line.
+    if (!protected) {
+        row.fillSlice(self.screen.cursor.pen, start, end);
+        return;
+    }
 
     for (start..end) |x| {
         const cell = row.getCellPtr(x);
@@ -3724,6 +3736,7 @@ test "Terminal: eraseChars protected attributes ignored with dec most recent" {
         try testing.expectEqualStrings("  C", str);
     }
 }
+
 test "Terminal: eraseChars protected attributes ignored with dec set" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
@@ -3820,6 +3833,22 @@ test "Terminal: setProtectedMode" {
     try testing.expect(!t.screen.cursor.pen.attrs.protected);
 }
 
+test "Terminal: eraseLine simple erase right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 3);
+    t.eraseLine(.right, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AB", str);
+    }
+}
+
 test "Terminal: eraseLine resets wrap" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
@@ -3838,7 +3867,104 @@ test "Terminal: eraseLine resets wrap" {
     }
 }
 
-test "Terminal: eraseLine protected right" {
+test "Terminal: eraseLine right preserves background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.screen.cursor.pen = pen;
+    t.eraseLine(.right, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A", str);
+        for (1..5) |x| {
+            const cell = t.screen.getCell(.active, 0, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: eraseLine right wide character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    for ("AB") |c| try t.print(c);
+    try t.print('橋');
+    for ("DE") |c| try t.print(c);
+    t.setCursorPos(1, 4);
+    t.eraseLine(.right, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AB", str);
+    }
+}
+
+test "Terminal: eraseLine right protected attributes respected with iso" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseLine(.right, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC", str);
+    }
+}
+
+test "Terminal: eraseLine right protected attributes ignored with dec most recent" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setProtectedMode(.dec);
+    t.setProtectedMode(.off);
+    t.setCursorPos(1, 2);
+    t.eraseLine(.right, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A", str);
+    }
+}
+
+test "Terminal: eraseLine right protected attributes ignored with dec set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.eraseLine(.right, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A", str);
+    }
+}
+
+test "Terminal: eraseLine right protected requested" {
     const alloc = testing.allocator;
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
@@ -3857,7 +3983,140 @@ test "Terminal: eraseLine protected right" {
     }
 }
 
-test "Terminal: eraseLine protected left" {
+// ------------------- SPLIT
+
+test "Terminal: eraseLine simple erase left" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 3);
+    t.eraseLine(.left, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("   DE", str);
+    }
+}
+
+test "Terminal: eraseLine left resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.eraseLine(.left, false);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('B');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    B", str);
+    }
+}
+
+test "Terminal: eraseLine left preserves background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.screen.cursor.pen = pen;
+    t.eraseLine(.left, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  CDE", str);
+        for (0..2) |x| {
+            const cell = t.screen.getCell(.active, 0, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: eraseLine left wide character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    for ("AB") |c| try t.print(c);
+    try t.print('橋');
+    for ("DE") |c| try t.print(c);
+    t.setCursorPos(1, 3);
+    t.eraseLine(.left, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    DE", str);
+    }
+}
+
+test "Terminal: eraseLine left protected attributes respected with iso" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseLine(.left, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC", str);
+    }
+}
+
+test "Terminal: eraseLine left protected attributes ignored with dec most recent" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setProtectedMode(.dec);
+    t.setProtectedMode(.off);
+    t.setCursorPos(1, 2);
+    t.eraseLine(.left, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C", str);
+    }
+}
+
+test "Terminal: eraseLine left protected attributes ignored with dec set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.eraseLine(.left, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C", str);
+    }
+}
+
+test "Terminal: eraseLine left protected requested" {
     const alloc = testing.allocator;
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
@@ -3876,7 +4135,86 @@ test "Terminal: eraseLine protected left" {
     }
 }
 
-test "Terminal: eraseLine protected complete" {
+test "Terminal: eraseLine complete preserves background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    for ("ABCDE") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.screen.cursor.pen = pen;
+    t.eraseLine(.complete, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+        for (0..5) |x| {
+            const cell = t.screen.getCell(.active, 0, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: eraseLine complete protected attributes respected with iso" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseLine(.complete, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC", str);
+    }
+}
+
+test "Terminal: eraseLine complete protected attributes ignored with dec most recent" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.setProtectedMode(.dec);
+    t.setProtectedMode(.off);
+    t.setCursorPos(1, 2);
+    t.eraseLine(.complete, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+}
+
+test "Terminal: eraseLine complete protected attributes ignored with dec set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 2);
+    t.eraseLine(.complete, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+}
+
+test "Terminal: eraseLine complete protected requested" {
     const alloc = testing.allocator;
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
