@@ -595,6 +595,17 @@ pub fn invokeCharset(
     }
 }
 
+/// Print UTF-8 encoded string to the terminal. This string must be
+/// a single line, newlines and carriage returns and other control
+/// characters are not processed.
+///
+/// This is not public because it is only used for tests rigt now.
+fn printString(self: *Terminal, str: []const u8) !void {
+    const view = try std.unicode.Utf8View.init(str);
+    var it = view.iterator();
+    while (it.nextCodepoint()) |cp| try self.print(cp);
+}
+
 pub fn print(self: *Terminal, c: u21) !void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -999,7 +1010,7 @@ pub fn eraseDisplay(
     self: *Terminal,
     alloc: Allocator,
     mode: csi.EraseDisplay,
-    protected: bool,
+    protected_req: bool,
 ) void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -1009,6 +1020,11 @@ pub fn eraseDisplay(
         .bg = self.screen.cursor.pen.bg,
         .attrs = .{ .has_bg = true },
     };
+
+    // We respect protected attributes if explicitly requested (probably
+    // a DECSEL sequence) or if our last protected mode was ISO even if its
+    // not currently set.
+    const protected = self.screen.protected_mode == .iso or protected_req;
 
     switch (mode) {
         .complete => {
@@ -1040,16 +1056,10 @@ pub fn eraseDisplay(
         .below => {
             // All lines to the right (including the cursor)
             {
+                self.eraseLine(.right, protected_req);
                 const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
                 row.setWrapped(false);
                 row.setDirty(true);
-                for (self.screen.cursor.x..self.cols) |x| {
-                    if (row.header().flags.grapheme) row.clearGraphemes(x);
-                    const cell = row.getCellPtr(x);
-                    if (protected and cell.attrs.protected) continue;
-                    cell.* = pen;
-                    cell.char = 0;
-                }
             }
 
             // All lines below
@@ -1072,18 +1082,12 @@ pub fn eraseDisplay(
 
         .above => {
             // Erase to the left (including the cursor)
-            var x: usize = 0;
-            while (x <= self.screen.cursor.x) : (x += 1) {
-                const cell = self.screen.getCellPtr(.active, self.screen.cursor.y, x);
-                if (protected and cell.attrs.protected) continue;
-                cell.* = pen;
-                cell.char = 0;
-            }
+            self.eraseLine(.left, protected_req);
 
             // All lines above
             var y: usize = 0;
             while (y < self.screen.cursor.y) : (y += 1) {
-                x = 0;
+                var x: usize = 0;
                 while (x < self.cols) : (x += 1) {
                     const cell = self.screen.getCellPtr(.active, y, x);
                     if (protected and cell.attrs.protected) continue;
@@ -1101,126 +1105,6 @@ pub fn eraseDisplay(
             log.err("failed to clear scrollback: {}", .{err});
         },
     }
-}
-
-test "Terminal: eraseDisplay above" {
-    var t = try init(testing.allocator, 80, 80);
-    defer t.deinit(testing.allocator);
-
-    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
-    t.screen.cursor.pen = Screen.Cell{
-        .char = 'a',
-        .bg = pink,
-        .fg = pink,
-        .attrs = .{ .bold = true, .has_bg = true },
-    };
-    const cell_ptr = t.screen.getCellPtr(.active, 0, 0);
-    cell_ptr.* = t.screen.cursor.pen;
-    // verify the cell was set
-    var cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
-    try testing.expect(cell.char == 'a');
-    try testing.expect(cell.attrs.bold);
-    // move the cursor below it
-    t.screen.cursor.y = 40;
-    t.screen.cursor.x = 40;
-    // erase above the cursor
-    t.eraseDisplay(testing.allocator, .above, false);
-    // check it was erased
-    cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
-    try testing.expect(cell.char == 0);
-    try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
-
-    // Check that our pen hasn't changed
-    try testing.expect(t.screen.cursor.pen.attrs.bold);
-
-    // check that another cell got the correct bg
-    cell = t.screen.getCell(.active, 0, 1);
-    try testing.expect(cell.bg.eql(pink));
-}
-
-test "Terminal: eraseDisplay below" {
-    var t = try init(testing.allocator, 80, 80);
-    defer t.deinit(testing.allocator);
-
-    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
-    t.screen.cursor.pen = Screen.Cell{
-        .char = 'a',
-        .bg = pink,
-        .fg = pink,
-        .attrs = .{ .bold = true, .has_bg = true },
-    };
-    const cell_ptr = t.screen.getCellPtr(.active, 60, 60);
-    cell_ptr.* = t.screen.cursor.pen;
-    // verify the cell was set
-    var cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
-    try testing.expect(cell.char == 'a');
-    try testing.expect(cell.attrs.bold);
-    // erase below the cursor
-    t.eraseDisplay(testing.allocator, .below, false);
-    // check it was erased
-    cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
-    try testing.expect(cell.char == 0);
-    try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
-
-    // check that another cell got the correct bg
-    cell = t.screen.getCell(.active, 0, 1);
-    try testing.expect(cell.bg.eql(pink));
-}
-
-test "Terminal: eraseDisplay complete" {
-    var t = try init(testing.allocator, 80, 80);
-    defer t.deinit(testing.allocator);
-
-    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
-    t.screen.cursor.pen = Screen.Cell{
-        .char = 'a',
-        .bg = pink,
-        .fg = pink,
-        .attrs = .{ .bold = true, .has_bg = true },
-    };
-    var cell_ptr = t.screen.getCellPtr(.active, 60, 60);
-    cell_ptr.* = t.screen.cursor.pen;
-    cell_ptr = t.screen.getCellPtr(.active, 0, 0);
-    cell_ptr.* = t.screen.cursor.pen;
-    // verify the cell was set
-    var cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
-    try testing.expect(cell.char == 'a');
-    try testing.expect(cell.attrs.bold);
-    // verify the cell was set
-    cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
-    try testing.expect(cell.char == 'a');
-    try testing.expect(cell.attrs.bold);
-    // position our cursor between the cells
-    t.screen.cursor.y = 30;
-    // erase everything
-    t.eraseDisplay(testing.allocator, .complete, false);
-    // check they were erased
-    cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
-    try testing.expect(cell.char == 0);
-    try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
-    cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
-    try testing.expect(cell.char == 0);
-    try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
 }
 
 /// Erase the line.
@@ -3983,8 +3867,6 @@ test "Terminal: eraseLine right protected requested" {
     }
 }
 
-// ------------------- SPLIT
-
 test "Terminal: eraseLine simple erase left" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
@@ -4231,6 +4113,467 @@ test "Terminal: eraseLine complete protected requested" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("     X", str);
     }
+}
+
+test "Terminal: eraseDisplay simple erase below" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .below, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nD", str);
+    }
+}
+
+test "Terminal: eraseDisplay erase below preserves SGR bg" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    t.screen.cursor.pen = pen;
+    t.eraseDisplay(alloc, .below, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nD", str);
+        for (1..5) |x| {
+            const cell = t.screen.getCell(.active, 1, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: eraseDisplay below split multi-cell" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("AB橋C");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DE橋F");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GH橋I");
+    t.setCursorPos(2, 4);
+    t.eraseDisplay(alloc, .below, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AB橋C\nDE", str);
+    }
+}
+
+test "Terminal: eraseDisplay below protected attributes respected with iso" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .below, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: eraseDisplay below protected attributes ignored with dec most recent" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setProtectedMode(.dec);
+    t.setProtectedMode(.off);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .below, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nD", str);
+    }
+}
+
+test "Terminal: eraseDisplay below protected attributes ignored with dec set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .below, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nD", str);
+    }
+}
+
+test "Terminal: eraseDisplay simple erase above" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .above, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n  F\nGHI", str);
+    }
+}
+
+test "Terminal: eraseDisplay below protected attributes respected with force" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .below, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: eraseDisplay erase above preserves SGR bg" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    t.screen.cursor.pen = pen;
+    t.eraseDisplay(alloc, .above, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n  F\nGHI", str);
+        for (0..2) |x| {
+            const cell = t.screen.getCell(.active, 1, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: eraseDisplay above split multi-cell" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("AB橋C");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DE橋F");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GH橋I");
+    t.setCursorPos(2, 3);
+    t.eraseDisplay(alloc, .above, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n    F\nGH橋I", str);
+    }
+}
+
+test "Terminal: eraseDisplay above protected attributes respected with iso" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .above, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: eraseDisplay above protected attributes ignored with dec most recent" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.iso);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setProtectedMode(.dec);
+    t.setProtectedMode(.off);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .above, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n  F\nGHI", str);
+    }
+}
+
+test "Terminal: eraseDisplay above protected attributes ignored with dec set" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .above, false);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n  F\nGHI", str);
+    }
+}
+
+test "Terminal: eraseDisplay above protected attributes respected with force" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setProtectedMode(.dec);
+    for ("ABC") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("DEF") |c| try t.print(c);
+    t.carriageReturn();
+    try t.linefeed();
+    for ("GHI") |c| try t.print(c);
+    t.setCursorPos(2, 2);
+    t.eraseDisplay(alloc, .above, true);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\nGHI", str);
+    }
+}
+test "Terminal: eraseDisplay above" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen = Screen.Cell{
+        .char = 'a',
+        .bg = pink,
+        .fg = pink,
+        .attrs = .{ .bold = true, .has_bg = true },
+    };
+    const cell_ptr = t.screen.getCellPtr(.active, 0, 0);
+    cell_ptr.* = t.screen.cursor.pen;
+    // verify the cell was set
+    var cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // move the cursor below it
+    t.screen.cursor.y = 40;
+    t.screen.cursor.x = 40;
+    // erase above the cursor
+    t.eraseDisplay(testing.allocator, .above, false);
+    // check it was erased
+    cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
+
+    // Check that our pen hasn't changed
+    try testing.expect(t.screen.cursor.pen.attrs.bold);
+
+    // check that another cell got the correct bg
+    cell = t.screen.getCell(.active, 0, 1);
+    try testing.expect(cell.bg.eql(pink));
+}
+
+test "Terminal: eraseDisplay below" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen = Screen.Cell{
+        .char = 'a',
+        .bg = pink,
+        .fg = pink,
+        .attrs = .{ .bold = true, .has_bg = true },
+    };
+    const cell_ptr = t.screen.getCellPtr(.active, 60, 60);
+    cell_ptr.* = t.screen.cursor.pen;
+    // verify the cell was set
+    var cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // erase below the cursor
+    t.eraseDisplay(testing.allocator, .below, false);
+    // check it was erased
+    cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
+
+    // check that another cell got the correct bg
+    cell = t.screen.getCell(.active, 0, 1);
+    try testing.expect(cell.bg.eql(pink));
+}
+
+test "Terminal: eraseDisplay complete" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen = Screen.Cell{
+        .char = 'a',
+        .bg = pink,
+        .fg = pink,
+        .attrs = .{ .bold = true, .has_bg = true },
+    };
+    var cell_ptr = t.screen.getCellPtr(.active, 60, 60);
+    cell_ptr.* = t.screen.cursor.pen;
+    cell_ptr = t.screen.getCellPtr(.active, 0, 0);
+    cell_ptr.* = t.screen.cursor.pen;
+    // verify the cell was set
+    var cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // verify the cell was set
+    cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.char == 'a');
+    try testing.expect(cell.attrs.bold);
+    // position our cursor between the cells
+    t.screen.cursor.y = 30;
+    // erase everything
+    t.eraseDisplay(testing.allocator, .complete, false);
+    // check they were erased
+    cell = t.screen.getCell(.active, 60, 60);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
+    cell = t.screen.getCell(.active, 0, 0);
+    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.char == 0);
+    try testing.expect(!cell.attrs.bold);
+    try testing.expect(cell.attrs.has_bg);
 }
 
 test "Terminal: eraseDisplay protected complete" {
