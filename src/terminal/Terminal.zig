@@ -1564,8 +1564,14 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
     // Rare, but happens
     if (count == 0) return;
 
+    // If the cursor is outside the scroll region we do nothing.
+    if (self.screen.cursor.y < self.scrolling_region.top or
+        self.screen.cursor.y > self.scrolling_region.bottom or
+        self.screen.cursor.x < self.scrolling_region.left or
+        self.screen.cursor.x > self.scrolling_region.right) return;
+
     // Move the cursor to the left margin
-    self.screen.cursor.x = 0;
+    self.screen.cursor.x = self.scrolling_region.left;
     self.screen.cursor.pending_wrap = false;
 
     // Remaining rows from our cursor
@@ -1582,14 +1588,19 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
 
     // Ensure we have the lines populated to the end
     while (y > top) : (y -= 1) {
-        try self.screen.copyRow(.{ .active = y }, .{ .active = y - adjusted_count });
+        const src = self.screen.getRow(.{ .active = y - adjusted_count });
+        const dst = self.screen.getRow(.{ .active = y });
+        try dst.copyRow(src);
     }
 
     // Insert count blank lines
     y = self.screen.cursor.y;
     while (y < self.screen.cursor.y + adjusted_count) : (y += 1) {
         const row = self.screen.getRow(.{ .active = y });
-        row.clear(self.screen.cursor.pen);
+        row.fillSlice(.{
+            .bg = self.screen.cursor.pen.bg,
+            .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
+        }, self.scrolling_region.left, self.scrolling_region.right + 1);
     }
 }
 
@@ -2647,6 +2658,101 @@ test "Terminal: deleteLines resets wrap" {
         try testing.expectEqualStrings("B", str);
     }
 }
+
+test "Terminal: insertLines simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setCursorPos(2, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\n\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: insertLines outside of scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setScrollingRegion(3, 4);
+    t.setCursorPos(2, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: insertLines top/bottom scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("123");
+    t.setScrollingRegion(1, 3);
+    t.setCursorPos(2, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\n\nDEF\n123", str);
+    }
+}
+
+// test "Terminal: insertLines left/right scroll region" {
+//     const alloc = testing.allocator;
+//     var t = try init(alloc, 10, 10);
+//     defer t.deinit(alloc);
+//
+//     try t.printString("ABC123");
+//     t.carriageReturn();
+//     try t.linefeed();
+//     try t.printString("DEF456");
+//     t.carriageReturn();
+//     try t.linefeed();
+//     try t.printString("GHI789");
+//     t.scrolling_region.left = 1;
+//     t.scrolling_region.right = 3;
+//     t.setCursorPos(2, 2);
+//     try t.insertLines(1);
+//
+//     {
+//         var str = try t.plainString(testing.allocator);
+//         defer testing.allocator.free(str);
+//         try testing.expectEqualStrings("ABC123\nD   56\nGEF489\n HI7", str);
+//     }
+// }
 
 test "Terminal: insertLines" {
     const alloc = testing.allocator;
