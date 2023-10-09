@@ -1702,7 +1702,6 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
 }
 
 /// Scroll the text down by one row.
-/// TODO: test
 pub fn scrollDown(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -5365,5 +5364,80 @@ test "Terminal: cursorRight right of right margin" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("    X", str);
+    }
+}
+
+test "Terminal: scrollDown simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setCursorPos(2, 2);
+    const cursor = t.screen.cursor;
+    try t.scrollDown(1);
+    try testing.expectEqual(cursor, t.screen.cursor);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: scrollDown outside of scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setScrollingRegion(3, 4);
+    t.setCursorPos(2, 2);
+    const cursor = t.screen.cursor;
+    try t.scrollDown(1);
+    try testing.expectEqual(cursor, t.screen.cursor);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\n\nGHI", str);
+    }
+}
+
+test "Terminal: scrollDown left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(2, 2);
+    const cursor = t.screen.cursor;
+    try t.scrollDown(1);
+    try testing.expectEqual(cursor, t.screen.cursor);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A   23\nDBC156\nGEF489\n HI7", str);
     }
 }

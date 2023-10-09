@@ -1,0 +1,15 @@
+import VTSequence from "@/components/VTSequence";
+
+# Scroll Down (SD)
+
+<VTSequence sequence={["CSI", "Pn", "T"]} />
+
+Inserts `n` lines at the top of the scroll region and shift existing
+lines down.
+
+This sequence is functionally identical to
+[Insert Line (IL)](/vt/il) with the cursor position set to the top of
+the scroll region. The cursor position after the operation must be unchanged
+from when SD was invoked.
+
+This sequence unsets the pending wrap state.
