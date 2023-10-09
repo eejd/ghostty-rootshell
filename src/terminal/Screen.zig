@@ -498,6 +498,27 @@ pub const Row = struct {
         }
     }
 
+    /// Copy a single cell from column x in src to column x in this row.
+    pub fn copyCell(self: Row, src: Row, x: usize) !void {
+        const dst_cell = self.getCellPtr(x);
+        const src_cell = src.getCellPtr(x);
+
+        // If our destination has graphemes, we have to clear them.
+        if (dst_cell.attrs.grapheme) self.clearGraphemes(x);
+        dst_cell.* = src_cell.*;
+
+        // If the source doesn't have any graphemes, then we can just copy.
+        if (!src_cell.attrs.grapheme) return;
+
+        // Source cell has graphemes. Copy them.
+        const src_key = src.getId() + x + 1;
+        const src_data = src.screen.graphemes.get(src_key) orelse return;
+        const dst_key = self.getId() + x + 1;
+        const dst_gop = try self.screen.graphemes.getOrPut(self.screen.alloc, dst_key);
+        dst_gop.value_ptr.* = try src_data.copy(self.screen.alloc);
+        self.storage[0].header.flags.grapheme = true;
+    }
+
     /// Copy the row src into this row. The row can be from another screen.
     pub fn copyRow(self: Row, src: Row) !void {
         // If we have graphemes, clear first to unset them.
