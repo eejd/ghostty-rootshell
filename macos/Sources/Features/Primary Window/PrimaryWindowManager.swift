@@ -96,6 +96,14 @@ class PrimaryWindowManager {
     
     func addNewWindow(withBaseConfig config: Ghostty.SurfaceConfiguration? = nil) {
         guard let controller = createWindowController(withBaseConfig: config) else { return }
+
+        // For new windows, explicitly disallow tabbing with other windows.
+        // This overrides the value of userTabbingPreference. Rationale:
+        // Ghostty explicitly provides both "New Tab" and "New Window"
+        // functionality, so there's no reason to make "New Window" open in a
+        // tab.
+        controller.window?.tabbingMode = .disallowed;
+
         controller.showWindow(self)
         guard let newWindow = addManagedWindow(windowController: controller)?.window else { return }
         newWindow.makeKeyAndOrderFront(nil)
