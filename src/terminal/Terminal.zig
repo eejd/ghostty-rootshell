@@ -1711,6 +1711,7 @@ pub fn scrollDown(self: *Terminal, count: usize) !void {
 
     // Move to the top of the scroll region
     self.screen.cursor.y = self.scrolling_region.top;
+    self.screen.cursor.x = self.scrolling_region.left;
     try self.insertLines(count);
 }
 
@@ -5430,6 +5431,32 @@ test "Terminal: scrollDown left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+    const cursor = t.screen.cursor;
+    try t.scrollDown(1);
+    try testing.expectEqual(cursor, t.screen.cursor);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A   23\nDBC156\nGEF489\n HI7", str);
+    }
+}
+
+test "Terminal: scrollDown outside of left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(1, 1);
     const cursor = t.screen.cursor;
     try t.scrollDown(1);
     try testing.expectEqual(cursor, t.screen.cursor);
