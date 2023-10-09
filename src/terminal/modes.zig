@@ -165,7 +165,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "focus_event", .value = 1004 },
     .{ .name = "mouse_format_utf8", .value = 1005 },
     .{ .name = "mouse_format_sgr", .value = 1006 },
-    .{ .name = "mouse_alternate_scroll", .value = 1007 },
+    .{ .name = "mouse_alternate_scroll", .value = 1007, .default = true },
     .{ .name = "mouse_format_urxvt", .value = 1015 },
     .{ .name = "mouse_format_sgr_pixels", .value = 1016 },
     .{ .name = "alt_esc_prefix", .value = 1036, .default = true },
