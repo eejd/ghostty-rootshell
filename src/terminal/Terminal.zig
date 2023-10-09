@@ -1452,7 +1452,6 @@ pub fn horizontalTabBack(self: *Terminal) !void {
 }
 
 /// Clear tab stops.
-/// TODO: test
 pub fn tabClear(self: *Terminal, cmd: csi.TabClear) void {
     switch (cmd) {
         .current => self.tabstops.unset(self.screen.cursor.x),
@@ -5440,4 +5439,27 @@ test "Terminal: scrollDown left/right scroll region" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A   23\nDBC156\nGEF489\n HI7", str);
     }
+}
+
+test "Terminal: tabClear single" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 30, 5);
+    defer t.deinit(alloc);
+
+    try t.horizontalTab();
+    t.tabClear(.current);
+    t.setCursorPos(1, 1);
+    try t.horizontalTab();
+    try testing.expectEqual(@as(usize, 16), t.screen.cursor.x);
+}
+
+test "Terminal: tabClear all" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 30, 5);
+    defer t.deinit(alloc);
+
+    t.tabClear(.all);
+    t.setCursorPos(1, 1);
+    try t.horizontalTab();
+    try testing.expectEqual(@as(usize, 29), t.screen.cursor.x);
 }
