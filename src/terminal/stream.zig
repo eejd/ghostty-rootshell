@@ -1102,6 +1102,11 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 } else log.warn("unimplemented invokeCharset: {}", .{action}),
 
+                // DECID
+                'Z' => if (@hasDecl(T, "deviceAttributes")) {
+                    try self.handler.deviceAttributes(.primary, &.{});
+                } else log.warn("unimplemented ESC callback: {}", .{action}),
+
                 // RIS - Full Reset
                 'c' => if (@hasDecl(T, "fullReset")) switch (action.intermediates.len) {
                     0 => try self.handler.fullReset(),
