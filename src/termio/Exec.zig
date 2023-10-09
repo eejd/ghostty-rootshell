@@ -1408,19 +1408,20 @@ const StreamHandler = struct {
         }
     }
 
-    pub fn requestMode(self: *StreamHandler, mode_raw: u16) !void {
+    pub fn requestMode(self: *StreamHandler, mode_raw: u16, ansi: bool) !void {
         // Get the mode value and respond.
         const code: u8 = code: {
-            if (!terminal.modes.hasSupport(mode_raw)) break :code 0;
-            if (self.terminal.modes.get(@enumFromInt(mode_raw))) break :code 1;
+            const mode = terminal.modes.modeFromInt(mode_raw, ansi) orelse break :code 0;
+            if (self.terminal.modes.get(mode)) break :code 1;
             break :code 2;
         };
 
         var msg: termio.Message = .{ .write_small = .{} };
         const resp = try std.fmt.bufPrint(
             &msg.write_small.data,
-            "\x1B[?{};{}$y",
+            "\x1B[{s}{};{}$y",
             .{
+                if (ansi) "" else "?",
                 mode_raw,
                 code,
             },
