@@ -1197,16 +1197,35 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 
     if (count == 0) return;
 
+    // If our cursor is outside the margins then do nothing. We DO reset
+    // wrap state still so this must remain below the above logic.
+    if (self.screen.cursor.x < self.scrolling_region.left or
+        self.screen.cursor.x > self.scrolling_region.right) return;
+
     // This resets the pending wrap state
     self.screen.cursor.pending_wrap = false;
 
+    const pen: Screen.Cell = .{
+        .bg = self.screen.cursor.pen.bg,
+        .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
+    };
+
+    // If our X is a wide spacer tail then we need to erase the
+    // previous cell too so we don't split a multi-cell character.
+    const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    if (self.screen.cursor.x > 0) {
+        const cell = line.getCellPtr(self.screen.cursor.x);
+        if (cell.attrs.wide_spacer_tail) {
+            line.getCellPtr(self.screen.cursor.x - 1).* = pen;
+        }
+    }
+
     // We go from our cursor right to the end and either copy the cell
     // "count" away or clear it.
-    const line = self.screen.getRow(.{ .active = self.screen.cursor.y });
-    for (self.screen.cursor.x..self.cols) |x| {
+    for (self.screen.cursor.x..self.scrolling_region.right + 1) |x| {
         const copy_x = x + count;
-        if (copy_x >= self.cols) {
-            line.getCellPtr(x).* = .{};
+        if (copy_x >= self.scrolling_region.right + 1) {
+            line.getCellPtr(x).* = pen;
             continue;
         }
 
@@ -1484,7 +1503,9 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // Unset pending wrap state without wrapping
+    // Unset pending wrap state without wrapping. Note: this purposely
+    // happens BEFORE the scroll region check below, because that's what
+    // xterm does.
     self.screen.cursor.pending_wrap = false;
 
     // If our cursor is outside the margins then do nothing. We DO reset
@@ -3466,21 +3487,22 @@ test "Terminal: insertBlanks inside left/right scroll region" {
 
 test "Terminal: insertBlanks outside left/right scroll region" {
     const alloc = testing.allocator;
-    var t = try init(alloc, 10, 10);
+    var t = try init(alloc, 6, 10);
     defer t.deinit(alloc);
 
+    t.setCursorPos(1, 4);
+    for ("ABC") |c| try t.print(c);
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
-    t.setCursorPos(1, 3);
-    for ("ABC") |c| try t.print(c);
-    t.setCursorPos(1, 1);
+    try testing.expect(t.screen.cursor.pending_wrap);
     t.insertBlanks(2);
+    try testing.expect(!t.screen.cursor.pending_wrap);
     try t.print('X');
 
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("X ABC", str);
+        try testing.expectEqualStrings("   ABX", str);
     }
 }
 
@@ -3722,6 +3744,101 @@ test "Terminal: deleteChars resets wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: deleteChars simple operation" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.setCursorPos(1, 3);
+    try t.deleteChars(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AB23", str);
+    }
+}
+
+test "Terminal: deleteChars background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    try t.printString("ABC123");
+    t.setCursorPos(1, 3);
+    t.screen.cursor.pen = pen;
+    try t.deleteChars(2);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AB23", str);
+        for (t.cols - 2..t.cols) |x| {
+            const cell = t.screen.getCell(.active, 0, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
+test "Terminal: deleteChars outside scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 6, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 4;
+    try testing.expect(t.screen.cursor.pending_wrap);
+    try t.deleteChars(2);
+    try testing.expect(t.screen.cursor.pending_wrap);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC123", str);
+    }
+}
+
+test "Terminal: deleteChars inside scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 6, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.scrolling_region.left = 2;
+    t.scrolling_region.right = 4;
+    t.setCursorPos(1, 4);
+    try t.deleteChars(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC2 3", str);
+    }
+}
+
+test "Terminal: deleteChars split wide character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 6, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("A橋123");
+    t.setCursorPos(1, 3);
+    try t.deleteChars(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A 123", str);
     }
 }
 
