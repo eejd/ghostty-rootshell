@@ -1626,23 +1626,58 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If our cursor is outside of the scroll region, do nothing.
+    // If the cursor is outside the scroll region we do nothing.
     if (self.screen.cursor.y < self.scrolling_region.top or
-        self.screen.cursor.y > self.scrolling_region.bottom)
+        self.screen.cursor.y > self.scrolling_region.bottom or
+        self.screen.cursor.x < self.scrolling_region.left or
+        self.screen.cursor.x > self.scrolling_region.right) return;
+
+    // Move the cursor to the left margin
+    self.screen.cursor.x = self.scrolling_region.left;
+    self.screen.cursor.pending_wrap = false;
+
+    // If this is a full line margin then we can do a faster scroll.
+    if (self.scrolling_region.left == 0 and
+        self.scrolling_region.right == self.cols - 1)
     {
+        self.screen.scrollRegionUp(
+            .{ .active = self.screen.cursor.y },
+            .{ .active = self.scrolling_region.bottom },
+            @min(count, self.scrolling_region.bottom - self.screen.cursor.y),
+        );
         return;
     }
 
-    // Move the cursor to the left margin
-    self.screen.cursor.x = 0;
-    self.screen.cursor.pending_wrap = false;
+    // Left/right margin is set, we need to do a slower scroll.
+    // Remaining rows from our cursor in the region, 1-indexed.
+    const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
-    // Perform the scroll
-    self.screen.scrollRegionUp(
-        .{ .active = self.screen.cursor.y },
-        .{ .active = self.scrolling_region.bottom },
-        @min(count, self.scrolling_region.bottom - self.screen.cursor.y),
-    );
+    // If our count is greater than the remaining amount, we can just
+    // clear the region using insertLines.
+    if (count >= rem) {
+        try self.insertLines(count);
+        return;
+    }
+
+    // The amount of lines we need to scroll up.
+    const scroll_amount = rem - count;
+    const scroll_top = self.scrolling_region.bottom - scroll_amount;
+    for (self.screen.cursor.y..scroll_top + 1) |y| {
+        const src = self.screen.getRow(.{ .active = y + count });
+        const dst = self.screen.getRow(.{ .active = y });
+        for (self.scrolling_region.left..self.scrolling_region.right + 1) |x| {
+            try dst.copyCell(src, x);
+        }
+    }
+
+    // Insert blank lines
+    for (scroll_top + 1..self.scrolling_region.bottom + 1) |y| {
+        const row = self.screen.getRow(.{ .active = y });
+        row.fillSlice(.{
+            .bg = self.screen.cursor.pen.bg,
+            .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
+        }, self.scrolling_region.left, self.scrolling_region.right + 1);
+    }
 }
 
 /// Scroll the text down by one row.
@@ -2658,6 +2693,76 @@ test "Terminal: deleteLines resets wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("B", str);
+    }
+}
+
+test "Terminal: deleteLines simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setCursorPos(2, 2);
+    try t.deleteLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nGHI", str);
+    }
+}
+
+test "Terminal: deleteLines left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(2, 2);
+    try t.deleteLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC123\nDHI756\nG   89", str);
+    }
+}
+
+test "Terminal: deleteLines left/right scroll region high count" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(2, 2);
+    try t.deleteLines(100);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC123\nD   56\nG   89", str);
     }
 }
 
