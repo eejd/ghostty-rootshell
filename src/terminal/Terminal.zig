@@ -3177,6 +3177,32 @@ test "Terminal: index bottom of primary screen" {
     }
 }
 
+test "Terminal: index bottom of primary screen background sgr" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    t.setCursorPos(5, 1);
+    try t.print('A');
+    t.screen.cursor.pen = pen;
+    try t.index();
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\n\nA", str);
+        for (0..5) |x| {
+            const cell = t.screen.getCell(.active, 4, x);
+            try testing.expectEqual(pen, cell);
+        }
+    }
+}
+
 test "Terminal: index inside scroll region" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
