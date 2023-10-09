@@ -1590,7 +1590,9 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
     while (y > top) : (y -= 1) {
         const src = self.screen.getRow(.{ .active = y - adjusted_count });
         const dst = self.screen.getRow(.{ .active = y });
-        try dst.copyRow(src);
+        for (self.scrolling_region.left..self.scrolling_region.right + 1) |x| {
+            try dst.copyCell(src, x);
+        }
     }
 
     // Insert count blank lines
@@ -2730,29 +2732,29 @@ test "Terminal: insertLines top/bottom scroll region" {
     }
 }
 
-// test "Terminal: insertLines left/right scroll region" {
-//     const alloc = testing.allocator;
-//     var t = try init(alloc, 10, 10);
-//     defer t.deinit(alloc);
-//
-//     try t.printString("ABC123");
-//     t.carriageReturn();
-//     try t.linefeed();
-//     try t.printString("DEF456");
-//     t.carriageReturn();
-//     try t.linefeed();
-//     try t.printString("GHI789");
-//     t.scrolling_region.left = 1;
-//     t.scrolling_region.right = 3;
-//     t.setCursorPos(2, 2);
-//     try t.insertLines(1);
-//
-//     {
-//         var str = try t.plainString(testing.allocator);
-//         defer testing.allocator.free(str);
-//         try testing.expectEqualStrings("ABC123\nD   56\nGEF489\n HI7", str);
-//     }
-// }
+test "Terminal: insertLines left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(2, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC123\nD   56\nGEF489\n HI7", str);
+    }
+}
 
 test "Terminal: insertLines" {
     const alloc = testing.allocator;
