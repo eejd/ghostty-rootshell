@@ -511,29 +511,41 @@ pub fn Stream(comptime Handler: type) type {
                 ) else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // SM - Set Mode
-                'h' => if (@hasDecl(T, "setMode")) {
-                    for (action.params) |mode| {
-                        if (modes.hasSupport(mode)) {
-                            try self.handler.setMode(
-                                @enumFromInt(mode),
-                                true,
-                            );
+                'h' => if (@hasDecl(T, "setMode")) mode: {
+                    const ansi_mode = ansi: {
+                        if (action.intermediates.len == 0) break :ansi true;
+                        if (action.intermediates.len == 1 and
+                            action.intermediates[0] == '?') break :ansi false;
+
+                        log.warn("invalid set mode command: {}", .{action});
+                        break :mode;
+                    };
+
+                    for (action.params) |mode_int| {
+                        if (modes.modeFromInt(mode_int, ansi_mode)) |mode| {
+                            try self.handler.setMode(mode, true);
                         } else {
-                            log.warn("unimplemented mode: {}", .{mode});
+                            log.warn("unimplemented mode: {}", .{mode_int});
                         }
                     }
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
 
                 // RM - Reset Mode
-                'l' => if (@hasDecl(T, "setMode")) {
-                    for (action.params) |mode| {
-                        if (modes.hasSupport(mode)) {
-                            try self.handler.setMode(
-                                @enumFromInt(mode),
-                                false,
-                            );
+                'l' => if (@hasDecl(T, "setMode")) mode: {
+                    const ansi_mode = ansi: {
+                        if (action.intermediates.len == 0) break :ansi true;
+                        if (action.intermediates.len == 1 and
+                            action.intermediates[0] == '?') break :ansi false;
+
+                        log.warn("invalid set mode command: {}", .{action});
+                        break :mode;
+                    };
+
+                    for (action.params) |mode_int| {
+                        if (modes.modeFromInt(mode_int, ansi_mode)) |mode| {
+                            try self.handler.setMode(mode, false);
                         } else {
-                            log.warn("unimplemented mode: {}", .{mode});
+                            log.warn("unimplemented mode: {}", .{mode_int});
                         }
                     }
                 } else log.warn("unimplemented CSI callback: {}", .{action}),
@@ -646,15 +658,20 @@ pub fn Stream(comptime Handler: type) type {
                 // DECRQM - Request Mode
                 'p' => switch (action.intermediates.len) {
                     2 => decrqm: {
-                        if (action.intermediates[0] != '?' and
-                            action.intermediates[1] != '$')
-                        {
+                        const ansi_mode = ansi: {
+                            switch (action.intermediates.len) {
+                                1 => if (action.intermediates[0] == '$') break :ansi true,
+                                2 => if (action.intermediates[0] == '?' and
+                                    action.intermediates[1] == '$') break :ansi false,
+                                else => {},
+                            }
+
                             log.warn(
                                 "ignoring unimplemented CSI p with intermediates: {s}",
                                 .{action.intermediates},
                             );
                             break :decrqm;
-                        }
+                        };
 
                         if (action.params.len != 1) {
                             log.warn("invalid DECRQM command: {}", .{action});
@@ -662,7 +679,7 @@ pub fn Stream(comptime Handler: type) type {
                         }
 
                         if (@hasDecl(T, "requestMode")) {
-                            try self.handler.requestMode(action.params[0]);
+                            try self.handler.requestMode(action.params[0], ansi_mode);
                         } else log.warn("unimplemented DECRQM callback: {}", .{action});
                     },
 
@@ -746,15 +763,13 @@ pub fn Stream(comptime Handler: type) type {
                     1 => switch (action.intermediates[0]) {
                         // Restore Mode
                         '?' => if (@hasDecl(T, "restoreMode")) {
-                            for (action.params) |mode| {
-                                if (modes.hasSupport(mode)) {
-                                    try self.handler.restoreMode(
-                                        @enumFromInt(mode),
-                                    );
+                            for (action.params) |mode_int| {
+                                if (modes.modeFromInt(mode_int, false)) |mode| {
+                                    try self.handler.restoreMode(mode);
                                 } else {
                                     log.warn(
                                         "unimplemented restore mode: {}",
-                                        .{mode},
+                                        .{mode_int},
                                     );
                                 }
                             }
@@ -776,15 +791,13 @@ pub fn Stream(comptime Handler: type) type {
                 's' => switch (action.intermediates.len) {
                     1 => switch (action.intermediates[0]) {
                         '?' => if (@hasDecl(T, "saveMode")) {
-                            for (action.params) |mode| {
-                                if (modes.hasSupport(mode)) {
-                                    try self.handler.saveMode(
-                                        @enumFromInt(mode),
-                                    );
+                            for (action.params) |mode_int| {
+                                if (modes.modeFromInt(mode_int, false)) |mode| {
+                                    try self.handler.saveMode(mode);
                                 } else {
                                     log.warn(
                                         "unimplemented save mode: {}",
-                                        .{mode},
+                                        .{mode_int},
                                     );
                                 }
                             }
@@ -1219,7 +1232,7 @@ test "stream: cursor right (CUF)" {
     try testing.expectEqual(@as(u16, 0), s.handler.amount);
 }
 
-test "stream: set mode (SM) and reset mode (RM)" {
+test "stream: dec set mode (SM) and reset mode (RM)" {
     const H = struct {
         mode: modes.Mode = @as(modes.Mode, @enumFromInt(1)),
         pub fn setMode(self: *@This(), mode: modes.Mode, v: bool) !void {
@@ -1234,6 +1247,42 @@ test "stream: set mode (SM) and reset mode (RM)" {
 
     try s.nextSlice("\x1B[?6l");
     try testing.expectEqual(@as(modes.Mode, @enumFromInt(1)), s.handler.mode);
+}
+
+test "stream: ansi set mode (SM) and reset mode (RM)" {
+    const H = struct {
+        mode: ?modes.Mode = null,
+
+        pub fn setMode(self: *@This(), mode: modes.Mode, v: bool) !void {
+            self.mode = null;
+            if (v) self.mode = mode;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[4h");
+    try testing.expectEqual(@as(modes.Mode, .insert), s.handler.mode.?);
+
+    try s.nextSlice("\x1B[4l");
+    try testing.expect(s.handler.mode == null);
+}
+
+test "stream: ansi set mode (SM) and reset mode (RM) with unknown value" {
+    const H = struct {
+        mode: ?modes.Mode = null,
+
+        pub fn setMode(self: *@This(), mode: modes.Mode, v: bool) !void {
+            self.mode = null;
+            if (v) self.mode = mode;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[6h");
+    try testing.expect(s.handler.mode == null);
+
+    try s.nextSlice("\x1B[6l");
+    try testing.expect(s.handler.mode == null);
 }
 
 test "stream: restore mode" {

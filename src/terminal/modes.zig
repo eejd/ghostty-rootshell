@@ -103,27 +103,45 @@ pub const Mode = mode_enum: {
     for (entries, 0..) |entry, i| {
         fields[i] = .{
             .name = entry.name,
-            .value = entry.value,
+            .value = @as(ModeTag.Backing, @bitCast(ModeTag{
+                .value = entry.value,
+                .ansi = entry.ansi,
+            })),
         };
     }
 
     break :mode_enum @Type(.{ .Enum = .{
-        .tag_type = u16,
+        .tag_type = ModeTag.Backing,
         .fields = &fields,
         .decls = &.{},
         .is_exhaustive = true,
     } });
 };
 
-/// Returns true if we support the given mode. If this is true then
-/// you can use `@enumFromInt` to get the Mode value. We don't do
-/// this directly due to a Zig compiler bug.
-pub fn hasSupport(v: u16) bool {
-    inline for (@typeInfo(Mode).Enum.fields) |field| {
-        if (field.value == v) return true;
+/// The tag type for our enum is a u16 but we use a packed struct
+/// in order to pack the ansi bit into the tag.
+const ModeTag = packed struct(u16) {
+    const Backing = @typeInfo(@This()).Struct.backing_integer.?;
+    value: u15,
+    ansi: bool = false,
+
+    test "order" {
+        const t: ModeTag = .{ .value = 1 };
+        const int: Backing = @bitCast(t);
+        try std.testing.expectEqual(@as(Backing, 1), int);
+    }
+};
+
+pub fn modeFromInt(v: u16, ansi: bool) ?Mode {
+    inline for (entries) |entry| {
+        if (entry.value == v and entry.ansi == ansi) {
+            const tag: ModeTag = .{ .ansi = ansi, .value = entry.value };
+            const int: ModeTag.Backing = @bitCast(tag);
+            return @enumFromInt(int);
+        }
     }
 
-    return false;
+    return null;
 }
 
 fn entryForMode(comptime mode: Mode) ModeEntry {
@@ -141,15 +159,17 @@ const ModeEntry = struct {
     name: []const u8,
     value: comptime_int,
     default: bool = false,
+    ansi: bool = false,
 };
 
 /// The full list of available entries. For documentation see how
 /// they're used within Ghostty or google their values. It is not
 /// valuable to redocument them all here.
 const entries: []const ModeEntry = &.{
+    .{ .name = "insert", .value = 4, .ansi = true },
+
     .{ .name = "cursor_keys", .value = 1 },
     .{ .name = "132_column", .value = 3 },
-    .{ .name = "insert", .value = 4 },
     .{ .name = "reverse_colors", .value = 5 },
     .{ .name = "origin", .value = 6 },
     .{ .name = "wraparound", .value = 7, .default = true },
@@ -182,10 +202,11 @@ test {
     _ = ModePacked;
 }
 
-test hasSupport {
-    try testing.expect(hasSupport(1));
-    try testing.expect(hasSupport(2004));
-    try testing.expect(!hasSupport(8888));
+test modeFromInt {
+    try testing.expect(modeFromInt(4, true).? == .insert);
+    try testing.expect(modeFromInt(9, true) == null);
+    try testing.expect(modeFromInt(9, false).? == .mouse_event_x10);
+    try testing.expect(modeFromInt(12, true) == null);
 }
 
 test ModeState {
