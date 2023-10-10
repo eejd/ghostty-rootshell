@@ -1653,6 +1653,10 @@ const StreamHandler = struct {
         self.terminal.tabSet();
     }
 
+    pub fn tabReset(self: *StreamHandler) !void {
+        self.terminal.tabReset();
+    }
+
     pub fn saveCursor(self: *StreamHandler) !void {
         self.terminal.saveCursor();
     }
