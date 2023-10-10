@@ -866,16 +866,37 @@ pub fn decaln(self: *Terminal) !void {
     defer tracy.end();
 
     // Reset margins, also sets cursor to top-left
-    self.setTopAndBottomMargin(0, 0);
+    self.scrolling_region = .{
+        .top = 0,
+        .bottom = self.rows - 1,
+        .left = 0,
+        .right = self.cols - 1,
+    };
 
-    // Fill with Es, does not move cursor. We reset fg/bg so we can just
-    // optimize here by doing row copies.
-    const filled = self.screen.getRow(.{ .active = 0 });
-    filled.fill(.{ .char = 'E' });
+    // Origin mode is disabled
+    self.modes.set(.origin, false);
 
-    var row: usize = 1;
-    while (row < self.rows) : (row += 1) {
-        try self.screen.getRow(.{ .active = row }).copyRow(filled);
+    // Move our cursor to the top-left
+    self.setCursorPos(1, 1);
+
+    // Clear our stylistic attributes
+    self.screen.cursor.pen = .{
+        .bg = self.screen.cursor.pen.bg,
+        .fg = self.screen.cursor.pen.fg,
+        .attrs = .{
+            .has_bg = self.screen.cursor.pen.attrs.has_bg,
+            .has_fg = self.screen.cursor.pen.attrs.has_fg,
+            .protected = self.screen.cursor.pen.attrs.protected,
+        },
+    };
+
+    // Our pen has the letter E
+    var pen: Screen.Cell = .{ .char = 'E' };
+
+    // Fill with Es, does not move cursor.
+    for (0..self.rows) |y| {
+        const filled = self.screen.getRow(.{ .active = y });
+        filled.fill(pen);
     }
 }
 
@@ -3394,6 +3415,50 @@ test "Terminal: DECALN" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("EE\nEE", str);
+    }
+}
+
+test "Terminal: decaln reset margins" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    // Initial value
+    t.modes.set(.origin, true);
+    t.setTopAndBottomMargin(2, 3);
+    try t.decaln();
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nEEE\nEEE", str);
+    }
+}
+
+test "Terminal: decaln preserves color" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    // Initial value
+    t.screen.cursor.pen = pen;
+    t.modes.set(.origin, true);
+    t.setTopAndBottomMargin(2, 3);
+    try t.decaln();
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nEEE\nEEE", str);
+        const cell = t.screen.getCell(.active, 0, 0);
+        try testing.expectEqual(pen, cell);
     }
 }
 
