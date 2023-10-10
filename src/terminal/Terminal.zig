@@ -1801,6 +1801,23 @@ pub fn setTopAndBottomMargin(self: *Terminal, top_req: usize, bottom_req: usize)
     self.setCursorPos(1, 1);
 }
 
+/// DECSLRM
+pub fn setLeftAndRightMargin(self: *Terminal, left_req: usize, right_req: usize) void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    // We must have this mode enabled to do anything
+    if (!self.modes.get(.enable_left_and_right_margin)) return;
+
+    const left = @max(1, left_req);
+    const right = @min(self.rows, if (right_req == 0) self.rows else right_req);
+    if (left >= right) return;
+
+    self.scrolling_region.left = left - 1;
+    self.scrolling_region.right = right - 1;
+    self.setCursorPos(1, 1);
+}
+
 /// Mark the current semantic prompt information. Current escape sequences
 /// (OSC 133) only allow setting this for wherever the current active cursor
 /// is located.
@@ -2637,6 +2654,126 @@ test "Terminal: setTopAndBottomMargin top equal to bottom" {
         try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
     }
 }
+
+test "Terminal: setLeftAndRightMargin simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(0, 0);
+    t.eraseChars(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(" BC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin left only" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 0);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\nDBC\nGEF\n HI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin left and right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(1, 2);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C\nABF\nDEI\nGH", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin left equal right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 2);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin mode 69 unset" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, false);
+    t.setLeftAndRightMargin(1, 2);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
+
 test "Terminal: deleteLines" {
     const alloc = testing.allocator;
     var t = try init(alloc, 80, 80);
