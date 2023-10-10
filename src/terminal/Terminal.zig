@@ -1827,7 +1827,7 @@ pub fn setLeftAndRightMargin(self: *Terminal, left_req: usize, right_req: usize)
     if (!self.modes.get(.enable_left_and_right_margin)) return;
 
     const left = @max(1, left_req);
-    const right = @min(self.rows, if (right_req == 0) self.rows else right_req);
+    const right = @min(self.cols, if (right_req == 0) self.cols else right_req);
     if (left >= right) return;
 
     self.scrolling_region.left = left - 1;
@@ -2760,6 +2760,8 @@ test "Terminal: setLeftAndRightMargin left only" {
     try t.printString("GHI");
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(2, 0);
+    try testing.expectEqual(@as(usize, 1), t.scrolling_region.left);
+    try testing.expectEqual(@as(usize, t.cols - 1), t.scrolling_region.right);
     t.setCursorPos(1, 2);
     try t.insertLines(1);
 
