@@ -1853,7 +1853,7 @@ fn dragLeftClickSingle(
         //   - Inverse logic for a point after the start.
         const click_point = self.mouse.left_click_point;
         const start: terminal.point.ScreenPoint = if (screen_point.before(click_point)) start: {
-            if (self.mouse.left_click_xpos > cell_xboundary) {
+            if (cell_start_xpos >= cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x > 0) terminal.point.ScreenPoint{
