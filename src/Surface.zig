@@ -1865,7 +1865,7 @@ fn dragLeftClickSingle(
                 };
             }
         } else start: {
-            if (self.mouse.left_click_xpos < cell_xboundary) {
+            if (cell_start_xpos < cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x < self.io.terminal.screen.cols - 1) terminal.point.ScreenPoint{
