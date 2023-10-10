@@ -217,8 +217,8 @@ xterm-ghostty`.
 Hopefully someday Ghostty will have terminfo entries pre-distributed
 everywhere, but in the meantime there are two ways to resolve the situation:
 
- 1. Copy Ghostty's terminfo entry to the remote machine.
- 2. Configure SSH to fall back to a known terminfo entry.
+1.  Copy Ghostty's terminfo entry to the remote machine.
+2.  Configure SSH to fall back to a known terminfo entry.
 
 #### Copy Ghostty's terminfo to a remote machine
 
