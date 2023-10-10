@@ -1879,12 +1879,37 @@ const StreamHandler = struct {
             return;
         }
 
-        log.debug("terminal pwd: {s}", .{uri.path});
-        try self.terminal.setPwd(uri.path);
+        // We need to unescape the path. We first try to unescape onto
+        // the stack and fall back to heap allocation if we have to.
+        var pathBuf: [1024]u8 = undefined;
+        const path, const heap = path: {
+            // If the path doesn't have any escapes, we can use it directly.
+            if (std.mem.indexOfScalar(u8, uri.path, '%') == null)
+                break :path .{ uri.path, false };
+
+            // First try to stack-allocate
+            var fba = std.heap.FixedBufferAllocator.init(&pathBuf);
+            if (std.Uri.unescapeString(fba.allocator(), uri.path)) |path|
+                break :path .{ path, false }
+            else |_| {}
+
+            // Fall back to heap
+            if (std.Uri.unescapeString(self.alloc, uri.path)) |path|
+                break :path .{ path, true }
+            else |_| {}
+
+            // Fall back to using it directly...
+            log.warn("failed to unescape OSC 7 path, using it directly path={s}", .{uri.path});
+            break :path .{ uri.path, false };
+        };
+        defer if (heap) self.alloc.free(path);
+
+        log.debug("terminal pwd: {s}", .{path});
+        try self.terminal.setPwd(path);
 
         // If we haven't seen a title, use our pwd as the title.
         if (!self.ev.seen_title) {
-            try self.changeWindowTitle(uri.path);
+            try self.changeWindowTitle(path);
             self.ev.seen_title = false;
         }
     }
