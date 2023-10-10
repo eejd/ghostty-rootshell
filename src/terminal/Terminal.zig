@@ -717,6 +717,12 @@ pub fn print(self: *Terminal, c: u21) !void {
         self.insertBlanks(width);
     }
 
+    // Our right margin depends where our cursor is now.
+    const right_limit = if (self.screen.cursor.x > self.scrolling_region.right)
+        self.cols
+    else
+        self.scrolling_region.right + 1;
+
     switch (width) {
         // Single cell is very easy: just write in the cell
         1 => _ = @call(.always_inline, printCell, .{ self, c }),
@@ -725,11 +731,11 @@ pub fn print(self: *Terminal, c: u21) !void {
         // using two cells: the first is flagged "wide" and has the
         // wide char. The second is guaranteed to be a spacer if
         // we're not at the end of the line.
-        2 => if (self.cols > 1) {
+        2 => if ((right_limit - self.scrolling_region.left) > 1) {
             // If we don't have space for the wide char, we need
             // to insert spacers and wrap. Then we just print the wide
             // char as normal.
-            if (self.screen.cursor.x == self.cols - 1) {
+            if (self.screen.cursor.x == right_limit - 1) {
                 const spacer_head = self.printCell(' ');
                 spacer_head.attrs.wide_spacer_head = true;
                 try self.printWrap();
@@ -757,7 +763,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're at the column limit, then we need to wrap the next time.
     // This is unlikely so we do the increment above and decrement here
     // if we need to rather than check once.
-    if (self.screen.cursor.x == self.cols) {
+    if (self.screen.cursor.x == right_limit) {
         self.screen.cursor.x -= 1;
         self.screen.cursor.pending_wrap = true;
     }
@@ -835,7 +841,7 @@ fn printWrap(self: *Terminal) !void {
 
     // Move to the next line
     try self.index();
-    self.screen.cursor.x = 0;
+    self.screen.cursor.x = self.scrolling_region.left;
 }
 
 fn clearWideSpacerHead(self: *Terminal) void {
@@ -2225,6 +2231,57 @@ test "Terminal: print invoke charset single" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("`◆`", str);
+    }
+}
+
+test "Terminal: print right margin wrap" {
+    var t = try init(testing.allocator, 10, 5);
+    defer t.deinit(testing.allocator);
+
+    try t.printString("123456789");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 5);
+    try t.printString("XY");
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("1234X6789\n  Y", str);
+    }
+}
+
+test "Terminal: print right margin outside" {
+    var t = try init(testing.allocator, 10, 5);
+    defer t.deinit(testing.allocator);
+
+    try t.printString("123456789");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 6);
+    try t.printString("XY");
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("12345XY89", str);
+    }
+}
+
+test "Terminal: print right margin outside wrap" {
+    var t = try init(testing.allocator, 10, 5);
+    defer t.deinit(testing.allocator);
+
+    try t.printString("123456789");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 10);
+    try t.printString("XY");
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("123456789X\n  Y", str);
     }
 }
 
