@@ -1707,8 +1707,8 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
 
     // The amount of lines we need to scroll up.
     const scroll_amount = rem - count;
-    const scroll_top = self.scrolling_region.bottom - scroll_amount;
-    for (self.screen.cursor.y..scroll_top + 1) |y| {
+    const scroll_end_y = self.screen.cursor.y + scroll_amount;
+    for (self.screen.cursor.y..scroll_end_y) |y| {
         const src = self.screen.getRow(.{ .active = y + count });
         const dst = self.screen.getRow(.{ .active = y });
         for (self.scrolling_region.left..self.scrolling_region.right + 1) |x| {
@@ -1717,7 +1717,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     }
 
     // Insert blank lines
-    for (scroll_top + 1..self.scrolling_region.bottom + 1) |y| {
+    for (scroll_end_y..self.scrolling_region.bottom + 1) |y| {
         const row = self.screen.getRow(.{ .active = y });
         row.fillSlice(.{
             .bg = self.screen.cursor.pen.bg,
@@ -1748,13 +1748,18 @@ pub fn scrollDown(self: *Terminal, count: usize) !void {
 /// The new lines are created according to the current SGR state.
 ///
 /// Does not change the (absolute) cursor position.
-// TODO: test
 pub fn scrollUp(self: *Terminal, count: usize) !void {
-    self.screen.scrollRegionUp(
-        .{ .active = self.scrolling_region.top },
-        .{ .active = self.scrolling_region.bottom },
-        count,
-    );
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    // Preserve the cursor
+    const cursor = self.screen.cursor;
+    defer self.screen.cursor = cursor;
+
+    // Move to the top of the scroll region
+    self.screen.cursor.y = self.scrolling_region.top;
+    self.screen.cursor.x = self.scrolling_region.left;
+    try self.deleteLines(count);
 }
 
 /// Options for scrolling the viewport of the terminal grid.
@@ -2975,6 +2980,30 @@ test "Terminal: deleteLines left/right scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABC123\nDHI756\nG   89", str);
+    }
+}
+
+test "Terminal: deleteLines left/right scroll region from top" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(1, 2);
+    try t.deleteLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AEF423\nDHI756\nG   89", str);
     }
 }
 
@@ -5725,6 +5754,121 @@ test "Terminal: scrollDown outside of left/right scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A   23\nDBC156\nGEF489\n HI7", str);
+    }
+}
+
+test "Terminal: scrollDown preserves pending wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 10);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 5);
+    try t.print('A');
+    t.setCursorPos(2, 5);
+    try t.print('B');
+    t.setCursorPos(3, 5);
+    try t.print('C');
+    try t.scrollDown(1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n    A\n    B\nX   C", str);
+    }
+}
+
+test "Terminal: scrollUp simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setCursorPos(2, 2);
+    const cursor = t.screen.cursor;
+    try t.scrollUp(1);
+    try testing.expectEqual(cursor, t.screen.cursor);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("DEF\nGHI", str);
+    }
+}
+
+test "Terminal: scrollUp top/bottom scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(2, 3);
+    t.setCursorPos(1, 1);
+    try t.scrollUp(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nGHI", str);
+    }
+}
+
+test "Terminal: scrollUp left/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF456");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(2, 2);
+    const cursor = t.screen.cursor;
+    try t.scrollUp(1);
+    try testing.expectEqual(cursor, t.screen.cursor);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AEF423\nDHI756\nG   89", str);
+    }
+}
+
+test "Terminal: scrollUp preserves pending wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 5);
+    try t.print('A');
+    t.setCursorPos(2, 5);
+    try t.print('B');
+    t.setCursorPos(3, 5);
+    try t.print('C');
+    try t.scrollUp(1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    B\n    C\n\nX", str);
     }
 }
 

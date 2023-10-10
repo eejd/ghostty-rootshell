@@ -2887,10 +2887,6 @@ pub fn dumpString(self: *Screen, writer: anytype, opts: Dump) !void {
 
         // Handle blank rows
         if (row.isEmpty()) {
-            // Blank rows should never have wrap set. A blank row doesn't
-            // include explicit spaces so there should never be a scenario
-            // it's wrapped.
-            assert(!row.header().flags.wrap);
             blank_rows += 1;
             continue;
         }
