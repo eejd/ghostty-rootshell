@@ -5757,6 +5757,27 @@ test "Terminal: scrollDown outside of left/right scroll region" {
     }
 }
 
+test "Terminal: scrollDown preserves pending wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 10);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 5);
+    try t.print('A');
+    t.setCursorPos(2, 5);
+    try t.print('B');
+    t.setCursorPos(3, 5);
+    try t.print('C');
+    try t.scrollDown(1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n    A\n    B\nX   C", str);
+    }
+}
+
 test "Terminal: scrollUp simple" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
