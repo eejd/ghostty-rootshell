@@ -141,6 +141,12 @@ pub const ghostty: Source = .{
         .{ .name = "XR", .value = .{ .string = "\\E[>0q" } },
         .{ .name = "xr", .value = .{ .string = "\\EP>\\|[ -~]+a\\E\\\\" } },
 
+        // DECSLRM (Left/Right Margins)
+        .{ .name = "Enmg", .value = .{ .string = "\\E[?69h" } },
+        .{ .name = "Dsmg", .value = .{ .string = "\\E[?69l" } },
+        .{ .name = "Clmg", .value = .{ .string = "\\E[s" } },
+        .{ .name = "Cmg", .value = .{ .string = "\\E[%i%p1%d;%p2%ds" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },

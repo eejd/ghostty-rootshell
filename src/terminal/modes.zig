@@ -184,6 +184,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "enable_mode_3", .value = 40 },
     .{ .name = "reverse_wrap", .value = 45 },
     .{ .name = "keypad_keys", .value = 66 },
+    .{ .name = "enable_left_and_right_margin", .value = 69 },
     .{ .name = "mouse_event_normal", .value = 1000 },
     .{ .name = "mouse_event_button", .value = 1002 },
     .{ .name = "mouse_event_any", .value = 1003 },
@@ -200,10 +201,6 @@ const entries: []const ModeEntry = &.{
     .{ .name = "bracketed_paste", .value = 2004 },
     .{ .name = "synchronized_output", .value = 2026 },
     .{ .name = "grapheme_cluster", .value = 2027 },
-
-    // Disabled for now until we ensure we get left/right margins working
-    // correctly in all sequences.
-    .{ .name = "enable_left_and_right_margin", .value = 69, .disabled = true },
 };
 
 test {
