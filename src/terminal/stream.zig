@@ -1487,3 +1487,37 @@ test "stream: DECEL, DECSEL" {
         try testing.expect(!s.handler.protected.?);
     }
 }
+
+test "stream: DECSCUSR" {
+    const H = struct {
+        style: ?ansi.CursorStyle = null,
+
+        pub fn setCursorStyle(self: *@This(), style: ansi.CursorStyle) !void {
+            self.style = style;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[ q");
+    try testing.expect(s.handler.style.? == .default);
+
+    try s.nextSlice("\x1B[1 q");
+    try testing.expect(s.handler.style.? == .blinking_block);
+}
+
+test "stream: DECSCUSR without space" {
+    const H = struct {
+        style: ?ansi.CursorStyle = null,
+
+        pub fn setCursorStyle(self: *@This(), style: ansi.CursorStyle) !void {
+            self.style = style;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[q");
+    try testing.expect(s.handler.style == null);
+
+    try s.nextSlice("\x1B[1q");
+    try testing.expect(s.handler.style == null);
+}
