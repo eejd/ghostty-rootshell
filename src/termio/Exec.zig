@@ -1394,7 +1394,11 @@ const StreamHandler = struct {
     }
 
     pub fn setTopAndBottomMargin(self: *StreamHandler, top: u16, bot: u16) !void {
-        self.terminal.setScrollingRegion(top, bot);
+        self.terminal.setTopAndBottomMargin(top, bot);
+    }
+
+    pub fn setLeftAndRightMargin(self: *StreamHandler, left: u16, right: u16) !void {
+        self.terminal.setLeftAndRightMargin(left, right);
     }
 
     pub fn setModifyKeyFormat(self: *StreamHandler, format: terminal.ModifyKeyFormat) !void {
@@ -1459,6 +1463,13 @@ const StreamHandler = struct {
 
             // Origin resets cursor pos
             .origin => self.terminal.setCursorPos(1, 1),
+
+            .enable_left_and_right_margin => if (!enabled) {
+                // When we disable left/right margin mode we need to
+                // reset the left/right margins.
+                self.terminal.scrolling_region.left = 0;
+                self.terminal.scrolling_region.right = self.terminal.cols - 1;
+            },
 
             .alt_screen_save_cursor_clear_enter => {
                 const opts: terminal.Terminal.AlternateScreenOptions = .{

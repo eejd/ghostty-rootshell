@@ -866,16 +866,37 @@ pub fn decaln(self: *Terminal) !void {
     defer tracy.end();
 
     // Reset margins, also sets cursor to top-left
-    self.setScrollingRegion(0, 0);
+    self.scrolling_region = .{
+        .top = 0,
+        .bottom = self.rows - 1,
+        .left = 0,
+        .right = self.cols - 1,
+    };
 
-    // Fill with Es, does not move cursor. We reset fg/bg so we can just
-    // optimize here by doing row copies.
-    const filled = self.screen.getRow(.{ .active = 0 });
-    filled.fill(.{ .char = 'E' });
+    // Origin mode is disabled
+    self.modes.set(.origin, false);
 
-    var row: usize = 1;
-    while (row < self.rows) : (row += 1) {
-        try self.screen.getRow(.{ .active = row }).copyRow(filled);
+    // Move our cursor to the top-left
+    self.setCursorPos(1, 1);
+
+    // Clear our stylistic attributes
+    self.screen.cursor.pen = .{
+        .bg = self.screen.cursor.pen.bg,
+        .fg = self.screen.cursor.pen.fg,
+        .attrs = .{
+            .has_bg = self.screen.cursor.pen.attrs.has_bg,
+            .has_fg = self.screen.cursor.pen.attrs.has_fg,
+            .protected = self.screen.cursor.pen.attrs.protected,
+        },
+    };
+
+    // Our pen has the letter E
+    var pen: Screen.Cell = .{ .char = 'E' };
+
+    // Fill with Es, does not move cursor.
+    for (0..self.rows) |y| {
+        const filled = self.screen.getRow(.{ .active = y });
+        filled.fill(pen);
     }
 }
 
@@ -1767,19 +1788,33 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
 /// and bottom-most line of the screen.
 ///
 /// Top and bottom are 1-indexed.
-pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
+pub fn setTopAndBottomMargin(self: *Terminal, top_req: usize, bottom_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    var t = if (top == 0) 1 else top;
-    var b = @min(bottom, self.rows);
-    if (t >= b) {
-        t = 1;
-        b = self.rows;
-    }
+    const top = @max(1, top_req);
+    const bottom = @min(self.rows, if (bottom_req == 0) self.rows else bottom_req);
+    if (top >= bottom) return;
 
-    self.scrolling_region.top = t - 1;
-    self.scrolling_region.bottom = b - 1;
+    self.scrolling_region.top = top - 1;
+    self.scrolling_region.bottom = bottom - 1;
+    self.setCursorPos(1, 1);
+}
+
+/// DECSLRM
+pub fn setLeftAndRightMargin(self: *Terminal, left_req: usize, right_req: usize) void {
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    // We must have this mode enabled to do anything
+    if (!self.modes.get(.enable_left_and_right_margin)) return;
+
+    const left = @max(1, left_req);
+    const right = @min(self.rows, if (right_req == 0) self.rows else right_req);
+    if (left >= right) return;
+
+    self.scrolling_region.left = left - 1;
+    self.scrolling_region.right = right - 1;
     self.setCursorPos(1, 1);
 }
 
@@ -2513,7 +2548,7 @@ test "Terminal: setCursorPos (original test)" {
     try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
     // Set the scroll region
-    t.setScrollingRegion(10, t.rows);
+    t.setTopAndBottomMargin(10, t.rows);
     t.setCursorPos(0, 0);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 9), t.screen.cursor.y);
@@ -2526,41 +2561,217 @@ test "Terminal: setCursorPos (original test)" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
-    t.setScrollingRegion(10, 11);
+    t.setTopAndBottomMargin(10, 11);
     t.setCursorPos(2, 0);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 10), t.screen.cursor.y);
 }
 
-test "Terminal: setScrollingRegion" {
-    var t = try init(testing.allocator, 80, 80);
-    defer t.deinit(testing.allocator);
+test "Terminal: setTopAndBottomMargin simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
 
-    // Initial value
-    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, t.rows - 1), t.scrolling_region.bottom);
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(0, 0);
+    try t.scrollDown(1);
 
-    // Move our cusor so we can verify we move it back
-    t.setCursorPos(5, 5);
-    t.setScrollingRegion(3, 7);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
 
-    // Cursor should move back to top-left
-    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
-    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+test "Terminal: setTopAndBottomMargin top only" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
 
-    // Scroll region is set
-    try testing.expectEqual(@as(usize, 2), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, 6), t.scrolling_region.bottom);
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(2, 0);
+    try t.scrollDown(1);
 
-    // Scroll region invalid
-    t.setScrollingRegion(7, 3);
-    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, t.rows - 1), t.scrolling_region.bottom);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\n\nDEF\nGHI", str);
+    }
+}
 
-    // Scroll region with zero top and bottom
-    t.setScrollingRegion(0, 0);
-    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, t.rows - 1), t.scrolling_region.bottom);
+test "Terminal: setTopAndBottomMargin top and bottom" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(1, 2);
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nGHI", str);
+    }
+}
+
+test "Terminal: setTopAndBottomMargin top equal to bottom" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(2, 2);
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(0, 0);
+    t.eraseChars(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(" BC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin left only" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 0);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\nDBC\nGEF\n HI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin left and right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(1, 2);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  C\nABF\nDEI\nGH", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin left equal right" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 2);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: setLeftAndRightMargin mode 69 unset" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, false);
+    t.setLeftAndRightMargin(1, 2);
+    t.setCursorPos(1, 2);
+    try t.insertLines(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
 }
 
 test "Terminal: deleteLines" {
@@ -2615,7 +2826,7 @@ test "Terminal: deleteLines with scroll region" {
     try t.linefeed();
     try t.print('D');
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
     try t.deleteLines(1);
 
@@ -2651,7 +2862,7 @@ test "Terminal: deleteLines with scroll region, large count" {
     try t.linefeed();
     try t.print('D');
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
     try t.deleteLines(5);
 
@@ -2687,7 +2898,7 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
     try t.linefeed();
     try t.print('D');
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(4, 1);
     try t.deleteLines(1);
 
@@ -2820,7 +3031,7 @@ test "Terminal: insertLines outside of scroll region" {
     t.carriageReturn();
     try t.linefeed();
     try t.printString("GHI");
-    t.setScrollingRegion(3, 4);
+    t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
     try t.insertLines(1);
 
@@ -2846,7 +3057,7 @@ test "Terminal: insertLines top/bottom scroll region" {
     t.carriageReturn();
     try t.linefeed();
     try t.printString("123");
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(2, 2);
     try t.insertLines(1);
 
@@ -2944,7 +3155,7 @@ test "Terminal: insertLines with scroll region" {
     try t.linefeed();
     try t.print('E');
 
-    t.setScrollingRegion(1, 2);
+    t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(1, 1);
     try t.insertLines(1);
 
@@ -3089,7 +3300,7 @@ test "Terminal: reverseIndex top of scrolling region" {
     try t.linefeed();
 
     // Set our scroll region
-    t.setScrollingRegion(2, 5);
+    t.setTopAndBottomMargin(2, 5);
     t.setCursorPos(2, 1);
     try t.reverseIndex();
     try t.print('X');
@@ -3141,7 +3352,7 @@ test "Terminal: index outside of scrolling region" {
     defer t.deinit(alloc);
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
-    t.setScrollingRegion(2, 5);
+    t.setTopAndBottomMargin(2, 5);
     try t.index();
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
 }
@@ -3151,7 +3362,7 @@ test "Terminal: index from the bottom outside of scroll region" {
     var t = try init(alloc, 2, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 2);
+    t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(5, 1);
     try t.print('A');
     try t.index();
@@ -3228,7 +3439,7 @@ test "Terminal: index inside scroll region" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     try t.print('A');
     try t.index();
     try t.print('X');
@@ -3245,7 +3456,7 @@ test "Terminal: index bottom of scroll region" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(4, 1);
     try t.print('B');
     t.setCursorPos(3, 1);
@@ -3265,7 +3476,7 @@ test "Terminal: index bottom of primary screen with scroll region" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(3, 1);
     try t.print('A');
     t.setCursorPos(5, 1);
@@ -3286,7 +3497,7 @@ test "Terminal: index outside left/right margin" {
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.scrolling_region.left = 3;
     t.scrolling_region.right = 5;
     t.setCursorPos(3, 3);
@@ -3307,7 +3518,7 @@ test "Terminal: index inside left/right margin" {
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.scrolling_region.left = 3;
     t.scrolling_region.right = 5;
     t.setCursorPos(3, 3);
@@ -3341,6 +3552,50 @@ test "Terminal: DECALN" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("EE\nEE", str);
+    }
+}
+
+test "Terminal: decaln reset margins" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    // Initial value
+    t.modes.set(.origin, true);
+    t.setTopAndBottomMargin(2, 3);
+    try t.decaln();
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nEEE\nEEE", str);
+    }
+}
+
+test "Terminal: decaln preserves color" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 3, 3);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    // Initial value
+    t.screen.cursor.pen = pen;
+    t.modes.set(.origin, true);
+    t.setTopAndBottomMargin(2, 3);
+    try t.decaln();
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nEEE\nEEE", str);
+        const cell = t.screen.getCell(.active, 0, 0);
+        try testing.expectEqual(pen, cell);
     }
 }
 
@@ -5181,7 +5436,7 @@ test "Terminal: cursorDown above bottom scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     try t.print('A');
     t.cursorDown(10);
     try t.print('X');
@@ -5198,7 +5453,7 @@ test "Terminal: cursorDown below bottom scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     try t.print('A');
     t.setCursorPos(4, 1);
     t.cursorDown(10);
@@ -5251,7 +5506,7 @@ test "Terminal: cursorUp below top scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(2, 4);
+    t.setTopAndBottomMargin(2, 4);
     t.setCursorPos(3, 1);
     try t.print('A');
     t.cursorUp(5);
@@ -5269,7 +5524,7 @@ test "Terminal: cursorUp above top scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(3, 5);
+    t.setTopAndBottomMargin(3, 5);
     t.setCursorPos(3, 1);
     try t.print('A');
     t.setCursorPos(2, 1);
@@ -5403,7 +5658,7 @@ test "Terminal: scrollDown outside of scroll region" {
     t.carriageReturn();
     try t.linefeed();
     try t.printString("GHI");
-    t.setScrollingRegion(3, 4);
+    t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
     const cursor = t.screen.cursor;
     try t.scrollDown(1);

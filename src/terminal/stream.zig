@@ -787,8 +787,20 @@ pub fn Stream(comptime Handler: type) type {
                     ),
                 },
 
-                // Save Mode
                 's' => switch (action.intermediates.len) {
+                    // DECSLRM
+                    0 => if (@hasDecl(T, "setLeftAndRightMargin")) {
+                        switch (action.params.len) {
+                            0 => try self.handler.setLeftAndRightMargin(0, 0),
+                            1 => try self.handler.setLeftAndRightMargin(action.params[0], 0),
+                            2 => try self.handler.setLeftAndRightMargin(action.params[0], action.params[1]),
+                            else => log.warn("invalid DECSLRM command: {}", .{action}),
+                        }
+                    } else log.warn(
+                        "unimplemented CSI callback: {}",
+                        .{action},
+                    ),
+
                     1 => switch (action.intermediates[0]) {
                         '?' => if (@hasDecl(T, "saveMode")) {
                             for (action.params) |mode_int| {

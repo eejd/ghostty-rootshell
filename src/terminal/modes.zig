@@ -134,10 +134,12 @@ const ModeTag = packed struct(u16) {
 
 pub fn modeFromInt(v: u16, ansi: bool) ?Mode {
     inline for (entries) |entry| {
-        if (entry.value == v and entry.ansi == ansi) {
-            const tag: ModeTag = .{ .ansi = ansi, .value = entry.value };
-            const int: ModeTag.Backing = @bitCast(tag);
-            return @enumFromInt(int);
+        if (comptime !entry.disabled) {
+            if (entry.value == v and entry.ansi == ansi) {
+                const tag: ModeTag = .{ .ansi = ansi, .value = entry.value };
+                const int: ModeTag.Backing = @bitCast(tag);
+                return @enumFromInt(int);
+            }
         }
     }
 
@@ -160,6 +162,7 @@ const ModeEntry = struct {
     value: comptime_int,
     default: bool = false,
     ansi: bool = false,
+    disabled: bool = false,
 };
 
 /// The full list of available entries. For documentation see how
@@ -195,6 +198,10 @@ const entries: []const ModeEntry = &.{
     .{ .name = "bracketed_paste", .value = 2004 },
     .{ .name = "synchronized_output", .value = 2026 },
     .{ .name = "grapheme_cluster", .value = 2027 },
+
+    // Disabled for now until we ensure we get left/right margins working
+    // correctly in all sequences.
+    .{ .name = "enable_left_and_right_margin", .value = 69, .disabled = true },
 };
 
 test {
