@@ -7,3 +7,6 @@ zig-out/
 
 # macos is managed by XCode GUI
 macos/
+
+# website dev run
+website/.next
