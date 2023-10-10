@@ -866,7 +866,7 @@ pub fn decaln(self: *Terminal) !void {
     defer tracy.end();
 
     // Reset margins, also sets cursor to top-left
-    self.setScrollingRegion(0, 0);
+    self.setTopAndBottomMargin(0, 0);
 
     // Fill with Es, does not move cursor. We reset fg/bg so we can just
     // optimize here by doing row copies.
@@ -1767,19 +1767,16 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
 /// and bottom-most line of the screen.
 ///
 /// Top and bottom are 1-indexed.
-pub fn setScrollingRegion(self: *Terminal, top: usize, bottom: usize) void {
+pub fn setTopAndBottomMargin(self: *Terminal, top_req: usize, bottom_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    var t = if (top == 0) 1 else top;
-    var b = @min(bottom, self.rows);
-    if (t >= b) {
-        t = 1;
-        b = self.rows;
-    }
+    const top = @max(1, top_req);
+    const bottom = @min(self.rows, if (bottom_req == 0) self.rows else bottom_req);
+    if (top >= bottom) return;
 
-    self.scrolling_region.top = t - 1;
-    self.scrolling_region.bottom = b - 1;
+    self.scrolling_region.top = top - 1;
+    self.scrolling_region.bottom = bottom - 1;
     self.setCursorPos(1, 1);
 }
 
@@ -2513,7 +2510,7 @@ test "Terminal: setCursorPos (original test)" {
     try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
     // Set the scroll region
-    t.setScrollingRegion(10, t.rows);
+    t.setTopAndBottomMargin(10, t.rows);
     t.setCursorPos(0, 0);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 9), t.screen.cursor.y);
@@ -2526,43 +2523,99 @@ test "Terminal: setCursorPos (original test)" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 79), t.screen.cursor.y);
 
-    t.setScrollingRegion(10, 11);
+    t.setTopAndBottomMargin(10, 11);
     t.setCursorPos(2, 0);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expectEqual(@as(usize, 10), t.screen.cursor.y);
 }
 
-test "Terminal: setScrollingRegion" {
-    var t = try init(testing.allocator, 80, 80);
-    defer t.deinit(testing.allocator);
+test "Terminal: setTopAndBottomMargin simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
 
-    // Initial value
-    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, t.rows - 1), t.scrolling_region.bottom);
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(0, 0);
+    try t.scrollDown(1);
 
-    // Move our cusor so we can verify we move it back
-    t.setCursorPos(5, 5);
-    t.setScrollingRegion(3, 7);
-
-    // Cursor should move back to top-left
-    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
-    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
-
-    // Scroll region is set
-    try testing.expectEqual(@as(usize, 2), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, 6), t.scrolling_region.bottom);
-
-    // Scroll region invalid
-    t.setScrollingRegion(7, 3);
-    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, t.rows - 1), t.scrolling_region.bottom);
-
-    // Scroll region with zero top and bottom
-    t.setScrollingRegion(0, 0);
-    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
-    try testing.expectEqual(@as(usize, t.rows - 1), t.scrolling_region.bottom);
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
 }
 
+test "Terminal: setTopAndBottomMargin top only" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(2, 0);
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\n\nDEF\nGHI", str);
+    }
+}
+
+test "Terminal: setTopAndBottomMargin top and bottom" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(1, 2);
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nGHI", str);
+    }
+}
+
+test "Terminal: setTopAndBottomMargin top equal to bottom" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setTopAndBottomMargin(2, 2);
+    try t.scrollDown(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nABC\nDEF\nGHI", str);
+    }
+}
 test "Terminal: deleteLines" {
     const alloc = testing.allocator;
     var t = try init(alloc, 80, 80);
@@ -2615,7 +2668,7 @@ test "Terminal: deleteLines with scroll region" {
     try t.linefeed();
     try t.print('D');
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
     try t.deleteLines(1);
 
@@ -2651,7 +2704,7 @@ test "Terminal: deleteLines with scroll region, large count" {
     try t.linefeed();
     try t.print('D');
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
     try t.deleteLines(5);
 
@@ -2687,7 +2740,7 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
     try t.linefeed();
     try t.print('D');
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(4, 1);
     try t.deleteLines(1);
 
@@ -2820,7 +2873,7 @@ test "Terminal: insertLines outside of scroll region" {
     t.carriageReturn();
     try t.linefeed();
     try t.printString("GHI");
-    t.setScrollingRegion(3, 4);
+    t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
     try t.insertLines(1);
 
@@ -2846,7 +2899,7 @@ test "Terminal: insertLines top/bottom scroll region" {
     t.carriageReturn();
     try t.linefeed();
     try t.printString("123");
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(2, 2);
     try t.insertLines(1);
 
@@ -2944,7 +2997,7 @@ test "Terminal: insertLines with scroll region" {
     try t.linefeed();
     try t.print('E');
 
-    t.setScrollingRegion(1, 2);
+    t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(1, 1);
     try t.insertLines(1);
 
@@ -3089,7 +3142,7 @@ test "Terminal: reverseIndex top of scrolling region" {
     try t.linefeed();
 
     // Set our scroll region
-    t.setScrollingRegion(2, 5);
+    t.setTopAndBottomMargin(2, 5);
     t.setCursorPos(2, 1);
     try t.reverseIndex();
     try t.print('X');
@@ -3141,7 +3194,7 @@ test "Terminal: index outside of scrolling region" {
     defer t.deinit(alloc);
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
-    t.setScrollingRegion(2, 5);
+    t.setTopAndBottomMargin(2, 5);
     try t.index();
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
 }
@@ -3151,7 +3204,7 @@ test "Terminal: index from the bottom outside of scroll region" {
     var t = try init(alloc, 2, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 2);
+    t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(5, 1);
     try t.print('A');
     try t.index();
@@ -3228,7 +3281,7 @@ test "Terminal: index inside scroll region" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     try t.print('A');
     try t.index();
     try t.print('X');
@@ -3245,7 +3298,7 @@ test "Terminal: index bottom of scroll region" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(4, 1);
     try t.print('B');
     t.setCursorPos(3, 1);
@@ -3265,7 +3318,7 @@ test "Terminal: index bottom of primary screen with scroll region" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(3, 1);
     try t.print('A');
     t.setCursorPos(5, 1);
@@ -3286,7 +3339,7 @@ test "Terminal: index outside left/right margin" {
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.scrolling_region.left = 3;
     t.scrolling_region.right = 5;
     t.setCursorPos(3, 3);
@@ -3307,7 +3360,7 @@ test "Terminal: index inside left/right margin" {
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     t.scrolling_region.left = 3;
     t.scrolling_region.right = 5;
     t.setCursorPos(3, 3);
@@ -5181,7 +5234,7 @@ test "Terminal: cursorDown above bottom scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     try t.print('A');
     t.cursorDown(10);
     try t.print('X');
@@ -5198,7 +5251,7 @@ test "Terminal: cursorDown below bottom scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(1, 3);
+    t.setTopAndBottomMargin(1, 3);
     try t.print('A');
     t.setCursorPos(4, 1);
     t.cursorDown(10);
@@ -5251,7 +5304,7 @@ test "Terminal: cursorUp below top scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(2, 4);
+    t.setTopAndBottomMargin(2, 4);
     t.setCursorPos(3, 1);
     try t.print('A');
     t.cursorUp(5);
@@ -5269,7 +5322,7 @@ test "Terminal: cursorUp above top scroll margin" {
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
 
-    t.setScrollingRegion(3, 5);
+    t.setTopAndBottomMargin(3, 5);
     t.setCursorPos(3, 1);
     try t.print('A');
     t.setCursorPos(2, 1);
@@ -5403,7 +5456,7 @@ test "Terminal: scrollDown outside of scroll region" {
     t.carriageReturn();
     try t.linefeed();
     try t.printString("GHI");
-    t.setScrollingRegion(3, 4);
+    t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
     const cursor = t.screen.cursor;
     try t.scrollDown(1);

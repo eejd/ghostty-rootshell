@@ -1394,7 +1394,7 @@ const StreamHandler = struct {
     }
 
     pub fn setTopAndBottomMargin(self: *StreamHandler, top: u16, bot: u16) !void {
-        self.terminal.setScrollingRegion(top, bot);
+        self.terminal.setTopAndBottomMargin(top, bot);
     }
 
     pub fn setModifyKeyFormat(self: *StreamHandler, format: terminal.ModifyKeyFormat) !void {
