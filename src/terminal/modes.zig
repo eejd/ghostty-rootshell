@@ -169,9 +169,11 @@ const ModeEntry = struct {
 /// they're used within Ghostty or google their values. It is not
 /// valuable to redocument them all here.
 const entries: []const ModeEntry = &.{
+    // ANSI
     .{ .name = "insert", .value = 4, .ansi = true },
 
-    .{ .name = "cursor_keys", .value = 1 },
+    // DEC
+    .{ .name = "cursor_keys", .value = 1 }, // DECCKM
     .{ .name = "132_column", .value = 3 },
     .{ .name = "reverse_colors", .value = 5 },
     .{ .name = "origin", .value = 6 },

@@ -1487,6 +1487,11 @@ pub fn tabSet(self: *Terminal) void {
     self.tabstops.set(self.screen.cursor.x);
 }
 
+/// TODO: test
+pub fn tabReset(self: *Terminal) void {
+    self.tabstops.reset(TABSTOP_INTERVAL);
+}
+
 /// Carriage return moves the cursor to the first column.
 pub fn carriageReturn(self: *Terminal) void {
     const tracy = trace(@src());
@@ -1922,7 +1927,7 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.screen.charset = .{};
     self.modes = .{};
     self.flags = .{};
-    self.tabstops.reset(0);
+    self.tabstops.reset(TABSTOP_INTERVAL);
     self.screen.cursor = .{};
     self.screen.saved_cursor = .{};
     self.screen.selection = null;

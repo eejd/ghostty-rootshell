@@ -376,10 +376,10 @@ pub fn Stream(comptime Handler: type) type {
                 'W' => {
                     switch (action.params.len) {
                         0 => if (action.intermediates.len == 1 and action.intermediates[0] == '?') {
-                            if (@hasDecl(T, "tabClear"))
-                                try self.handler.tabClear(.all)
+                            if (@hasDecl(T, "tabReset"))
+                                try self.handler.tabReset()
                             else
-                                log.warn("unimplemented tab clear callback: {}", .{action});
+                                log.warn("unimplemented tab reset callback: {}", .{action});
                         },
 
                         1 => switch (action.params[0]) {
