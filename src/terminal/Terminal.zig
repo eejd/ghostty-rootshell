@@ -973,15 +973,15 @@ pub fn reverseIndex(self: *Terminal) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // If the cursor is on the top-most line of the scroll region or
-    // its on the top of the screen we scroll down.
-    if (self.screen.cursor.y == self.scrolling_region.top or
-        self.screen.cursor.y == 0)
+    if (self.screen.cursor.y != self.scrolling_region.top or
+        self.screen.cursor.x < self.scrolling_region.left or
+        self.screen.cursor.x > self.scrolling_region.right)
     {
-        try self.scrollDown(1);
-    } else {
-        self.screen.cursor.y -|= 1;
+        self.cursorUp(1);
+        return;
     }
+
+    try self.scrollDown(1);
 }
 
 // Set Cursor Position. Move cursor to the position indicated
@@ -3343,6 +3343,134 @@ test "Terminal: reverseIndex top of scrolling region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\nX\nA\nB\nC", str);
+    }
+}
+
+test "Terminal: reverseIndex top of screen" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.setCursorPos(2, 1);
+    try t.print('B');
+    t.setCursorPos(3, 1);
+    try t.print('C');
+    t.setCursorPos(1, 1);
+    try t.reverseIndex();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X\nA\nB\nC", str);
+    }
+}
+
+test "Terminal: reverseIndex not top of screen" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.setCursorPos(2, 1);
+    try t.print('B');
+    t.setCursorPos(3, 1);
+    try t.print('C');
+    t.setCursorPos(2, 1);
+    try t.reverseIndex();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X\nB\nC", str);
+    }
+}
+
+test "Terminal: reverseIndex top/bottom margins" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.setCursorPos(2, 1);
+    try t.print('B');
+    t.setCursorPos(3, 1);
+    try t.print('C');
+    t.setTopAndBottomMargin(2, 3);
+    t.setCursorPos(2, 1);
+    try t.reverseIndex();
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\n\nB", str);
+    }
+}
+
+test "Terminal: reverseIndex outside top/bottom margins" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.setCursorPos(2, 1);
+    try t.print('B');
+    t.setCursorPos(3, 1);
+    try t.print('C');
+    t.setTopAndBottomMargin(2, 3);
+    t.setCursorPos(1, 1);
+    try t.reverseIndex();
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\nB\nC", str);
+    }
+}
+
+test "Terminal: reverseIndex left/right margins" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.setCursorPos(2, 1);
+    try t.printString("DEF");
+    t.setCursorPos(3, 1);
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 3);
+    t.setCursorPos(1, 2);
+    try t.reverseIndex();
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A\nDBC\nGEF\n HI", str);
+    }
+}
+
+test "Terminal: reverseIndex outside left/right margins" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.setCursorPos(2, 1);
+    try t.printString("DEF");
+    t.setCursorPos(3, 1);
+    try t.printString("GHI");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 3);
+    t.setCursorPos(1, 1);
+    try t.reverseIndex();
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABC\nDEF\nGHI", str);
     }
 }
 
