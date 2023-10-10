@@ -1329,12 +1329,13 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     }
 
     // The margins we can move to.
-    // TODO: if cursor is left of the left margin, assume left margin to be 0.
-    // verified with xterm. don't forget when left margins are implemented!
-    const left_margin = 0;
-    const right_margin = self.cols - 1;
     const top = self.scrolling_region.top;
     const bottom = self.scrolling_region.bottom;
+    const right_margin = self.scrolling_region.right;
+    const left_margin = if (self.screen.cursor.x < self.scrolling_region.left)
+        0
+    else
+        self.scrolling_region.left;
 
     while (true) {
         // We can move at most to the left margin.
