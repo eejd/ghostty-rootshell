@@ -204,6 +204,57 @@ fi
 **This must be at the top of your bashrc, not the bottom.** The same
 goes for any other shell.
 
+### Terminfo and SSH
+
+Ghostty ships with its own [terminfo](https://en.wikipedia.org/wiki/Terminfo)
+entry to tell software about its capabilities. When that entry is detected,
+Ghostty sets the `TERM` environment variable to `xterm-ghostty`.
+
+If you use SSH to connect to other machines that do not have Ghostty's terminfo
+entry, you will see error messages like `missing or unsuitable terminal:
+xterm-ghostty`.
+
+Hopefully someday Ghostty will have terminfo entries pre-distributed
+everywhere, but in the meantime there are two ways to resolve the situation:
+
+1.  Copy Ghostty's terminfo entry to the remote machine.
+2.  Configure SSH to fall back to a known terminfo entry.
+
+#### Copy Ghostty's terminfo to a remote machine
+
+The following one-liner will export the terminfo entry from your host and
+import it on the remote machine:
+
+```shell-session
+$ infocmp -x | ssh YOUR-SERVER -- tic -x -
+```
+
+**Note: macOS versions before Sonoma cannot use the system-bundled `infocmp`.**
+The bundled version of `ncurses` is too old to emit a terminfo entry that can be
+read by more recent versions of `tic`, and the command will fail with a bunch
+of `Illegal character` messages. You can fix this by using Homebrew to install
+a recent version of `ncurses` and replacing `infocmp` above with the full path
+`/opt/homebrew/opt/ncurses/bin/infocmp`.
+
+#### Configure SSH to fall back to a known terminfo entry
+
+If copying around terminfo entries is untenable, you can override `TERM` to a
+fallback value using SSH config.
+
+```ssh-config
+# .ssh/config
+Host example.com
+  SetEnv TERM=xterm-256color
+```
+
+**Note: Fallback does not support advanced terminal features.** Because
+`xterm-256color` does not include all of Ghostty's capabilities, terminal
+features beyond xterm's like colored and styled underlines will not work.
+
+**Note: Requires OpenSSH 8.7 or newer.** [The 8.7 release added
+support](https://www.openssh.com/txt/release-8.7) for setting `TERM` via
+`SetEnv`.
+
 ## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
