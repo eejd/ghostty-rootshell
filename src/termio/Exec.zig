@@ -1389,8 +1389,8 @@ const StreamHandler = struct {
     }
 
     pub fn nextLine(self: *StreamHandler) !void {
-        self.terminal.carriageReturn();
         try self.terminal.index();
+        self.terminal.carriageReturn();
     }
 
     pub fn setTopAndBottomMargin(self: *StreamHandler, top: u16, bot: u16) !void {
