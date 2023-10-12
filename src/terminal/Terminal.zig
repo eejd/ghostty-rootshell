@@ -102,6 +102,11 @@ flags: packed struct {
     /// this was called so we have to track it separately.
     mouse_event: MouseEvents = .none,
     mouse_format: MouseFormat = .x10,
+
+    /// Set via the XTSHIFTESCAPE sequence. If true (XTSHIFTESCAPE = 1)
+    /// then we want to capture the shift key for the mouse protocol
+    /// if the configuration allows it.
+    mouse_shift_capture: bool = false,
 } = .{},
 
 /// The event types that can be reported for mouse-related activities.

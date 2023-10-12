@@ -1521,6 +1521,10 @@ const StreamHandler = struct {
         }
     }
 
+    pub fn setMouseShiftCapture(self: *StreamHandler, v: bool) !void {
+        self.terminal.flags.mouse_shift_capture = v;
+    }
+
     pub fn setAttribute(self: *StreamHandler, attr: terminal.Attribute) !void {
         switch (attr) {
             .unknown => |unk| log.warn("unimplemented or unknown SGR attribute: {any}", .{unk}),
