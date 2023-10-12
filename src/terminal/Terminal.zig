@@ -953,11 +953,7 @@ pub fn index(self: *Terminal) !void {
         {
             try self.screen.scroll(.{ .screen = 1 });
         } else {
-            self.screen.scrollRegionUp(
-                .{ .active = self.scrolling_region.top },
-                .{ .active = self.scrolling_region.bottom },
-                1,
-            );
+            try self.scrollUp(1);
         }
 
         return;
@@ -3744,18 +3740,26 @@ test "Terminal: index inside left/right margin" {
     var t = try init(alloc, 10, 5);
     defer t.deinit(alloc);
 
+    try t.printString("AAAAAA");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("AAAAAA");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("AAAAAA");
+    t.modes.set(.enable_left_and_right_margin, true);
     t.setTopAndBottomMargin(1, 3);
-    t.scrolling_region.left = 3;
-    t.scrolling_region.right = 5;
-    t.setCursorPos(3, 3);
-    try t.print('A');
+    t.setLeftAndRightMargin(1, 3);
+    t.setCursorPos(3, 1);
     try t.index();
-    try t.print('X');
+
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 
     {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("\n  A\n   X", str);
+        try testing.expectEqualStrings("AAAAAA\nAAAAAA\n   AAA", str);
     }
 }
 
