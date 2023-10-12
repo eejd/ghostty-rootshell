@@ -1522,7 +1522,7 @@ const StreamHandler = struct {
     }
 
     pub fn setMouseShiftCapture(self: *StreamHandler, v: bool) !void {
-        self.terminal.flags.mouse_shift_capture = v;
+        self.terminal.flags.mouse_shift_capture = if (v) .true else .false;
     }
 
     pub fn setAttribute(self: *StreamHandler, attr: terminal.Attribute) !void {

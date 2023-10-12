@@ -1519,7 +1519,11 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
 
     // If thet terminal explicitly requests it then we always allow it
     // since we processed never/always at this point.
-    if (self.io.terminal.flags.mouse_shift_capture) return true;
+    switch (self.io.terminal.flags.mouse_shift_capture) {
+        .false => return false,
+        .true => return true,
+        .null => {},
+    }
 
     // Otherwise, go with the user's preference
     return switch (self.config.mouse_shift_capture) {
