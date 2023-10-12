@@ -319,7 +319,11 @@ fn pcStyleFunctionKey(
     keypad_key_application: bool,
     modify_other_keys: bool, // True if state 2
 ) ?[]const u8 {
-    const mods_int = mods.int();
+    // We only want binding-sensitive mods because lock keys
+    // and directional modifiers (left/right) don't matter for
+    // pc-style function keys.
+    const mods_int = mods.binding().int();
+
     for (function_keys.keys.get(keyval)) |entry| {
         switch (entry.cursor) {
             .any => {},
@@ -1326,6 +1330,38 @@ test "legacy: f1" {
         const actual = try enc.legacy(&buf);
         try testing.expectEqualStrings("\x1b[15;5~", actual);
     }
+}
+
+test "legacy: left_shift+tab" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .tab,
+            .mods = .{
+                .shift = true,
+                .sides = .{ .shift = .left },
+            },
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1b[Z", actual);
+}
+
+test "legacy: right_shift+tab" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .tab,
+            .mods = .{
+                .shift = true,
+                .sides = .{ .shift = .right },
+            },
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1b[Z", actual);
 }
 
 test "ctrlseq: normal ctrl c" {
