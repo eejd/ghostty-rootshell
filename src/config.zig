@@ -6,6 +6,7 @@ pub const Config = @import("config/Config.zig");
 // Field types
 pub const CopyOnSelect = Config.CopyOnSelect;
 pub const Keybinds = Config.Keybinds;
+pub const MouseShiftCapture = Config.MouseShiftCapture;
 pub const NonNativeFullscreen = Config.NonNativeFullscreen;
 pub const OptionAsAlt = Config.OptionAsAlt;
 

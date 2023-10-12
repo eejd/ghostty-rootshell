@@ -815,6 +815,30 @@ pub fn Stream(comptime Handler: type) type {
                             }
                         },
 
+                        // XTSHIFTESCAPE
+                        '>' => if (@hasDecl(T, "setMouseShiftCapture")) capture: {
+                            const capture = switch (action.params.len) {
+                                0 => false,
+                                1 => switch (action.params[0]) {
+                                    0 => false,
+                                    1 => true,
+                                    else => {
+                                        log.warn("invalid XTSHIFTESCAPE command: {}", .{action});
+                                        break :capture;
+                                    },
+                                },
+                                else => {
+                                    log.warn("invalid XTSHIFTESCAPE command: {}", .{action});
+                                    break :capture;
+                                },
+                            };
+
+                            try self.handler.setMouseShiftCapture(capture);
+                        } else log.warn(
+                            "unimplemented CSI callback: {}",
+                            .{action},
+                        ),
+
                         else => log.warn(
                             "unknown CSI s with intermediate: {}",
                             .{action},
@@ -1520,4 +1544,27 @@ test "stream: DECSCUSR without space" {
 
     try s.nextSlice("\x1B[1q");
     try testing.expect(s.handler.style == null);
+}
+
+test "stream: XTSHIFTESCAPE" {
+    const H = struct {
+        escape: ?bool = null,
+
+        pub fn setMouseShiftCapture(self: *@This(), v: bool) !void {
+            self.escape = v;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[>2s");
+    try testing.expect(s.handler.escape == null);
+
+    try s.nextSlice("\x1B[>s");
+    try testing.expect(s.handler.escape.? == false);
+
+    try s.nextSlice("\x1B[>0s");
+    try testing.expect(s.handler.escape.? == false);
+
+    try s.nextSlice("\x1B[>1s");
+    try testing.expect(s.handler.escape.? == true);
 }

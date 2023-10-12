@@ -142,6 +142,7 @@ const DerivedConfig = struct {
     confirm_close_surface: bool,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
+    mouse_shift_capture: configpkg.MouseShiftCapture,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
     window_padding_x: u32,
@@ -162,6 +163,7 @@ const DerivedConfig = struct {
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
+            .mouse_shift_capture = config.@"mouse-shift-capture",
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
             .window_padding_x = config.@"window-padding-x",
@@ -1501,6 +1503,36 @@ fn mouseReport(
     try self.io_thread.wakeup.notify();
 }
 
+/// Returns true if the shift modifier is allowed to be captured by modifier
+/// events. It is up to the caller to still verify it is a situation in which
+/// shift capture makes sense (i.e. left button, mouse click, etc.)
+fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
+    // Handle our never/always case where we don't need a lock.
+    switch (self.config.mouse_shift_capture) {
+        .never => return false,
+        .always => return true,
+        .false, .true => {},
+    }
+
+    if (lock) self.renderer_state.mutex.lock();
+    defer if (lock) self.renderer_state.mutex.unlock();
+
+    // If thet terminal explicitly requests it then we always allow it
+    // since we processed never/always at this point.
+    switch (self.io.terminal.flags.mouse_shift_capture) {
+        .false => return false,
+        .true => return true,
+        .null => {},
+    }
+
+    // Otherwise, go with the user's preference
+    return switch (self.config.mouse_shift_capture) {
+        .false => false,
+        .true => true,
+        .never, .always => unreachable, // handled earlier
+    };
+}
+
 pub fn mouseButtonCallback(
     self: *Surface,
     action: input.MouseButtonState,
@@ -1519,11 +1551,20 @@ pub fn mouseButtonCallback(
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 
+    // This is set to true if the terminal is allowed to capture the shift
+    // modifer. Note we can do this more efficiently probably with less
+    // locking/unlocking but clicking isn't that frequent enough to be a
+    // bottleneck.
+    const shift_capture = self.mouseShiftCapture(true);
+
     // Shift-click continues the previous mouse state if we have a selection.
     // cursorPosCallback will also do a mouse report so we don't need to do any
     // of the logic below.
     if (button == .left and action == .press) {
-        if (mods.shift and self.mouse.left_click_count > 0) {
+        if (mods.shift and
+            self.mouse.left_click_count > 0 and
+            !shift_capture)
+        {
             // Checking for selection requires the renderer state mutex which
             // sucks but this should be pretty rare of an event so it won't
             // cause a ton of contention.
@@ -1546,8 +1587,9 @@ pub fn mouseButtonCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         if (self.io.terminal.flags.mouse_event != .none) report: {
-            // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-            if (mods.shift) break :report;
+            // If we have shift-pressed and we aren't allowed to capture it,
+            // then we do not do a mouse report.
+            if (mods.shift and button == .left and !shift_capture) break :report;
 
             // In any other mouse button scenario without shift pressed we
             // clear the selection since the underlying application can handle
@@ -1682,7 +1724,9 @@ pub fn cursorPosCallback(
     // Do a mouse report
     if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-        if (self.mouse.mods.shift) break :report;
+        if (self.mouse.mods.shift and
+            self.mouse.click_state[@intFromEnum(input.MouseButton.left)] == .press and
+            !self.mouseShiftCapture(false)) break :report;
 
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
