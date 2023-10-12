@@ -856,11 +856,10 @@ fn clearWideSpacerHead(self: *Terminal) void {
 }
 
 /// Print the previous printed character a repeated amount of times.
-pub fn printRepeat(self: *Terminal, count: usize) !void {
-    // TODO: test
+pub fn printRepeat(self: *Terminal, count_req: usize) !void {
     if (self.previous_char) |c| {
-        var i: usize = 0;
-        while (i < count) : (i += 1) try self.print(c);
+        const count = @max(count_req, 1);
+        for (0..count) |_| try self.print(c);
     }
 }
 
@@ -6081,4 +6080,48 @@ test "Terminal: tabClear all" {
     t.setCursorPos(1, 1);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 29), t.screen.cursor.x);
+}
+
+test "Terminal: printRepeat simple" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("A");
+    try t.printRepeat(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AA", str);
+    }
+}
+
+test "Terminal: printRepeat wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("    A");
+    try t.printRepeat(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    A\nA", str);
+    }
+}
+
+test "Terminal: printRepeat no previous character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printRepeat(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
 }
