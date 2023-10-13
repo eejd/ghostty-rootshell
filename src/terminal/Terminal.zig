@@ -1522,6 +1522,7 @@ pub fn linefeed(self: *Terminal) !void {
     defer tracy.end();
 
     try self.index();
+    if (self.modes.get(.linefeed)) self.carriageReturn();
 }
 
 /// Inserts spaces at current cursor position moving existing cell contents
@@ -2317,6 +2318,22 @@ test "Terminal: linefeed unsets pending wrap" {
     try testing.expect(t.screen.cursor.pending_wrap == true);
     try t.linefeed();
     try testing.expect(t.screen.cursor.pending_wrap == false);
+}
+
+test "Terminal: linefeed mode automatic carriage return" {
+    var t = try init(testing.allocator, 10, 10);
+    defer t.deinit(testing.allocator);
+
+    // Basic grid writing
+    t.modes.set(.linefeed, true);
+    try t.printString("123456");
+    try t.linefeed();
+    try t.print('X');
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("123456\nX", str);
+    }
 }
 
 test "Terminal: carriage return unsets pending wrap" {

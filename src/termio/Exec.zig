@@ -393,7 +393,7 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
 
     // If we reached here it means we're at a prompt, so we send a form-feed.
     assert(self.terminal.cursorIsAtPrompt());
-    try self.queueWrite(&[_]u8{0x0C});
+    try self.queueWrite(&[_]u8{0x0C}, false);
 }
 
 /// Scroll the viewport
@@ -418,7 +418,7 @@ pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
     }
 }
 
-pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
+pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
     const ev = self.data.?;
 
     // We go through and chunk the data if necessary to fit into
@@ -427,19 +427,49 @@ pub inline fn queueWrite(self: *Exec, data: []const u8) !void {
     while (i < data.len) {
         const req = try ev.write_req_pool.getGrow(self.alloc);
         const buf = try ev.write_buf_pool.getGrow(self.alloc);
-        const end = @min(data.len, i + buf.len);
-        fastmem.copy(u8, buf, data[i..end]);
+        const slice = slice: {
+            // The maximum end index is either the end of our data or
+            // the end of our buffer, whichever is smaller.
+            const max = @min(data.len, i + buf.len);
+
+            // Fast
+            if (!linefeed) {
+                fastmem.copy(u8, buf, data[i..max]);
+                const len = max - i;
+                i = max;
+                break :slice buf[0..len];
+            }
+
+            // Slow, have to replace \r with \r\n
+            var buf_i: usize = 0;
+            while (i < data.len and buf_i < buf.len - 1) {
+                const ch = data[i];
+                i += 1;
+
+                if (ch != '\r') {
+                    buf[buf_i] = ch;
+                    buf_i += 1;
+                    continue;
+                }
+
+                // CRLF
+                buf[buf_i] = '\r';
+                buf[buf_i + 1] = '\n';
+                buf_i += 2;
+            }
+
+            break :slice buf[0..buf_i];
+        };
+
         ev.data_stream.queueWrite(
             ev.loop,
             &ev.write_queue,
             req,
-            .{ .slice = buf[0..(end - i)] },
+            .{ .slice = slice },
             EventData,
             ev,
             ttyWrite,
         );
-
-        i = end;
     }
 }
 
@@ -1505,6 +1535,10 @@ const StreamHandler = struct {
             .synchronized_output => {
                 if (enabled) self.messageWriter(.{ .start_synchronized_output = {} });
                 try self.queueRender();
+            },
+
+            .linefeed => {
+                self.messageWriter(.{ .linefeed_mode = enabled });
             },
 
             .mouse_event_x10 => self.terminal.flags.mouse_event = if (enabled) .x10 else .none,

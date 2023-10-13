@@ -62,6 +62,10 @@ sync_reset_cancel_c: xev.Completion = .{},
 /// The underlying IO implementation.
 impl: *termio.Impl,
 
+/// True if linefeed mode is enabled. This is duplicated here so that the
+/// write thread doesn't need to grab a lock to check this on every write.
+linefeed_mode: bool = false,
+
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: *Mailbox,
@@ -175,11 +179,12 @@ fn drainMailbox(self: *Thread) !void {
             .scroll_viewport => |v| try self.impl.scrollViewport(v),
             .jump_to_prompt => |v| try self.impl.jumpToPrompt(v),
             .start_synchronized_output => self.startSynchronizedOutput(),
-            .write_small => |v| try self.impl.queueWrite(v.data[0..v.len]),
-            .write_stable => |v| try self.impl.queueWrite(v),
+            .linefeed_mode => |v| self.linefeed_mode = v,
+            .write_small => |v| try self.impl.queueWrite(v.data[0..v.len], self.linefeed_mode),
+            .write_stable => |v| try self.impl.queueWrite(v, self.linefeed_mode),
             .write_alloc => |v| {
                 defer v.alloc.free(v.data);
-                try self.impl.queueWrite(v.data);
+                try self.impl.queueWrite(v.data, self.linefeed_mode);
             },
         }
     }
