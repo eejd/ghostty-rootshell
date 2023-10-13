@@ -515,6 +515,7 @@ pub fn renderGlyph(
             alloc,
             atlas,
             glyph_index,
+            opts,
         ),
     };
 

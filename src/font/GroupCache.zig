@@ -41,6 +41,7 @@ const CodepointKey = struct {
 const GlyphKey = struct {
     index: Group.FontIndex,
     glyph: u32,
+    opts: font.face.RenderOptions,
 };
 
 /// The GroupCache takes ownership of Group and will free it.
@@ -124,7 +125,7 @@ pub fn renderGlyph(
     glyph_index: u32,
     opts: font.face.RenderOptions,
 ) !Glyph {
-    const key: GlyphKey = .{ .index = index, .glyph = glyph_index };
+    const key: GlyphKey = .{ .index = index, .glyph = glyph_index, .opts = opts };
     const gop = try self.glyphs.getOrPut(alloc, key);
 
     // If it is in the cache, use it.

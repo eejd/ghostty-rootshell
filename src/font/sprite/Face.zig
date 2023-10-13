@@ -49,6 +49,7 @@ pub fn renderGlyph(
     alloc: Allocator,
     atlas: *font.Atlas,
     cp: u32,
+    opts: font.face.RenderOptions,
 ) !font.Glyph {
     if (std.debug.runtime_safety) {
         if (!self.hasCodepoint(cp, null)) {
@@ -57,11 +58,17 @@ pub fn renderGlyph(
         }
     }
 
+    // We adjust our sprite width based on the cell width.
+    const width = switch (opts.cell_width orelse 1) {
+        0, 1 => self.width,
+        else => |width| self.width * width,
+    };
+
     // Safe to ".?" because of the above assertion.
     return switch (Kind.init(cp).?) {
         .box => box: {
             const f: Box = .{
-                .width = self.width,
+                .width = width,
                 .height = self.height,
                 .thickness = self.thickness,
             };
@@ -73,7 +80,7 @@ pub fn renderGlyph(
             alloc,
             atlas,
             @enumFromInt(cp),
-            self.width,
+            width,
             self.height,
             self.underline_position,
             self.thickness,

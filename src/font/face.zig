@@ -76,6 +76,10 @@ pub const RenderOptions = struct {
     /// is typically naive, but ultimately up to the rasterizer.
     max_height: ?u16 = null,
 
+    /// The number of grid cells this glyph will take up. This can be used
+    /// optionally by the rasterizer to better layout the glyph.
+    cell_width: ?u2 = null,
+
     /// Thicken the glyph. This draws the glyph with a thicker stroke width.
     /// This is purely an aesthetic setting.
     ///

@@ -1364,7 +1364,7 @@ pub fn updateCell(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
-            .{},
+            .{ .cell_width = if (cell.attrs.wide) 2 else 1 },
         );
 
         const color = if (cell.attrs.underline_color) cell.underline_fg else colors.fg;
@@ -1421,7 +1421,7 @@ fn addCursor(
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
-        .{},
+        .{ .cell_width = if (cell.attrs.wide) 2 else 1 },
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
         return null;
