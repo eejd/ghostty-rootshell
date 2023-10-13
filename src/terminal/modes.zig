@@ -170,6 +170,7 @@ const ModeEntry = struct {
 /// valuable to redocument them all here.
 const entries: []const ModeEntry = &.{
     // ANSI
+    .{ .name = "disable_keyboard", .value = 2, .ansi = true }, // KAM
     .{ .name = "insert", .value = 4, .ansi = true },
 
     // DEC

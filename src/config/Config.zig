@@ -461,6 +461,14 @@ keybind: Keybinds = .{},
 /// The default value is "16-bit".
 @"osc-color-report-format": OSCColorReportFormat = .@"16-bit",
 
+/// If true, allows the "KAM" mode (ANSI mode 2) to be used within
+/// the terminal. KAM disables keyboard input at the request of the
+/// application. This is not a common feature and is not recommended
+/// to be enabled. This will not be documented further because
+/// if you know you need KAM, you know. If you don't know if you
+/// need KAM, you don't need it.
+@"vt-kam-allowed": bool = false,
+
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
 /// using a new space. It's faster than the native fullscreen mode since it
