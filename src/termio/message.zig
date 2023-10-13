@@ -56,6 +56,9 @@ pub const Message = union(enum) {
     /// period of time so that a bad actor can't hang the terminal.
     start_synchronized_output: void,
 
+    /// Enable or disable linefeed mode (mode 20).
+    linefeed_mode: bool,
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 
