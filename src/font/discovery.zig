@@ -399,6 +399,7 @@ pub const CoreText = struct {
 
         style: Style = .unmatched,
         monospace: bool = false,
+        codepoint: bool = false,
 
         const Style = enum(u8) { unmatched = 0, match = 0xFF, _ };
 
@@ -409,6 +410,26 @@ pub const CoreText = struct {
 
     fn score(desc: *const Descriptor, ct_desc: *const macos.text.FontDescriptor) Score {
         var score_acc: Score = .{};
+
+        // If we're searching for a codepoint, prioritize fonts that
+        // have that codepoint.
+        if (desc.codepoint > 0) codepoint: {
+            const font = macos.text.Font.createWithFontDescriptor(ct_desc, 12) catch
+                break :codepoint;
+            defer font.release();
+
+            // Turn UTF-32 into UTF-16 for CT API
+            var unichars: [2]u16 = undefined;
+            const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
+                desc.codepoint,
+                &unichars,
+            );
+            const len: usize = if (pair) 2 else 1;
+
+            // Get our glyphs
+            var glyphs = [2]macos.graphics.Glyph{ 0, 0 };
+            score_acc.codepoint = font.getGlyphsForCharacters(unichars[0..len], glyphs[0..len]);
+        }
 
         // Get our symbolic traits for the descriptor so we can compare
         // boolean attributes like bold, monospace, etc.
