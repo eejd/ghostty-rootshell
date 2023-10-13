@@ -811,7 +811,7 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         assert(x < self.cols);
 
         const spacer_cell = row.getCellPtr(x);
-        spacer_cell.attrs.wide_spacer_tail = false;
+        spacer_cell.* = self.screen.cursor.pen;
 
         if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
@@ -821,8 +821,7 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         const x = self.screen.cursor.x - 1;
 
         const wide_cell = row.getCellPtr(x);
-        wide_cell.char = 0;
-        wide_cell.attrs.wide = false;
+        wide_cell.* = self.screen.cursor.pen;
 
         if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
