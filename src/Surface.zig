@@ -145,6 +145,7 @@ const DerivedConfig = struct {
     mouse_shift_capture: configpkg.MouseShiftCapture,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
+    vt_kam_allowed: bool,
     window_padding_x: u32,
     window_padding_y: u32,
 
@@ -166,6 +167,7 @@ const DerivedConfig = struct {
             .mouse_shift_capture = config.@"mouse-shift-capture",
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
+            .vt_kam_allowed = config.@"vt-kam-allowed",
             .window_padding_x = config.@"window-padding-x",
             .window_padding_y = config.@"window-padding-y",
 
@@ -983,6 +985,13 @@ pub fn keyCallback(
         // it, we processed the action but we still want to process our
         // encodings, too.
         if (consumed and performed) return true;
+    }
+
+    // If we allow KAM and KAM is enabled then we do nothing.
+    if (self.config.vt_kam_allowed) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        if (self.io.terminal.modes.get(.disable_keyboard)) return true;
     }
 
     // If this input event has text, then we hide the mouse if configured.

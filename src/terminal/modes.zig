@@ -147,6 +147,7 @@ pub fn modeFromInt(v: u16, ansi: bool) ?Mode {
 }
 
 fn entryForMode(comptime mode: Mode) ModeEntry {
+    @setEvalBranchQuota(10_000);
     const name = @tagName(mode);
     for (entries) |entry| {
         if (std.mem.eql(u8, entry.name, name)) return entry;
@@ -170,7 +171,9 @@ const ModeEntry = struct {
 /// valuable to redocument them all here.
 const entries: []const ModeEntry = &.{
     // ANSI
+    .{ .name = "disable_keyboard", .value = 2, .ansi = true }, // KAM
     .{ .name = "insert", .value = 4, .ansi = true },
+    .{ .name = "send_receive_mode", .value = 12, .ansi = true, .default = true }, // SRM
 
     // DEC
     .{ .name = "cursor_keys", .value = 1 }, // DECCKM
@@ -212,7 +215,7 @@ test modeFromInt {
     try testing.expect(modeFromInt(4, true).? == .insert);
     try testing.expect(modeFromInt(9, true) == null);
     try testing.expect(modeFromInt(9, false).? == .mouse_event_x10);
-    try testing.expect(modeFromInt(12, true) == null);
+    try testing.expect(modeFromInt(14, true) == null);
 }
 
 test ModeState {
