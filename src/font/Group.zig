@@ -327,6 +327,7 @@ pub fn indexForCodepoint(
 
     // If we are regular, try looking for a fallback using discovery.
     if (style == .regular and font.Discover != void) {
+        log.debug("searching for a fallback font for cp={x}", .{cp});
         if (self.discover) |disco| discover: {
             var disco_it = disco.discover(self.alloc, .{
                 .codepoint = cp,
@@ -337,19 +338,27 @@ pub fn indexForCodepoint(
             }) catch break :discover;
             defer disco_it.deinit();
 
-            if (disco_it.next() catch break :discover) |face| {
+            while (true) {
+                const face_ = disco_it.next() catch |err| {
+                    log.warn("fallback search failed with error err={}", .{err});
+                    break;
+                };
+                const face = face_ orelse break;
+
                 // Discovery is supposed to only return faces that have our
                 // codepoint but we can't search presentation in discovery so
                 // we have to check it here.
-                if (face.hasCodepoint(cp, p)) {
-                    var buf: [256]u8 = undefined;
-                    log.info("found codepoint 0x{x} in fallback face={s}", .{
-                        cp,
-                        face.name(&buf) catch "<error>",
-                    });
-                    return self.addFace(style, .{ .deferred = face }) catch break :discover;
-                }
+                if (!face.hasCodepoint(cp, p)) continue;
+
+                var buf: [256]u8 = undefined;
+                log.info("found codepoint 0x{x} in fallback face={s}", .{
+                    cp,
+                    face.name(&buf) catch "<error>",
+                });
+                return self.addFace(style, .{ .deferred = face }) catch break :discover;
             }
+
+            log.debug("no fallback face found for cp={x}", .{cp});
         }
     }
 

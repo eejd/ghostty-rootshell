@@ -7,7 +7,7 @@ const text = @import("../text.zig");
 const c = @import("c.zig");
 
 pub const Font = opaque {
-    pub fn createWithFontDescriptor(desc: *text.FontDescriptor, size: f32) Allocator.Error!*Font {
+    pub fn createWithFontDescriptor(desc: *const text.FontDescriptor, size: f32) Allocator.Error!*Font {
         return @as(
             ?*Font,
             @ptrFromInt(@intFromPtr(c.CTFontCreateWithFontDescriptor(
