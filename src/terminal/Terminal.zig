@@ -821,9 +821,10 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
         const x = self.screen.cursor.x - 1;
 
         const wide_cell = row.getCellPtr(x);
+        wide_cell.char = 0;
         wide_cell.attrs.wide = false;
 
-        if (self.screen.cursor.x <= 1) {
+        if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
         }
     }
@@ -2013,6 +2014,47 @@ test "Terminal: print over wide char at 0,0" {
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 'A'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expect(!cell.attrs.wide_spacer_tail);
+    }
+}
+
+test "Terminal: print over wide spacer tail" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    try t.print('橋');
+    t.setCursorPos(1, 2);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(" X", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, 'X'), cell.char);
+        try testing.expect(!cell.attrs.wide_spacer_tail);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
 }
 
 test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
