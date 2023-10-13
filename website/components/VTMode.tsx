@@ -9,7 +9,7 @@ export default function VTMode({
     <div className="flex my-2.5">
       <div className="border px-1 grid grid-rows-2 grid-cols-1 text-center">
         <div>
-          {ansi ? "?" : ""}
+          {ansi ? "" : "?"}
           {value}
         </div>
       </div>

@@ -1573,6 +1573,11 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
         // This is the index of the final copyable value that we need to copy.
         const copyable_end = start + copyable - 1;
 
+        // If our last cell we're shifting is wide, then we need to clear
+        // it to be empty so we don't split the multi-cell char.
+        const cell = row.getCellPtr(copyable_end);
+        if (cell.attrs.wide) cell.char = 0;
+
         // Shift count cells. We have to do this backwards since we're not
         // allocated new space, otherwise we'll copy duplicates.
         var i: usize = 0;
@@ -3949,6 +3954,23 @@ test "Terminal: insertBlanks shift off screen" {
     }
 }
 
+test "Terminal: insertBlanks split multi-cell character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 10);
+    defer t.deinit(alloc);
+
+    for ("123") |c| try t.print(c);
+    try t.print('橋');
+    t.setCursorPos(1, 1);
+    t.insertBlanks(1);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(" 123", str);
+    }
+}
+
 test "Terminal: insertBlanks inside left/right scroll region" {
     const alloc = testing.allocator;
     var t = try init(alloc, 10, 10);
@@ -4070,6 +4092,24 @@ test "Terminal: insert mode with wide characters at end" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("well\n😀", str);
+    }
+}
+
+test "Terminal: insert mode pushing off wide character" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 2);
+    defer t.deinit(alloc);
+
+    for ("123") |c| try t.print(c);
+    try t.print('😀'); // 0x1F600
+    t.modes.set(.insert, true);
+    t.setCursorPos(1, 1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X123", str);
     }
 }
 
