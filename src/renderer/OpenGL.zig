@@ -848,12 +848,26 @@ fn addCursor(
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
 ) ?*const GPUCell {
-    // Add the cursor
-    const cell = screen.getCell(
-        .active,
-        screen.cursor.y,
-        screen.cursor.x,
-    );
+    // Add the cursor. We render the cursor over the wide character if
+    // we're on the wide characer tail.
+    const cell, const x = cell: {
+        // The cursor goes over the screen cursor position.
+        const cell = screen.getCell(
+            .active,
+            screen.cursor.y,
+            screen.cursor.x,
+        );
+        if (!cell.attrs.wide_spacer_tail or screen.cursor.x == 0)
+            break :cell .{ cell, screen.cursor.x };
+
+        // If we're part of a wide character, we move the cursor back to
+        // the actual character.
+        break :cell .{ screen.getCell(
+            .active,
+            screen.cursor.y,
+            screen.cursor.x - 1,
+        ), screen.cursor.x - 1 };
+    };
 
     const color = self.config.cursor_color orelse terminal.color.RGB{
         .r = 0xFF,
@@ -880,7 +894,7 @@ fn addCursor(
 
     self.cells.appendAssumeCapacity(.{
         .mode = .fg,
-        .grid_col = @intCast(screen.cursor.x),
+        .grid_col = @intCast(x),
         .grid_row = @intCast(screen.cursor.y),
         .grid_width = if (cell.attrs.wide) 2 else 1,
         .fg_r = color.r,
