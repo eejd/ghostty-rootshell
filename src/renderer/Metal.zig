@@ -1418,11 +1418,7 @@ fn addCursor(
         ), screen.cursor.x - 1 };
     };
 
-    const color = self.config.cursor_color orelse terminal.color.RGB{
-        .r = 0xFF,
-        .g = 0xFF,
-        .b = 0xFF,
-    };
+    const color = self.config.cursor_color orelse self.config.foreground;
 
     const sprite: font.Sprite = switch (cursor_style) {
         .block => .cursor_rect,
