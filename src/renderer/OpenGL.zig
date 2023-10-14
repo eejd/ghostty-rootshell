@@ -219,6 +219,7 @@ pub const DerivedConfig = struct {
     font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_text: ?terminal.color.RGB,
+    cursor_opacity: f64,
     background: terminal.color.RGB,
     background_opacity: f64,
     foreground: terminal.color.RGB,
@@ -257,6 +258,8 @@ pub const DerivedConfig = struct {
                 txt.toTerminalRGB()
             else
                 null,
+
+            .cursor_opacity = @max(0, @min(1, config.@"cursor-opacity")),
 
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
@@ -869,10 +872,10 @@ fn addCursor(
         ), screen.cursor.x - 1 };
     };
 
-    const color = self.config.cursor_color orelse terminal.color.RGB{
-        .r = 0xFF,
-        .g = 0xFF,
-        .b = 0xFF,
+    const color = self.config.cursor_color orelse self.config.foreground;
+    const alpha: u8 = if (!self.focused) 255 else alpha: {
+        const alpha = 255 * self.config.cursor_opacity;
+        break :alpha @intFromFloat(@ceil(alpha));
     };
 
     const sprite: font.Sprite = switch (cursor_style) {
@@ -900,7 +903,7 @@ fn addCursor(
         .fg_r = color.r,
         .fg_g = color.g,
         .fg_b = color.b,
-        .fg_a = 255,
+        .fg_a = alpha,
         .bg_r = 0,
         .bg_g = 0,
         .bg_b = 0,
