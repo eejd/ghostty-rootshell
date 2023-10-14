@@ -873,7 +873,7 @@ fn addCursor(
     };
 
     const color = self.config.cursor_color orelse self.config.foreground;
-    const alpha: u8 = alpha: {
+    const alpha: u8 = if (!self.focused) 255 else alpha: {
         const alpha = 255 * self.config.cursor_opacity;
         break :alpha @intFromFloat(@ceil(alpha));
     };
