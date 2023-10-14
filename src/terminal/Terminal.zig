@@ -618,6 +618,12 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
+    // Our right margin depends where our cursor is now.
+    const right_limit = if (self.screen.cursor.x > self.scrolling_region.right)
+        self.cols
+    else
+        self.scrolling_region.right + 1;
+
     // Perform grapheme clustering if grapheme support is enabled (mode 2027).
     // This is MUCH slower than the normal path so the conditional below is
     // purposely ordered in least-likely to most-likely so we can drop out
@@ -672,6 +678,52 @@ pub fn print(self: *Terminal, c: u21) !void {
         // If we can NOT break, this means that "c" is part of a grapheme
         // with the previous char.
         if (!grapheme_break) {
+            // If this is an emoji variation selector then we need to modify
+            // the cell width accordingly. VS16 makes the character wide and
+            // VS15 makes it narrow.
+            //
+            // TODO: This should use the emoji-variation-selector.txt UCD file.
+            switch (c) {
+                0xFE0F => wide: {
+                    if (prev.cell.attrs.wide) break :wide;
+
+                    const old = self.screen.cursor.x;
+                    self.screen.cursor.x = prev.x;
+                    defer self.screen.cursor.x = old;
+
+                    // If we don't have space for the wide char, we need
+                    // to insert spacers and wrap. Then we just print the wide
+                    // char as normal.
+                    if (prev.x == right_limit - 1) {
+                        const spacer_head = self.printCell(' ');
+                        spacer_head.attrs.wide_spacer_head = true;
+                        try self.printWrap();
+                    }
+
+                    const wide_cell = self.printCell(@intCast(prev.cell.char));
+                    wide_cell.attrs.wide = true;
+
+                    // Write our spacer
+                    self.screen.cursor.x += 1;
+                    const spacer = self.printCell(' ');
+                    spacer.attrs.wide_spacer_tail = true;
+                },
+
+                0xFE0E => narrow: {
+                    // Prev cell is no longer wide
+                    if (!prev.cell.attrs.wide) break :narrow;
+                    prev.cell.attrs.wide = false;
+
+                    // Remove the wide spacer tail
+                    const cell = row.getCellPtr(prev.x + 1);
+                    cell.attrs.wide_spacer_tail = false;
+
+                    break :narrow;
+                },
+
+                else => {},
+            }
+
             log.debug("c={x} grapheme attach to x={}", .{ c, prev.x });
             try row.attachGrapheme(prev.x, c);
             return;
@@ -721,12 +773,6 @@ pub fn print(self: *Terminal, c: u21) !void {
     {
         self.insertBlanks(width);
     }
-
-    // Our right margin depends where our cursor is now.
-    const right_limit = if (self.screen.cursor.x > self.scrolling_region.right)
-        self.cols
-    else
-        self.scrolling_region.right + 1;
 
     switch (width) {
         // Single cell is very easy: just write in the cell
@@ -2053,6 +2099,81 @@ test "Terminal: print over wide spacer tail" {
         try testing.expectEqual(@as(u32, 'X'), cell.char);
         try testing.expect(!cell.attrs.wide_spacer_tail);
         try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+}
+
+test "Terminal: VS15 to make narrow character" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    try t.print(0x26C8); // Thunder cloud and rain
+    try t.print(0xFE0E); // VS15 to make narrow
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("⛈︎", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x26C8), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+}
+
+test "Terminal: VS16 to make wide character with mode 2027" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    try t.print(0x2764); // Heart
+    try t.print(0xFE0F); // VS16 to make wide
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("❤️", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x2764), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+}
+
+test "Terminal: VS16 doesn't make character with 2027 disabled" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // Disable grapheme clustering
+    t.modes.set(.grapheme_cluster, false);
+
+    try t.print(0x2764); // Heart
+    try t.print(0xFE0F); // VS16 to make wide
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("❤️", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x2764), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
     }
 }
 
