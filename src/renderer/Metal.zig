@@ -104,6 +104,7 @@ pub const DerivedConfig = struct {
     font_features: std.ArrayList([]const u8),
     font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
+    cursor_opacity: f64,
     cursor_text: ?terminal.color.RGB,
     background: terminal.color.RGB,
     background_opacity: f64,
@@ -143,6 +144,8 @@ pub const DerivedConfig = struct {
                 txt.toTerminalRGB()
             else
                 null,
+
+            .cursor_opacity = @max(0, @min(1, config.@"cursor-opacity")),
 
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
@@ -1419,6 +1422,10 @@ fn addCursor(
     };
 
     const color = self.config.cursor_color orelse self.config.foreground;
+    const alpha: u8 = alpha: {
+        const alpha = 255 * self.config.cursor_opacity;
+        break :alpha @intFromFloat(@ceil(alpha));
+    };
 
     const sprite: font.Sprite = switch (cursor_style) {
         .block => .cursor_rect,
@@ -1444,7 +1451,7 @@ fn addCursor(
             @as(f32, @floatFromInt(screen.cursor.y)),
         },
         .cell_width = if (cell.attrs.wide) 2 else 1,
-        .color = .{ color.r, color.g, color.b, 0xFF },
+        .color = .{ color.r, color.g, color.b, alpha },
         .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
         .glyph_size = .{ glyph.width, glyph.height },
         .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
