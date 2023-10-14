@@ -1202,7 +1202,7 @@ pub fn scrollCallback(
                 for (0..y.delta_unsigned) |_| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = seq,
-                    }, .{ .forever = {} });
+                    }, .{ .instant = {} });
                 }
             }
 
