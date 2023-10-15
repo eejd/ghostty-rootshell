@@ -229,6 +229,14 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .default_background_color = self.default_background_color,
                 .osc_color_report_format = self.osc_color_report_format,
             },
+
+            .parser = .{
+                .osc_parser = .{
+                    // Populate the OSC parser allocator (optional) because
+                    // we want to support large OSC payloads such as OSC 52.
+                    .alloc = self.alloc,
+                },
+            },
         },
     };
     errdefer ev_data_ptr.deinit(self.alloc);
@@ -565,6 +573,7 @@ const EventData = struct {
 
         // Clear any StreamHandler state
         self.terminal_stream.handler.deinit();
+        self.terminal_stream.deinit();
     }
 
     /// This queues a render operation with the renderer thread. The render
