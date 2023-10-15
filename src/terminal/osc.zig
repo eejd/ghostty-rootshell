@@ -6,6 +6,8 @@ const osc = @This();
 
 const std = @import("std");
 const mem = std.mem;
+const assert = std.debug.assert;
+const Allocator = mem.Allocator;
 
 const log = std.log.scoped(.osc);
 
@@ -145,6 +147,11 @@ pub const Terminator = enum {
 };
 
 pub const Parser = struct {
+    /// Optional allocator used to accept data longer than MAX_BUF.
+    /// This only applies to some commands (e.g. OSC 52) that can
+    /// reasonably exceed MAX_BUF.
+    alloc: ?Allocator = null,
+
     /// Current state of the parser.
     state: State = .empty,
 
@@ -156,6 +163,7 @@ pub const Parser = struct {
     buf: [MAX_BUF]u8 = undefined,
     buf_start: usize = 0,
     buf_idx: usize = 0,
+    buf_dynamic: ?*std.ArrayListUnmanaged(u8) = null,
 
     /// True when a command is complete/valid to return.
     complete: bool = false,
@@ -219,7 +227,17 @@ pub const Parser = struct {
         // Expect a string parameter. param_str must be set as well as
         // buf_start.
         string,
+
+        // A string that can grow beyond MAX_BUF. This uses the allocator.
+        // If the parser has no allocator then it is treated as if the
+        // buffer is full.
+        allocable_string,
     };
+
+    /// This must be called to clean up any allocated memory.
+    pub fn deinit(self: *Parser) void {
+        self.reset();
+    }
 
     /// Reset the parser start.
     pub fn reset(self: *Parser) void {
@@ -227,6 +245,12 @@ pub const Parser = struct {
         self.buf_start = 0;
         self.buf_idx = 0;
         self.complete = false;
+        if (self.buf_dynamic) |ptr| {
+            const alloc = self.alloc.?;
+            ptr.deinit(alloc);
+            alloc.destroy(ptr);
+            self.buf_dynamic = null;
+        }
     }
 
     /// Consume the next character c and advance the parser state.
@@ -351,9 +375,9 @@ pub const Parser = struct {
             .clipboard_kind => switch (c) {
                 ';' => {
                     self.command.clipboard_contents.kind = 'c';
-                    self.state = .string;
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
+                    self.prepAllocableString();
                 },
                 else => {
                     self.command.clipboard_contents.kind = c;
@@ -363,9 +387,9 @@ pub const Parser = struct {
 
             .clipboard_kind_end => switch (c) {
                 ';' => {
-                    self.state = .string;
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
+                    self.prepAllocableString();
                 },
                 else => self.state = .invalid,
             },
@@ -467,8 +491,44 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
+            .allocable_string => {
+                const alloc = self.alloc.?;
+                const list = self.buf_dynamic.?;
+                list.append(alloc, c) catch {
+                    self.state = .invalid;
+                    return;
+                };
+
+                // Never consume buffer space for allocable strings
+                self.buf_idx -= 1;
+
+                // We can complete at any time
+                self.complete = true;
+            },
+
             .string => self.complete = true,
         }
+    }
+
+    fn prepAllocableString(self: *Parser) void {
+        assert(self.buf_dynamic == null);
+
+        // We need an allocator. If we don't have an allocator, we
+        // pretend we're just a fixed buffer string and hope we fit!
+        const alloc = self.alloc orelse {
+            self.state = .string;
+            return;
+        };
+
+        // Allocate our dynamic buffer
+        const list = alloc.create(std.ArrayListUnmanaged(u8)) catch {
+            self.state = .string;
+            return;
+        };
+        list.* = .{};
+
+        self.buf_dynamic = list;
+        self.state = .allocable_string;
     }
 
     fn endSemanticOptionValue(self: *Parser) void {
@@ -531,6 +591,11 @@ pub const Parser = struct {
         self.temp_state.str.* = self.buf[self.buf_start..self.buf_idx];
     }
 
+    fn endAllocableString(self: *Parser) void {
+        const list = self.buf_dynamic.?;
+        self.temp_state.str.* = list.items;
+    }
+
     /// End the sequence and return the command, if any. If the return value
     /// is null, then no valid command was found. The optional terminator_ch
     /// is the final character in the OSC sequence. This is used to determine
@@ -546,6 +611,7 @@ pub const Parser = struct {
             .semantic_exit_code => self.endSemanticExitCode(),
             .semantic_option_value => self.endSemanticOptionValue(),
             .string => self.endString(),
+            .allocable_string => self.endAllocableString(),
             else => {},
         }
 
@@ -759,6 +825,22 @@ test "OSC: get/set clipboard (optional parameter)" {
     const cmd = p.end(null).?;
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 'c');
+    try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
+}
+
+test "OSC: get/set clipboard with allocator" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var p: Parser = .{ .alloc = alloc };
+    defer p.deinit();
+
+    const input = "52;s;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end(null).?;
+    try testing.expect(cmd == .clipboard_contents);
+    try testing.expect(cmd.clipboard_contents.kind == 's');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
 }
 
