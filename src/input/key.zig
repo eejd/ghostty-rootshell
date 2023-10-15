@@ -332,6 +332,23 @@ pub const Key = enum(c_int) {
         };
     }
 
+    /// True if this key is a modifier.
+    pub fn modifier(self: Key) bool {
+        return switch (self) {
+            .left_shift,
+            .left_control,
+            .left_alt,
+            .left_super,
+            .right_shift,
+            .right_control,
+            .right_alt,
+            .right_super,
+            => true,
+
+            else => false,
+        };
+    }
+
     /// Returns true if this is a keypad key.
     pub fn keypad(self: Key) bool {
         return switch (self) {
