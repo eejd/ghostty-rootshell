@@ -38,6 +38,10 @@ pub fn Stream(comptime Handler: type) type {
         handler: Handler,
         parser: Parser = .{},
 
+        pub fn deinit(self: *Self) void {
+            self.parser.deinit();
+        }
+
         /// Process a string of characters.
         pub fn nextSlice(self: *Self, c: []const u8) !void {
             const tracy = trace(@src());

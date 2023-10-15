@@ -218,6 +218,10 @@ pub fn init() Parser {
     return .{};
 }
 
+pub fn deinit(self: *Parser) void {
+    self.osc_parser.deinit();
+}
+
 /// Next consumes the next character c and returns the actions to execute.
 /// Up to 3 actions may need to be executed -- in order -- representing
 /// the state exit, transition, and entry actions.
