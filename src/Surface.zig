@@ -1032,12 +1032,13 @@ pub fn keyCallback(
     }, .{ .forever = {} });
     try self.io_thread.wakeup.notify();
 
-    // If we have printable text to emit then we always want to clear the
-    // selection and scroll to the bottom.
-    if (event.utf8.len > 0) {
+    // If our event is any keypress that isn't a modifier and we generated
+    // some data to send to the pty, then we move the viewport down to the
+    // bottom. If we generated literal text, then we also clear the selection.
+    if (!event.key.modifier()) {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        self.setSelection(null);
+        if (event.utf8.len > 0) self.setSelection(null);
         try self.io.terminal.scrollViewport(.{ .bottom = {} });
         try self.queueRender();
     }
