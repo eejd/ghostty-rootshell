@@ -841,10 +841,13 @@ extension Ghostty {
             default:
                 return
             }
-
+            
             let len = chars.utf8CString.count
+            if (len == 0) { return }
+            
             chars.withCString { ptr in
-                ghostty_surface_text(surface, ptr, UInt(len))
+                // len includes the null terminator so we do len - 1
+                ghostty_surface_text(surface, ptr, UInt(len - 1))
             }
         }
 
