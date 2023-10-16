@@ -469,6 +469,8 @@ pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
             break :slice buf[0..buf_i];
         };
 
+        // for (slice) |b| log.warn("write: {x}", .{b});
+
         ev.data_stream.queueWrite(
             ev.loop,
             &ev.write_queue,

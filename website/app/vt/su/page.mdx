@@ -95,3 +95,19 @@ printf "X"
 |________|
 |X_______|
 ```
+
+### SU V-5: Scroll Full Top/Bottom Scroll Region
+
+```bash
+printf "\033[1;1H" # move to top-left
+printf "\033[0J" # clear screen
+printf "top"
+printf "\033[5;1H"
+printf "ABCDEF"
+printf "\033[2;5r" # scroll region top/bottom
+printf "\033[4S"
+```
+
+```
+|top_____|
+```
