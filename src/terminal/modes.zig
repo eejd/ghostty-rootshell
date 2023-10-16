@@ -162,7 +162,13 @@ const ModeEntry = struct {
     name: []const u8,
     value: comptime_int,
     default: bool = false,
+
+    /// True if this is an ANSI mode, false if its a DEC mode (?-prefixed).
     ansi: bool = false,
+
+    /// If true, this mode is disabled and Ghostty will not allow it to be
+    /// set or queried. The mode enum still has it, allowing Ghostty developers
+    /// to develop a mode without exposing it to real users.
     disabled: bool = false,
 };
 

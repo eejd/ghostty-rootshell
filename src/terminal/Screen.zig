@@ -57,6 +57,7 @@ const Allocator = std.mem.Allocator;
 const utf8proc = @import("utf8proc");
 const trace = @import("tracy").trace;
 const ansi = @import("ansi.zig");
+const modes = @import("modes.zig");
 const sgr = @import("sgr.zig");
 const color = @import("color.zig");
 const kitty = @import("kitty.zig");
@@ -107,6 +108,17 @@ pub const Cursor = struct {
     /// is determined by mode 12 (modes.zig). This mode is synchronized
     /// with CSI q, the same as xterm.
     pub const Style = enum { bar, block, underline };
+
+    /// Saved cursor state. This contains more than just Cursor members
+    /// because additional state is stored.
+    pub const Saved = struct {
+        x: usize,
+        y: usize,
+        pen: Cell,
+        pending_wrap: bool,
+        origin: bool,
+        charset: CharsetState,
+    };
 };
 
 /// This is a single item within the storage buffer. We use a union to
@@ -931,7 +943,7 @@ history: usize,
 cursor: Cursor = .{},
 
 /// Saved cursor saved with DECSC (ESC 7).
-saved_cursor: Cursor = .{},
+saved_cursor: ?Cursor.Saved = null,
 
 /// The selection for this screen (if any).
 selection: ?Selection = null,
@@ -944,15 +956,6 @@ kitty_images: kitty.graphics.ImageStorage = .{},
 
 /// The charset state
 charset: CharsetState = .{},
-
-/// The saved charset state. This state is saved / restored along with the
-/// cursor state
-saved_charset: CharsetState = .{},
-
-/// The saved state of origin mode. This mode gets special handling in Screen
-/// because it's state is saved/restored with the cursor and must have a state
-/// independent to each screen (primary and alternate)
-saved_origin_mode: bool = false,
 
 /// The current or most recent protected mode. Once a protection mode is
 /// set, this will never become "off" again until the screen is reset.
