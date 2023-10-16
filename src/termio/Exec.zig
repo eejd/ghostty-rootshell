@@ -1611,8 +1611,7 @@ const StreamHandler = struct {
                     x: usize,
                     y: usize,
                 } = if (self.terminal.modes.get(.origin)) .{
-                    // TODO: what do we do if cursor is outside scrolling region?
-                    .x = self.terminal.screen.cursor.x,
+                    .x = self.terminal.screen.cursor.x -| self.terminal.scrolling_region.left,
                     .y = self.terminal.screen.cursor.y -| self.terminal.scrolling_region.top,
                 } else .{
                     .x = self.terminal.screen.cursor.x,
