@@ -704,9 +704,9 @@ pub fn print(self: *Terminal, c: u21) !void {
                 0xFE0F => wide: {
                     if (prev.cell.attrs.wide) break :wide;
 
-                    const old = self.screen.cursor.x;
+                    // Move our cursor back to the previous. We'll move
+                    // the cursor within this block to the proper location.
                     self.screen.cursor.x = prev.x;
-                    defer self.screen.cursor.x = old;
 
                     // If we don't have space for the wide char, we need
                     // to insert spacers and wrap. Then we just print the wide
@@ -724,6 +724,13 @@ pub fn print(self: *Terminal, c: u21) !void {
                     self.screen.cursor.x += 1;
                     const spacer = self.printCell(' ');
                     spacer.attrs.wide_spacer_tail = true;
+
+                    // Move the cursor again so we're beyond our spacer
+                    self.screen.cursor.x += 1;
+                    if (self.screen.cursor.x == right_limit) {
+                        self.screen.cursor.x -= 1;
+                        self.screen.cursor.pending_wrap = true;
+                    }
                 },
 
                 0xFE0E => narrow: {
@@ -2166,6 +2173,39 @@ test "Terminal: VS16 to make wide character with mode 2027" {
         try testing.expectEqual(@as(u32, 0x2764), cell.char);
         try testing.expect(cell.attrs.wide);
         try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+}
+
+test "Terminal: VS16 repeated with mode 2027" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    try t.print(0x2764); // Heart
+    try t.print(0xFE0F); // VS16 to make wide
+    try t.print(0x2764); // Heart
+    try t.print(0xFE0F); // VS16 to make wide
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("❤️❤️", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 0x2764), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(2);
+        try testing.expectEqual(@as(u32, 0x2764), cell.char);
+        try testing.expect(cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 2), row.codepointLen(2));
     }
 }
 
