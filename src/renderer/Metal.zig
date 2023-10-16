@@ -1115,9 +1115,13 @@ fn rebuildCells(
         // the cell with the cursor.
         const start_i: usize = self.cells.items.len;
         defer if (cursor_row) {
+            // If we're on a wide spacer tail, then we want to look for
+            // the previous cell.
+            const screen_cell = row.getCell(screen.cursor.x);
+            const x = screen.cursor.x - @intFromBool(screen_cell.attrs.wide_spacer_tail);
             for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_pos[0] == @as(f32, @floatFromInt(screen.cursor.x)) and
-                    cell.mode == .fg)
+                if (cell.grid_pos[0] == @as(f32, @floatFromInt(x)) and
+                    (cell.mode == .fg or cell.mode == .fg_color))
                 {
                     cursor_cell = cell;
                     break;
@@ -1201,10 +1205,13 @@ fn rebuildCells(
         }
 
         if (cursor_cell) |*cell| {
-            cell.color = if (self.config.cursor_text) |txt|
-                .{ txt.r, txt.g, txt.b, 255 }
-            else
-                .{ 0, 0, 0, 255 };
+            if (cell.mode == .fg) {
+                cell.color = if (self.config.cursor_text) |txt|
+                    .{ txt.r, txt.g, txt.b, 255 }
+                else
+                    .{ 0, 0, 0, 255 };
+            }
+
             self.cells.appendAssumeCapacity(cell.*);
         }
     }
