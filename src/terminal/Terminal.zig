@@ -1765,7 +1765,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
         self.screen.scrollRegionUp(
             .{ .active = self.screen.cursor.y },
             .{ .active = self.scrolling_region.bottom },
-            @min(count, self.scrolling_region.bottom - self.screen.cursor.y),
+            @min(count, (self.scrolling_region.bottom - self.screen.cursor.y) + 1),
         );
         return;
     }
@@ -6361,6 +6361,44 @@ test "Terminal: scrollUp preserves pending wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("    B\n    C\n\nX", str);
+    }
+}
+
+test "Terminal: scrollUp full top/bottom region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("top");
+    t.setCursorPos(5, 1);
+    try t.printString("ABCDE");
+    t.setTopAndBottomMargin(2, 5);
+    try t.scrollUp(4);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("top", str);
+    }
+}
+
+test "Terminal: scrollUp full top/bottomleft/right scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.printString("top");
+    t.setCursorPos(5, 1);
+    try t.printString("ABCDE");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setTopAndBottomMargin(2, 5);
+    t.setLeftAndRightMargin(2, 4);
+    try t.scrollUp(4);
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("top\n\n\n\nA   E", str);
     }
 }
 
