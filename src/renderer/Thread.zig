@@ -382,11 +382,13 @@ fn cursorCancelCallback(
     // support different sets of errors, so we just unify it.
     const CancelError = xev.Timer.CancelError || error{
         Canceled,
+        NotFound,
         Unexpected,
     };
 
     _ = r catch |err| switch (@as(CancelError, @errorCast(err))) {
-        error.Canceled => {},
+        error.Canceled => {}, // success
+        error.NotFound => {}, // completed before it could cancel
         else => {
             log.warn("error in cursor cancel callback err={}", .{err});
             unreachable;
