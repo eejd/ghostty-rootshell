@@ -416,9 +416,14 @@ fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
 /// is kept per screen (main / alternative). If for the current screen state
 /// was already saved it is overwritten.
 pub fn saveCursor(self: *Terminal) void {
-    self.screen.saved_cursor = self.screen.cursor;
-    self.screen.saved_charset = self.screen.charset;
-    self.screen.saved_origin_mode = self.modes.get(.origin);
+    self.screen.saved_cursor = .{
+        .x = self.screen.cursor.x,
+        .y = self.screen.cursor.y,
+        .pen = self.screen.cursor.pen,
+        .pending_wrap = self.screen.cursor.pending_wrap,
+        .origin = self.modes.get(.origin),
+        .charset = self.screen.charset,
+    };
 }
 
 /// Restore cursor position and other state.
@@ -426,9 +431,21 @@ pub fn saveCursor(self: *Terminal) void {
 /// The primary and alternate screen have distinct save state.
 /// If no save was done before values are reset to their initial values.
 pub fn restoreCursor(self: *Terminal) void {
-    self.screen.cursor = self.screen.saved_cursor;
-    self.screen.charset = self.screen.saved_charset;
-    self.modes.set(.origin, self.screen.saved_origin_mode);
+    const saved: Screen.Cursor.Saved = self.screen.saved_cursor orelse .{
+        .x = 0,
+        .y = 0,
+        .pen = .{},
+        .pending_wrap = false,
+        .origin = false,
+        .charset = .{},
+    };
+
+    self.screen.cursor.pen = saved.pen;
+    self.screen.charset = saved.charset;
+    self.modes.set(.origin, saved.origin);
+    self.screen.cursor.x = saved.x;
+    self.screen.cursor.y = saved.y;
+    self.screen.cursor.pending_wrap = saved.pending_wrap;
 }
 
 /// TODO: test
@@ -1993,7 +2010,7 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.flags = .{};
     self.tabstops.reset(TABSTOP_INTERVAL);
     self.screen.cursor = .{};
-    self.screen.saved_cursor = .{};
+    self.screen.saved_cursor = null;
     self.screen.selection = null;
     self.screen.kitty_keyboard = .{};
     self.screen.protected_mode = .off;
@@ -4758,6 +4775,66 @@ test "Terminal: saveCursor with screen change" {
     try testing.expect(t.screen.cursor.pen.attrs.bold);
     try testing.expect(t.screen.charset.gr == .G3);
     try testing.expect(t.modes.get(.origin));
+}
+
+test "Terminal: saveCursor position" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 5);
+    try t.print('A');
+    t.saveCursor();
+    t.setCursorPos(1, 1);
+    try t.print('B');
+    t.restoreCursor();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B   AX", str);
+    }
+}
+
+test "Terminal: saveCursor pending wrap state" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 5);
+    try t.print('A');
+    t.saveCursor();
+    t.setCursorPos(1, 1);
+    try t.print('B');
+    t.restoreCursor();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B   A\nX", str);
+    }
+}
+
+test "Terminal: saveCursor origin mode" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.origin, true);
+    t.saveCursor();
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setTopAndBottomMargin(2, 4);
+    t.restoreCursor();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X", str);
+    }
 }
 
 test "Terminal: setProtectedMode" {
