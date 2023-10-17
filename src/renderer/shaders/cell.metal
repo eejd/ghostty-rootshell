@@ -99,17 +99,6 @@ vertex VertexOut uber_vertex(
     float2 glyph_size = float2(input.glyph_size);
     float2 glyph_offset = float2(input.glyph_offset);
 
-    // If the glyph is larger than our cell, we need to downsample it.
-    // The "+ 3" here is to give some wiggle room for fonts that are
-    // BARELY over it.
-    float2 glyph_size_downsampled = glyph_size;
-    if (glyph_size_downsampled.y > cell_size_scaled.y + 2) {
-      // Magic 0.9 and 1.1 are padding to make emoji look better
-      glyph_size_downsampled.y = cell_size_scaled.y * 0.9;
-      glyph_size_downsampled.x = glyph_size.x * (glyph_size_downsampled.y / glyph_size.y);
-      glyph_offset.y = glyph_offset.y * 1.1 * (glyph_size_downsampled.y / glyph_size.y);
-    }
-
     // The glyph_offset.y is the y bearing, a y value that when added
     // to the baseline is the offset (+y is up). Our grid goes down.
     // So we flip it with `cell_size.y - glyph_offset.y`.
@@ -117,7 +106,7 @@ vertex VertexOut uber_vertex(
 
     // Calculate the final position of the cell which uses our glyph size
     // and glyph offset to create the correct bounding box for the glyph.
-    cell_pos = cell_pos + glyph_size_downsampled * position + glyph_offset;
+    cell_pos = cell_pos + glyph_size * position + glyph_offset;
     out.position = uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
 
     // Calculate the texture coordinate in pixels. This is NOT normalized
