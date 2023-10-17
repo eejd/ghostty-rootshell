@@ -1,6 +1,7 @@
 .{
     .name = "ghostty",
     .version = "0.1.0",
+    .paths = .{""},
     .dependencies = .{
         // Zig libs
         .libxev = .{
@@ -8,12 +9,12 @@
             .hash = "1220f34357168affd9aab1a3fcafcaff093c44beb75ce1d4d4b75490e90729221771",
         },
         .mach_glfw = .{
-            .url = "https://github.com/hexops/mach-glfw/archive/321efd4065b57e31d8ab0bce720852c1d680d443.tar.gz",
-            .hash = "122002e355cf42b8d257efc95229c9ee6be4cca189c1718f86179cb7c21225beeb75",
+            .url = "https://github.com/hexops/mach-glfw/archive/16dc95cc7f74ebbbdd848d9a2c3cc4afc5717708.tar.gz",
+            .hash = "12202da6b8e9024c653f5d67f55a8065b401c42b3c08b69333d95400fe85d6019a59",
         },
         .zig_objc = .{
-            .url = "https://github.com/mitchellh/zig-objc/archive/01c16aaeeb674622f4a0e715aeeb16c8ce0bc30e.tar.gz",
-            .hash = "1220f9c919a1171ecf5d097a0d0349e8a9a01b45afa41006dd7eb0afa6243a5fa21f",
+            .url = "https://github.com/mitchellh/zig-objc/archive/146a50bb018d8e1ac5b9a1454d9db9a5eba5361f.tar.gz",
+            .hash = "12209f62dae4fccae478f5bd5670725c55308d8d985506110ba122ee2fb5e73122e0",
         },
         .zig_js = .{
             .url = "https://github.com/mitchellh/zig-js/archive/60ac42ab137461cdba2b38cc6c5e16376470aae6.tar.gz",
@@ -21,8 +22,8 @@
         },
 
         .glfw = .{
-            .url = "https://pkg.machengine.org/glfw/92abc63294d389c8f2a546686b6c072930b029e0.tar.gz",
-            .hash = "12205a6ce386007b97e22ef4b78a4f68c98af2cd6e1fde82589191fda79b9de54d0d",
+            .url = "https://pkg.machengine.org/glfw/14181bd28aa65915262ac3b4549bbd2dc70bbaa5.tar.gz",
+            .hash = "1220c6bb317ae3948b95161b9706777dde0509e72e8b35b62b92898aef801897d904",
         },
 
         // C libs

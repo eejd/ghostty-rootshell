@@ -19,7 +19,7 @@ const Version = @import("src/build/Version.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.12.0-dev.706+62a0fbdae";
+    const required_zig = "0.12.0-dev.983+78f2ae7f2";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -690,7 +690,7 @@ fn addDeps(
     // C files
     step.linkLibC();
     step.addIncludePath(.{ .path = "src/stb" });
-    step.addCSourceFiles(&.{"src/stb/stb.c"}, &.{});
+    step.addCSourceFiles(.{ .files = &.{"src/stb/stb.c"} });
 
     // If we're building a lib we have some different deps
     const lib = step.kind == .lib;
