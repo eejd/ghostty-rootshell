@@ -32,7 +32,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuSelectSplitBelow: NSMenuItem?
     @IBOutlet private var menuSelectSplitLeft: NSMenuItem?
     @IBOutlet private var menuSelectSplitRight: NSMenuItem?
-    
+
+    @IBOutlet private var menuIncreaseFontSize: NSMenuItem?
+    @IBOutlet private var menuDecreaseFontSize: NSMenuItem?
+    @IBOutlet private var menuResetFontSize: NSMenuItem?
+
     /// The dock menu
     private var dockMenu: NSMenu = NSMenu()
     
@@ -204,7 +208,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "goto_split:bottom", menuItem: self.menuSelectSplitBelow)
         syncMenuShortcut(action: "goto_split:left", menuItem: self.menuSelectSplitLeft)
         syncMenuShortcut(action: "goto_split:right", menuItem: self.menuSelectSplitRight)
-        
+
+        syncMenuShortcut(action: "increase_font_size:1", menuItem: self.menuIncreaseFontSize)
+        syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
+        syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
+
         // Dock menu
         reloadDockMenu()
     }
@@ -366,5 +374,20 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBAction func toggleFullScreen(_ sender: Any) {
         guard let surface = focusedSurface() else { return }
         ghostty.toggleFullscreen(surface: surface)
+    }
+
+    @IBAction func increaseFontSize(_ sender: Any) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.changeFontSize(surface: surface, .increase(1))
+    }
+
+    @IBAction func decreaseFontSize(_ sender: Any) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.changeFontSize(surface: surface, .decrease(1))
+    }
+
+    @IBAction func resetFontSize(_ sender: Any) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.changeFontSize(surface: surface, .reset)
     }
 }

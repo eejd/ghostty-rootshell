@@ -11,6 +11,12 @@ extension Ghostty {
         case loading, error, ready
     }
 
+    enum FontSizeModification {
+        case increase(Int)
+        case decrease(Int)
+        case reset
+    }
+
     struct Info {
         var mode: ghostty_build_mode_e
         var version: String
@@ -264,6 +270,21 @@ extension Ghostty {
         
         func toggleFullscreen(surface: ghostty_surface_t) {
             let action = "toggle_fullscreen"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
+
+        func changeFontSize(surface: ghostty_surface_t, _ change: FontSizeModification) {
+            let action: String
+            switch change {
+            case .increase(let amount):
+                action = "increase_font_size:\(amount)"
+            case .decrease(let amount):
+                action = "decrease_font_size:\(amount)"
+            case .reset:
+                action = "reset_font_size"
+            }
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
