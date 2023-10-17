@@ -276,13 +276,14 @@ extension Ghostty {
         }
 
         func changeFontSize(surface: ghostty_surface_t, _ change: FontSizeModification) {
-            let action = switch change {
+            let action: String
+            switch change {
             case .increase(let amount):
-                "increase_font_size:\(amount)"
+                action = "increase_font_size:\(amount)"
             case .decrease(let amount):
-                "decrease_font_size:\(amount)"
+                action = "decrease_font_size:\(amount)"
             case .reset:
-                "reset_font_size"
+                action = "reset_font_size"
             }
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
