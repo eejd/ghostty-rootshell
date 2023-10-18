@@ -27,6 +27,7 @@
         },
 
         // C libs
+        .cimgui = .{ .path = "./pkg/cimgui" },
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },

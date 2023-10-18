@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("imgui", .{ .source_file = .{ .path = "main.zig" } });
+    _ = b.addModule("cimgui", .{ .source_file = .{ .path = "main.zig" } });
 
     const imgui = b.dependency("imgui", .{});
     const lib = b.addStaticLibrary(.{
