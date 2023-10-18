@@ -42,6 +42,11 @@ pub fn build(b: *std.Build) !void {
     lib.addCSourceFile(.{ .file = imgui.path("imgui_widgets.cpp"), .flags = flags.items });
     lib.addCSourceFile(.{ .file = imgui.path("imgui_tables.cpp"), .flags = flags.items });
 
+    lib.addCSourceFile(.{
+        .file = imgui.path("backends/imgui_impl_opengl3.cpp"),
+        .flags = flags.items,
+    });
+
     lib.installHeadersDirectoryOptions(.{
         .source_dir = .{ .path = "vendor" },
         .install_dir = .header,

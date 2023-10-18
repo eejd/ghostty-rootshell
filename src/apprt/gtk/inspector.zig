@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const App = @import("App.zig");
 const TerminalWindow = @import("Window.zig");
+const ImguiWidget = @import("ImguiWidget.zig");
 const c = @import("c.zig");
 const icon = @import("icon.zig");
 
@@ -10,14 +11,10 @@ const log = std.log.scoped(.inspector);
 
 /// A window to hold a dedicated inspector instance.
 pub const Window = struct {
-    /// Our app
     app: *App,
-
-    /// Our window
     window: *c.GtkWindow,
-
-    /// The window icon
     icon: icon.Icon,
+    imgui_widget: ImguiWidget,
 
     pub fn create(alloc: Allocator, app: *App) !*Window {
         var window = try alloc.create(Window);
@@ -32,6 +29,7 @@ pub const Window = struct {
             .app = app,
             .icon = undefined,
             .window = undefined,
+            .imgui_widget = undefined,
         };
 
         // Create the window
@@ -44,10 +42,15 @@ pub const Window = struct {
         self.icon = try icon.appIcon(self.app, window);
         c.gtk_window_set_icon_name(gtk_window, self.icon.name);
 
+        // Initialize our imgui widget
+        try self.imgui_widget.init();
+        errdefer self.imgui_widget.deinit();
+
         // Signals
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
 
         // Show the window
+        c.gtk_window_set_child(gtk_window, @ptrCast(self.imgui_widget.gl_area));
         c.gtk_widget_show(window);
     }
 
