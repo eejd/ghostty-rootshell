@@ -25,6 +25,7 @@ const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const c = @import("c.zig");
+const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 
 const log = std.log.scoped(.gtk);
@@ -261,6 +262,12 @@ pub fn run(self: *App) !void {
     self.syncConfigChanges() catch |err| {
         log.warn("error handling configuration changes err={}", .{err});
     };
+
+    // TODO: temporary, remove: show our inspector window
+    {
+        const win = try inspector.Window.create(self.core_app.alloc, self);
+        _ = win;
+    }
 
     while (self.running) {
         _ = c.g_main_context_iteration(self.ctx, 1);
