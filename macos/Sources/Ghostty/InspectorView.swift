@@ -15,6 +15,8 @@ extension Ghostty {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
             }, right: {
                 InspectorViewRepresentable(surfaceView: surfaceView)
+                    .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
+                    .focusedValue(\.ghosttySurfaceView, surfaceView)
             })
         }
     }
@@ -34,6 +36,7 @@ extension Ghostty {
         }
     }
     
+    /// Inspector view is the view for the surface inspector (similar to a web inspector).
     class InspectorView: MTKView, NSTextInputClient {
         let commandQueue: MTLCommandQueue
         
