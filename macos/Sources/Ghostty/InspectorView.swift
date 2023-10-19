@@ -13,58 +13,83 @@ extension Ghostty {
             SplitView(.vertical, left: {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
             }, right: {
-                InspectorView()
+                SurfaceInspector()
             })
         }
     }
     
-    struct InspectorView: View {
+    struct SurfaceInspector: View {
         var body: some View {
-            MetalView<Renderer>()
+            MetalView<InspectorView>()
         }
     }
     
-    class Renderer: NSObject, MetalViewRenderer {
-        let device: MTLDevice
+    class InspectorView: MTKView {
         let commandQueue: MTLCommandQueue
         
-        required init(metalView: MTKView) {
+        override init(frame: CGRect, device: MTLDevice?) {
             // Initialize our Metal primitives
             guard
-              let device = MTLCreateSystemDefaultDevice(),
+              let device = device ?? MTLCreateSystemDefaultDevice(),
               let commandQueue = device.makeCommandQueue() else {
                 fatalError("GPU not available")
             }
             
-            self.device = device
+            // Setup our properties before initializing the parent
             self.commandQueue = commandQueue
-            super.init()
+            super.init(frame: frame, device: device)
             
-            // Setup the view to point to this renderer
-            metalView.device = device
-            metalView.delegate = self
-            metalView.clearColor = MTLClearColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
+            // After initializing the parent we can set our own properties
+            self.device = MTLCreateSystemDefaultDevice()
+            self.clearColor = MTLClearColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
+            
+            // Setup our tracking areas for mouse events
+            updateTrackingAreas()
         }
-    }
-}
-
-extension Ghostty.Renderer: MTKViewDelegate {
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-    }
-
-    func draw(in view: MTKView) {
-        guard
-          let commandBuffer = self.commandQueue.makeCommandBuffer(),
-          let descriptor = view.currentRenderPassDescriptor,
-          let renderEncoder =
-            commandBuffer.makeRenderCommandEncoder(
-              descriptor: descriptor) else {
-            return
+        
+        required init(coder: NSCoder) {
+            fatalError("init(coder:) is not supported for this view")
         }
+        
+        deinit {
+            trackingAreas.forEach { removeTrackingArea($0) }
+        }
+        
+        override func updateTrackingAreas() {
+            // To update our tracking area we just recreate it all.
+            trackingAreas.forEach { removeTrackingArea($0) }
 
-        renderEncoder.endEncoding()
-        guard let drawable = view.currentDrawable else { return }
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+            // This tracking area is across the entire frame to notify us of mouse movements.
+            addTrackingArea(NSTrackingArea(
+                rect: frame,
+                options: [
+                    .mouseMoved,
+                    
+                    // Only send mouse events that happen in our visible (not obscured) rect
+                    .inVisibleRect,
+
+                    // We want active always because we want to still send mouse reports
+                    // even if we're not focused or key.
+                    .activeAlways,
+                ],
+                owner: self,
+                userInfo: nil))
+        }
+        
+        override func draw(_ dirtyRect: NSRect) {
+            guard
+              let commandBuffer = self.commandQueue.makeCommandBuffer(),
+              let descriptor = self.currentRenderPassDescriptor,
+              let renderEncoder =
+                commandBuffer.makeRenderCommandEncoder(
+                  descriptor: descriptor) else {
+                return
+            }
+
+            renderEncoder.endEncoding()
+            guard let drawable = self.currentDrawable else { return }
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
+        }
     }
 }
