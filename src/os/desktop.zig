@@ -40,6 +40,7 @@ pub fn launchedFromDesktop() bool {
 
             break :linux gio_pid == pid;
         },
+        .windows => false,
 
         else => @compileError("unsupported platform"),
     };

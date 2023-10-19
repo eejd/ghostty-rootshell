@@ -128,6 +128,7 @@ pub fn childPreExec(self: Pty) !void {
 }
 
 test {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
     var ws: winsize = .{
         .ws_row = 50,
         .ws_col = 80,
