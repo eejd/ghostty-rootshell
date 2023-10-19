@@ -27,6 +27,7 @@ extern "C" {
 typedef void *ghostty_app_t;
 typedef void *ghostty_config_t;
 typedef void *ghostty_surface_t;
+typedef void *ghostty_inspector_t;
 
 // Enums are up top so we can reference them later.
 typedef enum {
@@ -398,6 +399,14 @@ void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char *, uintptr_t);
 void ghostty_surface_complete_clipboard_request(ghostty_surface_t, const char *, uintptr_t, void *);
+
+ghostty_inspector_t ghostty_surface_inspector(ghostty_surface_t);
+void ghostty_inspector_free(ghostty_surface_t);
+bool ghostty_inspector_metal_init(ghostty_inspector_t, void *);
+void ghostty_inspector_metal_render(ghostty_inspector_t, void *, void *);
+bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
+void ghostty_inspector_set_content_scale(ghostty_inspector_t, double, double);
+void ghostty_inspector_set_size(ghostty_inspector_t, uint32_t, uint32_t);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.

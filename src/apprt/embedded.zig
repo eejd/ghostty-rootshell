@@ -195,6 +195,7 @@ pub const Surface = struct {
     cursor_pos: apprt.CursorPos,
     opts: Options,
     keymap_state: input.Keymap.State,
+    inspector: ?*Inspector = null,
 
     pub const Options = extern struct {
         /// Userdata passed to some of the callbacks.
@@ -290,11 +291,36 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
+        // Shut down our inspector
+        self.freeInspector();
+
         // Remove ourselves from the list of known surfaces in the app.
         self.app.core_app.deleteSurface(self);
 
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
+    }
+
+    /// Initialize the inspector instance. A surface can only have one
+    /// inspector at any given time, so this will return the previous inspector
+    /// if it was already initialized.
+    pub fn initInspector(self: *Surface) !*Inspector {
+        if (self.inspector) |v| return v;
+
+        const alloc = self.app.core_app.alloc;
+        var inspector = try alloc.create(Inspector);
+        errdefer alloc.destroy(inspector);
+        inspector.* = try Inspector.init(self);
+        self.inspector = inspector;
+        return inspector;
+    }
+
+    pub fn freeInspector(self: *Surface) void {
+        if (self.inspector) |v| {
+            v.deinit();
+            self.app.core_app.alloc.destroy(v);
+            self.inspector = null;
+        }
     }
 
     pub fn newSplit(self: *const Surface, direction: input.SplitDirection) !void {
@@ -781,6 +807,141 @@ pub const Surface = struct {
     }
 };
 
+/// Inspector is the state required for the terminal inspector. A terminal
+/// inspector is 1:1 with a Surface.
+pub const Inspector = struct {
+    const cimgui = @import("cimgui");
+
+    surface: *Surface,
+    ig_ctx: *cimgui.c.ImGuiContext,
+    backend: ?Backend = null,
+
+    /// Our previous instant used to calculate delta time for animations.
+    instant: ?std.time.Instant = null,
+
+    const Backend = enum {
+        metal,
+
+        pub fn deinit(self: Backend) void {
+            switch (self) {
+                .metal => cimgui.c.ImGui_ImplMetal_Shutdown(),
+            }
+        }
+    };
+
+    pub fn init(surface: *Surface) !Inspector {
+        const ig_ctx = cimgui.c.igCreateContext(null);
+        errdefer cimgui.c.igDestroyContext(ig_ctx);
+        cimgui.c.igSetCurrentContext(ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        io.BackendPlatformName = "ghostty_embedded";
+
+        return .{
+            .surface = surface,
+            .ig_ctx = ig_ctx,
+        };
+    }
+
+    pub fn deinit(self: *Inspector) void {
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        if (self.backend) |v| v.deinit();
+        cimgui.c.igDestroyContext(self.ig_ctx);
+    }
+
+    /// Initialize the inspector for a metal backend.
+    pub fn initMetal(self: *Inspector, device: objc.Object) bool {
+        defer device.msgSend(void, objc.sel("release"), .{});
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+
+        if (self.backend) |v| {
+            v.deinit();
+            self.backend = null;
+        }
+
+        if (!cimgui.c.ImGui_ImplMetal_Init(device.value)) {
+            log.warn("failed to initialize metal backend", .{});
+            return false;
+        }
+        self.backend = .metal;
+
+        log.debug("initialized metal backend", .{});
+        return true;
+    }
+
+    pub fn renderMetal(
+        self: *Inspector,
+        command_buffer: objc.Object,
+        desc: objc.Object,
+    ) !void {
+        defer {
+            command_buffer.msgSend(void, objc.sel("release"), .{});
+            desc.msgSend(void, objc.sel("release"), .{});
+        }
+        assert(self.backend == .metal);
+        //log.debug("render", .{});
+
+        // Setup our imgui frame
+        {
+            cimgui.c.ImGui_ImplMetal_NewFrame(desc.value);
+            try self.newFrame();
+            cimgui.c.igNewFrame();
+
+            // Build our UI
+            var show: bool = true;
+            cimgui.c.igShowDemoWindow(&show);
+
+            // Render
+            cimgui.c.igRender();
+        }
+
+        // MTLRenderCommandEncoder
+        const encoder = command_buffer.msgSend(
+            objc.Object,
+            objc.sel("renderCommandEncoderWithDescriptor:"),
+            .{desc.value},
+        );
+        defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+        cimgui.c.ImGui_ImplMetal_RenderDrawData(
+            cimgui.c.igGetDrawData(),
+            command_buffer.value,
+            encoder.value,
+        );
+    }
+
+    pub fn updateContentScale(self: *Inspector, x: f64, y: f64) void {
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        io.DisplayFramebufferScale = .{
+            .x = @floatCast(x),
+            .y = @floatCast(y),
+        };
+    }
+
+    pub fn updateSize(self: *Inspector, width: u32, height: u32) void {
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        const x_scale: u32 = @intFromFloat(io.DisplayFramebufferScale.x);
+        const y_scale: u32 = @intFromFloat(io.DisplayFramebufferScale.y);
+        io.DisplaySize = .{
+            .x = @floatFromInt(@divFloor(width, x_scale)),
+            .y = @floatFromInt(@divFloor(height, y_scale)),
+        };
+    }
+
+    fn newFrame(self: *Inspector) !void {
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+
+        // Determine our delta time
+        const now = try std.time.Instant.now();
+        io.DeltaTime = if (self.instant) |prev| delta: {
+            const since_ns = now.since(prev);
+            const since_s: f32 = @floatFromInt(since_ns / std.time.ns_per_s);
+            break :delta @max(0.00001, since_s);
+        } else (1 / 60);
+        self.instant = now;
+    }
+};
+
 // C API
 pub const CAPI = struct {
     const global = &@import("../main.zig").state;
@@ -1045,6 +1206,50 @@ pub const CAPI = struct {
             log.err("error completing clipboard request err={}", .{err});
             return;
         };
+    }
+
+    export fn ghostty_surface_inspector(ptr: *Surface) ?*Inspector {
+        return ptr.initInspector() catch |err| {
+            log.err("error initializing inspector err={}", .{err});
+            return null;
+        };
+    }
+
+    export fn ghostty_inspector_free(ptr: *Surface) void {
+        ptr.freeInspector();
+    }
+
+    export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
+        return ptr.initMetal(objc.Object.fromId(device));
+    }
+
+    export fn ghostty_inspector_metal_render(
+        ptr: *Inspector,
+        command_buffer: objc.c.id,
+        descriptor: objc.c.id,
+    ) void {
+        return ptr.renderMetal(
+            objc.Object.fromId(command_buffer),
+            objc.Object.fromId(descriptor),
+        ) catch |err| {
+            log.err("error rendering inspector err={}", .{err});
+            return;
+        };
+    }
+
+    export fn ghostty_inspector_metal_shutdown(ptr: *Inspector) void {
+        if (ptr.backend) |v| {
+            v.deinit();
+            ptr.backend = null;
+        }
+    }
+
+    export fn ghostty_inspector_set_size(ptr: *Inspector, w: u32, h: u32) void {
+        ptr.updateSize(w, h);
+    }
+
+    export fn ghostty_inspector_set_content_scale(ptr: *Inspector, x: f64, y: f64) void {
+        ptr.updateContentScale(x, y);
     }
 
     /// Sets the window background blur on macOS to the desired value.

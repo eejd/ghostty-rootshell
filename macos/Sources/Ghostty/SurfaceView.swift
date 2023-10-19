@@ -233,7 +233,7 @@ extension Ghostty {
             return config
         }
     }
-
+    
     /// The NSView implementation for a terminal surface.
     class SurfaceView: NSView, NSTextInputClient, ObservableObject {
         // The current title of the surface as defined by the pty. This can be
@@ -244,6 +244,13 @@ extension Ghostty {
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
+        
+        // Returns the inspector instance for this surface, or nil if the
+        // surface has been closed.
+        var inspector: ghostty_inspector_t? {
+            guard let surface = self.surface else { return nil }
+            return ghostty_surface_inspector(surface)
+        }
         
         private(set) var surface: ghostty_surface_t?
         var error: Error? = nil
