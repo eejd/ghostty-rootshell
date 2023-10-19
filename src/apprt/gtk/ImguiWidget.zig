@@ -161,7 +161,7 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     // initialize the ImgUI OpenGL backend for our context.
     const self: *ImguiWidget = @ptrCast(@alignCast(ud.?));
     cimgui.c.igSetCurrentContext(self.ig_ctx);
-    cimgui.c.ImGui_ImplOpenGL3_Init(null);
+    _ = cimgui.c.ImGui_ImplOpenGL3_Init(null);
 }
 
 fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
