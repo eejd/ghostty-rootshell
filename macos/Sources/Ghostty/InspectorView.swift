@@ -260,16 +260,7 @@ extension Ghostty {
         override func keyDown(with event: NSEvent) {
             let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             keyAction(action, event: event)
-
-            // We specifically DO NOT call interpretKeyEvents because ghostty_surface_key
-            // automatically handles all key translation, and we don't handle any commands
-            // currently.
-            //
-            // It is possible that in the future we'll have to modify ghostty_surface_key
-            // and the embedding API so that we can call this because macOS needs to do
-            // some things with certain keys. I'm not sure. For now this works.
-            //
-            // self.interpretKeyEvents([event])
+            self.interpretKeyEvents([event])
         }
 
         override func keyUp(with event: NSEvent) {
@@ -300,8 +291,9 @@ extension Ghostty {
 
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let inspector = self.inspector else { return }
+            guard let key = Ghostty.keycodeToKey[event.keyCode] else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_inspector_key(inspector, action, UInt32(event.keyCode), mods)
+            ghostty_inspector_key(inspector, action, key, mods)
         }
         
         // MARK: NSTextInputClient

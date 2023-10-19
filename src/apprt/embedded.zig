@@ -1010,65 +1010,9 @@ pub const Inspector = struct {
     pub fn keyCallback(
         self: *Inspector,
         action: input.Action,
-        keycode: u32,
+        key: input.Key,
         mods: input.Mods,
     ) !void {
-        // True if this is a key down event
-        const is_down = action == .press or action == .repeat;
-
-        // Translate our key using the keymap for our localized keyboard layout.
-        // We only translate for keydown events. Otherwise, we only care about
-        // the raw keycode.
-        var buf: [128]u8 = undefined;
-        const result: input.Keymap.Translation = if (is_down) translate: {
-            const result = try self.surface.app.keymap.translate(
-                &buf,
-                &self.keymap_state,
-                @intCast(keycode),
-                mods,
-            );
-
-            // If this is a dead key, then we're composing a character and
-            // we don't do anything.
-            if (result.composing) return;
-
-            // If the text is just a single non-printable ASCII character
-            // then we clear the text. We handle non-printables in the
-            // key encoder manual (such as tab, ctrl+c, etc.)
-            if (result.text.len == 1 and result.text[0] < 0x20) {
-                break :translate .{ .composing = false, .text = "" };
-            }
-
-            break :translate result;
-        } else .{ .composing = false, .text = "" };
-
-        // We want to get the physical unmapped key to process keybinds.
-        const physical_key = keycode: for (input.keycodes.entries) |entry| {
-            if (entry.native == keycode) break :keycode entry.key;
-        } else .invalid;
-
-        // If the resulting text has length 1 then we can take its key
-        // and attempt to translate it to a key enum and call the key callback.
-        // If the length is greater than 1 then we're going to call the
-        // charCallback.
-        //
-        // We also only do key translation if this is not a dead key.
-        const key = if (!result.composing) key: {
-            // If our physical key is a keypad key, we use that.
-            if (physical_key.keypad()) break :key physical_key;
-
-            // A completed key. If the length of the key is one then we can
-            // attempt to translate it to a key enum and call the key
-            // callback. First try plain ASCII.
-            if (result.text.len > 0) {
-                if (input.Key.fromASCII(result.text[0])) |key| {
-                    break :key key;
-                }
-            }
-
-            break :key physical_key;
-        } else .invalid;
-
         self.queueRender();
         cimgui.c.igSetCurrentContext(self.ig_ctx);
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
@@ -1086,19 +1030,6 @@ pub const Inspector = struct {
                 imgui_key,
                 action == .press or action == .repeat,
             );
-        }
-
-        // Send any text
-        if (result.text.len > 0) text: {
-            const view = std.unicode.Utf8View.init(result.text) catch |err| {
-                log.warn("cannot build utf8 view over input: {}", .{err});
-                break :text;
-            };
-            var it = view.iterator();
-
-            while (it.nextCodepoint()) |cp| {
-                cimgui.c.ImGuiIO_AddInputCharacter(io, cp);
-            }
         }
     }
 
@@ -1462,12 +1393,12 @@ pub const CAPI = struct {
     export fn ghostty_inspector_key(
         ptr: *Inspector,
         action: input.Action,
-        keycode: u32,
+        key: input.Key,
         c_mods: c_int,
     ) void {
         ptr.keyCallback(
             action,
-            keycode,
+            key,
             @bitCast(@as(
                 input.Mods.Backing,
                 @truncate(@as(c_uint, @bitCast(c_mods))),
