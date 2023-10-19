@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) !void {
         const libxml2_dep = b.dependency("libxml2", .{
             .target = target,
             .optimize = optimize,
-            .iconv = !(target.getOsTag() == .windows) or iconv_win_enabled,
+            .iconv = target.getOsTag() != .windows or iconv_win_enabled,
         });
         lib.linkLibrary(libxml2_dep.artifact("xml2"));
     }
