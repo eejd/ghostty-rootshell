@@ -63,6 +63,10 @@ extension Ghostty {
             self.commandQueue = commandQueue
             super.init(frame: frame, device: device)
             
+            // This makes it so renders only happen when we request
+            self.enableSetNeedsDisplay = true
+            self.isPaused = true
+            
             // After initializing the parent we can set our own properties
             self.device = MTLCreateSystemDefaultDevice()
             self.clearColor = MTLClearColor(red: 0x28 / 0xFF, green: 0x2C / 0xFF, blue: 0x34 / 0xFF, alpha: 1.0)
@@ -77,15 +81,31 @@ extension Ghostty {
         
         deinit {
             trackingAreas.forEach { removeTrackingArea($0) }
+            NotificationCenter.default.removeObserver(self)
         }
         
         // MARK: Internal Inspector Funcs
         
         private func surfaceViewDidChange() {
+            let center = NotificationCenter.default
+            center.removeObserver(self)
+            
+            guard let surfaceView = self.surfaceView else { return }
             guard let inspector = self.inspector else { return }
             guard let device = self.device else { return }
             let devicePtr = Unmanaged.passRetained(device).toOpaque()
             ghostty_inspector_metal_init(inspector, devicePtr)
+            
+            // Register an observer for render requests
+            center.addObserver(
+                self,
+                selector: #selector(didRequestRender),
+                name: Ghostty.Notification.inspectorNeedsDisplay,
+                object: surfaceView)
+        }
+        
+        @objc private func didRequestRender(notification: SwiftUI.Notification) {
+            self.needsDisplay = true
         }
         
         private func updateSize() {

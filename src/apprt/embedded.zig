@@ -91,6 +91,9 @@ pub const App = struct {
         /// Set the initial window size. It is up to the user of libghostty to
         /// determine if it is the initial window and set this appropriately.
         set_initial_window_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
+
+        /// Render the inspector for the given surface.
+        render_inspector: ?*const fn (SurfaceUD) callconv(.C) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -788,6 +791,15 @@ pub const Surface = struct {
         func(self.opts.userdata, width, height);
     }
 
+    fn queueInspectorRender(self: *const Surface) void {
+        const func = self.app.opts.render_inspector orelse {
+            log.info("runtime embedder does not render_inspector", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
+    }
+
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
         const font_size: u16 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
@@ -851,8 +863,7 @@ pub const Inspector = struct {
 
     /// Queue a render for the next frame.
     pub fn queueRender(self: *Inspector) void {
-        // TODO
-        _ = self;
+        self.surface.queueInspectorRender();
     }
 
     /// Initialize the inspector for a metal backend.

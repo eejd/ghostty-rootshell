@@ -141,7 +141,8 @@ extension Ghostty {
                 toggle_split_zoom_cb: { userdata in AppState.toggleSplitZoom(userdata) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
-                set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) }
+                set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) },
+                render_inspector_cb: { userdata in AppState.renderInspector(userdata) }
             )
 
             // Create the ghostty app.
@@ -414,6 +415,14 @@ extension Ghostty {
             // to coalesce multiple ticks but I don't think it matters from a performance
             // standpoint since we don't do this much.
             DispatchQueue.main.async { state.appTick() }
+        }
+        
+        static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(
+                name: Notification.inspectorNeedsDisplay,
+                object: surface
+            )
         }
 
         static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {
