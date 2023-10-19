@@ -34,7 +34,7 @@ extension Ghostty {
         }
     }
     
-    class InspectorView: MTKView {
+    class InspectorView: MTKView, NSTextInputClient {
         let commandQueue: MTLCommandQueue
         
         var surfaceView: SurfaceView? = nil {
@@ -45,6 +45,11 @@ extension Ghostty {
             guard let surfaceView = self.surfaceView else { return nil }
             return surfaceView.inspector
         }
+        
+        private var markedText: NSMutableAttributedString = NSMutableAttributedString()
+        
+        // We need to support being a first responder so that we can get input events
+        override var acceptsFirstResponder: Bool { return true }
         
         override init(frame: CGRect, device: MTLDevice?) {
             // Initialize our Metal primitives
@@ -98,6 +103,26 @@ extension Ghostty {
         
         // MARK: NSView
         
+        override func becomeFirstResponder() -> Bool {
+            let result = super.becomeFirstResponder()
+            if (result) {
+                if let inspector = self.inspector {
+                    ghostty_inspector_set_focus(inspector, true)
+                }
+            }
+            return result
+        }
+
+        override func resignFirstResponder() -> Bool {
+            let result = super.resignFirstResponder()
+            if (result) {
+                if let inspector = self.inspector {
+                    ghostty_inspector_set_focus(inspector, false)
+                }
+            }
+            return result
+        }
+        
         override func updateTrackingAreas() {
             // To update our tracking area we just recreate it all.
             trackingAreas.forEach { removeTrackingArea($0) }
@@ -127,6 +152,210 @@ extension Ghostty {
         override func resize(withOldSuperviewSize oldSize: NSSize) {
             super.resize(withOldSuperviewSize: oldSize)
             updateSize()
+        }
+        
+        override func mouseDown(with event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_inspector_mouse_button(inspector, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_inspector_mouse_button(inspector, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_inspector_mouse_button(inspector, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods)
+        }
+
+        override func rightMouseUp(with event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_inspector_mouse_button(inspector, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
+        }
+        
+        override func mouseMoved(with event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+            
+            // Convert window position to view position. Note (0, 0) is bottom left.
+            let pos = self.convert(event.locationInWindow, from: nil)
+            ghostty_inspector_mouse_pos(inspector, pos.x, frame.height - pos.y)
+
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            self.mouseMoved(with: event)
+        }
+        
+        override func scrollWheel(with event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+
+            // Builds up the "input.ScrollMods" bitmask
+            var mods: Int32 = 0
+
+            var x = event.scrollingDeltaX
+            var y = event.scrollingDeltaY
+            if event.hasPreciseScrollingDeltas {
+                mods = 1
+
+                // We do a 2x speed multiplier. This is subjective, it "feels" better to me.
+                x *= 2;
+                y *= 2;
+
+                // TODO(mitchellh): do we have to scale the x/y here by window scale factor?
+            }
+
+            // Determine our momentum value
+            var momentum: ghostty_input_mouse_momentum_e = GHOSTTY_MOUSE_MOMENTUM_NONE
+            switch (event.momentumPhase) {
+            case .began:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_BEGAN
+            case .stationary:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_STATIONARY
+            case .changed:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_CHANGED
+            case .ended:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_ENDED
+            case .cancelled:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_CANCELLED
+            case .mayBegin:
+                momentum = GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN
+            default:
+                break
+            }
+
+            // Pack our momentum value into the mods bitmask
+            mods |= Int32(momentum.rawValue) << 1
+
+            ghostty_inspector_mouse_scroll(inspector, x, y, mods)
+        }
+        
+        override func keyDown(with event: NSEvent) {
+            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+            keyAction(action, event: event)
+
+            // We specifically DO NOT call interpretKeyEvents because ghostty_surface_key
+            // automatically handles all key translation, and we don't handle any commands
+            // currently.
+            //
+            // It is possible that in the future we'll have to modify ghostty_surface_key
+            // and the embedding API so that we can call this because macOS needs to do
+            // some things with certain keys. I'm not sure. For now this works.
+            //
+            // self.interpretKeyEvents([event])
+        }
+
+        override func keyUp(with event: NSEvent) {
+            keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+        }
+
+        override func flagsChanged(with event: NSEvent) {
+            let mod: UInt32;
+            switch (event.keyCode) {
+            case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
+            case 0x38, 0x3C: mod = GHOSTTY_MODS_SHIFT.rawValue
+            case 0x3B, 0x3E: mod = GHOSTTY_MODS_CTRL.rawValue
+            case 0x3A, 0x3D: mod = GHOSTTY_MODS_ALT.rawValue
+            case 0x37, 0x36: mod = GHOSTTY_MODS_SUPER.rawValue
+            default: return
+            }
+
+            // The keyAction function will do this AGAIN below which sucks to repeat
+            // but this is super cheap and flagsChanged isn't that common.
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+
+            // If the key that pressed this is active, its a press, else release
+            var action = GHOSTTY_ACTION_RELEASE
+            if (mods.rawValue & mod != 0) { action = GHOSTTY_ACTION_PRESS }
+
+            keyAction(action, event: event)
+        }
+
+        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
+            guard let inspector = self.inspector else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_inspector_key(inspector, action, UInt32(event.keyCode), mods)
+        }
+        
+        // MARK: NSTextInputClient
+
+        func hasMarkedText() -> Bool {
+            return markedText.length > 0
+        }
+
+        func markedRange() -> NSRange {
+            guard markedText.length > 0 else { return NSRange() }
+            return NSRange(0...(markedText.length-1))
+        }
+
+        func selectedRange() -> NSRange {
+            return NSRange()
+        }
+
+        func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+            switch string {
+            case let v as NSAttributedString:
+                self.markedText = NSMutableAttributedString(attributedString: v)
+
+            case let v as String:
+                self.markedText = NSMutableAttributedString(string: v)
+
+            default:
+                print("unknown marked text: \(string)")
+            }
+        }
+
+        func unmarkText() {
+            self.markedText.mutableString.setString("")
+        }
+
+        func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+            return []
+        }
+
+        func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+            return nil
+        }
+
+        func characterIndex(for point: NSPoint) -> Int {
+            return 0
+        }
+
+        func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+            return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
+        }
+
+        func insertText(_ string: Any, replacementRange: NSRange) {
+            // We must have an associated event
+            guard NSApp.currentEvent != nil else { return }
+            guard let inspector = self.inspector else { return }
+
+            // We want the string view of the any value
+            var chars = ""
+            switch (string) {
+            case let v as NSAttributedString:
+                chars = v.string
+            case let v as String:
+                chars = v
+            default:
+                return
+            }
+            
+            let len = chars.utf8CString.count
+            if (len == 0) { return }
+            
+            chars.withCString { ptr in
+                ghostty_inspector_text(inspector, ptr)
+            }
+        }
+
+        override func doCommand(by selector: Selector) {
+            // This currently just prevents NSBeep from interpretKeyEvents but in the future
+            // we may want to make some of this work.
         }
         
         // MARK: MTKView

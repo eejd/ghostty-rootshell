@@ -568,28 +568,28 @@ extension Ghostty {
 
         override func mouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return }
-            let mods = Self.translateFlags(event.modifierFlags)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
         }
 
         override func mouseUp(with event: NSEvent) {
             guard let surface = self.surface else { return }
-            let mods = Self.translateFlags(event.modifierFlags)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         }
 
         override func rightMouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return }
-            let mods = Self.translateFlags(event.modifierFlags)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods)
         }
 
         override func rightMouseUp(with event: NSEvent) {
             guard let surface = self.surface else { return }
-            let mods = Self.translateFlags(event.modifierFlags)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
         }
-
+        
         override func mouseMoved(with event: NSEvent) {
             guard let surface = self.surface else { return }
             
@@ -730,7 +730,7 @@ extension Ghostty {
 
             // The keyAction function will do this AGAIN below which sucks to repeat
             // but this is super cheap and flagsChanged isn't that common.
-            let mods = Self.translateFlags(event.modifierFlags)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
 
             // If the key that pressed this is active, its a press, else release
             var action = GHOSTTY_ACTION_RELEASE
@@ -741,7 +741,7 @@ extension Ghostty {
 
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
-            let mods = Self.translateFlags(event.modifierFlags)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_key(surface, action, UInt32(event.keyCode), mods)
         }
 
@@ -864,26 +864,6 @@ extension Ghostty {
             // we may want to make some of this work.
 
             print("SEL: \(selector)")
-        }
-
-        private static func translateFlags(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
-            var mods: UInt32 = GHOSTTY_MODS_NONE.rawValue
-
-            if (flags.contains(.shift)) { mods |= GHOSTTY_MODS_SHIFT.rawValue }
-            if (flags.contains(.control)) { mods |= GHOSTTY_MODS_CTRL.rawValue }
-            if (flags.contains(.option)) { mods |= GHOSTTY_MODS_ALT.rawValue }
-            if (flags.contains(.command)) { mods |= GHOSTTY_MODS_SUPER.rawValue }
-            if (flags.contains(.capsLock)) { mods |= GHOSTTY_MODS_CAPS.rawValue }
-
-            // Handle sided input. We can't tell that both are pressed in the
-            // Ghostty structure but thats okay -- we don't use that information.
-            let rawFlags = flags.rawValue
-            if (rawFlags & UInt(NX_DEVICERSHIFTKEYMASK) != 0) { mods |= GHOSTTY_MODS_SHIFT_RIGHT.rawValue }
-            if (rawFlags & UInt(NX_DEVICERCTLKEYMASK) != 0) { mods |= GHOSTTY_MODS_CTRL_RIGHT.rawValue }
-            if (rawFlags & UInt(NX_DEVICERALTKEYMASK) != 0) { mods |= GHOSTTY_MODS_ALT_RIGHT.rawValue }
-            if (rawFlags & UInt(NX_DEVICERCMDKEYMASK) != 0) { mods |= GHOSTTY_MODS_SUPER_RIGHT.rawValue }
-
-            return ghostty_input_mods_e(mods)
         }
 
         // Mapping of event keyCode to ghostty input key values. This is cribbed from

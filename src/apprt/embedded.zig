@@ -815,6 +815,7 @@ pub const Inspector = struct {
     surface: *Surface,
     ig_ctx: *cimgui.c.ImGuiContext,
     backend: ?Backend = null,
+    keymap_state: input.Keymap.State = .{},
 
     /// Our previous instant used to calculate delta time for animations.
     instant: ?std.time.Instant = null,
@@ -846,6 +847,12 @@ pub const Inspector = struct {
         cimgui.c.igSetCurrentContext(self.ig_ctx);
         if (self.backend) |v| v.deinit();
         cimgui.c.igDestroyContext(self.ig_ctx);
+    }
+
+    /// Queue a render for the next frame.
+    pub fn queueRender(self: *Inspector) void {
+        // TODO
+        _ = self;
     }
 
     /// Initialize the inspector for a metal backend.
@@ -926,6 +933,162 @@ pub const Inspector = struct {
             .x = @floatFromInt(@divFloor(width, x_scale)),
             .y = @floatFromInt(@divFloor(height, y_scale)),
         };
+    }
+
+    pub fn mouseButtonCallback(
+        self: *Inspector,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: input.Mods,
+    ) void {
+        _ = mods;
+
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+
+        const imgui_button = switch (button) {
+            .left => cimgui.c.ImGuiMouseButton_Left,
+            .middle => cimgui.c.ImGuiMouseButton_Middle,
+            .right => cimgui.c.ImGuiMouseButton_Right,
+            else => return, // unsupported
+        };
+
+        cimgui.c.ImGuiIO_AddMouseButtonEvent(io, imgui_button, action == .press);
+    }
+
+    pub fn scrollCallback(
+        self: *Inspector,
+        xoff: f64,
+        yoff: f64,
+        mods: input.ScrollMods,
+    ) void {
+        _ = mods;
+
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddMouseWheelEvent(
+            io,
+            @floatCast(xoff),
+            @floatCast(yoff),
+        );
+    }
+
+    pub fn cursorPosCallback(self: *Inspector, x: f64, y: f64) void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddMousePosEvent(io, @floatCast(x), @floatCast(y));
+    }
+
+    pub fn focusCallback(self: *Inspector, focused: bool) void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddFocusEvent(io, focused);
+    }
+
+    pub fn textCallback(self: *Inspector, text: [:0]const u8) void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddInputCharactersUTF8(io, text.ptr);
+    }
+
+    pub fn keyCallback(
+        self: *Inspector,
+        action: input.Action,
+        keycode: u32,
+        mods: input.Mods,
+    ) !void {
+        // True if this is a key down event
+        const is_down = action == .press or action == .repeat;
+
+        // Translate our key using the keymap for our localized keyboard layout.
+        // We only translate for keydown events. Otherwise, we only care about
+        // the raw keycode.
+        var buf: [128]u8 = undefined;
+        const result: input.Keymap.Translation = if (is_down) translate: {
+            const result = try self.surface.app.keymap.translate(
+                &buf,
+                &self.keymap_state,
+                @intCast(keycode),
+                mods,
+            );
+
+            // If this is a dead key, then we're composing a character and
+            // we don't do anything.
+            if (result.composing) return;
+
+            // If the text is just a single non-printable ASCII character
+            // then we clear the text. We handle non-printables in the
+            // key encoder manual (such as tab, ctrl+c, etc.)
+            if (result.text.len == 1 and result.text[0] < 0x20) {
+                break :translate .{ .composing = false, .text = "" };
+            }
+
+            break :translate result;
+        } else .{ .composing = false, .text = "" };
+
+        // We want to get the physical unmapped key to process keybinds.
+        const physical_key = keycode: for (input.keycodes.entries) |entry| {
+            if (entry.native == keycode) break :keycode entry.key;
+        } else .invalid;
+
+        // If the resulting text has length 1 then we can take its key
+        // and attempt to translate it to a key enum and call the key callback.
+        // If the length is greater than 1 then we're going to call the
+        // charCallback.
+        //
+        // We also only do key translation if this is not a dead key.
+        const key = if (!result.composing) key: {
+            // If our physical key is a keypad key, we use that.
+            if (physical_key.keypad()) break :key physical_key;
+
+            // A completed key. If the length of the key is one then we can
+            // attempt to translate it to a key enum and call the key
+            // callback. First try plain ASCII.
+            if (result.text.len > 0) {
+                if (input.Key.fromASCII(result.text[0])) |key| {
+                    break :key key;
+                }
+            }
+
+            break :key physical_key;
+        } else .invalid;
+
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+
+        // Update all our modifiers
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftShift, mods.shift);
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftCtrl, mods.ctrl);
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftAlt, mods.alt);
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftSuper, mods.super);
+
+        // Send our keypress
+        if (key.imguiKey()) |imgui_key| {
+            cimgui.c.ImGuiIO_AddKeyEvent(
+                io,
+                imgui_key,
+                action == .press or action == .repeat,
+            );
+        }
+
+        // Send any text
+        if (result.text.len > 0) text: {
+            const view = std.unicode.Utf8View.init(result.text) catch |err| {
+                log.warn("cannot build utf8 view over input: {}", .{err});
+                break :text;
+            };
+            var it = view.iterator();
+
+            while (it.nextCodepoint()) |cp| {
+                cimgui.c.ImGuiIO_AddInputCharacter(io, cp);
+            }
+        }
     }
 
     fn newFrame(self: *Inspector) !void {
@@ -1250,6 +1413,69 @@ pub const CAPI = struct {
 
     export fn ghostty_inspector_set_content_scale(ptr: *Inspector, x: f64, y: f64) void {
         ptr.updateContentScale(x, y);
+    }
+
+    export fn ghostty_inspector_mouse_button(
+        ptr: *Inspector,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: c_int,
+    ) void {
+        ptr.mouseButtonCallback(
+            action,
+            button,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
+        );
+    }
+
+    export fn ghostty_inspector_mouse_pos(ptr: *Inspector, x: f64, y: f64) void {
+        ptr.cursorPosCallback(x, y);
+    }
+
+    export fn ghostty_inspector_mouse_scroll(
+        ptr: *Inspector,
+        x: f64,
+        y: f64,
+        scroll_mods: c_int,
+    ) void {
+        ptr.scrollCallback(
+            x,
+            y,
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
+        );
+    }
+
+    export fn ghostty_inspector_key(
+        ptr: *Inspector,
+        action: input.Action,
+        keycode: u32,
+        c_mods: c_int,
+    ) void {
+        ptr.keyCallback(
+            action,
+            keycode,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(c_mods))),
+            )),
+        ) catch |err| {
+            log.err("error processing key event err={}", .{err});
+            return;
+        };
+    }
+
+    export fn ghostty_inspector_text(
+        ptr: *Inspector,
+        str: [*:0]const u8,
+    ) void {
+        ptr.textCallback(std.mem.sliceTo(str, 0));
+    }
+
+    export fn ghostty_inspector_set_focus(ptr: *Inspector, focused: bool) void {
+        ptr.focusCallback(focused);
     }
 
     /// Sets the window background blur on macOS to the desired value.

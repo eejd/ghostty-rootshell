@@ -405,8 +405,14 @@ void ghostty_inspector_free(ghostty_surface_t);
 bool ghostty_inspector_metal_init(ghostty_inspector_t, void *);
 void ghostty_inspector_metal_render(ghostty_inspector_t, void *, void *);
 bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
+void ghostty_inspector_set_focus(ghostty_inspector_t, bool);
 void ghostty_inspector_set_content_scale(ghostty_inspector_t, double, double);
 void ghostty_inspector_set_size(ghostty_inspector_t, uint32_t, uint32_t);
+void ghostty_inspector_mouse_button(ghostty_inspector_t, ghostty_input_mouse_state_e, ghostty_input_mouse_button_e, ghostty_input_mods_e);
+void ghostty_inspector_mouse_pos(ghostty_inspector_t, double, double);
+void ghostty_inspector_mouse_scroll(ghostty_inspector_t, double, double, ghostty_input_scroll_mods_t);
+void ghostty_inspector_key(ghostty_inspector_t, ghostty_input_action_e, uint32_t, ghostty_input_mods_e);
+void ghostty_inspector_text(ghostty_inspector_t, const char *);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.
