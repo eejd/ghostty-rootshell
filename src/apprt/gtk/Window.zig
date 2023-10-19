@@ -299,15 +299,12 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
             paned.removeChildren();
             defer alloc.destroy(paned);
 
-            // Remove children from Paned we were part of.
             switch (paned.parent) {
                 .tab => |tab| {
                     // If parent of Paned we belong to is a tab, we can
                     // replace the child with the other surface
                     tab.removeChild();
-
                     tab.setChild(.{ .surface = sibling_surface });
-                    // try tab.setChildSurface(sibling_surface, sibling_widget);
                 },
                 .paned => |paned_paned| {
                     log.info("paned is nested, parent is paned. position={}", .{paned_paned[1]});
@@ -316,8 +313,6 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
                     log.info("paned has no parent", .{});
                 },
             }
-
-            // alloc.destroy(paned);
         },
         .none => {
             log.info("no parent, dude?!", .{});
