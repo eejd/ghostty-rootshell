@@ -621,11 +621,11 @@ fn addDeps(
     const js_dep = b.dependency("zig_js", .{ .target = step.target, .optimize = step.optimize });
     const libxev_dep = b.dependency("libxev", .{ .target = step.target, .optimize = step.optimize });
     const objc_dep = b.dependency("zig_objc", .{ .target = step.target, .optimize = step.optimize });
-    const iconv_win_enabled = b.option(bool, "enable-iconv-win", "Build libxml2 for fontconfig with iconv on Windows") orelse false;
+
     const fontconfig_dep = b.dependency("fontconfig", .{
         .target = step.target,
         .optimize = step.optimize,
-        .@"enable-iconv-win" = iconv_win_enabled,
+        .@"enable-iconv-win" = false,
     });
     const freetype_dep = b.dependency("freetype", .{
         .target = step.target,
