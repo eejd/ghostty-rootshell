@@ -3,8 +3,8 @@
     .version = "0.1.0",
     .dependencies = .{
         .macos_sdk = .{
-            .url = "https://github.com/mitchellh/zig-build-macos-sdk/archive/7e50d6ea241403615d5ebc9f1df4680d3907fa92.tar.gz",
-            .hash = "1220eb266898413ecfe5aaf7f29cc17eb479d046adecc94ebc7d5e1e807d2aabdd70",
+            .url = "https://github.com/mitchellh/zig-build-macos-sdk/archive/7a7cb3816617dbaf87ecbc3fd90ad56a6f828275.tar.gz",
+            .hash = "1220a1dd91457d0131b50db15fb1bc51208ecadf1a23ad5dfa2d3a6bb3d1de5230c1",
         },
     },
 }

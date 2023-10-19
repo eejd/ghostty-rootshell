@@ -53,6 +53,10 @@ pub fn build(b: *std.Build) !void {
             .file = imgui.path("backends/imgui_impl_metal.mm"),
             .flags = flags.items,
         });
+        lib.addCSourceFile(.{
+            .file = imgui.path("backends/imgui_impl_osx.mm"),
+            .flags = flags.items,
+        });
     }
 
     lib.installHeadersDirectoryOptions(.{
