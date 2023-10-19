@@ -284,7 +284,7 @@ pub const Parser = struct {
 
             .@"0" => switch (c) {
                 ';' => {
-                    self.command = .{ .change_window_title = undefined };
+                    self.command = .{ .change_window_title = &.{} };
 
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.change_window_title };
@@ -328,7 +328,7 @@ pub const Parser = struct {
             .@"2" => switch (c) {
                 '2' => self.state = .@"22",
                 ';' => {
-                    self.command = .{ .change_window_title = undefined };
+                    self.command = .{ .change_window_title = &.{} };
 
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.change_window_title };
@@ -339,7 +339,7 @@ pub const Parser = struct {
 
             .@"22" => switch (c) {
                 ';' => {
-                    self.command = .{ .mouse_shape = undefined };
+                    self.command = .{ .mouse_shape = .{ .value = &.{} } };
 
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.mouse_shape.value };
@@ -366,7 +366,7 @@ pub const Parser = struct {
 
             .@"52" => switch (c) {
                 ';' => {
-                    self.command = .{ .clipboard_contents = undefined };
+                    self.command = .{ .clipboard_contents = .{ .kind = undefined, .data = &.{} } };
                     self.state = .clipboard_kind;
                 },
                 else => self.state = .invalid,

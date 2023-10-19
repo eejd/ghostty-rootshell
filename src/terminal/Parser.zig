@@ -373,6 +373,9 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                 break :param null;
             }
 
+            // Ignore parameters that are too long
+            if (self.param_acc_idx == std.math.maxInt(u8)) break :param null;
+
             // A numeric value. Add it to our accumulator.
             if (self.param_acc_idx > 0) {
                 self.param_acc *|= 10;
@@ -388,6 +391,9 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
             break :osc_put null;
         },
         .csi_dispatch => csi_dispatch: {
+            // Ignore too many parameters
+            if (self.params_idx >= MAX_PARAMS) break :csi_dispatch null;
+
             // Finalize parameters if we have one
             if (self.param_acc_idx > 0) {
                 self.params[self.params_idx] = self.param_acc;
