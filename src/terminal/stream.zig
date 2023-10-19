@@ -969,44 +969,53 @@ pub fn Stream(comptime Handler: type) type {
                 .change_window_title => |title| {
                     if (@hasDecl(T, "changeWindowTitle")) {
                         try self.handler.changeWindowTitle(title);
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .clipboard_contents => |clip| {
                     if (@hasDecl(T, "clipboardContents")) {
                         try self.handler.clipboardContents(clip.kind, clip.data);
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .prompt_start => |v| {
-                    if (@hasDecl(T, "promptStart")) switch (v.kind) {
-                        .primary, .right => try self.handler.promptStart(v.aid, v.redraw),
-                        .continuation => try self.handler.promptContinuation(v.aid),
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                    if (@hasDecl(T, "promptStart")) {
+                        switch (v.kind) {
+                            .primary, .right => try self.handler.promptStart(v.aid, v.redraw),
+                            .continuation => try self.handler.promptContinuation(v.aid),
+                        }
+                        return;
+                    }
                 },
 
                 .prompt_end => {
                     if (@hasDecl(T, "promptEnd")) {
                         try self.handler.promptEnd();
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .end_of_input => {
                     if (@hasDecl(T, "endOfInput")) {
                         try self.handler.endOfInput();
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .end_of_command => |end| {
                     if (@hasDecl(T, "endOfCommand")) {
                         try self.handler.endOfCommand(end.exit_code);
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .report_pwd => |v| {
                     if (@hasDecl(T, "reportPwd")) {
                         try self.handler.reportPwd(v.value);
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .mouse_shape => |v| {
@@ -1017,19 +1026,25 @@ pub fn Stream(comptime Handler: type) type {
                         };
 
                         try self.handler.setMouseShape(shape);
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
                 .report_default_color => |v| {
                     if (@hasDecl(T, "reportDefaultColor")) {
                         try self.handler.reportDefaultColor(v.kind, v.terminator);
-                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                        return;
+                    }
                 },
 
-                else => if (@hasDecl(T, "oscUnimplemented"))
-                    try self.handler.oscUnimplemented(cmd)
-                else
-                    log.warn("unimplemented OSC command: {}", .{cmd}),
+                else => {},
+            }
+
+            // Fall through for when we don't have a handler.
+            if (@hasDecl(T, "oscUnimplemented")) {
+                try self.handler.oscUnimplemented(cmd);
+            } else {
+                log.warn("unimplemented OSC command: {s}", .{@tagName(cmd)});
             }
         }
 
@@ -1597,4 +1612,29 @@ test "stream: insert characters" {
     s.handler.called = false;
     for ("\x1B[?42@") |c| try s.next(c);
     try testing.expect(!s.handler.called);
+}
+
+test "stream: too many csi params" {
+    const H = struct {
+        pub fn setCursorRight(self: *@This(), v: u16) !void {
+            _ = v;
+            _ = self;
+            unreachable;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1C");
+}
+
+test "stream: csi param too long" {
+    const H = struct {
+        pub fn setCursorRight(self: *@This(), v: u16) !void {
+            _ = v;
+            _ = self;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice("\x1B[1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111C");
 }
