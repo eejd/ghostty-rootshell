@@ -47,6 +47,14 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
+    if (target.isDarwin()) {
+        if (!target.isNative()) try @import("apple_sdk").addPaths(b, lib);
+        lib.addCSourceFile(.{
+            .file = imgui.path("backends/imgui_impl_metal.mm"),
+            .flags = flags.items,
+        });
+    }
+
     lib.installHeadersDirectoryOptions(.{
         .source_dir = .{ .path = "vendor" },
         .install_dir = .header,
