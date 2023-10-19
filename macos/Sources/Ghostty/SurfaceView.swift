@@ -32,7 +32,7 @@ extension Ghostty {
             content(surfaceView)
         }
     }
-
+    
     struct SurfaceWrapper: View {
         // The surface to create a view for. This must be created upstream. As long as this
         // remains the same, the surface that is being rendered remains the same.
