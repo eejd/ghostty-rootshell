@@ -20,21 +20,34 @@ pub const Options = struct {
 
 /// Get the XDG user config directory. The returned value is allocated.
 pub fn config(alloc: Allocator, opts: Options) ![]u8 {
-    if (std.process.getEnvVarOwned(alloc, "XDG_CONFIG_HOME")) |env| {
-        defer alloc.free(env);
-        // If we have a subdir, then we use the env as-is to avoid a copy.
-        if (opts.subdir) |subdir| {
-            return try std.fs.path.join(alloc, &[_][]const u8{
-                env,
-                subdir,
-            });
-        }
+    if (builtin.os.tag == .windows) {
+        if (std.process.getEnvVarOwned(alloc, "XDG_CONFIG_HOME")) |env| {
+            // If we have a subdir, then we use the env as-is to avoid a copy.
+            if (opts.subdir) |subdir| {
+                defer alloc.free(env);
+                return try std.fs.path.join(alloc, &[_][]const u8{
+                    env,
+                    subdir,
+                });
+            }
 
-        return try alloc.dupe(u8, env);
-    } else |err| {
-        switch (err) {
+            // We don't need to dupe since it's already allocated
+            return env;
+        } else |err| switch (err) {
             error.EnvironmentVariableNotFound => {},
             else => return err,
+        }
+    } else {
+        if (std.os.getenv("XDG_CONFIG_HOME")) |env| {
+            // If we have a subdir, then we use the env as-is to avoid a copy.
+            if (opts.subdir) |subdir| {
+                return try std.fs.path.join(alloc, &[_][]const u8{
+                    env,
+                    subdir,
+                });
+            }
+
+            return try alloc.dupe(u8, env);
         }
     }
 
