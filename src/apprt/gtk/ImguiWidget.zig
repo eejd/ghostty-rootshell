@@ -11,13 +11,18 @@ const input = @import("../../input.zig");
 
 const log = std.log.scoped(.gtk_imgui_widget);
 
+/// This is called every frame to populate the ImGui frame.
+render_callback: ?*const fn (?*anyopaque) void = null,
+render_userdata: ?*anyopaque = null,
+
 /// Our OpenGL widget
 gl_area: *c.GtkGLArea,
 im_context: *c.GtkIMContext,
 
+/// ImGui Context
 ig_ctx: *cimgui.c.ImGuiContext,
 
-/// Our previous instant used to calculate delta time.
+/// Our previous instant used to calculate delta time for animations.
 instant: ?std.time.Instant = null,
 
 /// Initialize the widget. This must have a stable pointer for events.
@@ -105,6 +110,12 @@ pub fn deinit(self: *ImguiWidget) void {
     cimgui.c.igDestroyContext(self.ig_ctx);
 }
 
+/// This should be called anytime the underlying data for the UI changes
+/// so that the UI can be refreshed.
+pub fn queueRender(self: *ImguiWidget) void {
+    c.gtk_gl_area_queue_render(self.gl_area);
+}
+
 /// Initialize the frame. Expects that the context is already current.
 fn newFrame(self: *ImguiWidget) !void {
     const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
@@ -117,10 +128,6 @@ fn newFrame(self: *ImguiWidget) !void {
         break :delta @max(0.00001, since_s);
     } else (1 / 60);
     self.instant = now;
-}
-
-fn queueRender(self: *ImguiWidget) void {
-    c.gtk_gl_area_queue_render(self.gl_area);
 }
 
 fn translateMouseButton(button: c.guint) ?c_int {
@@ -204,6 +211,7 @@ fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv
     // Build our UI
     var show: bool = true;
     cimgui.c.igShowDemoWindow(&show);
+    if (self.render_callback) |cb| cb(self.render_userdata);
 
     // Render
     cimgui.c.igRender();
