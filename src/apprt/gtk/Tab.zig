@@ -18,17 +18,7 @@ pub const GHOSTTY_TAB = "ghostty_tab";
 pub const Child = union(enum) {
     surface: *Surface,
     paned: *Paned,
-
-    empty,
-
-    const Self = @This();
-
-    pub fn is_empty(self: Self) bool {
-        switch (self) {
-            Child.empty => return true,
-            else => return false,
-        }
-    }
+    none,
 };
 
 window: *Window,
@@ -163,10 +153,10 @@ pub fn removeChild(self: *Tab) void {
     const widget = switch (self.child) {
         .surface => |surface| @as(*c.GtkWidget, @ptrCast(surface.gl_area)),
         .paned => |paned| @as(*c.GtkWidget, @ptrCast(@alignCast(paned.paned))),
-        .empty => return,
+        .none => return,
     };
     c.gtk_box_remove(self.box, widget);
-    self.child = .empty;
+    self.child = .none;
 }
 
 pub fn setChild(self: *Tab, newChild: Child) void {
@@ -183,23 +173,15 @@ pub fn setChild(self: *Tab, newChild: Child) void {
             const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(paned.paned)));
             c.gtk_box_append(self.box, widget);
         },
-        .empty => return,
+        .none => return,
     }
 
     self.child = newChild;
 }
 
-pub fn setChildSurface(self: *Tab, surface: *Surface, gl_area: *c.GtkWidget) !void {
-    c.gtk_box_append(self.box, gl_area);
-
-    const parent = Parent{ .tab = self };
-    surface.setParent(parent);
-
-    self.child = .{ .surface = surface };
-}
-
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     const tab: *Tab = @ptrCast(@alignCast(ud));
     _ = tab;
+    // TODO: Fix tab closing logic
     log.info("tab close click\n", .{});
 }

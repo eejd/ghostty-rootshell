@@ -195,13 +195,26 @@ pub fn deinit(self: *Window) void {
 
 /// Add a new tab to this window.
 pub fn newTab(self: *Window, parentSurface: ?*CoreSurface) !void {
-    const tab = try Tab.create(self.app.core_app.alloc, self, parentSurface);
-    try self.tabs.append(self.app.core_app.alloc, tab);
+    const alloc = self.app.core_app.alloc;
+    const tab = try Tab.create(alloc, self, parentSurface);
+    try self.tabs.append(alloc, tab);
 
-    log.info("\n\n\nnewTab. New tabs len={}\n", .{self.tabs.items.len});
     // TODO: When this is triggered through a GTK action, the new surface
     // redraws correctly. When it's triggered through keyboard shortcuts, it
-    // does not (cursor doesn't blink).
+    // does not (cursor doesn't blink) unless reactivated by refocusing.
+}
+
+pub fn removeTab(self: *Window, tab: *Tab) !void {
+    // Remove the tab from our stored tabs.
+    const tab_idx = for (self.tabs.items, 0..) |t, i| {
+        if (t == tab) break i;
+    } else null;
+
+    // TODO: Shrink capacity?
+    if (tab_idx) |idx| _ = self.tabs.orderedRemove(idx) else return error.TabNotFound;
+
+    // Deallocate the tab
+    self.app.core_app.alloc.destroy(tab);
 }
 
 /// Close the tab for the given notebook page. This will automatically
@@ -215,20 +228,10 @@ fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
     ));
 
     // Remove the tab from our stored tabs.
-    const tab_idx = for (self.tabs.items, 0..) |t, i| {
-        if (t == tab) break i;
-    } else null;
-    // TODO: Shrink capacity?
-    if (tab_idx) |idx| {
-        _ = self.tabs.orderedRemove(idx);
-    } else {
-        log.info("tab of page {} not found in managed tabs list\n", .{page_idx});
+    self.removeTab(tab) catch |err| {
+        log.warn("tab {} not removable: {}", .{ page_idx, err });
         return;
-    }
-    // Deallocate the tab
-    self.app.core_app.alloc.destroy(tab);
-
-    log.info("\n\n\ncloseTab. New tabs len={}\n", .{self.tabs.items.len});
+    };
 
     // Now remove the page
     c.gtk_notebook_remove_page(self.notebook, page_idx);
@@ -293,8 +296,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
             defer c.g_object_unref(sibling_object);
 
             // Remove children and kill Paned.
-            paned.removeChild1();
-            paned.removeChild2();
+            paned.removeChildren();
             defer alloc.destroy(paned);
 
             // Remove children from Paned we were part of.
@@ -478,7 +480,6 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
         return true;
     }
 
-    log.debug("WE ARE HERE", .{});
     // Setup our basic message
     const alert = c.gtk_message_dialog_new(
         self.window,
