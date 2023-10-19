@@ -8,17 +8,17 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const configpkg = @import("../../config.zig");
 const font = @import("../../font/main.zig");
+const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
 const Paned = @import("Paned.zig");
 const Surface = @import("Surface.zig");
+const Tab = @import("Tab.zig");
 const icon = @import("icon.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
-
-const GL_AREA_SURFACE = "gl_area_surface";
 
 app: *App,
 
@@ -31,6 +31,8 @@ notebook: *c.GtkNotebook,
 /// The resources directory for the icon (if any). We need to retain a
 /// pointer to this because GTK can use it at any time.
 icon: icon.Icon,
+
+tabs: std.ArrayListUnmanaged(*Tab),
 
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
@@ -53,7 +55,12 @@ pub fn init(self: *Window, app: *App) !void {
         .icon = undefined,
         .window = undefined,
         .notebook = undefined,
+        .tabs = undefined,
     };
+
+    var tabs: std.ArrayListUnmanaged(*Tab) = .{};
+    errdefer tabs.deinit(app.core_app.alloc);
+    self.tabs = tabs;
 
     // Create the window
     const window = c.gtk_application_window_new(app.app);
@@ -182,105 +189,48 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     self.icon.deinit(self.app);
+    for (self.tabs.items) |tab| self.app.core_app.alloc.destroy(tab);
+    self.tabs.deinit(self.app.core_app.alloc);
 }
 
 /// Add a new tab to this window.
-pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
-    // Grab a surface allocation we'll need it later.
-    var surface = try self.app.core_app.alloc.create(Surface);
-    errdefer self.app.core_app.alloc.destroy(surface);
+pub fn newTab(self: *Window, parentSurface: ?*CoreSurface) !void {
+    const tab = try Tab.create(self.app.core_app.alloc, self, parentSurface);
+    try self.tabs.append(self.app.core_app.alloc, tab);
 
-    // Inherit the parent's font size if we are configured to.
-    const font_size: ?font.face.DesiredSize = font_size: {
-        if (!self.app.config.@"window-inherit-font-size") break :font_size null;
-        const parent = parent_ orelse break :font_size null;
-        break :font_size parent.font_size;
-    };
-
-    // Build our tab label
-    const label_box_widget = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
-    const label_box = @as(*c.GtkBox, @ptrCast(label_box_widget));
-    const label_text = c.gtk_label_new("Ghostty");
-    c.gtk_box_append(label_box, label_text);
-
-    // Wide style GTK tabs
-    if (self.app.config.@"gtk-wide-tabs") {
-        c.gtk_widget_set_hexpand(label_box_widget, 1);
-        c.gtk_widget_set_halign(label_box_widget, c.GTK_ALIGN_FILL);
-        c.gtk_widget_set_hexpand(label_text, 1);
-        c.gtk_widget_set_halign(label_text, c.GTK_ALIGN_FILL);
-
-        // This ensures that tabs are always equal width. If they're too
-        // long, they'll be truncated with an ellipsis.
-        c.gtk_label_set_max_width_chars(@ptrCast(label_text), 1);
-        c.gtk_label_set_ellipsize(@ptrCast(label_text), c.PANGO_ELLIPSIZE_END);
-
-        // We need to set a minimum width so that at a certain point
-        // the notebook will have an arrow button rather than shrinking tabs
-        // to an unreadably small size.
-        c.gtk_widget_set_size_request(@ptrCast(label_text), 100, 1);
-    }
-
-    const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
-    const label_close = @as(*c.GtkButton, @ptrCast(label_close_widget));
-    c.gtk_button_set_has_frame(label_close, 0);
-    c.gtk_box_append(label_box, label_close_widget);
-    _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), surface, null, c.G_CONNECT_DEFAULT);
-
-    // Initialize the GtkGLArea and attach it to our surface.
-    // The surface starts in the "unrealized" state because we have to
-    // wait for the "realize" callback from GTK to know that the OpenGL
-    // context is ready. See Surface docs for more info.
-    const gl_area = c.gtk_gl_area_new();
-    c.gtk_widget_set_cursor_from_name(gl_area, "text");
-    try surface.init(self.app, .{
-        .window = self,
-        .gl_area = @ptrCast(gl_area),
-        .title_label = @ptrCast(label_text),
-        .font_size = font_size,
-        .parent = parent_ != null,
-    });
-    errdefer surface.deinit();
-
-    // Add the notebook page (create tab). We create the tab after our
-    // current selected tab if we have one.
-    const page_idx = c.gtk_notebook_insert_page(
-        self.notebook,
-        gl_area,
-        label_box_widget,
-        c.gtk_notebook_get_current_page(self.notebook) + 1,
-    );
-    if (page_idx < 0) {
-        log.warn("failed to add surface to notebook", .{});
-        return error.GtkAppendPageFailed;
-    }
-
-    // Tab settings
-    c.gtk_notebook_set_tab_reorderable(self.notebook, gl_area, 1);
-    c.gtk_notebook_set_tab_detachable(self.notebook, gl_area, 1);
-
-    // If we have multiple tabs, show the tab bar.
-    if (c.gtk_notebook_get_n_pages(self.notebook) > 1) {
-        c.gtk_notebook_set_show_tabs(self.notebook, 1);
-    }
-
-    // Set the userdata of the close button so it points to this page.
-    c.g_object_set_data(@ptrCast(gl_area), GL_AREA_SURFACE, surface);
-
-    // Switch to the new tab
-    c.gtk_notebook_set_current_page(self.notebook, page_idx);
-
-    // We need to grab focus after it is added to the window. When
-    // creating a window we want to always focus on the widget.
-    const widget = @as(*c.GtkWidget, @ptrCast(gl_area));
-    _ = c.gtk_widget_grab_focus(widget);
+    log.info("\n\n\nnewTab. New tabs len={}\n", .{self.tabs.items.len});
+    // TODO: When this is triggered through a GTK action, the new surface
+    // redraws correctly. When it's triggered through keyboard shortcuts, it
+    // does not (cursor doesn't blink).
 }
 
 /// Close the tab for the given notebook page. This will automatically
 /// handle closing the window if there are no more tabs.
 fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
-    // Remove the page
+    // Find page and tab which we're closing
     const page_idx = getNotebookPageIndex(page);
+    const page_widget = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
+    const tab: *Tab = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page_widget), Tab.GHOSTTY_TAB) orelse return,
+    ));
+
+    // Remove the tab from our stored tabs.
+    const tab_idx = for (self.tabs.items, 0..) |t, i| {
+        if (t == tab) break i;
+    } else null;
+    // TODO: Shrink capacity?
+    if (tab_idx) |idx| {
+        _ = self.tabs.orderedRemove(idx);
+    } else {
+        log.info("tab of page {} not found in managed tabs list\n", .{page_idx});
+        return;
+    }
+    // Deallocate the tab
+    self.app.core_app.alloc.destroy(tab);
+
+    log.info("\n\n\ncloseTab. New tabs len={}\n", .{self.tabs.items.len});
+
+    // Now remove the page
     c.gtk_notebook_remove_page(self.notebook, page_idx);
 
     const remaining = c.gtk_notebook_get_n_pages(self.notebook);
@@ -302,8 +252,75 @@ fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
 pub fn closeSurface(self: *Window, surface: *Surface) void {
     assert(surface.window == self);
 
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
-    self.closeTab(page);
+    const alloc = surface.app.core_app.alloc;
+
+    switch (surface.parent) {
+        .tab => {
+            const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.tab.box)) orelse return;
+            self.closeTab(page);
+        },
+        .paned => |paned_tuple| {
+            const paned = paned_tuple[0];
+            const position = paned_tuple[1];
+
+            // TODO: Do we need this?
+            surface.setParent(.none);
+
+            const sibling = switch (position) {
+                .start => .{
+                    switch (paned.child2) {
+                        .surface => |s| s,
+                        else => return,
+                    },
+                    c.gtk_paned_get_end_child(paned.paned),
+                },
+                .end => .{
+                    switch (paned.child1) {
+                        .surface => |s| s,
+                        else => return,
+                    },
+                    c.gtk_paned_get_start_child(paned.paned),
+                },
+            };
+            // TODO: Use destructuring syntax once it doesn't break ZLS
+            const sibling_surface = sibling[0];
+            const sibling_widget = sibling[1];
+
+            // Keep explicit reference to sibling's gl_area, so it's not
+            // destroyed when we remove it from GtkPaned.
+            const sibling_object: *c.GObject = @ptrCast(sibling_widget);
+            _ = c.g_object_ref(sibling_object);
+            defer c.g_object_unref(sibling_object);
+
+            // Remove children and kill Paned.
+            paned.removeChild1();
+            paned.removeChild2();
+            defer alloc.destroy(paned);
+
+            // Remove children from Paned we were part of.
+            switch (paned.parent) {
+                .tab => |tab| {
+                    // If parent of Paned we belong to is a tab, we can
+                    // replace the child with the other surface
+                    tab.removeChild();
+
+                    tab.setChild(.{ .surface = sibling_surface });
+                    // try tab.setChildSurface(sibling_surface, sibling_widget);
+                },
+                .paned => |paned_paned| {
+                    log.info("paned is nested, parent is paned. position={}", .{paned_paned[1]});
+                },
+                .none => {
+                    log.info("paned has no parent", .{});
+                },
+            }
+
+            // alloc.destroy(paned);
+        },
+        .none => {
+            log.info("no parent, dude?!", .{});
+        },
+    }
 }
 
 /// Returns true if this window has any tabs.
@@ -313,7 +330,7 @@ pub fn hasTabs(self: *const Window) bool {
 
 /// Go to the previous tab for a surface.
 pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.tab.box)) orelse return;
     const page_idx = getNotebookPageIndex(page);
 
     // The next index is the previous or we wrap around.
@@ -331,7 +348,7 @@ pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
 
 /// Go to the next tab for a surface.
 pub fn gotoNextTab(self: *Window, surface: *Surface) void {
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.gl_area)) orelse return;
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.tab.box)) orelse return;
     const page_idx = getNotebookPageIndex(page);
     const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
     const next_idx = if (page_idx < max) page_idx + 1 else 0;
@@ -365,13 +382,12 @@ pub fn toggleFullscreen(self: *Window, _: configpkg.NonNativeFullscreen) void {
 /// Grabs focus on the currently selected tab.
 fn focusCurrentTab(self: *Window) void {
     const page_idx = c.gtk_notebook_get_current_page(self.notebook);
-    const widget = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
-    _ = c.gtk_widget_grab_focus(widget);
-}
-
-fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-    const surface: *Surface = @ptrCast(@alignCast(ud));
-    surface.core_surface.close();
+    const page = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
+    const tab: *Tab = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return,
+    ));
+    const gl_area = @as(*c.GtkWidget, @ptrCast(tab.focus_child.gl_area));
+    _ = c.gtk_widget_grab_focus(gl_area);
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
@@ -424,10 +440,11 @@ fn gtkNotebookCreateWindow(
     page: *c.GtkWidget,
     ud: ?*anyopaque,
 ) callconv(.C) ?*c.GtkNotebook {
-    // The surface for the page is stored in the widget data.
-    const surface: *Surface = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), GL_AREA_SURFACE) orelse return null,
+    // The tab for the page is stored in the widget data.
+    const tab: *Tab = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
     ));
+    const surface: *Surface = tab.focus_child;
 
     const self = userdataSelf(ud.?);
     const alloc = self.app.core_app.alloc;
@@ -438,9 +455,10 @@ fn gtkNotebookCreateWindow(
         return null;
     };
 
-    // We need to update our surface to point to the new window so that
+    // We need to update our surface to point to the new window and tab so that
     // events such as new tab go to the right window.
     surface.window = window;
+    surface.tab = window.tabs.items[window.tabs.items.len - 1];
 
     return window.notebook;
 }
@@ -460,6 +478,7 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
         return true;
     }
 
+    log.debug("WE ARE HERE", .{});
     // Setup our basic message
     const alert = c.gtk_message_dialog_new(
         self.window,
@@ -603,10 +622,10 @@ fn gtkActionToggleInspector(
 fn actionSurface(self: *Window) ?*CoreSurface {
     const page_idx = c.gtk_notebook_get_current_page(self.notebook);
     const page = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
-    const surface: *Surface = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), GL_AREA_SURFACE) orelse return null,
+    const tab: *Tab = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
     ));
-    return &surface.core_surface;
+    return &tab.focus_child.core_surface;
 }
 
 fn userdataSelf(ud: *anyopaque) *Window {

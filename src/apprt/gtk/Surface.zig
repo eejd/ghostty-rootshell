@@ -32,6 +32,12 @@ pub const Options = struct {
     /// The window that this surface is attached to.
     window: *Window,
 
+    /// The tab that this surface is attached to.
+    tab: *Tab,
+
+    /// The parent this surface is created under.
+    parent: Parent,
+
     /// The GL area that this surface should draw to.
     gl_area: *c.GtkGLArea,
 
@@ -41,13 +47,6 @@ pub const Options = struct {
 
     /// A font size to set on the surface once it is initialized.
     font_size: ?font.face.DesiredSize = null,
-
-    /// True if this surface has a parent. This is a bit of a hack currently
-    /// to work around newConfig unconditinally inheriting the working
-    /// directory. The proper long term fix is to have the working directory
-    /// inherited upstream likely at the point where this field would be set,
-    /// then remove this field.
-    parent: bool = false,
 };
 
 /// Where the title of this surface will go.
@@ -61,16 +60,16 @@ const Title = union(enum) {
 /// surface has been initialized.
 realized: bool = false,
 
-/// See Options.parent
-parent: bool = false,
-
 /// The app we're part of
 app: *App,
 
 /// The window we're part of
 window: *Window,
 
-/// Our parent widget
+/// The tab we're part of
+tab: *Tab,
+
+/// The parent we belong to
 parent: Parent,
 
 /// Our GTK area
@@ -161,14 +160,14 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     self.* = .{
         .app = app,
         .window = opts.window,
-        .parent = Parent.none,
+        .tab = opts.tab,
+        .parent = opts.parent,
         .gl_area = opts.gl_area,
         .title = if (opts.title_label) |label| .{
             .label = label,
         } else .{ .none = {} },
         .core_surface = undefined,
         .font_size = opts.font_size,
-        .parent = opts.parent,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
@@ -347,6 +346,51 @@ pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFulls
     self.window.toggleFullscreen(mac_non_native);
 }
 
+pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
+    log.info("surface.newSplit. direction={}", .{direction});
+
+    switch (self.parent) {
+        .none => {
+            log.info("no parent\n", .{});
+        },
+        .paned => {
+            log.info("parent is paned \n", .{});
+        },
+        .tab => |tab| {
+            const tab_idx = for (self.window.tabs.items, 0..) |t, i| {
+                if (t == tab) break i;
+            } else null;
+
+            const label_text: ?*c.GtkWidget = switch (self.title) {
+                .none => null,
+                .label => |label| l: {
+                    const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(label)));
+                    break :l widget;
+                },
+            };
+
+            if (label_text) |text| {
+                tab.removeChild();
+
+                const paned = try Paned.create(self.app.core_app.alloc, self.window, text);
+
+                const new_surface = try paned.newSurface(tab, &self.core_surface);
+                // // This sets .parent on each surface
+                paned.addChild1Surface(self);
+                paned.addChild2Surface(new_surface);
+
+                tab.setChild(.{ .paned = paned });
+
+                // FOCUS ON NEW SURFACE
+                const widget = @as(*c.GtkWidget, @ptrCast(new_surface.gl_area));
+                _ = c.gtk_widget_grab_focus(widget);
+            } else {
+                log.info("no label text: {?}\n", .{tab_idx});
+            }
+        },
+    }
+}
+
 pub fn newTab(self: *Surface) !void {
     try self.window.newTab(&self.core_surface);
 }
@@ -427,6 +471,10 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
     //     *c.GtkWidget,
     //     self.gl_area,
     // ));
+}
+
+pub fn setParent(self: *Surface, parent: Parent) void {
+    self.parent = parent;
 }
 
 pub fn setMouseShape(
@@ -755,9 +803,20 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     log.debug("gl destroy", .{});
 
     const self = userdataSelf(ud.?);
-    const alloc = self.app.core_app.alloc;
-    self.deinit();
-    alloc.destroy(self);
+    switch (self.parent) {
+        .none, .tab => {
+            const alloc = self.app.core_app.alloc;
+            self.deinit();
+            alloc.destroy(self);
+        },
+        else => {
+
+            // const alloc = self.app.core_app.alloc;
+            // self.deinit();
+            // alloc.destroy(self);
+            log.debug("TODO: no destroy", .{});
+        },
+    }
 }
 
 /// Scale x/y by the GDK device scale.
@@ -1226,7 +1285,6 @@ fn gtkInputCommit(
 
 fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
     const self = userdataSelf(ud.?);
-
     // Notify our IM context
     c.gtk_im_context_focus_in(self.im_context);
 
