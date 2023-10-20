@@ -60,11 +60,14 @@ pub fn build(b: *std.Build) !void {
     var env = try std.process.getEnvMap(b.allocator);
     defer env.deinit();
 
+    // Note: Our tracy usage has a huge memory leak currently so only enable
+    // this if you really want tracy integration and don't mind the memory leak.
+    // Or, please contribute a fix because I don't know where it is.
     tracy = b.option(
         bool,
         "tracy",
         "Enable Tracy integration (default true in Debug on Linux)",
-    ) orelse (optimize == .Debug and target.isLinux());
+    ) orelse false;
 
     flatpak = b.option(
         bool,
