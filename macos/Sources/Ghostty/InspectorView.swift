@@ -10,14 +10,60 @@ extension Ghostty {
         @ObservedObject var surfaceView: SurfaceView
         var isSplit: Bool = false
         
+        // Maintain whether our view has focus or not
+        @FocusState private var inspectorFocus: Bool
+        
         var body: some View {
-            SplitView(.vertical, left: {
-                SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
-            }, right: {
-                InspectorViewRepresentable(surfaceView: surfaceView)
-                    .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
-                    .focusedValue(\.ghosttySurfaceView, surfaceView)
-            })
+            let center = NotificationCenter.default
+            let pubInspector = center.publisher(for: Notification.didControlInspector, object: surfaceView)
+            
+            ZStack {
+                if (!surfaceView.inspectorVisible) {
+                    SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
+                } else {
+                    SplitView(.vertical, left: {
+                        SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
+                    }, right: {
+                        InspectorViewRepresentable(surfaceView: surfaceView)
+                            .focused($inspectorFocus)
+                            .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
+                            .focusedValue(\.ghosttySurfaceView, surfaceView)
+                    })
+                }
+            }
+            .onReceive(pubInspector) { onControlInspector($0) }
+        }
+        
+        private func onControlInspector(_ notification: SwiftUI.Notification) {
+            // Determine our mode
+            guard let modeAny = notification.userInfo?["mode"] else { return }
+            guard let mode = modeAny as? ghostty_inspector_mode_e else { return }
+            
+            switch (mode) {
+            case GHOSTTY_INSPECTOR_TOGGLE:
+                surfaceView.inspectorVisible = !surfaceView.inspectorVisible
+                
+            case GHOSTTY_INSPECTOR_SHOW:
+                surfaceView.inspectorVisible = true
+                
+            case GHOSTTY_INSPECTOR_HIDE:
+                surfaceView.inspectorVisible = false
+                
+            default:
+                return
+            }
+            
+            // When we show the inspector, we want to focus on the inspector.
+            // When we hide the inspector, we want to move focus back to the surface.
+            if (surfaceView.inspectorVisible) {
+                // We need to delay this until SwiftUI shows the inspector.
+                DispatchQueue.main.async {
+                    _ = surfaceView.resignFirstResponder()
+                    inspectorFocus = true
+                }
+            } else {
+                Ghostty.moveFocus(to: surfaceView)
+            }
         }
     }
     

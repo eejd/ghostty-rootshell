@@ -41,7 +41,7 @@ extension Ghostty {
         // True if this surface is part of a split view. This is important to know so
         // we know whether to dim the surface out of focus.
         var isSplit: Bool = false
-
+        
         // Maintain whether our view has focus or not
         @FocusState private var surfaceFocus: Bool
 
@@ -251,6 +251,9 @@ extension Ghostty {
             guard let surface = self.surface else { return nil }
             return ghostty_surface_inspector(surface)
         }
+        
+        // True if the inspector should be visible
+        @Published var inspectorVisible: Bool = false
         
         private(set) var surface: ghostty_surface_t?
         var error: Error? = nil
