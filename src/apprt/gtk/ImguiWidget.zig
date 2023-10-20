@@ -217,7 +217,7 @@ fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv
     cimgui.c.igRender();
 
     // OpenGL final render
-    gl.clearColor(0.45, 0.55, 0.60, 1.00);
+    gl.clearColor(0x28 / 0xFF, 0x2C / 0xFF, 0x34 / 0xFF, 1.0);
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
     cimgui.c.ImGui_ImplOpenGL3_RenderDrawData(cimgui.c.igGetDrawData());
 
