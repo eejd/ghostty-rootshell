@@ -2278,6 +2278,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement toggleFullscreen", .{});
         },
 
+        .inspector => |mode| {
+            if (@hasDecl(apprt.Surface, "controlInspector")) {
+                self.rt_surface.controlInspector(mode);
+            } else log.warn("runtime doesn't implement controlInspector", .{});
+        },
+
         .close_surface => self.close(),
 
         .close_window => try self.app.closeSurface(self),

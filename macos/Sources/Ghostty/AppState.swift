@@ -136,6 +136,7 @@ extension Ghostty {
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
                 new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
                 new_window_cb: { userdata, surfaceConfig in AppState.newWindow(userdata, config: surfaceConfig) },
+                control_inspector_cb: { userdata, mode in AppState.controlInspector(userdata, mode: mode) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 toggle_split_zoom_cb: { userdata in AppState.toggleSplitZoom(userdata) },
@@ -295,6 +296,13 @@ extension Ghostty {
             case .reset:
                 action = "reset_font_size"
             }
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
+        
+        func toggleTerminalInspector(surface: ghostty_surface_t) {
+            let action = "inspector:toggle"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
@@ -493,6 +501,13 @@ extension Ghostty {
                     Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
                 ]
             )
+        }
+        
+        static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(name: Notification.didControlInspector, object: surface, userInfo: [
+                "mode": mode,
+            ])
         }
 
         /// Returns the GhosttyState from the given userdata value.

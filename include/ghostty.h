@@ -50,6 +50,12 @@ typedef enum {
 } ghostty_split_focus_direction_e;
 
 typedef enum {
+    GHOSTTY_INSPECTOR_TOGGLE,
+    GHOSTTY_INSPECTOR_SHOW,
+    GHOSTTY_INSPECTOR_HIDE,
+} ghostty_inspector_mode_e;
+
+typedef enum {
     GHOSTTY_MOUSE_RELEASE,
     GHOSTTY_MOUSE_PRESS,
 } ghostty_input_mouse_state_e;
@@ -323,6 +329,7 @@ typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_window_cb)(void *, ghostty_surface_config_s);
+typedef void (*ghostty_runtime_control_inspector_cb)(void *, ghostty_inspector_mode_e);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void *);
@@ -344,6 +351,7 @@ typedef struct {
     ghostty_runtime_new_split_cb new_split_cb;
     ghostty_runtime_new_tab_cb new_tab_cb;
     ghostty_runtime_new_window_cb new_window_cb;
+    ghostty_runtime_control_inspector_cb control_inspector_cb;
     ghostty_runtime_close_surface_cb close_surface_cb;
     ghostty_runtime_focus_split_cb focus_split_cb;
     ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;

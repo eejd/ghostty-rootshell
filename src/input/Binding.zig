@@ -176,6 +176,10 @@ pub const Action = union(enum) {
     /// zoom/unzoom the current split.
     toggle_split_zoom: void,
 
+    /// Show, hide, or toggle the terminal inspector for the currently
+    /// focused terminal.
+    inspector: InspectorMode,
+
     /// Reload the configuration. The exact meaning depends on the app runtime
     /// in use but this usually involves re-reading the configuration file
     /// and applying any changes. Note that not all changes can be applied at
@@ -218,6 +222,13 @@ pub const Action = union(enum) {
         left,
         bottom,
         right,
+    };
+
+    // Extern because it is used in the embedded runtime ABI.
+    pub const InspectorMode = enum(c_int) {
+        toggle,
+        show,
+        hide,
     };
 
     /// Parse an action in the format of "key=value" where key is the

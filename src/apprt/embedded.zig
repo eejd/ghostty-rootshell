@@ -73,6 +73,9 @@ pub const App = struct {
         /// New window with options.
         new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
+        /// Control the inspector visibility
+        control_inspector: ?*const fn (SurfaceUD, input.InspectorMode) callconv(.C) void = null,
+
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
@@ -324,6 +327,15 @@ pub const Surface = struct {
             self.app.core_app.alloc.destroy(v);
             self.inspector = null;
         }
+    }
+
+    pub fn controlInspector(self: *const Surface, mode: input.InspectorMode) void {
+        const func = self.app.opts.control_inspector orelse {
+            log.info("runtime embedder does not support the terminal inspector", .{});
+            return;
+        };
+
+        func(self.opts.userdata, mode);
     }
 
     pub fn newSplit(self: *const Surface, direction: input.SplitDirection) !void {
