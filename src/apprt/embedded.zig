@@ -13,6 +13,7 @@ const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
+const CoreInspector = @import("../Inspector.zig");
 const CoreSurface = @import("../Surface.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
@@ -861,6 +862,12 @@ pub const Inspector = struct {
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
         io.BackendPlatformName = "ghostty_embedded";
 
+        // Setup our core inspector
+        CoreInspector.setup();
+        surface.core_surface.activateInspector() catch |err| {
+            log.err("failed to activate inspector err={}", .{err});
+        };
+
         return .{
             .surface = surface,
             .ig_ctx = ig_ctx,
@@ -868,6 +875,7 @@ pub const Inspector = struct {
     }
 
     pub fn deinit(self: *Inspector) void {
+        self.surface.core_surface.deactivateInspector();
         cimgui.c.igSetCurrentContext(self.ig_ctx);
         if (self.backend) |v| v.deinit();
         cimgui.c.igDestroyContext(self.ig_ctx);
@@ -917,8 +925,13 @@ pub const Inspector = struct {
             cimgui.c.igNewFrame();
 
             // Build our UI
-            var show: bool = true;
-            cimgui.c.igShowDemoWindow(&show);
+            render: {
+                const surface = &self.surface.core_surface;
+                const inspector = surface.inspector orelse break :render;
+                surface.renderer_state.mutex.lock();
+                defer surface.renderer_state.mutex.unlock();
+                inspector.render();
+            }
 
             // Render
             cimgui.c.igRender();
