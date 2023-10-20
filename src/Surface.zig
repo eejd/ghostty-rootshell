@@ -20,6 +20,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const Inspector = @import("Inspector.zig");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -73,6 +74,9 @@ mouse: Mouse,
 io: termio.Impl,
 io_thread: termio.Thread,
 io_thr: std.Thread,
+
+/// Terminal inspector
+inspector: ?*Inspector = null,
 
 /// All the cached sizes since we need them at various times.
 screen_size: renderer.ScreenSize,
@@ -550,8 +554,14 @@ pub fn deinit(self: *Surface) void {
     self.font_lib.deinit();
     self.alloc.destroy(self.font_group);
 
+    if (self.inspector) |v| {
+        v.deinit();
+        self.alloc.destroy(v);
+    }
+
     self.alloc.destroy(self.renderer_state.mutex);
     self.config.deinit();
+
     log.info("surface closed addr={x}", .{@intFromPtr(self)});
 }
 
@@ -559,6 +569,51 @@ pub fn deinit(self: *Surface) void {
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
     self.rt_surface.close(self.needsConfirmQuit());
+}
+
+/// Activate the inspector. This will begin collecting inspection data.
+/// This will not affect the GUI. The GUI must use performAction to
+/// show/hide the inspector UI.
+pub fn activateInspector(self: *Surface) !void {
+    if (self.inspector != null) return;
+
+    // Setup the inspector
+    var ptr = try self.alloc.create(Inspector);
+    errdefer self.alloc.destroy(ptr);
+    ptr.* = Inspector.init();
+    self.inspector = ptr;
+
+    // Put the inspector onto the render state
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    assert(self.renderer_state.inspector == null);
+    self.renderer_state.inspector = self.inspector;
+}
+
+/// Deactivate the inspector and stop collecting any information.
+pub fn deactivateInspector(self: *Surface) void {
+    const inspector = self.inspector orelse return;
+
+    // Remove the inspector from the render state
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        assert(self.renderer_state.inspector != null);
+        self.renderer_state.inspector = null;
+    }
+
+    // Deinit the inspector
+    inspector.deinit();
+    self.alloc.destroy(inspector);
+    self.inspector = null;
+}
+
+/// Render the inspector. This requires an active ImGui context.
+pub fn renderInspector(self: *Surface) void {
+    const inspector = self.inspector orelse return;
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    inspector.render();
 }
 
 /// True if the surface requires confirmation to quit. This should be called

@@ -209,8 +209,6 @@ fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv
     cimgui.c.igNewFrame();
 
     // Build our UI
-    var show: bool = true;
-    cimgui.c.igShowDemoWindow(&show);
     if (self.render_callback) |cb| cb(self.render_userdata);
 
     // Render

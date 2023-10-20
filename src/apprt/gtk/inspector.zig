@@ -74,6 +74,12 @@ pub const Inspector = struct {
             .location = undefined,
         };
 
+        // Activate the inspector. If it doesn't work we ignore the error
+        // because we can just show an error in the inspector window.
+        self.surface.core_surface.activateInspector() catch |err| {
+            log.err("failed to activate inspector err={}", .{err});
+        };
+
         switch (location) {
             .hidden => self.location = .{ .hidden = {} },
             .window => try self.initWindow(),
@@ -81,7 +87,7 @@ pub const Inspector = struct {
     }
 
     fn deinit(self: *Inspector) void {
-        _ = self;
+        self.surface.core_surface.deactivateInspector();
     }
 
     /// Request the inspector is closed.
@@ -136,6 +142,8 @@ const Window = struct {
         // Initialize our imgui widget
         try self.imgui_widget.init();
         errdefer self.imgui_widget.deinit();
+        self.imgui_widget.render_callback = &imguiRender;
+        self.imgui_widget.render_userdata = self;
 
         // Signals
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
@@ -152,6 +160,11 @@ const Window = struct {
 
     pub fn close(self: *const Window) void {
         c.gtk_window_destroy(self.window);
+    }
+
+    fn imguiRender(ud: ?*anyopaque) void {
+        const self: *Window = @ptrCast(@alignCast(ud orelse return));
+        self.inspector.surface.core_surface.renderInspector();
     }
 
     /// "destroy" signal for the window
