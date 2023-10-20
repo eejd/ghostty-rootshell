@@ -430,6 +430,11 @@ keybind: Keybinds = .{},
 /// to true. If set to false, surfaces will close without any confirmation.
 @"confirm-close-surface": bool = true,
 
+/// Whether or not to quit after the last window is closed. This defaults
+/// to false. Currently only supported on macOS. On Linux, the process always
+/// exits after the last window is closed.
+@"quit-after-last-window-closed": bool = false,
+
 /// Whether to enable shell integration auto-injection or not. Shell
 /// integration greatly enhances the terminal experience by enabling
 /// a number of features:

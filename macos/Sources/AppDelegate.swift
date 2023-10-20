@@ -81,7 +81,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // else is initialized.
         NSApp.servicesProvider = ServiceProvider()
     }
-    
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return ghostty.shouldQuitAfterLastWindowClosed
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let windows = NSApplication.shared.windows
         if (windows.isEmpty) { return .terminateNow }

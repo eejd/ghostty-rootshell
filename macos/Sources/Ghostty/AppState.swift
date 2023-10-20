@@ -51,6 +51,15 @@ extension Ghostty {
             }
         }
 
+        /// True if we should quit when the last window is closed.
+        var shouldQuitAfterLastWindowClosed: Bool {
+            guard let config = self.config else { return true }
+            var v = false;
+            let key = "quit-after-last-window-closed"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v;
+        }
+
         /// True if we need to confirm before quitting.
         var needsConfirmQuit: Bool {
             guard let app = app else { return false }
