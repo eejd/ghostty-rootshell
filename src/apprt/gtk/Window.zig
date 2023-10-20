@@ -219,13 +219,11 @@ pub fn removeTab(self: *Window, tab: *Tab) !void {
 
 /// Close the tab for the given notebook page. This will automatically
 /// handle closing the window if there are no more tabs.
-fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
+pub fn closeTab(self: *Window, tab: *Tab) void {
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(tab.box)) orelse return;
+
     // Find page and tab which we're closing
     const page_idx = getNotebookPageIndex(page);
-    const page_widget = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
-    const tab: *Tab = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page_widget), Tab.GHOSTTY_TAB) orelse return,
-    ));
 
     // Remove the tab from our stored tabs.
     self.removeTab(tab) catch |err| {
@@ -233,7 +231,6 @@ fn closeTab(self: *Window, page: *c.GtkNotebookPage) void {
         return;
     };
 
-    // Now remove the page
     c.gtk_notebook_remove_page(self.notebook, page_idx);
 
     const remaining = c.gtk_notebook_get_n_pages(self.notebook);
@@ -258,16 +255,10 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
     const alloc = surface.app.core_app.alloc;
 
     switch (surface.parent) {
-        .tab => {
-            const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.tab.box)) orelse return;
-            self.closeTab(page);
-        },
+        .tab => |tab| self.closeTab(tab),
         .paned => |paned_tuple| {
             const paned = paned_tuple[0];
             const position = paned_tuple[1];
-
-            // TODO: Do we need this?
-            surface.setParent(.none);
 
             const sibling = switch (position) {
                 .start => .{
@@ -294,6 +285,9 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
             const sibling_object: *c.GObject = @ptrCast(sibling_widget);
             _ = c.g_object_ref(sibling_object);
             defer c.g_object_unref(sibling_object);
+
+            // Remove reference on the surface we're closing
+            surface.setParent(.none);
 
             // Remove children and kill Paned.
             paned.removeChildren();

@@ -181,7 +181,6 @@ pub fn setChild(self: *Tab, newChild: Child) void {
 
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     const tab: *Tab = @ptrCast(@alignCast(ud));
-    _ = tab;
-    // TODO: Fix tab closing logic
-    log.info("tab close click\n", .{});
+    const window = tab.window;
+    window.closeTab(tab);
 }
