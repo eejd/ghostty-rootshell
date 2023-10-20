@@ -255,6 +255,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
     const alloc = surface.app.core_app.alloc;
 
     switch (surface.parent) {
+        .none => unreachable,
         .tab => |tab| self.closeTab(tab),
         .paned => |paned_tuple| {
             const paned = paned_tuple[0];
@@ -294,6 +295,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
             defer alloc.destroy(paned);
 
             switch (paned.parent) {
+                .none => unreachable,
                 .tab => |tab| {
                     // If parent of Paned we belong to is a tab, we can
                     // replace the child with the other surface
@@ -303,13 +305,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
                 .paned => |paned_paned| {
                     log.info("paned is nested, parent is paned. position={}", .{paned_paned[1]});
                 },
-                .none => {
-                    log.info("paned has no parent", .{});
-                },
             }
-        },
-        .none => {
-            log.info("no parent, dude?!", .{});
         },
     }
 }
