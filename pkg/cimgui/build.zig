@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     lib.linkLibC();
+    lib.linkLibCpp();
     if (target.isWindows()) {
         lib.linkSystemLibrary("imm32");
     }
