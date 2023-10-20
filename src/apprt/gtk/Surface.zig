@@ -347,46 +347,36 @@ pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFulls
 }
 
 pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
-    log.info("surface.newSplit. direction={}", .{direction});
+    log.debug("new split, direction: {}", .{direction});
 
     switch (self.parent) {
-        .none => {
-            log.info("no parent\n", .{});
-        },
+        .none => return,
         .paned => {
-            log.info("parent is paned \n", .{});
+            // TODO: Implement this
+            log.info("parent is paned", .{});
         },
         .tab => |tab| {
-            const tab_idx = for (self.window.tabs.items, 0..) |t, i| {
-                if (t == tab) break i;
-            } else null;
-
-            const label_text: ?*c.GtkWidget = switch (self.title) {
-                .none => null,
+            const label_text: *c.GtkWidget = switch (self.title) {
+                .none => return,
                 .label => |label| l: {
                     const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(label)));
                     break :l widget;
                 },
             };
 
-            if (label_text) |text| {
-                tab.removeChild();
+            tab.removeChild();
 
-                const paned = try Paned.create(self.app.core_app.alloc, self.window, text);
+            const paned = try Paned.create(self.app.core_app.alloc, self.window, label_text);
+            const new_surface = try paned.newSurface(tab, &self.core_surface);
+            // This sets .parent on each surface
+            paned.addChild1Surface(self);
+            paned.addChild2Surface(new_surface);
 
-                const new_surface = try paned.newSurface(tab, &self.core_surface);
-                // // This sets .parent on each surface
-                paned.addChild1Surface(self);
-                paned.addChild2Surface(new_surface);
+            tab.setChild(.{ .paned = paned });
 
-                tab.setChild(.{ .paned = paned });
-
-                // FOCUS ON NEW SURFACE
-                const widget = @as(*c.GtkWidget, @ptrCast(new_surface.gl_area));
-                _ = c.gtk_widget_grab_focus(widget);
-            } else {
-                log.info("no label text: {?}\n", .{tab_idx});
-            }
+            // FOCUS ON NEW SURFACE
+            const widget = @as(*c.GtkWidget, @ptrCast(new_surface.gl_area));
+            _ = c.gtk_widget_grab_focus(widget);
         },
     }
 }
