@@ -149,6 +149,7 @@ fn initActions(self: *Window) void {
         .{ "close", &gtkActionClose },
         .{ "new_window", &gtkActionNewWindow },
         .{ "new_tab", &gtkActionNewTab },
+        .{ "toggle_inspector", &gtkActionToggleInspector },
     };
 
     inline for (actions) |entry| {
@@ -541,6 +542,19 @@ fn gtkActionNewTab(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionToggleInspector(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .inspector = .toggle }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };

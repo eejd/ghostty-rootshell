@@ -216,6 +216,7 @@ fn updateConfigErrors(self: *App) !void {
 fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
     try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
+    try self.syncActionAccelerator("app.toggle_inspector", .{ .inspector = .toggle });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
     try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
     try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
@@ -459,6 +460,7 @@ fn initMenu(self: *App) void {
         const section = c.g_menu_new();
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
         c.g_menu_append(section, "Reload Configuration", "app.reload_config");
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
