@@ -26,7 +26,7 @@ pub const Inspector = struct {
     /// location is closed. For example: set this to true, request the
     /// window be closed, let GTK do its cleanup, then note this to destroy
     /// the inner state.
-    request_destroy: bool = false,
+    destroy_on_close: bool = true,
 
     /// Location where the inspector will be launched.
     pub const Location = union(LocationKey) {
@@ -63,6 +63,7 @@ pub const Inspector = struct {
     pub fn destroy(self: *Inspector) void {
         assert(self.location == .hidden);
         const alloc = self.allocator();
+        self.surface.inspector = null;
         self.deinit();
         alloc.destroy(self);
     }
@@ -83,10 +84,8 @@ pub const Inspector = struct {
         _ = self;
     }
 
-    /// Request the inspector is closed. If request_destroy is true, also
-    /// destroy the inspector state when the GUI is closed.
-    pub fn close(self: *Inspector, request_destroy: bool) void {
-        self.request_destroy = request_destroy;
+    /// Request the inspector is closed.
+    pub fn close(self: *Inspector) void {
         switch (self.location) {
             .hidden => self.locationDidClose(),
             .window => |v| v.close(),
@@ -95,7 +94,7 @@ pub const Inspector = struct {
 
     fn locationDidClose(self: *Inspector) void {
         self.location = .{ .hidden = {} };
-        if (self.request_destroy) self.destroy();
+        if (self.destroy_on_close) self.destroy();
     }
 
     fn allocator(self: *const Inspector) Allocator {
@@ -129,7 +128,7 @@ const Window = struct {
         const gtk_window: *c.GtkWindow = @ptrCast(window);
         errdefer c.gtk_window_destroy(gtk_window);
         self.window = gtk_window;
-        c.gtk_window_set_title(gtk_window, "Ghostty");
+        c.gtk_window_set_title(gtk_window, "Ghostty: Terminal Inspector");
         c.gtk_window_set_default_size(gtk_window, 1000, 600);
         self.icon = try icon.appIcon(self.inspector.surface.app, window);
         c.gtk_window_set_icon_name(gtk_window, self.icon.name);

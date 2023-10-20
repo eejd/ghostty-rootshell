@@ -297,7 +297,7 @@ pub fn controlInspector(self: *Surface, mode: input.InspectorMode) void {
 
     if (!show) {
         if (self.inspector) |v| {
-            v.close(true);
+            v.close();
             self.inspector = null;
         }
 
