@@ -85,7 +85,9 @@ pub fn destroy(self: *App) void {
     self.surfaces.deinit(self.alloc);
 
     if (self.resources_dir) |dir| self.alloc.free(dir);
-    if (self.font_discover) |*v| v.deinit();
+    if (comptime font.Discover != void) {
+        if (self.font_discover) |*v| v.deinit();
+    }
 
     self.alloc.destroy(self);
 }
