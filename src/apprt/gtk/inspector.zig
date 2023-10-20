@@ -8,6 +8,7 @@ const TerminalWindow = @import("Window.zig");
 const ImguiWidget = @import("ImguiWidget.zig");
 const c = @import("c.zig");
 const icon = @import("icon.zig");
+const CoreInspector = @import("../../Inspector.zig");
 
 const log = std.log.scoped(.inspector);
 
@@ -144,6 +145,7 @@ const Window = struct {
         errdefer self.imgui_widget.deinit();
         self.imgui_widget.render_callback = &imguiRender;
         self.imgui_widget.render_userdata = self;
+        CoreInspector.setup();
 
         // Signals
         _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
@@ -164,7 +166,12 @@ const Window = struct {
 
     fn imguiRender(ud: ?*anyopaque) void {
         const self: *Window = @ptrCast(@alignCast(ud orelse return));
-        self.inspector.surface.core_surface.renderInspector();
+        const surface = &self.inspector.surface.core_surface;
+        const inspector = surface.inspector orelse return;
+
+        surface.renderer_state.mutex.lock();
+        defer surface.renderer_state.mutex.unlock();
+        inspector.render();
     }
 
     /// "destroy" signal for the window

@@ -608,14 +608,6 @@ pub fn deactivateInspector(self: *Surface) void {
     self.inspector = null;
 }
 
-/// Render the inspector. This requires an active ImGui context.
-pub fn renderInspector(self: *Surface) void {
-    const inspector = self.inspector orelse return;
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-    inspector.render();
-}
-
 /// True if the surface requires confirmation to quit. This should be called
 /// by apprt to determine if the surface should confirm before quitting.
 pub fn needsConfirmQuit(self: *Surface) bool {
