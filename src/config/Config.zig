@@ -431,7 +431,8 @@ keybind: Keybinds = .{},
 @"confirm-close-surface": bool = true,
 
 /// Whether or not to quit after the last window is closed. This defaults
-/// to false. Currently only supported on macOS.
+/// to false. Currently only supported on macOS. On Linux, the process always
+/// exits after the last window is closed.
 @"quit-after-last-window-closed": bool = false,
 
 /// Whether to enable shell integration auto-injection or not. Shell
