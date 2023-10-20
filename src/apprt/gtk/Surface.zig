@@ -14,6 +14,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
 const Window = @import("Window.zig");
+const inspector = @import("inspector.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
@@ -75,6 +76,9 @@ font_size: ?font.face.DesiredSize = null,
 /// Cached metrics about the surface from GTK callbacks.
 size: apprt.SurfaceSize,
 cursor_pos: apprt.CursorPos,
+
+/// Inspector state.
+inspector: ?*inspector.Inspector = null,
 
 /// Key input states. See gtkKeyPressed for detailed descriptions.
 in_keypress: bool = false,
@@ -218,6 +222,9 @@ pub fn deinit(self: *Surface) void {
     // We don't allocate anything if we aren't realized.
     if (!self.realized) return;
 
+    // Delete our inspector if we have one
+    self.controlInspector(.hide);
+
     // Remove ourselves from the list of known surfaces in the app.
     self.app.core_app.deleteSurface(self);
 
@@ -279,6 +286,33 @@ pub fn close(self: *Surface, processActive: bool) void {
     _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, c.G_CONNECT_DEFAULT);
 
     c.gtk_widget_show(alert);
+}
+
+pub fn controlInspector(self: *Surface, mode: input.InspectorMode) void {
+    const show = switch (mode) {
+        .toggle => self.inspector == null,
+        .show => true,
+        .hide => false,
+    };
+
+    if (!show) {
+        if (self.inspector) |v| {
+            v.close(true);
+            self.inspector = null;
+        }
+
+        return;
+    }
+
+    // If we already have an inspector, we don't need to show anything.
+    if (self.inspector != null) return;
+    self.inspector = inspector.Inspector.create(
+        self,
+        .{ .window = {} },
+    ) catch |err| {
+        log.err("failed to control inspector err={}", .{err});
+        return;
+    };
 }
 
 pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFullscreen) void {

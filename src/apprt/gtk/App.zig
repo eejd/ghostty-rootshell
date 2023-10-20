@@ -263,12 +263,6 @@ pub fn run(self: *App) !void {
         log.warn("error handling configuration changes err={}", .{err});
     };
 
-    // TODO: temporary, remove: show our inspector window
-    {
-        const win = try inspector.Window.create(self.core_app.alloc, self);
-        _ = win;
-    }
-
     while (self.running) {
         _ = c.g_main_context_iteration(self.ctx, 1);
 
