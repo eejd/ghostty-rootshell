@@ -1871,20 +1871,20 @@ fn dragLeftClickSingle(
     //
 
     // the boundary point at which we consider selection or non-selection
-    const cell_xboundary = @as(f32, @floatFromInt(self.cell_size.width)) * 0.6;
+    const cell_width_f64: f64 = @floatFromInt(self.cell_size.width);
+    const cell_xboundary = cell_width_f64 * 0.6;
 
-    // first xpos of the clicked cell
-    const cell_xstart = @as(
-        f32,
-        @floatFromInt(self.mouse.left_click_point.x),
-    ) * @as(f32, @floatFromInt(self.cell_size.width));
-    const cell_start_xpos = self.mouse.left_click_xpos - cell_xstart;
+    // first xpos of the clicked cell adjusted for padding
+    const left_padding_f64: f64 = @as(f64, @floatFromInt(self.padding.left));
+    const cell_xstart = @as(f64, @floatFromInt(self.mouse.left_click_point.x)) * cell_width_f64;
+    const cell_start_xpos = self.mouse.left_click_xpos - cell_xstart - left_padding_f64;
 
     // If this is the same cell, then we only start the selection if weve
     // moved past the boundary point the opposite direction from where we
     // started.
     if (std.meta.eql(screen_point, self.mouse.left_click_point)) {
-        const cell_xpos = xpos - cell_xstart;
+        // Ensuring to adjusting the cursor position for padding
+        const cell_xpos = xpos - cell_xstart - left_padding_f64;
         const selected: bool = if (cell_start_xpos < cell_xboundary)
             cell_xpos >= cell_xboundary
         else
