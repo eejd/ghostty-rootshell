@@ -42,7 +42,11 @@ pub fn ensureLocale() void {
 
             if (setlocale(LC_ALL, "")) |v| {
                 log.info("setlocale after unset lang result={s}", .{v});
-                return;
+
+                // If we try to setlocale to an unsupported locale it'll return "C"
+                // as the POSIX/C fallback, if that's the case we want to not use
+                // it and move to our fallback of en_US.UTF-8
+                if (!std.mem.eql(u8, std.mem.sliceTo(v, 0), "C")) return;
             }
         }
     }
@@ -50,6 +54,7 @@ pub fn ensureLocale() void {
     // Failure again... fallback to en_US.UTF-8
     log.warn("setlocale failed with LANG and system default. Falling back to en_US.UTF-8", .{});
     if (setlocale(LC_ALL, "en_US.UTF-8")) |v| {
+        _ = setenv("LANG", "en_US.UTF-8", 1);
         log.info("setlocale default result={s}", .{v});
         return;
     } else log.err("setlocale failed even with the fallback, uncertain results", .{});
