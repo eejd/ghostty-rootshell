@@ -8,6 +8,11 @@ pub fn build(b: *std.Build) !void {
     _ = b.addModule("cimgui", .{ .source_file = .{ .path = "main.zig" } });
 
     const imgui = b.dependency("imgui", .{});
+    const freetype = b.dependency("freetype", .{
+        .target = target,
+        .optimize = optimize,
+        .@"enable-libpng" = true,
+    });
     const lib = b.addStaticLibrary(.{
         .name = "cimgui",
         .target = target,
@@ -15,6 +20,7 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibC();
     lib.linkLibCpp();
+    lib.linkLibrary(freetype.artifact("freetype"));
     if (target.isWindows()) {
         lib.linkSystemLibrary("imm32");
     }
@@ -24,6 +30,7 @@ pub fn build(b: *std.Build) !void {
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.appendSlice(&.{
+        "-DCIMGUI_FREETYPE=1",
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
     });
     if (target.isWindows()) {
@@ -42,6 +49,7 @@ pub fn build(b: *std.Build) !void {
     lib.addCSourceFile(.{ .file = imgui.path("imgui_demo.cpp"), .flags = flags.items });
     lib.addCSourceFile(.{ .file = imgui.path("imgui_widgets.cpp"), .flags = flags.items });
     lib.addCSourceFile(.{ .file = imgui.path("imgui_tables.cpp"), .flags = flags.items });
+    lib.addCSourceFile(.{ .file = imgui.path("misc/freetype/imgui_freetype.cpp"), .flags = flags.items });
 
     lib.addCSourceFile(.{
         .file = imgui.path("backends/imgui_impl_opengl3.cpp"),

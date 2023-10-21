@@ -11,5 +11,6 @@
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },
+        .freetype = .{ .path = "../freetype" },
     },
 }
