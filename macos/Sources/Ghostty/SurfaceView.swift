@@ -449,16 +449,17 @@ extension Ghostty {
         override func viewDidMoveToWindow() {
             guard let window = self.window else { return }
             guard let surface = self.surface else { return }
-            guard ghostty_surface_transparent(surface) else { return }
 
-            // Set the window transparency settings
-            window.isOpaque = false
-            window.hasShadow = false
-            window.backgroundColor = .clear
+            if ghostty_surface_transparent(surface) {
+                // Set the window transparency settings
+                window.isOpaque = false
+                window.hasShadow = false
+                window.backgroundColor = .clear
 
-            // If we have a blur, set the blur
-            ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
-            
+                // If we have a blur, set the blur
+                ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
+            }
+
             // Try to set the initial window size if we have one
             setInitialWindowSize()
         }
