@@ -16,12 +16,12 @@ pub fn setup() void {
     // Our colorspace is sRGB.
     io.ConfigFlags |= cimgui.c.ImGuiConfigFlags_IsSRGB;
 
-    // Get our style
-    const style = cimgui.c.igGetStyle();
-    cimgui.c.ImGuiStyle_ScaleAllSizes(style, 2);
-
     // Use our own embedded font
     {
+        // TODO: This will have to be recalculated for different screen DPIs.
+        // This is currently hardcoded to a 2x content scale.
+        const font_size = 16 * 2;
+
         const font_config: *cimgui.c.ImFontConfig = cimgui.c.ImFontConfig_ImFontConfig();
         defer cimgui.c.ImFontConfig_destroy(font_config);
         font_config.FontDataOwnedByAtlas = false;
@@ -29,7 +29,7 @@ pub fn setup() void {
             io.Fonts,
             @constCast(@ptrCast(Surface.face_ttf)),
             Surface.face_ttf.len,
-            32,
+            font_size,
             font_config,
             null,
         );
