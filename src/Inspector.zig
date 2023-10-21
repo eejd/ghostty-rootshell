@@ -29,7 +29,7 @@ pub fn setup() void {
             io.Fonts,
             @constCast(@ptrCast(Surface.face_ttf)),
             Surface.face_ttf.len,
-            24,
+            32,
             font_config,
             null,
         );

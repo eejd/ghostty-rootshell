@@ -841,6 +841,7 @@ pub const Inspector = struct {
     ig_ctx: *cimgui.c.ImGuiContext,
     backend: ?Backend = null,
     keymap_state: input.Keymap.State = .{},
+    content_scale: f64 = 1,
 
     /// Our previous instant used to calculate delta time for animations.
     instant: ?std.time.Instant = null,
@@ -952,23 +953,24 @@ pub const Inspector = struct {
     }
 
     pub fn updateContentScale(self: *Inspector, x: f64, y: f64) void {
+        _ = y;
         cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
-        io.DisplayFramebufferScale = .{
-            .x = @floatCast(x),
-            .y = @floatCast(y),
-        };
+
+        // Cache our scale because we use it for cursor position calculations.
+        self.content_scale = x;
+
+        // Setup a new style and scale it appropriately.
+        const style = cimgui.c.ImGuiStyle_ImGuiStyle();
+        defer cimgui.c.ImGuiStyle_destroy(style);
+        cimgui.c.ImGuiStyle_ScaleAllSizes(style, @floatCast(x));
+        const active_style = cimgui.c.igGetStyle();
+        active_style.* = style.*;
     }
 
     pub fn updateSize(self: *Inspector, width: u32, height: u32) void {
         cimgui.c.igSetCurrentContext(self.ig_ctx);
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
-        const x_scale: u32 = @intFromFloat(io.DisplayFramebufferScale.x);
-        const y_scale: u32 = @intFromFloat(io.DisplayFramebufferScale.y);
-        io.DisplaySize = .{
-            .x = @floatFromInt(@divFloor(width, x_scale)),
-            .y = @floatFromInt(@divFloor(height, y_scale)),
-        };
+        io.DisplaySize = .{ .x = @floatFromInt(width), .y = @floatFromInt(height) };
     }
 
     pub fn mouseButtonCallback(
@@ -1015,7 +1017,11 @@ pub const Inspector = struct {
         self.queueRender();
         cimgui.c.igSetCurrentContext(self.ig_ctx);
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
-        cimgui.c.ImGuiIO_AddMousePosEvent(io, @floatCast(x), @floatCast(y));
+        cimgui.c.ImGuiIO_AddMousePosEvent(
+            io,
+            @floatCast(x * self.content_scale),
+            @floatCast(y * self.content_scale),
+        );
     }
 
     pub fn focusCallback(self: *Inspector, focused: bool) void {
