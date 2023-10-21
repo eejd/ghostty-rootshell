@@ -919,8 +919,10 @@ pub const Inspector = struct {
         assert(self.backend == .metal);
         //log.debug("render", .{});
 
-        // Setup our imgui frame
-        {
+        // Setup our imgui frame. We need to render multiple frames to ensure
+        // ImGui completes all its state processing. I don't know how to fix
+        // this.
+        for (0..2) |_| {
             cimgui.c.ImGui_ImplMetal_NewFrame(desc.value);
             try self.newFrame();
             cimgui.c.igNewFrame();
