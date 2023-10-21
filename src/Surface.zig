@@ -2466,7 +2466,7 @@ fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8) !void 
     self.io_thread.wakeup.notify() catch {};
 }
 
-const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
-const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
-const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
-const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");
+pub const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
+pub const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
+pub const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
+pub const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");

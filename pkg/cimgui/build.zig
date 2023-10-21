@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) !void {
     defer flags.deinit();
     try flags.appendSlice(&.{
         "-DCIMGUI_FREETYPE=1",
+        "-DIMGUI_USE_WCHAR32=1",
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
     });
     if (target.isWindows()) {

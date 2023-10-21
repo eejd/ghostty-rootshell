@@ -184,14 +184,17 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
         scale_factor,
     });
 
-    io.DisplaySize = .{
-        .x = @floatFromInt(@divFloor(width, scale_factor)),
-        .y = @floatFromInt(@divFloor(height, scale_factor)),
-    };
-    io.DisplayFramebufferScale = .{
-        .x = @floatFromInt(scale_factor),
-        .y = @floatFromInt(scale_factor),
-    };
+    // Our display size is always unscaled. We'll do the scaling in the
+    // style instead. This creates crisper looking fonts.
+    io.DisplaySize = .{ .x = @floatFromInt(width), .y = @floatFromInt(height) };
+    io.DisplayFramebufferScale = .{ .x = 1, .y = 1 };
+
+    // Setup a new style and scale it appropriately.
+    const style = cimgui.c.ImGuiStyle_ImGuiStyle();
+    defer cimgui.c.ImGuiStyle_destroy(style);
+    cimgui.c.ImGuiStyle_ScaleAllSizes(style, @floatFromInt(scale_factor));
+    const active_style = cimgui.c.igGetStyle();
+    active_style.* = style.*;
 }
 
 fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv(.C) c.gboolean {
@@ -231,7 +234,14 @@ fn gtkMouseMotion(
     const self: *ImguiWidget = @ptrCast(@alignCast(ud.?));
     cimgui.c.igSetCurrentContext(self.ig_ctx);
     const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
-    cimgui.c.ImGuiIO_AddMousePosEvent(io, @floatCast(x), @floatCast(y));
+    const scale_factor: f64 = @floatFromInt(c.gtk_widget_get_scale_factor(
+        @ptrCast(self.gl_area),
+    ));
+    cimgui.c.ImGuiIO_AddMousePosEvent(
+        io,
+        @floatCast(x * scale_factor),
+        @floatCast(y * scale_factor),
+    );
     self.queueRender();
 }
 

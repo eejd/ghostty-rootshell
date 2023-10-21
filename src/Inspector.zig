@@ -4,6 +4,7 @@
 const Inspector = @This();
 
 const cimgui = @import("cimgui");
+const Surface = @import("Surface.zig");
 
 /// Setup the ImGui state. This requires an ImGui context to be set.
 pub fn setup() void {
@@ -14,6 +15,25 @@ pub fn setup() void {
 
     // Our colorspace is sRGB.
     io.ConfigFlags |= cimgui.c.ImGuiConfigFlags_IsSRGB;
+
+    // Get our style
+    const style = cimgui.c.igGetStyle();
+    cimgui.c.ImGuiStyle_ScaleAllSizes(style, 2);
+
+    // Use our own embedded font
+    {
+        const font_config: *cimgui.c.ImFontConfig = cimgui.c.ImFontConfig_ImFontConfig();
+        defer cimgui.c.ImFontConfig_destroy(font_config);
+        font_config.FontDataOwnedByAtlas = false;
+        _ = cimgui.c.ImFontAtlas_AddFontFromMemoryTTF(
+            io.Fonts,
+            @constCast(@ptrCast(Surface.face_ttf)),
+            Surface.face_ttf.len,
+            24,
+            font_config,
+            null,
+        );
+    }
 }
 
 pub fn init() Inspector {
