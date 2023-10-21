@@ -6,6 +6,11 @@ const Inspector = @This();
 const cimgui = @import("cimgui");
 const Surface = @import("Surface.zig");
 
+/// The window names. These are used with docking so we need to have access.
+const window_modes = "Modes";
+
+show_modes_window: bool = true,
+
 /// Setup the ImGui state. This requires an ImGui context to be set.
 pub fn setup() void {
     const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
@@ -15,6 +20,10 @@ pub fn setup() void {
 
     // Our colorspace is sRGB.
     io.ConfigFlags |= cimgui.c.ImGuiConfigFlags_IsSRGB;
+
+    // Disable the ini file to save layout
+    io.IniFilename = null;
+    io.LogFilename = null;
 
     // Use our own embedded font
     {
@@ -46,14 +55,35 @@ pub fn deinit(self: *Inspector) void {
 
 /// Render the frame.
 pub fn render(self: *Inspector) void {
-    _ = self;
-
-    _ = cimgui.c.igDockSpaceOverViewport(
+    const dock_id = cimgui.c.igDockSpaceOverViewport(
         cimgui.c.igGetMainViewport(),
         cimgui.c.ImGuiDockNodeFlags_None,
         null,
     );
 
-    var show: bool = true;
-    cimgui.c.igShowDemoWindow(&show);
+    // Flip this boolean to true whenever you want to see the ImGui demo
+    // window which can help you figure out how to use various ImGui widgets.
+    if (false) {
+        var show: bool = true;
+        cimgui.c.igShowDemoWindow(&show);
+    }
+
+    self.renderModesWindow();
+
+    // Setup our dock. We want all our main windows to be tabs in the main bar.
+    cimgui.c.igDockBuilderDockWindow(window_modes, dock_id);
+}
+
+/// The modes window shows the currently active terminal modes and allows
+/// users to toggle them on and off.
+fn renderModesWindow(self: *Inspector) void {
+    if (!self.show_modes_window) return;
+
+    // Start our window. If we're collapsed we do nothing.
+    defer cimgui.c.igEnd();
+    if (!cimgui.c.igBegin(
+        window_modes,
+        &self.show_modes_window,
+        cimgui.c.ImGuiWindowFlags_None,
+    )) return;
 }

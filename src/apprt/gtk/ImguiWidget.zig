@@ -201,21 +201,25 @@ fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv
     _ = area;
     _ = ctx;
     const self: *ImguiWidget = @ptrCast(@alignCast(ud.?));
-
-    // Setup our frame
     cimgui.c.igSetCurrentContext(self.ig_ctx);
-    cimgui.c.ImGui_ImplOpenGL3_NewFrame();
-    self.newFrame() catch |err| {
-        log.err("failed to setup frame: {}", .{err});
-        return 0;
-    };
-    cimgui.c.igNewFrame();
 
-    // Build our UI
-    if (self.render_callback) |cb| cb(self.render_userdata);
+    // Setup our frame. We render twice because some ImGui behaviors
+    // take multiple renders to process. I don't know how to make this
+    // more efficient.
+    for (0..2) |_| {
+        cimgui.c.ImGui_ImplOpenGL3_NewFrame();
+        self.newFrame() catch |err| {
+            log.err("failed to setup frame: {}", .{err});
+            return 0;
+        };
+        cimgui.c.igNewFrame();
 
-    // Render
-    cimgui.c.igRender();
+        // Build our UI
+        if (self.render_callback) |cb| cb(self.render_userdata);
+
+        // Render
+        cimgui.c.igRender();
+    }
 
     // OpenGL final render
     gl.clearColor(0x28 / 0xFF, 0x2C / 0xFF, 0x34 / 0xFF, 1.0);
