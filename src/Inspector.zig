@@ -148,7 +148,31 @@ fn renderScreenWindow(self: *Inspector) void {
         cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
     )) return;
 
-    const screen = &self.surface.renderer_state.terminal.screen;
+    const t = self.surface.renderer_state.terminal;
+    const screen = &t.screen;
+
+    {
+        _ = cimgui.c.igBeginTable(
+            "table_screen",
+            2,
+            cimgui.c.ImGuiTableFlags_None,
+            .{ .x = 0, .y = 0 },
+            0,
+        );
+        defer cimgui.c.igEndTable();
+
+        {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Active Screen");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("%s", @tagName(t.active_screen).ptr);
+            }
+        }
+    }
 
     if (cimgui.c.igCollapsingHeader_TreeNodeFlags(
         "Cursor",
@@ -255,7 +279,76 @@ fn renderScreenWindow(self: *Inspector) void {
         } // table
 
         cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
-    }
+    } // cursor
+
+    if (cimgui.c.igCollapsingHeader_TreeNodeFlags(
+        "Keyboard",
+        cimgui.c.ImGuiTreeNodeFlags_DefaultOpen,
+    )) {
+        {
+            _ = cimgui.c.igBeginTable(
+                "table_keyboard",
+                2,
+                cimgui.c.ImGuiTableFlags_None,
+                .{ .x = 0, .y = 0 },
+                0,
+            );
+            defer cimgui.c.igEndTable();
+
+            const kitty_flags = screen.kitty_keyboard.current();
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Mode");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    const mode = if (kitty_flags.int() != 0) "kitty" else "legacy";
+                    cimgui.c.igText("%s", mode.ptr);
+                }
+            }
+
+            if (kitty_flags.int() != 0) {
+                const Flags = @TypeOf(kitty_flags);
+                inline for (@typeInfo(Flags).Struct.fields) |field| {
+                    {
+                        const value = @field(kitty_flags, field.name);
+
+                        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                        {
+                            _ = cimgui.c.igTableSetColumnIndex(0);
+                            const name = std.fmt.comptimePrint("{s}", .{field.name});
+                            cimgui.c.igText("%s", name.ptr);
+                        }
+                        {
+                            _ = cimgui.c.igTableSetColumnIndex(1);
+                            cimgui.c.igText(
+                                "%s",
+                                if (value) "true".ptr else "false".ptr,
+                            );
+                        }
+                    }
+                }
+            } else {
+                {
+                    cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                    {
+                        _ = cimgui.c.igTableSetColumnIndex(0);
+                        cimgui.c.igText("Xterm modify keys");
+                    }
+                    {
+                        _ = cimgui.c.igTableSetColumnIndex(1);
+                        cimgui.c.igText(
+                            "%s",
+                            if (t.flags.modify_other_keys_2) "true".ptr else "false".ptr,
+                        );
+                    }
+                }
+            } // keyboard mode info
+        } // table
+    } // keyboard
 }
 
 /// The modes window shows the currently active terminal modes and allows
