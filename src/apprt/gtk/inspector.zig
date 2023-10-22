@@ -104,6 +104,13 @@ pub const Inspector = struct {
         if (self.destroy_on_close) self.destroy();
     }
 
+    pub fn queueRender(self: *const Inspector) void {
+        switch (self.location) {
+            .hidden => {},
+            .window => |v| v.imgui_widget.queueRender(),
+        }
+    }
+
     fn allocator(self: *const Inspector) Allocator {
         return self.surface.app.core_app.alloc;
     }

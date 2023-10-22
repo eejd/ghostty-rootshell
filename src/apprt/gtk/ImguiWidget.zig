@@ -112,7 +112,7 @@ pub fn deinit(self: *ImguiWidget) void {
 
 /// This should be called anytime the underlying data for the UI changes
 /// so that the UI can be refreshed.
-pub fn queueRender(self: *ImguiWidget) void {
+pub fn queueRender(self: *const ImguiWidget) void {
     c.gtk_gl_area_queue_render(self.gl_area);
 }
 

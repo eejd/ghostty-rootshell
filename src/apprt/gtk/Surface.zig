@@ -239,6 +239,7 @@ pub fn deinit(self: *Surface) void {
 }
 
 fn render(self: *Surface) !void {
+    if (self.inspector) |v| v.queueRender();
     try self.core_surface.renderer.draw();
 }
 

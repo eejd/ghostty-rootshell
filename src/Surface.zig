@@ -580,7 +580,7 @@ pub fn activateInspector(self: *Surface) !void {
     // Setup the inspector
     var ptr = try self.alloc.create(Inspector);
     errdefer self.alloc.destroy(ptr);
-    ptr.* = Inspector.init();
+    ptr.* = Inspector.init(self);
     self.inspector = ptr;
 
     // Put the inspector onto the render state
