@@ -27,6 +27,9 @@ const c = @cImport({
 /// The font families to use.
 /// You can generate the list of valid values using the CLI:
 ///   path/to/ghostty/cli +list-fonts
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
 @"font-family": ?[:0]const u8 = null,
 @"font-family-bold": ?[:0]const u8 = null,
 @"font-family-italic": ?[:0]const u8 = null,
