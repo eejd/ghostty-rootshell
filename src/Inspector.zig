@@ -11,6 +11,7 @@ const terminal = @import("terminal/main.zig");
 
 /// The window names. These are used with docking so we need to have access.
 const window_modes = "Modes";
+const window_screen = "Screen";
 const window_size = "Surface Info";
 const window_imgui_demo = "Dear ImGui Demo";
 
@@ -22,6 +23,7 @@ surface: *Surface,
 first_render: bool = true,
 
 show_modes_window: bool = true,
+show_screen_window: bool = true,
 show_size_window: bool = true,
 
 /// Setup the ImGui state. This requires an ImGui context to be set.
@@ -80,6 +82,7 @@ pub fn render(self: *Inspector) void {
     {
         self.surface.renderer_state.mutex.lock();
         defer self.surface.renderer_state.mutex.unlock();
+        self.renderScreenWindow();
         self.renderModesWindow();
         self.renderSizeWindow();
     }
@@ -104,7 +107,7 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     _ = self;
 
     // Our initial focus should always be the modes window
-    cimgui.c.igSetWindowFocus_Str(window_modes);
+    cimgui.c.igSetWindowFocus_Str(window_screen);
 
     // Setup our initial layout.
     const dock_id: struct {
@@ -128,9 +131,62 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     };
 
     cimgui.c.igDockBuilderDockWindow(window_modes, dock_id.left);
+    cimgui.c.igDockBuilderDockWindow(window_screen, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_imgui_demo, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_size, dock_id.right);
     cimgui.c.igDockBuilderFinish(dock_id_main);
+}
+
+fn renderScreenWindow(self: *Inspector) void {
+    if (!self.show_screen_window) return;
+
+    // Start our window. If we're collapsed we do nothing.
+    defer cimgui.c.igEnd();
+    if (!cimgui.c.igBegin(
+        window_screen,
+        &self.show_screen_window,
+        cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+    )) return;
+
+    const screen = &self.surface.renderer_state.terminal.screen;
+
+    if (cimgui.c.igCollapsingHeader_TreeNodeFlags(
+        "Cursor",
+        cimgui.c.ImGuiTreeNodeFlags_DefaultOpen,
+    )) {
+        _ = cimgui.c.igBeginTable(
+            "table_cursor",
+            2,
+            cimgui.c.ImGuiTableFlags_None,
+            .{ .x = 0, .y = 0 },
+            0,
+        );
+        defer cimgui.c.igEndTable();
+
+        {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Position (x, y)");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("(%d, %d)", screen.cursor.x, screen.cursor.y);
+            }
+        }
+
+        {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Pending Wrap");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("%s", if (screen.cursor.pending_wrap) "true".ptr else "false".ptr);
+            }
+        }
+    }
 }
 
 /// The modes window shows the currently active terminal modes and allows
