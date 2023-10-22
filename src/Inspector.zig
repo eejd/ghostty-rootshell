@@ -3,8 +3,10 @@
 //! debugging issues in Ghostty itself.
 const Inspector = @This();
 
+const std = @import("std");
 const cimgui = @import("cimgui");
 const Surface = @import("Surface.zig");
+const terminal = @import("terminal/main.zig");
 
 /// The window names. These are used with docking so we need to have access.
 const window_modes = "Modes";
@@ -71,9 +73,15 @@ pub fn render(self: *Inspector) void {
         null,
     );
 
-    // We want the modes window to have the initial focus
-    self.renderModesWindow();
-    self.renderSizeWindow();
+    // Render all of our data. We hold the mutex for this duration. This is
+    // expensive but this is an initial implementation until it doesn't work
+    // anymore.
+    {
+        self.surface.renderer_state.mutex.lock();
+        defer self.surface.renderer_state.mutex.unlock();
+        self.renderModesWindow();
+        self.renderSizeWindow();
+    }
 
     // Flip this boolean to true whenever you want to see the ImGui demo
     // window which can help you figure out how to use various ImGui widgets.
@@ -136,6 +144,48 @@ fn renderModesWindow(self: *Inspector) void {
         &self.show_modes_window,
         cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
     )) return;
+
+    _ = cimgui.c.igBeginTable(
+        "table_modes",
+        3,
+        cimgui.c.ImGuiTableFlags_SizingFixedFit |
+            cimgui.c.ImGuiTableFlags_RowBg,
+        .{ .x = 0, .y = 0 },
+        0,
+    );
+    defer cimgui.c.igEndTable();
+
+    {
+        _ = cimgui.c.igTableSetupColumn("", cimgui.c.ImGuiTableColumnFlags_NoResize, 0, 0);
+        _ = cimgui.c.igTableSetupColumn("Number", cimgui.c.ImGuiTableColumnFlags_PreferSortAscending, 0, 0);
+        _ = cimgui.c.igTableSetupColumn("Name", cimgui.c.ImGuiTableColumnFlags_WidthStretch, 0, 0);
+        cimgui.c.igTableHeadersRow();
+    }
+
+    const t = self.surface.renderer_state.terminal;
+    inline for (@typeInfo(terminal.Mode).Enum.fields) |field| {
+        const tag: terminal.modes.ModeTag = @bitCast(@as(terminal.modes.ModeTag.Backing, field.value));
+
+        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+        {
+            _ = cimgui.c.igTableSetColumnIndex(0);
+            var value: bool = t.modes.get(@field(terminal.Mode, field.name));
+            _ = cimgui.c.igCheckbox("", &value);
+        }
+        {
+            _ = cimgui.c.igTableSetColumnIndex(1);
+            cimgui.c.igText(
+                "%s%d",
+                if (tag.ansi) "?" else "",
+                @as(u32, @intCast(tag.value)),
+            );
+        }
+        {
+            _ = cimgui.c.igTableSetColumnIndex(2);
+            const name = std.fmt.comptimePrint("{s}", .{field.name});
+            cimgui.c.igText("%s", name.ptr);
+        }
+    }
 }
 
 fn renderSizeWindow(self: *Inspector) void {

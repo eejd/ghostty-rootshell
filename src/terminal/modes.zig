@@ -120,8 +120,8 @@ pub const Mode = mode_enum: {
 
 /// The tag type for our enum is a u16 but we use a packed struct
 /// in order to pack the ansi bit into the tag.
-const ModeTag = packed struct(u16) {
-    const Backing = @typeInfo(@This()).Struct.backing_integer.?;
+pub const ModeTag = packed struct(u16) {
+    pub const Backing = @typeInfo(@This()).Struct.backing_integer.?;
     value: u15,
     ansi: bool = false,
 

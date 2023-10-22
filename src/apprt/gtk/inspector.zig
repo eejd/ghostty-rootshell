@@ -175,9 +175,6 @@ const Window = struct {
         const self: *Window = @ptrCast(@alignCast(ud orelse return));
         const surface = &self.inspector.surface.core_surface;
         const inspector = surface.inspector orelse return;
-
-        surface.renderer_state.mutex.lock();
-        defer surface.renderer_state.mutex.unlock();
         inspector.render();
     }
 
