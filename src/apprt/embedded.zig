@@ -936,8 +936,6 @@ pub const Inspector = struct {
             render: {
                 const surface = &self.surface.core_surface;
                 const inspector = surface.inspector orelse break :render;
-                surface.renderer_state.mutex.lock();
-                defer surface.renderer_state.mutex.unlock();
                 inspector.render();
             }
 
