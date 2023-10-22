@@ -4,6 +4,7 @@
 const Inspector = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const cimgui = @import("cimgui");
 const Surface = @import("Surface.zig");
 const terminal = @import("terminal/main.zig");
@@ -83,9 +84,9 @@ pub fn render(self: *Inspector) void {
         self.renderSizeWindow();
     }
 
-    // Flip this boolean to true whenever you want to see the ImGui demo
-    // window which can help you figure out how to use various ImGui widgets.
-    if (true) {
+    // In debug we show the ImGui demo window so we can easily view available
+    // widgets and such.
+    if (builtin.mode == .Debug) {
         var show: bool = true;
         cimgui.c.igShowDemoWindow(&show);
     }
