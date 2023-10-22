@@ -154,38 +154,107 @@ fn renderScreenWindow(self: *Inspector) void {
         "Cursor",
         cimgui.c.ImGuiTreeNodeFlags_DefaultOpen,
     )) {
-        _ = cimgui.c.igBeginTable(
-            "table_cursor",
-            2,
-            cimgui.c.ImGuiTableFlags_None,
-            .{ .x = 0, .y = 0 },
-            0,
-        );
-        defer cimgui.c.igEndTable();
-
         {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            {
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Position (x, y)");
-            }
-            {
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("(%d, %d)", screen.cursor.x, screen.cursor.y);
-            }
-        }
+            _ = cimgui.c.igBeginTable(
+                "table_cursor",
+                2,
+                cimgui.c.ImGuiTableFlags_None,
+                .{ .x = 0, .y = 0 },
+                0,
+            );
+            defer cimgui.c.igEndTable();
 
-        {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Position (x, y)");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("(%d, %d)", screen.cursor.x, screen.cursor.y);
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Pending Wrap");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%s", if (screen.cursor.pending_wrap) "true".ptr else "false".ptr);
+                }
+            }
+
+            // If we have a color then we show the color
+            color: {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
                 _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Pending Wrap");
-            }
-            {
+                cimgui.c.igText("Foreground Color");
                 _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("%s", if (screen.cursor.pending_wrap) "true".ptr else "false".ptr);
+                if (!screen.cursor.pen.attrs.has_fg) {
+                    cimgui.c.igText("default");
+                    break :color;
+                }
+
+                var color: [3]f32 = .{
+                    @as(f32, @floatFromInt(screen.cursor.pen.fg.r)) / 255,
+                    @as(f32, @floatFromInt(screen.cursor.pen.fg.g)) / 255,
+                    @as(f32, @floatFromInt(screen.cursor.pen.fg.b)) / 255,
+                };
+                _ = cimgui.c.igColorEdit3(
+                    "color_fg",
+                    &color,
+                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                        cimgui.c.ImGuiColorEditFlags_NoLabel,
+                );
             }
-        }
+            color: {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Background Color");
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                if (!screen.cursor.pen.attrs.has_bg) {
+                    cimgui.c.igText("default");
+                    break :color;
+                }
+
+                var color: [3]f32 = .{
+                    @as(f32, @floatFromInt(screen.cursor.pen.bg.r)) / 255,
+                    @as(f32, @floatFromInt(screen.cursor.pen.bg.g)) / 255,
+                    @as(f32, @floatFromInt(screen.cursor.pen.bg.b)) / 255,
+                };
+                _ = cimgui.c.igColorEdit3(
+                    "color_bg",
+                    &color,
+                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                        cimgui.c.ImGuiColorEditFlags_NoLabel,
+                );
+            }
+
+            // Boolean styles
+            const styles = .{
+                "bold",    "italic",    "faint",     "blink",
+                "inverse", "invisible", "protected", "strikethrough",
+            };
+            inline for (styles) |style| style: {
+                if (!@field(screen.cursor.pen.attrs, style)) break :style;
+
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText(style.ptr);
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("true");
+                }
+            }
+        } // table
+
+        cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
     }
 }
 
