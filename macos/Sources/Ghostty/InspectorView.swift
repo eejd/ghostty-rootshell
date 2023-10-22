@@ -218,11 +218,6 @@ extension Ghostty {
             updateSize()
         }
         
-        override func resize(withOldSuperviewSize oldSize: NSSize) {
-            super.resize(withOldSuperviewSize: oldSize)
-            updateSize()
-        }
-        
         override func mouseDown(with event: NSEvent) {
             guard let inspector = self.inspector else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
@@ -428,6 +423,12 @@ extension Ghostty {
                 return
             }
             
+            // We always update our size because sometimes draw is called
+            // between resize events and if our size is wrong with the underlying
+            // drawable we will crash.
+            updateSize()
+            
+            // Render
             ghostty_inspector_metal_render(
                 inspector,
                 Unmanaged.passRetained(commandBuffer).toOpaque(),
