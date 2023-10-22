@@ -15,6 +15,7 @@ const build_config = @import("build_config.zig");
 pub usingnamespace @import("apprt/structs.zig");
 pub const glfw = @import("apprt/glfw.zig");
 pub const gtk = @import("apprt/gtk.zig");
+pub const none = @import("apprt/none.zig");
 pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
 pub const surface = @import("apprt/surface.zig");
@@ -25,7 +26,7 @@ pub const surface = @import("apprt/surface.zig");
 /// Window or something.
 pub const runtime = switch (build_config.artifact) {
     .exe => switch (build_config.app_runtime) {
-        .none => struct {},
+        .none => none,
         .glfw => glfw,
         .gtk => gtk,
     },
