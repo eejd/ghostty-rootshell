@@ -36,6 +36,9 @@ pub const Message = union(enum) {
         ptr: *termio.Impl.DerivedConfig,
     },
 
+    /// Activate or deactivate the inspector.
+    inspector: bool,
+
     /// Resize the window.
     resize: Resize,
 

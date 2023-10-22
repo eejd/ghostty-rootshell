@@ -48,11 +48,6 @@ cursor_h: xev.Timer,
 cursor_c: xev.Completion = .{},
 cursor_c_cancel: xev.Completion = .{},
 
-/// This is true when a blinking cursor should be visible and false
-/// when it should not be visible. This is toggled on a timer by the
-/// thread automatically.
-cursor_blink_visible: bool = false,
-
 /// The surface we're rendering to.
 surface: *apprt.Surface,
 
@@ -68,6 +63,16 @@ mailbox: *Mailbox,
 
 /// Mailbox to send messages to the app thread
 app_mailbox: App.Mailbox,
+
+flags: packed struct {
+    /// This is true when a blinking cursor should be visible and false
+    /// when it should not be visible. This is toggled on a timer by the
+    /// thread automatically.
+    cursor_blink_visible: bool = false,
+
+    /// This is true when the inspector is active.
+    has_inspector: bool = false,
+} = .{},
 
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
@@ -225,7 +230,7 @@ fn drainMailbox(self: *Thread) !void {
                     // If we're focused, we immediately show the cursor again
                     // and then restart the timer.
                     if (self.cursor_c.state() != .active) {
-                        self.cursor_blink_visible = true;
+                        self.flags.cursor_blink_visible = true;
                         self.cursor_h.run(
                             &self.loop,
                             &self.cursor_c,
@@ -239,7 +244,7 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .reset_cursor_blink => {
-                self.cursor_blink_visible = true;
+                self.flags.cursor_blink_visible = true;
                 if (self.cursor_c.state() == .active) {
                     self.cursor_h.reset(
                         &self.loop,
@@ -265,6 +270,8 @@ fn drainMailbox(self: *Thread) !void {
                 defer config.alloc.destroy(config.ptr);
                 try self.renderer.changeConfig(config.ptr);
             },
+
+            .inspector => |v| self.flags.has_inspector = v,
         }
     }
 }
@@ -322,10 +329,15 @@ fn renderCallback(
         return .disarm;
     };
 
+    // If we have an inspector, let the app know we want to rerender that.
+    if (t.flags.has_inspector) {
+        _ = t.app_mailbox.push(.{ .redraw_inspector = t.surface }, .{ .instant = {} });
+    }
+
     t.renderer.render(
         t.surface,
         t.state,
-        t.cursor_blink_visible,
+        t.flags.cursor_blink_visible,
     ) catch |err|
         log.warn("error rendering err={}", .{err});
 
@@ -365,7 +377,7 @@ fn cursorTimerCallback(
         return .disarm;
     };
 
-    t.cursor_blink_visible = !t.cursor_blink_visible;
+    t.flags.cursor_blink_visible = !t.flags.cursor_blink_visible;
     t.wakeup.notify() catch {};
 
     t.cursor_h.run(&t.loop, &t.cursor_c, CURSOR_BLINK_INTERVAL, Thread, t, cursorTimerCallback);

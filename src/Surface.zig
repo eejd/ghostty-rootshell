@@ -584,10 +584,16 @@ pub fn activateInspector(self: *Surface) !void {
     self.inspector = ptr;
 
     // Put the inspector onto the render state
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-    assert(self.renderer_state.inspector == null);
-    self.renderer_state.inspector = self.inspector;
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        assert(self.renderer_state.inspector == null);
+        self.renderer_state.inspector = self.inspector;
+    }
+
+    // Notify our components we have an inspector active
+    _ = self.renderer_thread.mailbox.push(.{ .inspector = true }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{ .inspector = true }, .{ .forever = {} });
 }
 
 /// Deactivate the inspector and stop collecting any information.
@@ -601,6 +607,10 @@ pub fn deactivateInspector(self: *Surface) void {
         assert(self.renderer_state.inspector != null);
         self.renderer_state.inspector = null;
     }
+
+    // Notify our components we have deactivated inspector
+    _ = self.renderer_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
 
     // Deinit the inspector
     inspector.deinit();

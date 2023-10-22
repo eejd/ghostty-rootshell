@@ -279,6 +279,12 @@ pub fn redrawSurface(self: *App, surface: *Surface) void {
     surface.redraw();
 }
 
+/// Redraw the inspector for the given surface.
+pub fn redrawInspector(self: *App, surface: *Surface) void {
+    _ = self;
+    surface.queueInspectorRender();
+}
+
 /// Called by CoreApp to create a new window with a new surface.
 pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
     const alloc = self.core_app.alloc;

@@ -181,6 +181,11 @@ pub const App = struct {
         // No-op, we use a threaded interface so we're constantly drawing.
     }
 
+    pub fn redrawInspector(self: *App, surface: *Surface) void {
+        _ = self;
+        surface.queueInspectorRender();
+    }
+
     pub fn newWindow(self: *App, parent: ?*CoreSurface) !void {
         _ = self;
 

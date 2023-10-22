@@ -239,8 +239,12 @@ pub fn deinit(self: *Surface) void {
 }
 
 fn render(self: *Surface) !void {
-    if (self.inspector) |v| v.queueRender();
     try self.core_surface.renderer.draw();
+}
+
+/// Queue the inspector to render if we have one.
+pub fn queueInspectorRender(self: *Surface) void {
+    if (self.inspector) |v| v.queueRender();
 }
 
 /// Invalidate the surface so that it forces a redraw on the next tick.

@@ -34,4 +34,7 @@ pub const Message = union(enum) {
         alloc: Allocator,
         ptr: *renderer.Renderer.DerivedConfig,
     },
+
+    /// Activate or deactivate the inspector.
+    inspector: bool,
 };
