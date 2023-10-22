@@ -366,7 +366,7 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
 
             tab.removeChild();
 
-            const paned = try Paned.create(self.app.core_app.alloc, self.window, label_text);
+            const paned = try Paned.create(self.app.core_app.alloc, self.window, direction, label_text);
             const new_surface = try paned.newSurface(tab, &self.core_surface);
             // This sets .parent on each surface
             paned.addChild1Surface(self);

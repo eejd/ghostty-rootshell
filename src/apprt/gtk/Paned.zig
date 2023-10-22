@@ -4,6 +4,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const font = @import("../../font/main.zig");
+const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const Window = @import("Window.zig");
@@ -32,14 +33,14 @@ child2: Tab.Child,
 // maximize the parent pane, or close the tab.
 parent: Parent,
 
-pub fn create(alloc: Allocator, window: *Window, label_text: *c.GtkWidget) !*Paned {
+pub fn create(alloc: Allocator, window: *Window, direction: input.SplitDirection, label_text: *c.GtkWidget) !*Paned {
     var paned = try alloc.create(Paned);
     errdefer alloc.destroy(paned);
-    try paned.init(window, label_text);
+    try paned.init(window, direction, label_text);
     return paned;
 }
 
-pub fn init(self: *Paned, window: *Window, label_text: *c.GtkWidget) !void {
+pub fn init(self: *Paned, window: *Window, direction: input.SplitDirection, label_text: *c.GtkWidget) !void {
     self.* = .{
         .window = window,
         .label_text = label_text,
@@ -49,7 +50,12 @@ pub fn init(self: *Paned, window: *Window, label_text: *c.GtkWidget) !void {
         .parent = undefined,
     };
 
-    const paned = c.gtk_paned_new(c.GTK_ORIENTATION_HORIZONTAL);
+    const orientation: c_uint = switch (direction) {
+        .right => c.GTK_ORIENTATION_HORIZONTAL,
+        .down => c.GTK_ORIENTATION_VERTICAL,
+    };
+
+    const paned = c.gtk_paned_new(orientation);
     const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     errdefer c.gtk_widget_destroy(paned);
     self.paned = gtk_paned;
