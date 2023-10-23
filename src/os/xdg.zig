@@ -20,35 +20,31 @@ pub const Options = struct {
 
 /// Get the XDG user config directory. The returned value is allocated.
 pub fn config(alloc: Allocator, opts: Options) ![]u8 {
-    if (builtin.os.tag == .windows) {
-        if (std.process.getEnvVarOwned(alloc, "XDG_CONFIG_HOME")) |env| {
-            // If we have a subdir, then we use the env as-is to avoid a copy.
-            if (opts.subdir) |subdir| {
-                defer alloc.free(env);
-                return try std.fs.path.join(alloc, &[_][]const u8{
-                    env,
-                    subdir,
-                });
+    // First check the env var. On Windows we have to allocate so this tracks
+    // both whether we have the env var and whether we own it.
+    const env_, const owned = switch (builtin.os.tag) {
+        else => .{ std.os.getenv("XDG_CONFIG_HOME"), false },
+        .windows => windows: {
+            if (std.process.getEnvVarOwned(alloc, "XDG_CONFIG_HOME")) |env| {
+                break :windows .{ env, true };
+            } else |err| switch (err) {
+                error.EnvironmentVariableNotFound => break :windows .{ null, false },
+                else => return err,
             }
+        },
+    };
+    defer if (owned) if (env_) |v| alloc.free(v);
 
-            // We don't need to dupe since it's already allocated
-            return env;
-        } else |err| switch (err) {
-            error.EnvironmentVariableNotFound => {},
-            else => return err,
+    if (env_) |env| {
+        // If we have a subdir, then we use the env as-is to avoid a copy.
+        if (opts.subdir) |subdir| {
+            return try std.fs.path.join(alloc, &[_][]const u8{
+                env,
+                subdir,
+            });
         }
-    } else {
-        if (std.os.getenv("XDG_CONFIG_HOME")) |env| {
-            // If we have a subdir, then we use the env as-is to avoid a copy.
-            if (opts.subdir) |subdir| {
-                return try std.fs.path.join(alloc, &[_][]const u8{
-                    env,
-                    subdir,
-                });
-            }
 
-            return try alloc.dupe(u8, env);
-        }
+        return try alloc.dupe(u8, env);
     }
 
     // If we have a cached home dir, use that.
