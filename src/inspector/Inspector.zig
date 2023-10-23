@@ -424,6 +424,89 @@ fn renderScreenWindow(self: *Inspector) void {
             } // keyboard mode info
         } // table
     } // keyboard
+
+    if (cimgui.c.igCollapsingHeader_TreeNodeFlags(
+        "Kitty Graphics",
+        cimgui.c.ImGuiTreeNodeFlags_DefaultOpen,
+    )) kitty_gfx: {
+        if (!screen.kitty_images.enabled()) {
+            cimgui.c.igTextDisabled("(Kitty graphics are disabled)");
+            break :kitty_gfx;
+        }
+
+        {
+            _ = cimgui.c.igBeginTable(
+                "##kitty_graphics",
+                2,
+                cimgui.c.ImGuiTableFlags_None,
+                .{ .x = 0, .y = 0 },
+                0,
+            );
+            defer cimgui.c.igEndTable();
+
+            const kitty_images = &screen.kitty_images;
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Memory Usage");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%d bytes", kitty_images.total_bytes);
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Memory Limit");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%d bytes", kitty_images.total_limit);
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Image Count");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%d", kitty_images.images.count());
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Placement Count");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%d", kitty_images.placements.count());
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Image Loading");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%s", if (kitty_images.loading != null) "true".ptr else "false".ptr);
+                }
+            }
+        } // table
+    } // kitty graphics
 }
 
 /// The modes window shows the currently active terminal modes and allows
