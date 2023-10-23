@@ -31,7 +31,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
             pub const Direction = enum { forward, reverse };
 
-            pub fn next(self: *Iterator) ?T {
+            pub fn next(self: *Iterator) ?*T {
                 if (self.idx >= self.buf.len()) return null;
 
                 // Get our index from the tail
@@ -43,7 +43,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
                 // Translate the tail index to a storage index
                 const storage_idx = (self.buf.tail + tail_idx) % self.buf.capacity();
                 self.idx += 1;
-                return self.buf.storage[storage_idx];
+                return &self.buf.storage[storage_idx];
             }
         };
 
@@ -292,8 +292,8 @@ test "forward iterator" {
     try buf.append(2);
     {
         var it = buf.iterator(.forward);
-        try testing.expect(it.next().? == 1);
-        try testing.expect(it.next().? == 2);
+        try testing.expect(it.next().?.* == 1);
+        try testing.expect(it.next().?.* == 2);
         try testing.expect(it.next() == null);
     }
 
@@ -301,9 +301,9 @@ test "forward iterator" {
     try buf.append(3);
     {
         var it = buf.iterator(.forward);
-        try testing.expect(it.next().? == 1);
-        try testing.expect(it.next().? == 2);
-        try testing.expect(it.next().? == 3);
+        try testing.expect(it.next().?.* == 1);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 3);
         try testing.expect(it.next() == null);
     }
 
@@ -312,9 +312,9 @@ test "forward iterator" {
     try buf.append(4);
     {
         var it = buf.iterator(.forward);
-        try testing.expect(it.next().? == 2);
-        try testing.expect(it.next().? == 3);
-        try testing.expect(it.next().? == 4);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next().?.* == 4);
         try testing.expect(it.next() == null);
     }
 }
@@ -338,8 +338,8 @@ test "reverse iterator" {
     try buf.append(2);
     {
         var it = buf.iterator(.reverse);
-        try testing.expect(it.next().? == 2);
-        try testing.expect(it.next().? == 1);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 1);
         try testing.expect(it.next() == null);
     }
 
@@ -347,9 +347,9 @@ test "reverse iterator" {
     try buf.append(3);
     {
         var it = buf.iterator(.reverse);
-        try testing.expect(it.next().? == 3);
-        try testing.expect(it.next().? == 2);
-        try testing.expect(it.next().? == 1);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 1);
         try testing.expect(it.next() == null);
     }
 
@@ -358,9 +358,9 @@ test "reverse iterator" {
     try buf.append(4);
     {
         var it = buf.iterator(.reverse);
-        try testing.expect(it.next().? == 4);
-        try testing.expect(it.next().? == 3);
-        try testing.expect(it.next().? == 2);
+        try testing.expect(it.next().?.* == 4);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next().?.* == 2);
         try testing.expect(it.next() == null);
     }
 }
