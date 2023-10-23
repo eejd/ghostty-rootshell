@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Inspector = @import("../Inspector.zig");
+const Inspector = @import("../inspector/main.zig").Inspector;
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 

@@ -8,7 +8,7 @@ const TerminalWindow = @import("Window.zig");
 const ImguiWidget = @import("ImguiWidget.zig");
 const c = @import("c.zig");
 const icon = @import("icon.zig");
-const CoreInspector = @import("../../Inspector.zig");
+const CoreInspector = @import("../../inspector/main.zig").Inspector;
 
 const log = std.log.scoped(.inspector);
 

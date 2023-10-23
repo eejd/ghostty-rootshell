@@ -7,11 +7,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const cimgui = @import("cimgui");
-const CircBuf = @import("circ_buf.zig").CircBuf;
-const Surface = @import("Surface.zig");
-const input = @import("input.zig");
-const terminal = @import("terminal/main.zig");
-const inspector = @import("inspector/main.zig");
+const Surface = @import("../Surface.zig");
+const input = @import("../input.zig");
+const terminal = @import("../terminal/main.zig");
+const inspector = @import("main.zig");
 
 /// The window names. These are used with docking so we need to have access.
 const window_cell = "Cell";

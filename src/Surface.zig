@@ -20,7 +20,6 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const Inspector = @import("Inspector.zig");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -77,7 +76,7 @@ io_thread: termio.Thread,
 io_thr: std.Thread,
 
 /// Terminal inspector
-inspector: ?*Inspector = null,
+inspector: ?*inspector.Inspector = null,
 
 /// All the cached sizes since we need them at various times.
 screen_size: renderer.ScreenSize,
@@ -579,9 +578,9 @@ pub fn activateInspector(self: *Surface) !void {
     if (self.inspector != null) return;
 
     // Setup the inspector
-    var ptr = try self.alloc.create(Inspector);
+    var ptr = try self.alloc.create(inspector.Inspector);
     errdefer self.alloc.destroy(ptr);
-    ptr.* = try Inspector.init(self);
+    ptr.* = try inspector.Inspector.init(self);
     self.inspector = ptr;
 
     // Put the inspector onto the render state
