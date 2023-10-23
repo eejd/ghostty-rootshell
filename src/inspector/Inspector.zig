@@ -956,37 +956,7 @@ fn renderKeyboardWindow(self: *Inspector) void {
             );
 
             if (!ev.imgui_state.selected) continue;
-
-            _ = cimgui.c.igBeginTable(
-                "##event",
-                2,
-                cimgui.c.ImGuiTableFlags_None,
-                .{ .x = 0, .y = 0 },
-                0,
-            );
-            defer cimgui.c.igEndTable();
-
-            {
-                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Action");
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("%s", @tagName(ev.event.action).ptr);
-            }
-            {
-                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Key");
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("%s", @tagName(ev.event.key).ptr);
-            }
-            {
-                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Physical Key");
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("%s", @tagName(ev.event.physical_key).ptr);
-            }
+            ev.render();
         }
     } // table
 }
