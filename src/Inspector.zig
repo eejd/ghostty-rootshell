@@ -709,7 +709,7 @@ fn renderCellWindow(self: *Inspector) void {
     )) return;
 
     // Our popup for the picker
-    const popup_picker = "popup_modal_cell_picker";
+    const popup_picker = "Cell Picker";
 
     if (cimgui.c.igButton("Picker", .{ .x = 0, .y = 0 })) {
         // Request a cell
