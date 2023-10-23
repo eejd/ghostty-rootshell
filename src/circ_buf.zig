@@ -1,8 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const trace = @import("tracy").trace;
-const fastmem = @import("../fastmem.zig");
+const fastmem = @import("fastmem.zig");
 
 /// Returns a circular buffer containing type T.
 pub fn CircBuf(comptime T: type, comptime default: T) type {
@@ -95,9 +94,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// Resize the buffer to the given size (larger or smaller).
         /// If larger, new values will be set to the default value.
         pub fn resize(self: *Self, alloc: Allocator, size: usize) !void {
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // Rotate to zero so it is aligned.
             try self.rotateToZero(alloc);
 
@@ -121,9 +117,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
         /// Rotate the data so that it is zero-aligned.
         fn rotateToZero(self: *Self, alloc: Allocator) !void {
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // TODO: this does this in the worst possible way by allocating.
             // rewrite to not allocate, its possible, I'm just lazy right now.
 
@@ -171,9 +164,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         pub fn deleteOldest(self: *Self, n: usize) void {
             assert(n <= self.storage.len);
 
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // Clear the values back to default
             const slices = self.getPtrSlice(0, n);
             inline for (slices) |slice| @memset(slice, default);
@@ -190,9 +180,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// the end of our buffer. This never "rotates" the buffer because
         /// the offset can only be within the size of the buffer.
         pub fn getPtrSlice(self: *Self, offset: usize, slice_len: usize) [2][]T {
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // Note: this assertion is very important, it hints the compiler
             // which generates ~10% faster code than without it.
             assert(offset + slice_len <= self.capacity());

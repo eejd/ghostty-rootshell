@@ -283,6 +283,7 @@ pub const GlobalState = struct {
     }
 };
 test {
+    _ = @import("circ_buf.zig");
     _ = @import("Pty.zig");
     _ = @import("Command.zig");
     _ = @import("font/main.zig");
