@@ -136,6 +136,7 @@ pub fn recordKeyEvent(self: *Inspector, ev: inspector.key.Event) !void {
             try self.key_events.resize(self.surface.alloc, new_capacity);
             try self.key_events.append(ev);
         } else {
+            // TODO: there is a memory leak here, we have to deinit the oldest
             self.key_events.deleteOldest(1);
             try self.key_events.append(ev);
         },
