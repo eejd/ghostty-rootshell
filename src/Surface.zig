@@ -1615,6 +1615,9 @@ pub fn mouseButtonCallback(
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(mods);
 
+    // If we have an inspector, we always queue a render
+    if (self.inspector != null) try self.queueRender();
+
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 
@@ -1787,6 +1790,17 @@ pub fn cursorPosCallback(
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // If we have an inspector, we need to always record position information
+    if (self.inspector) |insp| {
+        insp.mouse.last_xpos = pos.x;
+        insp.mouse.last_ypos = pos.y;
+
+        const point = self.posToViewport(pos.x, pos.y);
+        insp.mouse.last_point = point.toScreen(&self.io.terminal.screen);
+
+        try self.queueRender();
+    }
 
     // Do a mouse report
     if (self.io.terminal.flags.mouse_event != .none) report: {

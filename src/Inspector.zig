@@ -7,6 +7,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const cimgui = @import("cimgui");
 const Surface = @import("Surface.zig");
+const input = @import("input.zig");
 const terminal = @import("terminal/main.zig");
 
 /// The window names. These are used with docking so we need to have access.
@@ -22,9 +23,21 @@ surface: *Surface,
 /// is used to set up the initial window positions.
 first_render: bool = true,
 
+/// Window show states
 show_modes_window: bool = true,
 show_screen_window: bool = true,
 show_size_window: bool = true,
+
+/// Mouse state that we track in addition to normal mouse states that
+/// Ghostty always knows about.
+mouse: struct {
+    /// Last hovered x/y
+    last_xpos: f64 = 0,
+    last_ypos: f64 = 0,
+
+    /// Last hovered screen point
+    last_point: terminal.point.ScreenPoint = .{},
+} = .{},
 
 /// Setup the ImGui state. This requires an ImGui context to be set.
 pub fn setup() void {
@@ -440,7 +453,7 @@ fn renderSizeWindow(self: *Inspector) void {
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
-                    "%d x %d",
+                    "%dpx x %dpx",
                     self.surface.screen_size.width,
                     self.surface.screen_size.height,
                 );
@@ -457,7 +470,7 @@ fn renderSizeWindow(self: *Inspector) void {
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
-                    "%d x %d",
+                    "%dc x %dr",
                     self.surface.grid_size.columns,
                     self.surface.grid_size.rows,
                 );
@@ -474,7 +487,7 @@ fn renderSizeWindow(self: *Inspector) void {
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
-                    "%d x %d",
+                    "%dpx x %dpx",
                     self.surface.cell_size.width,
                     self.surface.cell_size.height,
                 );
@@ -491,7 +504,7 @@ fn renderSizeWindow(self: *Inspector) void {
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
-                    "T=%d B=%d L=%d R=%d",
+                    "T=%d B=%d L=%d R=%d px",
                     self.surface.padding.top,
                     self.surface.padding.bottom,
                     self.surface.padding.left,
@@ -539,6 +552,127 @@ fn renderSizeWindow(self: *Inspector) void {
                 cimgui.c.igText(
                     "%d px",
                     self.surface.font_size.pixels(),
+                );
+            }
+        }
+    }
+
+    cimgui.c.igSeparatorText("Mouse");
+
+    {
+        _ = cimgui.c.igBeginTable(
+            "table_mouse",
+            2,
+            cimgui.c.ImGuiTableFlags_None,
+            .{ .x = 0, .y = 0 },
+            0,
+        );
+        defer cimgui.c.igEndTable();
+
+        const mouse = &self.surface.mouse;
+        const t = self.surface.renderer_state.terminal;
+
+        {
+            const hover_point = self.mouse.last_point.toViewport(&t.screen);
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Hover Grid");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText(
+                    "row=%d, col=%d",
+                    hover_point.y,
+                    hover_point.x,
+                );
+            }
+        }
+
+        {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Hover Point");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText(
+                    "(%dpx, %dpx)",
+                    @as(u32, @intFromFloat(self.mouse.last_xpos)),
+                    @as(u32, @intFromFloat(self.mouse.last_ypos)),
+                );
+            }
+        }
+
+        const any_click = for (mouse.click_state) |state| {
+            if (state == .press) break true;
+        } else false;
+
+        click: {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Click State");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                if (!any_click) {
+                    cimgui.c.igText("none");
+                    break :click;
+                }
+
+                for (mouse.click_state, 0..) |state, i| {
+                    if (state != .press) continue;
+                    const button: input.MouseButton = @enumFromInt(i);
+                    cimgui.c.igSameLine(0, 0);
+                    cimgui.c.igText("%s", (switch (button) {
+                        .unknown => "?",
+                        .left => "L",
+                        .middle => "M",
+                        .right => "R",
+                        .four => "{4}",
+                        .five => "{5}",
+                        .six => "{6}",
+                        .seven => "{7}",
+                        .eight => "{8}",
+                        .nine => "{9}",
+                        .ten => "{10}",
+                        .eleven => "{11}",
+                    }).ptr);
+                }
+            }
+        }
+
+        {
+            const left_click_point = mouse.left_click_point.toViewport(&t.screen);
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Click Grid");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText(
+                    "row=%d, col=%d",
+                    left_click_point.y,
+                    left_click_point.x,
+                );
+            }
+        }
+
+        {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Click Point");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText(
+                    "(%dpx, %dpx)",
+                    @as(u32, @intFromFloat(mouse.left_click_xpos)),
+                    @as(u32, @intFromFloat(mouse.left_click_ypos)),
                 );
             }
         }
