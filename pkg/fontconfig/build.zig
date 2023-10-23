@@ -6,6 +6,11 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const libxml2_enabled = b.option(bool, "enable-libxml2", "Build libxml2") orelse true;
+    const libxml2_iconv_enabled = b.option(
+        bool,
+        "enable-libxml2-iconv",
+        "Build libxml2 with iconv",
+    ) orelse (target.getOsTag() != .windows);
     const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse true;
 
     _ = b.addModule("fontconfig", .{ .source_file = .{ .path = "main.zig" } });
@@ -25,7 +30,11 @@ pub fn build(b: *std.Build) !void {
         lib.linkLibrary(freetype_dep.artifact("freetype"));
     }
     if (libxml2_enabled) {
-        const libxml2_dep = b.dependency("libxml2", .{ .target = target, .optimize = optimize });
+        const libxml2_dep = b.dependency("libxml2", .{
+            .target = target,
+            .optimize = optimize,
+            .iconv = libxml2_iconv_enabled,
+        });
         lib.linkLibrary(libxml2_dep.artifact("xml2"));
     }
 

@@ -41,6 +41,9 @@ pub fn launchedFromDesktop() bool {
             break :linux gio_pid == pid;
         },
 
+        // TODO: This should have some logic to detect this. Perhaps std.builtin.subsystem
+        .windows => false,
+
         else => @compileError("unsupported platform"),
     };
 }
