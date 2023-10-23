@@ -11,13 +11,20 @@ const CircBuf = @import("circ_buf.zig").CircBuf;
 const Surface = @import("Surface.zig");
 const input = @import("input.zig");
 const terminal = @import("terminal/main.zig");
+const inspector = @import("inspector/main.zig");
 
 /// The window names. These are used with docking so we need to have access.
 const window_cell = "Cell";
 const window_modes = "Modes";
+const window_keyboard = "Keyboard";
 const window_screen = "Screen";
 const window_size = "Surface Info";
 const window_imgui_demo = "Dear ImGui Demo";
+
+/// Unique ID system. This is used to generate unique IDs for Dear ImGui
+/// widgets. Overflow to reset to 0 is fine. IDs should still be prefixed
+/// by type to avoid collisions but its never going to happen.
+next_id: usize = 123456789,
 
 /// The surface that we're inspecting.
 surface: *Surface,
@@ -41,7 +48,7 @@ mouse: struct {
 cell: CellInspect = .{ .idle = {} },
 
 /// The list of keyboard events
-key_events: CircBuf(KeyEvent, undefined),
+key_events: inspector.key.EventRing,
 
 const CellInspect = union(enum) {
     /// Idle, no cell inspection is requested
@@ -65,23 +72,6 @@ const CellInspect = union(enum) {
             .idle, .selected => self.* = .requested,
             .requested => {},
         }
-    }
-};
-
-pub const KeyEvent = struct {
-    /// The input event.
-    event: input.KeyEvent,
-
-    /// The binding that was triggered as a result of this event.
-    binding: ?input.Binding.Action = null,
-
-    /// The data sent to the pty as a result of this keyboard event.
-    /// This is allocated using the inspector allocator.
-    pty: []const u8 = "",
-
-    pub fn deinit(self: *const KeyEvent, alloc: Allocator) void {
-        if (self.event.utf8.len > 0) alloc.free(self.event.utf8);
-        if (self.pty.len > 0) alloc.free(self.pty);
     }
 };
 
@@ -120,7 +110,7 @@ pub fn setup() void {
 }
 
 pub fn init(surface: *Surface) !Inspector {
-    var key_buf = try CircBuf(KeyEvent, undefined).init(surface.alloc, 2);
+    var key_buf = try inspector.key.EventRing.init(surface.alloc, 2);
     errdefer key_buf.deinit(surface.alloc);
 
     return .{
@@ -138,15 +128,18 @@ pub fn deinit(self: *Inspector) void {
 }
 
 /// Record a keyboard event.
-pub fn recordKeyEvent(self: *Inspector, ev: KeyEvent) !void {
-    const max_capacity = 1024;
+pub fn recordKeyEvent(self: *Inspector, ev: inspector.key.Event) !void {
+    const max_capacity = 50;
     self.key_events.append(ev) catch |err| switch (err) {
         error.OutOfMemory => if (self.key_events.capacity() < max_capacity) {
             // We're out of memory, but we can allocate to our capacity.
             const new_capacity = @min(self.key_events.capacity() * 2, max_capacity);
             try self.key_events.resize(self.surface.alloc, new_capacity);
             try self.key_events.append(ev);
-        } else return err,
+        } else {
+            self.key_events.deleteOldest(1);
+            try self.key_events.append(ev);
+        },
 
         else => return err,
     };
@@ -168,6 +161,7 @@ pub fn render(self: *Inspector) void {
         defer self.surface.renderer_state.mutex.unlock();
         self.renderScreenWindow();
         self.renderModesWindow();
+        self.renderKeyboardWindow();
         self.renderCellWindow();
         self.renderSizeWindow();
     }
@@ -217,6 +211,7 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
 
     cimgui.c.igDockBuilderDockWindow(window_cell, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_modes, dock_id.left);
+    cimgui.c.igDockBuilderDockWindow(window_keyboard, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_screen, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_imgui_demo, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_size, dock_id.right);
@@ -914,4 +909,85 @@ fn renderCellWindow(self: *Inspector) void {
     } // table
 
     cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
+}
+
+fn renderKeyboardWindow(self: *Inspector) void {
+    // Start our window. If we're collapsed we do nothing.
+    defer cimgui.c.igEnd();
+    if (!cimgui.c.igBegin(
+        window_keyboard,
+        null,
+        cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+    )) return;
+
+    list: {
+        if (self.key_events.empty()) {
+            cimgui.c.igText("No recorded key events. Press a key with the " ++
+                "terminal focused to record it.");
+            break :list;
+        }
+
+        _ = cimgui.c.igBeginTable(
+            "table_key_events",
+            1,
+            //cimgui.c.ImGuiTableFlags_ScrollY |
+            cimgui.c.ImGuiTableFlags_RowBg |
+                cimgui.c.ImGuiTableFlags_Borders,
+            .{ .x = 0, .y = 0 },
+            0,
+        );
+        defer cimgui.c.igEndTable();
+
+        var it = self.key_events.iterator(.reverse);
+        while (it.next()) |ev| {
+            // Need to push an ID so that our selectable is unique.
+            cimgui.c.igPushID_Ptr(ev);
+            defer cimgui.c.igPopID();
+
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            _ = cimgui.c.igTableSetColumnIndex(0);
+
+            var buf: [1024]u8 = undefined;
+            const label = ev.label(&buf) catch "Key Event";
+            _ = cimgui.c.igSelectable_BoolPtr(
+                label.ptr,
+                &ev.imgui_state.selected,
+                cimgui.c.ImGuiSelectableFlags_None,
+                .{ .x = 0, .y = 0 },
+            );
+
+            if (!ev.imgui_state.selected) continue;
+
+            _ = cimgui.c.igBeginTable(
+                "##event",
+                2,
+                cimgui.c.ImGuiTableFlags_None,
+                .{ .x = 0, .y = 0 },
+                0,
+            );
+            defer cimgui.c.igEndTable();
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Action");
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("%s", @tagName(ev.event.action).ptr);
+            }
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Key");
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("%s", @tagName(ev.event.key).ptr);
+            }
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Physical Key");
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("%s", @tagName(ev.event.physical_key).ptr);
+            }
+        }
+    } // table
 }

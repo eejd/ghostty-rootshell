@@ -34,6 +34,7 @@ const configpkg = @import("config.zig");
 const input = @import("input.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
+const inspector = @import("inspector/main.zig");
 
 const log = std.log.scoped(.surface);
 
@@ -598,7 +599,7 @@ pub fn activateInspector(self: *Surface) !void {
 
 /// Deactivate the inspector and stop collecting any information.
 pub fn deactivateInspector(self: *Surface) void {
-    const inspector = self.inspector orelse return;
+    const insp = self.inspector orelse return;
 
     // Remove the inspector from the render state
     {
@@ -613,8 +614,8 @@ pub fn deactivateInspector(self: *Surface) void {
     _ = self.io_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
 
     // Deinit the inspector
-    inspector.deinit();
-    self.alloc.destroy(inspector);
+    insp.deinit();
+    self.alloc.destroy(insp);
     self.inspector = null;
 }
 
@@ -1005,7 +1006,7 @@ pub fn keyCallback(
     // log.debug("keyCallback event={}", .{event});
 
     // Setup our inspector event if we have an inspector.
-    var insp_ev: ?Inspector.KeyEvent = if (self.inspector != null) ev: {
+    var insp_ev: ?inspector.key.Event = if (self.inspector != null) ev: {
         var copy = event;
         copy.utf8 = "";
         if (event.utf8.len > 0) copy.utf8 = try self.alloc.dupe(u8, event.utf8);
