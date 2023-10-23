@@ -926,6 +926,14 @@ fn renderKeyboardWindow(self: *Inspector) void {
             break :list;
         }
 
+        if (cimgui.c.igButton("Clear", .{ .x = 0, .y = 0 })) {
+            var it = self.key_events.iterator(.forward);
+            while (it.next()) |v| v.deinit(self.surface.alloc);
+            self.key_events.clear();
+        }
+
+        cimgui.c.igSeparator();
+
         _ = cimgui.c.igBeginTable(
             "table_key_events",
             1,
