@@ -1611,12 +1611,39 @@ pub fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If we have an inspector, we always queue a render
+    if (self.inspector) |insp| {
+        defer self.queueRender() catch {};
+
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // If the inspector is requesting a cell, then we intercept
+        // left mouse clicks and send them to the inspector.
+        if (insp.cell == .requested and
+            button == .left and
+            action == .press)
+        {
+            const pos = try self.rt_surface.getCursorPos();
+            const point = self.posToViewport(pos.x, pos.y);
+            const cell = self.renderer_state.terminal.screen.getCell(
+                .viewport,
+                point.y,
+                point.x,
+            );
+
+            insp.cell = .{ .selected = .{
+                .row = point.y,
+                .col = point.x,
+                .cell = cell,
+            } };
+            return;
+        }
+    }
+
     // Always record our latest mouse state
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(mods);
-
-    // If we have an inspector, we always queue a render
-    if (self.inspector != null) try self.queueRender();
 
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();

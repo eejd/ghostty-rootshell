@@ -11,6 +11,7 @@ const input = @import("input.zig");
 const terminal = @import("terminal/main.zig");
 
 /// The window names. These are used with docking so we need to have access.
+const window_cell = "Cell";
 const window_modes = "Modes";
 const window_screen = "Screen";
 const window_size = "Surface Info";
@@ -23,11 +24,6 @@ surface: *Surface,
 /// is used to set up the initial window positions.
 first_render: bool = true,
 
-/// Window show states
-show_modes_window: bool = true,
-show_screen_window: bool = true,
-show_size_window: bool = true,
-
 /// Mouse state that we track in addition to normal mouse states that
 /// Ghostty always knows about.
 mouse: struct {
@@ -38,6 +34,34 @@ mouse: struct {
     /// Last hovered screen point
     last_point: terminal.point.ScreenPoint = .{},
 } = .{},
+
+/// A selected cell.
+cell: CellInspect = .{ .idle = {} },
+
+const CellInspect = union(enum) {
+    /// Idle, no cell inspection is requested
+    idle: void,
+
+    /// Requested, a cell is being picked.
+    requested: void,
+
+    /// The cell has been picked and set to this. This is a copy so that
+    /// if the cell contents change we still have the original cell.
+    selected: Selected,
+
+    const Selected = struct {
+        row: usize,
+        col: usize,
+        cell: terminal.Screen.Cell,
+    };
+
+    pub fn request(self: *CellInspect) void {
+        switch (self.*) {
+            .idle, .selected => self.* = .requested,
+            .requested => {},
+        }
+    }
+};
 
 /// Setup the ImGui state. This requires an ImGui context to be set.
 pub fn setup() void {
@@ -97,6 +121,7 @@ pub fn render(self: *Inspector) void {
         defer self.surface.renderer_state.mutex.unlock();
         self.renderScreenWindow();
         self.renderModesWindow();
+        self.renderCellWindow();
         self.renderSizeWindow();
     }
 
@@ -119,7 +144,7 @@ pub fn render(self: *Inspector) void {
 fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     _ = self;
 
-    // Our initial focus should always be the modes window
+    // Our initial focus
     cimgui.c.igSetWindowFocus_Str(window_screen);
 
     // Setup our initial layout.
@@ -143,6 +168,7 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
         };
     };
 
+    cimgui.c.igDockBuilderDockWindow(window_cell, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_modes, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_screen, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_imgui_demo, dock_id.left);
@@ -151,13 +177,11 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
 }
 
 fn renderScreenWindow(self: *Inspector) void {
-    if (!self.show_screen_window) return;
-
     // Start our window. If we're collapsed we do nothing.
     defer cimgui.c.igEnd();
     if (!cimgui.c.igBegin(
         window_screen,
-        &self.show_screen_window,
+        null,
         cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
     )) return;
 
@@ -367,13 +391,11 @@ fn renderScreenWindow(self: *Inspector) void {
 /// The modes window shows the currently active terminal modes and allows
 /// users to toggle them on and off.
 fn renderModesWindow(self: *Inspector) void {
-    if (!self.show_modes_window) return;
-
     // Start our window. If we're collapsed we do nothing.
     defer cimgui.c.igEnd();
     if (!cimgui.c.igBegin(
         window_modes,
-        &self.show_modes_window,
+        null,
         cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
     )) return;
 
@@ -421,13 +443,11 @@ fn renderModesWindow(self: *Inspector) void {
 }
 
 fn renderSizeWindow(self: *Inspector) void {
-    if (!self.show_size_window) return;
-
     // Start our window. If we're collapsed we do nothing.
     defer cimgui.c.igEnd();
     if (!cimgui.c.igBegin(
         window_size,
-        &self.show_size_window,
+        null,
         cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
     )) return;
 
@@ -677,4 +697,174 @@ fn renderSizeWindow(self: *Inspector) void {
             }
         }
     }
+}
+
+fn renderCellWindow(self: *Inspector) void {
+    // Start our window. If we're collapsed we do nothing.
+    defer cimgui.c.igEnd();
+    if (!cimgui.c.igBegin(
+        window_cell,
+        null,
+        cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+    )) return;
+
+    // Our popup for the picker
+    const popup_picker = "popup_modal_cell_picker";
+
+    if (cimgui.c.igButton("Picker", .{ .x = 0, .y = 0 })) {
+        // Request a cell
+        self.cell.request();
+
+        cimgui.c.igOpenPopup_Str(
+            popup_picker,
+            cimgui.c.ImGuiPopupFlags_None,
+        );
+    }
+
+    if (cimgui.c.igBeginPopupModal(
+        popup_picker,
+        null,
+        cimgui.c.ImGuiWindowFlags_AlwaysAutoResize,
+    )) popup: {
+        defer cimgui.c.igEndPopup();
+
+        // Once we select a cell, close this popup.
+        if (self.cell == .selected) {
+            cimgui.c.igCloseCurrentPopup();
+            break :popup;
+        }
+
+        cimgui.c.igText(
+            "Click on a cell in the terminal to inspect it.\n" ++
+                "The click will be intercepted by the picker, \n" ++
+                "so it won't be sent to the terminal.",
+        );
+        cimgui.c.igSeparator();
+
+        if (cimgui.c.igButton("Cancel", .{ .x = 0, .y = 0 })) {
+            cimgui.c.igCloseCurrentPopup();
+        }
+    } // cell pick popup
+
+    cimgui.c.igSeparator();
+
+    if (self.cell != .selected) {
+        cimgui.c.igText("No cell selected.");
+        return;
+    }
+
+    const selected = self.cell.selected;
+
+    {
+        // We have a selected cell, show information about it.
+        _ = cimgui.c.igBeginTable(
+            "table_cursor",
+            2,
+            cimgui.c.ImGuiTableFlags_None,
+            .{ .x = 0, .y = 0 },
+            0,
+        );
+        defer cimgui.c.igEndTable();
+
+        {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Grid Position");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("row=%d col=%d", selected.row, selected.col);
+            }
+        }
+
+        // NOTE: we don't currently write the character itself because
+        // we haven't hooked up imgui to our font system. That's hard! We
+        // can/should instead hook up our renderer to imgui and just render
+        // the single glyph in an image view so it looks _identical_ to the
+        // terminal.
+        codepoint: {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText("Codepoint");
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                if (selected.cell.char == 0) {
+                    cimgui.c.igTextDisabled("(empty)");
+                    break :codepoint;
+                }
+
+                cimgui.c.igText("U+%X", selected.cell.char);
+            }
+        }
+
+        // If we have a color then we show the color
+        color: {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            _ = cimgui.c.igTableSetColumnIndex(0);
+            cimgui.c.igText("Foreground Color");
+            _ = cimgui.c.igTableSetColumnIndex(1);
+            if (!selected.cell.attrs.has_fg) {
+                cimgui.c.igText("default");
+                break :color;
+            }
+
+            var color: [3]f32 = .{
+                @as(f32, @floatFromInt(selected.cell.fg.r)) / 255,
+                @as(f32, @floatFromInt(selected.cell.fg.g)) / 255,
+                @as(f32, @floatFromInt(selected.cell.fg.b)) / 255,
+            };
+            _ = cimgui.c.igColorEdit3(
+                "color_fg",
+                &color,
+                cimgui.c.ImGuiColorEditFlags_NoPicker |
+                    cimgui.c.ImGuiColorEditFlags_NoLabel,
+            );
+        }
+        color: {
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            _ = cimgui.c.igTableSetColumnIndex(0);
+            cimgui.c.igText("Background Color");
+            _ = cimgui.c.igTableSetColumnIndex(1);
+            if (!selected.cell.attrs.has_bg) {
+                cimgui.c.igText("default");
+                break :color;
+            }
+
+            var color: [3]f32 = .{
+                @as(f32, @floatFromInt(selected.cell.bg.r)) / 255,
+                @as(f32, @floatFromInt(selected.cell.bg.g)) / 255,
+                @as(f32, @floatFromInt(selected.cell.bg.b)) / 255,
+            };
+            _ = cimgui.c.igColorEdit3(
+                "color_bg",
+                &color,
+                cimgui.c.ImGuiColorEditFlags_NoPicker |
+                    cimgui.c.ImGuiColorEditFlags_NoLabel,
+            );
+        }
+
+        // Boolean styles
+        const styles = .{
+            "bold",    "italic",    "faint",     "blink",
+            "inverse", "invisible", "protected", "strikethrough",
+        };
+        inline for (styles) |style| style: {
+            if (!@field(selected.cell.attrs, style)) break :style;
+
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            {
+                _ = cimgui.c.igTableSetColumnIndex(0);
+                cimgui.c.igText(style.ptr);
+            }
+            {
+                _ = cimgui.c.igTableSetColumnIndex(1);
+                cimgui.c.igText("true");
+            }
+        }
+    } // table
+
+    cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
 }
