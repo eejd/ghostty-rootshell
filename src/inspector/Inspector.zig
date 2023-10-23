@@ -20,11 +20,6 @@ const window_screen = "Screen";
 const window_size = "Surface Info";
 const window_imgui_demo = "Dear ImGui Demo";
 
-/// Unique ID system. This is used to generate unique IDs for Dear ImGui
-/// widgets. Overflow to reset to 0 is fine. IDs should still be prefixed
-/// by type to avoid collisions but its never going to happen.
-next_id: usize = 123456789,
-
 /// The surface that we're inspecting.
 surface: *Surface,
 
