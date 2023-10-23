@@ -625,7 +625,6 @@ fn addDeps(
     const fontconfig_dep = b.dependency("fontconfig", .{
         .target = step.target,
         .optimize = step.optimize,
-        .@"enable-iconv-win" = false,
     });
     const freetype_dep = b.dependency("freetype", .{
         .target = step.target,
