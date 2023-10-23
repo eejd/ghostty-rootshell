@@ -4,8 +4,10 @@
 const Inspector = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const cimgui = @import("cimgui");
+const CircBuf = @import("circ_buf.zig").CircBuf;
 const Surface = @import("Surface.zig");
 const input = @import("input.zig");
 const terminal = @import("terminal/main.zig");
@@ -38,6 +40,9 @@ mouse: struct {
 /// A selected cell.
 cell: CellInspect = .{ .idle = {} },
 
+/// The list of keyboard events
+key_events: CircBuf(KeyEvent, undefined),
+
 const CellInspect = union(enum) {
     /// Idle, no cell inspection is requested
     idle: void,
@@ -60,6 +65,23 @@ const CellInspect = union(enum) {
             .idle, .selected => self.* = .requested,
             .requested => {},
         }
+    }
+};
+
+pub const KeyEvent = struct {
+    /// The input event.
+    event: input.KeyEvent,
+
+    /// The binding that was triggered as a result of this event.
+    binding: ?input.Binding.Action = null,
+
+    /// The data sent to the pty as a result of this keyboard event.
+    /// This is allocated using the inspector allocator.
+    pty: []const u8 = "",
+
+    pub fn deinit(self: *const KeyEvent, alloc: Allocator) void {
+        if (self.event.utf8.len > 0) alloc.free(self.event.utf8);
+        if (self.pty.len > 0) alloc.free(self.pty);
     }
 };
 
@@ -97,12 +119,37 @@ pub fn setup() void {
     }
 }
 
-pub fn init(surface: *Surface) Inspector {
-    return .{ .surface = surface };
+pub fn init(surface: *Surface) !Inspector {
+    var key_buf = try CircBuf(KeyEvent, undefined).init(surface.alloc, 2);
+    errdefer key_buf.deinit(surface.alloc);
+
+    return .{
+        .surface = surface,
+        .key_events = key_buf,
+    };
 }
 
 pub fn deinit(self: *Inspector) void {
-    _ = self;
+    {
+        var it = self.key_events.iterator(.forward);
+        while (it.next()) |v| v.deinit(self.surface.alloc);
+        self.key_events.deinit(self.surface.alloc);
+    }
+}
+
+/// Record a keyboard event.
+pub fn recordKeyEvent(self: *Inspector, ev: KeyEvent) !void {
+    const max_capacity = 1024;
+    self.key_events.append(ev) catch |err| switch (err) {
+        error.OutOfMemory => if (self.key_events.capacity() < max_capacity) {
+            // We're out of memory, but we can allocate to our capacity.
+            const new_capacity = @min(self.key_events.capacity() * 2, max_capacity);
+            try self.key_events.resize(self.surface.alloc, new_capacity);
+            try self.key_events.append(ev);
+        } else return err,
+
+        else => return err,
+    };
 }
 
 /// Render the frame.

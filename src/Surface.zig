@@ -580,7 +580,7 @@ pub fn activateInspector(self: *Surface) !void {
     // Setup the inspector
     var ptr = try self.alloc.create(Inspector);
     errdefer self.alloc.destroy(ptr);
-    ptr.* = Inspector.init(self);
+    ptr.* = try Inspector.init(self);
     self.inspector = ptr;
 
     // Put the inspector onto the render state
@@ -1004,6 +1004,24 @@ pub fn keyCallback(
 ) !bool {
     // log.debug("keyCallback event={}", .{event});
 
+    // Setup our inspector event if we have an inspector.
+    var insp_ev: ?Inspector.KeyEvent = if (self.inspector != null) ev: {
+        var copy = event;
+        copy.utf8 = "";
+        if (event.utf8.len > 0) copy.utf8 = try self.alloc.dupe(u8, event.utf8);
+        break :ev .{ .event = copy };
+    } else null;
+
+    // When we're done processing, we always want to add the event to
+    // the inspector.
+    defer if (insp_ev) |ev| {
+        if (self.inspector.?.recordKeyEvent(ev)) {
+            self.queueRender() catch {};
+        } else |err| {
+            log.warn("error adding key event to inspector err={}", .{err});
+        }
+    };
+
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     binding: {
@@ -1041,7 +1059,10 @@ pub fn keyCallback(
         // If we consume this event, then we are done. If we don't consume
         // it, we processed the action but we still want to process our
         // encodings, too.
-        if (consumed and performed) return true;
+        if (consumed and performed) {
+            if (insp_ev) |*ev| ev.binding = binding_action;
+            return true;
+        }
     }
 
     // If we allow KAM and KAM is enabled then we do nothing.
@@ -1087,6 +1108,12 @@ pub fn keyCallback(
             .len = @intCast(seq.len),
         },
     }, .{ .forever = {} });
+    if (insp_ev) |*ev| {
+        ev.pty = self.alloc.dupe(u8, seq) catch |err| err: {
+            log.warn("error copying pty data for inspector err={}", .{err});
+            break :err "";
+        };
+    }
     try self.io_thread.wakeup.notify();
 
     // If our event is any keypress that isn't a modifier and we generated
