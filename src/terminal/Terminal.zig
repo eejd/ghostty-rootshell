@@ -1413,6 +1413,25 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     else
         self.scrolling_region.left;
 
+    // Handle some edge cases when our cursor is already on the left margin.
+    if (self.screen.cursor.x == left_margin) {
+        switch (wrap_mode) {
+            // In reverse mode, if we're already before the top margin
+            // then we just set our cursor to the top-left and we're done.
+            .reverse => if (self.screen.cursor.y <= top) {
+                self.screen.cursor.x = left_margin;
+                self.screen.cursor.y = top;
+                return;
+            },
+
+            // Handled in while loop
+            .reverse_extended => {},
+
+            // Handled above
+            .none => unreachable,
+        }
+    }
+
     while (true) {
         // We can move at most to the left margin.
         const max = self.screen.cursor.x - left_margin;
@@ -1437,8 +1456,10 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         }
 
         // If our previous line is not wrapped then we are done.
-        const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
-        if (wrap_mode != .reverse_extended and !row.isWrapped()) break;
+        if (wrap_mode != .reverse_extended) {
+            const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
+            if (!row.isWrapped()) break;
+        }
         self.screen.cursor.y -= 1;
         self.screen.cursor.x = right_margin;
         count -= 1;
@@ -1541,7 +1562,7 @@ pub fn horizontalTabBack(self: *Terminal) !void {
 
     while (true) {
         // If we're already at the edge of the screen, then we're done.
-        if (self.screen.cursor.x == left_limit) return;
+        if (self.screen.cursor.x <= left_limit) return;
 
         // Move the cursor left
         self.screen.cursor.x -= 1;
@@ -1634,7 +1655,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 
     // Determine our indexes.
     const start = self.screen.cursor.x;
-    const pivot = self.screen.cursor.x + count;
+    const pivot = @min(self.screen.cursor.x + count, right_limit);
 
     // This is the number of spaces we have left to shift existing data.
     // If count is bigger than the available space left after the cursor,
@@ -2730,6 +2751,26 @@ test "Terminal: horizontal tabs with left margin in origin mode" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("  AX", str);
+    }
+}
+
+test "Terminal: horizontal tab back with cursor before left margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.origin, true);
+    t.saveCursor();
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(5, 0);
+    t.restoreCursor();
+    try t.horizontalTabBack();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X", str);
     }
 }
 
@@ -4245,6 +4286,25 @@ test "Terminal: insertBlanks outside left/right scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("   ABX", str);
+    }
+}
+
+test "Terminal: insertBlanks left/right scroll region large count" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    t.modes.set(.origin, true);
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 1);
+    t.insertBlanks(140);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  X", str);
     }
 }
 
@@ -5911,6 +5971,24 @@ test "Terminal: cursorLeft reverse wrap with no soft wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDE\nX", str);
+    }
+}
+
+test "Terminal: cursorLeft reverse wrap before left margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap, true);
+    t.setTopAndBottomMargin(3, 0);
+    t.cursorLeft(1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\nX", str);
     }
 }
 
