@@ -1832,6 +1832,7 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
     // Insert blank lines
     for (scroll_end_y..self.scrolling_region.bottom + 1) |y| {
         const row = self.screen.getRow(.{ .active = y });
+        row.setWrapped(false);
         row.fillSlice(.{
             .bg = self.screen.cursor.pen.bg,
             .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
@@ -3331,6 +3332,25 @@ test "Terminal: deleteLines left/right scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABC123\nDHI756\nG   89", str);
+    }
+}
+
+test "Terminal: deleteLines left/right scroll region clears row wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    try t.print('0');
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 3);
+    try t.printRepeat(1000);
+    for (0..t.rows - 1) |y| {
+        const row = t.screen.getRow(.{ .active = y });
+        try testing.expect(row.isWrapped());
+    }
+    {
+        const row = t.screen.getRow(.{ .active = t.rows - 1 });
+        try testing.expect(!row.isWrapped());
     }
 }
 
@@ -4854,6 +4874,25 @@ test "Terminal: resize less cols with wide char then print" {
     try t.resize(alloc, 2, 3);
     t.setCursorPos(1, 2);
     try t.print('😀'); // 0x1F600
+}
+
+// https://github.com/mitchellh/ghostty/issues/723
+// This was found via fuzzing so its highly specific.
+test "Terminal: resize with left and right margin set" {
+    const alloc = testing.allocator;
+    const cols = 70;
+    const rows = 23;
+    var t = try init(alloc, cols, rows);
+    defer t.deinit(alloc);
+
+    t.modes.set(.enable_left_and_right_margin, true);
+    try t.print('0');
+    t.modes.set(.enable_mode_3, true);
+    try t.resize(alloc, cols, rows);
+    t.setLeftAndRightMargin(2, 0);
+    try t.printRepeat(1850);
+    _ = t.modes.restore(.enable_mode_3);
+    try t.resize(alloc, cols, rows);
 }
 
 test "Terminal: saveCursor" {
