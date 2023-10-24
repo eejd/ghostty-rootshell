@@ -1541,7 +1541,7 @@ pub fn horizontalTabBack(self: *Terminal) !void {
 
     while (true) {
         // If we're already at the edge of the screen, then we're done.
-        if (self.screen.cursor.x == left_limit) return;
+        if (self.screen.cursor.x <= left_limit) return;
 
         // Move the cursor left
         self.screen.cursor.x -= 1;
@@ -2730,6 +2730,26 @@ test "Terminal: horizontal tabs with left margin in origin mode" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("  AX", str);
+    }
+}
+
+test "Terminal: horizontal tab back with cursor before left margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 20, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.origin, true);
+    t.saveCursor();
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(5, 0);
+    t.restoreCursor();
+    try t.horizontalTabBack();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X", str);
     }
 }
 
