@@ -19,19 +19,19 @@ branch: []const u8,
 pub fn detect(b: *std.Build) !Version {
     // Execute a bunch of git commands to determine the automatic version.
     var code: u8 = 0;
-    const branch = try b.execAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "rev-parse", "--abbrev-ref", "HEAD" }, &code, .Ignore);
+    const branch = try b.runAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "rev-parse", "--abbrev-ref", "HEAD" }, &code, .Ignore);
 
     const short_hash = short_hash: {
-        const output = try b.execAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "log", "--pretty=format:%h", "-n", "1" }, &code, .Ignore);
+        const output = try b.runAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "log", "--pretty=format:%h", "-n", "1" }, &code, .Ignore);
         break :short_hash std.mem.trimRight(u8, output, "\r\n ");
     };
 
-    const tag = b.execAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "describe", "--exact-match", "--tags" }, &code, .Ignore) catch |err| switch (err) {
+    const tag = b.runAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "describe", "--exact-match", "--tags" }, &code, .Ignore) catch |err| switch (err) {
         error.ExitCodeFailure => "", // expected
         else => return err,
     };
 
-    _ = b.execAllowFail(&[_][]const u8{
+    _ = b.runAllowFail(&[_][]const u8{
         "git",
         "-C",
         b.build_root.path orelse ".",
