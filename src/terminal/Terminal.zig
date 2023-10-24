@@ -758,6 +758,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     // non-single-width characters properly.
     const width = utf8proc.charwidth(c);
     assert(width <= 2);
+    // log.debug("c={x} width={}", .{ c, width });
 
     // Attach zero-width characters to our cell as grapheme data.
     if (width == 0) {
@@ -1327,6 +1328,10 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
         }
 
         const copy_cell = line.getCellPtr(copy_x);
+        if (x == 0 and copy_cell.attrs.wide_spacer_tail) {
+            line.getCellPtr(x).* = pen;
+            continue;
+        }
         line.getCellPtr(x).* = copy_cell.*;
         copy_cell.char = 0;
     }
@@ -4659,6 +4664,24 @@ test "Terminal: deleteChars split wide character" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A 123", str);
+    }
+}
+
+test "Terminal: deleteChars split wide character tail" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, t.cols - 1);
+    try t.print(0x6A4B); // 橋
+    t.carriageReturn();
+    try t.deleteChars(t.cols - 1);
+    try t.print('0');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("0", str);
     }
 }
 
