@@ -1133,6 +1133,17 @@ const ReadThread = struct {
         // Schedule a render
         ev.queueRender() catch unreachable;
 
+        // If we have an inspector, send the data to it too. The inspector
+        // will keep track of the VT sequences that we are processing.
+        if (ev.renderer_state.inspector) |insp| {
+            // This forces all VT sequences to be parsed twice, meaning our
+            // vt processing always slows down by roughly 50% with the inspector
+            // active. That's fine for now but room for improvement.
+            insp.recordPtyRead(buf) catch |err| {
+                log.err("error recording pty read in inspector err={}", .{err});
+            };
+        }
+
         // Process the terminal data. This is an extremely hot part of the
         // terminal emulator, so we do some abstraction leakage to avoid
         // function calls and unnecessary logic.

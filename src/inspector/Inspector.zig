@@ -16,6 +16,7 @@ const inspector = @import("main.zig");
 const window_cell = "Cell";
 const window_modes = "Modes";
 const window_keyboard = "Keyboard";
+const window_termio = "Terminal IO";
 const window_screen = "Screen";
 const window_size = "Surface Info";
 const window_imgui_demo = "Dear ImGui Demo";
@@ -43,6 +44,10 @@ cell: CellInspect = .{ .idle = {} },
 
 /// The list of keyboard events
 key_events: inspector.key.EventRing,
+
+/// The VT stream
+vt_events: inspector.termio.VTEventRing,
+vt_stream: inspector.termio.Stream,
 
 const CellInspect = union(enum) {
     /// Idle, no cell inspection is requested
@@ -107,9 +112,24 @@ pub fn init(surface: *Surface) !Inspector {
     var key_buf = try inspector.key.EventRing.init(surface.alloc, 2);
     errdefer key_buf.deinit(surface.alloc);
 
+    var vt_events = try inspector.termio.VTEventRing.init(surface.alloc, 2);
+    errdefer vt_events.deinit(surface.alloc);
+
     return .{
         .surface = surface,
         .key_events = key_buf,
+        .vt_events = vt_events,
+        .vt_stream = .{
+            .handler = .{
+                .surface = surface,
+            },
+
+            .parser = .{
+                .osc_parser = .{
+                    .alloc = surface.alloc,
+                },
+            },
+        },
     };
 }
 
@@ -118,6 +138,13 @@ pub fn deinit(self: *Inspector) void {
         var it = self.key_events.iterator(.forward);
         while (it.next()) |v| v.deinit(self.surface.alloc);
         self.key_events.deinit(self.surface.alloc);
+    }
+
+    {
+        var it = self.vt_events.iterator(.forward);
+        while (it.next()) |v| v.deinit(self.surface.alloc);
+        self.vt_events.deinit(self.surface.alloc);
+        self.vt_stream.deinit();
     }
 }
 
@@ -141,6 +168,11 @@ pub fn recordKeyEvent(self: *Inspector, ev: inspector.key.Event) !void {
     };
 }
 
+/// Record data read from the pty.
+pub fn recordPtyRead(self: *Inspector, data: []const u8) !void {
+    try self.vt_stream.nextSlice(data);
+}
+
 /// Render the frame.
 pub fn render(self: *Inspector) void {
     const dock_id = cimgui.c.igDockSpaceOverViewport(
@@ -158,6 +190,7 @@ pub fn render(self: *Inspector) void {
         self.renderScreenWindow();
         self.renderModesWindow();
         self.renderKeyboardWindow();
+        self.renderTermioWindow();
         self.renderCellWindow();
         self.renderSizeWindow();
     }
@@ -208,6 +241,7 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     cimgui.c.igDockBuilderDockWindow(window_cell, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_modes, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_keyboard, dock_id.left);
+    cimgui.c.igDockBuilderDockWindow(window_termio, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_screen, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_imgui_demo, dock_id.left);
     cimgui.c.igDockBuilderDockWindow(window_size, dock_id.right);
@@ -1045,6 +1079,53 @@ fn renderKeyboardWindow(self: *Inspector) void {
 
             if (!ev.imgui_state.selected) continue;
             ev.render();
+        }
+    } // table
+}
+
+fn renderTermioWindow(self: *Inspector) void {
+    // Start our window. If we're collapsed we do nothing.
+    defer cimgui.c.igEnd();
+    if (!cimgui.c.igBegin(
+        window_termio,
+        null,
+        cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
+    )) return;
+
+    list: {
+        if (self.vt_events.empty()) {
+            cimgui.c.igText("Waiting for events...");
+            break :list;
+        }
+
+        if (cimgui.c.igButton("Clear", .{ .x = 0, .y = 0 })) {
+            var it = self.vt_events.iterator(.forward);
+            while (it.next()) |v| v.deinit(self.surface.alloc);
+            self.vt_events.clear();
+        }
+
+        cimgui.c.igSeparator();
+
+        _ = cimgui.c.igBeginTable(
+            "table_vt_events",
+            1,
+            cimgui.c.ImGuiTableFlags_RowBg |
+                cimgui.c.ImGuiTableFlags_Borders,
+            .{ .x = 0, .y = 0 },
+            0,
+        );
+        defer cimgui.c.igEndTable();
+
+        var it = self.vt_events.iterator(.reverse);
+        while (it.next()) |ev| {
+            // Need to push an ID so that our selectable is unique.
+            cimgui.c.igPushID_Ptr(ev);
+            defer cimgui.c.igPopID();
+
+            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+            _ = cimgui.c.igTableSetColumnIndex(0);
+
+            cimgui.c.igText("%s", ev.str.ptr);
         }
     } // table
 }
