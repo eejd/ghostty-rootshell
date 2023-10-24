@@ -56,8 +56,9 @@ pub fn init(self: *Paned, window: *Window, direction: input.SplitDirection, labe
     };
 
     const paned = c.gtk_paned_new(orientation);
-    const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     errdefer c.gtk_widget_destroy(paned);
+
+    const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     self.paned = gtk_paned;
 }
 
@@ -80,6 +81,7 @@ pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
     const gl_area = c.gtk_gl_area_new();
     c.gtk_widget_set_hexpand(gl_area, 1);
     c.gtk_widget_set_vexpand(gl_area, 1);
+
     try surface.init(self.window.app, .{
         .window = self.window,
         .tab = tab,
@@ -91,9 +93,13 @@ pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
         .title_label = @ptrCast(self.label_text),
         .font_size = font_size,
     });
+
     return surface;
 }
 
+pub fn setParent(self: *Paned, parent: Parent) void {
+    self.parent = parent;
+}
 pub fn removeChildren(self: *Paned) void {
     assert(self.child1 != .none);
     assert(self.child2 != .none);
@@ -101,6 +107,21 @@ pub fn removeChildren(self: *Paned) void {
     self.child2 = .none;
     c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
     c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
+}
+
+pub fn removeChildInPosition(self: *Paned, position: Position) void {
+    switch (position) {
+        .start => {
+            assert(self.child1 != .none);
+            self.child1 = .none;
+            c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
+        },
+        .end => {
+            assert(self.child2 != .none);
+            self.child2 = .none;
+            c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
+        },
+    }
 }
 
 pub fn addChild1Surface(self: *Paned, surface: *Surface) void {
@@ -115,6 +136,20 @@ pub fn addChild2Surface(self: *Paned, surface: *Surface) void {
     self.child2 = Tab.Child{ .surface = surface };
     surface.setParent(Parent{ .paned = .{ self, .end } });
     c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
+}
+
+pub fn addChild1Paned(self: *Paned, paned: *Paned) void {
+    assert(self.child1 == .none);
+    self.child1 = Tab.Child{ .paned = paned };
+    paned.setParent(Parent{ .paned = .{ self, .start } });
+    c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
+}
+
+pub fn addChild2Paned(self: *Paned, paned: *Paned) void {
+    assert(self.child2 == .none);
+    self.child2 = Tab.Child{ .paned = paned };
+    paned.setParent(Parent{ .paned = .{ self, .end } });
+    c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
 }
 
 pub fn splitStartPosition(self: *Paned, orientation: c.GtkOrientation) !void {

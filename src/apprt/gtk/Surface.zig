@@ -349,11 +349,49 @@ pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFulls
 pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
     log.debug("new split, direction: {}", .{direction});
 
+    // TODO: Refactor all of this!
+
     switch (self.parent) {
         .none => return,
-        .paned => {
-            // TODO: Implement this
-            log.info("parent is paned", .{});
+        .paned => |parent_paned_tuple| {
+            const label_text: *c.GtkWidget = switch (self.title) {
+                .none => return,
+                .label => |label| l: {
+                    const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(label)));
+                    break :l widget;
+                },
+            };
+
+            // Keep explicit reference to our gl_area before we remove ourselves.
+            const sibling_object: *c.GObject = @ptrCast(self.gl_area);
+            _ = c.g_object_ref(sibling_object);
+            defer c.g_object_unref(sibling_object);
+
+            const parent_paned = parent_paned_tuple[0];
+            const parent_position = parent_paned_tuple[1];
+
+            // Keep position of divider
+            const parent_paned_position_before = c.gtk_paned_get_position(parent_paned.paned);
+            // Now remove ourselves from parent
+            parent_paned.removeChildInPosition(parent_position);
+
+            // Create new sibling
+            const paned = try Paned.create(self.app.core_app.alloc, self.window, direction, label_text);
+            const new_surface = try paned.newSurface(self.tab, &self.core_surface);
+            // This sets .parent on each surface
+            paned.addChild1Surface(self);
+            paned.addChild2Surface(new_surface);
+
+            // Add new split-paned
+            switch (parent_position) {
+                .start => parent_paned.addChild1Paned(paned),
+                .end => parent_paned.addChild2Paned(paned),
+            }
+            // Restore position
+            c.gtk_paned_set_position(parent_paned.paned, parent_paned_position_before);
+            // Focus on new surface
+            const widget = @as(*c.GtkWidget, @ptrCast(new_surface.gl_area));
+            _ = c.gtk_widget_grab_focus(widget);
         },
         .tab => |tab| {
             const label_text: *c.GtkWidget = switch (self.title) {
@@ -374,7 +412,7 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
 
             tab.setChild(.{ .paned = paned });
 
-            // FOCUS ON NEW SURFACE
+            // Focus on new surface
             const widget = @as(*c.GtkWidget, @ptrCast(new_surface.gl_area));
             _ = c.gtk_widget_grab_focus(widget);
         },
@@ -793,20 +831,9 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     log.debug("gl destroy", .{});
 
     const self = userdataSelf(ud.?);
-    switch (self.parent) {
-        .none, .tab => {
-            const alloc = self.app.core_app.alloc;
-            self.deinit();
-            alloc.destroy(self);
-        },
-        else => {
-
-            // const alloc = self.app.core_app.alloc;
-            // self.deinit();
-            // alloc.destroy(self);
-            log.debug("TODO: no destroy", .{});
-        },
-    }
+    const alloc = self.app.core_app.alloc;
+    self.deinit();
+    alloc.destroy(self);
 }
 
 /// Scale x/y by the GDK device scale.
