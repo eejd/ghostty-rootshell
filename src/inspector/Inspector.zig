@@ -1108,13 +1108,26 @@ fn renderTermioWindow(self: *Inspector) void {
 
         _ = cimgui.c.igBeginTable(
             "table_vt_events",
-            1,
+            2,
             cimgui.c.ImGuiTableFlags_RowBg |
                 cimgui.c.ImGuiTableFlags_Borders,
             .{ .x = 0, .y = 0 },
             0,
         );
         defer cimgui.c.igEndTable();
+
+        cimgui.c.igTableSetupColumn(
+            "Kind",
+            cimgui.c.ImGuiTableColumnFlags_WidthFixed,
+            0,
+            0,
+        );
+        cimgui.c.igTableSetupColumn(
+            "Description",
+            cimgui.c.ImGuiTableColumnFlags_WidthStretch,
+            0,
+            0,
+        );
 
         var it = self.vt_events.iterator(.reverse);
         while (it.next()) |ev| {
@@ -1124,7 +1137,8 @@ fn renderTermioWindow(self: *Inspector) void {
 
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             _ = cimgui.c.igTableSetColumnIndex(0);
-
+            cimgui.c.igText("%s", @tagName(ev.kind).ptr);
+            _ = cimgui.c.igTableSetColumnIndex(1);
             cimgui.c.igText("%s", ev.str.ptr);
         }
     } // table

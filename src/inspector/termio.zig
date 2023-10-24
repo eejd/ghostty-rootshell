@@ -12,10 +12,39 @@ pub const VTEventRing = CircBuf(VTEvent, undefined);
 
 /// VT event
 pub const VTEvent = struct {
+    /// Kind of event, for filtering
+    kind: Kind,
+
     /// The formatted string of the event. This is allocated. We format the
     /// event for now because there is so much data to copy if we wanted to
     /// store the raw event.
     str: [:0]const u8,
+
+    const Kind = enum { print, execute, csi, esc, osc, dcs, apc };
+
+    /// Initiaze the event information for the given parser action.
+    pub fn init(alloc: Allocator, action: terminal.Parser.Action) !VTEvent {
+        var buf = std.ArrayList(u8).init(alloc);
+        defer buf.deinit();
+        try encodeAction(buf.writer(), action);
+        const str = try buf.toOwnedSliceSentinel(0);
+        errdefer alloc.free(str);
+
+        const kind: Kind = switch (action) {
+            .print => .print,
+            .execute => .execute,
+            .csi_dispatch => .csi,
+            .esc_dispatch => .esc,
+            .osc_dispatch => .osc,
+            .dcs_hook, .dcs_put, .dcs_unhook => .dcs,
+            .apc_start, .apc_put, .apc_end => .apc,
+        };
+
+        return .{
+            .kind = kind,
+            .str = str,
+        };
+    }
 
     pub fn deinit(self: *VTEvent, alloc: Allocator) void {
         alloc.free(self.str);
@@ -31,13 +60,15 @@ const Handler = struct {
     /// This is called with every single terminal action.
     pub fn handleManually(self: *Handler, action: terminal.Parser.Action) !bool {
         const insp = self.surface.inspector orelse return false;
-        const alloc = self.surface.alloc;
-        const formatted = try std.fmt.allocPrintZ(alloc, "{}", .{action});
-        errdefer alloc.free(formatted);
 
-        const ev: VTEvent = .{
-            .str = formatted,
-        };
+        // We ignore certain action types that are too noisy.
+        switch (action) {
+            .dcs_put, .apc_put => return false,
+            else => {},
+        }
+
+        const alloc = self.surface.alloc;
+        const ev = try VTEvent.init(alloc, action);
 
         const max_capacity = 100;
         insp.vt_events.append(ev) catch |err| switch (err) {
@@ -59,3 +90,64 @@ const Handler = struct {
         return true;
     }
 };
+
+/// Encode a parser action as a string that we show in the logs.
+fn encodeAction(writer: anytype, action: terminal.Parser.Action) !void {
+    switch (action) {
+        .print => try encodePrint(writer, action),
+        .execute => try encodeExecute(writer, action),
+        .csi_dispatch => |v| try encodeCSI(writer, v),
+        .esc_dispatch => |v| try encodeEsc(writer, v),
+        .osc_dispatch => |v| try encodeOSC(writer, v),
+        else => try writer.print("{}", .{action}),
+    }
+}
+
+fn encodePrint(writer: anytype, action: terminal.Parser.Action) !void {
+    const ch = action.print;
+    try writer.print("'{u}' (U+{X})", .{ ch, ch });
+}
+
+fn encodeExecute(writer: anytype, action: terminal.Parser.Action) !void {
+    const ch = action.execute;
+    switch (ch) {
+        0x00 => try writer.writeAll("NUL"),
+        0x01 => try writer.writeAll("SOH"),
+        0x02 => try writer.writeAll("STX"),
+        0x03 => try writer.writeAll("ETX"),
+        0x04 => try writer.writeAll("EOT"),
+        0x05 => try writer.writeAll("ENQ"),
+        0x06 => try writer.writeAll("ACK"),
+        0x07 => try writer.writeAll("BEL"),
+        0x08 => try writer.writeAll("BS"),
+        0x09 => try writer.writeAll("HT"),
+        0x0A => try writer.writeAll("LF"),
+        0x0B => try writer.writeAll("VT"),
+        0x0C => try writer.writeAll("FF"),
+        0x0D => try writer.writeAll("CR"),
+        0x0E => try writer.writeAll("SO"),
+        0x0F => try writer.writeAll("SI"),
+        else => try writer.writeAll("?"),
+    }
+    try writer.print(" (0x{X})", .{ch});
+}
+
+fn encodeCSI(writer: anytype, csi: terminal.Parser.Action.CSI) !void {
+    for (csi.intermediates) |v| try writer.print("{c} ", .{v});
+    for (csi.params, 0..) |v, i| {
+        if (i != 0) try writer.writeByte(';');
+        try writer.print("{d}", .{v});
+    }
+    if (csi.intermediates.len > 0 or csi.params.len > 0) try writer.writeByte(' ');
+    try writer.writeByte(csi.final);
+}
+
+fn encodeEsc(writer: anytype, esc: terminal.Parser.Action.ESC) !void {
+    for (esc.intermediates) |v| try writer.print("{c} ", .{v});
+    try writer.writeByte(esc.final);
+}
+
+fn encodeOSC(writer: anytype, osc: terminal.osc.Command) !void {
+    // TODO: field values
+    try writer.print("{s} ", .{@tagName(osc)});
+}
