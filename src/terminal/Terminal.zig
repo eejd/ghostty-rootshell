@@ -1413,6 +1413,25 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
     else
         self.scrolling_region.left;
 
+    // Handle some edge cases when our cursor is already on the left margin.
+    if (self.screen.cursor.x == left_margin) {
+        switch (wrap_mode) {
+            // In reverse mode, if we're already before the top margin
+            // then we just set our cursor to the top-left and we're done.
+            .reverse => if (self.screen.cursor.y <= top) {
+                self.screen.cursor.x = left_margin;
+                self.screen.cursor.y = top;
+                return;
+            },
+
+            // Handled in while loop
+            .reverse_extended => {},
+
+            // Handled above
+            .none => unreachable,
+        }
+    }
+
     while (true) {
         // We can move at most to the left margin.
         const max = self.screen.cursor.x - left_margin;
@@ -1437,8 +1456,10 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         }
 
         // If our previous line is not wrapped then we are done.
-        const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
-        if (wrap_mode != .reverse_extended and !row.isWrapped()) break;
+        if (wrap_mode != .reverse_extended) {
+            const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
+            if (!row.isWrapped()) break;
+        }
         self.screen.cursor.y -= 1;
         self.screen.cursor.x = right_margin;
         count -= 1;
@@ -5931,6 +5952,24 @@ test "Terminal: cursorLeft reverse wrap with no soft wrap" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDE\nX", str);
+    }
+}
+
+test "Terminal: cursorLeft reverse wrap before left margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap, true);
+    t.setTopAndBottomMargin(3, 0);
+    t.cursorLeft(1);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\n\nX", str);
     }
 }
 
