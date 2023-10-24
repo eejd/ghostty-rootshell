@@ -15,6 +15,8 @@ const Parent = @import("relation.zig").Parent;
 const Child = @import("relation.zig").Child;
 const c = @import("c.zig");
 
+const log = std.log.scoped(.gtk);
+
 /// We'll need to keep a reference to the Window this belongs to for various reasons
 window: *Window,
 
@@ -34,21 +36,27 @@ child2: Child,
 // maximize the parent pane, or close the tab.
 parent: Parent,
 
-pub fn create(alloc: Allocator, window: *Window, direction: input.SplitDirection, label_text: *c.GtkWidget) !*Paned {
+pub fn create(alloc: Allocator, window: *Window, sibling: *Surface, direction: input.SplitDirection) !*Paned {
     var paned = try alloc.create(Paned);
     errdefer alloc.destroy(paned);
-    try paned.init(window, direction, label_text);
+    try paned.init(window, sibling, direction);
     return paned;
 }
 
-pub fn init(self: *Paned, window: *Window, direction: input.SplitDirection, label_text: *c.GtkWidget) !void {
+pub fn init(self: *Paned, window: *Window, sibling: *Surface, direction: input.SplitDirection) !void {
     self.* = .{
         .window = window,
-        .label_text = label_text,
+        .label_text = undefined,
         .paned = undefined,
         .child1 = .none,
         .child2 = .none,
         .parent = undefined,
+    };
+    errdefer self.* = undefined;
+
+    self.label_text = sibling.getTitleLabel() orelse {
+        log.warn("sibling surface has no title label", .{});
+        return;
     };
 
     const orientation: c_uint = switch (direction) {
@@ -57,10 +65,15 @@ pub fn init(self: *Paned, window: *Window, direction: input.SplitDirection, labe
     };
 
     const paned = c.gtk_paned_new(orientation);
-    errdefer c.gtk_widget_destroy(paned);
+    errdefer c.g_object_unref(paned);
 
     const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     self.paned = gtk_paned;
+
+    const new_surface = try self.newSurface(sibling.tab, &sibling.core_surface);
+    // This sets .parent on each surface
+    self.addChild1Surface(sibling);
+    self.addChild2Surface(new_surface);
 }
 
 pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
@@ -98,16 +111,28 @@ pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
     return surface;
 }
 
+pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
+    const child = switch (position) {
+        .start => self.child1,
+        .end => self.child2,
+    };
+
+    const surface = switch (child) {
+        .surface => |surface| surface,
+        else => return,
+    };
+
+    const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
+    _ = c.gtk_widget_grab_focus(widget);
+}
+
 pub fn setParent(self: *Paned, parent: Parent) void {
     self.parent = parent;
 }
+
 pub fn removeChildren(self: *Paned) void {
-    assert(self.child1 != .none);
-    assert(self.child2 != .none);
-    self.child1 = .none;
-    self.child2 = .none;
-    c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
-    c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
+    self.removeChildInPosition(.start);
+    self.removeChildInPosition(.end);
 }
 
 pub fn removeChildInPosition(self: *Paned, position: Position) void {
@@ -151,16 +176,4 @@ pub fn addChild2Paned(self: *Paned, paned: *Paned) void {
     self.child2 = Child{ .paned = paned };
     paned.setParent(Parent{ .paned = .{ self, .end } });
     c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
-}
-
-pub fn splitStartPosition(self: *Paned, orientation: c.GtkOrientation) !void {
-    _ = orientation;
-    _ = self;
-    // todo
-}
-
-pub fn splitEndPosition(self: *Paned, orientation: c.GtkOrientation) !void {
-    _ = orientation;
-    _ = self;
-    // todo
 }
