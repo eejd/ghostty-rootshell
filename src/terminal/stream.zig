@@ -926,12 +926,18 @@ pub fn Stream(comptime Handler: type) type {
                 },
 
                 // ICH - Insert Blanks
-                // TODO: test
-                '@' => if (@hasDecl(T, "insertBlanks")) switch (action.params.len) {
-                    0 => try self.handler.insertBlanks(1),
-                    1 => try self.handler.insertBlanks(action.params[0]),
-                    else => log.warn("invalid ICH command: {}", .{action}),
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                '@' => switch (action.intermediates.len) {
+                    0 => if (@hasDecl(T, "insertBlanks")) switch (action.params.len) {
+                        0 => try self.handler.insertBlanks(1),
+                        1 => try self.handler.insertBlanks(action.params[0]),
+                        else => log.warn("invalid ICH command: {}", .{action}),
+                    } else log.warn("unimplemented CSI callback: {}", .{action}),
+
+                    else => log.warn(
+                        "ignoring unimplemented CSI @: {}",
+                        .{action},
+                    ),
+                },
 
                 // DECSASD - Select Active Status Display
                 '}' => {
@@ -1571,4 +1577,24 @@ test "stream: XTSHIFTESCAPE" {
 
     try s.nextSlice("\x1B[>1s");
     try testing.expect(s.handler.escape.? == true);
+}
+
+test "stream: insert characters" {
+    const H = struct {
+        const Self = @This();
+        called: bool = false,
+
+        pub fn insertBlanks(self: *Self, v: u16) !void {
+            _ = v;
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    for ("\x1B[42@") |c| try s.next(c);
+    try testing.expect(s.handler.called);
+
+    s.handler.called = false;
+    for ("\x1B[?42@") |c| try s.next(c);
+    try testing.expect(!s.handler.called);
 }
