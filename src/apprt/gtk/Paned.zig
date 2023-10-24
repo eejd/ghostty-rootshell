@@ -10,8 +10,9 @@ const CoreSurface = @import("../../Surface.zig");
 const Window = @import("Window.zig");
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
-const Position = @import("parent.zig").Position;
-const Parent = @import("parent.zig").Parent;
+const Position = @import("relation.zig").Position;
+const Parent = @import("relation.zig").Parent;
+const Child = @import("relation.zig").Child;
 const c = @import("c.zig");
 
 /// We'll need to keep a reference to the Window this belongs to for various reasons
@@ -26,8 +27,8 @@ paned: *c.GtkPaned,
 
 // We have two children, each of which can be either a Surface, another pane,
 // or empty. We're going to keep track of which each child is here.
-child1: Tab.Child,
-child2: Tab.Child,
+child1: Child,
+child2: Child,
 
 // We also hold a reference to our parent widget, so that when we close we can either
 // maximize the parent pane, or close the tab.
@@ -126,28 +127,28 @@ pub fn removeChildInPosition(self: *Paned, position: Position) void {
 
 pub fn addChild1Surface(self: *Paned, surface: *Surface) void {
     assert(self.child1 == .none);
-    self.child1 = Tab.Child{ .surface = surface };
+    self.child1 = Child{ .surface = surface };
     surface.setParent(Parent{ .paned = .{ self, .start } });
     c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
 }
 
 pub fn addChild2Surface(self: *Paned, surface: *Surface) void {
     assert(self.child2 == .none);
-    self.child2 = Tab.Child{ .surface = surface };
+    self.child2 = Child{ .surface = surface };
     surface.setParent(Parent{ .paned = .{ self, .end } });
     c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
 }
 
 pub fn addChild1Paned(self: *Paned, paned: *Paned) void {
     assert(self.child1 == .none);
-    self.child1 = Tab.Child{ .paned = paned };
+    self.child1 = Child{ .paned = paned };
     paned.setParent(Parent{ .paned = .{ self, .start } });
     c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
 }
 
 pub fn addChild2Paned(self: *Paned, paned: *Paned) void {
     assert(self.child2 == .none);
-    self.child2 = Tab.Child{ .paned = paned };
+    self.child2 = Child{ .paned = paned };
     paned.setParent(Parent{ .paned = .{ self, .end } });
     c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
 }

@@ -6,7 +6,8 @@ const assert = std.debug.assert;
 const font = @import("../../font/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 const Paned = @import("Paned.zig");
-const Parent = @import("parent.zig").Parent;
+const Parent = @import("relation.zig").Parent;
+const Child = @import("relation.zig").Child;
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const c = @import("c.zig");
@@ -14,12 +15,6 @@ const c = @import("c.zig");
 const log = std.log.scoped(.gtk);
 
 pub const GHOSTTY_TAB = "ghostty_tab";
-
-pub const Child = union(enum) {
-    surface: *Surface,
-    paned: *Paned,
-    none,
-};
 
 window: *Window,
 label_text: *c.GtkLabel,
