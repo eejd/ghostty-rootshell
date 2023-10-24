@@ -648,7 +648,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     if (c > 255 and
         self.modes.get(.grapheme_cluster) and
         self.screen.cursor.x > 0)
-    {
+    grapheme: {
         const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
 
         // We need the previous cell to determine if we're at a grapheme
@@ -672,6 +672,10 @@ pub fn print(self: *Terminal, c: u21) !void {
                 .x = x - 1,
             };
         };
+
+        // If our cell has no content, then this is a new cell and
+        // necessarily a grapheme break.
+        if (prev.cell.char == 0) break :grapheme;
 
         const grapheme_break = brk: {
             var state: i32 = 0;
