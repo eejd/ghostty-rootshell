@@ -33,7 +33,7 @@ fn homeUnix(buf: []u8) !?[]u8 {
     // If we're on darwin, we try the directory service. I'm not sure if there
     // is a Mac API to do this but if so we can link to that...
     if (builtin.os.tag == .macos) {
-        const exec = try std.ChildProcess.exec(.{
+        const run = try std.ChildProcess.run(.{
             .allocator = fba.allocator(),
             .argv = &[_][]const u8{
                 "/bin/sh",
@@ -43,8 +43,8 @@ fn homeUnix(buf: []u8) !?[]u8 {
             .max_output_bytes = fba.buffer.len / 2,
         });
 
-        if (exec.term == .Exited and exec.term.Exited == 0) {
-            const result = trimSpace(exec.stdout);
+        if (run.term == .Exited and run.term.Exited == 0) {
+            const result = trimSpace(run.stdout);
             if (buf.len < result.len) return Error.BufferTooSmall;
             std.mem.copy(u8, buf, result);
             return buf[0..result.len];
@@ -62,14 +62,14 @@ fn homeUnix(buf: []u8) !?[]u8 {
 
     // If all else fails, have the shell tell us...
     fba.reset();
-    const exec = try std.ChildProcess.exec(.{
+    const run = try std.ChildProcess.run(.{
         .allocator = fba.allocator(),
         .argv = &[_][]const u8{ "/bin/sh", "-c", "cd && pwd" },
         .max_output_bytes = fba.buffer.len / 2,
     });
 
-    if (exec.term == .Exited and exec.term.Exited == 0) {
-        const result = trimSpace(exec.stdout);
+    if (run.term == .Exited and run.term.Exited == 0) {
+        const result = trimSpace(run.stdout);
         if (buf.len < result.len) return Error.BufferTooSmall;
         std.mem.copy(u8, buf, result);
         return buf[0..result.len];
