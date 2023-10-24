@@ -1655,7 +1655,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 
     // Determine our indexes.
     const start = self.screen.cursor.x;
-    const pivot = self.screen.cursor.x + count;
+    const pivot = @min(self.screen.cursor.x + count, right_limit);
 
     // This is the number of spaces we have left to shift existing data.
     // If count is bigger than the available space left after the cursor,
@@ -4286,6 +4286,25 @@ test "Terminal: insertBlanks outside left/right scroll region" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("   ABX", str);
+    }
+}
+
+test "Terminal: insertBlanks left/right scroll region large count" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 10);
+    defer t.deinit(alloc);
+
+    t.modes.set(.origin, true);
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 1);
+    t.insertBlanks(140);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  X", str);
     }
 }
 
