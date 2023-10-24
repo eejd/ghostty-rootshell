@@ -302,10 +302,27 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
                     tab.removeChild();
                     tab.setChild(.{ .surface = sibling_surface });
                 },
-                .paned => |paned_paned| {
-                    log.info("paned is nested, parent is paned. position={}", .{paned_paned[1]});
+                .paned => |parent_paned_tuple| {
+                    const parent_paned = parent_paned_tuple[0];
+                    const parent_paned_position = parent_paned_tuple[1];
+
+                    // Keep position of divider
+                    const parent_paned_position_before = c.gtk_paned_get_position(parent_paned.paned);
+
+                    parent_paned.removeChildInPosition(parent_paned_position);
+
+                    switch (parent_paned_position) {
+                        .start => parent_paned.addChild1Surface(sibling_surface),
+                        .end => parent_paned.addChild2Surface(sibling_surface),
+                    }
+
+                    // Restore position
+                    c.gtk_paned_set_position(parent_paned.paned, parent_paned_position_before);
                 },
             }
+
+            const widget = @as(*c.GtkWidget, @ptrCast(sibling_widget));
+            _ = c.gtk_widget_grab_focus(widget);
         },
     }
 }
