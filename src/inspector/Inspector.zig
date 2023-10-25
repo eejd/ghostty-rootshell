@@ -1033,6 +1033,9 @@ fn renderTermioWindow(self: *Inspector) void {
                 var it = self.vt_events.iterator(.forward);
                 while (it.next()) |v| v.deinit(self.surface.alloc);
                 self.vt_events.clear();
+
+                // We also reset the sequence number.
+                self.vt_stream.handler.current_seq = 1;
             }
         }
 
