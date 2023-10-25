@@ -1,11 +1,12 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const cimgui = @import("cimgui");
 const terminal = @import("../terminal/main.zig");
 const CircBuf = @import("../circ_buf.zig").CircBuf;
 const Surface = @import("../Surface.zig");
 
 /// The stream handler for our inspector.
-pub const Stream = terminal.Stream(Handler);
+pub const Stream = terminal.Stream(VTHandler);
 
 /// VT event circular buffer.
 pub const VTEventRing = CircBuf(VTEvent, undefined);
@@ -49,21 +50,41 @@ pub const VTEvent = struct {
     pub fn deinit(self: *VTEvent, alloc: Allocator) void {
         alloc.free(self.str);
     }
+
+    /// Returns true if the event passes the given filter.
+    pub fn passFilter(
+        self: *const VTEvent,
+        filter: *cimgui.c.ImGuiTextFilter,
+    ) bool {
+        return cimgui.c.ImGuiTextFilter_PassFilter(filter, self.str.ptr, null);
+    }
 };
 
 /// Our VT stream handler.
-const Handler = struct {
+pub const VTHandler = struct {
     /// The surface that the inspector is attached to. We use this instead
     /// of the inspector because this is pointer-stable.
     surface: *Surface,
 
     /// Exclude certain actions by tag.
     filter_exclude: ActionTagSet = ActionTagSet.initMany(&.{.print}),
+    filter_text: *cimgui.c.ImGuiTextFilter,
 
     const ActionTagSet = std.EnumSet(terminal.Parser.Action.Tag);
 
+    pub fn init(surface: *Surface) VTHandler {
+        return .{
+            .surface = surface,
+            .filter_text = cimgui.c.ImGuiTextFilter_ImGuiTextFilter(""),
+        };
+    }
+
+    pub fn deinit(self: *VTHandler) void {
+        cimgui.c.ImGuiTextFilter_destroy(self.filter_text);
+    }
+
     /// This is called with every single terminal action.
-    pub fn handleManually(self: *Handler, action: terminal.Parser.Action) !bool {
+    pub fn handleManually(self: *VTHandler, action: terminal.Parser.Action) !bool {
         const insp = self.surface.inspector orelse return false;
 
         // We ignore certain action types that are too noisy.
@@ -76,8 +97,16 @@ const Handler = struct {
         // We return true because we did "handle" it by ignoring it.
         if (self.filter_exclude.contains(std.meta.activeTag(action))) return true;
 
+        // Build our event
         const alloc = self.surface.alloc;
-        const ev = try VTEvent.init(alloc, action);
+        var ev = try VTEvent.init(alloc, action);
+        errdefer ev.deinit(alloc);
+
+        // Check if the event passes the filter
+        if (!ev.passFilter(self.filter_text)) {
+            ev.deinit(alloc);
+            return true;
+        }
 
         const max_capacity = 100;
         insp.vt_events.append(ev) catch |err| switch (err) {

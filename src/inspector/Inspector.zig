@@ -115,15 +115,15 @@ pub fn init(surface: *Surface) !Inspector {
     var vt_events = try inspector.termio.VTEventRing.init(surface.alloc, 2);
     errdefer vt_events.deinit(surface.alloc);
 
+    var vt_handler = inspector.termio.VTHandler.init(surface);
+    errdefer vt_handler.deinit();
+
     return .{
         .surface = surface,
         .key_events = key_buf,
         .vt_events = vt_events,
         .vt_stream = .{
-            .handler = .{
-                .surface = surface,
-            },
-
+            .handler = vt_handler,
             .parser = .{
                 .osc_parser = .{
                     .alloc = surface.alloc,
@@ -144,6 +144,8 @@ pub fn deinit(self: *Inspector) void {
         var it = self.vt_events.iterator(.forward);
         while (it.next()) |v| v.deinit(self.surface.alloc);
         self.vt_events.deinit(self.surface.alloc);
+
+        self.vt_stream.handler.deinit();
         self.vt_stream.deinit();
     }
 }
@@ -1108,7 +1110,8 @@ fn renderTermioWindow(self: *Inspector) void {
         )) {
             defer cimgui.c.igEndPopup();
 
-            cimgui.c.igText("Selected filters will only affect future events.");
+            cimgui.c.igText("Changed filter settings will only affect future events.");
+
             cimgui.c.igSeparator();
 
             {
@@ -1137,6 +1140,20 @@ fn renderTermioWindow(self: *Inspector) void {
                 }
             } // Filter kind table
 
+            cimgui.c.igSeparator();
+
+            cimgui.c.igText(
+                "Filter by string. Empty displays all, \"abc\" finds lines\n" ++
+                    "containing \"abc\", \"abc,xyz\" finds lines containing \"abc\"\n" ++
+                    "or \"xyz\", \"-abc\" excludes lines containing \"abc\".",
+            );
+            _ = cimgui.c.ImGuiTextFilter_Draw(
+                self.vt_stream.handler.filter_text,
+                "##filter_text",
+                0,
+            );
+
+            cimgui.c.igSeparator();
             if (cimgui.c.igButton("Close", .{ .x = 0, .y = 0 })) {
                 cimgui.c.igCloseCurrentPopup();
             }
