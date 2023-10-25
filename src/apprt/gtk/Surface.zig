@@ -378,8 +378,8 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
 
             // Add new split-paned
             switch (parent_position) {
-                .start => parent_paned.addChild1Paned(paned),
-                .end => parent_paned.addChild2Paned(paned),
+                .start => parent_paned.addChild1(.{ .paned = paned }),
+                .end => parent_paned.addChild2(.{ .paned = paned }),
             }
             // Restore position
             c.gtk_paned_set_position(parent_paned.paned, parent_paned_position_before);

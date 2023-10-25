@@ -72,8 +72,8 @@ pub fn init(self: *Paned, window: *Window, sibling: *Surface, direction: input.S
 
     const new_surface = try self.newSurface(sibling.tab, &sibling.core_surface);
     // This sets .parent on each surface
-    self.addChild1Surface(sibling);
-    self.addChild2Surface(new_surface);
+    self.addChild1(.{ .surface = sibling });
+    self.addChild2(.{ .surface = new_surface });
 }
 
 pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
@@ -150,30 +150,40 @@ pub fn removeChildInPosition(self: *Paned, position: Position) void {
     }
 }
 
-pub fn addChild1Surface(self: *Paned, surface: *Surface) void {
+pub fn addChild1(self: *Paned, child: Child) void {
     assert(self.child1 == .none);
-    self.child1 = Child{ .surface = surface };
-    surface.setParent(Parent{ .paned = .{ self, .start } });
-    c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
+
+    const parent = Parent{ .paned = .{ self, .start } };
+    self.child1 = child;
+
+    switch (child) {
+        .none => return,
+        .paned => |paned| {
+            paned.setParent(parent);
+            c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
+        },
+        .surface => |surface| {
+            surface.setParent(parent);
+            c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
+        },
+    }
 }
 
-pub fn addChild2Surface(self: *Paned, surface: *Surface) void {
+pub fn addChild2(self: *Paned, child: Child) void {
     assert(self.child2 == .none);
-    self.child2 = Child{ .surface = surface };
-    surface.setParent(Parent{ .paned = .{ self, .end } });
-    c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
-}
 
-pub fn addChild1Paned(self: *Paned, paned: *Paned) void {
-    assert(self.child1 == .none);
-    self.child1 = Child{ .paned = paned };
-    paned.setParent(Parent{ .paned = .{ self, .start } });
-    c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
-}
+    const parent = Parent{ .paned = .{ self, .end } };
+    self.child2 = child;
 
-pub fn addChild2Paned(self: *Paned, paned: *Paned) void {
-    assert(self.child2 == .none);
-    self.child2 = Child{ .paned = paned };
-    paned.setParent(Parent{ .paned = .{ self, .end } });
-    c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
+    switch (child) {
+        .none => return,
+        .paned => |paned| {
+            paned.setParent(parent);
+            c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
+        },
+        .surface => |surface| {
+            surface.setParent(parent);
+            c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
+        },
+    }
 }

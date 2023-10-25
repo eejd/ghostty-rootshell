@@ -263,22 +263,16 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
 
             const sibling = switch (position) {
                 .start => .{
-                    switch (paned.child2) {
-                        .surface => |s| s,
-                        else => return,
-                    },
+                    paned.child2,
                     c.gtk_paned_get_end_child(paned.paned),
                 },
                 .end => .{
-                    switch (paned.child1) {
-                        .surface => |s| s,
-                        else => return,
-                    },
+                    paned.child1,
                     c.gtk_paned_get_start_child(paned.paned),
                 },
             };
             // TODO: Use destructuring syntax once it doesn't break ZLS
-            const sibling_surface = sibling[0];
+            const sibling_child = sibling[0];
             const sibling_widget = sibling[1];
 
             // Keep explicit reference to sibling's gl_area, so it's not
@@ -300,7 +294,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
                     // If parent of Paned we belong to is a tab, we can
                     // replace the child with the other surface
                     tab.removeChild();
-                    tab.setChild(.{ .surface = sibling_surface });
+                    tab.setChild(sibling_child);
                 },
                 .paned => |parent_paned_tuple| {
                     const parent_paned = parent_paned_tuple[0];
@@ -312,8 +306,8 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
                     parent_paned.removeChildInPosition(parent_paned_position);
 
                     switch (parent_paned_position) {
-                        .start => parent_paned.addChild1Surface(sibling_surface),
-                        .end => parent_paned.addChild2Surface(sibling_surface),
+                        .start => parent_paned.addChild1(sibling_child),
+                        .end => parent_paned.addChild2(sibling_child),
                     }
 
                     // Restore position
