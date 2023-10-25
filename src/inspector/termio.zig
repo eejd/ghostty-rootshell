@@ -57,15 +57,24 @@ const Handler = struct {
     /// of the inspector because this is pointer-stable.
     surface: *Surface,
 
+    /// Exclude certain actions by tag.
+    filter_exclude: ActionTagSet = ActionTagSet.initMany(&.{.print}),
+
+    const ActionTagSet = std.EnumSet(terminal.Parser.Action.Tag);
+
     /// This is called with every single terminal action.
     pub fn handleManually(self: *Handler, action: terminal.Parser.Action) !bool {
         const insp = self.surface.inspector orelse return false;
 
         // We ignore certain action types that are too noisy.
         switch (action) {
-            .dcs_put, .apc_put => return false,
+            .dcs_put, .apc_put => return true,
             else => {},
         }
+
+        // If we requested a specific type to be ignored, ignore it.
+        // We return true because we did "handle" it by ignoring it.
+        if (self.filter_exclude.contains(std.meta.activeTag(action))) return true;
 
         const alloc = self.surface.alloc;
         const ev = try VTEvent.init(alloc, action);

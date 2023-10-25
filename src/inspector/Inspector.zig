@@ -1093,15 +1093,67 @@ fn renderTermioWindow(self: *Inspector) void {
     )) return;
 
     list: {
+        const popup_filter = "Filter";
+        if (cimgui.c.igButton("Filter", .{ .x = 0, .y = 0 })) {
+            cimgui.c.igOpenPopup_Str(
+                popup_filter,
+                cimgui.c.ImGuiPopupFlags_None,
+            );
+        }
+
+        if (cimgui.c.igBeginPopupModal(
+            popup_filter,
+            null,
+            cimgui.c.ImGuiWindowFlags_AlwaysAutoResize,
+        )) {
+            defer cimgui.c.igEndPopup();
+
+            cimgui.c.igText("Selected filters will only affect future events.");
+            cimgui.c.igSeparator();
+
+            {
+                _ = cimgui.c.igBeginTable(
+                    "table_filter_kind",
+                    3,
+                    cimgui.c.ImGuiTableFlags_None,
+                    .{ .x = 0, .y = 0 },
+                    0,
+                );
+                defer cimgui.c.igEndTable();
+
+                inline for (@typeInfo(terminal.Parser.Action.Tag).Enum.fields) |field| {
+                    const tag = @field(terminal.Parser.Action.Tag, field.name);
+                    if (tag == .apc_put or tag == .dcs_put) continue;
+
+                    _ = cimgui.c.igTableNextColumn();
+                    var value = !self.vt_stream.handler.filter_exclude.contains(tag);
+                    if (cimgui.c.igCheckbox(@tagName(tag).ptr, &value)) {
+                        if (value) {
+                            self.vt_stream.handler.filter_exclude.insert(tag);
+                        } else {
+                            self.vt_stream.handler.filter_exclude.remove(tag);
+                        }
+                    }
+                }
+            } // Filter kind table
+
+            if (cimgui.c.igButton("Close", .{ .x = 0, .y = 0 })) {
+                cimgui.c.igCloseCurrentPopup();
+            }
+        } // filter popup
+
+        if (!self.vt_events.empty()) {
+            cimgui.c.igSameLine(0, cimgui.c.igGetStyle().*.ItemInnerSpacing.x);
+            if (cimgui.c.igButton("Clear", .{ .x = 0, .y = 0 })) {
+                var it = self.vt_events.iterator(.forward);
+                while (it.next()) |v| v.deinit(self.surface.alloc);
+                self.vt_events.clear();
+            }
+        }
+
         if (self.vt_events.empty()) {
             cimgui.c.igText("Waiting for events...");
             break :list;
-        }
-
-        if (cimgui.c.igButton("Clear", .{ .x = 0, .y = 0 })) {
-            var it = self.vt_events.iterator(.forward);
-            while (it.next()) |v| v.deinit(self.surface.alloc);
-            self.vt_events.clear();
         }
 
         cimgui.c.igSeparator();

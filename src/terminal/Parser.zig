@@ -54,6 +54,8 @@ pub const TransitionAction = enum {
 /// Action is the action that a caller of the parser is expected to
 /// take as a result of some input character.
 pub const Action = union(enum) {
+    pub const Tag = std.meta.FieldEnum(Action);
+
     /// Draw character to the screen. This is a unicode codepoint.
     print: u21,
 
