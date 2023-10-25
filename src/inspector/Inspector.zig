@@ -1159,9 +1159,9 @@ fn renderTermioWindow(self: *Inspector) void {
                 var value = !self.vt_stream.handler.filter_exclude.contains(tag);
                 if (cimgui.c.igCheckbox(@tagName(tag).ptr, &value)) {
                     if (value) {
-                        self.vt_stream.handler.filter_exclude.insert(tag);
-                    } else {
                         self.vt_stream.handler.filter_exclude.remove(tag);
+                    } else {
+                        self.vt_stream.handler.filter_exclude.insert(tag);
                     }
                 }
             }
