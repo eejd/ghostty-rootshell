@@ -9,7 +9,7 @@ const Config = @import("../config.zig").Config;
 pub const Message = union(enum) {
     /// Represents a write request. Magic number comes from the max size
     /// we want this union to be.
-    pub const WriteReq = termio.MessageData(u8, 256);
+    pub const WriteReq = termio.MessageData(u8, 255);
 
     /// Set the title of the surface.
     /// TODO: we should change this to a "WriteReq" style structure in

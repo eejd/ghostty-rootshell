@@ -84,6 +84,8 @@ pub const Message = union(enum) {
 /// are a stable pointer, or require deallocation. This is helpful for thread
 /// messaging utilities.
 pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type {
+    assert(small_size <= std.math.maxInt(u8));
+
     return union(enum) {
         pub const Self = @This();
 
