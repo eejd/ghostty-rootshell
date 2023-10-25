@@ -29,7 +29,7 @@ pub fn renderInTable(cursor: *const terminal.Screen.Cursor) void {
     }
 
     // If we have a color then we show the color
-    color: {
+    if (cursor.pen.attrs.has_fg) color: {
         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
         _ = cimgui.c.igTableSetColumnIndex(0);
         cimgui.c.igText("Foreground Color");
@@ -51,7 +51,7 @@ pub fn renderInTable(cursor: *const terminal.Screen.Cursor) void {
                 cimgui.c.ImGuiColorEditFlags_NoLabel,
         );
     }
-    color: {
+    if (cursor.pen.attrs.has_bg) color: {
         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
         _ = cimgui.c.igTableSetColumnIndex(0);
         cimgui.c.igText("Background Color");

@@ -1125,6 +1125,18 @@ fn renderTermioWindow(self: *Inspector) void {
                             );
                         }
                     }
+
+                    var md_it = ev.metadata.iterator();
+                    while (md_it.next()) |entry| {
+                        var buf: [256]u8 = undefined;
+                        const key = std.fmt.bufPrintZ(&buf, "{s}", .{entry.key_ptr.*}) catch
+                            "<internal error>";
+                        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                        _ = cimgui.c.igTableNextColumn();
+                        cimgui.c.igText("%s", key.ptr);
+                        _ = cimgui.c.igTableNextColumn();
+                        cimgui.c.igText("%s", entry.value_ptr.ptr);
+                    }
                 }
             }
         }
