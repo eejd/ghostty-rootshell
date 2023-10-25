@@ -130,6 +130,21 @@ pub fn setParent(self: *Paned, parent: Parent) void {
     self.parent = parent;
 }
 
+pub fn replaceChildInPosition(self: *Paned, child: Child, position: Position) void {
+    // Keep position of divider
+    const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
+
+    self.removeChildInPosition(position);
+
+    switch (position) {
+        .start => self.addChild1(child),
+        .end => self.addChild2(child),
+    }
+
+    // Restore position
+    c.gtk_paned_set_position(self.paned, parent_paned_position_before);
+}
+
 pub fn removeChildren(self: *Paned) void {
     self.removeChildInPosition(.start);
     self.removeChildInPosition(.end);

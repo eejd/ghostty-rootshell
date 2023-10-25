@@ -300,18 +300,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
                     const parent_paned = parent_paned_tuple[0];
                     const parent_paned_position = parent_paned_tuple[1];
 
-                    // Keep position of divider
-                    const parent_paned_position_before = c.gtk_paned_get_position(parent_paned.paned);
-
-                    parent_paned.removeChildInPosition(parent_paned_position);
-
-                    switch (parent_paned_position) {
-                        .start => parent_paned.addChild1(sibling_child),
-                        .end => parent_paned.addChild2(sibling_child),
-                    }
-
-                    // Restore position
-                    c.gtk_paned_set_position(parent_paned.paned, parent_paned_position_before);
+                    parent_paned.replaceChildInPosition(sibling_child, parent_paned_position);
                 },
             }
 
