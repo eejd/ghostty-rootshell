@@ -1046,6 +1046,7 @@ fn renderKeyboardWindow(self: *Inspector) void {
             var it = self.key_events.iterator(.forward);
             while (it.next()) |v| v.deinit(self.surface.alloc);
             self.key_events.clear();
+            self.vt_stream.handler.current_seq = 1;
         }
 
         cimgui.c.igSeparator();
@@ -1131,7 +1132,7 @@ fn renderTermioWindow(self: *Inspector) void {
 
         _ = cimgui.c.igBeginTable(
             "table_vt_events",
-            2,
+            3,
             cimgui.c.ImGuiTableFlags_RowBg |
                 cimgui.c.ImGuiTableFlags_Borders,
             .{ .x = 0, .y = 0 },
@@ -1139,6 +1140,12 @@ fn renderTermioWindow(self: *Inspector) void {
         );
         defer cimgui.c.igEndTable();
 
+        cimgui.c.igTableSetupColumn(
+            "Seq",
+            cimgui.c.ImGuiTableColumnFlags_WidthFixed,
+            0,
+            0,
+        );
         cimgui.c.igTableSetupColumn(
             "Kind",
             cimgui.c.ImGuiTableColumnFlags_WidthFixed,
@@ -1159,9 +1166,11 @@ fn renderTermioWindow(self: *Inspector) void {
             defer cimgui.c.igPopID();
 
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            _ = cimgui.c.igTableSetColumnIndex(0);
+            _ = cimgui.c.igTableNextColumn();
+            cimgui.c.igText("%d", ev.seq);
+            _ = cimgui.c.igTableNextColumn();
             cimgui.c.igText("%s", @tagName(ev.kind).ptr);
-            _ = cimgui.c.igTableSetColumnIndex(1);
+            _ = cimgui.c.igTableNextColumn();
             cimgui.c.igText("%s", ev.str.ptr);
         }
     } // table

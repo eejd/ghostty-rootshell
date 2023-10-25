@@ -13,6 +13,9 @@ pub const VTEventRing = CircBuf(VTEvent, undefined);
 
 /// VT event
 pub const VTEvent = struct {
+    /// Sequence number, just monotonically increasing.
+    seq: usize = 1,
+
     /// Kind of event, for filtering
     kind: Kind,
 
@@ -69,6 +72,9 @@ pub const VTHandler = struct {
     /// True if the handler is currently recording.
     active: bool = true,
 
+    /// Current sequence number
+    current_seq: usize = 1,
+
     /// Exclude certain actions by tag.
     filter_exclude: ActionTagSet = ActionTagSet.initMany(&.{.print}),
     filter_text: *cimgui.c.ImGuiTextFilter,
@@ -106,10 +112,13 @@ pub const VTHandler = struct {
         // Build our event
         const alloc = self.surface.alloc;
         var ev = try VTEvent.init(alloc, action);
+        ev.seq = self.current_seq;
+        self.current_seq +%= 1;
         errdefer ev.deinit(alloc);
 
         // Check if the event passes the filter
         if (!ev.passFilter(self.filter_text)) {
+            self.current_seq -= 1;
             ev.deinit(alloc);
             return true;
         }
