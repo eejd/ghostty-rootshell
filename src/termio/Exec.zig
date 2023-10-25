@@ -1133,54 +1133,58 @@ const ReadThread = struct {
         // Schedule a render
         ev.queueRender() catch unreachable;
 
-        // If we have an inspector, send the data to it too. The inspector
-        // will keep track of the VT sequences that we are processing.
+        // If we have an inspector, we enter SLOW MODE because we need to
+        // process a byte at a time alternating between the inspector handler
+        // and the termio handler. This is very slow compared to our optimizations
+        // below but at least users only pay for it if they're using the inspector.
         if (ev.renderer_state.inspector) |insp| {
-            // This forces all VT sequences to be parsed twice, meaning our
-            // vt processing always slows down by roughly 50% with the inspector
-            // active. That's fine for now but room for improvement.
-            insp.recordPtyRead(buf) catch |err| {
-                log.err("error recording pty read in inspector err={}", .{err});
-            };
-        }
+            for (buf, 0..) |byte, i| {
+                insp.recordPtyRead(buf[i .. i + 1]) catch |err| {
+                    log.err("error recording pty read in inspector err={}", .{err});
+                };
 
-        // Process the terminal data. This is an extremely hot part of the
-        // terminal emulator, so we do some abstraction leakage to avoid
-        // function calls and unnecessary logic.
-        //
-        // The ground state is the only state that we can see and print/execute
-        // ASCII, so we only execute this hot path if we're already in the ground
-        // state.
-        //
-        // Empirically, this alone improved throughput of large text output by ~20%.
-        var i: usize = 0;
-        const end = buf.len;
-        if (ev.terminal_stream.parser.state == .ground) {
-            for (buf[i..end]) |ch| {
-                switch (terminal.parse_table.table[ch][@intFromEnum(terminal.Parser.State.ground)].action) {
-                    // Print, call directly.
-                    .print => ev.terminal_stream.handler.print(@intCast(ch)) catch |err|
-                        log.err("error processing terminal data: {}", .{err}),
-
-                    // C0 execute, let our stream handle this one but otherwise
-                    // continue since we're guaranteed to be back in ground.
-                    .execute => ev.terminal_stream.execute(ch) catch |err|
-                        log.err("error processing terminal data: {}", .{err}),
-
-                    // Otherwise, break out and go the slow path until we're
-                    // back in ground. There is a slight optimization here where
-                    // could try to find the next transition to ground but when
-                    // I implemented that it didn't materially change performance.
-                    else => break,
-                }
-
-                i += 1;
+                ev.terminal_stream.next(byte) catch |err|
+                    log.err("error processing terminal data: {}", .{err});
             }
-        }
+        } else {
+            // Process the terminal data. This is an extremely hot part of the
+            // terminal emulator, so we do some abstraction leakage to avoid
+            // function calls and unnecessary logic.
+            //
+            // The ground state is the only state that we can see and print/execute
+            // ASCII, so we only execute this hot path if we're already in the ground
+            // state.
+            //
+            // Empirically, this alone improved throughput of large text output by ~20%.
+            var i: usize = 0;
+            const end = buf.len;
+            if (ev.terminal_stream.parser.state == .ground) {
+                for (buf[i..end]) |ch| {
+                    switch (terminal.parse_table.table[ch][@intFromEnum(terminal.Parser.State.ground)].action) {
+                        // Print, call directly.
+                        .print => ev.terminal_stream.handler.print(@intCast(ch)) catch |err|
+                            log.err("error processing terminal data: {}", .{err}),
 
-        if (i < end) {
-            ev.terminal_stream.nextSlice(buf[i..end]) catch |err|
-                log.err("error processing terminal data: {}", .{err});
+                        // C0 execute, let our stream handle this one but otherwise
+                        // continue since we're guaranteed to be back in ground.
+                        .execute => ev.terminal_stream.execute(ch) catch |err|
+                            log.err("error processing terminal data: {}", .{err}),
+
+                        // Otherwise, break out and go the slow path until we're
+                        // back in ground. There is a slight optimization here where
+                        // could try to find the next transition to ground but when
+                        // I implemented that it didn't materially change performance.
+                        else => break,
+                    }
+
+                    i += 1;
+                }
+            }
+
+            if (i < end) {
+                ev.terminal_stream.nextSlice(buf[i..end]) catch |err|
+                    log.err("error processing terminal data: {}", .{err});
+            }
         }
 
         // If our stream handling caused messages to be sent to the writer
