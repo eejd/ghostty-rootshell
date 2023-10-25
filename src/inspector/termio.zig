@@ -85,7 +85,31 @@ pub const VTEvent = struct {
         self: *const VTEvent,
         filter: *cimgui.c.ImGuiTextFilter,
     ) bool {
-        return cimgui.c.ImGuiTextFilter_PassFilter(filter, self.str.ptr, null);
+        // Check our main string
+        if (cimgui.c.ImGuiTextFilter_PassFilter(
+            filter,
+            self.str.ptr,
+            null,
+        )) return true;
+
+        // We also check all metadata keys and values
+        var it = self.metadata.iterator();
+        while (it.next()) |entry| {
+            var buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrintZ(&buf, "{s}", .{entry.key_ptr.*}) catch continue;
+            if (cimgui.c.ImGuiTextFilter_PassFilter(
+                filter,
+                key.ptr,
+                null,
+            )) return true;
+            if (cimgui.c.ImGuiTextFilter_PassFilter(
+                filter,
+                entry.value_ptr.ptr,
+                null,
+            )) return true;
+        }
+
+        return false;
     }
 
     /// Encode a parser action as a string that we show in the logs.
