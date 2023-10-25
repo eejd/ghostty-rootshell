@@ -78,6 +78,7 @@ extension Ghostty {
                         .focused($surfaceFocus)
                         .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
+                        .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
                         .onReceive(pubBecomeKey) { notification in
                             guard let window = notification.object as? NSWindow else { return }
                             guard let surfaceWindow = surfaceView.window else { return }
@@ -240,7 +241,9 @@ extension Ghostty {
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
         @Published var title: String = "👻"
-        
+
+        @Published var cellSize: NSSize = .init()
+
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
@@ -928,5 +931,16 @@ extension FocusedValues {
 
     struct FocusedGhosttySurfaceZoomed: FocusedValueKey {
         typealias Value = Bool
+    }
+}
+
+extension FocusedValues {
+    var ghosttySurfaceCellSize: NSSize? {
+        get { self[FocusedGhosttySurfaceCellSize.self] }
+        set { self[FocusedGhosttySurfaceCellSize.self] = newValue }
+    }
+
+    struct FocusedGhosttySurfaceCellSize: FocusedValueKey {
+        typealias Value = NSSize
     }
 }

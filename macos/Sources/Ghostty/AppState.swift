@@ -143,7 +143,8 @@ extension Ghostty {
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
                 set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) },
-                render_inspector_cb: { userdata in AppState.renderInspector(userdata) }
+                render_inspector_cb: { userdata in AppState.renderInspector(userdata) },
+                set_cell_size_cb: { userdata, width, height in AppState.setCellSize(userdata, width: width, height: height) }
             )
 
             // Create the ghostty app.
@@ -466,6 +467,12 @@ extension Ghostty {
             // We need a window to set the frame
             guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
             surfaceView.initialSize = NSMakeSize(Double(width), Double(height))
+        }
+
+        static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
+            guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
+            let backingSize = NSSize(width: Double(width), height: Double(height))
+            surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
         }
 
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {

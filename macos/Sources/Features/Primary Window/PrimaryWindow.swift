@@ -41,7 +41,8 @@ class PrimaryWindow: NSWindow {
             ghostty: ghostty,
             appDelegate: appDelegate,
             focusedSurfaceWrapper: window.focusedSurfaceWrapper,
-            baseConfig: baseConfig
+            baseConfig: baseConfig,
+            window: window
         ))
         
         // We do want to cascade when new windows are created
