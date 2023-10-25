@@ -1036,12 +1036,12 @@ fn renderTermioWindow(self: *Inspector) void {
             }
         }
 
+        cimgui.c.igSeparator();
+
         if (self.vt_events.empty()) {
             cimgui.c.igText("Waiting for events...");
             break :list;
         }
-
-        cimgui.c.igSeparator();
 
         _ = cimgui.c.igBeginTable(
             "table_vt_events",
