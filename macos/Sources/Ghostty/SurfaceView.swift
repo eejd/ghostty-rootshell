@@ -253,7 +253,14 @@ extension Ghostty {
         }
         
         // True if the inspector should be visible
-        @Published var inspectorVisible: Bool = false
+        @Published var inspectorVisible: Bool = false {
+            didSet {
+                if (oldValue && !inspectorVisible) {
+                    guard let surface = self.surface else { return }
+                    ghostty_inspector_free(surface)
+                }
+            }
+        }
         
         private(set) var surface: ghostty_surface_t?
         var error: Error? = nil
