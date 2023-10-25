@@ -111,6 +111,11 @@ pub const VTHandler = struct {
     pub fn handleManually(self: *VTHandler, action: terminal.Parser.Action) !bool {
         const insp = self.surface.inspector orelse return false;
 
+        // We always increment the sequence number, even if we're paused or
+        // filter out the event. This helps show the user that there is a gap
+        // between events and roughly how large that gap was.
+        defer self.current_seq +%= 1;
+
         // If we're pausing, then we ignore all events.
         if (!self.active) return true;
 
@@ -128,12 +133,10 @@ pub const VTHandler = struct {
         const alloc = self.surface.alloc;
         var ev = try VTEvent.init(alloc, self.surface, action);
         ev.seq = self.current_seq;
-        self.current_seq +%= 1;
         errdefer ev.deinit(alloc);
 
         // Check if the event passes the filter
         if (!ev.passFilter(self.filter_text)) {
-            self.current_seq -= 1;
             ev.deinit(alloc);
             return true;
         }
