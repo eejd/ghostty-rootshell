@@ -66,6 +66,9 @@ pub const VTHandler = struct {
     /// of the inspector because this is pointer-stable.
     surface: *Surface,
 
+    /// True if the handler is currently recording.
+    active: bool = true,
+
     /// Exclude certain actions by tag.
     filter_exclude: ActionTagSet = ActionTagSet.initMany(&.{.print}),
     filter_text: *cimgui.c.ImGuiTextFilter,
@@ -86,6 +89,9 @@ pub const VTHandler = struct {
     /// This is called with every single terminal action.
     pub fn handleManually(self: *VTHandler, action: terminal.Parser.Action) !bool {
         const insp = self.surface.inspector orelse return false;
+
+        // If we're pausing, then we ignore all events.
+        if (!self.active) return true;
 
         // We ignore certain action types that are too noisy.
         switch (action) {

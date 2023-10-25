@@ -1094,70 +1094,24 @@ fn renderTermioWindow(self: *Inspector) void {
         cimgui.c.ImGuiWindowFlags_NoFocusOnAppearing,
     )) return;
 
+    const popup_filter = "Filter";
+
     list: {
-        const popup_filter = "Filter";
+        const pause_play: [:0]const u8 = if (self.vt_stream.handler.active)
+            "Pause##pause_play"
+        else
+            "Resume##pause_play";
+        if (cimgui.c.igButton(pause_play.ptr, .{ .x = 0, .y = 0 })) {
+            self.vt_stream.handler.active = !self.vt_stream.handler.active;
+        }
+
+        cimgui.c.igSameLine(0, cimgui.c.igGetStyle().*.ItemInnerSpacing.x);
         if (cimgui.c.igButton("Filter", .{ .x = 0, .y = 0 })) {
             cimgui.c.igOpenPopup_Str(
                 popup_filter,
                 cimgui.c.ImGuiPopupFlags_None,
             );
         }
-
-        if (cimgui.c.igBeginPopupModal(
-            popup_filter,
-            null,
-            cimgui.c.ImGuiWindowFlags_AlwaysAutoResize,
-        )) {
-            defer cimgui.c.igEndPopup();
-
-            cimgui.c.igText("Changed filter settings will only affect future events.");
-
-            cimgui.c.igSeparator();
-
-            {
-                _ = cimgui.c.igBeginTable(
-                    "table_filter_kind",
-                    3,
-                    cimgui.c.ImGuiTableFlags_None,
-                    .{ .x = 0, .y = 0 },
-                    0,
-                );
-                defer cimgui.c.igEndTable();
-
-                inline for (@typeInfo(terminal.Parser.Action.Tag).Enum.fields) |field| {
-                    const tag = @field(terminal.Parser.Action.Tag, field.name);
-                    if (tag == .apc_put or tag == .dcs_put) continue;
-
-                    _ = cimgui.c.igTableNextColumn();
-                    var value = !self.vt_stream.handler.filter_exclude.contains(tag);
-                    if (cimgui.c.igCheckbox(@tagName(tag).ptr, &value)) {
-                        if (value) {
-                            self.vt_stream.handler.filter_exclude.insert(tag);
-                        } else {
-                            self.vt_stream.handler.filter_exclude.remove(tag);
-                        }
-                    }
-                }
-            } // Filter kind table
-
-            cimgui.c.igSeparator();
-
-            cimgui.c.igText(
-                "Filter by string. Empty displays all, \"abc\" finds lines\n" ++
-                    "containing \"abc\", \"abc,xyz\" finds lines containing \"abc\"\n" ++
-                    "or \"xyz\", \"-abc\" excludes lines containing \"abc\".",
-            );
-            _ = cimgui.c.ImGuiTextFilter_Draw(
-                self.vt_stream.handler.filter_text,
-                "##filter_text",
-                0,
-            );
-
-            cimgui.c.igSeparator();
-            if (cimgui.c.igButton("Close", .{ .x = 0, .y = 0 })) {
-                cimgui.c.igCloseCurrentPopup();
-            }
-        } // filter popup
 
         if (!self.vt_events.empty()) {
             cimgui.c.igSameLine(0, cimgui.c.igGetStyle().*.ItemInnerSpacing.x);
@@ -1211,4 +1165,60 @@ fn renderTermioWindow(self: *Inspector) void {
             cimgui.c.igText("%s", ev.str.ptr);
         }
     } // table
+
+    if (cimgui.c.igBeginPopupModal(
+        popup_filter,
+        null,
+        cimgui.c.ImGuiWindowFlags_AlwaysAutoResize,
+    )) {
+        defer cimgui.c.igEndPopup();
+
+        cimgui.c.igText("Changed filter settings will only affect future events.");
+
+        cimgui.c.igSeparator();
+
+        {
+            _ = cimgui.c.igBeginTable(
+                "table_filter_kind",
+                3,
+                cimgui.c.ImGuiTableFlags_None,
+                .{ .x = 0, .y = 0 },
+                0,
+            );
+            defer cimgui.c.igEndTable();
+
+            inline for (@typeInfo(terminal.Parser.Action.Tag).Enum.fields) |field| {
+                const tag = @field(terminal.Parser.Action.Tag, field.name);
+                if (tag == .apc_put or tag == .dcs_put) continue;
+
+                _ = cimgui.c.igTableNextColumn();
+                var value = !self.vt_stream.handler.filter_exclude.contains(tag);
+                if (cimgui.c.igCheckbox(@tagName(tag).ptr, &value)) {
+                    if (value) {
+                        self.vt_stream.handler.filter_exclude.insert(tag);
+                    } else {
+                        self.vt_stream.handler.filter_exclude.remove(tag);
+                    }
+                }
+            }
+        } // Filter kind table
+
+        cimgui.c.igSeparator();
+
+        cimgui.c.igText(
+            "Filter by string. Empty displays all, \"abc\" finds lines\n" ++
+                "containing \"abc\", \"abc,xyz\" finds lines containing \"abc\"\n" ++
+                "or \"xyz\", \"-abc\" excludes lines containing \"abc\".",
+        );
+        _ = cimgui.c.ImGuiTextFilter_Draw(
+            self.vt_stream.handler.filter_text,
+            "##filter_text",
+            0,
+        );
+
+        cimgui.c.igSeparator();
+        if (cimgui.c.igButton("Close", .{ .x = 0, .y = 0 })) {
+            cimgui.c.igCloseCurrentPopup();
+        }
+    } // filter popup
 }
