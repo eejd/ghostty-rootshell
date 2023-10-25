@@ -24,10 +24,21 @@ pub const VTEvent = struct {
     /// store the raw event.
     str: [:0]const u8,
 
+    /// Various metadata at the time of the event (before processing).
+    cursor: terminal.Screen.Cursor,
+    scrolling_region: terminal.Terminal.ScrollingRegion,
+
+    /// imgui selection state
+    imgui_selected: bool = false,
+
     const Kind = enum { print, execute, csi, esc, osc, dcs, apc };
 
     /// Initiaze the event information for the given parser action.
-    pub fn init(alloc: Allocator, action: terminal.Parser.Action) !VTEvent {
+    pub fn init(
+        alloc: Allocator,
+        surface: *Surface,
+        action: terminal.Parser.Action,
+    ) !VTEvent {
         var buf = std.ArrayList(u8).init(alloc);
         defer buf.deinit();
         try encodeAction(buf.writer(), action);
@@ -44,9 +55,13 @@ pub const VTEvent = struct {
             .apc_start, .apc_put, .apc_end => .apc,
         };
 
+        const t = surface.renderer_state.terminal;
+
         return .{
             .kind = kind,
             .str = str,
+            .cursor = t.screen.cursor,
+            .scrolling_region = t.scrolling_region,
         };
     }
 
@@ -111,7 +126,7 @@ pub const VTHandler = struct {
 
         // Build our event
         const alloc = self.surface.alloc;
-        var ev = try VTEvent.init(alloc, action);
+        var ev = try VTEvent.init(alloc, self.surface, action);
         ev.seq = self.current_seq;
         self.current_seq +%= 1;
         errdefer ev.deinit(alloc);
