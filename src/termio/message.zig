@@ -84,16 +84,15 @@ pub const Message = union(enum) {
 /// are a stable pointer, or require deallocation. This is helpful for thread
 /// messaging utilities.
 pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type {
-    assert(small_size <= std.math.maxInt(u8));
-
     return union(enum) {
         pub const Self = @This();
 
         pub const Small = struct {
             pub const Max = small_size;
             pub const Array = [Max]Elem;
+            pub const Len = std.math.IntFittingRange(0, small_size);
             data: Array = undefined,
-            len: u8 = 0,
+            len: Len = 0,
         };
 
         pub const Alloc = struct {
@@ -183,4 +182,15 @@ test "MessageData init alloc" {
     const io = try Data.init(alloc, @as([]const u8, input));
     try testing.expect(io == .alloc);
     io.alloc.alloc.free(io.alloc.data);
+}
+
+test "MessageData small fits non-u8 sized data" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const len = 500;
+    const Data = MessageData(u8, len);
+    const input: []const u8 = "X" ** len;
+    const io = try Data.init(alloc, input);
+    try testing.expect(io == .small);
 }
