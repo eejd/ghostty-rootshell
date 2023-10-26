@@ -1014,8 +1014,15 @@ pub fn keyCallback(
 
     // When we're done processing, we always want to add the event to
     // the inspector.
-    defer if (insp_ev) |ev| {
-        if (self.inspector.?.recordKeyEvent(ev)) {
+    defer if (insp_ev) |ev| ev: {
+        // We have to check for the inspector again because our keybinding
+        // might close it.
+        const insp = self.inspector orelse {
+            ev.deinit(self.alloc);
+            break :ev;
+        };
+
+        if (insp.recordKeyEvent(ev)) {
             self.queueRender() catch {};
         } else |err| {
             log.warn("error adding key event to inspector err={}", .{err});
