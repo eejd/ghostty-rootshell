@@ -110,35 +110,18 @@ pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
     return surface;
 }
 
-pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
-    const child = switch (position) {
-        .start => self.child1,
-        .end => self.child2,
-    };
-
-    const surface = switch (child) {
-        .surface => |surface| surface,
-        else => return,
-    };
-
-    const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
-    _ = c.gtk_widget_grab_focus(widget);
-}
-
 pub fn setParent(self: *Paned, parent: Parent) void {
     self.parent = parent;
 }
 
-pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input.SplitDirection) !void {
-    const child = switch (position) {
-        .start => self.child1,
-        .end => self.child2,
-    };
+pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
+    const surface: *Surface = self.surfaceInPosition(position) orelse return;
+    const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
+    _ = c.gtk_widget_grab_focus(widget);
+}
 
-    const surface: *Surface = switch (child) {
-        .surface => |surface| surface,
-        else => return,
-    };
+pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input.SplitDirection) !void {
+    const surface: *Surface = self.surfaceInPosition(position) orelse return;
 
     // Keep explicit reference to surface gl_area before we remove it.
     const object: *c.GObject = @ptrCast(surface.gl_area);
@@ -236,4 +219,16 @@ pub fn deinit(self: *Paned, alloc: Allocator) void {
             alloc.destroy(paned);
         },
     }
+}
+
+fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
+    const child = switch (position) {
+        .start => self.child1,
+        .end => self.child2,
+    };
+
+    return switch (child) {
+        .surface => |surface| surface,
+        else => null,
+    };
 }
