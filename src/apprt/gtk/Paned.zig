@@ -185,7 +185,7 @@ pub fn removeChildren(self: *Paned) void {
     self.removeChildInPosition(.end);
 }
 
-pub fn removeChildInPosition(self: *Paned, position: Position) void {
+fn removeChildInPosition(self: *Paned, position: Position) void {
     switch (position) {
         .start => {
             assert(self.child1 != .none);
@@ -200,40 +200,22 @@ pub fn removeChildInPosition(self: *Paned, position: Position) void {
     }
 }
 
-pub fn addChild1(self: *Paned, child: Child) void {
+fn addChild1(self: *Paned, child: Child) void {
     assert(self.child1 == .none);
 
-    const parent = Parent{ .paned = .{ self, .start } };
-    self.child1 = child;
+    const widget = child.widget() orelse return;
+    c.gtk_paned_set_start_child(@ptrCast(self.paned), widget);
 
-    switch (child) {
-        .none => return,
-        .paned => |paned| {
-            paned.setParent(parent);
-            c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
-        },
-        .surface => |surface| {
-            surface.setParent(parent);
-            c.gtk_paned_set_start_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
-        },
-    }
+    self.child1 = child;
+    child.setParent(.{ .paned = .{ self, .start } });
 }
 
-pub fn addChild2(self: *Paned, child: Child) void {
+fn addChild2(self: *Paned, child: Child) void {
     assert(self.child2 == .none);
 
-    const parent = Parent{ .paned = .{ self, .end } };
-    self.child2 = child;
+    const widget = child.widget() orelse return;
+    c.gtk_paned_set_end_child(@ptrCast(self.paned), widget);
 
-    switch (child) {
-        .none => return,
-        .paned => |paned| {
-            paned.setParent(parent);
-            c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(@alignCast(paned.paned)));
-        },
-        .surface => |surface| {
-            surface.setParent(parent);
-            c.gtk_paned_set_end_child(@ptrCast(self.paned), @ptrCast(surface.gl_area));
-        },
-    }
+    self.child2 = child;
+    child.setParent(.{ .paned = .{ self, .end } });
 }

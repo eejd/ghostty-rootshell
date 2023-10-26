@@ -144,34 +144,18 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 }
 
 pub fn removeChild(self: *Tab) void {
-    // Remove old child from box.
-    const widget = switch (self.child) {
-        .surface => |surface| @as(*c.GtkWidget, @ptrCast(surface.gl_area)),
-        .paned => |paned| @as(*c.GtkWidget, @ptrCast(@alignCast(paned.paned))),
-        .none => return,
-    };
+    const widget = self.child.widget() orelse return;
     c.gtk_box_remove(self.box, widget);
+
     self.child = .none;
 }
 
-pub fn setChild(self: *Tab, newChild: Child) void {
-    const parent = Parent{ .tab = self };
+pub fn setChild(self: *Tab, child: Child) void {
+    const widget = child.widget() orelse return;
+    c.gtk_box_append(self.box, widget);
 
-    switch (newChild) {
-        .surface => |surface| {
-            surface.setParent(parent);
-            const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
-            c.gtk_box_append(self.box, widget);
-        },
-        .paned => |paned| {
-            paned.parent = parent;
-            const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(paned.paned)));
-            c.gtk_box_append(self.box, widget);
-        },
-        .none => return,
-    }
-
-    self.child = newChild;
+    child.setParent(.{ .tab = self });
+    self.child = child;
 }
 
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
