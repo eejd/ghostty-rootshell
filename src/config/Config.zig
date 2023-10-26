@@ -753,6 +753,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .page_down, .mods = .{ .shift = true, .ctrl = true } },
             .{ .jump_to_prompt = 1 },
         );
+
+        // Inspector, matching Chromium
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .i, .mods = .{ .shift = true, .ctrl = true } },
+            .{ .inspector = .toggle },
+        );
     }
     {
         // Cmd+N for goto tab N
@@ -912,6 +919,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .right, .mods = .{ .super = true, .alt = true } },
             .{ .goto_split = .right },
+        );
+
+        // Inspector, matching Chromium
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .i, .mods = .{ .alt = true, .super = true } },
+            .{ .inspector = .toggle },
         );
     }
 
