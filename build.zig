@@ -621,6 +621,7 @@ fn addDeps(
     };
 
     // Dependencies
+    const cimgui_dep = b.dependency("cimgui", .{ .target = step.target, .optimize = step.optimize });
     const js_dep = b.dependency("zig_js", .{ .target = step.target, .optimize = step.optimize });
     const libxev_dep = b.dependency("libxev", .{ .target = step.target, .optimize = step.optimize });
     const objc_dep = b.dependency("zig_objc", .{ .target = step.target, .optimize = step.optimize });
@@ -723,6 +724,11 @@ fn addDeps(
         step.linkLibrary(macos_dep.artifact("macos"));
         try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
     }
+
+    // cimgui
+    step.addModule("cimgui", cimgui_dep.module("cimgui"));
+    step.linkLibrary(cimgui_dep.artifact("cimgui"));
+    try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
 
     // Tracy
     step.addModule("tracy", tracy_dep.module("tracy"));

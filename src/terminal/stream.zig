@@ -58,11 +58,29 @@ pub fn Stream(comptime Handler: type) type {
             // log.debug("char: {c}", .{c});
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
+                const action = action_opt orelse continue;
+
+                // If this handler handles everything manually then we do nothing
+                // if it can be processed.
+                if (@hasDecl(T, "handleManually")) {
+                    const processed = self.handler.handleManually(action) catch |err| err: {
+                        log.warn("error handling action manually err={} action={}", .{
+                            err,
+                            action,
+                        });
+
+                        break :err false;
+                    };
+
+                    if (processed) continue;
+                }
+
                 // if (action_opt) |action| {
                 //     if (action != .print)
                 //         log.info("action: {}", .{action});
                 // }
-                switch (action_opt orelse continue) {
+
+                switch (action) {
                     .print => |p| if (@hasDecl(T, "print")) try self.handler.print(p),
                     .execute => |code| try self.execute(code),
                     .csi_dispatch => |csi_action| try self.csiDispatch(csi_action),

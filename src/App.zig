@@ -205,6 +205,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .quit => try self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
             .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
+            .redraw_inspector => |surface| try self.redrawInspector(rt_app, surface),
         }
     }
 }
@@ -230,6 +231,11 @@ pub fn focusSurface(self: *App, surface: *Surface) void {
 fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {
     if (!self.hasSurface(&surface.core_surface)) return;
     rt_app.redrawSurface(surface);
+}
+
+fn redrawInspector(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {
+    if (!self.hasSurface(&surface.core_surface)) return;
+    rt_app.redrawInspector(surface);
 }
 
 /// Create a new window
@@ -303,6 +309,10 @@ pub const Message = union(enum) {
     /// wake up the renderer thread. The renderer thread will send this
     /// message if it needs to.
     redraw_surface: *apprt.Surface,
+
+    /// Redraw the inspector. This is called whenever some non-OS event
+    /// causes the inspector to need to be redrawn.
+    redraw_inspector: *apprt.Surface,
 
     const NewWindow = struct {
         /// The parent surface

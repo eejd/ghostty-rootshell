@@ -6,5 +6,6 @@ pub const Surface = @import("gtk/Surface.zig");
 test {
     @import("std").testing.refAllDecls(@This());
 
+    _ = @import("gtk/inspector.zig");
     _ = @import("gtk/key.zig");
 }

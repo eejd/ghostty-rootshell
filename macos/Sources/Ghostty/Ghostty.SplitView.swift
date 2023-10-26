@@ -30,7 +30,7 @@ extension Ghostty {
                     // surface. We need to keep the split root around so that we don't
                     // lose all of the surface state so this must be a ZStack.
                     if let surfaceView = zoomedSurface {
-                        SurfaceWrapper(surfaceView: surfaceView)
+                        InspectableSurface(surfaceView: surfaceView)
                     }
                 }
                 .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
@@ -343,7 +343,7 @@ extension Ghostty {
             let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: leaf.surface)
             let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: leaf.surface)
 
-            SurfaceWrapper(surfaceView: leaf.surface, isSplit: !neighbors.isEmpty())
+            InspectableSurface(surfaceView: leaf.surface, isSplit: !neighbors.isEmpty())
                 .onReceive(pub) { onNewSplit(notification: $0) }
                 .onReceive(pubClose) { onClose(notification: $0) }
                 .onReceive(pubFocus) { onMoveFocus(notification: $0) }

@@ -36,6 +36,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuIncreaseFontSize: NSMenuItem?
     @IBOutlet private var menuDecreaseFontSize: NSMenuItem?
     @IBOutlet private var menuResetFontSize: NSMenuItem?
+    @IBOutlet private var menuTerminalInspector: NSMenuItem?
 
     /// The dock menu
     private var dockMenu: NSMenu = NSMenu()
@@ -216,6 +217,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "increase_font_size:1", menuItem: self.menuIncreaseFontSize)
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
+        syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
         // Dock menu
         reloadDockMenu()
@@ -393,5 +395,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBAction func resetFontSize(_ sender: Any) {
         guard let surface = focusedSurface() else { return }
         ghostty.changeFontSize(surface: surface, .reset)
+    }
+    
+    @IBAction func toggleTerminalInspector(_ sender: Any) {
+        guard let surface = focusedSurface() else { return }
+        ghostty.toggleTerminalInspector(surface: surface)
     }
 }

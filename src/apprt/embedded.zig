@@ -13,6 +13,7 @@ const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
+const CoreInspector = @import("../inspector/main.zig").Inspector;
 const CoreSurface = @import("../Surface.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
@@ -73,6 +74,9 @@ pub const App = struct {
         /// New window with options.
         new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
+        /// Control the inspector visibility
+        control_inspector: ?*const fn (SurfaceUD, input.InspectorMode) callconv(.C) void = null,
+
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
@@ -91,6 +95,9 @@ pub const App = struct {
         /// Set the initial window size. It is up to the user of libghostty to
         /// determine if it is the initial window and set this appropriately.
         set_initial_window_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
+
+        /// Render the inspector for the given surface.
+        render_inspector: ?*const fn (SurfaceUD) callconv(.C) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -174,6 +181,11 @@ pub const App = struct {
         // No-op, we use a threaded interface so we're constantly drawing.
     }
 
+    pub fn redrawInspector(self: *App, surface: *Surface) void {
+        _ = self;
+        surface.queueInspectorRender();
+    }
+
     pub fn newWindow(self: *App, parent: ?*CoreSurface) !void {
         _ = self;
 
@@ -195,6 +207,7 @@ pub const Surface = struct {
     cursor_pos: apprt.CursorPos,
     opts: Options,
     keymap_state: input.Keymap.State,
+    inspector: ?*Inspector = null,
 
     pub const Options = extern struct {
         /// Userdata passed to some of the callbacks.
@@ -290,11 +303,45 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
+        // Shut down our inspector
+        self.freeInspector();
+
         // Remove ourselves from the list of known surfaces in the app.
         self.app.core_app.deleteSurface(self);
 
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
+    }
+
+    /// Initialize the inspector instance. A surface can only have one
+    /// inspector at any given time, so this will return the previous inspector
+    /// if it was already initialized.
+    pub fn initInspector(self: *Surface) !*Inspector {
+        if (self.inspector) |v| return v;
+
+        const alloc = self.app.core_app.alloc;
+        var inspector = try alloc.create(Inspector);
+        errdefer alloc.destroy(inspector);
+        inspector.* = try Inspector.init(self);
+        self.inspector = inspector;
+        return inspector;
+    }
+
+    pub fn freeInspector(self: *Surface) void {
+        if (self.inspector) |v| {
+            v.deinit();
+            self.app.core_app.alloc.destroy(v);
+            self.inspector = null;
+        }
+    }
+
+    pub fn controlInspector(self: *const Surface, mode: input.InspectorMode) void {
+        const func = self.app.opts.control_inspector orelse {
+            log.info("runtime embedder does not support the terminal inspector", .{});
+            return;
+        };
+
+        func(self.opts.userdata, mode);
     }
 
     pub fn newSplit(self: *const Surface, direction: input.SplitDirection) !void {
@@ -762,6 +809,15 @@ pub const Surface = struct {
         func(self.opts.userdata, width, height);
     }
 
+    fn queueInspectorRender(self: *const Surface) void {
+        const func = self.app.opts.render_inspector orelse {
+            log.info("runtime embedder does not render_inspector", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
+    }
+
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
         const font_size: u16 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
@@ -778,6 +834,252 @@ pub const Surface = struct {
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
+    }
+};
+
+/// Inspector is the state required for the terminal inspector. A terminal
+/// inspector is 1:1 with a Surface.
+pub const Inspector = struct {
+    const cimgui = @import("cimgui");
+
+    surface: *Surface,
+    ig_ctx: *cimgui.c.ImGuiContext,
+    backend: ?Backend = null,
+    keymap_state: input.Keymap.State = .{},
+    content_scale: f64 = 1,
+
+    /// Our previous instant used to calculate delta time for animations.
+    instant: ?std.time.Instant = null,
+
+    const Backend = enum {
+        metal,
+
+        pub fn deinit(self: Backend) void {
+            switch (self) {
+                .metal => cimgui.c.ImGui_ImplMetal_Shutdown(),
+            }
+        }
+    };
+
+    pub fn init(surface: *Surface) !Inspector {
+        const ig_ctx = cimgui.c.igCreateContext(null);
+        errdefer cimgui.c.igDestroyContext(ig_ctx);
+        cimgui.c.igSetCurrentContext(ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        io.BackendPlatformName = "ghostty_embedded";
+
+        // Setup our core inspector
+        CoreInspector.setup();
+        surface.core_surface.activateInspector() catch |err| {
+            log.err("failed to activate inspector err={}", .{err});
+        };
+
+        return .{
+            .surface = surface,
+            .ig_ctx = ig_ctx,
+        };
+    }
+
+    pub fn deinit(self: *Inspector) void {
+        self.surface.core_surface.deactivateInspector();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        if (self.backend) |v| v.deinit();
+        cimgui.c.igDestroyContext(self.ig_ctx);
+    }
+
+    /// Queue a render for the next frame.
+    pub fn queueRender(self: *Inspector) void {
+        self.surface.queueInspectorRender();
+    }
+
+    /// Initialize the inspector for a metal backend.
+    pub fn initMetal(self: *Inspector, device: objc.Object) bool {
+        defer device.msgSend(void, objc.sel("release"), .{});
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+
+        if (self.backend) |v| {
+            v.deinit();
+            self.backend = null;
+        }
+
+        if (!cimgui.c.ImGui_ImplMetal_Init(device.value)) {
+            log.warn("failed to initialize metal backend", .{});
+            return false;
+        }
+        self.backend = .metal;
+
+        log.debug("initialized metal backend", .{});
+        return true;
+    }
+
+    pub fn renderMetal(
+        self: *Inspector,
+        command_buffer: objc.Object,
+        desc: objc.Object,
+    ) !void {
+        defer {
+            command_buffer.msgSend(void, objc.sel("release"), .{});
+            desc.msgSend(void, objc.sel("release"), .{});
+        }
+        assert(self.backend == .metal);
+        //log.debug("render", .{});
+
+        // Setup our imgui frame. We need to render multiple frames to ensure
+        // ImGui completes all its state processing. I don't know how to fix
+        // this.
+        for (0..2) |_| {
+            cimgui.c.ImGui_ImplMetal_NewFrame(desc.value);
+            try self.newFrame();
+            cimgui.c.igNewFrame();
+
+            // Build our UI
+            render: {
+                const surface = &self.surface.core_surface;
+                const inspector = surface.inspector orelse break :render;
+                inspector.render();
+            }
+
+            // Render
+            cimgui.c.igRender();
+        }
+
+        // MTLRenderCommandEncoder
+        const encoder = command_buffer.msgSend(
+            objc.Object,
+            objc.sel("renderCommandEncoderWithDescriptor:"),
+            .{desc.value},
+        );
+        defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+        cimgui.c.ImGui_ImplMetal_RenderDrawData(
+            cimgui.c.igGetDrawData(),
+            command_buffer.value,
+            encoder.value,
+        );
+    }
+
+    pub fn updateContentScale(self: *Inspector, x: f64, y: f64) void {
+        _ = y;
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+
+        // Cache our scale because we use it for cursor position calculations.
+        self.content_scale = x;
+
+        // Setup a new style and scale it appropriately.
+        const style = cimgui.c.ImGuiStyle_ImGuiStyle();
+        defer cimgui.c.ImGuiStyle_destroy(style);
+        cimgui.c.ImGuiStyle_ScaleAllSizes(style, @floatCast(x));
+        const active_style = cimgui.c.igGetStyle();
+        active_style.* = style.*;
+    }
+
+    pub fn updateSize(self: *Inspector, width: u32, height: u32) void {
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        io.DisplaySize = .{ .x = @floatFromInt(width), .y = @floatFromInt(height) };
+    }
+
+    pub fn mouseButtonCallback(
+        self: *Inspector,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: input.Mods,
+    ) void {
+        _ = mods;
+
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+
+        const imgui_button = switch (button) {
+            .left => cimgui.c.ImGuiMouseButton_Left,
+            .middle => cimgui.c.ImGuiMouseButton_Middle,
+            .right => cimgui.c.ImGuiMouseButton_Right,
+            else => return, // unsupported
+        };
+
+        cimgui.c.ImGuiIO_AddMouseButtonEvent(io, imgui_button, action == .press);
+    }
+
+    pub fn scrollCallback(
+        self: *Inspector,
+        xoff: f64,
+        yoff: f64,
+        mods: input.ScrollMods,
+    ) void {
+        _ = mods;
+
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddMouseWheelEvent(
+            io,
+            @floatCast(xoff),
+            @floatCast(yoff),
+        );
+    }
+
+    pub fn cursorPosCallback(self: *Inspector, x: f64, y: f64) void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddMousePosEvent(
+            io,
+            @floatCast(x * self.content_scale),
+            @floatCast(y * self.content_scale),
+        );
+    }
+
+    pub fn focusCallback(self: *Inspector, focused: bool) void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddFocusEvent(io, focused);
+    }
+
+    pub fn textCallback(self: *Inspector, text: [:0]const u8) void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGuiIO_AddInputCharactersUTF8(io, text.ptr);
+    }
+
+    pub fn keyCallback(
+        self: *Inspector,
+        action: input.Action,
+        key: input.Key,
+        mods: input.Mods,
+    ) !void {
+        self.queueRender();
+        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+
+        // Update all our modifiers
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftShift, mods.shift);
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftCtrl, mods.ctrl);
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftAlt, mods.alt);
+        cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftSuper, mods.super);
+
+        // Send our keypress
+        if (key.imguiKey()) |imgui_key| {
+            cimgui.c.ImGuiIO_AddKeyEvent(
+                io,
+                imgui_key,
+                action == .press or action == .repeat,
+            );
+        }
+    }
+
+    fn newFrame(self: *Inspector) !void {
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+
+        // Determine our delta time
+        const now = try std.time.Instant.now();
+        io.DeltaTime = if (self.instant) |prev| delta: {
+            const since_ns = now.since(prev);
+            const since_s: f32 = @floatFromInt(since_ns / std.time.ns_per_s);
+            break :delta @max(0.00001, since_s);
+        } else (1 / 60);
+        self.instant = now;
     }
 };
 
@@ -1045,6 +1347,113 @@ pub const CAPI = struct {
             log.err("error completing clipboard request err={}", .{err});
             return;
         };
+    }
+
+    export fn ghostty_surface_inspector(ptr: *Surface) ?*Inspector {
+        return ptr.initInspector() catch |err| {
+            log.err("error initializing inspector err={}", .{err});
+            return null;
+        };
+    }
+
+    export fn ghostty_inspector_free(ptr: *Surface) void {
+        ptr.freeInspector();
+    }
+
+    export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
+        return ptr.initMetal(objc.Object.fromId(device));
+    }
+
+    export fn ghostty_inspector_metal_render(
+        ptr: *Inspector,
+        command_buffer: objc.c.id,
+        descriptor: objc.c.id,
+    ) void {
+        return ptr.renderMetal(
+            objc.Object.fromId(command_buffer),
+            objc.Object.fromId(descriptor),
+        ) catch |err| {
+            log.err("error rendering inspector err={}", .{err});
+            return;
+        };
+    }
+
+    export fn ghostty_inspector_metal_shutdown(ptr: *Inspector) void {
+        if (ptr.backend) |v| {
+            v.deinit();
+            ptr.backend = null;
+        }
+    }
+
+    export fn ghostty_inspector_set_size(ptr: *Inspector, w: u32, h: u32) void {
+        ptr.updateSize(w, h);
+    }
+
+    export fn ghostty_inspector_set_content_scale(ptr: *Inspector, x: f64, y: f64) void {
+        ptr.updateContentScale(x, y);
+    }
+
+    export fn ghostty_inspector_mouse_button(
+        ptr: *Inspector,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: c_int,
+    ) void {
+        ptr.mouseButtonCallback(
+            action,
+            button,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
+        );
+    }
+
+    export fn ghostty_inspector_mouse_pos(ptr: *Inspector, x: f64, y: f64) void {
+        ptr.cursorPosCallback(x, y);
+    }
+
+    export fn ghostty_inspector_mouse_scroll(
+        ptr: *Inspector,
+        x: f64,
+        y: f64,
+        scroll_mods: c_int,
+    ) void {
+        ptr.scrollCallback(
+            x,
+            y,
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
+        );
+    }
+
+    export fn ghostty_inspector_key(
+        ptr: *Inspector,
+        action: input.Action,
+        key: input.Key,
+        c_mods: c_int,
+    ) void {
+        ptr.keyCallback(
+            action,
+            key,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(c_mods))),
+            )),
+        ) catch |err| {
+            log.err("error processing key event err={}", .{err});
+            return;
+        };
+    }
+
+    export fn ghostty_inspector_text(
+        ptr: *Inspector,
+        str: [*:0]const u8,
+    ) void {
+        ptr.textCallback(std.mem.sliceTo(str, 0));
+    }
+
+    export fn ghostty_inspector_set_focus(ptr: *Inspector, focused: bool) void {
+        ptr.focusCallback(focused);
     }
 
     /// Sets the window background blur on macOS to the desired value.

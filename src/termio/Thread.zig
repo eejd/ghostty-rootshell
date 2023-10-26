@@ -62,13 +62,18 @@ sync_reset_cancel_c: xev.Completion = .{},
 /// The underlying IO implementation.
 impl: *termio.Impl,
 
-/// True if linefeed mode is enabled. This is duplicated here so that the
-/// write thread doesn't need to grab a lock to check this on every write.
-linefeed_mode: bool = false,
-
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: *Mailbox,
+
+flags: packed struct {
+    /// True if linefeed mode is enabled. This is duplicated here so that the
+    /// write thread doesn't need to grab a lock to check this on every write.
+    linefeed_mode: bool = false,
+
+    /// This is true when the inspector is active.
+    has_inspector: bool = false,
+} = .{},
 
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
@@ -174,17 +179,18 @@ fn drainMailbox(self: *Thread) !void {
                 defer config.alloc.destroy(config.ptr);
                 try self.impl.changeConfig(config.ptr);
             },
+            .inspector => |v| self.flags.has_inspector = v,
             .resize => |v| self.handleResize(v),
             .clear_screen => |v| try self.impl.clearScreen(v.history),
             .scroll_viewport => |v| try self.impl.scrollViewport(v),
             .jump_to_prompt => |v| try self.impl.jumpToPrompt(v),
             .start_synchronized_output => self.startSynchronizedOutput(),
-            .linefeed_mode => |v| self.linefeed_mode = v,
-            .write_small => |v| try self.impl.queueWrite(v.data[0..v.len], self.linefeed_mode),
-            .write_stable => |v| try self.impl.queueWrite(v, self.linefeed_mode),
+            .linefeed_mode => |v| self.flags.linefeed_mode = v,
+            .write_small => |v| try self.impl.queueWrite(v.data[0..v.len], self.flags.linefeed_mode),
+            .write_stable => |v| try self.impl.queueWrite(v, self.flags.linefeed_mode),
             .write_alloc => |v| {
                 defer v.alloc.free(v.data);
-                try self.impl.queueWrite(v.data, self.linefeed_mode);
+                try self.impl.queueWrite(v.data, self.flags.linefeed_mode);
             },
         }
     }

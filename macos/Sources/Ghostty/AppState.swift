@@ -136,12 +136,14 @@ extension Ghostty {
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
                 new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
                 new_window_cb: { userdata, surfaceConfig in AppState.newWindow(userdata, config: surfaceConfig) },
+                control_inspector_cb: { userdata, mode in AppState.controlInspector(userdata, mode: mode) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 toggle_split_zoom_cb: { userdata in AppState.toggleSplitZoom(userdata) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
-                set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) }
+                set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) },
+                render_inspector_cb: { userdata in AppState.renderInspector(userdata) }
             )
 
             // Create the ghostty app.
@@ -298,6 +300,13 @@ extension Ghostty {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
+        
+        func toggleTerminalInspector(surface: ghostty_surface_t) {
+            let action = "inspector:toggle"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
 
         // Called when the selected keyboard changes. We have to notify Ghostty so that
         // it can reload the keyboard mapping for input.
@@ -415,6 +424,14 @@ extension Ghostty {
             // standpoint since we don't do this much.
             DispatchQueue.main.async { state.appTick() }
         }
+        
+        static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(
+                name: Notification.inspectorNeedsDisplay,
+                object: surface
+            )
+        }
 
         static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {
             let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
@@ -484,6 +501,13 @@ extension Ghostty {
                     Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
                 ]
             )
+        }
+        
+        static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(name: Notification.didControlInspector, object: surface, userInfo: [
+                "mode": mode,
+            ])
         }
 
         /// Returns the GhosttyState from the given userdata value.

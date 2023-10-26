@@ -27,6 +27,7 @@ extern "C" {
 typedef void *ghostty_app_t;
 typedef void *ghostty_config_t;
 typedef void *ghostty_surface_t;
+typedef void *ghostty_inspector_t;
 
 // Enums are up top so we can reference them later.
 typedef enum {
@@ -47,6 +48,12 @@ typedef enum {
     GHOSTTY_SPLIT_FOCUS_BOTTOM,
     GHOSTTY_SPLIT_FOCUS_RIGHT,
 } ghostty_split_focus_direction_e;
+
+typedef enum {
+    GHOSTTY_INSPECTOR_TOGGLE,
+    GHOSTTY_INSPECTOR_SHOW,
+    GHOSTTY_INSPECTOR_HIDE,
+} ghostty_inspector_mode_e;
 
 typedef enum {
     GHOSTTY_MOUSE_RELEASE,
@@ -322,12 +329,14 @@ typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_window_cb)(void *, ghostty_surface_config_s);
+typedef void (*ghostty_runtime_control_inspector_cb)(void *, ghostty_inspector_mode_e);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
 typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void *);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, ghostty_non_native_fullscreen_e);
 typedef void (*ghostty_runtime_set_initial_window_size_cb)(void *, uint32_t, uint32_t);
+typedef void (*ghostty_runtime_render_inspector_cb)(void *);
 
 typedef struct {
     void *userdata;
@@ -342,12 +351,14 @@ typedef struct {
     ghostty_runtime_new_split_cb new_split_cb;
     ghostty_runtime_new_tab_cb new_tab_cb;
     ghostty_runtime_new_window_cb new_window_cb;
+    ghostty_runtime_control_inspector_cb control_inspector_cb;
     ghostty_runtime_close_surface_cb close_surface_cb;
     ghostty_runtime_focus_split_cb focus_split_cb;
     ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
     ghostty_runtime_set_initial_window_size_cb set_initial_window_size_cb;
+    ghostty_runtime_render_inspector_cb render_inspector_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------
@@ -398,6 +409,20 @@ void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char *, uintptr_t);
 void ghostty_surface_complete_clipboard_request(ghostty_surface_t, const char *, uintptr_t, void *);
+
+ghostty_inspector_t ghostty_surface_inspector(ghostty_surface_t);
+void ghostty_inspector_free(ghostty_surface_t);
+bool ghostty_inspector_metal_init(ghostty_inspector_t, void *);
+void ghostty_inspector_metal_render(ghostty_inspector_t, void *, void *);
+bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
+void ghostty_inspector_set_focus(ghostty_inspector_t, bool);
+void ghostty_inspector_set_content_scale(ghostty_inspector_t, double, double);
+void ghostty_inspector_set_size(ghostty_inspector_t, uint32_t, uint32_t);
+void ghostty_inspector_mouse_button(ghostty_inspector_t, ghostty_input_mouse_state_e, ghostty_input_mouse_button_e, ghostty_input_mods_e);
+void ghostty_inspector_mouse_pos(ghostty_inspector_t, double, double);
+void ghostty_inspector_mouse_scroll(ghostty_inspector_t, double, double, ghostty_input_scroll_mods_t);
+void ghostty_inspector_key(ghostty_inspector_t, ghostty_input_action_e, ghostty_input_key_e, ghostty_input_mods_e);
+void ghostty_inspector_text(ghostty_inspector_t, const char *);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.

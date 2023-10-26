@@ -1,8 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const trace = @import("tracy").trace;
-const fastmem = @import("../fastmem.zig");
+const fastmem = @import("fastmem.zig");
 
 /// Returns a circular buffer containing type T.
 pub fn CircBuf(comptime T: type, comptime default: T) type {
@@ -25,6 +24,29 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         // this minor overhead is not worth optimizing out.
         full: bool,
 
+        pub const Iterator = struct {
+            buf: Self,
+            idx: usize,
+            direction: Direction,
+
+            pub const Direction = enum { forward, reverse };
+
+            pub fn next(self: *Iterator) ?*T {
+                if (self.idx >= self.buf.len()) return null;
+
+                // Get our index from the tail
+                const tail_idx = switch (self.direction) {
+                    .forward => self.idx,
+                    .reverse => self.buf.len() - self.idx - 1,
+                };
+
+                // Translate the tail index to a storage index
+                const storage_idx = (self.buf.tail + tail_idx) % self.buf.capacity();
+                self.idx += 1;
+                return &self.buf.storage[storage_idx];
+            }
+        };
+
         /// Initialize a new circular buffer that can store size elements.
         pub fn init(alloc: Allocator, size: usize) !Self {
             var buf = try alloc.alloc(T, size);
@@ -43,12 +65,35 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
             self.* = undefined;
         }
 
+        /// Append a single value to the buffer. If the buffer is full,
+        /// an error will be returned.
+        pub fn append(self: *Self, v: T) !void {
+            if (self.full) return error.OutOfMemory;
+            self.storage[self.head] = v;
+            self.head += 1;
+            if (self.head >= self.storage.len) self.head = 0;
+            self.full = self.head == self.tail;
+        }
+
+        /// Clear the buffer.
+        pub fn clear(self: *Self) void {
+            self.head = 0;
+            self.tail = 0;
+            self.full = false;
+        }
+
+        /// Iterate over the circular buffer.
+        pub fn iterator(self: Self, direction: Iterator.Direction) Iterator {
+            return Iterator{
+                .buf = self,
+                .idx = 0,
+                .direction = direction,
+            };
+        }
+
         /// Resize the buffer to the given size (larger or smaller).
         /// If larger, new values will be set to the default value.
         pub fn resize(self: *Self, alloc: Allocator, size: usize) !void {
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // Rotate to zero so it is aligned.
             try self.rotateToZero(alloc);
 
@@ -72,9 +117,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
         /// Rotate the data so that it is zero-aligned.
         fn rotateToZero(self: *Self, alloc: Allocator) !void {
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // TODO: this does this in the worst possible way by allocating.
             // rewrite to not allocate, its possible, I'm just lazy right now.
 
@@ -122,9 +164,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         pub fn deleteOldest(self: *Self, n: usize) void {
             assert(n <= self.storage.len);
 
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // Clear the values back to default
             const slices = self.getPtrSlice(0, n);
             inline for (slices) |slice| @memset(slice, default);
@@ -141,9 +180,6 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         /// the end of our buffer. This never "rotates" the buffer because
         /// the offset can only be within the size of the buffer.
         pub fn getPtrSlice(self: *Self, offset: usize, slice_len: usize) [2][]T {
-            const tracy = trace(@src());
-            defer tracy.end();
-
             // Note: this assertion is very important, it hints the compiler
             // which generates ~10% faster code than without it.
             assert(offset + slice_len <= self.capacity());
@@ -218,6 +254,115 @@ test {
 
     try testing.expect(buf.empty());
     try testing.expectEqual(@as(usize, 0), buf.len());
+}
+
+test "append" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 3);
+    defer buf.deinit(alloc);
+
+    try buf.append(1);
+    try buf.append(2);
+    try buf.append(3);
+    try testing.expectError(error.OutOfMemory, buf.append(4));
+    buf.deleteOldest(1);
+    try buf.append(4);
+    try testing.expectError(error.OutOfMemory, buf.append(5));
+}
+
+test "forward iterator" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 3);
+    defer buf.deinit(alloc);
+
+    // Empty
+    {
+        var it = buf.iterator(.forward);
+        try testing.expect(it.next() == null);
+    }
+
+    // Partially full
+    try buf.append(1);
+    try buf.append(2);
+    {
+        var it = buf.iterator(.forward);
+        try testing.expect(it.next().?.* == 1);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next() == null);
+    }
+
+    // Full
+    try buf.append(3);
+    {
+        var it = buf.iterator(.forward);
+        try testing.expect(it.next().?.* == 1);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next() == null);
+    }
+
+    // Delete and add
+    buf.deleteOldest(1);
+    try buf.append(4);
+    {
+        var it = buf.iterator(.forward);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next().?.* == 4);
+        try testing.expect(it.next() == null);
+    }
+}
+
+test "reverse iterator" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 3);
+    defer buf.deinit(alloc);
+
+    // Empty
+    {
+        var it = buf.iterator(.reverse);
+        try testing.expect(it.next() == null);
+    }
+
+    // Partially full
+    try buf.append(1);
+    try buf.append(2);
+    {
+        var it = buf.iterator(.reverse);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 1);
+        try testing.expect(it.next() == null);
+    }
+
+    // Full
+    try buf.append(3);
+    {
+        var it = buf.iterator(.reverse);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next().?.* == 1);
+        try testing.expect(it.next() == null);
+    }
+
+    // Delete and add
+    buf.deleteOldest(1);
+    try buf.append(4);
+    {
+        var it = buf.iterator(.reverse);
+        try testing.expect(it.next().?.* == 4);
+        try testing.expect(it.next().?.* == 3);
+        try testing.expect(it.next().?.* == 2);
+        try testing.expect(it.next() == null);
+    }
 }
 
 test "getPtrSlice fits" {

@@ -12,6 +12,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
 const Surface = @import("Surface.zig");
+const icon = @import("icon.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
@@ -28,7 +29,7 @@ notebook: *c.GtkNotebook,
 
 /// The resources directory for the icon (if any). We need to retain a
 /// pointer to this because GTK can use it at any time.
-icon_search_dir: ?[:0]const u8 = null,
+icon: icon.Icon,
 
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
@@ -48,6 +49,7 @@ pub fn init(self: *Window, app: *App) !void {
     // Set up our own state
     self.* = .{
         .app = app,
+        .icon = undefined,
         .window = undefined,
         .notebook = undefined,
     };
@@ -62,28 +64,8 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we don't have the icon then we'll try to add our resources dir
     // to the search path and see if we can find it there.
-    const icon_name = "com.mitchellh.ghostty";
-    const icon_theme = c.gtk_icon_theme_get_for_display(c.gtk_widget_get_display(window));
-    if (c.gtk_icon_theme_has_icon(icon_theme, icon_name) == 0) icon: {
-        const base = self.app.core_app.resources_dir orelse {
-            log.info("gtk app missing Ghostty icon and no resources dir detected", .{});
-            log.info("gtk app will not have Ghostty icon", .{});
-            break :icon;
-        };
-
-        // Note that this method for adding the icon search path is
-        // a fallback mechanism. The recommended mechanism is the
-        // Freedesktop Icon Theme Specification. We distribute a ".desktop"
-        // file in zig-out/share that should be installed to the proper
-        // place.
-        const dir = try std.fmt.allocPrintZ(app.core_app.alloc, "{s}/icons", .{base});
-        self.icon_search_dir = dir;
-        c.gtk_icon_theme_add_search_path(icon_theme, dir.ptr);
-        if (c.gtk_icon_theme_has_icon(icon_theme, icon_name) == 0) {
-            log.warn("Ghostty icon for gtk app not found", .{});
-        }
-    }
-    c.gtk_window_set_icon_name(gtk_window, icon_name);
+    self.icon = try icon.appIcon(self.app, window);
+    c.gtk_window_set_icon_name(gtk_window, self.icon.name);
 
     // Apply background opacity if we have it
     if (app.config.@"background-opacity" < 1) {
@@ -167,6 +149,7 @@ fn initActions(self: *Window) void {
         .{ "close", &gtkActionClose },
         .{ "new_window", &gtkActionNewWindow },
         .{ "new_tab", &gtkActionNewTab },
+        .{ "toggle_inspector", &gtkActionToggleInspector },
     };
 
     inline for (actions) |entry| {
@@ -185,7 +168,7 @@ fn initActions(self: *Window) void {
 }
 
 pub fn deinit(self: *Window) void {
-    if (self.icon_search_dir) |ptr| self.app.core_app.alloc.free(ptr);
+    self.icon.deinit(self.app);
 }
 
 /// Add a new tab to this window.
@@ -559,6 +542,19 @@ fn gtkActionNewTab(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionToggleInspector(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .inspector = .toggle }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };

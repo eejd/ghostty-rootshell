@@ -33,6 +33,7 @@ const configpkg = @import("config.zig");
 const input = @import("input.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
+const inspector = @import("inspector/main.zig");
 
 const log = std.log.scoped(.surface);
 
@@ -73,6 +74,9 @@ mouse: Mouse,
 io: termio.Impl,
 io_thread: termio.Thread,
 io_thr: std.Thread,
+
+/// Terminal inspector
+inspector: ?*inspector.Inspector = null,
 
 /// All the cached sizes since we need them at various times.
 screen_size: renderer.ScreenSize,
@@ -550,8 +554,14 @@ pub fn deinit(self: *Surface) void {
     self.font_lib.deinit();
     self.alloc.destroy(self.font_group);
 
+    if (self.inspector) |v| {
+        v.deinit();
+        self.alloc.destroy(v);
+    }
+
     self.alloc.destroy(self.renderer_state.mutex);
     self.config.deinit();
+
     log.info("surface closed addr={x}", .{@intFromPtr(self)});
 }
 
@@ -559,6 +569,53 @@ pub fn deinit(self: *Surface) void {
 /// close process, which should ultimately deinitialize this surface.
 pub fn close(self: *Surface) void {
     self.rt_surface.close(self.needsConfirmQuit());
+}
+
+/// Activate the inspector. This will begin collecting inspection data.
+/// This will not affect the GUI. The GUI must use performAction to
+/// show/hide the inspector UI.
+pub fn activateInspector(self: *Surface) !void {
+    if (self.inspector != null) return;
+
+    // Setup the inspector
+    var ptr = try self.alloc.create(inspector.Inspector);
+    errdefer self.alloc.destroy(ptr);
+    ptr.* = try inspector.Inspector.init(self);
+    self.inspector = ptr;
+
+    // Put the inspector onto the render state
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        assert(self.renderer_state.inspector == null);
+        self.renderer_state.inspector = self.inspector;
+    }
+
+    // Notify our components we have an inspector active
+    _ = self.renderer_thread.mailbox.push(.{ .inspector = true }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{ .inspector = true }, .{ .forever = {} });
+}
+
+/// Deactivate the inspector and stop collecting any information.
+pub fn deactivateInspector(self: *Surface) void {
+    const insp = self.inspector orelse return;
+
+    // Remove the inspector from the render state
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        assert(self.renderer_state.inspector != null);
+        self.renderer_state.inspector = null;
+    }
+
+    // Notify our components we have deactivated inspector
+    _ = self.renderer_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
+    _ = self.io_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
+
+    // Deinit the inspector
+    insp.deinit();
+    self.alloc.destroy(insp);
+    self.inspector = null;
 }
 
 /// True if the surface requires confirmation to quit. This should be called
@@ -947,6 +1004,24 @@ pub fn keyCallback(
 ) !bool {
     // log.debug("keyCallback event={}", .{event});
 
+    // Setup our inspector event if we have an inspector.
+    var insp_ev: ?inspector.key.Event = if (self.inspector != null) ev: {
+        var copy = event;
+        copy.utf8 = "";
+        if (event.utf8.len > 0) copy.utf8 = try self.alloc.dupe(u8, event.utf8);
+        break :ev .{ .event = copy };
+    } else null;
+
+    // When we're done processing, we always want to add the event to
+    // the inspector.
+    defer if (insp_ev) |ev| {
+        if (self.inspector.?.recordKeyEvent(ev)) {
+            self.queueRender() catch {};
+        } else |err| {
+            log.warn("error adding key event to inspector err={}", .{err});
+        }
+    };
+
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     binding: {
@@ -984,7 +1059,10 @@ pub fn keyCallback(
         // If we consume this event, then we are done. If we don't consume
         // it, we processed the action but we still want to process our
         // encodings, too.
-        if (consumed and performed) return true;
+        if (consumed and performed) {
+            if (insp_ev) |*ev| ev.binding = binding_action;
+            return true;
+        }
     }
 
     // If we allow KAM and KAM is enabled then we do nothing.
@@ -1030,6 +1108,12 @@ pub fn keyCallback(
             .len = @intCast(seq.len),
         },
     }, .{ .forever = {} });
+    if (insp_ev) |*ev| {
+        ev.pty = self.alloc.dupe(u8, seq) catch |err| err: {
+            log.warn("error copying pty data for inspector err={}", .{err});
+            break :err "";
+        };
+    }
     try self.io_thread.wakeup.notify();
 
     // If our event is any keypress that isn't a modifier and we generated
@@ -1554,6 +1638,36 @@ pub fn mouseButtonCallback(
     const tracy = trace(@src());
     defer tracy.end();
 
+    // If we have an inspector, we always queue a render
+    if (self.inspector) |insp| {
+        defer self.queueRender() catch {};
+
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // If the inspector is requesting a cell, then we intercept
+        // left mouse clicks and send them to the inspector.
+        if (insp.cell == .requested and
+            button == .left and
+            action == .press)
+        {
+            const pos = try self.rt_surface.getCursorPos();
+            const point = self.posToViewport(pos.x, pos.y);
+            const cell = self.renderer_state.terminal.screen.getCell(
+                .viewport,
+                point.y,
+                point.x,
+            );
+
+            insp.cell = .{ .selected = .{
+                .row = point.y,
+                .col = point.x,
+                .cell = cell,
+            } };
+            return;
+        }
+    }
+
     // Always record our latest mouse state
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
     self.mouse.mods = @bitCast(mods);
@@ -1730,6 +1844,17 @@ pub fn cursorPosCallback(
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // If we have an inspector, we need to always record position information
+    if (self.inspector) |insp| {
+        insp.mouse.last_xpos = pos.x;
+        insp.mouse.last_ypos = pos.y;
+
+        const point = self.posToViewport(pos.x, pos.y);
+        insp.mouse.last_point = point.toScreen(&self.io.terminal.screen);
+
+        try self.queueRender();
+    }
 
     // Do a mouse report
     if (self.io.terminal.flags.mouse_event != .none) report: {
@@ -2278,6 +2403,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement toggleFullscreen", .{});
         },
 
+        .inspector => |mode| {
+            if (@hasDecl(apprt.Surface, "controlInspector")) {
+                self.rt_surface.controlInspector(mode);
+            } else log.warn("runtime doesn't implement controlInspector", .{});
+        },
+
         .close_surface => self.close(),
 
         .close_window => try self.app.closeSurface(self),
@@ -2413,7 +2544,7 @@ fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8) !void 
     self.io_thread.wakeup.notify() catch {};
 }
 
-const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
-const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
-const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
-const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");
+pub const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
+pub const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
+pub const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
+pub const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");

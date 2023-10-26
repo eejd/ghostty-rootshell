@@ -102,6 +102,12 @@ extension Ghostty.Notification {
     /// Notification
     static let didReceiveInitialWindowFrame = Notification.Name("com.mitchellh.ghostty.didReceiveInitialWindowFrame")
     static let FrameKey = "com.mitchellh.ghostty.frame"
+    
+    /// Notification to render the inspector for a surface
+    static let inspectorNeedsDisplay = Notification.Name("com.mitchellh.ghostty.inspectorNeedsDisplay")
+    
+    /// Notification to show/hide the inspector
+    static let didControlInspector = Notification.Name("com.mitchellh.ghostty.didControlInspector")
 }
 
 // Make the input enum hashable.
