@@ -970,14 +970,14 @@ pub fn Stream(comptime Handler: type) type {
                     if (@hasDecl(T, "changeWindowTitle")) {
                         try self.handler.changeWindowTitle(title);
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .clipboard_contents => |clip| {
                     if (@hasDecl(T, "clipboardContents")) {
                         try self.handler.clipboardContents(clip.kind, clip.data);
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .prompt_start => |v| {
@@ -987,35 +987,35 @@ pub fn Stream(comptime Handler: type) type {
                             .continuation => try self.handler.promptContinuation(v.aid),
                         }
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .prompt_end => {
                     if (@hasDecl(T, "promptEnd")) {
                         try self.handler.promptEnd();
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .end_of_input => {
                     if (@hasDecl(T, "endOfInput")) {
                         try self.handler.endOfInput();
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .end_of_command => |end| {
                     if (@hasDecl(T, "endOfCommand")) {
                         try self.handler.endOfCommand(end.exit_code);
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .report_pwd => |v| {
                     if (@hasDecl(T, "reportPwd")) {
                         try self.handler.reportPwd(v.value);
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .mouse_shape => |v| {
@@ -1027,17 +1027,20 @@ pub fn Stream(comptime Handler: type) type {
 
                         try self.handler.setMouseShape(shape);
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .report_default_color => |v| {
                     if (@hasDecl(T, "reportDefaultColor")) {
                         try self.handler.reportDefaultColor(v.kind, v.terminator);
                         return;
-                    }
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                else => {},
+                else => if (@hasDecl(T, "oscUnimplemented"))
+                    try self.handler.oscUnimplemented(cmd)
+                else
+                    log.warn("unimplemented OSC command: {}", .{cmd}),
             }
 
             // Fall through for when we don't have a handler.
