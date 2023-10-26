@@ -255,11 +255,11 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
         path_buf[path_len] = 0;
         const full_path = path_buf[0..path_len :0];
 
-        // Skip if this isn't an absolute path
-        if (!std.fs.path.isAbsolute(full_path)) continue;
-
         // Stat it
-        const f = std.fs.openFileAbsolute(full_path, .{}) catch |err| switch (err) {
+        const f = std.fs.cwd().openFile(
+            full_path,
+            .{},
+        ) catch |err| switch (err) {
             error.FileNotFound => continue,
             error.AccessDenied => {
                 // Accumulate this and return it later so we can try other
