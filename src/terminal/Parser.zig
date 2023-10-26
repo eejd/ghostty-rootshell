@@ -378,7 +378,11 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
                 self.param_acc *|= 10;
             }
             self.param_acc +|= c - '0';
-            self.param_acc_idx += 1;
+
+            // Increment our accumulator index. If we overflow then
+            // we're out of bounds and we exit immediately.
+            self.param_acc_idx, const overflow = @addWithOverflow(self.param_acc_idx, 1);
+            if (overflow > 0) break :param null;
 
             // The client is expected to perform no action.
             break :param null;
@@ -388,6 +392,9 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
             break :osc_put null;
         },
         .csi_dispatch => csi_dispatch: {
+            // Ignore too many parameters
+            if (self.params_idx >= MAX_PARAMS) break :csi_dispatch null;
+
             // Finalize parameters if we have one
             if (self.param_acc_idx > 0) {
                 self.params[self.params_idx] = self.param_acc;
@@ -900,6 +907,25 @@ test "csi followed by utf8" {
         const a = p.next(0x94);
         try testing.expect(p.state == .ground);
         try testing.expect(a[0].? == .print);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+}
+
+test "csi: too many params" {
+    var p = init();
+    _ = p.next(0x1B);
+    _ = p.next('[');
+    for (0..100) |_| {
+        _ = p.next('1');
+        _ = p.next(';');
+    }
+    _ = p.next('1');
+
+    {
+        const a = p.next('C');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
         try testing.expect(a[1] == null);
         try testing.expect(a[2] == null);
     }

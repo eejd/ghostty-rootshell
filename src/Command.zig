@@ -256,7 +256,10 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
         const full_path = path_buf[0..path_len :0];
 
         // Stat it
-        const f = std.fs.openFileAbsolute(full_path, .{}) catch |err| switch (err) {
+        const f = std.fs.cwd().openFile(
+            full_path,
+            .{},
+        ) catch |err| switch (err) {
             error.FileNotFound => continue,
             error.AccessDenied => {
                 // Accumulate this and return it later so we can try other
