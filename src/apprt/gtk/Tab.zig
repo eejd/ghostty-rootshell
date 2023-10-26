@@ -123,8 +123,8 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     }
 
     // Tab settings
-    c.gtk_notebook_set_tab_reorderable(window.notebook, gl_area, 1);
-    c.gtk_notebook_set_tab_detachable(window.notebook, gl_area, 1);
+    c.gtk_notebook_set_tab_reorderable(window.notebook, box_widget, 1);
+    c.gtk_notebook_set_tab_detachable(window.notebook, box_widget, 1);
 
     // If we have multiple tabs, show the tab bar.
     if (c.gtk_notebook_get_n_pages(window.notebook) > 1) {
