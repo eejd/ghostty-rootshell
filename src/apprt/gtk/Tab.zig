@@ -163,3 +163,17 @@ fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     const window = tab.window;
     window.closeTab(tab);
 }
+
+pub fn close(self: *Tab) void {
+    switch (self.child) {
+        .none => return,
+        .surface => {
+            // TODO: I'm not 100% but I don't think we have to do something
+            return;
+        },
+        .paned => |paned| {
+            paned.deinit(self.window.app.core_app.alloc);
+            self.window.app.core_app.alloc.destroy(paned);
+        },
+    }
+}

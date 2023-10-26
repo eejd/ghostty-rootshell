@@ -219,3 +219,21 @@ fn addChild2(self: *Paned, child: Child) void {
     self.child2 = child;
     child.setParent(.{ .paned = .{ self, .end } });
 }
+
+pub fn deinit(self: *Paned, alloc: Allocator) void {
+    switch (self.child1) {
+        .none, .surface => {},
+        .paned => |paned| {
+            paned.deinit(alloc);
+            alloc.destroy(paned);
+        },
+    }
+
+    switch (self.child2) {
+        .none, .surface => {},
+        .paned => |paned| {
+            paned.deinit(alloc);
+            alloc.destroy(paned);
+        },
+    }
+}
