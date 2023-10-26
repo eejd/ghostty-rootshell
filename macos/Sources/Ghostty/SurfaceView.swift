@@ -296,9 +296,8 @@ extension Ghostty {
             super.init(frame: NSMakeRect(0, 0, 800, 600))
 
             // Setup our surface. This will also initialize all the terminal IO.
-            var surface_cfg = baseConfig ?? SurfaceConfiguration()
+            let surface_cfg = baseConfig ?? SurfaceConfiguration()
             var surface_cfg_c = surface_cfg.ghosttyConfig(view: self)
-
             guard let surface = ghostty_surface_new(app, &surface_cfg_c) else {
                 self.error = AppError.surfaceCreateError
                 return
