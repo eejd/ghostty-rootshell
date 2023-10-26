@@ -361,30 +361,10 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
     switch (self.parent) {
         .none => return,
         .paned => |parent_paned_tuple| {
-            // Keep explicit reference to our gl_area before we remove ourselves.
-            const sibling_object: *c.GObject = @ptrCast(self.gl_area);
-            _ = c.g_object_ref(sibling_object);
-            defer c.g_object_unref(sibling_object);
+            const paned = parent_paned_tuple[0];
+            const position = parent_paned_tuple[1];
 
-            const parent_paned = parent_paned_tuple[0];
-            const parent_position = parent_paned_tuple[1];
-
-            // Keep position of divider
-            const parent_paned_position_before = c.gtk_paned_get_position(parent_paned.paned);
-            // Now remove ourselves from parent
-            parent_paned.removeChildInPosition(parent_position);
-
-            const paned = try Paned.create(self.app.core_app.alloc, self.window, self, direction);
-
-            // Add new split-paned
-            switch (parent_position) {
-                .start => parent_paned.addChild1(.{ .paned = paned }),
-                .end => parent_paned.addChild2(.{ .paned = paned }),
-            }
-            // Restore position
-            c.gtk_paned_set_position(parent_paned.paned, parent_paned_position_before);
-            // Focus on new surface
-            paned.focusSurfaceInPosition(.end);
+            try paned.splitSurfaceInPosition(position, direction);
         },
         .tab => |tab| {
             tab.removeChild();

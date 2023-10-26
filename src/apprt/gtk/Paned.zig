@@ -70,10 +70,9 @@ pub fn init(self: *Paned, window: *Window, sibling: *Surface, direction: input.S
     const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     self.paned = gtk_paned;
 
-    const new_surface = try self.newSurface(sibling.tab, &sibling.core_surface);
-    // This sets .parent on each surface
+    const surface = try self.newSurface(sibling.tab, &sibling.core_surface);
     self.addChild1(.{ .surface = sibling });
-    self.addChild2(.{ .surface = new_surface });
+    self.addChild2(.{ .surface = surface });
 }
 
 pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
@@ -128,6 +127,42 @@ pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
 
 pub fn setParent(self: *Paned, parent: Parent) void {
     self.parent = parent;
+}
+
+pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input.SplitDirection) !void {
+    const child = switch (position) {
+        .start => self.child1,
+        .end => self.child2,
+    };
+
+    const surface: *Surface = switch (child) {
+        .surface => |surface| surface,
+        else => return,
+    };
+
+    // Keep explicit reference to surface gl_area before we remove it.
+    const object: *c.GObject = @ptrCast(surface.gl_area);
+    _ = c.g_object_ref(object);
+    defer c.g_object_unref(object);
+
+    // Keep position of divider
+    const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
+    // Now remove it
+    self.removeChildInPosition(position);
+
+    // Create new Paned
+    // NOTE: We cannot use `replaceChildInPosition` here because we need to
+    // first remove the surface before we create a new pane.
+    const paned = try Paned.create(self.window.app.core_app.alloc, self.window, surface, direction);
+    switch (position) {
+        .start => self.addChild1(.{ .paned = paned }),
+        .end => self.addChild2(.{ .paned = paned }),
+    }
+    // Restore position
+    c.gtk_paned_set_position(self.paned, parent_paned_position_before);
+
+    // Focus on new surface
+    paned.focusSurfaceInPosition(.end);
 }
 
 pub fn replaceChildInPosition(self: *Paned, child: Child, position: Position) void {
