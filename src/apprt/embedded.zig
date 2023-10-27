@@ -98,6 +98,9 @@ pub const App = struct {
 
         /// Render the inspector for the given surface.
         render_inspector: ?*const fn (SurfaceUD) callconv(.C) void = null,
+
+        /// Called when the cell size changes.
+        set_cell_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -816,6 +819,15 @@ pub const Surface = struct {
         };
 
         func(self.opts.userdata);
+    }
+
+    pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
+        const func = self.app.opts.set_cell_size orelse {
+            log.info("runtime embedder does not support set_cell_size", .{});
+            return;
+        };
+
+        func(self.opts.userdata, width, height);
     }
 
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {

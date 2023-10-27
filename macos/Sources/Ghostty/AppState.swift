@@ -97,6 +97,15 @@ extension Ghostty {
             return String(cString: ptr)
         }
         
+        /// Whether to resize windows in discrete steps or use "fluid" resizing
+        var windowStepResize: Bool {
+            guard let config = self.config else { return true }
+            var v = false
+            let key = "window-step-resize"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+
         /// The background opacity.
         var backgroundOpacity: Double {
             guard let config = self.config else { return 1 }
@@ -143,7 +152,8 @@ extension Ghostty {
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
                 set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) },
-                render_inspector_cb: { userdata in AppState.renderInspector(userdata) }
+                render_inspector_cb: { userdata in AppState.renderInspector(userdata) },
+                set_cell_size_cb: { userdata, width, height in AppState.setCellSize(userdata, width: width, height: height) }
             )
 
             // Create the ghostty app.
@@ -466,6 +476,12 @@ extension Ghostty {
             // We need a window to set the frame
             guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
             surfaceView.initialSize = NSMakeSize(Double(width), Double(height))
+        }
+
+        static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
+            guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
+            let backingSize = NSSize(width: Double(width), height: Double(height))
+            surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
         }
 
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {

@@ -14,9 +14,10 @@ struct PrimaryView: View {
     // If this is set, this is the base configuration that we build our surface out of.
     let baseConfig: Ghostty.SurfaceConfiguration?
     
-    // We need access to our window to know if we're the key window to determine
-    // if we show the quit confirmation or not.
-    @State private var window: NSWindow?
+    // We need access to our window to know if we're the key window and to
+    // modify window properties in response to events from the surface (e.g.
+    // updating the window title)
+    var window: NSWindow
     
     // This handles non-native fullscreen
     @State private var fullScreen = FullScreenHandler()
@@ -27,6 +28,7 @@ struct PrimaryView: View {
     @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
     @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle
     @FocusedValue(\.ghosttySurfaceZoomed) private var zoomedSplit
+    @FocusedValue(\.ghosttySurfaceCellSize) private var cellSize
     
     // The title for our window
     private var title: String {
@@ -68,7 +70,6 @@ struct PrimaryView: View {
                 Ghostty.TerminalSplit(onClose: Self.closeWindow, baseConfig: self.baseConfig)
                     .ghosttyApp(ghostty.app!)
                     .ghosttyConfig(ghostty.config!)
-                    .background(WindowAccessor(window: $window))
                     .onReceive(gotoTab) { onGotoTab(notification: $0) }
                     .onReceive(toggleFullscreen) { onToggleFullscreen(notification: $0) }
                     .focused($focused)
@@ -79,8 +80,12 @@ struct PrimaryView: View {
                     .onChange(of: title) { newValue in
                         // We need to handle this manually because we are using AppKit lifecycle
                         // so navigationTitle no longer works.
-                        guard let window = self.window else { return }
-                        window.title = newValue
+                        self.window.title = newValue
+                    }
+                    .onChange(of: cellSize) { newValue in
+                        if !ghostty.windowStepResize { return }
+                        guard let size = newValue else { return }
+                        self.window.contentResizeIncrements = size
                     }
             }
         }
@@ -95,8 +100,7 @@ struct PrimaryView: View {
         // Notification center indiscriminately sends to every subscriber (makes sense)
         // but we only want to process this once. In order to process it once lets only
         // handle it if we're the focused window.
-        guard let window = self.window else { return }
-        guard window.isKeyWindow else { return }
+        guard self.window.isKeyWindow else { return }
         
         // Get the tab index from the notification
         guard let tabIndexAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
@@ -135,8 +139,7 @@ struct PrimaryView: View {
         // Just like in `onGotoTab`, we might receive this multiple times. But
         // it's fine, because `toggleFullscreen` should only apply to the
         // currently focused window.
-        guard let window = self.window else { return }
-        guard window.isKeyWindow else { return }
+        guard self.window.isKeyWindow else { return }
 
         // Check whether we use non-native fullscreen
         guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }

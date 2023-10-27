@@ -460,6 +460,9 @@ pub fn init(
         .config = try DerivedConfig.init(alloc, config),
     };
 
+    // Report initial cell size on surface creation
+    try rt_surface.setCellSize(cell_size.width, cell_size.height);
+
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
     try rt_surface.setSizeLimits(.{
@@ -896,6 +899,9 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
         },
     }, .{ .forever = {} });
     self.io_thread.wakeup.notify() catch {};
+
+    // Notify the window
+    try self.rt_surface.setCellSize(size.width, size.height);
 }
 
 /// Change the font size.

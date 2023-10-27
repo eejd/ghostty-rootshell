@@ -374,6 +374,12 @@ pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void
     );
 }
 
+pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
+    _ = self;
+    _ = width;
+    _ = height;
+}
+
 pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
     _ = self;
     _ = min;
