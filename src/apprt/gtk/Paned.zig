@@ -152,6 +152,10 @@ pub fn replaceChildInPosition(self: *Paned, child: Child, position: Position) vo
     // Keep position of divider
     const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
 
+    // Focus on the sibling, otherwise we'll get a GTK warning
+    self.focusSurfaceInPosition(if (position == .start) .end else .start);
+
+    // Now we can remove the other one
     self.removeChildInPosition(position);
 
     switch (position) {
