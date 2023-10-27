@@ -766,6 +766,11 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // Attach zero-width characters to our cell as grapheme data.
     if (width == 0) {
+        // If we have grapheme clustering enabled, we don't blindly attach
+        // any zero width character to our cells and we instead just ignore
+        // it.
+        if (self.modes.get(.grapheme_cluster)) return;
+
         // If we're at cell zero, then this is malformed data and we don't
         // print anything or even store this. Zero-width characters are ALWAYS
         // attached to some other non-zero-width character at the time of
@@ -2167,6 +2172,31 @@ test "Terminal: print over wide spacer tail" {
         try testing.expectEqual(@as(u32, 'X'), cell.char);
         try testing.expect(!cell.attrs.wide_spacer_tail);
         try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+}
+
+test "Terminal: zero width chars with grapheme clustering can be put in their own cell" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    try t.print('x');
+    try t.print(0x7F); // zero-width control character
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("x", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 'x'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expect(!cell.attrs.grapheme);
     }
 }
 
