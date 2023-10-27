@@ -154,7 +154,7 @@ pub fn Stream(comptime Handler: type) type {
                 else
                     log.warn("unimplemented invokeCharset: {x}", .{c}),
 
-                else => log.warn("invalid C0 character, ignoring: {x}", .{c}),
+                else => log.warn("invalid C0 character, ignoring: 0x{x}", .{c}),
             }
         }
 
