@@ -1145,6 +1145,36 @@ pub fn finalize(self: *Config) !void {
     if (self.@"window-height" > 0) self.@"window-height" = @max(4, self.@"window-height");
 }
 
+/// Callback for src/cli/args.zig to allow us to handle special cases
+/// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
+pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
+    // If it isn't "-e" then we just continue parsing normally.
+    if (!std.mem.eql(u8, arg, "-e")) return true;
+
+    // The first value is the command to run.
+    if (iter.next()) |command| {
+        self.command = try alloc.dupe(u8, command);
+    } else {
+        try self._errors.add(alloc, .{
+            .message = try std.fmt.allocPrintZ(
+                alloc,
+                "missing command after -e",
+                .{},
+            ),
+        });
+
+        return false;
+    }
+
+    // All further arguments are parameters
+    while (iter.next()) |param| {
+        try self.@"command-arg".parseCLI(alloc, param);
+    }
+
+    // Do not continue, we consumed everything.
+    return false;
+}
+
 /// Create a shallow copy of this config. This will share all the memory
 /// allocated with the previous config but will have a new arena for
 /// any changes or new allocations. The config should have `deinit`
