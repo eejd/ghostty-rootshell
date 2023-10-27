@@ -393,7 +393,7 @@ keybind: Keybinds = .{},
 /// Resize the window in discrete increments of the focused surface's
 /// cell size. If this is disabled, surfaces are resized in pixel increments.
 /// Currently only supported on macOS.
-@"window-step-resize": bool = true,
+@"window-step-resize": bool = false,
 
 /// Whether to allow programs running in the terminal to read/write to
 /// the system clipboard (OSC 52, for googling). The default is to
