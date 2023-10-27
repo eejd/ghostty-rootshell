@@ -256,7 +256,7 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
 pub fn closeSurface(self: *Window, surface: *Surface) void {
     assert(surface.window == self);
 
-    const alloc = surface.app.core_app.alloc;
+    const alloc = self.app.core_app.alloc;
 
     switch (surface.parent) {
         .none => unreachable,
@@ -288,8 +288,9 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
             // Remove reference on the surface we're closing
             surface.setParent(.none);
 
-            // Remove children and kill Paned.
+            // Remove children.
             paned.removeChildren();
+            // Don't need to call paned.deinit, because we already removed children.
             defer alloc.destroy(paned);
 
             switch (paned.parent) {
