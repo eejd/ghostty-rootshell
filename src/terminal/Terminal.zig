@@ -1346,9 +1346,11 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
     }
 }
 
-pub fn eraseChars(self: *Terminal, count: usize) void {
+pub fn eraseChars(self: *Terminal, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    const count = @max(count_req, 1);
 
     // This resets the pending wrap state
     self.screen.cursor.pending_wrap = false;
@@ -4784,6 +4786,23 @@ test "Terminal: eraseChars simple operation" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("X C", str);
+    }
+}
+
+test "Terminal: eraseChars minimum one" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseChars(0);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XBC", str);
     }
 }
 
