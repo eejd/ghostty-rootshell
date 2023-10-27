@@ -183,6 +183,16 @@ class PrimaryWindowManager {
         // If we remove a window, we reset the cascade point to the key window so that
         // the next window cascade's from that one.
         if let focusedWindow = NSApplication.shared.keyWindow {
+            // If we are NOT the focused window, then we are a tabbed window. If we
+            // are closing a tabbed window, we want to set the cascade point to be
+            // the next cascade point from this window.
+            if focusedWindow != window {
+                Self.lastCascadePoint = focusedWindow.cascadeTopLeft(from: NSZeroPoint)
+                return
+            }
+            
+            // If we are the focused window, then we set the last cascade point to
+            // our own frame so that it shows up in the same spot.
             let frame = focusedWindow.frame
             Self.lastCascadePoint = NSPoint(x: frame.minX, y: frame.maxY)
         }
