@@ -82,6 +82,7 @@ struct PrimaryView: View {
                         self.window.title = newValue
                     }
                     .onChange(of: cellSize) { newValue in
+                        if !ghostty.windowStepResize { return }
                         guard let size = newValue else { return }
                         self.window.contentResizeIncrements = size
                     }

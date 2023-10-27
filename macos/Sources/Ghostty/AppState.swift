@@ -97,6 +97,15 @@ extension Ghostty {
             return String(cString: ptr)
         }
         
+        /// Whether to resize windows in discrete steps or use "fluid" resizing
+        var windowStepResize: Bool {
+            guard let config = self.config else { return true }
+            var v = false
+            let key = "window-step-resize"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+
         /// The background opacity.
         var backgroundOpacity: Double {
             guard let config = self.config else { return 1 }
