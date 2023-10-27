@@ -1478,7 +1478,7 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         // appropriately sized value of "count" this is the behavior that xterm
         // would have. This is unit tested.
         if (self.screen.cursor.y == 0) {
-            assert(self.screen.cursor.x == 0);
+            assert(self.screen.cursor.x == left_margin);
             break;
         }
 
