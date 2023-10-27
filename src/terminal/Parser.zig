@@ -159,7 +159,10 @@ pub const Action = union(enum) {
                     const value = @field(self, u_field.name);
                     switch (@TypeOf(value)) {
                         // Unicode
-                        u21 => try std.fmt.format(writer, "'{u}'", .{value}),
+                        u21 => try std.fmt.format(writer, "'{u}' (U+{X})", .{ value, value }),
+
+                        // Byte
+                        u8 => try std.fmt.format(writer, "0x{x}", .{value}),
 
                         // Note: we don't do ASCII (u8) because there are a lot
                         // of invisible characters we don't want to handle right

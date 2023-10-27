@@ -197,7 +197,7 @@ pub const Parser = struct {
                         .b = @truncate(rgb[2]),
                     },
                 };
-            } else if (slice.len >= 2 and slice[1] == 5) {
+            } else if (slice.len >= 3 and slice[1] == 5) {
                 self.idx += 2;
                 return Attribute{
                     .@"256_fg" = @truncate(slice[2]),
@@ -225,7 +225,7 @@ pub const Parser = struct {
                         .b = @truncate(rgb[2]),
                     },
                 };
-            } else if (slice.len >= 2 and slice[1] == 5) {
+            } else if (slice.len >= 3 and slice[1] == 5) {
                 self.idx += 2;
                 return Attribute{
                     .@"256_bg" = @truncate(slice[2]),
@@ -531,4 +531,16 @@ test "sgr: underline, bg, and fg" {
         try testing.expect(v == .underline);
         try testing.expectEqual(Attribute.Underline.single, v.underline);
     }
+}
+
+test "sgr: direct color fg missing color" {
+    // This used to crash
+    var p: Parser = .{ .params = &[_]u16{ 38, 5 }, .colon = false };
+    while (p.next()) |_| {}
+}
+
+test "sgr: direct color bg missing color" {
+    // This used to crash
+    var p: Parser = .{ .params = &[_]u16{ 48, 5 }, .colon = false };
+    while (p.next()) |_| {}
 }

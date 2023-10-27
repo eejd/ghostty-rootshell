@@ -443,8 +443,8 @@ pub fn restoreCursor(self: *Terminal) void {
     self.screen.cursor.pen = saved.pen;
     self.screen.charset = saved.charset;
     self.modes.set(.origin, saved.origin);
-    self.screen.cursor.x = saved.x;
-    self.screen.cursor.y = saved.y;
+    self.screen.cursor.x = @min(saved.x, self.cols - 1);
+    self.screen.cursor.y = @min(saved.y, self.rows - 1);
     self.screen.cursor.pending_wrap = saved.pending_wrap;
 }
 
@@ -766,6 +766,11 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // Attach zero-width characters to our cell as grapheme data.
     if (width == 0) {
+        // If we have grapheme clustering enabled, we don't blindly attach
+        // any zero width character to our cells and we instead just ignore
+        // it.
+        if (self.modes.get(.grapheme_cluster)) return;
+
         // If we're at cell zero, then this is malformed data and we don't
         // print anything or even store this. Zero-width characters are ALWAYS
         // attached to some other non-zero-width character at the time of
@@ -883,10 +888,10 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
     // single-width characters into that.
     if (cell.attrs.wide) {
         const x = self.screen.cursor.x + 1;
-        assert(x < self.cols);
-
-        const spacer_cell = row.getCellPtr(x);
-        spacer_cell.* = self.screen.cursor.pen;
+        if (x < self.cols) {
+            const spacer_cell = row.getCellPtr(x);
+            spacer_cell.* = self.screen.cursor.pen;
+        }
 
         if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
@@ -1341,9 +1346,11 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
     }
 }
 
-pub fn eraseChars(self: *Terminal, count: usize) void {
+pub fn eraseChars(self: *Terminal, count_req: usize) void {
     const tracy = trace(@src());
     defer tracy.end();
+
+    const count = @max(count_req, 1);
 
     // This resets the pending wrap state
     self.screen.cursor.pending_wrap = false;
@@ -2167,6 +2174,31 @@ test "Terminal: print over wide spacer tail" {
         try testing.expectEqual(@as(u32, 'X'), cell.char);
         try testing.expect(!cell.attrs.wide_spacer_tail);
         try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+}
+
+test "Terminal: zero width chars with grapheme clustering can be put in their own cell" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    try t.print('x');
+    try t.print(0x7F); // zero-width control character
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("x", str);
+    }
+
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 'x'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expect(!cell.attrs.grapheme);
     }
 }
 
@@ -4757,6 +4789,23 @@ test "Terminal: eraseChars simple operation" {
     }
 }
 
+test "Terminal: eraseChars minimum one" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABC") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.eraseChars(0);
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XBC", str);
+    }
+}
+
 test "Terminal: eraseChars beyond screen edge" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
@@ -5013,6 +5062,24 @@ test "Terminal: saveCursor origin mode" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("X", str);
+    }
+}
+
+test "Terminal: saveCursor resize" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 10);
+    t.saveCursor();
+    try t.resize(alloc, 5, 5);
+    t.restoreCursor();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    X", str);
     }
 }
 
