@@ -220,19 +220,13 @@ fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
 }
 
 pub fn deinit(self: *Paned, alloc: Allocator) void {
-    switch (self.child1) {
-        .none, .surface => {},
-        .paned => |paned| {
-            paned.deinit(alloc);
-            alloc.destroy(paned);
-        },
-    }
-
-    switch (self.child2) {
-        .none, .surface => {},
-        .paned => |paned| {
-            paned.deinit(alloc);
-            alloc.destroy(paned);
-        },
+    for ([_]Child{ self.child1, self.child2 }) |child| {
+        switch (child) {
+            .none, .surface => continue,
+            .paned => |paned| {
+                paned.deinit(alloc);
+                alloc.destroy(paned);
+            },
+        }
     }
 }
