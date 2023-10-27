@@ -354,10 +354,12 @@ pub fn shouldClose(self: *const Surface) bool {
 }
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
-    _ = self;
-    const monitor = glfw.Monitor.getPrimary() orelse return error.NoMonitor;
-    const scale = monitor.getContentScale();
-    return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
+    const window_scale: f32 = scale: {
+        const window = @as(*c.GtkNative, @ptrCast(self.window.window));
+        const gdk_surface = c.gtk_native_get_surface(window);
+        break :scale @floatCast(c.gdk_surface_get_scale(gdk_surface));
+    };
+    return apprt.ContentScale{ .x = window_scale, .y = window_scale };
 }
 
 pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
@@ -624,6 +626,13 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
         .width = @intCast(width),
         .height = @intCast(height),
     };
+
+    if (self.getContentScale()) |scale| {
+        self.core_surface.contentScaleCallback(scale) catch |err| {
+            log.err("error in content scale callback err={}", .{err});
+            return;
+        };
+    } else |_|{}
 
     // Call the primary callback.
     if (self.realized) {
