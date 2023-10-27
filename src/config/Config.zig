@@ -268,6 +268,16 @@ palette: Palette = .{},
 ///
 command: ?[]const u8 = null,
 
+/// A single argument to pass to the command. This can be repeated to
+/// pass multiple arguments. This slightly clunky configuration style is
+/// so that Ghostty doesn't have to perform any sort of shell parsing
+/// to find argument boundaries.
+///
+/// This cannot be used to override argv[0]. argv[0] will always be
+/// set by Ghostty to be the command (possibly with a hyphen-prefix to
+/// indicate that it is a login shell, depending on the OS).
+@"command-arg": RepeatableString = .{},
+
 /// The directory to change to after starting the command.
 ///
 /// The default is "inherit" except in special scenarios listed next.
