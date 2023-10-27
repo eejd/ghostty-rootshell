@@ -60,6 +60,8 @@ pub fn Stream(comptime Handler: type) type {
             for (actions) |action_opt| {
                 const action = action_opt orelse continue;
 
+                // log.info("action: {}", .{action});
+
                 // If this handler handles everything manually then we do nothing
                 // if it can be processed.
                 if (@hasDecl(T, "handleManually")) {
@@ -74,11 +76,6 @@ pub fn Stream(comptime Handler: type) type {
 
                     if (processed) continue;
                 }
-
-                // if (action_opt) |action| {
-                //     if (action != .print)
-                //         log.info("action: {}", .{action});
-                // }
 
                 switch (action) {
                     .print => |p| if (@hasDecl(T, "print")) try self.handler.print(p),
