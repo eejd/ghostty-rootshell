@@ -1469,6 +1469,19 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
             const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
             if (!row.isWrapped()) break;
         }
+
+        // UNDEFINED TERMINAL BEHAVIOR. This situation is not handled in xterm
+        // and currently results in a crash in xterm. Given no other known
+        // terminal [to me] implements XTREVWRAP2, I decided to just mimick
+        // the behavior of xterm up and not including the crash by wrapping
+        // up to the (0, 0) and stopping there. My reasoning is that for an
+        // appropriately sized value of "count" this is the behavior that xterm
+        // would have. This is unit tested.
+        if (self.screen.cursor.y == 0) {
+            assert(self.screen.cursor.x == 0);
+            break;
+        }
+
         self.screen.cursor.y -= 1;
         self.screen.cursor.x = right_margin;
         count -= 1;
@@ -6123,6 +6136,22 @@ test "Terminal: cursorLeft extended reverse wrap is priority if both set" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDE\n1\n    X", str);
     }
+}
+
+test "Terminal: cursorLeft extended reverse wrap above top scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap_extended, true);
+
+    t.setTopAndBottomMargin(3, 0);
+    t.setCursorPos(2, 1);
+    t.cursorLeft(1000);
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
 }
 
 test "Terminal: cursorDown basic" {
