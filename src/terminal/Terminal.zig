@@ -1464,12 +1464,6 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
             continue;
         }
 
-        // If our previous line is not wrapped then we are done.
-        if (wrap_mode != .reverse_extended) {
-            const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
-            if (!row.isWrapped()) break;
-        }
-
         // UNDEFINED TERMINAL BEHAVIOR. This situation is not handled in xterm
         // and currently results in a crash in xterm. Given no other known
         // terminal [to me] implements XTREVWRAP2, I decided to just mimick
@@ -1480,6 +1474,12 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         if (self.screen.cursor.y == 0) {
             assert(self.screen.cursor.x == left_margin);
             break;
+        }
+
+        // If our previous line is not wrapped then we are done.
+        if (wrap_mode != .reverse_extended) {
+            const row = self.screen.getRow(.{ .active = self.screen.cursor.y - 1 });
+            if (!row.isWrapped()) break;
         }
 
         self.screen.cursor.y -= 1;
@@ -6148,6 +6148,22 @@ test "Terminal: cursorLeft extended reverse wrap above top scroll region" {
 
     t.setTopAndBottomMargin(3, 0);
     t.setCursorPos(2, 1);
+    t.cursorLeft(1000);
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+}
+
+test "Terminal: cursorLeft reverse wrap on first row" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap, true);
+
+    t.setTopAndBottomMargin(3, 0);
+    t.setCursorPos(1, 2);
     t.cursorLeft(1000);
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
