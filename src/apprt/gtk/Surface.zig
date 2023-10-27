@@ -4,7 +4,6 @@
 const Surface = @This();
 
 const std = @import("std");
-const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
@@ -18,9 +17,6 @@ const inspector = @import("inspector.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
-
-// We need native X11 access to access the primary clipboard.
-const glfw_native = glfw.Native(.{ .x11 = true });
 
 /// This is detected by the OpenGL renderer to move to a single-threaded
 /// draw operation. This basically puts locks around our draw path.
@@ -354,12 +350,8 @@ pub fn shouldClose(self: *const Surface) bool {
 }
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
-    const window_scale: f32 = scale: {
-        const window = @as(*c.GtkNative, @ptrCast(self.window.window));
-        const gdk_surface = c.gtk_native_get_surface(window);
-        break :scale @floatCast(c.gdk_surface_get_scale(gdk_surface));
-    };
-    return apprt.ContentScale{ .x = window_scale, .y = window_scale };
+    const scale = c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area));
+    return .{ .x = @floatFromInt(scale), .y = @floatFromInt(scale) };
 }
 
 pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
@@ -632,7 +624,7 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
             log.err("error in content scale callback err={}", .{err});
             return;
         };
-    } else |_|{}
+    } else |_| {}
 
     // Call the primary callback.
     if (self.realized) {
