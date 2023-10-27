@@ -888,10 +888,10 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
     // single-width characters into that.
     if (cell.attrs.wide) {
         const x = self.screen.cursor.x + 1;
-        assert(x < self.cols);
-
-        const spacer_cell = row.getCellPtr(x);
-        spacer_cell.* = self.screen.cursor.pen;
+        if (x < self.cols) {
+            const spacer_cell = row.getCellPtr(x);
+            spacer_cell.* = self.screen.cursor.pen;
+        }
 
         if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
             self.clearWideSpacerHead();
