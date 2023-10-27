@@ -14,8 +14,9 @@ struct PrimaryView: View {
     // If this is set, this is the base configuration that we build our surface out of.
     let baseConfig: Ghostty.SurfaceConfiguration?
     
-    // We need access to our window to know if we're the key window to determine
-    // if we show the quit confirmation or not.
+    // We need access to our window to know if we're the key window and to
+    // modify window properties in response to events from the surface (e.g.
+    // updating the window title)
     var window: NSWindow
     
     // This handles non-native fullscreen
