@@ -350,6 +350,8 @@ pub fn shouldClose(self: *const Surface) bool {
 }
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
+    // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
+    // can support fractional scaling.
     const scale = c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area));
     return .{ .x = @floatFromInt(scale), .y = @floatFromInt(scale) };
 }
@@ -619,6 +621,8 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
         .height = @intCast(height),
     };
 
+    // We also update the content scale because there is no signal for
+    // content scale change and it seems to trigger a resize event.
     if (self.getContentScale()) |scale| {
         self.core_surface.contentScaleCallback(scale) catch |err| {
             log.err("error in content scale callback err={}", .{err});
