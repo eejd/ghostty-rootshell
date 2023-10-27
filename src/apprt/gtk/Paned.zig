@@ -203,6 +203,18 @@ fn addChild2(self: *Paned, child: Child) void {
     child.setParent(.{ .paned = .{ self, .end } });
 }
 
+fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
+    const child = switch (position) {
+        .start => self.child1,
+        .end => self.child2,
+    };
+
+    return switch (child) {
+        .surface => |surface| surface,
+        else => null,
+    };
+}
+
 pub fn deinit(self: *Paned, alloc: Allocator) void {
     switch (self.child1) {
         .none, .surface => {},
@@ -219,16 +231,4 @@ pub fn deinit(self: *Paned, alloc: Allocator) void {
             alloc.destroy(paned);
         },
     }
-}
-
-fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
-    const child = switch (position) {
-        .start => self.child1,
-        .end => self.child2,
-    };
-
-    return switch (child) {
-        .surface => |surface| surface,
-        else => null,
-    };
 }
