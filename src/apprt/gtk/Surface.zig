@@ -4,7 +4,6 @@
 const Surface = @This();
 
 const std = @import("std");
-const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
@@ -18,9 +17,6 @@ const inspector = @import("inspector.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
-
-// We need native X11 access to access the primary clipboard.
-const glfw_native = glfw.Native(.{ .x11 = true });
 
 /// This is detected by the OpenGL renderer to move to a single-threaded
 /// draw operation. This basically puts locks around our draw path.
@@ -354,10 +350,10 @@ pub fn shouldClose(self: *const Surface) bool {
 }
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
-    _ = self;
-    const monitor = glfw.Monitor.getPrimary() orelse return error.NoMonitor;
-    const scale = monitor.getContentScale();
-    return apprt.ContentScale{ .x = scale.x_scale, .y = scale.y_scale };
+    // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
+    // can support fractional scaling.
+    const scale = c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area));
+    return .{ .x = @floatFromInt(scale), .y = @floatFromInt(scale) };
 }
 
 pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
@@ -624,6 +620,15 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
         .width = @intCast(width),
         .height = @intCast(height),
     };
+
+    // We also update the content scale because there is no signal for
+    // content scale change and it seems to trigger a resize event.
+    if (self.getContentScale()) |scale| {
+        self.core_surface.contentScaleCallback(scale) catch |err| {
+            log.err("error in content scale callback err={}", .{err});
+            return;
+        };
+    } else |_| {}
 
     // Call the primary callback.
     if (self.realized) {

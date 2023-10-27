@@ -13,7 +13,6 @@ const App = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
-const glfw = @import("glfw");
 const configpkg = @import("../../config.zig");
 const input = @import("../../input.zig");
 const internal_os = @import("../../os/main.zig");
@@ -52,12 +51,6 @@ running: bool = true,
 
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
-
-    // This is super weird, but we still use GLFW with GTK only so that
-    // we can tap into their folklore logic to get screen DPI. If we can
-    // figure out a reliable way to determine this ourselves, we can get
-    // rid of this dep.
-    if (!glfw.init(.{})) return error.GlfwInitFailed;
 
     // Load our configuration
     var config = try Config.load(core_app.alloc);
@@ -166,8 +159,6 @@ pub fn terminate(self: *App) void {
     if (self.menu) |menu| c.g_object_unref(menu);
 
     self.config.deinit();
-
-    glfw.terminate();
 }
 
 /// Reload the configuration. This should return the new configuration.

@@ -795,30 +795,24 @@ fn addDeps(
         // get access to glib for dbus.
         if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
-        // We may link GLFW below
-        const glfw_dep = b.dependency("glfw", .{
-            .target = step.target,
-            .optimize = step.optimize,
-            .x11 = step.target.isLinux(),
-            .wayland = step.target.isLinux(),
-            .metal = step.target.isDarwin(),
-        });
-
         switch (app_runtime) {
             .none => {},
 
             .glfw => {
+                const glfw_dep = b.dependency("glfw", .{
+                    .target = step.target,
+                    .optimize = step.optimize,
+                    .x11 = step.target.isLinux(),
+                    .wayland = step.target.isLinux(),
+                    .metal = step.target.isDarwin(),
+                });
+
                 step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
                 step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
                 step.linkLibrary(glfw_dep.artifact("glfw"));
             },
 
             .gtk => {
-                // We need glfw for GTK because we use GLFW to get DPI.
-                step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
-                step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
-                step.linkLibrary(glfw_dep.artifact("glfw"));
-
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
             },
         }
