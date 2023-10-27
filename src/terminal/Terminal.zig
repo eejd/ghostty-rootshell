@@ -443,8 +443,8 @@ pub fn restoreCursor(self: *Terminal) void {
     self.screen.cursor.pen = saved.pen;
     self.screen.charset = saved.charset;
     self.modes.set(.origin, saved.origin);
-    self.screen.cursor.x = saved.x;
-    self.screen.cursor.y = saved.y;
+    self.screen.cursor.x = @min(saved.x, self.cols - 1);
+    self.screen.cursor.y = @min(saved.y, self.rows - 1);
     self.screen.cursor.pending_wrap = saved.pending_wrap;
 }
 
@@ -5062,6 +5062,24 @@ test "Terminal: saveCursor origin mode" {
         var str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("X", str);
+    }
+}
+
+test "Terminal: saveCursor resize" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    t.setCursorPos(1, 10);
+    t.saveCursor();
+    try t.resize(alloc, 5, 5);
+    t.restoreCursor();
+    try t.print('X');
+
+    {
+        var str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("    X", str);
     }
 }
 
