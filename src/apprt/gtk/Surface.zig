@@ -14,6 +14,7 @@ const CoreSurface = @import("../../Surface.zig");
 const App = @import("App.zig");
 const Window = @import("Window.zig");
 const inspector = @import("inspector.zig");
+const gtk_key = @import("key.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
@@ -903,6 +904,10 @@ fn keyEvent(
             if (input.Key.fromASCII(ascii)) |key| {
                 break :key key;
             }
+        }
+
+        if (gtk_key.keyFromKeyval(keyval)) |key| {
+            break :key key;
         }
 
         break :key physical_key;
