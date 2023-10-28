@@ -1308,6 +1308,54 @@ pub const ChangeIterator = struct {
     }
 };
 
+const TestIterator = struct {
+    data: []const []const u8,
+    i: usize = 0,
+
+    pub fn next(self: *TestIterator) ?[]const u8 {
+        if (self.i >= self.data.len) return null;
+        const result = self.data[self.i];
+        self.i += 1;
+        return result;
+    }
+};
+
+test "parse hook: invalid command" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{"foo"} };
+    try testing.expect(try cfg.parseManuallyHook(alloc, "--command", &it));
+    try testing.expect(cfg.command == null);
+}
+
+test "parse e: command only" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{"foo"} };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("foo", cfg.command.?);
+}
+
+test "parse e: command and args" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("echo", cfg.command.?);
+    try testing.expectEqual(@as(usize, 2), cfg.@"command-arg".list.items.len);
+    try testing.expectEqualStrings("foo", cfg.@"command-arg".list.items[0]);
+    try testing.expectEqualStrings("bar baz", cfg.@"command-arg".list.items[1]);
+}
+
 test "clone default" {
     const testing = std.testing;
     const alloc = testing.allocator;
