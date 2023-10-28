@@ -744,24 +744,25 @@ const Subprocess = struct {
             env.remove("GHOSTTY_MAC_APP");
         }
 
-        // If we're NOT in a flatpak (usually!), then we just exec the
-        // process directly. If we are in a flatpak, we use flatpak-spawn
-        // to escape the sandbox.
-        const args = if (!internal_os.isFlatpak()) try alloc.dupe(
-            []const u8,
-            &[_][]const u8{argv0_override orelse path},
-        ) else args: {
-            var args = try std.ArrayList([]const u8).initCapacity(alloc, 8);
+        // Build our args list
+        const args = args: {
+            const cap = 1 + opts.full_config.@"command-arg".list.items.len;
+            var args = try std.ArrayList([]const u8).initCapacity(alloc, cap);
             defer args.deinit();
 
-            // We run our shell wrapped in a /bin/sh login shell because
-            // some systems do not properly initialize the env vars unless
-            // we start this way (NixOS!)
-            try args.append("/bin/sh");
-            try args.append("-l");
-            try args.append("-c");
-            try args.append(path);
+            if (!internal_os.isFlatpak()) {
+                try args.append(argv0_override orelse path);
+            } else {
+                // We run our shell wrapped in a /bin/sh login shell because
+                // some systems do not properly initialize the env vars unless
+                // we start this way (NixOS!)
+                try args.append("/bin/sh");
+                try args.append("-l");
+                try args.append("-c");
+                try args.append(path);
+            }
 
+            try args.appendSlice(opts.full_config.@"command-arg".list.items);
             break :args try args.toOwnedSlice();
         };
 

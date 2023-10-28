@@ -268,6 +268,16 @@ palette: Palette = .{},
 ///
 command: ?[]const u8 = null,
 
+/// A single argument to pass to the command. This can be repeated to
+/// pass multiple arguments. This slightly clunky configuration style is
+/// so that Ghostty doesn't have to perform any sort of shell parsing
+/// to find argument boundaries.
+///
+/// This cannot be used to override argv[0]. argv[0] will always be
+/// set by Ghostty to be the command (possibly with a hyphen-prefix to
+/// indicate that it is a login shell, depending on the OS).
+@"command-arg": RepeatableString = .{},
+
 /// The directory to change to after starting the command.
 ///
 /// The default is "inherit" except in special scenarios listed next.
@@ -1135,6 +1145,37 @@ pub fn finalize(self: *Config) !void {
     if (self.@"window-height" > 0) self.@"window-height" = @max(4, self.@"window-height");
 }
 
+/// Callback for src/cli/args.zig to allow us to handle special cases
+/// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
+pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
+    // If it isn't "-e" then we just continue parsing normally.
+    if (!std.mem.eql(u8, arg, "-e")) return true;
+
+    // The first value is the command to run.
+    if (iter.next()) |command| {
+        self.command = try alloc.dupe(u8, command);
+    } else {
+        try self._errors.add(alloc, .{
+            .message = try std.fmt.allocPrintZ(
+                alloc,
+                "missing command after -e",
+                .{},
+            ),
+        });
+
+        return false;
+    }
+
+    // All further arguments are parameters
+    self.@"command-arg".list.clearRetainingCapacity();
+    while (iter.next()) |param| {
+        try self.@"command-arg".parseCLI(alloc, param);
+    }
+
+    // Do not continue, we consumed everything.
+    return false;
+}
+
 /// Create a shallow copy of this config. This will share all the memory
 /// allocated with the previous config but will have a new arena for
 /// any changes or new allocations. The config should have `deinit`
@@ -1267,6 +1308,69 @@ pub const ChangeIterator = struct {
         return null;
     }
 };
+
+const TestIterator = struct {
+    data: []const []const u8,
+    i: usize = 0,
+
+    pub fn next(self: *TestIterator) ?[]const u8 {
+        if (self.i >= self.data.len) return null;
+        const result = self.data[self.i];
+        self.i += 1;
+        return result;
+    }
+};
+
+test "parse hook: invalid command" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{"foo"} };
+    try testing.expect(try cfg.parseManuallyHook(alloc, "--command", &it));
+    try testing.expect(cfg.command == null);
+}
+
+test "parse e: command only" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{"foo"} };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("foo", cfg.command.?);
+}
+
+test "parse e: command and args" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("echo", cfg.command.?);
+    try testing.expectEqual(@as(usize, 2), cfg.@"command-arg".list.items.len);
+    try testing.expectEqualStrings("foo", cfg.@"command-arg".list.items[0]);
+    try testing.expectEqualStrings("bar baz", cfg.@"command-arg".list.items[1]);
+}
+
+test "parse e: command replaces args" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    try cfg.@"command-arg".parseCLI(alloc, "foo");
+    try testing.expectEqual(@as(usize, 1), cfg.@"command-arg".list.items.len);
+
+    var it: TestIterator = .{ .data = &.{"echo"} };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("echo", cfg.command.?);
+    try testing.expectEqual(@as(usize, 0), cfg.@"command-arg".list.items.len);
+}
 
 test "clone default" {
     const testing = std.testing;
