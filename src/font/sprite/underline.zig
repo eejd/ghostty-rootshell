@@ -165,6 +165,10 @@ const Draw = struct {
     fn drawCurly(self: Draw, canvas: *font.sprite.Canvas) void {
         // This is the lowest that the curl can go.
         const y_max = self.height - 1;
+
+        // Determines the density of the waves.
+        //   `2 * pi...` = 1 peak per character
+        //   `4 * pi...` = 2 peaks per character
         const x_factor = 2 * std.math.pi / @as(f64, @floatFromInt(self.width - 1));
 
         // Some fonts put the underline too close to the bottom of the
@@ -181,7 +185,6 @@ const Draw = struct {
         // underline position. We also calculate our starting y which is
         // slightly below our descender since our wave will move about that.
         const wave_height = @as(f64, @floatFromInt(y_max - pos));
-        //const wave_height = @as(f64, @floatFromInt(y_max - (pos - self.thickness / 2)));
         const half_height = @max(1, wave_height / 4);
         const y_pos = @as(i32, @intCast(pos)) + @as(i32, @intFromFloat(2 * half_height));
 
