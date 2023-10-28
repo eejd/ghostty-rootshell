@@ -46,27 +46,14 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         .focus_child = undefined,
     };
 
-    // Grab a surface allocation we'll need it later.
-    var surface = try window.app.core_app.alloc.create(Surface);
-    errdefer window.app.core_app.alloc.destroy(surface);
-    self.child = Child{ .surface = surface };
-    // TODO: this needs to change
-    self.focus_child = surface;
-
-    // Inherit the parent's font size if we are configured to.
-    const font_size: ?font.face.DesiredSize = font_size: {
-        if (!window.app.config.@"window-inherit-font-size") break :font_size null;
-        const parent = parent_ orelse break :font_size null;
-        break :font_size parent.font_size;
-    };
-
     // Build the tab label
     const label_box_widget = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
     const label_box = @as(*c.GtkBox, @ptrCast(label_box_widget));
     const label_text_widget = c.gtk_label_new("Ghostty");
     const label_text: *c.GtkLabel = @ptrCast(label_text_widget);
-    self.label_text = label_text;
     c.gtk_box_append(label_box, label_text_widget);
+    self.label_text = label_text;
+
     const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
     const label_close: *c.GtkButton = @ptrCast(label_close_widget);
     c.gtk_button_set_has_frame(label_close, 0);
@@ -93,29 +80,24 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         c.gtk_widget_set_size_request(@ptrCast(label_text), 100, 1);
     }
 
+    // Create a Box in which we'll later keep either Surface or Paned
     const box_widget = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
     c.gtk_widget_set_hexpand(box_widget, 1);
     c.gtk_widget_set_vexpand(box_widget, 1);
     self.box = @ptrCast(box_widget);
 
-    // Initialize the GtkGLArea and attach it to our surface.
-    // The surface starts in the "unrealized" state because we have to
-    // wait for the "realize" callback from GTK to know that the OpenGL
-    // context is ready. See Surface docs for more info.
-    const gl_area = c.gtk_gl_area_new();
-    c.gtk_widget_set_hexpand(gl_area, 1);
-    c.gtk_widget_set_vexpand(gl_area, 1);
-    try surface.init(window.app, .{
-        .window = window,
-        .tab = self,
-        .parent = .{ .tab = self },
-        .gl_area = @ptrCast(gl_area),
-        .title_label = @ptrCast(label_text),
-        .font_size = font_size,
-    });
+    // Create the Surface
+    const surface = try self.newSurface(parent_);
     errdefer surface.deinit();
 
-    c.gtk_box_append(self.box, gl_area);
+    self.child = Child{ .surface = surface };
+    // // TODO: this needs to change
+    self.focus_child = surface;
+
+    // Add Surface to the Tab
+    const gl_area_widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
+    c.gtk_box_append(self.box, gl_area_widget);
+
     const page_idx = c.gtk_notebook_append_page(window.notebook, box_widget, label_box_widget);
     if (page_idx < 0) {
         log.warn("failed to add page to notebook", .{});
@@ -137,10 +119,45 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Switch to the new tab
     c.gtk_notebook_set_current_page(window.notebook, page_idx);
 
-    // We need to grab focus after it is added to the window. When
-    // creating a window we want to always focus on the widget.
-    const widget = @as(*c.GtkWidget, @ptrCast(gl_area));
-    _ = c.gtk_widget_grab_focus(widget);
+    // We need to grab focus after Surface and Tab is added to the window. When
+    // creating a Tab we want to always focus on the widget.
+    _ = c.gtk_widget_grab_focus(gl_area_widget);
+}
+
+/// Allocates and initializes a new Surface, but doesn't add it to the Tab yet.
+/// Can also be added to a Paned.
+pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
+    // Grab a surface allocation we'll need it later.
+    var surface = try self.window.app.core_app.alloc.create(Surface);
+    errdefer self.window.app.core_app.alloc.destroy(surface);
+
+    // Inherit the parent's font size if we are configured to.
+    const font_size: ?font.face.DesiredSize = font_size: {
+        if (!self.window.app.config.@"window-inherit-font-size") break :font_size null;
+        const parent = parent_ orelse break :font_size null;
+        break :font_size parent.font_size;
+    };
+
+    // Initialize the GtkGLArea and attach it to our surface.
+    // The surface starts in the "unrealized" state because we have to
+    // wait for the "realize" callback from GTK to know that the OpenGL
+    // context is ready. See Surface docs for more info.
+    const gl_area = c.gtk_gl_area_new();
+    c.gtk_widget_set_hexpand(gl_area, 1);
+    c.gtk_widget_set_vexpand(gl_area, 1);
+
+    try surface.init(self.window.app, .{
+        .window = self.window,
+        .tab = self,
+        .parent = .{
+            .tab = self,
+        },
+        .gl_area = @ptrCast(gl_area),
+        .title_label = @ptrCast(self.label_text),
+        .font_size = font_size,
+    });
+
+    return surface;
 }
 
 pub fn removeChild(self: *Tab) void {

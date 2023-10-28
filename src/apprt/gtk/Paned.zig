@@ -70,44 +70,11 @@ pub fn init(self: *Paned, window: *Window, sibling: *Surface, direction: input.S
     const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     self.paned = gtk_paned;
 
-    const surface = try self.newSurface(sibling.tab, &sibling.core_surface);
+    const surface = try sibling.tab.newSurface(&sibling.core_surface);
+    surface.setParent(.{ .paned = .{ self, .end } });
+
     self.addChild1(.{ .surface = sibling });
     self.addChild2(.{ .surface = surface });
-}
-
-fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
-    // Grab a surface allocation we'll need it later.
-    var surface = try self.window.app.core_app.alloc.create(Surface);
-    errdefer self.window.app.core_app.alloc.destroy(surface);
-
-    // Inherit the parent's font size if we are configured to.
-    const font_size: ?font.face.DesiredSize = font_size: {
-        if (!self.window.app.config.@"window-inherit-font-size") break :font_size null;
-        const parent = parent_ orelse break :font_size null;
-        break :font_size parent.font_size;
-    };
-
-    // Initialize the GtkGLArea and attach it to our surface.
-    // The surface starts in the "unrealized" state because we have to
-    // wait for the "realize" callback from GTK to know that the OpenGL
-    // context is ready. See Surface docs for more info.
-    const gl_area = c.gtk_gl_area_new();
-    c.gtk_widget_set_hexpand(gl_area, 1);
-    c.gtk_widget_set_vexpand(gl_area, 1);
-
-    try surface.init(self.window.app, .{
-        .window = self.window,
-        .tab = tab,
-        .parent = .{ .paned = .{
-            self,
-            .end,
-        } },
-        .gl_area = @ptrCast(gl_area),
-        .title_label = @ptrCast(self.label_text),
-        .font_size = font_size,
-    });
-
-    return surface;
 }
 
 /// Set the parent of Paned.
