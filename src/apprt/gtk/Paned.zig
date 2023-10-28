@@ -75,7 +75,7 @@ pub fn init(self: *Paned, window: *Window, sibling: *Surface, direction: input.S
     self.addChild2(.{ .surface = surface });
 }
 
-pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
+fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
     // Grab a surface allocation we'll need it later.
     var surface = try self.window.app.core_app.alloc.create(Surface);
     errdefer self.window.app.core_app.alloc.destroy(surface);
@@ -110,16 +110,19 @@ pub fn newSurface(self: *Paned, tab: *Tab, parent_: ?*CoreSurface) !*Surface {
     return surface;
 }
 
+/// Set the parent of Paned.
 pub fn setParent(self: *Paned, parent: Parent) void {
     self.parent = parent;
 }
 
+/// Focus on the Surface's gl_area in the given position.
 pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
     const surface: *Surface = self.surfaceInPosition(position) orelse return;
     const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
     _ = c.gtk_widget_grab_focus(widget);
 }
 
+/// Split the Surface in the given position into a Paned with two surfaces.
 pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input.SplitDirection) !void {
     const surface: *Surface = self.surfaceInPosition(position) orelse return;
 
@@ -148,6 +151,7 @@ pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input
     paned.focusSurfaceInPosition(.end);
 }
 
+/// Replace the existing .start or .end Child with the given new Child.
 pub fn replaceChildInPosition(self: *Paned, child: Child, position: Position) void {
     // Keep position of divider
     const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
@@ -167,9 +171,23 @@ pub fn replaceChildInPosition(self: *Paned, child: Child, position: Position) vo
     c.gtk_paned_set_position(self.paned, parent_paned_position_before);
 }
 
+/// Remove both children, setting *c.GtkPaned start/end children to null.
 pub fn removeChildren(self: *Paned) void {
     self.removeChildInPosition(.start);
     self.removeChildInPosition(.end);
+}
+
+/// Deinit the Paned by deiniting its child Paneds, if they exist.
+pub fn deinit(self: *Paned, alloc: Allocator) void {
+    for ([_]Child{ self.child1, self.child2 }) |child| {
+        switch (child) {
+            .none, .surface => continue,
+            .paned => |paned| {
+                paned.deinit(alloc);
+                alloc.destroy(paned);
+            },
+        }
+    }
 }
 
 fn removeChildInPosition(self: *Paned, position: Position) void {
@@ -217,16 +235,4 @@ fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
         .surface => |surface| surface,
         else => null,
     };
-}
-
-pub fn deinit(self: *Paned, alloc: Allocator) void {
-    for ([_]Child{ self.child1, self.child2 }) |child| {
-        switch (child) {
-            .none, .surface => continue,
-            .paned => |paned| {
-                paned.deinit(alloc);
-                alloc.destroy(paned);
-            },
-        }
-    }
 }

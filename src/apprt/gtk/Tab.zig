@@ -158,12 +158,6 @@ pub fn setChild(self: *Tab, child: Child) void {
     self.child = child;
 }
 
-fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-    const tab: *Tab = @ptrCast(@alignCast(ud));
-    const window = tab.window;
-    window.closeTab(tab);
-}
-
 pub fn deinit(self: *Tab) void {
     switch (self.child) {
         .none, .surface => return,
@@ -172,4 +166,10 @@ pub fn deinit(self: *Tab) void {
             self.window.app.core_app.alloc.destroy(paned);
         },
     }
+}
+
+fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+    const tab: *Tab = @ptrCast(@alignCast(ud));
+    const window = tab.window;
+    window.closeTab(tab);
 }
