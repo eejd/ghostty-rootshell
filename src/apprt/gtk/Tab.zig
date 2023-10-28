@@ -4,7 +4,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const font = @import("../../font/main.zig");
+const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
+
 const Paned = @import("Paned.zig");
 const Parent = @import("relation.zig").Parent;
 const Child = @import("relation.zig").Child;
@@ -160,6 +162,28 @@ pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
     return surface;
 }
 
+/// Splits the current child surface into a Paned in given direction. Child of
+/// Tab must be a Surface.
+pub fn splitSurface(self: *Tab, direction: input.SplitDirection) !void {
+    assert(self.child == .surface);
+
+    const surface = switch (self.child) {
+        .surface => |s| s,
+        else => unreachable,
+    };
+    self.removeChild();
+
+    // Create a Paned with two Surfaces.
+    const paned = try Paned.create(self.window.app.core_app.alloc, self.window, surface, direction);
+
+    // Add Paned to the Tab.
+    self.setChild(.{ .paned = paned });
+
+    // Focus on new surface
+    paned.focusSurfaceInPosition(.end);
+}
+
+/// Remove the current child from the Tab. Noop if no child set.
 pub fn removeChild(self: *Tab) void {
     const widget = self.child.widget() orelse return;
     c.gtk_box_remove(self.box, widget);
@@ -167,6 +191,7 @@ pub fn removeChild(self: *Tab) void {
     self.child = .none;
 }
 
+/// Sets child to given child and sets parent on child.
 pub fn setChild(self: *Tab, child: Child) void {
     const widget = child.widget() orelse return;
     c.gtk_box_append(self.box, widget);
@@ -175,6 +200,7 @@ pub fn setChild(self: *Tab, child: Child) void {
     self.child = child;
 }
 
+/// Deinits tab by deiniting child if child is Paned.
 pub fn deinit(self: *Tab) void {
     switch (self.child) {
         .none, .surface => return,

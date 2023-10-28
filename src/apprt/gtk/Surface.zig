@@ -356,7 +356,7 @@ pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
 }
 
 pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
-    log.debug("new split, direction: {}", .{direction});
+    log.debug("splitting surface, direction: {}", .{direction});
 
     switch (self.parent) {
         .none => return,
@@ -367,13 +367,7 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
             try paned.splitSurfaceInPosition(position, direction);
         },
         .tab => |tab| {
-            tab.removeChild();
-
-            const paned = try Paned.create(self.app.core_app.alloc, self.window, self, direction);
-            tab.setChild(.{ .paned = paned });
-
-            // Focus on new surface
-            paned.focusSurfaceInPosition(.end);
+            try tab.splitSurface(direction);
         },
     }
 }
