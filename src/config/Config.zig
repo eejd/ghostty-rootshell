@@ -1167,6 +1167,7 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
     }
 
     // All further arguments are parameters
+    self.@"command-arg".list.clearRetainingCapacity();
     while (iter.next()) |param| {
         try self.@"command-arg".parseCLI(alloc, param);
     }
@@ -1354,6 +1355,21 @@ test "parse e: command and args" {
     try testing.expectEqual(@as(usize, 2), cfg.@"command-arg".list.items.len);
     try testing.expectEqualStrings("foo", cfg.@"command-arg".list.items[0]);
     try testing.expectEqualStrings("bar baz", cfg.@"command-arg".list.items[1]);
+}
+
+test "parse e: command replaces args" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    try cfg.@"command-arg".parseCLI(alloc, "foo");
+    try testing.expectEqual(@as(usize, 1), cfg.@"command-arg".list.items.len);
+
+    var it: TestIterator = .{ .data = &.{"echo"} };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("echo", cfg.command.?);
+    try testing.expectEqual(@as(usize, 0), cfg.@"command-arg".list.items.len);
 }
 
 test "clone default" {
