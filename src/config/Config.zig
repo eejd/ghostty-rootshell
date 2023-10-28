@@ -301,7 +301,7 @@ command: ?[]const u8 = null,
 /// "ctrl+a", "ctrl+shift+b", "up". Some notes:
 ///
 ///   - modifiers cannot repeat, "ctrl+ctrl+a" is invalid.
-///   - modifiers and key scan be in any order, "shift+a+ctrl" is weird,
+///   - modifiers and keys can be in any order, "shift+a+ctrl" is weird,
 ///     but valid.
 ///   - only a single key input is allowed, "ctrl+a+b" is invalid.
 ///
