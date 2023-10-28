@@ -906,6 +906,8 @@ fn keyEvent(
             }
         }
 
+        // Before using the physical key, try to convert the keyval
+        // directly to a key. This allows the use of key remapping.
         if (gtk_key.keyFromKeyval(keyval)) |key| {
             break :key key;
         }
