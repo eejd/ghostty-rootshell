@@ -1047,6 +1047,12 @@ pub fn setScreenSize(
         .strikethrough_thickness = old.strikethrough_thickness,
     };
 
+    // Reset our buffer sizes so that we free memory when the screen shrinks.
+    // This could be made more clever by only doing this when the screen
+    // shrinks but the performance cost really isn't that much.
+    self.cells.clearAndFree(self.alloc);
+    self.cells_bg.clearAndFree(self.alloc);
+
     log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
 
