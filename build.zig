@@ -714,7 +714,6 @@ fn addDeps(
     step.addModule("freetype", freetype_dep.module("freetype"));
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
-    step.addModule("zig-js", js_dep.module("zig-js"));
     step.addModule("pixman", pixman_dep.module("pixman"));
     step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
 
