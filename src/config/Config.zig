@@ -1134,24 +1134,38 @@ pub fn finalize(self: *Config) !void {
                 }
             }
 
-            // We need the passwd entry for the remainder
-            const pw = try internal_os.passwd.get(alloc);
-            if (self.command == null) {
-                if (pw.shell) |sh| {
-                    log.info("default shell src=passwd value={s}", .{sh});
-                    self.command = sh;
+            if (builtin.target.os.tag == .windows) {
+                if (self.command == null) {
+                    log.warn("no default shell found, will default to using cmd", .{});
+                    self.command = "cmd.exe";
                 }
-            }
 
-            if (wd_home) {
-                if (pw.home) |home| {
-                    log.info("default working directory src=passwd value={s}", .{home});
-                    self.@"working-directory" = home;
+                if (wd_home) {
+                    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                    if (try internal_os.home(&buf)) |home| {
+                        self.@"working-directory" = try alloc.dupe(u8, home);
+                    }
                 }
-            }
+            } else {
+                // We need the passwd entry for the remainder
+                const pw = try internal_os.passwd.get(alloc);
+                if (self.command == null) {
+                    if (pw.shell) |sh| {
+                        log.info("default shell src=passwd value={s}", .{sh});
+                        self.command = sh;
+                    }
+                }
 
-            if (self.command == null) {
-                log.warn("no default shell found, will default to using sh", .{});
+                if (wd_home) {
+                    if (pw.home) |home| {
+                        log.info("default working directory src=passwd value={s}", .{home});
+                        self.@"working-directory" = home;
+                    }
+                }
+
+                if (self.command == null) {
+                    log.warn("no default shell found, will default to using sh", .{});
+                }
             }
         }
     }

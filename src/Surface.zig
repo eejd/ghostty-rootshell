@@ -24,7 +24,7 @@ const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
 const imgui = @import("imgui");
-const Pty = @import("Pty.zig");
+const Pty = @import("Pty.zig").Pty;
 const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const trace = @import("tracy").trace;
@@ -941,7 +941,7 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
 /// This queues a render operation with the renderer thread. The render
 /// isn't guaranteed to happen immediately but it will happen as soon as
 /// practical.
-fn queueRender(self: *const Surface) !void {
+fn queueRender(self: *Surface) !void {
     try self.renderer_thread.wakeup.notify();
 }
 

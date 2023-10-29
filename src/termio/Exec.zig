@@ -10,7 +10,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
-const Pty = @import("../Pty.zig");
+const Pty = @import("../Pty.zig").Pty;
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
 const terminfo = @import("../terminfo/main.zig");
@@ -23,6 +23,7 @@ const fastmem = @import("../fastmem.zig");
 const internal_os = @import("../os/main.zig");
 const configpkg = @import("../config.zig");
 const shell_integration = @import("shell_integration.zig");
+const windows = @import("../windows.zig");
 
 const log = std.log.scoped(.io_exec);
 
@@ -184,7 +185,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     const alloc = self.alloc;
 
     // Start our subprocess
-    const master_fd = try self.subprocess.start(alloc);
+    try self.subprocess.start(alloc);
     errdefer self.subprocess.stop();
     const pid = pid: {
         const command = self.subprocess.command orelse return error.ProcessNotStarted;
@@ -193,7 +194,15 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
 
     // Create our pipe that we'll use to kill our read thread.
     // pipe[0] is the read end, pipe[1] is the write end.
-    const pipe = try std.os.pipe();
+    const pipe = if (builtin.os.tag == .windows) pipe: {
+        var read: windows.HANDLE = undefined;
+        var write: windows.HANDLE = undefined;
+        if (windows.exp.kernel32.CreatePipe(&read, &write, null, 0) == 0) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
+
+        break :pipe .{ read, write };
+    } else try std.os.pipe();
     errdefer std.os.close(pipe[0]);
     errdefer std.os.close(pipe[1]);
 
@@ -202,7 +211,8 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     errdefer alloc.destroy(ev_data_ptr);
 
     // Setup our stream so that we can write.
-    var stream = xev.Stream.initFd(master_fd);
+    const write_fd = if (builtin.os.tag == .windows) self.subprocess.pty.?.in_pipe else self.subprocess.pty.?.master;
+    var stream = xev.Stream.initFd(write_fd);
     errdefer stream.deinit();
 
     // Wakeup watcher for the writer thread.
@@ -262,10 +272,11 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     );
 
     // Start our reader thread
+    const read_fd = if (builtin.os.tag == .windows) self.subprocess.pty.?.out_pipe else self.subprocess.pty.?.master;
     const read_thread = try std.Thread.spawn(
         .{},
-        ReadThread.threadMain,
-        .{ master_fd, ev_data_ptr, pipe[0] },
+        if (builtin.os.tag == .windows) ReadThread.threadMainWindows else ReadThread.threadMainPosix,
+        .{ read_fd, ev_data_ptr, pipe[0] },
     );
     read_thread.setName("io-reader") catch {};
 
@@ -275,6 +286,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .ev = ev_data_ptr,
         .read_thread = read_thread,
         .read_thread_pipe = pipe[1],
+        .read_thread_fd = if (builtin.os.tag == .windows) read_fd else {},
     };
 }
 
@@ -291,6 +303,17 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     // a particularly noisy process.
     _ = std.os.write(data.read_thread_pipe, "x") catch |err|
         log.warn("error writing to read thread quit pipe err={}", .{err});
+
+    if (builtin.os.tag == .windows) {
+        // Interrupt the blocking read so the thread can see the quit message
+        if (windows.kernel32.CancelIoEx(data.read_thread_fd, null) == 0) {
+            switch (windows.kernel32.GetLastError()) {
+                .NOT_FOUND => {},
+                else => |err| log.warn("error interrupting read thread err={}", .{err}),
+            }
+        }
+    }
+
     data.read_thread.join();
 }
 
@@ -476,7 +499,7 @@ pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
             break :slice buf[0..buf_i];
         };
 
-        // for (slice) |b| log.warn("write: {x}", .{b});
+        //for (slice) |b| log.warn("write: {x}", .{b});
 
         ev.data_stream.queueWrite(
             ev.loop,
@@ -500,6 +523,7 @@ const ThreadData = struct {
     /// Our read thread
     read_thread: std.Thread,
     read_thread_pipe: std.os.fd_t,
+    read_thread_fd: if (builtin.os.tag == .windows) std.os.fd_t else void,
 
     pub fn deinit(self: *ThreadData) void {
         std.os.close(self.read_thread_pipe);
@@ -662,7 +686,8 @@ const Subprocess = struct {
         const alloc = arena.allocator();
 
         // Determine the path to the binary we're executing
-        const path = (try Command.expandPath(alloc, opts.full_config.command orelse "sh")) orelse
+        const default_command = if (builtin.os.tag == .windows) "cmd.exe" else "sh";
+        const path = (try Command.expandPath(alloc, opts.full_config.command orelse default_command)) orelse
             return error.CommandNotFound;
 
         // On macOS, we launch the program as a login shell. This is a Mac-specific
@@ -833,7 +858,7 @@ const Subprocess = struct {
 
     /// Start the subprocess. If the subprocess is already started this
     /// will crash.
-    pub fn start(self: *Subprocess, alloc: Allocator) !std.os.fd_t {
+    pub fn start(self: *Subprocess, alloc: Allocator) !void {
         assert(self.pty == null and self.command == null);
 
         // Create our pty
@@ -886,8 +911,6 @@ const Subprocess = struct {
             // wait right now but that is fine too. This lets us read the
             // parent and detect EOF.
             _ = std.os.close(pty.slave);
-
-            return pty.master;
         }
 
         // If we can't access the cwd, then don't set any cwd and inherit.
@@ -908,10 +931,11 @@ const Subprocess = struct {
             .args = self.args,
             .env = &self.env,
             .cwd = cwd,
-            .stdin = .{ .handle = pty.slave },
-            .stdout = .{ .handle = pty.slave },
-            .stderr = .{ .handle = pty.slave },
-            .pre_exec = (struct {
+            .stdin = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
+            .stdout = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
+            .stderr = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
+            .pseudo_console = if (builtin.os.tag == .windows) pty.pseudo_console else {},
+            .pre_exec = if (builtin.os.tag == .windows) null else (struct {
                 fn callback(cmd: *Command) void {
                     const p = cmd.getData(Pty) orelse unreachable;
                     p.childPreExec() catch |err|
@@ -925,7 +949,6 @@ const Subprocess = struct {
         log.info("started subcommand path={s} pid={?}", .{ self.path, cmd.pid });
 
         self.command = cmd;
-        return pty.master;
     }
 
     /// Called to notify that we exited externally so we can unset our
@@ -969,7 +992,7 @@ const Subprocess = struct {
         self.grid_size = grid_size;
         self.screen_size = screen_size;
 
-        if (self.pty) |pty| {
+        if (self.pty) |*pty| {
             try pty.setSize(.{
                 .ws_row = @intCast(grid_size.rows),
                 .ws_col = @intCast(grid_size.columns),
@@ -983,28 +1006,34 @@ const Subprocess = struct {
     /// process. This doesn't wait for the child process to be exited.
     fn killCommand(command: *Command) !void {
         if (command.pid) |pid| {
-            const pgid_: ?c.pid_t = pgid: {
-                const pgid = c.getpgid(pid);
-
-                // Don't know why it would be zero but its not a valid pid
-                if (pgid == 0) break :pgid null;
-
-                // If the pid doesn't exist then... okay.
-                if (pgid == c.ESRCH) break :pgid null;
-
-                // If we have an error...
-                if (pgid < 0) {
-                    log.warn("error getting pgid for kill", .{});
-                    break :pgid null;
+            if (builtin.os.tag == .windows) {
+                if (windows.kernel32.TerminateProcess(pid, 0) == 0) {
+                    return windows.unexpectedError(windows.kernel32.GetLastError());
                 }
+            } else {
+                const pgid_: ?c.pid_t = pgid: {
+                    const pgid = c.getpgid(pid);
 
-                break :pgid pgid;
-            };
+                    // Don't know why it would be zero but its not a valid pid
+                    if (pgid == 0) break :pgid null;
 
-            if (pgid_) |pgid| {
-                if (c.killpg(pgid, c.SIGHUP) < 0) {
-                    log.warn("error killing process group pgid={}", .{pgid});
-                    return error.KillFailed;
+                    // If the pid doesn't exist then... okay.
+                    if (pgid == c.ESRCH) break :pgid null;
+
+                    // If we have an error...
+                    if (pgid < 0) {
+                        log.warn("error getting pgid for kill", .{});
+                        break :pgid null;
+                    }
+
+                    break :pgid pgid;
+                };
+
+                if (pgid_) |pgid| {
+                    if (c.killpg(pgid, c.SIGHUP) < 0) {
+                        log.warn("error killing process group pgid={}", .{pgid});
+                        return error.KillFailed;
+                    }
                 }
             }
         }
@@ -1034,8 +1063,7 @@ const Subprocess = struct {
 /// fds and this is still much faster and lower overhead than any async
 /// mechanism.
 const ReadThread = struct {
-    /// The main entrypoint for the thread.
-    fn threadMain(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
+    fn threadMainPosix(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
         // Always close our end of the pipe when we exit.
         defer std.os.close(quit);
 
@@ -1106,6 +1134,44 @@ const ReadThread = struct {
 
             // If our quit fd is set, we're done.
             if (pollfds[1].revents & std.os.POLL.IN != 0) {
+                log.info("read thread got quit signal", .{});
+                return;
+            }
+        }
+    }
+
+    /// The main entrypoint for the thread.
+    fn threadMainWindows(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
+        // Always close our end of the pipe when we exit.
+        defer std.os.close(quit);
+
+        var buf: [1024]u8 = undefined;
+        while (true) {
+            while (true) {
+                var n: windows.DWORD = 0;
+                if (windows.kernel32.ReadFile(fd, &buf, buf.len, &n, null) == 0) {
+                    const err = windows.kernel32.GetLastError();
+                    switch (err) {
+                        // Check for a quit signal
+                        .OPERATION_ABORTED => break,
+                        else => {
+                            log.err("io reader error err={}", .{err});
+                            unreachable;
+                        },
+                    }
+                }
+
+                @call(.always_inline, process, .{ ev, buf[0..n] });
+            }
+
+            var quit_bytes: windows.DWORD = 0;
+            if (windows.exp.kernel32.PeekNamedPipe(quit, null, 0, null, &quit_bytes, null) == 0) {
+                const err = windows.kernel32.GetLastError();
+                log.err("quit pipe reader error err={}", .{err});
+                unreachable;
+            }
+
+            if (quit_bytes > 0) {
                 log.info("read thread got quit signal", .{});
                 return;
             }
@@ -1913,6 +1979,11 @@ const StreamHandler = struct {
     }
 
     pub fn reportPwd(self: *StreamHandler, url: []const u8) !void {
+        if (builtin.os.tag == .windows) {
+            log.warn("reportPwd unimplemented on windows", .{});
+            return;
+        }
+
         const uri = std.Uri.parse(url) catch |e| {
             log.warn("invalid url in OSC 7: {}", .{e});
             return;

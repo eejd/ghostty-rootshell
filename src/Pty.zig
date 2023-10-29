@@ -1,11 +1,6 @@
-//! Linux PTY creation and management. This is just a thin layer on top
-//! of Linux syscalls. The caller is responsible for detail-oriented handling
-//! of the returned file handles.
-const Pty = @This();
-
 const std = @import("std");
 const builtin = @import("builtin");
-const testing = std.testing;
+const windows = @import("windows.zig");
 const fd_t = std.os.fd_t;
 
 const c = switch (builtin.os.tag) {
@@ -13,7 +8,6 @@ const c = switch (builtin.os.tag) {
         @cInclude("sys/ioctl.h"); // ioctl and constants
         @cInclude("util.h"); // openpty()
     }),
-    .windows => {},
     else => @cImport({
         @cInclude("sys/ioctl.h"); // ioctl and constants
         @cInclude("pty.h");
@@ -22,16 +16,10 @@ const c = switch (builtin.os.tag) {
 
 const log = std.log.scoped(.pty);
 
-// https://github.com/ziglang/zig/issues/13277
-// Once above is fixed, use `c.TIOCSCTTY`
-const TIOCSCTTY = if (builtin.os.tag == .macos) 536900705 else c.TIOCSCTTY;
-const TIOCSWINSZ = if (builtin.os.tag == .macos) 2148037735 else c.TIOCSWINSZ;
-const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
-
 /// Redeclare this winsize struct so we can just use a Zig struct. This
 /// layout should be correct on all tested platforms. The defaults on this
 /// are some reasonable screen size but you should probably not use them.
-const winsize = extern struct {
+pub const winsize = extern struct {
     ws_row: u16 = 100,
     ws_col: u16 = 80,
     ws_xpixel: u16 = 800,
@@ -40,95 +28,233 @@ const winsize = extern struct {
 
 pub extern "c" fn setsid() std.c.pid_t;
 
-/// The file descriptors for the master and slave side of the pty.
-master: fd_t,
-slave: fd_t,
+pub const Pty = if (builtin.os.tag == .windows)
+    WindowsPty
+else
+    PosixPty;
 
-/// Open a new PTY with the given initial size.
-pub fn open(size: winsize) !Pty {
-    if (builtin.os.tag == .windows) return error.NotImplementedOnWindows;
+/// Linux PTY creation and management. This is just a thin layer on top
+/// of Linux syscalls. The caller is responsible for detail-oriented handling
+/// of the returned file handles.
+pub const PosixPty = struct {
 
-    // Need to copy so that it becomes non-const.
-    var sizeCopy = size;
+    // https://github.com/ziglang/zig/issues/13277
+    // Once above is fixed, use `c.TIOCSCTTY`
+    const TIOCSCTTY = if (builtin.os.tag == .macos) 536900705 else c.TIOCSCTTY;
+    const TIOCSWINSZ = if (builtin.os.tag == .macos) 2148037735 else c.TIOCSWINSZ;
+    const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
 
-    var master_fd: fd_t = undefined;
-    var slave_fd: fd_t = undefined;
-    if (c.openpty(
-        &master_fd,
-        &slave_fd,
-        null,
-        null,
-        @ptrCast(&sizeCopy),
-    ) < 0)
-        return error.OpenptyFailed;
-    errdefer {
-        _ = std.os.system.close(master_fd);
-        _ = std.os.system.close(slave_fd);
+    /// The file descriptors for the master and slave side of the pty.
+    master: fd_t,
+    slave: fd_t,
+
+    /// Open a new PTY with the given initial size.
+    pub fn open(size: winsize) !Pty {
+        // Need to copy so that it becomes non-const.
+        var sizeCopy = size;
+
+        var master_fd: fd_t = undefined;
+        var slave_fd: fd_t = undefined;
+        if (c.openpty(
+            &master_fd,
+            &slave_fd,
+            null,
+            null,
+            @ptrCast(&sizeCopy),
+        ) < 0)
+            return error.OpenptyFailed;
+        errdefer {
+            _ = std.os.system.close(master_fd);
+            _ = std.os.system.close(slave_fd);
+        }
+
+        // Enable UTF-8 mode. I think this is on by default on Linux but it
+        // is NOT on by default on macOS so we ensure that it is always set.
+        var attrs: c.termios = undefined;
+        if (c.tcgetattr(master_fd, &attrs) != 0)
+            return error.OpenptyFailed;
+        attrs.c_iflag |= c.IUTF8;
+        if (c.tcsetattr(master_fd, c.TCSANOW, &attrs) != 0)
+            return error.OpenptyFailed;
+
+        return Pty{
+            .master = master_fd,
+            .slave = slave_fd,
+        };
     }
 
-    // Enable UTF-8 mode. I think this is on by default on Linux but it
-    // is NOT on by default on macOS so we ensure that it is always set.
-    var attrs: c.termios = undefined;
-    if (c.tcgetattr(master_fd, &attrs) != 0)
-        return error.OpenptyFailed;
-    attrs.c_iflag |= c.IUTF8;
-    if (c.tcsetattr(master_fd, c.TCSANOW, &attrs) != 0)
-        return error.OpenptyFailed;
-
-    return Pty{
-        .master = master_fd,
-        .slave = slave_fd,
-    };
-}
-
-pub fn deinit(self: *Pty) void {
-    _ = std.os.system.close(self.master);
-    _ = std.os.system.close(self.slave);
-    self.* = undefined;
-}
-
-/// Return the size of the pty.
-pub fn getSize(self: Pty) !winsize {
-    if (builtin.os.tag == .windows) return error.NotImplementedOnWindows;
-
-    var ws: winsize = undefined;
-    if (c.ioctl(self.master, TIOCGWINSZ, @intFromPtr(&ws)) < 0)
-        return error.IoctlFailed;
-
-    return ws;
-}
-
-/// Set the size of the pty.
-pub fn setSize(self: Pty, size: winsize) !void {
-    if (builtin.os.tag == .windows) return error.NotImplementedOnWindows;
-    if (c.ioctl(self.master, TIOCSWINSZ, @intFromPtr(&size)) < 0)
-        return error.IoctlFailed;
-}
-
-/// This should be called prior to exec in the forked child process
-/// in order to setup the tty properly.
-pub fn childPreExec(self: Pty) !void {
-    // Create a new process group
-    if (setsid() < 0) return error.ProcessGroupFailed;
-
-    // Set controlling terminal
-    switch (std.os.system.getErrno(c.ioctl(self.slave, TIOCSCTTY, @as(c_ulong, 0)))) {
-        .SUCCESS => {},
-        else => |err| {
-            log.err("error setting controlling terminal errno={}", .{err});
-            return error.SetControllingTerminalFailed;
-        },
+    pub fn deinit(self: *Pty) void {
+        _ = std.os.system.close(self.master);
+        _ = std.os.system.close(self.slave);
+        self.* = undefined;
     }
 
-    // Can close master/slave pair now
-    std.os.close(self.slave);
-    std.os.close(self.master);
+    /// Return the size of the pty.
+    pub fn getSize(self: Pty) !winsize {
+        var ws: winsize = undefined;
+        if (c.ioctl(self.master, TIOCGWINSZ, @intFromPtr(&ws)) < 0)
+            return error.IoctlFailed;
 
-    // TODO: reset signals
-}
+        return ws;
+    }
 
+    /// Set the size of the pty.
+    pub fn setSize(self: *Pty, size: winsize) !void {
+        if (c.ioctl(self.master, TIOCSWINSZ, @intFromPtr(&size)) < 0)
+            return error.IoctlFailed;
+    }
+
+    /// This should be called prior to exec in the forked child process
+    /// in order to setup the tty properly.
+    pub fn childPreExec(self: Pty) !void {
+        // Create a new process group
+        if (setsid() < 0) return error.ProcessGroupFailed;
+
+        // Set controlling terminal
+        switch (std.os.system.getErrno(c.ioctl(self.slave, TIOCSCTTY, @as(c_ulong, 0)))) {
+            .SUCCESS => {},
+            else => |err| {
+                log.err("error setting controlling terminal errno={}", .{err});
+                return error.SetControllingTerminalFailed;
+            },
+        }
+
+        // Can close master/slave pair now
+        std.os.close(self.slave);
+        std.os.close(self.master);
+
+        // TODO: reset signals
+    }
+};
+
+/// Windows PTY creation and management.
+pub const WindowsPty = struct {
+    // Process-wide counter for pipe names
+    var pipe_name_counter = std.atomic.Atomic(u32).init(1);
+
+    out_pipe: windows.HANDLE,
+    in_pipe: windows.HANDLE,
+    out_pipe_pty: windows.HANDLE,
+    in_pipe_pty: windows.HANDLE,
+    pseudo_console: windows.exp.HPCON,
+    size: winsize,
+
+    /// Open a new PTY with the given initial size.
+    pub fn open(size: winsize) !Pty {
+        var pty: Pty = undefined;
+
+        var pipe_path_buf: [128]u8 = undefined;
+        var pipe_path_buf_w: [128]u16 = undefined;
+        const pipe_path = std.fmt.bufPrintZ(
+            &pipe_path_buf,
+            "\\\\.\\pipe\\LOCAL\\ghostty-pty-{d}-{d}",
+            .{ windows.kernel32.GetCurrentProcessId(), pipe_name_counter.fetchAdd(1, .Monotonic) },
+        ) catch unreachable;
+
+        const pipe_path_w_len = std.unicode.utf8ToUtf16Le(&pipe_path_buf_w, pipe_path) catch unreachable;
+        pipe_path_buf_w[pipe_path_w_len] = 0;
+        const pipe_path_w = pipe_path_buf_w[0..pipe_path_w_len :0];
+
+        const security_attributes = windows.SECURITY_ATTRIBUTES{
+            .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
+            .bInheritHandle = windows.FALSE,
+            .lpSecurityDescriptor = null,
+        };
+
+        pty.in_pipe = windows.kernel32.CreateNamedPipeW(
+            pipe_path_w.ptr,
+            windows.PIPE_ACCESS_OUTBOUND | windows.exp.FILE_FLAG_FIRST_PIPE_INSTANCE | windows.FILE_FLAG_OVERLAPPED,
+            windows.PIPE_TYPE_BYTE,
+            1,
+            4096,
+            4096,
+            0,
+            &security_attributes,
+        );
+        if (pty.in_pipe == windows.INVALID_HANDLE_VALUE) return windows.unexpectedError(windows.kernel32.GetLastError());
+        errdefer _ = windows.kernel32.CloseHandle(pty.in_pipe);
+
+        var security_attributes_read = security_attributes;
+        pty.in_pipe_pty = windows.kernel32.CreateFileW(
+            pipe_path_w.ptr,
+            windows.GENERIC_READ,
+            0,
+            &security_attributes_read,
+            windows.OPEN_EXISTING,
+            windows.FILE_ATTRIBUTE_NORMAL,
+            null,
+        );
+        if (pty.in_pipe_pty == windows.INVALID_HANDLE_VALUE) return windows.unexpectedError(windows.kernel32.GetLastError());
+        errdefer _ = windows.kernel32.CloseHandle(pty.in_pipe_pty);
+
+        // The in_pipe needs to be created as a named pipe, since anonymous pipes created with CreatePipe do not
+        // support overlapped operations, and the IOCP backend of libxev only uses overlapped operations on files.
+        //
+        // It would be ideal to use CreatePipe here, so that our pipe isn't visible to any other processes.
+
+        // if (windows.exp.kernel32.CreatePipe(&pty.in_pipe_pty, &pty.in_pipe, null, 0) == 0) {
+        //     return windows.unexpectedError(windows.kernel32.GetLastError());
+        // }
+        // errdefer {
+        //     _ = windows.kernel32.CloseHandle(pty.in_pipe_pty);
+        //     _ = windows.kernel32.CloseHandle(pty.in_pipe);
+        // }
+
+        if (windows.exp.kernel32.CreatePipe(&pty.out_pipe, &pty.out_pipe_pty, null, 0) == 0) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
+        errdefer {
+            _ = windows.kernel32.CloseHandle(pty.out_pipe);
+            _ = windows.kernel32.CloseHandle(pty.out_pipe_pty);
+        }
+
+        try windows.SetHandleInformation(pty.in_pipe, windows.HANDLE_FLAG_INHERIT, 0);
+        try windows.SetHandleInformation(pty.in_pipe_pty, windows.HANDLE_FLAG_INHERIT, 0);
+        try windows.SetHandleInformation(pty.out_pipe, windows.HANDLE_FLAG_INHERIT, 0);
+        try windows.SetHandleInformation(pty.out_pipe_pty, windows.HANDLE_FLAG_INHERIT, 0);
+
+        const result = windows.exp.kernel32.CreatePseudoConsole(
+            .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },
+            pty.in_pipe_pty,
+            pty.out_pipe_pty,
+            0,
+            &pty.pseudo_console,
+        );
+
+        if (result != windows.S_OK) return error.Unexpected;
+
+        pty.size = size;
+        return pty;
+    }
+
+    pub fn deinit(self: *Pty) void {
+        _ = windows.kernel32.CloseHandle(self.in_pipe_pty);
+        _ = windows.kernel32.CloseHandle(self.in_pipe);
+        _ = windows.kernel32.CloseHandle(self.out_pipe_pty);
+        _ = windows.kernel32.CloseHandle(self.out_pipe);
+        _ = windows.exp.kernel32.ClosePseudoConsole(self.pseudo_console);
+        self.* = undefined;
+    }
+
+    /// Return the size of the pty.
+    pub fn getSize(self: Pty) !winsize {
+        return self.size;
+    }
+
+    /// Set the size of the pty.
+    pub fn setSize(self: *Pty, size: winsize) !void {
+        const result = windows.exp.kernel32.ResizePseudoConsole(
+            self.pseudo_console,
+            .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },
+        );
+
+        if (result != windows.S_OK) return error.ResizeFailed;
+        self.size = size;
+    }
+};
+
+const testing = std.testing;
 test {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
     var ws: winsize = .{
         .ws_row = 50,
         .ws_col = 80,
@@ -136,7 +262,7 @@ test {
         .ws_ypixel = 1,
     };
 
-    var pty = try open(ws);
+    var pty = try Pty.open(ws);
     defer pty.deinit();
 
     // Initialize size should match what we gave it

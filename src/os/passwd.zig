@@ -30,7 +30,7 @@ pub const Entry = struct {
 
 /// Get the passwd entry for the currently executing user.
 pub fn get(alloc: Allocator) !Entry {
-    if (builtin.os.tag == .windows) @panic("todo: windows");
+    if (builtin.os.tag == .windows) @compileError("passwd is not available on windows");
 
     var buf: [1024]u8 = undefined;
     var pw: c.struct_passwd = undefined;
@@ -63,7 +63,7 @@ pub fn get(alloc: Allocator) !Entry {
         // Note: we wrap our getent call in a /bin/sh login shell because
         // some operating systems (NixOS tested) don't set the PATH for various
         // utilities properly until we get a login shell.
-        const Pty = @import("../Pty.zig");
+        const Pty = @import("../Pty.zig").Pty;
         var pty = try Pty.open(.{});
         defer pty.deinit();
         var cmd: internal_os.FlatpakHostCommand = .{

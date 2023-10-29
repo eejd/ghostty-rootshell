@@ -243,7 +243,8 @@ pub const GlobalState = struct {
         // maybe once for logging) so for now this is an easy way to do
         // this. Env vars are useful for logging too because they are
         // easy to set.
-        if (std.os.getenv("GHOSTTY_LOG")) |v| {
+        if ((try internal_os.getEnvVarOwned(self.alloc, "GHOSTTY_LOG"))) |v| {
+            defer self.alloc.free(v);
             if (v.len > 0) {
                 self.logging = .{ .stderr = {} };
             }
@@ -265,7 +266,7 @@ pub const GlobalState = struct {
 
         // We need to make sure the process locale is set properly. Locale
         // affects a lot of behaviors in a shell.
-        internal_os.ensureLocale();
+        try internal_os.ensureLocale(self.alloc);
     }
 
     /// Cleans up the global state. This doesn't _need_ to be called but
