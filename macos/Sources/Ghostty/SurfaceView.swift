@@ -252,6 +252,13 @@ extension Ghostty {
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
         
+        // Returns true if quit confirmation is required for this surface to
+        // exit safely.
+        var needsConfirmQuit: Bool {
+            guard let surface = self.surface else { return false }
+            return ghostty_surface_needs_confirm_quit(surface)
+        }
+        
         // Returns the inspector instance for this surface, or nil if the
         // surface has been closed.
         var inspector: ghostty_inspector_t? {

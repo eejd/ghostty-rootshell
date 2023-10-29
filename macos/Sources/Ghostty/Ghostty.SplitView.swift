@@ -96,6 +96,22 @@ extension Ghostty {
                 container.bottomRight.close()
             }
         }
+        
+        /// Returns true if any surface in the split stack requires quit confirmation.
+        func needsConfirmQuit() -> Bool {
+            switch (self) {
+            case .noSplit(let leaf):
+                return leaf.surface.needsConfirmQuit
+
+            case .horizontal(let container):
+                return container.topLeft.needsConfirmQuit() ||
+                    container.bottomRight.needsConfirmQuit()
+
+            case .vertical(let container):
+                return container.topLeft.needsConfirmQuit() ||
+                    container.bottomRight.needsConfirmQuit()
+            }
+        }
 
         /// Returns true if the split tree contains the given view.
         func contains(view: SurfaceView) -> Bool {
