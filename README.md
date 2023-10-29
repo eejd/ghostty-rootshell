@@ -132,7 +132,7 @@ Ghostty supports some features that require shell integration. I am aiming
 to support many of the features that
 [Kitty supports for shell integration](https://sw.kovidgoyal.net/kitty/shell-integration/).
 
-The currently support shell integration features in Ghostty:
+The currently supported shell integration features in Ghostty:
 
 - We do not confirm close for windows where the cursor is at a prompt.
 - New terminals start in the working directory of the previously focused terminal.
