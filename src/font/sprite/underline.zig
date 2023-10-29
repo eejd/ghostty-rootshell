@@ -182,28 +182,27 @@ const Draw = struct {
         };
 
         // The full height of the wave can be from the bottom to the
-        // underline position. We also calculate our starting y which is
-        // slightly below our descender since our wave will move about that.
+        // underline position. We also calculate our mid y point of the wave
         const wave_height: f64 = @floatFromInt(y_max - pos);
         const half_height: f64 = @max(1, wave_height / 4);
-        const y_pos = @as(i32, @intCast(pos)) + @as(i32, @intFromFloat(2 * half_height));
+        const y_mid: u32 = pos + @as(u32, @intFromFloat(2 * half_height));
 
         // follow Xiaolin Wu's antialias algorithm to draw the curve
         var x: u32 = 0;
         while (x < self.width) : (x += 1) {
-            const y0 = half_height * @cos(@as(f64, @floatFromInt(x)) * x_factor);
-            const y1 = y_pos + @as(i32, @intFromFloat(@floor(y0)));
-            const y3 = y1 - 1 + @as(i32, @intCast(self.thickness));
-            const alpha: u8 = @intFromFloat(255 * @abs(y0 - @floor(y0)));
+            const y: f64 = @as(f64, @floatFromInt(y_mid)) + (half_height * @cos(@as(f64, @floatFromInt(x)) * x_factor));
+            const y_upper: u32 = @intFromFloat(@floor(y));
+            const y_lower: u32 = y_upper - 1 + self.thickness;
+            const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
 
             // upper and lower bounds
-            canvas.pixel(x, @min(@as(u32, @intCast(y1)), y_max), @enumFromInt(255 - alpha));
-            canvas.pixel(x, @min(@as(u32, @intCast(y3)), y_max), @enumFromInt(alpha));
+            canvas.pixel(x, @min(y_upper, y_max), @enumFromInt(255 - alpha));
+            canvas.pixel(x, @min(y_lower, y_max), @enumFromInt(alpha));
 
             // fill between upper and lower bound
-            var y2: u32 = @as(u32, @intCast(y1)) + 1;
-            while (y2 < y3) : (y2 += 1) {
-                canvas.pixel(x, @min(y2, y_max), .on);
+            var y_fill: u32 = y_upper + 1;
+            while (y_fill < y_lower) : (y_fill += 1) {
+                canvas.pixel(x, @min(y_fill, y_max), .on);
             }
         }
     }
