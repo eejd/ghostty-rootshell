@@ -1612,6 +1612,55 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     };
 }
 
+/// Select the command output under the given point. The limits of the output
+/// are determined by semantic prompt information provided by shell integration.
+/// A selection can span multiple physical lines if they are soft-wrapped.
+///
+/// This will return null if a selection is impossible. The only scenario
+/// this happens is if the point pt is outside of the written screen space.
+pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Impossible to select anything outside of the area we've written.
+    const y_max = self.rowsWritten() - 1;
+    if (pt.y > y_max) return null;
+
+    // Go forwards to find our end boundary
+    // We are looking for input start / prompt markers
+    const end: point.ScreenPoint = boundary: {
+        var y: usize = pt.y;
+        while (y <= y_max) : (y += 1) {
+            const row = self.getRow(.{ .screen = y });
+            switch (row.getSemanticPrompt()) {
+                .input, .prompt_continuation, .prompt => {
+                    const prev_row = self.getRow(.{ .screen = y - 1 });
+                    break :boundary .{ .x = prev_row.lenCells(), .y = y - 1 };
+                },
+                else => {},
+            }
+        }
+
+        break :boundary .{ .x = self.cols - 1, .y = y_max };
+    };
+
+    // Go backwards to find our start boundary
+    // We are looking for output start markers
+    const start: point.ScreenPoint = boundary: {
+        var y: usize = pt.y;
+        while (y > 0) : (y -= 1) {
+            const row = self.getRow(.{ .screen = y });
+            switch (row.getSemanticPrompt()) {
+                .command => break :boundary .{ .x = 0, .y = y },
+                else => {},
+            }
+        }
+        break :boundary .{ .x = 0, .y = 0 };
+    };
+
+    return Selection{
+        .start = start,
+        .end = end,
+    };
+}
+
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
