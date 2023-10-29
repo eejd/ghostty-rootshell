@@ -147,6 +147,10 @@ pub const ghostty: Source = .{
         .{ .name = "Clmg", .value = .{ .string = "\\E[s" } },
         .{ .name = "Cmg", .value = .{ .string = "\\E[%i%p1%d;%p2%ds" } },
 
+        // Clear screen. E3 is the extension to clear scrollback
+        .{ .name = "clear", .value = .{ .string = "\\E[H\\E[2J" } },
+        .{ .name = "E3", .value = .{ .string = "\\E[3J" } },
+
         // These are all capabilities that should be pretty straightforward
         // and map to input sequences.
         .{ .name = "bel", .value = .{ .string = "^G" } },
@@ -154,7 +158,6 @@ pub const ghostty: Source = .{
         .{ .name = "bold", .value = .{ .string = "\\E[1m" } },
         .{ .name = "cbt", .value = .{ .string = "\\E[Z" } },
         .{ .name = "civis", .value = .{ .string = "\\E[?25l" } },
-        .{ .name = "clear", .value = .{ .string = "\\E[H\\E[2J" } },
         .{ .name = "cnorm", .value = .{ .string = "\\E[?12l\\E[?25h" } },
         .{ .name = "cr", .value = .{ .string = "\\r" } },
         .{ .name = "csr", .value = .{ .string = "\\E[%i%p1%d;%p2%dr" } },
