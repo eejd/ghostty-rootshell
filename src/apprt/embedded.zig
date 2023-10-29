@@ -1206,6 +1206,11 @@ pub const CAPI = struct {
         return surface.app.config.@"background-opacity" < 1.0;
     }
 
+    /// Returns true if the surface needs to confirm quitting.
+    export fn ghostty_surface_needs_confirm_quit(surface: *Surface) bool {
+        return surface.core_surface.needsConfirmQuit();
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_refresh(surface: *Surface) void {
         surface.refresh();

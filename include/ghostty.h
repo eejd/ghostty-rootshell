@@ -396,6 +396,7 @@ ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 bool ghostty_surface_transparent(ghostty_surface_t);
+bool ghostty_surface_needs_confirm_quit(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
