@@ -73,10 +73,14 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         
         // Let's launch our first window.
         // TODO: we should detect if we restored windows and if so not launch a new window.
-        windowManager.addInitialWindow()
+        // TODO: remove when TerminalController is done
+        // windowManager.addInitialWindow()
         
         // Initial config loading
         configDidReload(ghostty)
+        
+        let c = TerminalController(ghostty)
+        c.showWindow(self)
         
         // Register our service provider. This must happen after everything
         // else is initialized.

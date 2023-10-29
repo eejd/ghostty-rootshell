@@ -27,6 +27,9 @@
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A59630972AEE163600D64628 /* HostingWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59630962AEE163600D64628 /* HostingWindow.swift */; };
+		A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */ = {isa = PBXBuildFile; fileRef = A59630992AEE1C6400D64628 /* Terminal.xib */; };
+		A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A596309B2AEE1C9E00D64628 /* TerminalController.swift */; };
+		A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A596309D2AEE1D6C00D64628 /* TerminalView.swift */; };
 		A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */; };
 		A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5D02AE0DEA7009128F3 /* MetalView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
@@ -62,6 +65,9 @@
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A59630962AEE163600D64628 /* HostingWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingWindow.swift; sourceTree = "<group>"; };
+		A59630992AEE1C6400D64628 /* Terminal.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = Terminal.xib; sourceTree = "<group>"; };
+		A596309B2AEE1C9E00D64628 /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
+		A596309D2AEE1D6C00D64628 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
 		A59FB5D02AE0DEA7009128F3 /* MetalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalView.swift; sourceTree = "<group>"; };
 		A5A1F8842A489D6800D1E8BC /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "../zig-out/share/terminfo"; sourceTree = "<group>"; };
@@ -97,6 +103,7 @@
 			children = (
 				A56D58872ACDE6BE00508D2C /* Services */,
 				A53426372A7DC53A00EBB7A2 /* Primary Window */,
+				A59630982AEE1C4400D64628 /* Terminal */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 			);
 			path = Features;
@@ -171,6 +178,16 @@
 				A56D58882ACDE6CA00508D2C /* ServiceProvider.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		A59630982AEE1C4400D64628 /* Terminal */ = {
+			isa = PBXGroup;
+			children = (
+				A59630992AEE1C6400D64628 /* Terminal.xib */,
+				A596309B2AEE1C9E00D64628 /* TerminalController.swift */,
+				A596309D2AEE1D6C00D64628 /* TerminalView.swift */,
+			);
+			path = Terminal;
 			sourceTree = "<group>";
 		};
 		A5A1F8862A489D7400D1E8BC /* Resources */ = {
@@ -280,6 +297,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A545D1A22A5772CE006E0AE4 /* shell-integration in Resources */,
+				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
 				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
 				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
@@ -295,6 +313,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
+				A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */,
 				A53426392A7DC55C00EBB7A2 /* PrimaryWindowManager.swift in Sources */,
 				85DE1C922A6A3DCA00493853 /* PrimaryWindow.swift in Sources */,
 				A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */,
@@ -318,6 +337,7 @@
 				85102A1C2A6E32890084AB3E /* PrimaryWindowController.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
 				8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */,
+				A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */,
 				A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
