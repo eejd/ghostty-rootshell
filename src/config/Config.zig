@@ -280,6 +280,12 @@ command: ?[]const u8 = null,
 
 /// The directory to change to after starting the command.
 ///
+/// This setting is secondary to the "window-inherit-working-directory"
+/// setting. If a previous Ghostty terminal exists in the same process,
+/// "window-inherit-working-directory" will take precedence. Otherwise,
+/// this setting will be used. Typically, this setting is used only
+/// for the first window.
+///
 /// The default is "inherit" except in special scenarios listed next.
 /// On macOS, if Ghostty can detect it is launched from launchd
 /// (double-clicked) or `open`, then it defaults to "home".
