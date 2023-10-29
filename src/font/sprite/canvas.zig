@@ -140,6 +140,12 @@ const WebCanvasImpl = struct {
         self.* = undefined;
     }
 
+    pub fn pixel(self: *WebCanvasImpl, x: u32, y: u32, color: Color) void {
+        const ctx = self.context(color) catch return;
+        defer ctx.deinit();
+        ctx.call(void, "fillRect", .{ x, y, 1, 1 }) catch return;
+    }
+
     pub fn rect(self: *WebCanvasImpl, v: Rect, color: Color) void {
         const ctx = self.context(color) catch return;
         defer ctx.deinit();
@@ -399,6 +405,20 @@ const PixmanImpl = struct {
         }
 
         return region;
+    }
+
+    /// Draw and fill a single pixel
+    pub fn pixel(self: *Canvas, x: u32, y: u32, color: Color) void {
+        const boxes = &[_]pixman.Box32{
+            .{
+                .x1 = @intCast(x),
+                .y1 = @intCast(y),
+                .x2 = @intCast(x + 1),
+                .y2 = @intCast(y + 1),
+            },
+        };
+
+        self.image.fillBoxes(.src, color.pixmanColor(), boxes) catch {};
     }
 
     /// Draw and fill a rectangle. This is the main primitive for drawing

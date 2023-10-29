@@ -166,40 +166,43 @@ const Draw = struct {
         // This is the lowest that the curl can go.
         const y_max = self.height - 1;
 
+        // Determines the density of the waves.
+        //   `2 * pi...` = 1 peak per character
+        //   `4 * pi...` = 2 peaks per character
+        const x_factor = 2 * std.math.pi / @as(f64, @floatFromInt(self.width - 1));
+
         // Some fonts put the underline too close to the bottom of the
         // cell height and this doesn't allow us to make a high enough
         // wave. This constant is arbitrary, change it for aesthetics.
-        const pos = pos: {
-            const MIN_HEIGHT = 7;
+        const pos: u32 = pos: {
+            const MIN_HEIGHT = 5;
             const clamped_pos = @min(y_max, self.pos);
             const height = y_max - clamped_pos;
             break :pos if (height < MIN_HEIGHT) clamped_pos -| MIN_HEIGHT else clamped_pos;
         };
 
-        // The full heightof the wave can be from the bottom to the
-        // underline position. We also calculate our starting y which is
-        // slightly below our descender since our wave will move about that.
-        const wave_height = @as(f64, @floatFromInt(y_max - pos));
-        const half_height = wave_height / 4;
-        const y = pos + @as(u32, @intFromFloat(half_height));
+        // The full height of the wave can be from the bottom to the
+        // underline position. We also calculate our mid y point of the wave
+        const wave_height: f64 = @floatFromInt(y_max - pos);
+        const half_height: f64 = @max(1, wave_height / 4);
+        const y_mid: u32 = pos + @as(u32, @intFromFloat(2 * half_height));
 
-        const x_factor = (2 * std.math.pi) / @as(f64, @floatFromInt(self.width));
+        // follow Xiaolin Wu's antialias algorithm to draw the curve
         var x: u32 = 0;
         while (x < self.width) : (x += 1) {
-            const vertical = @as(
-                u32,
-                @intFromFloat((-1 * half_height) * @sin(@as(f64, @floatFromInt(x)) * x_factor) + half_height),
-            );
+            const y: f64 = @as(f64, @floatFromInt(y_mid)) + (half_height * @cos(@as(f64, @floatFromInt(x)) * x_factor));
+            const y_upper: u32 = @intFromFloat(@floor(y));
+            const y_lower: u32 = y_upper - 1 + self.thickness;
+            const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
 
-            var row: u32 = 0;
-            while (row < self.thickness) : (row += 1) {
-                const y1 = @min(row + y + vertical, y_max);
-                canvas.rect(.{
-                    .x = @intCast(x),
-                    .y = @intCast(y1),
-                    .width = 1,
-                    .height = 1,
-                }, .on);
+            // upper and lower bounds
+            canvas.pixel(x, @min(y_upper, y_max), @enumFromInt(255 - alpha));
+            canvas.pixel(x, @min(y_lower, y_max), @enumFromInt(alpha));
+
+            // fill between upper and lower bound
+            var y_fill: u32 = y_upper + 1;
+            while (y_fill < y_lower) : (y_fill += 1) {
+                canvas.pixel(x, @min(y_fill, y_max), .on);
             }
         }
     }
