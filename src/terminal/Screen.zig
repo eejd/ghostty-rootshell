@@ -4091,6 +4091,62 @@ test "Screen: selectWord with single quote boundary" {
     }
 }
 
+test "Screen: selectOutput" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 15, 10, 0);
+    defer s.deinit();
+
+                                                // line number:
+    try s.testWriteString("output1\n");         // 0
+    try s.testWriteString("output1\n");         // 1
+    try s.testWriteString("prompt2\n");         // 2
+    try s.testWriteString("input2\n");          // 3
+    try s.testWriteString("output2\n");         // 4
+    try s.testWriteString("output2\n");         // 5
+    try s.testWriteString("prompt3$ input3\n"); // 6
+    try s.testWriteString("output3\n");         // 7
+    try s.testWriteString("output3\n");         // 8
+    try s.testWriteString("output3");           // 9
+
+    var row = s.getRow(.{.screen = 2});
+    row.setSemanticPrompt(.prompt);
+    row = s.getRow(.{.screen = 3});
+    row.setSemanticPrompt(.input);
+    row = s.getRow(.{.screen = 4});
+    row.setSemanticPrompt(.command);
+    row = s.getRow(.{.screen = 6});
+    row.setSemanticPrompt(.input);
+    row = s.getRow(.{.screen = 7});
+    row.setSemanticPrompt(.command);
+
+    // No start marker, should select from the beginning
+    {
+        const sel = s.selectOutput(.{.x = 1, .y = 1}).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 10), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+    // Both start and end markers, should select between them
+    {
+        const sel = s.selectOutput(.{ .x = 3, .y = 5 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 4), sel.start.y);
+        try testing.expectEqual(@as(usize, 10), sel.end.x);
+        try testing.expectEqual(@as(usize, 5), sel.end.y);
+    }
+    // No end marker, should select till the end
+    {
+        const sel = s.selectOutput(.{ .x = 2, .y = 7 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 7), sel.start.y);
+        try testing.expectEqual(@as(usize, 9), sel.end.x);
+        try testing.expectEqual(@as(usize, 10), sel.end.y);
+    }
+}
+
 test "Screen: scrollRegionUp single" {
     const testing = std.testing;
     const alloc = testing.allocator;
