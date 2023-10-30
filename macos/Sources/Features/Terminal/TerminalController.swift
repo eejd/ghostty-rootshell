@@ -9,9 +9,6 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.AppState
     
-    /// The base configuration for the new window
-    let baseConfig: Ghostty.SurfaceConfiguration?
-    
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil
 
@@ -39,7 +36,6 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
-        self.baseConfig = base
         super.init(window: nil)
         
         // Initialize our initial surface.
