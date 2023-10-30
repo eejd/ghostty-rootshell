@@ -95,7 +95,7 @@ const SetScreenSize = struct {
 
         // Apply our padding
         const padding = r.padding.explicit.add(if (r.padding.balance)
-            renderer.Padding.balanced(self.size, r.gridSize(self.size), r.cell_size)
+            renderer.Padding.balanced(self.size.subPadding(r.padding.explicit), r.gridSize(self.size), r.cell_size)
         else
             .{});
         const padded_size = self.size.subPadding(padding);

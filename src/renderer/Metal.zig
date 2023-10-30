@@ -1019,7 +1019,7 @@ pub fn setScreenSize(
     // the leftover amounts on the right/bottom that don't fit a full grid cell
     // and we split them equal across all boundaries.
     const padding = self.padding.explicit.add(if (self.padding.balance)
-        renderer.Padding.balanced(dim, grid_size, self.cell_size)
+        renderer.Padding.balanced(dim.subPadding(self.padding.explicit), grid_size, self.cell_size)
     else
         .{});
     const padded_dim = dim.subPadding(padding);
