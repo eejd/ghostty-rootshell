@@ -46,11 +46,11 @@ extension Ghostty {
     ///   "container" which has a recursive top/left SplitNode and bottom/right SplitNode. These
     ///   values can further be split infinitely.
     ///
-    enum SplitNode {
+    enum SplitNode: Equatable, Hashable {
         case noSplit(Leaf)
         case horizontal(Container)
         case vertical(Container)
-
+        
         /// Returns the view that would prefer receiving focus in this tree. This is always the
         /// top-left-most view. This is used when creating a split or closing a split to find the
         /// next view to send focus to.
@@ -112,8 +112,23 @@ extension Ghostty {
                     container.bottomRight.contains(view: view)
             }
         }
+        
+        // MARK: - Equatable
+        
+        static func == (lhs: SplitNode, rhs: SplitNode) -> Bool {
+            switch (lhs, rhs) {
+            case (.noSplit(let lhs_v), .noSplit(let rhs_v)):
+                return lhs_v === rhs_v
+            case (.horizontal(let lhs_v), .horizontal(let rhs_v)):
+                return lhs_v === rhs_v
+            case (.vertical(let lhs_v), .vertical(let rhs_v)):
+                return lhs_v === rhs_v
+            default:
+                return false
+            }
+        }
 
-        class Leaf: ObservableObject {
+        class Leaf: ObservableObject, Equatable, Hashable {
             let app: ghostty_app_t
             @Published var surface: SurfaceView
 
@@ -122,9 +137,22 @@ extension Ghostty {
                 self.app = app
                 self.surface = SurfaceView(app, baseConfig)
             }
+            
+            // MARK: - Hashable
+            
+            func hash(into hasher: inout Hasher) {
+                hasher.combine(app)
+                hasher.combine(surface)
+            }
+            
+            // MARK: - Equatable
+            
+            static func == (lhs: Leaf, rhs: Leaf) -> Bool {
+                return lhs.app == rhs.app && lhs.surface === rhs.surface
+            }
         }
 
-        class Container: ObservableObject {
+        class Container: ObservableObject, Equatable, Hashable {
             let app: ghostty_app_t
             @Published var topLeft: SplitNode
             @Published var bottomRight: SplitNode
@@ -139,6 +167,22 @@ extension Ghostty {
                 // state since this is a new split.
                 self.topLeft = .noSplit(from)
                 self.bottomRight = .noSplit(.init(app, baseConfig))
+            }
+            
+            // MARK: - Hashable
+            
+            func hash(into hasher: inout Hasher) {
+                hasher.combine(app)
+                hasher.combine(topLeft)
+                hasher.combine(bottomRight)
+            }
+            
+            // MARK: - Equatable
+            
+            static func == (lhs: Container, rhs: Container) -> Bool {
+                return lhs.app == rhs.app &&
+                    lhs.topLeft == rhs.topLeft &&
+                    lhs.bottomRight == rhs.bottomRight
             }
         }
 
@@ -265,6 +309,7 @@ extension Ghostty {
                     }
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
+                .id(node) // Required to detect node changes
             } else {
                 // On these events we want to reset the split state and call it.
                 let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
