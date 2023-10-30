@@ -89,9 +89,9 @@ class TerminalManager {
     }
     
     /// Creates a window controller, adds it to our managed list, and returns it.
-    private func createWindow(withBaseConfig: Ghostty.SurfaceConfiguration?) -> TerminalController {
+    private func createWindow(withBaseConfig base: Ghostty.SurfaceConfiguration?) -> TerminalController {
         // Initialize our controller to load the window
-        let c = TerminalController(ghostty)
+        let c = TerminalController(ghostty, withBaseConfig: base)
         
         // Create a listener for when the window is closed so we can remove it.
         let pubClose = NotificationCenter.default.publisher(

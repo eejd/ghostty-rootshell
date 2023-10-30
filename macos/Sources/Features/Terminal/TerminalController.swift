@@ -9,14 +9,18 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.AppState
     
+    /// The base configuration for the new window
+    let baseConfig: Ghostty.SurfaceConfiguration?
+    
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil
     
     /// Fullscreen state management.
     private let fullscreenHandler = FullScreenHandler()
     
-    init(_ ghostty: Ghostty.AppState) {
+    init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
+        self.baseConfig = base
         super.init(window: nil)
         
         let center = NotificationCenter.default
@@ -64,7 +68,8 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
-            delegate: self
+            delegate: self,
+            baseConfig: baseConfig
         ))
     }
     

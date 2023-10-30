@@ -28,6 +28,9 @@ struct TerminalView: View {
     // An optional delegate to receive information about terminal changes.
     weak var delegate: TerminalViewDelegate? = nil
     
+    // If this is set, this is the base configuration that we build our surface out of.
+    let baseConfig: Ghostty.SurfaceConfiguration?
+    
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
     
@@ -70,7 +73,7 @@ struct TerminalView: View {
                     DebugBuildWarningView()
                 }
                 
-                Ghostty.TerminalSplit(onClose: onClose, baseConfig: nil)
+                Ghostty.TerminalSplit(onClose: onClose, baseConfig: baseConfig)
                     .ghosttyApp(ghostty.app!)
                     .ghosttyConfig(ghostty.config!)
                     .focused($focused)
