@@ -216,6 +216,7 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
         .gl_area = @ptrCast(gl_area),
         .title_label = @ptrCast(label_text),
         .font_size = font_size,
+        .parent = parent_ != null,
     });
     errdefer surface.deinit();
     const page_idx = c.gtk_notebook_append_page(self.notebook, gl_area, label_box_widget);
