@@ -70,10 +70,8 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     //MARK: - NSWindowController
     
     override func windowWillLoad() {
-        // We want every new terminal window to cascade so they don't directly overlap.
-        shouldCascadeWindows = true
-        
-        // TODO: The cascade is messed up with tabs.
+        // We do NOT want to cascade because we handle this manually from the manager.
+        shouldCascadeWindows = false
     }
     
     override func windowDidLoad() {

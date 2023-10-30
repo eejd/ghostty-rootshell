@@ -19,6 +19,11 @@ class TerminalManager {
     /// The set of windows we currently have.
     private var windows: [Window] = []
     
+    // Keep track of the last point that our window was launched at so that new
+    // windows "cascade" over each other and don't just launch directly on top
+    // of each other.
+    private static var lastCascadePoint = NSPoint(x: 0, y: 0)
+    
     /// Returns the main window of the managed window stack. If there is no window
     /// then an arbitrary window will be chosen.
     private var mainWindow: Window? {
@@ -58,6 +63,10 @@ class TerminalManager {
     /// Create a new terminal window.
     func newWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         let c = createWindow(withBaseConfig: base)
+        if let window = c.window {
+            Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+        }
+        
         c.showWindow(self)
     }
     
@@ -120,6 +129,23 @@ class TerminalManager {
         // I don't know a way to only relabel the active tab bar, so just relabel
         // all of them.
         relabelAllTabs()
+        
+        // If we remove a window, we reset the cascade point to the key window so that
+        // the next window cascade's from that one.
+        if let focusedWindow = NSApplication.shared.keyWindow {
+            // If we are NOT the focused window, then we are a tabbed window. If we
+            // are closing a tabbed window, we want to set the cascade point to be
+            // the next cascade point from this window.
+            if focusedWindow != controller.window {
+                Self.lastCascadePoint = focusedWindow.cascadeTopLeft(from: NSZeroPoint)
+                return
+            }
+            
+            // If we are the focused window, then we set the last cascade point to
+            // our own frame so that it shows up in the same spot.
+            let frame = focusedWindow.frame
+            Self.lastCascadePoint = NSPoint(x: frame.minX, y: frame.maxY)
+        }
     }
     
     /// Relabels all the tabs with the proper keyboard shortcut.
