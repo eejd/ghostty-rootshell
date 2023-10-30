@@ -10,9 +10,6 @@ protocol TerminalViewDelegate: AnyObject, ObservableObject {
     
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
-    
-    /// The last surface closed so there are no active surfaces.
-    func lastSurfaceDidClose()
 }
 
 protocol TerminalViewModel: ObservableObject {
@@ -23,7 +20,6 @@ extension TerminalViewDelegate {
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
     func titleDidChange(to: String) {}
     func cellSizeDidChange(to: NSSize) {}
-    func lastSurfaceDidClose() {}
 }
 
 struct TerminalView<ViewModel: TerminalViewModel>: View {
@@ -94,10 +90,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     }
             }
         }
-    }
-    
-    func onClose() {
-        self.delegate?.lastSurfaceDidClose()
     }
 }
 

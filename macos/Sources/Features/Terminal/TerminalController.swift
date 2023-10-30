@@ -16,7 +16,13 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     var focusedSurface: Ghostty.SurfaceView? = nil
 
     /// The surface tree for this window.
-    @Published var surfaceTree: Ghostty.SplitNode? = nil
+    @Published var surfaceTree: Ghostty.SplitNode? = nil {
+        didSet {
+            // If our surface tree becomes nil then it means all our surfaces
+            // have closed, so we also cloud the window.
+            if (surfaceTree == nil) { lastSurfaceDidClose() }
+        }
+    }
     
     /// Fullscreen state management.
     private let fullscreenHandler = FullScreenHandler()
