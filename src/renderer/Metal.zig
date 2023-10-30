@@ -1018,10 +1018,10 @@ pub fn setScreenSize(
     // Determine if we need to pad the window. For "auto" padding, we take
     // the leftover amounts on the right/bottom that don't fit a full grid cell
     // and we split them equal across all boundaries.
-    const padding = self.padding.explicit.add(if (self.padding.balance)
+    const padding = if (self.padding.balance)
         renderer.Padding.balanced(dim, grid_size, self.cell_size)
     else
-        .{});
+        self.padding.explicit;
     const padded_dim = dim.subPadding(padding);
 
     // Set the size of the drawable surface to the bounds

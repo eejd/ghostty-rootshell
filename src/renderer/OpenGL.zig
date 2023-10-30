@@ -94,10 +94,10 @@ const SetScreenSize = struct {
         const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
 
         // Apply our padding
-        const padding = r.padding.explicit.add(if (r.padding.balance)
+        const padding = if (r.padding.balance)
             renderer.Padding.balanced(self.size, r.gridSize(self.size), r.cell_size)
         else
-            .{});
+            r.padding.explicit;
         const padded_size = self.size.subPadding(padding);
 
         log.debug("GL api: screen size padded={} screen={} grid={} cell={} padding={}", .{
