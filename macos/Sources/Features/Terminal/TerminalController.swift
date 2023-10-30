@@ -25,6 +25,11 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
             selector: #selector(onToggleFullscreen),
             name: Ghostty.Notification.ghosttyToggleFullscreen,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onGotoTab),
+            name: Ghostty.Notification.ghosttyGotoTab,
+            object: nil)
     }
     
     required init?(coder: NSCoder) {
@@ -91,6 +96,45 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     }
     
     //MARK: - Notifications
+    
+    @objc private func onGotoTab(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard target == self.focusedSurface else { return }
+        guard let window = self.window else { return }
+        
+        // Get the tab index from the notification
+        guard let tabIndexAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
+        guard let tabIndex = tabIndexAny as? Int32 else { return }
+        
+        guard let windowController = window.windowController else { return }
+        guard let tabGroup = windowController.window?.tabGroup else { return }
+        let tabbedWindows = tabGroup.windows
+        
+        // This will be the index we want to actual go to
+        let finalIndex: Int
+        
+        // An index that is invalid is used to signal some special values.
+        if (tabIndex <= 0) {
+            guard let selectedWindow = tabGroup.selectedWindow else { return }
+            guard let selectedIndex = tabbedWindows.firstIndex(where: { $0 == selectedWindow }) else { return }
+            
+            if (tabIndex == GHOSTTY_TAB_PREVIOUS.rawValue) {
+                finalIndex = selectedIndex - 1
+            } else if (tabIndex == GHOSTTY_TAB_NEXT.rawValue) {
+                finalIndex = selectedIndex + 1
+            } else {
+                return
+            }
+        } else {
+            // Tabs are 0-indexed here, so we subtract one from the key the user hit.
+            finalIndex = Int(tabIndex - 1)
+        }
+        
+        guard finalIndex >= 0 && finalIndex < tabbedWindows.count else { return }
+        let targetWindow = tabbedWindows[finalIndex]
+        targetWindow.makeKeyAndOrderFront(nil)
+    }
+
     
     @objc private func onToggleFullscreen(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
