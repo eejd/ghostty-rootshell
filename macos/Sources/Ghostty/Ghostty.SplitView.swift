@@ -8,7 +8,7 @@ extension Ghostty {
     struct TerminalSplit: View {
         let onClose: (() -> Void)?
         let baseConfig: SurfaceConfiguration?
-
+        
         @Environment(\.ghosttyApp) private var app
 
         /// Non-nil if one of the surfaces in the split tree is currently "zoomed." A zoomed surface

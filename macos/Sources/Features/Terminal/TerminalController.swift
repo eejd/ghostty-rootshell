@@ -3,7 +3,7 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
-class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate {
+class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate, TerminalViewModel {
     override var windowNibName: NSNib.Name? { "Terminal" }
     
     /// The app instance that this terminal view will represent.
@@ -14,6 +14,9 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil
+
+    /// The surface tree for this window.
+    @Published var surfaceTree: Ghostty.SplitNode? = nil
     
     /// Fullscreen state management.
     private let fullscreenHandler = FullScreenHandler()
@@ -23,6 +26,11 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         self.baseConfig = base
         super.init(window: nil)
         
+        // Initialize our initial surface.
+        guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
+        self.surfaceTree = .noSplit(.init(ghostty_app, base))
+        
+        // Setup our notifications for behaviors
         let center = NotificationCenter.default
         center.addObserver(
             self,
@@ -68,8 +76,8 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
-            delegate: self,
-            baseConfig: baseConfig
+            viewModel: self,
+            delegate: self
         ))
     }
     

@@ -1,7 +1,7 @@
 import SwiftUI
 import GhosttyKit
 
-protocol TerminalViewDelegate: AnyObject {
+protocol TerminalViewDelegate: AnyObject, ObservableObject {
     /// Called when the currently focused surface changed. This can be nil.
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?)
     
@@ -15,6 +15,10 @@ protocol TerminalViewDelegate: AnyObject {
     func lastSurfaceDidClose()
 }
 
+protocol TerminalViewModel: ObservableObject {
+    var surfaceTree: Ghostty.SplitNode? { get set }
+}
+
 extension TerminalViewDelegate {
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
     func titleDidChange(to: String) {}
@@ -22,14 +26,14 @@ extension TerminalViewDelegate {
     func lastSurfaceDidClose() {}
 }
 
-struct TerminalView: View {
+struct TerminalView<ViewModel: TerminalViewModel>: View {
     @ObservedObject var ghostty: Ghostty.AppState
     
-    // An optional delegate to receive information about terminal changes.
-    weak var delegate: TerminalViewDelegate? = nil
+    // The required view model
+    @ObservedObject var viewModel: ViewModel
     
-    // If this is set, this is the base configuration that we build our surface out of.
-    let baseConfig: Ghostty.SurfaceConfiguration?
+    // An optional delegate to receive information about terminal changes.
+    weak var delegate: (any TerminalViewDelegate)? = nil
     
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -73,7 +77,7 @@ struct TerminalView: View {
                     DebugBuildWarningView()
                 }
                 
-                Ghostty.TerminalSplit(onClose: onClose, baseConfig: baseConfig)
+                Ghostty.TerminalSplit2(node: $viewModel.surfaceTree)
                     .ghosttyApp(ghostty.app!)
                     .ghosttyConfig(ghostty.config!)
                     .focused($focused)
