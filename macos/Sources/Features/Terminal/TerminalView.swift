@@ -10,12 +10,16 @@ protocol TerminalViewDelegate: AnyObject {
     
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
+    
+    /// The last surface closed so there are no active surfaces.
+    func lastSurfaceDidClose()
 }
 
 extension TerminalViewDelegate {
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
     func titleDidChange(to: String) {}
     func cellSizeDidChange(to: NSSize) {}
+    func lastSurfaceDidClose() {}
 }
 
 struct TerminalView: View {
@@ -66,7 +70,7 @@ struct TerminalView: View {
                     DebugBuildWarningView()
                 }
                 
-                Ghostty.TerminalSplit(onClose: Self.closeWindow, baseConfig: nil)
+                Ghostty.TerminalSplit(onClose: onClose, baseConfig: nil)
                     .ghosttyApp(ghostty.app!)
                     .ghosttyConfig(ghostty.config!)
                     .focused($focused)
@@ -85,8 +89,7 @@ struct TerminalView: View {
         }
     }
     
-    static func closeWindow() {
-        guard let currentWindow = NSApp.keyWindow else { return }
-        currentWindow.close()
+    func onClose() {
+        self.delegate?.lastSurfaceDidClose()
     }
 }

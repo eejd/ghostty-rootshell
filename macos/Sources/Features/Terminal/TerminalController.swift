@@ -95,6 +95,10 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         self.window?.contentResizeIncrements = to
     }
     
+    func lastSurfaceDidClose() {
+        self.window?.close()
+    }
+    
     //MARK: - Notifications
     
     @objc private func onGotoTab(notification: SwiftUI.Notification) {
