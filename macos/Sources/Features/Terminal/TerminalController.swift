@@ -21,6 +21,13 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// Fullscreen state management.
     private let fullscreenHandler = FullScreenHandler()
     
+    /// The style mask to use for the new window
+    private var styleMask: NSWindow.StyleMask {
+        var mask: NSWindow.StyleMask = [.resizable, .closable, .miniaturizable]
+        if (ghostty.windowDecorations) { mask.insert(.titled) }
+        return mask
+    }
+    
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
         self.baseConfig = base
@@ -59,11 +66,14 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     override func windowWillLoad() {
         // We want every new terminal window to cascade so they don't directly overlap.
         shouldCascadeWindows = true
+        
+        // TODO: The cascade is messed up with tabs.
     }
     
     override func windowDidLoad() {
         guard let window = window else { return }
-
+        window.styleMask = self.styleMask
+        
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
         // covered in thie GitHub issue: https://github.com/mitchellh/ghostty/pull/376

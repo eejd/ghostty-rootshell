@@ -507,8 +507,8 @@ extension Ghostty {
             // If we have tabs, then do not change the window size
             guard let window = self.window else { return }
             guard let windowControllerRaw = window.windowController else { return }
-            guard let windowController = windowControllerRaw as? PrimaryWindowController else { return }
-            guard !windowController.didInitializeFromSurface else { return }
+            guard let windowController = windowControllerRaw as? TerminalController else { return }
+            guard case .noSplit = windowController.surfaceTree else { return }
             
             // Setup our frame. We need to first subtract the views frame so that we can
             // just get the chrome frame so that we only affect the surface view size.
@@ -520,9 +520,6 @@ extension Ghostty {
             
             // We have no tabs and we are not a split, so set the initial size of the window.
             window.setFrame(frame, display: true)
-            
-            // Note that we did initialize
-            windowController.didInitializeFromSurface = true
         }
         
         override func becomeFirstResponder() -> Bool {

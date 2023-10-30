@@ -8,12 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */; };
-		85102A1C2A6E32890084AB3E /* PrimaryWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85102A1B2A6E32890084AB3E /* PrimaryWindowController.swift */; };
 		857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 857F63802A5E64F200CA4815 /* MainMenu.xib */; };
-		85DE1C922A6A3DCA00493853 /* PrimaryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85DE1C912A6A3DCA00493853 /* PrimaryWindow.swift */; };
 		A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */; };
 		A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */; };
-		A53426392A7DC55C00EBB7A2 /* PrimaryWindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53426382A7DC55C00EBB7A2 /* PrimaryWindowManager.swift */; };
 		A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535B9D9299C569B0017E2E4 /* ErrorView.swift */; };
 		A545D1A22A5772CE006E0AE4 /* shell-integration in Resources */ = {isa = PBXBuildFile; fileRef = A545D1A12A5772CE006E0AE4 /* shell-integration */; };
 		A55685E029A03A9F004303CE /* AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55685DF29A03A9F004303CE /* AppError.swift */; };
@@ -43,17 +40,13 @@
 		A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */; };
 		A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
-		A5FECBD729D1FC3900022361 /* PrimaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FECBD629D1FC3900022361 /* PrimaryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenHandler.swift; sourceTree = "<group>"; };
-		85102A1B2A6E32890084AB3E /* PrimaryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryWindowController.swift; sourceTree = "<group>"; };
 		857F63802A5E64F200CA4815 /* MainMenu.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
-		85DE1C912A6A3DCA00493853 /* PrimaryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryWindow.swift; sourceTree = "<group>"; };
 		A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Input.swift; sourceTree = "<group>"; };
 		A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		A53426382A7DC55C00EBB7A2 /* PrimaryWindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryWindowManager.swift; sourceTree = "<group>"; };
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
 		A545D1A12A5772CE006E0AE4 /* shell-integration */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "shell-integration"; path = "../zig-out/share/shell-integration"; sourceTree = "<group>"; };
 		A55685DF29A03A9F004303CE /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppError.swift; sourceTree = "<group>"; };
@@ -86,7 +79,6 @@
 		A5CEAFFE29C2410700646FDA /* Backport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backport.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		A5FECBD629D1FC3900022361 /* PrimaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,23 +98,10 @@
 			isa = PBXGroup;
 			children = (
 				A56D58872ACDE6BE00508D2C /* Services */,
-				A53426372A7DC53A00EBB7A2 /* Primary Window */,
 				A59630982AEE1C4400D64628 /* Terminal */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 			);
 			path = Features;
-			sourceTree = "<group>";
-		};
-		A53426372A7DC53A00EBB7A2 /* Primary Window */ = {
-			isa = PBXGroup;
-			children = (
-				A53426382A7DC55C00EBB7A2 /* PrimaryWindowManager.swift */,
-				85102A1B2A6E32890084AB3E /* PrimaryWindowController.swift */,
-				85DE1C912A6A3DCA00493853 /* PrimaryWindow.swift */,
-				A5FECBD629D1FC3900022361 /* PrimaryView.swift */,
-				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
-			);
-			path = "Primary Window";
 			sourceTree = "<group>";
 		};
 		A534263D2A7DCBB000EBB7A2 /* Helpers */ = {
@@ -192,6 +171,7 @@
 				A596309F2AEF6AEB00D64628 /* TerminalManager.swift */,
 				A596309B2AEE1C9E00D64628 /* TerminalController.swift */,
 				A596309D2AEE1D6C00D64628 /* TerminalView.swift */,
+				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -320,8 +300,6 @@
 			files = (
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
 				A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */,
-				A53426392A7DC55C00EBB7A2 /* PrimaryWindowManager.swift in Sources */,
-				85DE1C922A6A3DCA00493853 /* PrimaryWindow.swift in Sources */,
 				A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */,
 				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
 				A59630972AEE163600D64628 /* HostingWindow.swift in Sources */,
@@ -332,7 +310,6 @@
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */,
 				A59630A22AF0415000D64628 /* Ghostty.TerminalSplit.swift in Sources */,
-				A5FECBD729D1FC3900022361 /* PrimaryView.swift in Sources */,
 				A5FEB3002ABB69450068369E /* main.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
 				A55B7BBE29B701360055DE60 /* Ghostty.SplitView.swift in Sources */,
@@ -342,7 +319,6 @@
 				A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
-				85102A1C2A6E32890084AB3E /* PrimaryWindowController.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
 				8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */,
 				A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */,
