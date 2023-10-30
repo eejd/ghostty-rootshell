@@ -1,10 +1,13 @@
 import Cocoa
 import SwiftUI
+import GhosttyKit
+import Combine
 
 /// Manages a set of terminal windows.
 class TerminalManager {
     struct Window {
         let controller: TerminalController
+        let closePublisher: AnyCancellable
     }
     
     let ghostty: Ghostty.AppState
@@ -56,6 +59,8 @@ class TerminalManager {
             object: nil)
     }
     
+    // MARK: - Window Management
+    
     /// Create a new terminal window.
     func newWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         let c = createWindow(withBaseConfig: base)
@@ -79,6 +84,7 @@ class TerminalManager {
         // Create a new window and add it to the parent
         let window = createWindow(withBaseConfig: base).window!
         parent.addTabbedWindow(window, ordered: .above)
+        relabelTabs(parent)
         window.makeKeyAndOrderFront(self)
     }
     
@@ -87,11 +93,74 @@ class TerminalManager {
         // Initialize our controller to load the window
         let c = TerminalController(ghostty)
         
+        // Create a listener for when the window is closed so we can remove it.
+        let pubClose = NotificationCenter.default.publisher(
+            for: NSWindow.willCloseNotification,
+            object: c.window!
+        ).sink { notification in
+            guard let window = notification.object as? NSWindow else { return }
+            guard let c = window.windowController as? TerminalController else { return }
+            self.removeWindow(c)
+        }
+        
         // Keep track of every window we manage
-        windows.append(Window(controller: c))
+        windows.append(Window(
+            controller: c,
+            closePublisher: pubClose
+        ))
         
         return c
     }
+    
+    private func removeWindow(_ controller: TerminalController) {
+        // Remove it from our managed set
+        guard let idx = self.windows.firstIndex(where: { $0.controller == controller }) else { return }
+        let w = self.windows[idx]
+        self.windows.remove(at: idx)
+        
+        // Ensure any publishers we have are cancelled
+        w.closePublisher.cancel()
+        
+        // Removing the window can change tabs, so we need to relabel all tabs.
+        // At this point, the window is already removed from the tab bar so
+        // I don't know a way to only relabel the active tab bar, so just relabel
+        // all of them.
+        relabelAllTabs()
+    }
+    
+    /// Relabels all the tabs with the proper keyboard shortcut.
+    func relabelAllTabs() {
+        for w in windows {
+            if let window = w.controller.window {
+                relabelTabs(window)
+            }
+        }
+    }
+    
+    /// Update the accessory view of each tab according to the keyboard
+    /// shortcut that activates it (if any). This is called when the key window
+    /// changes and when a window is closed.
+    private func relabelTabs(_ window: NSWindow) {
+        guard let windows = window.tabbedWindows else { return }
+        guard let cfg = ghostty.config else { return }
+        for (index, window) in windows.enumerated().prefix(9) {
+            let action = "goto_tab:\(index + 1)"
+            let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
+            guard let equiv = Ghostty.keyEquivalentLabel(key: trigger.key, mods: trigger.mods) else {
+                continue
+            }
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.labelFont(ofSize: 0),
+                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+            ]
+            let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
+            let text = NSTextField(labelWithAttributedString: attributedString)
+            window.tab.accessoryView = text
+        }
+    }
+    
+    // MARK: - Notifications
     
     @objc private func onNewWindow(notification: SwiftUI.Notification) {
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]

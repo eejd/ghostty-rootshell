@@ -246,7 +246,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     func configDidReload(_ state: Ghostty.AppState) {
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts()
-        //windowManager.relabelTabs()
+        terminalManager.relabelAllTabs()
         
         // Config could change window appearance
         syncAppearance()
