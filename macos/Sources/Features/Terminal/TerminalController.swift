@@ -3,6 +3,7 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
+/// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
 class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate, TerminalViewModel {
     override var windowNibName: NSNib.Name? { "Terminal" }
     

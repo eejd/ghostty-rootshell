@@ -1,6 +1,9 @@
 import SwiftUI
 import GhosttyKit
 
+/// This delegate is notified of actions and property changes regarding the terminal view. This
+/// delegate is optional and can be used by a TerminalView caller to react to changes such as
+/// titles being set, cell sizes being changed, etc.
 protocol TerminalViewDelegate: AnyObject, ObservableObject {
     /// Called when the currently focused surface changed. This can be nil.
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?)
@@ -12,16 +15,23 @@ protocol TerminalViewDelegate: AnyObject, ObservableObject {
     func cellSizeDidChange(to: NSSize)
 }
 
-protocol TerminalViewModel: ObservableObject {
-    var surfaceTree: Ghostty.SplitNode? { get set }
-}
-
+// Default all the functions so they're optional
 extension TerminalViewDelegate {
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
     func titleDidChange(to: String) {}
     func cellSizeDidChange(to: NSSize) {}
 }
 
+/// The view model is a required implementation for TerminalView callers. This contains
+/// the main state between the TerminalView caller and SwiftUI. This abstraction is what
+/// allows AppKit to own most of the data in SwiftUI.
+protocol TerminalViewModel: ObservableObject {
+    /// The tree of terminal surfaces (splits) within the view. This is mutated by TerminalView
+    /// and children. This should be @Published.
+    var surfaceTree: Ghostty.SplitNode? { get set }
+}
+
+/// The main terminal view. This terminal view supports splits.
 struct TerminalView<ViewModel: TerminalViewModel>: View {
     @ObservedObject var ghostty: Ghostty.AppState
     

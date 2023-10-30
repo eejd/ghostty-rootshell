@@ -3,7 +3,8 @@ import SwiftUI
 import GhosttyKit
 import Combine
 
-/// Manages a set of terminal windows.
+/// Manages a set of terminal windows. This is effectively an array of TerminalControllers.
+/// This abstraction helps manage tabs and multi-window scenarios.
 class TerminalManager {
     struct Window {
         let controller: TerminalController
@@ -48,15 +49,8 @@ class TerminalManager {
     }
     
     deinit {
-        let center = NotificationCenter.default;
-        center.removeObserver(
-            self,
-            name: Ghostty.Notification.ghosttyNewTab,
-            object: nil)
-        center.removeObserver(
-            self,
-            name: Ghostty.Notification.ghosttyNewWindow,
-            object: nil)
+        let center = NotificationCenter.default
+        center.removeObserver(self)
     }
     
     // MARK: - Window Management
