@@ -1616,8 +1616,10 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
 /// are determined by semantic prompt information provided by shell integration.
 /// A selection can span multiple physical lines if they are soft-wrapped.
 ///
-/// This will return null if a selection is impossible. The only scenario
-/// this happens is if the point pt is outside of the written screen space.
+/// This will return null if a selection is impossible. The only scenarios
+/// this happens is if:
+///  - the point pt is outside of the written screen space.
+///  - the point pt is on a prompt / input line.
 pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
@@ -1626,11 +1628,14 @@ pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Go forwards to find our end boundary
     // We are looking for input start / prompt markers
     const end: point.ScreenPoint = boundary: {
-        var y: usize = pt.y;
-        while (y <= y_max) : (y += 1) {
+        for (pt.y..y_max + 1) |y| {
             const row = self.getRow(.{ .screen = y });
             switch (row.getSemanticPrompt()) {
                 .input, .prompt_continuation, .prompt => {
+                    if (y == pt.y) {
+                        // Cursor on a prompt line, selection impossible
+                        return null;
+                    }
                     const prev_row = self.getRow(.{ .screen = y - 1 });
                     break :boundary .{ .x = prev_row.lenCells(), .y = y - 1 };
                 },
@@ -4110,20 +4115,20 @@ test "Screen: selectOutput" {
     try s.testWriteString("output3\n");         // 8
     try s.testWriteString("output3");           // 9
 
-    var row = s.getRow(.{.screen = 2});
+    var row = s.getRow(.{ .screen = 2 });
     row.setSemanticPrompt(.prompt);
-    row = s.getRow(.{.screen = 3});
+    row = s.getRow(.{ .screen = 3 });
     row.setSemanticPrompt(.input);
-    row = s.getRow(.{.screen = 4});
+    row = s.getRow(.{ .screen = 4 });
     row.setSemanticPrompt(.command);
-    row = s.getRow(.{.screen = 6});
+    row = s.getRow(.{ .screen = 6 });
     row.setSemanticPrompt(.input);
-    row = s.getRow(.{.screen = 7});
+    row = s.getRow(.{ .screen = 7 });
     row.setSemanticPrompt(.command);
 
     // No start marker, should select from the beginning
     {
-        const sel = s.selectOutput(.{.x = 1, .y = 1}).?;
+        const sel = s.selectOutput(.{ .x = 1, .y = 1 }).?;
         try testing.expectEqual(@as(usize, 0), sel.start.x);
         try testing.expectEqual(@as(usize, 0), sel.start.y);
         try testing.expectEqual(@as(usize, 10), sel.end.x);
@@ -4144,6 +4149,19 @@ test "Screen: selectOutput" {
         try testing.expectEqual(@as(usize, 7), sel.start.y);
         try testing.expectEqual(@as(usize, 9), sel.end.x);
         try testing.expectEqual(@as(usize, 10), sel.end.y);
+    }
+    // input / prompt at y = 0, pt.y = 0
+    {
+        s.deinit();
+        s = try init(alloc, 5, 10, 0);
+        try s.testWriteString("prompt1$ input1\n");
+        try s.testWriteString("output1\n");
+        try s.testWriteString("prompt2\n");
+        row = s.getRow(.{ .screen = 0 });
+        row.setSemanticPrompt(.input);
+        row = s.getRow(.{ .screen = 1 });
+        row.setSemanticPrompt(.command);
+        try testing.expect(s.selectOutput(.{ .x = 2, .y = 0 }) == null);
     }
 }
 
