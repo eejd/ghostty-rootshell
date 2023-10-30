@@ -794,22 +794,22 @@ fn draw_heavy_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
 
 fn draw_double_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const mid = (self.height - thick_px * 3) / 2;
+    const mid = (self.height -| thick_px * 3) / 2;
     self.hline(canvas, 0, self.width, mid, thick_px);
     self.hline(canvas, 0, self.width, mid + 2 * thick_px, thick_px);
 }
 
 fn draw_double_vertical(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const mid = (self.width - thick_px * 3) / 2;
+    const mid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, 0, self.height, mid, thick_px);
     self.vline(canvas, 0, self.height, mid + 2 * thick_px, thick_px);
 }
 
 fn draw_down_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px) / 2;
     self.vline_middle_down(canvas, .light, .light);
     self.hline(canvas, vmid, self.width, hmid, thick_px);
     self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
@@ -817,8 +817,8 @@ fn draw_down_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) voi
 
 fn draw_down_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle_right(canvas, .light, .light);
     self.vline(canvas, hmid, self.height, vmid, thick_px);
     self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
@@ -826,8 +826,8 @@ fn draw_down_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) voi
 
 fn draw_double_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, hmid, self.height, vmid, thick_px);
     self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
     self.hline(canvas, vmid, self.width, hmid, thick_px);
@@ -836,7 +836,7 @@ fn draw_double_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_down_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
     const vmid = (self.width + thick_px) / 2;
     self.vline_middle_down(canvas, .light, .light);
     self.hline(canvas, 0, vmid, hmid, thick_px);
@@ -845,8 +845,8 @@ fn draw_down_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void
 
 fn draw_down_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle_left(canvas, .light, .light);
     self.vline(canvas, hmid, self.height, vmid, thick_px);
     self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
@@ -854,8 +854,8 @@ fn draw_down_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void
 
 fn draw_double_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
     self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
     self.hline(canvas, 0, vmid + 2 * thick_px, hmid, thick_px);
@@ -864,8 +864,8 @@ fn draw_double_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_up_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px) / 2;
     self.vline_middle_up(canvas, .light, .light);
     self.hline(canvas, vmid, self.width, hmid, thick_px);
     self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
@@ -874,7 +874,7 @@ fn draw_up_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void 
 fn draw_up_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height + thick_px) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle_right(canvas, .light, .light);
     self.vline(canvas, 0, hmid, vmid, thick_px);
     self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
@@ -882,8 +882,8 @@ fn draw_up_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void 
 
 fn draw_double_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, 0, hmid + 2 * thick_px, vmid, thick_px);
     self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
     self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
@@ -892,7 +892,7 @@ fn draw_double_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_up_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
     const vmid = (self.width + thick_px) / 2;
     self.vline_middle_up(canvas, .light, .light);
     self.hline(canvas, 0, vmid, hmid, thick_px);
@@ -902,7 +902,7 @@ fn draw_up_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_up_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
     const hmid = (self.height + thick_px) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle_left(canvas, .light, .light);
     self.vline(canvas, 0, hmid, vmid, thick_px);
     self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
@@ -910,8 +910,8 @@ fn draw_up_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_double_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, 0, hmid + 0 * thick_px + thick_px, vmid, thick_px);
     self.vline(canvas, 0, hmid + 2 * thick_px + thick_px, vmid + 2 * thick_px, thick_px);
     self.hline(canvas, 0, vmid, hmid, thick_px);
@@ -920,8 +920,8 @@ fn draw_double_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_vertical_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px) / 2;
     self.vline_middle(canvas, .light);
     self.hline(canvas, vmid, self.width, hmid, thick_px);
     self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
@@ -929,16 +929,16 @@ fn draw_vertical_single_and_right_double(self: Box, canvas: *font.sprite.Canvas)
 
 fn draw_vertical_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const vmid = (self.width - thick_px * 3) / 2;
-    self.hline(canvas, vmid + 2 * thick_px, self.width, (self.height - thick_px) / 2, thick_px);
+    const vmid = (self.width -| thick_px * 3) / 2;
+    self.hline(canvas, vmid + 2 * thick_px, self.width, (self.height -| thick_px) / 2, thick_px);
     self.vline(canvas, 0, self.height, vmid, thick_px);
     self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
 }
 
 fn draw_double_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, 0, self.height, vmid, thick_px);
     self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
     self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
@@ -948,7 +948,7 @@ fn draw_double_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_vertical_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
     const vmid = (self.width + thick_px) / 2;
     self.vline_middle(canvas, .light);
     self.hline(canvas, 0, vmid, hmid, thick_px);
@@ -957,16 +957,16 @@ fn draw_vertical_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) 
 
 fn draw_vertical_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const vmid = (self.width - thick_px * 3) / 2;
-    self.hline(canvas, 0, vmid, (self.height - thick_px) / 2, thick_px);
+    const vmid = (self.width -| thick_px * 3) / 2;
+    self.hline(canvas, 0, vmid, (self.height -| thick_px) / 2, thick_px);
     self.vline(canvas, 0, self.height, vmid, thick_px);
     self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
 }
 
 fn draw_double_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
     self.vline(canvas, 0, hmid, vmid, thick_px);
     self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
@@ -976,16 +976,16 @@ fn draw_double_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_down_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    self.vline(canvas, hmid + 2 * thick_px, self.height, (self.width - thick_px) / 2, thick_px);
+    const hmid = (self.height -| thick_px * 3) / 2;
+    self.vline(canvas, hmid + 2 * thick_px, self.height, (self.width -| thick_px) / 2, thick_px);
     self.hline(canvas, 0, self.width, hmid, thick_px);
     self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
 }
 
 fn draw_down_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle(canvas, .light);
     self.vline(canvas, hmid, self.height, vmid, thick_px);
     self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
@@ -993,8 +993,8 @@ fn draw_down_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas
 
 fn draw_double_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline(canvas, 0, self.width, hmid, thick_px);
     self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
     self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
@@ -1004,8 +1004,8 @@ fn draw_double_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void 
 
 fn draw_up_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px) / 2;
     self.vline(canvas, 0, hmid, vmid, thick_px);
     self.hline(canvas, 0, self.width, hmid, thick_px);
     self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
@@ -1013,8 +1013,8 @@ fn draw_up_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) 
 
 fn draw_up_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle(canvas, .light);
     self.vline(canvas, 0, hmid, vmid, thick_px);
     self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
@@ -1022,8 +1022,8 @@ fn draw_up_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) 
 
 fn draw_double_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.vline(canvas, 0, hmid, vmid, thick_px);
     self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
     self.hline(canvas, 0, vmid + thick_px, hmid, thick_px);
@@ -1033,7 +1033,7 @@ fn draw_double_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn draw_vertical_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
     self.vline_middle(canvas, .light);
     self.hline(canvas, 0, self.width, hmid, thick_px);
     self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
@@ -1041,7 +1041,7 @@ fn draw_vertical_single_and_horizontal_double(self: Box, canvas: *font.sprite.Ca
 
 fn draw_vertical_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const vmid = (self.width - thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline_middle(canvas, .light);
     self.vline(canvas, 0, self.height, vmid, thick_px);
     self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
@@ -1049,8 +1049,8 @@ fn draw_vertical_double_and_horizontal_single(self: Box, canvas: *font.sprite.Ca
 
 fn draw_double_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height - thick_px * 3) / 2;
-    const vmid = (self.width - thick_px * 3) / 2;
+    const hmid = (self.height -| thick_px * 3) / 2;
+    const vmid = (self.width -| thick_px * 3) / 2;
     self.hline(canvas, 0, vmid, hmid, thick_px);
     self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
     self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
@@ -1183,18 +1183,18 @@ fn draw_upper_half_block(self: Box, canvas: *font.sprite.Canvas) void {
 }
 
 fn draw_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, self.height - (self.height / 8), self.width, self.height);
+    self.rect(canvas, 0, self.height -| (self.height / 8), self.width, self.height);
 }
 
 fn draw_lower_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, self.height - (self.height / 4), self.width, self.height);
+    self.rect(canvas, 0, self.height -| (self.height / 4), self.width, self.height);
 }
 
 fn draw_lower_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
         0,
-        self.height - @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 8))),
+        self.height -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 8))),
         self.width,
         self.height,
     );
@@ -1204,7 +1204,7 @@ fn draw_lower_half_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
         0,
-        self.height - @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.height)) / 2))),
+        self.height -| @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.height)) / 2))),
         self.width,
         self.height,
     );
@@ -1214,7 +1214,7 @@ fn draw_lower_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
         0,
-        self.height - @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.height)) / 8))),
+        self.height -| @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.height)) / 8))),
         self.width,
         self.height,
     );
@@ -1224,7 +1224,7 @@ fn draw_lower_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void 
     self.rect(
         canvas,
         0,
-        self.height - @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 4))),
+        self.height -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 4))),
         self.width,
         self.height,
     );
@@ -1234,7 +1234,7 @@ fn draw_lower_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
         0,
-        self.height - @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.height)) / 8))),
+        self.height -| @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.height)) / 8))),
         self.width,
         self.height,
     );
@@ -1408,7 +1408,7 @@ fn draw_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_right_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
-        self.width - @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 8))),
+        self.width -| @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 8))),
         0,
         self.width,
         self.height,
@@ -1450,7 +1450,7 @@ fn draw_horizontal_one_eighth_1358_block(self: Box, canvas: *font.sprite.Canvas)
 fn draw_right_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
-        self.width - @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 4))),
+        self.width -| @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 4))),
         0,
         self.width,
         self.height,
@@ -1460,7 +1460,7 @@ fn draw_right_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_right_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
-        self.width - @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 4))),
+        self.width -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 4))),
         0,
         self.width,
         self.height,
@@ -1470,7 +1470,7 @@ fn draw_right_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void 
 fn draw_right_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
-        self.width - @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 8))),
+        self.width -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 8))),
         0,
         self.width,
         self.height,
@@ -1480,7 +1480,7 @@ fn draw_right_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_right_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
-        self.width - @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.width)) / 8))),
+        self.width -| @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.width)) / 8))),
         0,
         self.width,
         self.height,
@@ -1490,7 +1490,7 @@ fn draw_right_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_right_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(
         canvas,
-        self.width - @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.width)) / 8))),
+        self.width -| @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.width)) / 8))),
         0,
         self.width,
         self.height,
@@ -2185,7 +2185,7 @@ fn draw_light_arc(
     const thick_pixels = Thickness.light.height(self.thickness);
     const thick = thick_pixels * supersample;
 
-    const circle_inner_edge = (@min(width_pixels, height_pixels) - thick_pixels) / 2;
+    const circle_inner_edge = (@min(width_pixels, height_pixels) -| thick_pixels) / 2;
 
     // We want to draw the quartercircle by filling small circles (with r =
     // thickness/2.) whose centers are on its edge. This means to get the
@@ -2240,10 +2240,10 @@ fn draw_light_arc(
         },
         '╮' => {
             const left_bottom_edge = (height_pixels + thick_pixels) / 2;
-            const bottom_left_edge = (width_pixels - thick_pixels) / 2;
+            const bottom_left_edge = (width_pixels -| thick_pixels) / 2;
 
             c_y = left_bottom_edge + circle_inner_edge;
-            c_x = bottom_left_edge - circle_inner_edge;
+            c_x = bottom_left_edge -| circle_inner_edge;
 
             circle_hemisphere = 1;
 
@@ -2254,10 +2254,10 @@ fn draw_light_arc(
             hor_to = 0;
         },
         '╰' => {
-            const right_top_edge = (height_pixels - thick_pixels) / 2;
+            const right_top_edge = (height_pixels -| thick_pixels) / 2;
             const top_right_edge = (width_pixels + thick_pixels) / 2;
 
-            c_y = right_top_edge - circle_inner_edge;
+            c_y = right_top_edge -| circle_inner_edge;
             c_x = top_right_edge + circle_inner_edge;
 
             circle_hemisphere = -1;
@@ -2269,11 +2269,11 @@ fn draw_light_arc(
             hor_to = width_pixels;
         },
         '╯' => {
-            const left_top_edge = (height_pixels - thick_pixels) / 2;
-            const top_left_edge = (width_pixels - thick_pixels) / 2;
+            const left_top_edge = (height_pixels -| thick_pixels) / 2;
+            const top_left_edge = (width_pixels -| thick_pixels) / 2;
 
-            c_y = left_top_edge - circle_inner_edge;
-            c_x = top_left_edge - circle_inner_edge;
+            c_y = left_top_edge -| circle_inner_edge;
+            c_x = top_left_edge -| circle_inner_edge;
 
             circle_hemisphere = 1;
 
@@ -2479,12 +2479,12 @@ fn draw_dash_horizontal(
         w[3] = self.width - x[3];
     }
 
-    self.hline(canvas, x[0], x[0] + w[0], (self.height - thick_px) / 2, thick_px);
-    self.hline(canvas, x[1], x[1] + w[1], (self.height - thick_px) / 2, thick_px);
+    self.hline(canvas, x[0], x[0] + w[0], (self.height -| thick_px) / 2, thick_px);
+    self.hline(canvas, x[1], x[1] + w[1], (self.height -| thick_px) / 2, thick_px);
     if (count >= 3)
-        self.hline(canvas, x[2], x[2] + w[2], (self.height - thick_px) / 2, thick_px);
+        self.hline(canvas, x[2], x[2] + w[2], (self.height -| thick_px) / 2, thick_px);
     if (count >= 4)
-        self.hline(canvas, x[3], x[3] + w[3], (self.height - thick_px) / 2, thick_px);
+        self.hline(canvas, x[3], x[3] + w[3], (self.height -| thick_px) / 2, thick_px);
 }
 
 fn draw_dash_vertical(
@@ -2545,12 +2545,12 @@ fn draw_dash_vertical(
         h[3] = self.height - y[3];
     }
 
-    self.vline(canvas, y[0], y[0] + h[0], (self.width - thick_px) / 2, thick_px);
-    self.vline(canvas, y[1], y[1] + h[1], (self.width - thick_px) / 2, thick_px);
+    self.vline(canvas, y[0], y[0] + h[0], (self.width -| thick_px) / 2, thick_px);
+    self.vline(canvas, y[1], y[1] + h[1], (self.width -| thick_px) / 2, thick_px);
     if (count >= 3)
-        self.vline(canvas, y[2], y[2] + h[2], (self.width - thick_px) / 2, thick_px);
+        self.vline(canvas, y[2], y[2] + h[2], (self.width -| thick_px) / 2, thick_px);
     if (count >= 4)
-        self.vline(canvas, y[3], y[3] + h[3], (self.width - thick_px) / 2, thick_px);
+        self.vline(canvas, y[3], y[3] + h[3], (self.width -| thick_px) / 2, thick_px);
 }
 
 fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
@@ -2561,9 +2561,9 @@ fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
     const thick_px = Thickness.super_light.height(self.thickness);
 
     self.vline(canvas, 0, self.height, 0, thick_px);
-    self.vline(canvas, 0, self.height, self.width - thick_px, thick_px);
+    self.vline(canvas, 0, self.height, self.width -| thick_px, thick_px);
     self.hline(canvas, 0, self.width, 0, thick_px);
-    self.hline(canvas, 0, self.width, self.height - thick_px, thick_px);
+    self.hline(canvas, 0, self.width, self.height -| thick_px, thick_px);
 }
 
 fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
@@ -2574,7 +2574,7 @@ fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
 
 fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
-    self.vline(canvas, 0, self.height, (self.width - thick_px) / 2, thick_px);
+    self.vline(canvas, 0, self.height, (self.width -| thick_px) / 2, thick_px);
 }
 
 fn vline_middle_up(
@@ -2589,7 +2589,7 @@ fn vline_middle_up(
         canvas,
         0,
         (self.height + hthick_px) / 2,
-        (self.width - vthick_px) / 2,
+        (self.width -| vthick_px) / 2,
         vthick_px,
     );
 }
@@ -2604,16 +2604,16 @@ fn vline_middle_down(
     const vthick_px = vthickness.height(self.thickness);
     self.vline(
         canvas,
-        (self.height - hthick_px) / 2,
+        (self.height -| hthick_px) / 2,
         self.height,
-        (self.width - vthick_px) / 2,
+        (self.width -| vthick_px) / 2,
         vthick_px,
     );
 }
 
 fn hline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
-    self.hline(canvas, 0, self.width, (self.height - thick_px) / 2, thick_px);
+    self.hline(canvas, 0, self.width, (self.height -| thick_px) / 2, thick_px);
 }
 
 fn hline_middle_left(
@@ -2628,7 +2628,7 @@ fn hline_middle_left(
         canvas,
         0,
         (self.width + vthick_px) / 2,
-        (self.height - hthick_px) / 2,
+        (self.height -| hthick_px) / 2,
         hthick_px,
     );
 }
@@ -2643,9 +2643,9 @@ fn hline_middle_right(
     const vthick_px = vthickness.height(self.thickness);
     self.hline(
         canvas,
-        (self.width - vthick_px) / 2,
+        (self.width -| vthick_px) / 2,
         self.width,
-        (self.height - hthick_px) / 2,
+        (self.height -| hthick_px) / 2,
         hthick_px,
     );
 }
