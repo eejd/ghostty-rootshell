@@ -9,6 +9,9 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.AppState
     
+    /// The currently focused surface.
+    var focusedSurface: Ghostty.SurfaceView? = nil
+    
     init(_ ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
         super.init(window: nil)
@@ -49,12 +52,23 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         ))
     }
     
+    // Shows the "+" button in the tab bar, responds to that click.
+    override func newWindowForTab(_ sender: Any?) {
+        // Trigger the ghostty core event logic for a new tab.
+        guard let surface = self.focusedSurface?.surface else { return }
+        ghostty.newTab(surface: surface)
+    }
+    
     //MARK: - NSWindowDelegate
     
     func windowWillClose(_ notification: Notification) {
     }
     
     //MARK: - TerminalViewDelegate
+    
+    func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
+        self.focusedSurface = to
+    }
     
     func titleDidChange(to: String) {
         self.window?.title = to

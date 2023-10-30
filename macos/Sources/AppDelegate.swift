@@ -233,8 +233,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     private func focusedSurface() -> ghostty_surface_t? {
-        guard let window = NSApp.keyWindow as? PrimaryWindow else { return nil }
-        return window.focusedSurfaceWrapper.surface
+        return terminalManager.focusedSurface?.surface
     }
     
     private func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {

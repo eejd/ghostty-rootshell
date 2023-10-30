@@ -1,4 +1,5 @@
 import Cocoa
+import SwiftUI
 
 /// Manages a set of terminal windows.
 class TerminalManager {
@@ -7,6 +8,9 @@ class TerminalManager {
     }
     
     let ghostty: Ghostty.AppState
+    
+    /// The currently focused surface of the main window.
+    var focusedSurface: Ghostty.SurfaceView? { mainWindow?.controller.focusedSurface }
     
     /// The set of windows we currently have.
     private var windows: [Window] = []
@@ -26,6 +30,30 @@ class TerminalManager {
     
     init(_ ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
+        
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(onNewTab),
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onNewWindow),
+            name: Ghostty.Notification.ghosttyNewWindow,
+            object: nil)
+    }
+    
+    deinit {
+        let center = NotificationCenter.default;
+        center.removeObserver(
+            self,
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
+        center.removeObserver(
+            self,
+            name: Ghostty.Notification.ghosttyNewWindow,
+            object: nil)
     }
     
     /// Create a new terminal window.
@@ -44,13 +72,18 @@ class TerminalManager {
         }
         
         // Create a new window and add it to the parent
+        newTab(to: parent, withBaseConfig: base)
+    }
+    
+    private func newTab(to parent: NSWindow, withBaseConfig base: Ghostty.SurfaceConfiguration?) {
+        // Create a new window and add it to the parent
         let window = createWindow(withBaseConfig: base).window!
         parent.addTabbedWindow(window, ordered: .above)
         window.makeKeyAndOrderFront(self)
     }
     
     /// Creates a window controller, adds it to our managed list, and returns it.
-    func createWindow(withBaseConfig: Ghostty.SurfaceConfiguration?) -> TerminalController {
+    private func createWindow(withBaseConfig: Ghostty.SurfaceConfiguration?) -> TerminalController {
         // Initialize our controller to load the window
         let c = TerminalController(ghostty)
         
@@ -58,5 +91,21 @@ class TerminalManager {
         windows.append(Window(controller: c))
         
         return c
+    }
+    
+    @objc private func onNewWindow(notification: SwiftUI.Notification) {
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
+        let config = configAny as? Ghostty.SurfaceConfiguration
+        self.newWindow(withBaseConfig: config)
+    }
+    
+    @objc private func onNewTab(notification: SwiftUI.Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let window = surfaceView.window else { return }
+        
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
+        let config = configAny as? Ghostty.SurfaceConfiguration
+        
+        self.newTab(to: window, withBaseConfig: config)
     }
 }
