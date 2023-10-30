@@ -363,4 +363,42 @@ extension Ghostty {
             }
         }
     }
+    
+    /// When changing the split state, or going full screen (native or non), the terminal view
+    /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
+    /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
+    /// that should have it.
+    static func moveFocus(to: SurfaceView, from: SurfaceView? = nil) {
+        DispatchQueue.main.async {
+            // If the callback runs before the surface is attached to a view
+            // then the window will be nil. We just reschedule in that case.
+            guard let window = to.window else {
+                moveFocus(to: to, from: from)
+                return
+            }
+
+            // If we had a previously focused node and its not where we're sending
+            // focus, make sure that we explicitly tell it to lose focus. In theory
+            // we should NOT have to do this but the focus callback isn't getting
+            // called for some reason.
+            if let from = from {
+                _ = from.resignFirstResponder()
+            }
+
+            window.makeFirstResponder(to)
+
+            // On newer versions of macOS everything above works great so we're done.
+            if #available(macOS 13, *) { return }
+
+            // On macOS 12, splits do not properly gain focus. I don't know why, but
+            // it seems like the `focused` SwiftUI method doesn't work. We use
+            // NotificationCenter as a blunt force instrument to make it work.
+            if #available(macOS 12, *) {
+                NotificationCenter.default.post(
+                    name: Notification.didBecomeFocusedSurface,
+                    object: to
+                )
+            }
+        }
+    }
 }
