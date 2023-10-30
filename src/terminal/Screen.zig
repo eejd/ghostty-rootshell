@@ -1612,6 +1612,64 @@ pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     };
 }
 
+/// Select the command output under the given point. The limits of the output
+/// are determined by semantic prompt information provided by shell integration.
+/// A selection can span multiple physical lines if they are soft-wrapped.
+///
+/// This will return null if a selection is impossible. The only scenarios
+/// this happens is if:
+///  - the point pt is outside of the written screen space.
+///  - the point pt is on a prompt / input line.
+pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Impossible to select anything outside of the area we've written.
+    const y_max = self.rowsWritten() - 1;
+    if (pt.y > y_max) return null;
+    const point_row = self.getRow(.{ .screen = pt.y });
+    switch (point_row.getSemanticPrompt()) {
+        .input, .prompt_continuation, .prompt => {
+            // Cursor on a prompt line, selection impossible
+            return null;
+        },
+        else => {},
+    }
+
+    // Go forwards to find our end boundary
+    // We are looking for input start / prompt markers
+    const end: point.ScreenPoint = boundary: {
+        for (pt.y..y_max + 1) |y| {
+            const row = self.getRow(.{ .screen = y });
+            switch (row.getSemanticPrompt()) {
+                .input, .prompt_continuation, .prompt => {
+                    const prev_row = self.getRow(.{ .screen = y - 1 });
+                    break :boundary .{ .x = prev_row.lenCells(), .y = y - 1 };
+                },
+                else => {},
+            }
+        }
+
+        break :boundary .{ .x = self.cols - 1, .y = y_max };
+    };
+
+    // Go backwards to find our start boundary
+    // We are looking for output start markers
+    const start: point.ScreenPoint = boundary: {
+        var y: usize = pt.y;
+        while (y > 0) : (y -= 1) {
+            const row = self.getRow(.{ .screen = y });
+            switch (row.getSemanticPrompt()) {
+                .command => break :boundary .{ .x = 0, .y = y },
+                else => {},
+            }
+        }
+        break :boundary .{ .x = 0, .y = 0 };
+    };
+
+    return Selection{
+        .start = start,
+        .end = end,
+    };
+}
+
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
@@ -4039,6 +4097,75 @@ test "Screen: selectWord with single quote boundary" {
         try testing.expectEqual(@as(usize, 0), sel.start.y);
         try testing.expectEqual(@as(usize, 1), sel.end.x);
         try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+}
+
+test "Screen: selectOutput" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 15, 10, 0);
+    defer s.deinit();
+
+                                                // line number:
+    try s.testWriteString("output1\n");         // 0
+    try s.testWriteString("output1\n");         // 1
+    try s.testWriteString("prompt2\n");         // 2
+    try s.testWriteString("input2\n");          // 3
+    try s.testWriteString("output2\n");         // 4
+    try s.testWriteString("output2\n");         // 5
+    try s.testWriteString("prompt3$ input3\n"); // 6
+    try s.testWriteString("output3\n");         // 7
+    try s.testWriteString("output3\n");         // 8
+    try s.testWriteString("output3");           // 9
+
+    var row = s.getRow(.{ .screen = 2 });
+    row.setSemanticPrompt(.prompt);
+    row = s.getRow(.{ .screen = 3 });
+    row.setSemanticPrompt(.input);
+    row = s.getRow(.{ .screen = 4 });
+    row.setSemanticPrompt(.command);
+    row = s.getRow(.{ .screen = 6 });
+    row.setSemanticPrompt(.input);
+    row = s.getRow(.{ .screen = 7 });
+    row.setSemanticPrompt(.command);
+
+    // No start marker, should select from the beginning
+    {
+        const sel = s.selectOutput(.{ .x = 1, .y = 1 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 10), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+    // Both start and end markers, should select between them
+    {
+        const sel = s.selectOutput(.{ .x = 3, .y = 5 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 4), sel.start.y);
+        try testing.expectEqual(@as(usize, 10), sel.end.x);
+        try testing.expectEqual(@as(usize, 5), sel.end.y);
+    }
+    // No end marker, should select till the end
+    {
+        const sel = s.selectOutput(.{ .x = 2, .y = 7 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 7), sel.start.y);
+        try testing.expectEqual(@as(usize, 9), sel.end.x);
+        try testing.expectEqual(@as(usize, 10), sel.end.y);
+    }
+    // input / prompt at y = 0, pt.y = 0
+    {
+        s.deinit();
+        s = try init(alloc, 5, 10, 0);
+        try s.testWriteString("prompt1$ input1\n");
+        try s.testWriteString("output1\n");
+        try s.testWriteString("prompt2\n");
+        row = s.getRow(.{ .screen = 0 });
+        row.setSemanticPrompt(.input);
+        row = s.getRow(.{ .screen = 1 });
+        row.setSemanticPrompt(.command);
+        try testing.expect(s.selectOutput(.{ .x = 2, .y = 0 }) == null);
     }
 }
 
