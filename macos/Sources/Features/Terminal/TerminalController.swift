@@ -1,7 +1,7 @@
 import Foundation
 import Cocoa
 import SwiftUI
-import Combine
+import GhosttyKit
 
 class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate {
     override var windowNibName: NSNib.Name? { "Terminal" }
@@ -12,18 +12,29 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil
     
+    /// Fullscreen state management.
+    private let fullscreenHandler = FullScreenHandler()
+    
     init(_ ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
         super.init(window: nil)
         
-        // Register as observer for window-level manipulations that are best handled
-        // here at the controller layer rather than in the SwiftUI stack.
         let center = NotificationCenter.default
-
+        center.addObserver(
+            self,
+            selector: #selector(onToggleFullscreen),
+            name: Ghostty.Notification.ghosttyToggleFullscreen,
+            object: nil)
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for this view")
+    }
+    
+    deinit {
+        // Remove all of our notificationcenter subscriptions
+        let center = NotificationCenter.default
+        center.removeObserver(self)
     }
     
     //MARK: - NSWindowController
@@ -77,5 +88,25 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     func cellSizeDidChange(to: NSSize) {
         guard ghostty.windowStepResize else { return }
         self.window?.contentResizeIncrements = to
+    }
+    
+    //MARK: - Notifications
+    
+    @objc private func onToggleFullscreen(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard target == self.focusedSurface else { return }
+        
+        // We need a window to fullscreen
+        guard let window = self.window else { return }
+        
+        // Check whether we use non-native fullscreen
+        guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }
+        guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? ghostty_non_native_fullscreen_e else { return }
+        self.fullscreenHandler.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
+        
+        // For some reason focus always gets lost when we toggle fullscreen, so we set it back.
+        if let focusedSurface {
+            Ghostty.moveFocus(to: focusedSurface)
+        }
     }
 }

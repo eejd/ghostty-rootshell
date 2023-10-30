@@ -1,7 +1,8 @@
 import SwiftUI
 import GhosttyKit
 
-class FullScreenHandler {    var previousTabGroup: NSWindowTabGroup?
+class FullScreenHandler {    
+    var previousTabGroup: NSWindowTabGroup?
     var previousTabGroupIndex: Int?
     var previousContentFrame: NSRect?
     var previousStyleMask: NSWindow.StyleMask? = nil
