@@ -1624,6 +1624,14 @@ pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
     if (pt.y > y_max) return null;
+    const point_row = self.getRow(.{ .screen = pt.y });
+    switch (point_row.getSemanticPrompt()) {
+        .input, .prompt_continuation, .prompt => {
+            // Cursor on a prompt line, selection impossible
+            return null;
+        },
+        else => {},
+    }
 
     // Go forwards to find our end boundary
     // We are looking for input start / prompt markers
@@ -1632,10 +1640,6 @@ pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
             const row = self.getRow(.{ .screen = y });
             switch (row.getSemanticPrompt()) {
                 .input, .prompt_continuation, .prompt => {
-                    if (y == pt.y) {
-                        // Cursor on a prompt line, selection impossible
-                        return null;
-                    }
                     const prev_row = self.getRow(.{ .screen = y - 1 });
                     break :boundary .{ .x = prev_row.lenCells(), .y = y - 1 };
                 },
