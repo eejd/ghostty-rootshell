@@ -3,7 +3,7 @@ import Cocoa
 import SwiftUI
 import Combine
 
-class TerminalController: NSWindowController, NSWindowDelegate {
+class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate {
     override var windowNibName: NSNib.Name? { "Terminal" }
     
     /// The app instance that this terminal view will represent.
@@ -12,6 +12,11 @@ class TerminalController: NSWindowController, NSWindowDelegate {
     init(_ ghostty: Ghostty.AppState) {
         self.ghostty = ghostty
         super.init(window: nil)
+        
+        // Register as observer for window-level manipulations that are best handled
+        // here at the controller layer rather than in the SwiftUI stack.
+        let center = NotificationCenter.default
+
     }
     
     required init?(coder: NSCoder) {
@@ -39,12 +44,24 @@ class TerminalController: NSWindowController, NSWindowDelegate {
         
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
-            ghostty: self.ghostty
+            ghostty: self.ghostty,
+            delegate: self
         ))
     }
     
     //MARK: - NSWindowDelegate
     
     func windowWillClose(_ notification: Notification) {
+    }
+    
+    //MARK: - TerminalViewDelegate
+    
+    func titleDidChange(to: String) {
+        self.window?.title = to
+    }
+    
+    func cellSizeDidChange(to: NSSize) {
+        guard ghostty.windowStepResize else { return }
+        self.window?.contentResizeIncrements = to
     }
 }

@@ -39,7 +39,7 @@ class ServiceProvider: NSObject {
     private func openTerminal(_ path: String, target: OpenTarget) {
         guard let delegateRaw = NSApp.delegate else { return }
         guard let delegate = delegateRaw as? AppDelegate else { return }
-        guard let windowManager = delegate.windowManager else { return }
+        let terminalManager = delegate.terminalManager
         
         // We only open in directories.
         var isDirectory = ObjCBool(true)
@@ -49,20 +49,13 @@ class ServiceProvider: NSObject {
         // Build our config
         var config = Ghostty.SurfaceConfiguration()
         config.workingDirectory = path
-            
-        // If we don't have a window open through the window manager, we launch
-        // a new window even if they requested a tab.
-        guard let mainWindow = windowManager.mainWindow else {
-            windowManager.addNewWindow(withBaseConfig: config)
-            return
-        }
         
         switch (target) {
         case .window:
-            windowManager.addNewWindow(withBaseConfig: config)
+            terminalManager.newWindow(withBaseConfig: config)
             
         case .tab:
-            windowManager.addNewTab(to: mainWindow, withBaseConfig: config)
+            terminalManager.newTab(withBaseConfig: config)
         }
     }
 }

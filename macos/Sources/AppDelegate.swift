@@ -42,16 +42,16 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     private var dockMenu: NSMenu = NSMenu()
     
     /// The ghostty global state. Only one per process.
-    private var ghostty: Ghostty.AppState = Ghostty.AppState()
+    private let ghostty: Ghostty.AppState = Ghostty.AppState()
     
-    /// Manages windows and tabs, ensuring they're allocated/deallocated correctly
-    var windowManager: PrimaryWindowManager!
+    /// Manages our terminal windows.
+    let terminalManager: TerminalManager
     
     override init() {
+        self.terminalManager = TerminalManager(ghostty)
         super.init()
         
         ghostty.delegate = self
-        windowManager = PrimaryWindowManager(ghostty: self.ghostty)
     }
     
     //MARK: - NSApplicationDelegate
@@ -73,14 +73,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         
         // Let's launch our first window.
         // TODO: we should detect if we restored windows and if so not launch a new window.
-        // TODO: remove when TerminalController is done
-        // windowManager.addInitialWindow()
+        terminalManager.newWindow()
         
         // Initial config loading
         configDidReload(ghostty)
-        
-        let c = TerminalController(ghostty)
-        c.showWindow(self)
         
         // Register our service provider. This must happen after everything
         // else is initialized.
@@ -151,7 +147,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         guard !flag else { return true }
         
         // No visible windows, open a new one.
-        windowManager.newWindow()
+        terminalManager.newWindow()
         return false
     }
     
@@ -174,16 +170,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // Build our config
         var config = Ghostty.SurfaceConfiguration()
         config.workingDirectory = filename
-            
-        // If we don't have a window open through the window manager, we launch
-        // a new window.
-        guard let mainWindow = windowManager.mainWindow else {
-            windowManager.addNewWindow(withBaseConfig: config)
-            return true
-        }
         
-        // Add a new tab
-        windowManager.addNewTab(to: mainWindow, withBaseConfig: config)
+        // Add a new tab or create a new window
+        terminalManager.newTab(withBaseConfig: config)
         return true
     }
     
@@ -258,7 +247,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     func configDidReload(_ state: Ghostty.AppState) {
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts()
-        windowManager.relabelTabs()
+        //windowManager.relabelTabs()
         
         // Config could change window appearance
         syncAppearance()
@@ -308,7 +297,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     @IBAction func newWindow(_ sender: Any?) {
-        windowManager.newWindow()
+        terminalManager.newWindow()
         
         // We also activate our app so that it becomes front. This may be
         // necessary for the dock menu.
@@ -316,7 +305,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     @IBAction func newTab(_ sender: Any?) {
-        windowManager.newTab()
+        terminalManager.newTab()
         
         // We also activate our app so that it becomes front. This may be
         // necessary for the dock menu.
