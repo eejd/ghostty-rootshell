@@ -83,6 +83,10 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     //MARK: - NSWindowDelegate
     
     func windowWillClose(_ notification: Notification) {
+        // I don't know if this is required anymore. We previously had a ref cycle between
+        // the view and the window so we had to nil this out to break it but I think this
+        // may now be resolved. We should verify that no memory leaks and we can remove this.
+        self.window?.contentView = nil
     }
     
     //MARK: - TerminalViewDelegate
