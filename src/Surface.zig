@@ -1818,7 +1818,10 @@ pub fn mouseButtonCallback(
 
             // Triple click, select the line under our mouse
             3 => {
-                const sel_ = self.io.terminal.screen.selectLine(self.mouse.left_click_point);
+                const sel_ = if (mods.ctrl)
+                    self.io.terminal.screen.selectOutput(self.mouse.left_click_point)
+                else
+                    self.io.terminal.screen.selectLine(self.mouse.left_click_point);
                 if (sel_) |sel| {
                     self.setSelection(sel);
                     try self.queueRender();
