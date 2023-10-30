@@ -106,6 +106,40 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     //MARK: - NSWindowDelegate
     
+    // This is called when performClose is called on a window (NOT when close()
+    // is called directly). performClose is called primarily when UI elements such
+    // as the "red X" are pressed.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // We must have a window. Is it even possible not to?
+        guard let window = self.window else { return true }
+        
+        // If we have no surfaces, close.
+        guard let node = self.surfaceTree else { return true }
+        
+        // If our surfaces don't require confirmation, close.
+        if (!node.needsConfirmQuit()) { return true }
+        
+        // We require confirmation, so show an alert.
+        let alert = NSAlert()
+        alert.messageText = "Close Terminal?"
+        alert.informativeText = "The terminal still has a running process. If you close the " +
+            "terminal the process will be killed."
+        alert.addButton(withTitle: "Close the Terminal")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window, completionHandler: { response in
+            switch (response) {
+            case .alertFirstButtonReturn:
+                window.close()
+                
+            default:
+                break
+            }
+        })
+        
+        return false
+    }
+    
     func windowWillClose(_ notification: Notification) {
         // I don't know if this is required anymore. We previously had a ref cycle between
         // the view and the window so we had to nil this out to break it but I think this
