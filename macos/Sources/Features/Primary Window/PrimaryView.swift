@@ -156,34 +156,3 @@ struct PrimaryView: View {
         }
     }
 }
-
-struct DebugBuildWarningView: View {
-    @State private var isPopover = false
-    
-    var body: some View {
-        HStack {
-            Spacer()
-            
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.yellow)
-            
-            Text("You're running a debug build of Ghostty! Performance will be degraded.")
-                .padding(.all, 8)
-                .popover(isPresented: $isPopover, arrowEdge: .bottom) {
-                    Text("""
-                    Debug builds of Ghostty are very slow and you may experience
-                    performance problems. Debug builds are only recommended during
-                    development.
-                    """)
-                    .padding(.all)
-                }
-            
-            Spacer()
-        }
-        .background(Color(.windowBackgroundColor))
-        .frame(maxWidth: .infinity)
-        .onTapGesture {
-            isPopover = true
-        }
-    }
-}
