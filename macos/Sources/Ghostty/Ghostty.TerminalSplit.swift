@@ -7,7 +7,7 @@ extension Ghostty {
     /// split direction by splitting the terminal.
     ///
     /// This also allows one split to be "zoomed" at any time.
-    struct TerminalSplit2: View {
+    struct TerminalSplit: View {
         /// The current state of the root node. This can be set to nil when all surfaces are closed.
         @Binding var node: SplitNode?
 
@@ -17,7 +17,7 @@ extension Ghostty {
 
         var body: some View {
             ZStack {
-                TerminalSplitRoot2(
+                TerminalSplitRoot(
                     node: $node,
                     zoomedSurface: $zoomedSurface
                 )
@@ -36,7 +36,7 @@ extension Ghostty {
     
     /// The root of a split tree. This sets up the initial SplitNode state and renders. There is only ever
     /// one of these in a split tree.
-    private struct TerminalSplitRoot2: View {
+    private struct TerminalSplitRoot: View {
         /// The root node that we're rendering. This will be set to nil if all the surfaces in this tree close.
         @Binding var node: SplitNode?
 
@@ -62,14 +62,14 @@ extension Ghostty {
                         Color(.clear)
                         
                     case .noSplit(let leaf):
-                        TerminalSplitLeaf2(
+                        TerminalSplitLeaf(
                             leaf: leaf,
                             neighbors: .empty,
                             node: $node
                         )
 
                     case .horizontal(let container):
-                        TerminalSplitContainer2(
+                        TerminalSplitContainer(
                             direction: .horizontal,
                             neighbors: .empty,
                             node: $node,
@@ -78,7 +78,7 @@ extension Ghostty {
                         .onReceive(pubZoom) { onZoom(notification: $0) }
 
                     case .vertical(let container):
-                        TerminalSplitContainer2(
+                        TerminalSplitContainer(
                             direction: .vertical,
                             neighbors: .empty,
                             node: $node,
@@ -147,7 +147,7 @@ extension Ghostty {
     }
     
     /// A noSplit leaf node of a split tree.
-    private struct TerminalSplitLeaf2: View {
+    private struct TerminalSplitLeaf: View {
         /// The leaf to draw the surface for.
         let leaf: SplitNode.Leaf
 
@@ -261,7 +261,7 @@ extension Ghostty {
     }
     
     /// This represents a split view that is in the horizontal or vertical split state.
-    private struct TerminalSplitContainer2: View {
+    private struct TerminalSplitContainer: View {
         let direction: SplitViewDirection
         let neighbors: SplitNode.Neighbors
         @Binding var node: SplitNode?
@@ -271,7 +271,7 @@ extension Ghostty {
             SplitView(direction, left: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.right : \.bottom
 
-                TerminalSplitNested2(
+                TerminalSplitNested(
                     node: closeableTopLeft(),
                     neighbors: neighbors.update([
                         neighborKey: container.bottomRight,
@@ -281,7 +281,7 @@ extension Ghostty {
             }, right: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.left : \.top
                 
-                TerminalSplitNested2(
+                TerminalSplitNested(
                     node: closeableBottomRight(),
                     neighbors: neighbors.update([
                         neighborKey: container.topLeft,
@@ -329,7 +329,7 @@ extension Ghostty {
     
     /// This is like TerminalSplitRoot, but... not the root. This renders a SplitNode in any state but
     /// requires there be a binding to the parent node.
-    private struct TerminalSplitNested2: View {
+    private struct TerminalSplitNested: View {
         @Binding var node: SplitNode?
         let neighbors: SplitNode.Neighbors
 
@@ -339,14 +339,14 @@ extension Ghostty {
                 Color(.clear)
                 
             case .noSplit(let leaf):
-                TerminalSplitLeaf2(
+                TerminalSplitLeaf(
                     leaf: leaf,
                     neighbors: neighbors,
                     node: $node
                 )
 
             case .horizontal(let container):
-                TerminalSplitContainer2(
+                TerminalSplitContainer(
                     direction: .horizontal,
                     neighbors: neighbors,
                     node: $node,
@@ -354,7 +354,7 @@ extension Ghostty {
                 )
 
             case .vertical(let container):
-                TerminalSplitContainer2(
+                TerminalSplitContainer(
                     direction: .vertical,
                     neighbors: neighbors,
                     node: $node,

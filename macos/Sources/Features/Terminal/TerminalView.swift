@@ -77,7 +77,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     DebugBuildWarningView()
                 }
                 
-                Ghostty.TerminalSplit2(node: $viewModel.surfaceTree)
+                Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
                     .ghosttyApp(ghostty.app!)
                     .ghosttyConfig(ghostty.config!)
                     .focused($focused)
