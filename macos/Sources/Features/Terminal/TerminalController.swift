@@ -27,6 +27,9 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// Fullscreen state management.
     private let fullscreenHandler = FullScreenHandler()
     
+    /// True when an alert is active so we don't overlap multiple.
+    private var alert: NSAlert? = nil
+    
     /// The style mask to use for the new window
     private var styleMask: NSWindow.StyleMask {
         var mask: NSWindow.StyleMask = [.resizable, .closable, .miniaturizable]
@@ -119,23 +122,28 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         // If our surfaces don't require confirmation, close.
         if (!node.needsConfirmQuit()) { return true }
         
-        // We require confirmation, so show an alert.
-        let alert = NSAlert()
-        alert.messageText = "Close Terminal?"
-        alert.informativeText = "The terminal still has a running process. If you close the " +
+        // We require confirmation, so show an alert as long as we aren't already.
+        if (alert == nil) {
+            let alert = NSAlert()
+            alert.messageText = "Close Terminal?"
+            alert.informativeText = "The terminal still has a running process. If you close the " +
             "terminal the process will be killed."
-        alert.addButton(withTitle: "Close the Terminal")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window, completionHandler: { response in
-            switch (response) {
-            case .alertFirstButtonReturn:
-                window.close()
-                
-            default:
-                break
-            }
-        })
+            alert.addButton(withTitle: "Close the Terminal")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            alert.beginSheetModal(for: window, completionHandler: { response in
+                self.alert = nil
+                switch (response) {
+                case .alertFirstButtonReturn:
+                    window.close()
+                    
+                default:
+                    break
+                }
+            })
+            
+            self.alert = alert
+        }
         
         return false
     }
