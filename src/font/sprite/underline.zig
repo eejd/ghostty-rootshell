@@ -175,10 +175,8 @@ const Draw = struct {
         // cell height and this doesn't allow us to make a high enough
         // wave. This constant is arbitrary, change it for aesthetics.
         const pos: u32 = pos: {
-            const MIN_HEIGHT = 5;
-            const clamped_pos = @min(y_max, self.pos);
-            const height = y_max - clamped_pos;
-            break :pos if (height < MIN_HEIGHT) clamped_pos -| MIN_HEIGHT else clamped_pos;
+            const MIN_HEIGHT: u32 = @max(self.height / 10, 3);
+            break :pos y_max - (MIN_HEIGHT * 2);
         };
 
         // The full height of the wave can be from the bottom to the
@@ -192,7 +190,7 @@ const Draw = struct {
         while (x < self.width) : (x += 1) {
             const y: f64 = @as(f64, @floatFromInt(y_mid)) + (half_height * @cos(@as(f64, @floatFromInt(x)) * x_factor));
             const y_upper: u32 = @intFromFloat(@floor(y));
-            const y_lower: u32 = y_upper - 1 + self.thickness;
+            const y_lower: u32 = y_upper + self.thickness;
             const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
 
             // upper and lower bounds
