@@ -1,11 +1,11 @@
 import SwiftUI
 
-struct ConfigurationErrorsView: View {
-    class Model: ObservableObject {
-        @Published var errors: [String] = []
-    }
-    
-    @ObservedObject var model: Model
+protocol ConfigurationErrorsViewModel: ObservableObject {
+    var errors: [String] { get set }
+}
+
+struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
+    @ObservedObject var model: ViewModel
     
     var body: some View {
         VStack {

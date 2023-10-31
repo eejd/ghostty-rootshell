@@ -248,8 +248,8 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
-        c.model.errors = state.configErrors()
-        if (c.model.errors.count > 0) {
+        c.errors = state.configErrors()
+        if (c.errors.count > 0) {
             if (c.window == nil || !c.window!.isVisible) {
                 c.showWindow(self)
             }
