@@ -94,7 +94,7 @@
                             <menuItem title="New Window" id="Was-JA-tGl">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="newWindow:" target="bbz-4X-AYv" id="NnC-l5-DUY"/>
+                                    <action selector="newWindow:" target="-1" id="pnf-fE-gHi"/>
                                 </connections>
                             </menuItem>
                             <menuItem title="New Tab" id="uTG-Vz-hJU">

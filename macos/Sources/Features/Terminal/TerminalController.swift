@@ -152,6 +152,11 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     //MARK: - First Responder
     
+    @IBAction func newWindow(_ sender: Any?) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.newWindow(surface: surface)
+    }
+    
     @IBAction func newTab(_ sender: Any?) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.newTab(surface: surface)
