@@ -114,31 +114,32 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         // If we have no surfaces, close.
         guard let node = self.surfaceTree else { return true }
         
+        // If we already have an alert, continue with it
+        guard alert == nil else { return false }
+        
         // If our surfaces don't require confirmation, close.
         if (!node.needsConfirmQuit()) { return true }
         
         // We require confirmation, so show an alert as long as we aren't already.
-        if (alert == nil) {
-            let alert = NSAlert()
-            alert.messageText = "Close Terminal?"
-            alert.informativeText = "The terminal still has a running process. If you close the " +
-            "terminal the process will be killed."
-            alert.addButton(withTitle: "Close the Terminal")
-            alert.addButton(withTitle: "Cancel")
-            alert.alertStyle = .warning
-            alert.beginSheetModal(for: window, completionHandler: { response in
-                self.alert = nil
-                switch (response) {
-                case .alertFirstButtonReturn:
-                    window.close()
-                    
-                default:
-                    break
-                }
-            })
+        let alert = NSAlert()
+        alert.messageText = "Close Terminal?"
+        alert.informativeText = "The terminal still has a running process. If you close the " +
+        "terminal the process will be killed."
+        alert.addButton(withTitle: "Close the Terminal")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window, completionHandler: { response in
+            self.alert = nil
+            switch (response) {
+            case .alertFirstButtonReturn:
+                window.close()
+                
+            default:
+                break
+            }
+        })
             
-            self.alert = alert
-        }
+        self.alert = alert
         
         return false
     }
