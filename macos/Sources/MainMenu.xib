@@ -203,7 +203,7 @@
                             <menuItem title="Toggle Full Screen" id="8kY-Pi-KaY">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="toggleFullScreen:" target="bbz-4X-AYv" id="PQq-1F-kpT"/>
+                                    <action selector="toggleGhosttyFullScreen:" target="-1" id="QB9-7R-xyc"/>
                                 </connections>
                             </menuItem>
                             <menuItem title="Bring All to Front" id="LE2-aR-0XJ">

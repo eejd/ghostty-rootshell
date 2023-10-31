@@ -205,7 +205,7 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
     
-    @IBAction func toggleFullScreen(_ sender: Any) {
+    @IBAction func toggleGhosttyFullScreen(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.toggleFullscreen(surface: surface)
     }
