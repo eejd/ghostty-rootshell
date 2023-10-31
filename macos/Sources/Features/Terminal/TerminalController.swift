@@ -150,6 +150,86 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         self.window?.contentView = nil
     }
     
+    //MARK: - First Responder
+    
+    @IBAction func close(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.requestClose(surface: surface)
+    }
+    
+    @IBAction func closeWindow(_ sender: Any) {
+        self.window?.performClose(sender)
+    }
+    
+    @IBAction func splitHorizontally(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
+    }
+    
+    @IBAction func splitVertically(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
+    }
+    
+    @IBAction func splitZoom(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.splitToggleZoom(surface: surface)
+    }
+    
+    @IBAction func splitMoveFocusPrevious(_ sender: Any) {
+        splitMoveFocus(direction: .previous)
+    }
+    
+    @IBAction func splitMoveFocusNext(_ sender: Any) {
+        splitMoveFocus(direction: .next)
+    }
+    
+    @IBAction func splitMoveFocusAbove(_ sender: Any) {
+        splitMoveFocus(direction: .top)
+    }
+    
+    @IBAction func splitMoveFocusBelow(_ sender: Any) {
+        splitMoveFocus(direction: .bottom)
+    }
+    
+    @IBAction func splitMoveFocusLeft(_ sender: Any) {
+        splitMoveFocus(direction: .left)
+    }
+    
+    @IBAction func splitMoveFocusRight(_ sender: Any) {
+        splitMoveFocus(direction: .right)
+    }
+    
+    private func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.splitMoveFocus(surface: surface, direction: direction)
+    }
+    
+    @IBAction func toggleFullScreen(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.toggleFullscreen(surface: surface)
+    }
+    
+    @IBAction func increaseFontSize(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.changeFontSize(surface: surface, .increase(1))
+    }
+
+    @IBAction func decreaseFontSize(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.changeFontSize(surface: surface, .decrease(1))
+    }
+
+    @IBAction func resetFontSize(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.changeFontSize(surface: surface, .reset)
+    }
+    
+    @IBAction func toggleTerminalInspector(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.toggleTerminalInspector(surface: surface)
+    }
+    
     //MARK: - TerminalViewDelegate
     
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {

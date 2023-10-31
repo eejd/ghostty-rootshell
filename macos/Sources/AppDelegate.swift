@@ -236,11 +236,6 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         return terminalManager.focusedSurface?.surface
     }
     
-    private func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.splitMoveFocus(surface: surface, direction: direction)
-    }
-    
     //MARK: - GhosttyAppStateDelegate
     
     func configDidReload(_ state: Ghostty.AppState) {
@@ -311,86 +306,8 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    @IBAction func closeWindow(_ sender: Any) {
-        guard let currentWindow = NSApp.keyWindow else { return }
-        currentWindow.close()
-    }
-
-    @IBAction func close(_ sender: Any) {
-        guard let surface = focusedSurface() else {
-            self.closeWindow(self)
-            return
-        }
-
-        ghostty.requestClose(surface: surface)
-    }
-    
-    @IBAction func splitHorizontally(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
-    }
-    
-    @IBAction func splitVertically(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
-    }
-    
-    @IBAction func splitZoom(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.splitToggleZoom(surface: surface)
-    }
-    
-    @IBAction func splitMoveFocusPrevious(_ sender: Any) {
-        splitMoveFocus(direction: .previous)
-    }
-    
-    @IBAction func splitMoveFocusNext(_ sender: Any) {
-        splitMoveFocus(direction: .next)
-    }
-    
-    @IBAction func splitMoveFocusAbove(_ sender: Any) {
-        splitMoveFocus(direction: .top)
-    }
-    
-    @IBAction func splitMoveFocusBelow(_ sender: Any) {
-        splitMoveFocus(direction: .bottom)
-    }
-    
-    @IBAction func splitMoveFocusLeft(_ sender: Any) {
-        splitMoveFocus(direction: .left)
-    }
-    
-    @IBAction func splitMoveFocusRight(_ sender: Any) {
-        splitMoveFocus(direction: .right)
-    }
-    
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://github.com/mitchellh/ghostty") else { return }
         NSWorkspace.shared.open(url)
-    }
-    
-    @IBAction func toggleFullScreen(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.toggleFullscreen(surface: surface)
-    }
-
-    @IBAction func increaseFontSize(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.changeFontSize(surface: surface, .increase(1))
-    }
-
-    @IBAction func decreaseFontSize(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.changeFontSize(surface: surface, .decrease(1))
-    }
-
-    @IBAction func resetFontSize(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.changeFontSize(surface: surface, .reset)
-    }
-    
-    @IBAction func toggleTerminalInspector(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.toggleTerminalInspector(surface: surface)
     }
 }
