@@ -219,7 +219,15 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
         .parent = parent_ != null,
     });
     errdefer surface.deinit();
-    const page_idx = c.gtk_notebook_append_page(self.notebook, gl_area, label_box_widget);
+
+    // Add the notebook page (create tab). We create the tab after our
+    // current selected tab if we have one.
+    const page_idx = c.gtk_notebook_insert_page(
+        self.notebook,
+        gl_area,
+        label_box_widget,
+        c.gtk_notebook_get_current_page(self.notebook) + 1,
+    );
     if (page_idx < 0) {
         log.warn("failed to add surface to notebook", .{});
         return error.GtkAppendPageFailed;
