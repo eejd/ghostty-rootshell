@@ -5,243 +5,40 @@ extension Ghostty {
     /// A spittable terminal view is one where the terminal allows for "splits" (vertical and horizontal) within the
     /// view. The terminal starts in the unsplit state (a plain ol' TerminalView) but responds to changes to the
     /// split direction by splitting the terminal.
+    ///
+    /// This also allows one split to be "zoomed" at any time.
     struct TerminalSplit: View {
-        let onClose: (() -> Void)?
-        let baseConfig: SurfaceConfiguration?
-
-        @Environment(\.ghosttyApp) private var app
+        /// The current state of the root node. This can be set to nil when all surfaces are closed.
+        @Binding var node: SplitNode?
 
         /// Non-nil if one of the surfaces in the split tree is currently "zoomed." A zoomed surface
         /// becomes "full screen" on the split tree.
         @State private var zoomedSurface: SurfaceView? = nil
 
         var body: some View {
-            if let app = app {
-                ZStack {
-                    TerminalSplitRoot(
-                        app: app,
-                        zoomedSurface: $zoomedSurface,
-                        onClose: onClose,
-                        baseConfig: baseConfig
-                    )
+            ZStack {
+                TerminalSplitRoot(
+                    node: $node,
+                    zoomedSurface: $zoomedSurface
+                )
 
-                    // If we have a zoomed surface, we overlay that on top of our split
-                    // root. Our split root will become clear when there is a zoomed
-                    // surface. We need to keep the split root around so that we don't
-                    // lose all of the surface state so this must be a ZStack.
-                    if let surfaceView = zoomedSurface {
-                        InspectableSurface(surfaceView: surfaceView)
-                    }
+                // If we have a zoomed surface, we overlay that on top of our split
+                // root. Our split root will become clear when there is a zoomed
+                // surface. We need to keep the split root around so that we don't
+                // lose all of the surface state so this must be a ZStack.
+                if let surfaceView = zoomedSurface {
+                    InspectableSurface(surfaceView: surfaceView)
                 }
-                .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
             }
+            .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
         }
     }
-
-    /// This enum represents the possible states that a node in the split tree can be in. It is either:
-    ///
-    ///   - noSplit - This is an unsplit, single pane. This contains only a "leaf" which has a single
-    ///   terminal surface to render.
-    ///   - horizontal/vertical - This is split into the horizontal or vertical direction. This contains a
-    ///   "container" which has a recursive top/left SplitNode and bottom/right SplitNode. These
-    ///   values can further be split infinitely.
-    ///
-    enum SplitNode: Equatable, Hashable {
-        case noSplit(Leaf)
-        case horizontal(Container)
-        case vertical(Container)
-        
-        /// Returns the view that would prefer receiving focus in this tree. This is always the
-        /// top-left-most view. This is used when creating a split or closing a split to find the
-        /// next view to send focus to.
-        func preferredFocus(_ direction: SplitFocusDirection = .top) -> SurfaceView {
-            let container: Container
-            switch (self) {
-            case .noSplit(let leaf):
-                // noSplit is easy because there is only one thing to focus
-                return leaf.surface
-
-            case .horizontal(let c):
-                container = c
-
-            case .vertical(let c):
-                container = c
-            }
-            
-            let node: SplitNode
-            switch (direction) {
-            case .previous, .bottom, .left:
-                node = container.bottomRight
-                
-            case .next, .top, .right:
-                node = container.topLeft
-            }
-            
-            return node.preferredFocus(direction)
-        }
-
-        /// Close the surface associated with this node. This will likely deinitialize the
-        /// surface. At this point, the surface view in this node tree can never be used again.
-        func close() {
-            switch (self) {
-            case .noSplit(let leaf):
-                leaf.surface.close()
-
-            case .horizontal(let container):
-                container.topLeft.close()
-                container.bottomRight.close()
-
-            case .vertical(let container):
-                container.topLeft.close()
-                container.bottomRight.close()
-            }
-        }
-
-        /// Returns true if the split tree contains the given view.
-        func contains(view: SurfaceView) -> Bool {
-            switch (self) {
-            case .noSplit(let leaf):
-                return leaf.surface == view
-
-            case .horizontal(let container):
-                return container.topLeft.contains(view: view) ||
-                    container.bottomRight.contains(view: view)
-
-            case .vertical(let container):
-                return container.topLeft.contains(view: view) ||
-                    container.bottomRight.contains(view: view)
-            }
-        }
-        
-        // MARK: - Equatable
-        
-        static func == (lhs: SplitNode, rhs: SplitNode) -> Bool {
-            switch (lhs, rhs) {
-            case (.noSplit(let lhs_v), .noSplit(let rhs_v)):
-                return lhs_v === rhs_v
-            case (.horizontal(let lhs_v), .horizontal(let rhs_v)):
-                return lhs_v === rhs_v
-            case (.vertical(let lhs_v), .vertical(let rhs_v)):
-                return lhs_v === rhs_v
-            default:
-                return false
-            }
-        }
-
-        class Leaf: ObservableObject, Equatable, Hashable {
-            let app: ghostty_app_t
-            @Published var surface: SurfaceView
-
-            /// Initialize a new leaf which creates a new terminal surface.
-            init(_ app: ghostty_app_t, _ baseConfig: SurfaceConfiguration?) {
-                self.app = app
-                self.surface = SurfaceView(app, baseConfig)
-            }
-            
-            // MARK: - Hashable
-            
-            func hash(into hasher: inout Hasher) {
-                hasher.combine(app)
-                hasher.combine(surface)
-            }
-            
-            // MARK: - Equatable
-            
-            static func == (lhs: Leaf, rhs: Leaf) -> Bool {
-                return lhs.app == rhs.app && lhs.surface === rhs.surface
-            }
-        }
-
-        class Container: ObservableObject, Equatable, Hashable {
-            let app: ghostty_app_t
-            @Published var topLeft: SplitNode
-            @Published var bottomRight: SplitNode
-
-            /// A container is always initialized from some prior leaf because a split has to originate
-            /// from a non-split value. When initializing, we inherit the leaf's surface and then
-            /// initialize a new surface for the new pane.
-            init(from: Leaf, baseConfig: SurfaceConfiguration? = nil) {
-                self.app = from.app
-
-                // Initially, both topLeft and bottomRight are in the "nosplit"
-                // state since this is a new split.
-                self.topLeft = .noSplit(from)
-                self.bottomRight = .noSplit(.init(app, baseConfig))
-            }
-            
-            // MARK: - Hashable
-            
-            func hash(into hasher: inout Hasher) {
-                hasher.combine(app)
-                hasher.combine(topLeft)
-                hasher.combine(bottomRight)
-            }
-            
-            // MARK: - Equatable
-            
-            static func == (lhs: Container, rhs: Container) -> Bool {
-                return lhs.app == rhs.app &&
-                    lhs.topLeft == rhs.topLeft &&
-                    lhs.bottomRight == rhs.bottomRight
-            }
-        }
-
-        /// This keeps track of the "neighbors" of a split: the immediately above/below/left/right
-        /// nodes. This is purposely weak so we don't have to worry about memory management
-        /// with this (although, it should always be correct).
-        struct Neighbors {
-            var left: SplitNode?
-            var right: SplitNode?
-            var top: SplitNode?
-            var bottom: SplitNode?
-
-            /// These are the previous/next nodes. It will certainly be one of the above as well
-            /// but we keep track of these separately because depending on the split direction
-            /// of the containing node, previous may be left OR top (same for next).
-            var previous: SplitNode?
-            var next: SplitNode?
-
-            /// No neighbors, used by the root node.
-            static let empty: Self = .init()
-
-            /// Get the node for a given direction.
-            func get(direction: SplitFocusDirection) -> SplitNode? {
-                let map: [SplitFocusDirection : KeyPath<Self, SplitNode?>] = [
-                    .previous: \.previous,
-                    .next: \.next,
-                    .top: \.top,
-                    .bottom: \.bottom,
-                    .left: \.left,
-                    .right: \.right,
-                ]
-
-                guard let path = map[direction] else { return nil }
-                return self[keyPath: path]
-            }
-
-            /// Update multiple keys and return a new copy.
-            func update(_ attrs: [WritableKeyPath<Self, SplitNode?>: SplitNode?]) -> Self {
-                var clone = self
-                attrs.forEach { (key, value) in
-                    clone[keyPath: key] = value
-                }
-                return clone
-            }
-            
-            /// True if there are no neighbors
-            func isEmpty() -> Bool {
-                return self.previous == nil && self.next == nil
-            }
-        }
-    }
-
+    
     /// The root of a split tree. This sets up the initial SplitNode state and renders. There is only ever
     /// one of these in a split tree.
     private struct TerminalSplitRoot: View {
-        @State private var node: SplitNode
-        @State private var requestClose: Bool = false
-        let onClose: (() -> Void)?
-        let baseConfig: SurfaceConfiguration?
+        /// The root node that we're rendering. This will be set to nil if all the surfaces in this tree close.
+        @Binding var node: SplitNode?
 
         /// Keeps track of whether we're in a zoomed split state or not. If one of the splits we own
         /// is in the zoomed state, we clear our body since we expect a zoomed split to overlay
@@ -249,16 +46,6 @@ extension Ghostty {
         @Binding var zoomedSurface: SurfaceView?
 
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
-
-        init(app: ghostty_app_t,
-             zoomedSurface: Binding<SurfaceView?>,
-             onClose: (() ->Void)? = nil,
-             baseConfig: SurfaceConfiguration? = nil) {
-            self.onClose = onClose
-            self.baseConfig = baseConfig
-            self._zoomedSurface = zoomedSurface
-            _node = State(wrappedValue: SplitNode.noSplit(.init(app, baseConfig)))
-        }
 
         var body: some View {
             let center = NotificationCenter.default
@@ -271,23 +58,15 @@ extension Ghostty {
             if (zoomedSurface == nil) {
                 ZStack {
                     switch (node) {
+                    case nil:
+                        Color(.clear)
+                        
                     case .noSplit(let leaf):
                         TerminalSplitLeaf(
                             leaf: leaf,
                             neighbors: .empty,
-                            node: $node,
-                            requestClose: $requestClose
+                            node: $node
                         )
-                        .onChange(of: requestClose) { value in
-                            guard value else { return }
-
-                            // Free any resources associated with this root, we're closing.
-                            node.close()
-
-                            // Call our callback
-                            guard let onClose = self.onClose else { return }
-                            onClose()
-                        }
 
                     case .horizontal(let container):
                         TerminalSplitContainer(
@@ -309,7 +88,7 @@ extension Ghostty {
                     }
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
-                .id(node) // Required to detect node changes
+                .id(node) // Needed for change detection on node
             } else {
                 // On these events we want to reset the split state and call it.
                 let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
@@ -323,7 +102,7 @@ extension Ghostty {
                     .onReceive(pubFocus) { onZoomReset(notification: $0) }
             }
         }
-
+        
         func onZoom(notification: SwiftUI.Notification) {
             // Our node must be split to receive zooms. You can't zoom an unsplit terminal.
             if case .noSplit = node {
@@ -332,7 +111,7 @@ extension Ghostty {
 
             // Make sure the notification has a surface and that this window owns the surface.
             guard let surfaceView = notification.object as? SurfaceView else { return }
-            guard node.contains(view: surfaceView) else { return }
+            guard node?.contains(view: surfaceView) ?? false else { return }
 
             // We are in the zoomed state.
             zoomedSurface = surfaceView
@@ -367,7 +146,7 @@ extension Ghostty {
             }
         }
     }
-
+    
     /// A noSplit leaf node of a split tree.
     private struct TerminalSplitLeaf: View {
         /// The leaf to draw the surface for.
@@ -376,11 +155,8 @@ extension Ghostty {
         /// The neighbors, used for navigation.
         let neighbors: SplitNode.Neighbors
 
-        /// The SplitNode that the leaf belongs to.
-        @Binding var node: SplitNode
-
-        ///  This will be set to true when the split requests that is become closed.
-        @Binding var requestClose: Bool
+        /// The SplitNode that the leaf belongs to. This will be set to nil but when leaf is closed.
+        @Binding var node: SplitNode?
 
         var body: some View {
             let center = NotificationCenter.default
@@ -404,14 +180,14 @@ extension Ghostty {
 
             // If the child process is not alive, then we exit immediately
             guard processAlive else {
-                requestClose = true
+                node = nil
                 return
             }
             
             // If we don't have a window to attach our modal to, we also exit immediately.
             // This should NOT happen.
             guard let window = leaf.surface.window else {
-                requestClose = true
+                node = nil
                 return
             }
             
@@ -430,7 +206,7 @@ extension Ghostty {
             alert.beginSheetModal(for: window, completionHandler: { response in
                 switch (response) {
                 case .alertFirstButtonReturn:
-                    requestClose = true
+                    node = nil
                     
                 default:
                     break
@@ -470,7 +246,7 @@ extension Ghostty {
             }
 
             // See moveFocus comment, we have to run this whenever split changes.
-            Ghostty.moveFocus(to: container.bottomRight.preferredFocus(), from: node.preferredFocus())
+            Ghostty.moveFocus(to: container.bottomRight.preferredFocus(), from: node!.preferredFocus())
         }
 
         /// This handles the event to move the split focus (i.e. previous/next) from a keyboard event.
@@ -480,84 +256,104 @@ extension Ghostty {
             guard let direction = directionAny as? SplitFocusDirection else { return }
             guard let next = neighbors.get(direction: direction) else { return }
             Ghostty.moveFocus(
-                to: next.preferredFocus(direction),
-                from: node.preferredFocus()
+                to: next.preferredFocus(direction)
             )
         }
     }
-
+    
     /// This represents a split view that is in the horizontal or vertical split state.
     private struct TerminalSplitContainer: View {
         let direction: SplitViewDirection
         let neighbors: SplitNode.Neighbors
-        @Binding var node: SplitNode
+        @Binding var node: SplitNode?
         @StateObject var container: SplitNode.Container
-
-        @State private var closeTopLeft: Bool = false
-        @State private var closeBottomRight: Bool = false
 
         var body: some View {
             SplitView(direction, left: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.right : \.bottom
 
                 TerminalSplitNested(
-                    node: $container.topLeft,
+                    node: closeableTopLeft(),
                     neighbors: neighbors.update([
                         neighborKey: container.bottomRight,
                         \.next: container.bottomRight,
-                    ]),
-                    requestClose: $closeTopLeft
+                    ])
                 )
-                .onChange(of: closeTopLeft) { value in
-                    guard value else { return }
-
-                    // Close the top left and release all resources
-                    container.topLeft.close()
-
-                    // When closing the topLeft, our parent becomes the bottomRight.
-                    node = container.bottomRight
-                    Ghostty.moveFocus(to: node.preferredFocus(), from: container.topLeft.preferredFocus())
-                }
             }, right: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.left : \.top
-
+                
                 TerminalSplitNested(
-                    node: $container.bottomRight,
+                    node: closeableBottomRight(),
                     neighbors: neighbors.update([
                         neighborKey: container.topLeft,
                         \.previous: container.topLeft,
-                    ]),
-                    requestClose: $closeBottomRight
+                    ])
                 )
-                .onChange(of: closeBottomRight) { value in
-                    guard value else { return }
-
-                    // Close the node and release all resources
-                    container.bottomRight.close()
-
-                    // When closing the bottomRight, our parent becomes the topLeft.
-                    node = container.topLeft
-                    Ghostty.moveFocus(to: node.preferredFocus(), from: container.bottomRight.preferredFocus())
+            })
+        }
+        
+        private func closeableTopLeft() -> Binding<SplitNode?> {
+            return .init(get: {
+                container.topLeft
+            }, set: { newValue in
+                if let newValue {
+                    container.topLeft = newValue
+                    return
+                }
+                
+                // Closing
+                container.topLeft.close()
+                node = container.bottomRight
+                
+                DispatchQueue.main.async {
+                    Ghostty.moveFocus(
+                        to: container.bottomRight.preferredFocus(),
+                        from: container.topLeft.preferredFocus()
+                    )
+                }
+            })
+        }
+        
+        private func closeableBottomRight() -> Binding<SplitNode?> {
+            return .init(get: {
+                container.bottomRight
+            }, set: { newValue in
+                if let newValue {
+                    container.bottomRight = newValue
+                    return
+                }
+                
+                // Closing
+                container.bottomRight.close()
+                node = container.topLeft
+                
+                DispatchQueue.main.async {
+                    Ghostty.moveFocus(
+                        to: container.topLeft.preferredFocus(),
+                        from: container.bottomRight.preferredFocus()
+                    )
                 }
             })
         }
     }
 
+    
     /// This is like TerminalSplitRoot, but... not the root. This renders a SplitNode in any state but
     /// requires there be a binding to the parent node.
     private struct TerminalSplitNested: View {
-        @Binding var node: SplitNode
+        @Binding var node: SplitNode?
         let neighbors: SplitNode.Neighbors
-        @Binding var requestClose: Bool
 
         var body: some View {
             switch (node) {
+            case nil:
+                Color(.clear)
+                
             case .noSplit(let leaf):
                 TerminalSplitLeaf(
                     leaf: leaf,
                     neighbors: neighbors,
-                    node: $node,
-                    requestClose: $requestClose
+                    node: $node
                 )
 
             case .horizontal(let container):
@@ -578,7 +374,7 @@ extension Ghostty {
             }
         }
     }
-
+    
     /// When changing the split state, or going full screen (native or non), the terminal view
     /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
     /// figure it out so we're going to do this hacky thing to bring focus back to the terminal

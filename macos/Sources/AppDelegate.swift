@@ -42,16 +42,16 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     private var dockMenu: NSMenu = NSMenu()
     
     /// The ghostty global state. Only one per process.
-    private var ghostty: Ghostty.AppState = Ghostty.AppState()
+    private let ghostty: Ghostty.AppState = Ghostty.AppState()
     
-    /// Manages windows and tabs, ensuring they're allocated/deallocated correctly
-    var windowManager: PrimaryWindowManager!
+    /// Manages our terminal windows.
+    let terminalManager: TerminalManager
     
     override init() {
+        self.terminalManager = TerminalManager(ghostty)
         super.init()
         
         ghostty.delegate = self
-        windowManager = PrimaryWindowManager(ghostty: self.ghostty)
     }
     
     //MARK: - NSApplicationDelegate
@@ -73,7 +73,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         
         // Let's launch our first window.
         // TODO: we should detect if we restored windows and if so not launch a new window.
-        windowManager.addInitialWindow()
+        terminalManager.newWindow()
         
         // Initial config loading
         configDidReload(ghostty)
@@ -147,7 +147,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         guard !flag else { return true }
         
         // No visible windows, open a new one.
-        windowManager.newWindow()
+        terminalManager.newWindow()
         return false
     }
     
@@ -170,16 +170,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         // Build our config
         var config = Ghostty.SurfaceConfiguration()
         config.workingDirectory = filename
-            
-        // If we don't have a window open through the window manager, we launch
-        // a new window.
-        guard let mainWindow = windowManager.mainWindow else {
-            windowManager.addNewWindow(withBaseConfig: config)
-            return true
-        }
         
-        // Add a new tab
-        windowManager.addNewTab(to: mainWindow, withBaseConfig: config)
+        // Add a new tab or create a new window
+        terminalManager.newTab(withBaseConfig: config)
         return true
     }
     
@@ -240,13 +233,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     private func focusedSurface() -> ghostty_surface_t? {
-        guard let window = NSApp.keyWindow as? PrimaryWindow else { return nil }
-        return window.focusedSurfaceWrapper.surface
-    }
-    
-    private func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.splitMoveFocus(surface: surface, direction: direction)
+        return terminalManager.focusedSurface?.surface
     }
     
     //MARK: - GhosttyAppStateDelegate
@@ -254,15 +241,15 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     func configDidReload(_ state: Ghostty.AppState) {
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts()
-        windowManager.relabelTabs()
+        terminalManager.relabelAllTabs()
         
         // Config could change window appearance
         syncAppearance()
         
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
-        c.model.errors = state.configErrors()
-        if (c.model.errors.count > 0) {
+        c.errors = state.configErrors()
+        if (c.errors.count > 0) {
             if (c.window == nil || !c.window!.isVisible) {
                 c.showWindow(self)
             }
@@ -304,7 +291,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     @IBAction func newWindow(_ sender: Any?) {
-        windowManager.newWindow()
+        terminalManager.newWindow()
         
         // We also activate our app so that it becomes front. This may be
         // necessary for the dock menu.
@@ -312,93 +299,15 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     }
     
     @IBAction func newTab(_ sender: Any?) {
-        windowManager.newTab()
+        terminalManager.newTab()
         
         // We also activate our app so that it becomes front. This may be
         // necessary for the dock menu.
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    @IBAction func closeWindow(_ sender: Any) {
-        guard let currentWindow = NSApp.keyWindow else { return }
-        currentWindow.close()
-    }
-
-    @IBAction func close(_ sender: Any) {
-        guard let surface = focusedSurface() else {
-            self.closeWindow(self)
-            return
-        }
-
-        ghostty.requestClose(surface: surface)
-    }
-    
-    @IBAction func splitHorizontally(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
-    }
-    
-    @IBAction func splitVertically(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
-    }
-    
-    @IBAction func splitZoom(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.splitToggleZoom(surface: surface)
-    }
-    
-    @IBAction func splitMoveFocusPrevious(_ sender: Any) {
-        splitMoveFocus(direction: .previous)
-    }
-    
-    @IBAction func splitMoveFocusNext(_ sender: Any) {
-        splitMoveFocus(direction: .next)
-    }
-    
-    @IBAction func splitMoveFocusAbove(_ sender: Any) {
-        splitMoveFocus(direction: .top)
-    }
-    
-    @IBAction func splitMoveFocusBelow(_ sender: Any) {
-        splitMoveFocus(direction: .bottom)
-    }
-    
-    @IBAction func splitMoveFocusLeft(_ sender: Any) {
-        splitMoveFocus(direction: .left)
-    }
-    
-    @IBAction func splitMoveFocusRight(_ sender: Any) {
-        splitMoveFocus(direction: .right)
-    }
-    
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://github.com/mitchellh/ghostty") else { return }
         NSWorkspace.shared.open(url)
-    }
-    
-    @IBAction func toggleFullScreen(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.toggleFullscreen(surface: surface)
-    }
-
-    @IBAction func increaseFontSize(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.changeFontSize(surface: surface, .increase(1))
-    }
-
-    @IBAction func decreaseFontSize(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.changeFontSize(surface: surface, .decrease(1))
-    }
-
-    @IBAction func resetFontSize(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.changeFontSize(surface: surface, .reset)
-    }
-    
-    @IBAction func toggleTerminalInspector(_ sender: Any) {
-        guard let surface = focusedSurface() else { return }
-        ghostty.toggleTerminalInspector(surface: surface)
     }
 }
