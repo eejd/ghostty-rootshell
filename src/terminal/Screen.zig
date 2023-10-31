@@ -4107,17 +4107,20 @@ test "Screen: selectOutput" {
     var s = try init(alloc, 15, 10, 0);
     defer s.deinit();
 
-                                                // line number:
-    try s.testWriteString("output1\n");         // 0
-    try s.testWriteString("output1\n");         // 1
-    try s.testWriteString("prompt2\n");         // 2
-    try s.testWriteString("input2\n");          // 3
-    try s.testWriteString("output2\n");         // 4
-    try s.testWriteString("output2\n");         // 5
-    try s.testWriteString("prompt3$ input3\n"); // 6
-    try s.testWriteString("output3\n");         // 7
-    try s.testWriteString("output3\n");         // 8
-    try s.testWriteString("output3");           // 9
+    // zig fmt: off
+    {
+                                                    // line number:
+        try s.testWriteString("output1\n");         // 0
+        try s.testWriteString("output1\n");         // 1
+        try s.testWriteString("prompt2\n");         // 2
+        try s.testWriteString("input2\n");          // 3
+        try s.testWriteString("output2\n");         // 4
+        try s.testWriteString("output2\n");         // 5
+        try s.testWriteString("prompt3$ input3\n"); // 6
+        try s.testWriteString("output3\n");         // 7
+        try s.testWriteString("output3\n");         // 8
+        try s.testWriteString("output3");           // 9
+    }
 
     var row = s.getRow(.{ .screen = 2 });
     row.setSemanticPrompt(.prompt);
