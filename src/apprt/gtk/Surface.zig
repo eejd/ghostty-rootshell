@@ -46,6 +46,13 @@ pub const Options = struct {
 
     /// A font size to set on the surface once it is initialized.
     font_size: ?font.face.DesiredSize = null,
+
+    /// True if this surface has a parent. This is a bit of a hack currently
+    /// to work around newConfig unconditinally inheriting the working
+    /// directory. The proper long term fix is to have the working directory
+    /// inherited upstream likely at the point where this field would be set,
+    /// then remove this field.
+    parentSurface: bool = false,
 };
 
 /// Where the title of this surface will go.
@@ -58,6 +65,9 @@ const Title = union(enum) {
 /// "realized" it means that the OpenGL context is ready and the core
 /// surface has been initialized.
 realized: bool = false,
+
+/// See Options.parentSurface
+parentSurface: bool = false,
 
 /// The app we're part of
 app: *App,
@@ -167,6 +177,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         } else .{ .none = {} },
         .core_surface = undefined,
         .font_size = opts.font_size,
+        .parentSurface = opts.parentSurface,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
@@ -215,8 +226,8 @@ fn realize(self: *Surface) !void {
     // Get our new surface config
     var config = try apprt.surface.newConfig(self.app.core_app, &self.app.config);
     defer config.deinit();
-    if (!self.parent) {
-        // A hack, see the "parent" field for more information.
+    if (!self.parentSurface) {
+        // A hack, see the "parentSurface" field for more information.
         config.@"working-directory" = self.app.config.@"working-directory";
     }
 
