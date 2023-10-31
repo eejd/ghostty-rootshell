@@ -88,6 +88,7 @@ extension Ghostty {
                     }
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
+                .id(node) // Needed for change detection on node
             } else {
                 // On these events we want to reset the split state and call it.
                 let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
