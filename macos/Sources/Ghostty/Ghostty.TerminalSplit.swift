@@ -305,7 +305,12 @@ extension Ghostty {
                 container.topLeft.close()
                 node = container.bottomRight
                 
-                Ghostty.moveFocus(to: node!.preferredFocus(), from: container.topLeft.preferredFocus())
+                DispatchQueue.main.async {
+                    Ghostty.moveFocus(
+                        to: container.bottomRight.preferredFocus(),
+                        from: container.topLeft.preferredFocus()
+                    )
+                }
             })
         }
         
@@ -322,7 +327,12 @@ extension Ghostty {
                 container.bottomRight.close()
                 node = container.topLeft
                 
-                Ghostty.moveFocus(to: node!.preferredFocus(), from: container.bottomRight.preferredFocus())
+                DispatchQueue.main.async {
+                    Ghostty.moveFocus(
+                        to: container.topLeft.preferredFocus(),
+                        from: container.bottomRight.preferredFocus()
+                    )
+                }
             })
         }
     }
