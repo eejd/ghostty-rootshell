@@ -21,8 +21,10 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
     // process.
     if (comptime builtin.target.isDarwin()) {
         // Set the lang if it is not set or if its empty.
-        if (lang.len == 0) {
-            setLangFromCocoa();
+        if (lang) |l| {
+            if (l.len == 0) {
+                setLangFromCocoa();
+            }
         }
     }
 
@@ -98,7 +100,7 @@ fn setLangFromCocoa() void {
     log.info("detected system locale={s}", .{env_value});
 
     // Set it onto our environment
-    if (internal_os.setEnv("LANG", env_value.ptr) < 0) {
+    if (internal_os.setEnv("LANG", env_value) < 0) {
         log.err("error setting locale env var", .{});
         return;
     }
