@@ -100,7 +100,14 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     const gl_area_widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
     c.gtk_box_append(self.box, gl_area_widget);
 
-    const page_idx = c.gtk_notebook_append_page(window.notebook, box_widget, label_box_widget);
+    // Add the notebook page (create tab). We create the tab after our
+    // current selected tab if we have one.
+    const page_idx = c.gtk_notebook_insert_page(
+        window.notebook,
+        box_widget,
+        label_box_widget,
+        c.gtk_notebook_get_current_page(window.notebook) + 1,
+    );
     if (page_idx < 0) {
         log.warn("failed to add page to notebook", .{});
         return error.GtkAppendPageFailed;
