@@ -180,7 +180,7 @@ pub fn splitSurface(self: *Tab, direction: input.SplitDirection) !void {
     self.removeChild();
 
     // Create a Paned with two Surfaces.
-    const paned = try Paned.create(self.window.app.core_app.alloc, self.window, surface, direction);
+    const paned = try Paned.create(self.window.app.core_app.alloc, surface, direction);
 
     // Add Paned to the Tab.
     self.setChild(.{ .paned = paned });

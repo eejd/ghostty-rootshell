@@ -17,13 +17,6 @@ const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
 
-/// We'll need to keep a reference to the Window this belongs to for various reasons
-window: *Window,
-
-// We keep track of the tab label's text so that if a child widget of this pane
-// gets focus (and is a Surface) we can reset the tab label appropriately
-label_text: *c.GtkWidget,
-
 /// Our actual GtkPaned widget
 paned: *c.GtkPaned,
 
@@ -36,28 +29,21 @@ child2: Child,
 // maximize the parent pane, or close the tab.
 parent: Parent,
 
-pub fn create(alloc: Allocator, window: *Window, sibling: *Surface, direction: input.SplitDirection) !*Paned {
+pub fn create(alloc: Allocator, sibling: *Surface, direction: input.SplitDirection) !*Paned {
     var paned = try alloc.create(Paned);
     errdefer alloc.destroy(paned);
-    try paned.init(window, sibling, direction);
+    try paned.init(sibling, direction);
     return paned;
 }
 
-pub fn init(self: *Paned, window: *Window, sibling: *Surface, direction: input.SplitDirection) !void {
+pub fn init(self: *Paned, sibling: *Surface, direction: input.SplitDirection) !void {
     self.* = .{
-        .window = window,
-        .label_text = undefined,
         .paned = undefined,
         .child1 = .none,
         .child2 = .none,
         .parent = undefined,
     };
     errdefer self.* = undefined;
-
-    self.label_text = sibling.getTitleLabel() orelse {
-        log.warn("sibling surface has no title label", .{});
-        return;
-    };
 
     const orientation: c_uint = switch (direction) {
         .right => c.GTK_ORIENTATION_HORIZONTAL,
@@ -113,7 +99,7 @@ pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input
     // Create new Paned
     // NOTE: We cannot use `replaceChildInPosition` here because we need to
     // first remove the surface before we create a new pane.
-    const paned = try Paned.create(self.window.app.core_app.alloc, self.window, surface, direction);
+    const paned = try Paned.create(surface.window.app.core_app.alloc, surface, direction);
     switch (position) {
         .start => self.addChild1(.{ .paned = paned }),
         .end => self.addChild2(.{ .paned = paned }),
