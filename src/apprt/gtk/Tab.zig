@@ -159,6 +159,7 @@ pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
         .parent = .{
             .tab = self,
         },
+        .parentSurface = parent_ != null,
         .gl_area = @ptrCast(gl_area),
         .title_label = @ptrCast(self.label_text),
         .font_size = font_size,
