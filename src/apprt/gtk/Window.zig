@@ -269,7 +269,7 @@ pub fn closeSurface(self: *Window, surface: *Surface) void {
 }
 
 fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position: Position) void {
-    const sibling = switch (position) {
+    const sibling_child, const sibling_widget = switch (position) {
         .start => .{
             paned.child2,
             c.gtk_paned_get_end_child(paned.paned),
@@ -279,9 +279,6 @@ fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position
             c.gtk_paned_get_start_child(paned.paned),
         },
     };
-    // TODO: Use destructuring syntax once it doesn't break ZLS
-    const sibling_child = sibling[0];
-    const sibling_widget = sibling[1];
 
     // Keep explicit reference to sibling's widget (gl_area, or Paned), so it's
     // not destroyed when we remove it from GtkPaned.
