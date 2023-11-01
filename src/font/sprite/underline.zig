@@ -175,7 +175,7 @@ const Draw = struct {
         // cell height and this doesn't allow us to make a high enough
         // wave. This constant is arbitrary, change it for aesthetics.
         const pos: u32 = pos: {
-            const MIN_HEIGHT: u32 = @max(self.height / 9, 3);
+            const MIN_HEIGHT: u32 = @max(self.height / 9, 2);
             break :pos y_max - (MIN_HEIGHT * 2);
         };
 
