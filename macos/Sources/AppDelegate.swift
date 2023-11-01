@@ -224,7 +224,9 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         
         let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
         guard let equiv = Ghostty.keyEquivalent(key: trigger.key) else {
-            Self.logger.debug("no keyboard shorcut set for action=\(action)")
+            // No shortcut, clear the menu item
+            menu.keyEquivalent = ""
+            menu.keyEquivalentModifierMask = []
             return
         }
         
