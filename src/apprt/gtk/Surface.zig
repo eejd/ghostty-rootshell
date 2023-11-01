@@ -836,6 +836,7 @@ fn gtkMouseDown(
     // If we don't have focus, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     if (c.gtk_widget_has_focus(gl_widget) == 0) {
+        self.tab.focus_child = self;
         _ = c.gtk_widget_grab_focus(gl_widget);
     }
 

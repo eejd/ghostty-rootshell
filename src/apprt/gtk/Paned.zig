@@ -86,6 +86,7 @@ pub fn setParent(self: *Paned, parent: Parent) void {
 pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
     const surface: *Surface = self.surfaceInPosition(position) orelse return;
     const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
+    surface.tab.focus_child = surface;
     _ = c.gtk_widget_grab_focus(widget);
 }
 

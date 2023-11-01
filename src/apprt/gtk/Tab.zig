@@ -93,8 +93,6 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     errdefer surface.deinit();
 
     self.child = Child{ .surface = surface };
-    // // TODO: this needs to change
-    self.focus_child = surface;
 
     // Add Surface to the Tab
     const gl_area_widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
@@ -121,6 +119,9 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     if (c.gtk_notebook_get_n_pages(window.notebook) > 1) {
         c.gtk_notebook_set_show_tabs(window.notebook, 1);
     }
+
+    // TODO: This needs to happen before we show the page
+    self.focus_child = surface;
 
     // Set the userdata of the box to point to this tab.
     c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
