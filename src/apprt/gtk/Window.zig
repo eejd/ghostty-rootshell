@@ -437,27 +437,31 @@ fn gtkNotebookCreateWindow(
     page: *c.GtkWidget,
     ud: ?*anyopaque,
 ) callconv(.C) ?*c.GtkNotebook {
+    _ = ud;
+    _ = page;
+    log.warn("feature needs to be re-implemented after adding gtk splits", .{});
+    return null;
     // The tab for the page is stored in the widget data.
-    const tab: *Tab = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
-    ));
-    const surface: *Surface = tab.focus_child;
+    // const tab: *Tab = @ptrCast(@alignCast(
+    //     c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
+    // ));
+    // const surface: *Surface = tab.focus_child;
 
-    const self = userdataSelf(ud.?);
-    const alloc = self.app.core_app.alloc;
+    // const self = userdataSelf(ud.?);
+    // const alloc = self.app.core_app.alloc;
 
-    // Create a new window
-    const window = Window.create(alloc, self.app) catch |err| {
-        log.warn("error creating new window error={}", .{err});
-        return null;
-    };
+    // // Create a new window
+    // const window = Window.create(alloc, self.app) catch |err| {
+    //     log.warn("error creating new window error={}", .{err});
+    //     return null;
+    // };
 
-    // We need to update our surface to point to the new window and tab so that
-    // events such as new tab go to the right window.
-    surface.window = window;
-    surface.tab = window.tabs.items[window.tabs.items.len - 1];
+    // // We need to update our surface to point to the new window and tab so that
+    // // events such as new tab go to the right window.
+    // surface.window = window;
+    // surface.tab = window.tabs.items[window.tabs.items.len - 1];
 
-    return window.notebook;
+    // return window.notebook;
 }
 
 fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
