@@ -280,12 +280,22 @@ pub fn init(
                     _ = try group.addFace(.regular, .{ .deferred = face });
                 } else log.warn("font-family not found: {s}", .{family});
             }
+
+            // In all the styled cases below, we prefer to specify an exact
+            // style via the `font-style` configuration. If a style is not
+            // specified, we use the discovery mechanism to search for a
+            // style category such as bold, italic, etc. We can't specify both
+            // because the latter will restrict the search to only that. If
+            // a user says `font-style = italic` for the bold face for example,
+            // no results would be found if we restrict to ALSO searching for
+            // italic.
             if (config.@"font-family-bold") |family| {
+                const style = config.@"font-style-bold".nameValue();
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,
-                    .style = config.@"font-style-bold".nameValue(),
+                    .style = style,
                     .size = font_size.points,
-                    .bold = true,
+                    .bold = style == null,
                     .variations = config.@"font-variation-bold".list.items,
                 });
                 defer disco_it.deinit();
@@ -295,11 +305,12 @@ pub fn init(
                 } else log.warn("font-family-bold not found: {s}", .{family});
             }
             if (config.@"font-family-italic") |family| {
+                const style = config.@"font-style-italic".nameValue();
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,
-                    .style = config.@"font-style-italic".nameValue(),
+                    .style = style,
                     .size = font_size.points,
-                    .italic = true,
+                    .italic = style == null,
                     .variations = config.@"font-variation-italic".list.items,
                 });
                 defer disco_it.deinit();
@@ -309,12 +320,13 @@ pub fn init(
                 } else log.warn("font-family-italic not found: {s}", .{family});
             }
             if (config.@"font-family-bold-italic") |family| {
+                const style = config.@"font-style-bold-italic".nameValue();
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,
-                    .style = config.@"font-style-bold-italic".nameValue(),
+                    .style = style,
                     .size = font_size.points,
-                    .bold = true,
-                    .italic = true,
+                    .bold = style == null,
+                    .italic = style == null,
                     .variations = config.@"font-variation-bold-italic".list.items,
                 });
                 defer disco_it.deinit();
