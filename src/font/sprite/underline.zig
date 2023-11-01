@@ -166,29 +166,29 @@ const Draw = struct {
         // This is the lowest that the curl can go.
         const y_max = self.height - 1;
 
-        // Determines the density of the waves.
+        // Calculate the wave period for a single character
         //   `2 * pi...` = 1 peak per character
         //   `4 * pi...` = 2 peaks per character
-        const x_factor = 2 * std.math.pi / @as(f64, @floatFromInt(self.width - 1));
+        const wave_period = 2 * std.math.pi / @as(f64, @floatFromInt(self.width - 1));
 
         // Some fonts put the underline too close to the bottom of the
         // cell height and this doesn't allow us to make a high enough
         // wave. This constant is arbitrary, change it for aesthetics.
         const pos: u32 = pos: {
-            const MIN_HEIGHT: u32 = @max(self.height / 9, 2);
-            break :pos y_max - (MIN_HEIGHT * 2);
+            const MIN_AMPLITUDE: u32 = @max(self.height / 9, 2);
+            break :pos y_max - (MIN_AMPLITUDE * 2);
         };
 
-        // The full height of the wave can be from the bottom to the
+        // The full aplitude of the wave can be from the bottom to the
         // underline position. We also calculate our mid y point of the wave
-        const wave_height: f64 = @floatFromInt(y_max - pos);
-        const half_height: f64 = @max(1, wave_height / 4);
-        const y_mid: u32 = pos + @as(u32, @intFromFloat(2 * half_height));
+        const double_amplitude: f64 = @floatFromInt(y_max - pos);
+        const half_amplitude: f64 = @max(1, double_amplitude / 4);
+        const y_mid: u32 = pos + @as(u32, @intFromFloat(2 * half_amplitude));
 
         // follow Xiaolin Wu's antialias algorithm to draw the curve
         var x: u32 = 0;
         while (x < self.width) : (x += 1) {
-            const y: f64 = @as(f64, @floatFromInt(y_mid)) + (half_height * @cos(@as(f64, @floatFromInt(x)) * x_factor));
+            const y: f64 = @as(f64, @floatFromInt(y_mid)) + (half_amplitude * @cos(@as(f64, @floatFromInt(x)) * wave_period));
             const y_upper: u32 = @intFromFloat(@floor(y));
             const y_lower: u32 = y_upper + self.thickness;
             const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
