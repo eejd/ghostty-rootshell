@@ -353,6 +353,7 @@ pub const Surface = struct {
         win.setScrollCallback(scrollCallback);
         win.setCursorPosCallback(cursorPosCallback);
         win.setMouseButtonCallback(mouseButtonCallback);
+        win.setDropCallback(dropCallback);
 
         // Build our result
         self.* = .{
@@ -963,5 +964,39 @@ pub const Surface = struct {
             log.err("error in scroll callback err={}", .{err});
             return;
         };
+    }
+
+    fn dropCallback(window: glfw.Window, paths: [][*:0]const u8) void {
+        const tracy = trace(@src());
+        defer tracy.end();
+
+        const surface = window.getUserPointer(CoreSurface) orelse return;
+
+        var list = std.ArrayList(u8).init(surface.alloc);
+        defer list.deinit();
+
+        for (paths) |path| {
+            const path_slice = std.mem.span(path);
+            const writer = list.writer();
+
+            list.ensureTotalCapacity(path_slice.len * 2 + 1) catch |err| { // preallocate worst case of escaping every char + space
+                log.err("error in drop callback err={}", .{err});
+                return;
+            };
+
+            for (path_slice) |c| {
+                if (std.mem.indexOfScalar(u8, "\\ ()[]{}<>\"'`!#$&;|*?\t", c)) |_| {
+                    writer.print("\\{c}", .{c}) catch unreachable; // only error is OOM, memory preallocated
+                } else writer.writeByte(c) catch unreachable; // same here
+            }
+            writer.writeByte(' ') catch unreachable; // separate paths
+
+            surface.textCallback(list.items) catch |err| {
+                log.err("error in drop callback err={}", .{err});
+                return;
+            };
+
+            list.clearRetainingCapacity(); // avoid unnecessary reallocations
+        }
     }
 };
