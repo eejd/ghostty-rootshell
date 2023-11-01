@@ -120,9 +120,6 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         c.gtk_notebook_set_show_tabs(window.notebook, 1);
     }
 
-    // TODO: This needs to happen before we show the page
-    self.focus_child = surface;
-
     // Set the userdata of the box to point to this tab.
     c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
 
@@ -131,7 +128,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 
     // We need to grab focus after Surface and Tab is added to the window. When
     // creating a Tab we want to always focus on the widget.
-    _ = c.gtk_widget_grab_focus(gl_area_widget);
+    surface.grabFocus();
 }
 
 /// Allocates and initializes a new Surface, but doesn't add it to the Tab yet.

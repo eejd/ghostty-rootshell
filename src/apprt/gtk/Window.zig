@@ -314,11 +314,7 @@ fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position
     }
 
     switch (sibling_child) {
-        .surface => |s| {
-            s.tab.focus_child = s;
-            const widget = @as(*c.GtkWidget, @ptrCast(s.gl_area));
-            _ = c.gtk_widget_grab_focus(widget);
-        },
+        .surface => |s| s.grabFocus(),
         .paned => |p| {
             // Focus on first surface in sibling Paned
             p.focusFirstSurfaceInPosition(position);

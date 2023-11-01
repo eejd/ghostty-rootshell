@@ -90,6 +90,11 @@ cursor: ?*c.GdkCursor = null,
 /// Our title label (if there is one).
 title: Title,
 
+/// Our title. The raw value of the title. This will be kept up to date and
+/// .title will be updated if we have focus.
+/// TODO: what's a big enough value?
+titleText: [4096]u8,
+
 /// The core surface backing this surface
 core_surface: CoreSurface,
 
@@ -175,6 +180,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .title = if (opts.title_label) |label| .{
             .label = label,
         } else .{ .none = {} },
+        .titleText = undefined,
         .core_surface = undefined,
         .font_size = opts.font_size,
         .parentSurface = opts.parentSurface,
@@ -445,24 +451,38 @@ pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.Surfac
     _ = max_;
 }
 
-pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+pub fn grabFocus(self: *Surface) void {
+    self.updateTitleLabels();
+    self.tab.focus_child = self;
+    const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
+    _ = c.gtk_widget_grab_focus(widget);
+}
+
+fn updateTitleLabels(self: *Surface) void {
     switch (self.title) {
         .none => {},
-
         .label => |label| {
-            c.gtk_label_set_text(label, slice.ptr);
-
-            const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
-            if (c.gtk_widget_is_focus(widget) == 1) {
+            const slice: []u8 = std.mem.sliceTo(&self.titleText, 0);
+            // Check whether there's even something in the buffer yet.
+            // TODO: This check is really bad.
+            if (slice.len != self.titleText.len) {
+                c.gtk_label_set_text(label, @as([*c]const u8, @ptrCast(slice)));
                 c.gtk_window_set_title(self.window.window, c.gtk_label_get_text(label));
             }
         },
     }
+}
 
-    // const root = c.gtk_widget_get_root(@ptrCast(
-    //     *c.GtkWidget,
-    //     self.gl_area,
-    // ));
+pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+    // TODO: I'm sure there has to be a better way than this in Zig.
+    const len = @min(self.titleText.len - 1, slice.len);
+    @memcpy(self.titleText[0..len], slice[0..]);
+    self.titleText[len] = 0;
+
+    const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
+    if (c.gtk_widget_is_focus(widget) == 1) {
+        self.updateTitleLabels();
+    }
 }
 
 pub fn setParent(self: *Surface, parent: Parent) void {
@@ -838,6 +858,10 @@ fn gtkMouseDown(
     if (c.gtk_widget_has_focus(gl_widget) == 0) {
         self.tab.focus_child = self;
         _ = c.gtk_widget_grab_focus(gl_widget);
+
+        // If we have siblings, we also update the title, since it means
+        // another sibling might have updated the title.
+        if (self.parent != Parent.tab) self.updateTitleLabels();
     }
 
     self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
@@ -1267,6 +1291,7 @@ fn gtkInputCommit(
 
 fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
     const self = userdataSelf(ud.?);
+
     // Notify our IM context
     c.gtk_im_context_focus_in(self.im_context);
 

@@ -87,11 +87,7 @@ pub fn setParent(self: *Paned, parent: Parent) void {
 pub fn focusFirstSurfaceInPosition(self: *Paned, position: Position) void {
     const child = self.childInPosition(position);
     switch (child) {
-        .surface => |s| {
-            const widget = @as(*c.GtkWidget, @ptrCast(s.gl_area));
-            s.tab.focus_child = s;
-            _ = c.gtk_widget_grab_focus(widget);
-        },
+        .surface => |s| s.grabFocus(),
         .paned => |p| p.focusFirstSurfaceInPosition(position),
         .none => {
             log.warn("attempted to focus on first surface, found none", .{});
