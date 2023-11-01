@@ -283,8 +283,8 @@ fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position
     const sibling_child = sibling[0];
     const sibling_widget = sibling[1];
 
-    // Keep explicit reference to sibling's gl_area, so it's not
-    // destroyed when we remove it from GtkPaned.
+    // Keep explicit reference to sibling's widget (gl_area, or Paned), so it's
+    // not destroyed when we remove it from GtkPaned.
     const sibling_object: *c.GObject = @ptrCast(sibling_widget);
     _ = c.g_object_ref(sibling_object);
     defer c.g_object_unref(sibling_object);
@@ -314,11 +314,17 @@ fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position
     }
 
     switch (sibling_child) {
-        .surface => |s| s.tab.focus_child = s,
+        .surface => |s| {
+            s.tab.focus_child = s;
+            const widget = @as(*c.GtkWidget, @ptrCast(s.gl_area));
+            _ = c.gtk_widget_grab_focus(widget);
+        },
+        .paned => |p| {
+            // Focus on first surface in sibling Paned
+            p.focusFirstSurfaceInPosition(position);
+        },
         else => {},
     }
-    const widget = @as(*c.GtkWidget, @ptrCast(sibling_widget));
-    _ = c.gtk_widget_grab_focus(widget);
 }
 
 /// Returns true if this window has any tabs.

@@ -188,7 +188,7 @@ pub fn splitSurface(self: *Tab, direction: input.SplitDirection) !void {
     self.setChild(.{ .paned = paned });
 
     // Focus on new surface
-    paned.focusSurfaceInPosition(.end);
+    paned.focusFirstSurfaceInPosition(.end);
 }
 
 /// Remove the current child from the Tab. Noop if no child set.

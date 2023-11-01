@@ -82,12 +82,22 @@ pub fn setParent(self: *Paned, parent: Parent) void {
     self.parent = parent;
 }
 
-/// Focus on the Surface's gl_area in the given position.
-pub fn focusSurfaceInPosition(self: *Paned, position: Position) void {
-    const surface: *Surface = self.surfaceInPosition(position) orelse return;
-    const widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
-    surface.tab.focus_child = surface;
-    _ = c.gtk_widget_grab_focus(widget);
+/// Focus on first Surface that can be found in given position. If there's a
+/// Paned in the position, it will focus on the first surface in that position.
+pub fn focusFirstSurfaceInPosition(self: *Paned, position: Position) void {
+    const child = self.childInPosition(position);
+    switch (child) {
+        .surface => |s| {
+            const widget = @as(*c.GtkWidget, @ptrCast(s.gl_area));
+            s.tab.focus_child = s;
+            _ = c.gtk_widget_grab_focus(widget);
+        },
+        .paned => |p| p.focusFirstSurfaceInPosition(position),
+        .none => {
+            log.warn("attempted to focus on first surface, found none", .{});
+            return;
+        },
+    }
 }
 
 /// Split the Surface in the given position into a Paned with two surfaces.
@@ -116,7 +126,7 @@ pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input
     c.gtk_paned_set_position(self.paned, parent_paned_position_before);
 
     // Focus on new surface
-    paned.focusSurfaceInPosition(.end);
+    paned.focusFirstSurfaceInPosition(.end);
 }
 
 /// Replace the existing .start or .end Child with the given new Child.
@@ -125,7 +135,7 @@ pub fn replaceChildInPosition(self: *Paned, child: Child, position: Position) vo
     const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
 
     // Focus on the sibling, otherwise we'll get a GTK warning
-    self.focusSurfaceInPosition(if (position == .start) .end else .start);
+    self.focusFirstSurfaceInPosition(if (position == .start) .end else .start);
 
     // Now we can remove the other one
     self.removeChildInPosition(position);
@@ -193,13 +203,15 @@ fn addChild2(self: *Paned, child: Child) void {
     child.setParent(.{ .paned = .{ self, .end } });
 }
 
-fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
-    const child = switch (position) {
+fn childInPosition(self: *Paned, position: Position) Child {
+    return switch (position) {
         .start => self.child1,
         .end => self.child2,
     };
+}
 
-    return switch (child) {
+fn surfaceInPosition(self: *Paned, position: Position) ?*Surface {
+    return switch (self.childInPosition(position)) {
         .surface => |surface| surface,
         else => null,
     };
