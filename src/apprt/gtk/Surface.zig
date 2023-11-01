@@ -92,8 +92,11 @@ title: Title,
 
 /// Our title. The raw value of the title. This will be kept up to date and
 /// .title will be updated if we have focus.
+/// When set the text in this buf will be null-terminated, because we need to
+/// pass it to GTK.
 /// TODO: what's a big enough value?
-titleText: [4096]u8,
+title_text_buf: [4096]u8,
+title_text_buf_len: u13,
 
 /// The core surface backing this surface
 core_surface: CoreSurface,
@@ -180,7 +183,8 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .title = if (opts.title_label) |label| .{
             .label = label,
         } else .{ .none = {} },
-        .titleText = undefined,
+        .title_text_buf = undefined,
+        .title_text_buf_len = 0,
         .core_surface = undefined,
         .font_size = opts.font_size,
         .parentSurface = opts.parentSurface,
@@ -462,22 +466,21 @@ fn updateTitleLabels(self: *Surface) void {
     switch (self.title) {
         .none => {},
         .label => |label| {
-            const slice: []u8 = std.mem.sliceTo(&self.titleText, 0);
-            // Check whether there's even something in the buffer yet.
-            // TODO: This check is really bad.
-            if (slice.len != self.titleText.len) {
-                c.gtk_label_set_text(label, @as([*c]const u8, @ptrCast(slice)));
-                c.gtk_window_set_title(self.window.window, c.gtk_label_get_text(label));
-            }
+            if (self.title_text_buf_len == 0) return;
+
+            const slice: []u8 = self.title_text_buf[0..self.title_text_buf_len];
+            c.gtk_label_set_text(label, @as([*c]const u8, @ptrCast(slice)));
+            c.gtk_window_set_title(self.window.window, c.gtk_label_get_text(label));
         },
     }
 }
 
 pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-    // TODO: I'm sure there has to be a better way than this in Zig.
-    const len = @min(self.titleText.len - 1, slice.len);
-    @memcpy(self.titleText[0..len], slice[0..]);
-    self.titleText[len] = 0;
+    const len = @min(self.title_text_buf.len - 1, slice.len);
+    @memcpy(self.title_text_buf[0..len], slice[0..]);
+    // Null-terminate this because we then need to pass it to GTK.
+    self.title_text_buf[len] = 0;
+    self.title_text_buf_len = len;
 
     const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     if (c.gtk_widget_is_focus(widget) == 1) {
