@@ -37,10 +37,6 @@ pub const Options = struct {
     /// The GL area that this surface should draw to.
     gl_area: *c.GtkGLArea,
 
-    /// The label to use as the title of this surface. This will be
-    /// modified with setTitle.
-    title_label: ?*c.GtkLabel = null,
-
     /// A font size to set on the surface once it is initialized.
     font_size: ?font.face.DesiredSize = null,
 
@@ -84,12 +80,6 @@ pub const Container = union(enum) {
     }
 };
 
-/// Where the title of this surface will go.
-const Title = union(enum) {
-    none: void,
-    label: *c.GtkLabel,
-};
-
 /// Whether the surface has been realized or not yet. When a surface is
 /// "realized" it means that the OpenGL context is ready and the core
 /// surface has been initialized.
@@ -113,9 +103,6 @@ gl_area: *c.GtkGLArea,
 
 /// Any active cursor we may have
 cursor: ?*c.GdkCursor = null,
-
-/// Our title label (if there is one).
-title: Title,
 
 /// Our title. The raw value of the title. This will be kept up to date and
 /// .title will be updated if we have focus.
@@ -206,9 +193,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .container = .{ .tab_ = opts.tab },
         .parent = opts.parent,
         .gl_area = opts.gl_area,
-        .title = if (opts.title_label) |label| .{
-            .label = label,
-        } else .{ .none = {} },
         .title_text_buf = undefined,
         .title_text_buf_len = 0,
         .core_surface = undefined,
@@ -537,18 +521,18 @@ pub fn grabFocus(self: *Surface) void {
 }
 
 fn updateTitleLabels(self: *Surface) void {
-    switch (self.title) {
-        .none => {},
-        .label => |label| {
-            if (self.title_text_buf_len == 0) return;
+    // If we have no title, then we have nothing to update.
+    if (self.title_text_buf_len == 0) return;
+    const slice: []u8 = self.title_text_buf[0..self.title_text_buf_len];
 
-            const slice: []u8 = self.title_text_buf[0..self.title_text_buf_len];
-            c.gtk_label_set_text(label, @as([*c]const u8, @ptrCast(slice)));
-            c.gtk_window_set_title(
-                self.container.window().?.window, // TODO: messy
-                c.gtk_label_get_text(label),
-            );
-        },
+    // If we have a tab, then we have to update the tab
+    if (self.container.tab()) |tab| {
+        c.gtk_label_set_text(tab.label_text, slice.ptr);
+    }
+
+    // If we have a window, then we have to update the window title.
+    if (self.container.window()) |window| {
+        c.gtk_window_set_title(window.window, slice.ptr);
     }
 }
 
