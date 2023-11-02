@@ -204,17 +204,12 @@ pub fn replace(
     const pos = c.gtk_paned_get_position(self.paned);
     defer c.gtk_paned_set_position(self.paned, pos);
 
-    if (ptr == &self.top_left) {
-        c.gtk_paned_set_start_child(
-            @ptrCast(self.paned),
-            self.top_left.widget(),
-        );
-    } else {
-        c.gtk_paned_set_end_child(
-            @ptrCast(self.paned),
-            self.bottom_right.widget(),
-        );
-    }
+    // We have to set both to null. If we overwrite the pane with
+    // the same value, then GTK bugs out (the GL area unrealizes
+    // and never rerealizes).
+    c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
+    c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
+    self.updateChildren();
 }
 
 /// Update the paned children to represent the current state.
