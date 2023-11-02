@@ -159,27 +159,6 @@ pub fn deinit(self: *Tab) void {
     }
 }
 
-/// Splits the current child surface into a Paned in given direction. Child of
-/// Tab must be a Surface.
-pub fn splitSurface(self: *Tab, direction: input.SplitDirection) !void {
-    assert(self.child == .surface);
-
-    const surface = switch (self.child) {
-        .surface => |s| s,
-        else => unreachable,
-    };
-    self.removeChild();
-
-    // Create a Paned with two Surfaces.
-    const paned = try Paned.create(self.window.app.core_app.alloc, surface, direction);
-
-    // Add Paned to the Tab.
-    self.setChild(.{ .paned = paned });
-
-    // Focus on new surface
-    paned.focusFirstSurfaceInPosition(.end);
-}
-
 /// Remove the current child from the Tab. Noop if no child set.
 pub fn removeChild(self: *Tab) void {
     const widget = self.child.widget() orelse return;

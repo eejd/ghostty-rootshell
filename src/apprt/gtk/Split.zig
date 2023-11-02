@@ -87,6 +87,9 @@ pub fn init(
     // Update our children so that our GL area is properly
     // added to the paned.
     self.updateChildren();
+
+    // The new surface should always grab focus
+    surface.grabFocus();
 }
 
 /// Focus on first Surface that can be found in given position. If there's a
@@ -199,8 +202,19 @@ pub fn replace(
     // Update our paned children. This will reset the divider
     // position but we want to keep it in place so save and restore it.
     const pos = c.gtk_paned_get_position(self.paned);
-    self.updateChildren();
-    c.gtk_paned_set_position(self.paned, pos);
+    defer c.gtk_paned_set_position(self.paned, pos);
+
+    if (ptr == &self.top_left) {
+        c.gtk_paned_set_start_child(
+            @ptrCast(self.paned),
+            self.top_left.widget(),
+        );
+    } else {
+        c.gtk_paned_set_end_child(
+            @ptrCast(self.paned),
+            self.bottom_right.widget(),
+        );
+    }
 }
 
 /// Update the paned children to represent the current state.
