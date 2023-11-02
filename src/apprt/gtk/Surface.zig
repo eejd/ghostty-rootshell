@@ -121,6 +121,17 @@ pub const Container = union(enum) {
             },
         }
     }
+
+    /// Remove ourselves from the container. This is used by
+    /// children to effectively notify they're containing that
+    /// all children at this level are exiting.
+    pub fn remove(self: Container) void {
+        switch (self) {
+            .none => {},
+            .tab_ => |t| t.closeElem(),
+            else => @panic("TOOD"),
+        }
+    }
 };
 
 /// Whether the surface has been realized or not yet. When a surface is
@@ -388,14 +399,16 @@ pub fn redraw(self: *Surface) void {
 
 /// Close this surface.
 pub fn close(self: *Surface, processActive: bool) void {
-    // If we are not currently in a window, then we don't need to do any
-    // cleanup. If we are in a window, we need to potentially confirm,
-    // remove ourselves from the view hierarchy, etc.
-    const window = self.container.window() orelse return;
+    // If we're not part of a window hierarchy, we never confirm
+    // so we can just directly remove ourselves and exit.
+    const window = self.container.window() orelse {
+        self.container.remove();
+        return;
+    };
 
+    // If we have no process active we can just exit immediately.
     if (!processActive) {
-        // TODO: change to container doing this directly
-        window.closeSurface(self);
+        self.container.remove();
         return;
     }
 
@@ -1472,8 +1485,7 @@ fn gtkCloseConfirmation(
     c.gtk_window_destroy(@ptrCast(alert));
     if (response == c.GTK_RESPONSE_YES) {
         const self = userdataSelf(ud.?);
-        const window = self.container.window() orelse return;
-        window.closeSurface(self);
+        self.container.remove();
     }
 }
 
