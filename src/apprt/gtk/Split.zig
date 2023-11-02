@@ -156,10 +156,10 @@ pub fn replaceChildInPosition(self: *Split, child: Child, position: Position) vo
 }
 
 /// Remove both children, setting *c.GtkSplit start/end children to null.
-pub fn removeChildren(self: *Split) void {
-    self.removeChildInPosition(.start);
-    self.removeChildInPosition(.end);
-}
+// pub fn removeChildren(self: *Split) void {
+//     self.removeChildInPosition(.start);
+//     self.removeChildInPosition(.end);
+//}
 
 /// Deinit the Split by deiniting its child Split, if they exist.
 pub fn deinit(self: *Split, alloc: Allocator) void {
@@ -189,6 +189,18 @@ fn removeChildInPosition(self: *Split, position: Position) void {
     }
 }
 
+/// Remove the top left child.
+pub fn removeTopLeft(self: *Split) void {
+    // Remove our children since we are going to no longer be
+    // a split anyways. This prevents widgets with multiple parents.
+    self.removeChildren();
+
+    // Our container must become whatever our bottom right is
+    self.container.replace(self.bottom_right);
+
+    // TODO: memory management of top left
+}
+
 // TODO: ehhhhhh
 pub fn replace(
     self: *Split,
@@ -203,12 +215,6 @@ pub fn replace(
     // position but we want to keep it in place so save and restore it.
     const pos = c.gtk_paned_get_position(self.paned);
     defer c.gtk_paned_set_position(self.paned, pos);
-
-    // We have to set both to null. If we overwrite the pane with
-    // the same value, then GTK bugs out (the GL area unrealizes
-    // and never rerealizes).
-    c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
-    c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
     self.updateChildren();
 }
 
@@ -216,6 +222,12 @@ pub fn replace(
 /// This should be called anytime the top/left or bottom/right
 /// element is changed.
 fn updateChildren(self: *const Split) void {
+    // We have to set both to null. If we overwrite the pane with
+    // the same value, then GTK bugs out (the GL area unrealizes
+    // and never rerealizes).
+    self.removeChildren();
+
+    // Set our current children
     c.gtk_paned_set_start_child(
         @ptrCast(self.paned),
         self.top_left.widget(),
@@ -224,6 +236,11 @@ fn updateChildren(self: *const Split) void {
         @ptrCast(self.paned),
         self.bottom_right.widget(),
     );
+}
+
+fn removeChildren(self: *const Split) void {
+    c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
+    c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
 }
 
 fn addChild1(self: *Split, child: Child) void {

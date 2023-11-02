@@ -72,6 +72,13 @@ pub const Container = union(enum) {
                 .split => |s| @ptrCast(@alignCast(s.paned)),
             };
         }
+
+        pub fn containerPtr(self: Elem) *Container {
+            return switch (self) {
+                .surface => |s| &s.container,
+                .split => |s| &s.container,
+            };
+        }
     };
 
     /// Returns the window that this surface is attached to.
@@ -112,6 +119,7 @@ pub const Container = union(enum) {
     /// from a surface to a split or a split back to a surface or
     /// a split to a nested split and so on.
     pub fn replace(self: Container, elem: Elem) void {
+        // Move the element into the container
         switch (self) {
             .none => {},
             .tab_ => |t| t.replaceElem(elem),
@@ -120,6 +128,9 @@ pub const Container = union(enum) {
                 s.replace(ptr, elem);
             },
         }
+
+        // Update the reverse reference to the container
+        elem.containerPtr().* = self;
     }
 
     /// Remove ourselves from the container. This is used by
@@ -129,6 +140,7 @@ pub const Container = union(enum) {
         switch (self) {
             .none => {},
             .tab_ => |t| t.closeElem(),
+            .split_tl => self.split().?.removeTopLeft(),
             else => @panic("TOOD"),
         }
     }
