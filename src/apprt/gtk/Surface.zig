@@ -280,7 +280,7 @@ fn realize(self: *Surface) !void {
 
 pub fn destroy(self: *Surface, alloc: Allocator) void {
     self.deinit();
-    alloc.free(self);
+    alloc.destroy(self);
 }
 
 pub fn deinit(self: *Surface) void {

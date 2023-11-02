@@ -90,8 +90,12 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     self.box = @ptrCast(box_widget);
 
     // Create the initial surface since all tabs start as a single non-split
-    const surface = try self.newSurface(parent_);
-    errdefer surface.deinit();
+    var surface = try Surface.create(window.app.core_app.alloc, window.app, .{
+        .parent2 = parent_,
+        .parent = .{ .tab = self },
+    });
+    errdefer surface.destroy(window.app.core_app.alloc);
+    surface.setContainer(.{ .tab_ = self });
     self.child = .{ .surface = surface };
 
     // Add Surface to the Tab
