@@ -55,6 +55,38 @@ pub const Options = struct {
     parentSurface: bool = false,
 };
 
+/// The container that this surface is directly attached to.
+pub const Container = union(enum) {
+    /// The surface is not currently attached to anything. This means
+    /// that the GLArea has been created and potentially initialized
+    /// but the widget is currently floating and not part of any parent.
+    none: void,
+
+    /// Directly attached to a tab. (i.e. no splits)
+    tab_: *Tab,
+
+    /// A split within a split hierarchy.
+    paned: *Paned,
+
+    /// Returns the window that this surface is attached to.
+    pub fn window(self: Container) ?*Window {
+        return switch (self) {
+            .none => null,
+            .tab_ => |v| v.window,
+            else => @panic("TODO"),
+        };
+    }
+
+    /// Returns the tab container if it exists.
+    pub fn tab(self: Container) ?*Tab {
+        return switch (self) {
+            .none => null,
+            .tab_ => |v| v,
+            else => @panic("TODO"),
+        };
+    }
+};
+
 /// Where the title of this surface will go.
 const Title = union(enum) {
     none: void,
@@ -69,14 +101,15 @@ realized: bool = false,
 /// See Options.parentSurface
 parentSurface: bool = false,
 
+/// The GUI container that this surface has been attached to. This
+/// dictates some behaviors such as new splits, etc.
+container: Container = .{ .none = {} },
+
 /// The app we're part of
 app: *App,
 
 /// The window we're part of
 window: *Window,
-
-/// The tab we're part of
-tab: *Tab,
 
 /// The parent we belong to
 parent: Parent,
@@ -177,7 +210,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     self.* = .{
         .app = app,
         .window = opts.window,
-        .tab = opts.tab,
+        .container = .{ .tab_ = opts.tab },
         .parent = opts.parent,
         .gl_area = opts.gl_area,
         .title = if (opts.title_label) |label| .{
@@ -456,8 +489,9 @@ pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.Surfac
 }
 
 pub fn grabFocus(self: *Surface) void {
+    if (self.container.tab()) |tab| tab.focus_child = self;
+
     self.updateTitleLabels();
-    self.tab.focus_child = self;
     const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     _ = c.gtk_widget_grab_focus(widget);
 }
@@ -859,7 +893,7 @@ fn gtkMouseDown(
     // If we don't have focus, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     if (c.gtk_widget_has_focus(gl_widget) == 0) {
-        self.tab.focus_child = self;
+        if (self.container.tab()) |tab| tab.focus_child = self;
         _ = c.gtk_widget_grab_focus(gl_widget);
 
         // If we have siblings, we also update the title, since it means

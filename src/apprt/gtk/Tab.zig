@@ -1,3 +1,6 @@
+/// The state associated with a single tab in the window.
+///
+/// A tab can contain one or more terminals due to splits.
 const Tab = @This();
 
 const std = @import("std");
@@ -20,7 +23,6 @@ pub const GHOSTTY_TAB = "ghostty_tab";
 
 window: *Window,
 label_text: *c.GtkLabel,
-close_button: *c.GtkButton,
 // We'll put our children into this box instead of packing them directly, so
 // that we can send the box into `c.g_signal_connect_data` for the close button
 box: *c.GtkBox,
@@ -38,11 +40,12 @@ pub fn create(alloc: Allocator, window: *Window, parent_: ?*CoreSurface) !*Tab {
     return tab;
 }
 
+/// Initialize the tab, create a surface, and add it to the window. "self"
+/// needs to be a stable pointer, since it is used for GTK events.
 pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     self.* = .{
         .window = window,
         .label_text = undefined,
-        .close_button = undefined,
         .box = undefined,
         .child = undefined,
         .focus_child = undefined,
@@ -56,13 +59,11 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     c.gtk_box_append(label_box, label_text_widget);
     self.label_text = label_text;
 
+    // Build the close button for the tab
     const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
     const label_close: *c.GtkButton = @ptrCast(label_close_widget);
     c.gtk_button_set_has_frame(label_close, 0);
     c.gtk_box_append(label_box, label_close_widget);
-    self.close_button = label_close;
-
-    _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
 
     // Wide style GTK tabs
     if (window.app.config.@"gtk-wide-tabs") {
@@ -88,11 +89,10 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     c.gtk_widget_set_vexpand(box_widget, 1);
     self.box = @ptrCast(box_widget);
 
-    // Create the Surface
+    // Create the initial surface since all tabs start as a single non-split
     const surface = try self.newSurface(parent_);
     errdefer surface.deinit();
-
-    self.child = Child{ .surface = surface };
+    self.child = .{ .surface = surface };
 
     // Add Surface to the Tab
     const gl_area_widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
@@ -123,12 +123,26 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Set the userdata of the box to point to this tab.
     c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
 
+    // Attach all events
+    _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
+
     // Switch to the new tab
     c.gtk_notebook_set_current_page(window.notebook, page_idx);
 
     // We need to grab focus after Surface and Tab is added to the window. When
     // creating a Tab we want to always focus on the widget.
     surface.grabFocus();
+}
+
+/// Deinits tab by deiniting child if child is Paned.
+pub fn deinit(self: *Tab) void {
+    switch (self.child) {
+        .none, .surface => return,
+        .paned => |paned| {
+            paned.deinit(self.window.app.core_app.alloc);
+            self.window.app.core_app.alloc.destroy(paned);
+        },
+    }
 }
 
 /// Allocates and initializes a new Surface, but doesn't add it to the Tab yet.
@@ -204,17 +218,6 @@ pub fn setChild(self: *Tab, child: Child) void {
 
     child.setParent(.{ .tab = self });
     self.child = child;
-}
-
-/// Deinits tab by deiniting child if child is Paned.
-pub fn deinit(self: *Tab) void {
-    switch (self.child) {
-        .none, .surface => return,
-        .paned => |paned| {
-            paned.deinit(self.window.app.core_app.alloc);
-            self.window.app.core_app.alloc.destroy(paned);
-        },
-    }
 }
 
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {

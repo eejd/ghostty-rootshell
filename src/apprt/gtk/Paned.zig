@@ -56,7 +56,8 @@ pub fn init(self: *Paned, sibling: *Surface, direction: input.SplitDirection) !v
     const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     self.paned = gtk_paned;
 
-    const surface = try sibling.tab.newSurface(&sibling.core_surface);
+    const tab = sibling.container.tab().?; // TODO
+    const surface = try tab.newSurface(&sibling.core_surface);
     surface.setParent(.{ .paned = .{ self, .end } });
 
     self.addChild1(.{ .surface = sibling });

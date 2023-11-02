@@ -1,4 +1,8 @@
-/// A Window is a single, real GTK window.
+/// A Window is a single, real GTK window that holds terminal surfaces.
+///
+/// A Window always contains a notebook (what GTK calls a tabbed container)
+/// even while no tabs are in use, because a notebook without a tab bar has
+/// no visible UI chrome.
 const Window = @This();
 
 const std = @import("std");
@@ -327,7 +331,12 @@ pub fn hasTabs(self: *const Window) bool {
 
 /// Go to the previous tab for a surface.
 pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.tab.box)) orelse return;
+    const tab = surface.container.tab() orelse {
+        log.info("surface is not attached to a tab bar, cannot navigate", .{});
+        return;
+    };
+
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(tab.box)) orelse return;
     const page_idx = getNotebookPageIndex(page);
 
     // The next index is the previous or we wrap around.
@@ -345,7 +354,12 @@ pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
 
 /// Go to the next tab for a surface.
 pub fn gotoNextTab(self: *Window, surface: *Surface) void {
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(surface.tab.box)) orelse return;
+    const tab = surface.container.tab() orelse {
+        log.info("surface is not attached to a tab bar, cannot navigate", .{});
+        return;
+    };
+
+    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(tab.box)) orelse return;
     const page_idx = getNotebookPageIndex(page);
     const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
     const next_idx = if (page_idx < max) page_idx + 1 else 0;
