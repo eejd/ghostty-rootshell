@@ -13,7 +13,7 @@ const terminal = @import("../../terminal/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
-const Paned = @import("Paned.zig");
+const Split = @import("Split.zig");
 const Tab = @import("Tab.zig");
 const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
@@ -47,15 +47,20 @@ pub const Container = union(enum) {
     /// Directly attached to a tab. (i.e. no splits)
     tab_: *Tab,
 
-    /// A split within a split hierarchy.
-    paned: *Paned,
+    /// A split within a split hierarchy. The key determines the
+    /// position of the split within the parent split.
+    split_tl: *Split.Elem,
+    split_br: *Split.Elem,
 
     /// Returns the window that this surface is attached to.
     pub fn window(self: Container) ?*Window {
         return switch (self) {
             .none => null,
             .tab_ => |v| v.window,
-            else => @panic("TODO"),
+            .split_tl, .split_br => split: {
+                const s = self.split() orelse break :split null;
+                break :split s.container.window();
+            },
         };
     }
 
@@ -64,7 +69,29 @@ pub const Container = union(enum) {
         return switch (self) {
             .none => null,
             .tab_ => |v| v,
-            else => @panic("TODO"),
+            .split_tl, .split_br => split: {
+                const s = self.split() orelse break :split null;
+                break :split s.container.tab();
+            },
+        };
+    }
+
+    /// Returns the split containing this surface (if any).
+    pub fn split(self: Container) ?*Split {
+        return switch (self) {
+            .none, .tab_ => null,
+            .split_tl => |ptr| @fieldParentPtr(Split, "top_left", ptr),
+            .split_br => |ptr| @fieldParentPtr(Split, "bottom_right", ptr),
+        };
+    }
+
+    /// Returns the element of the split that this container
+    /// is attached to.
+    pub fn splitElem(self: Container) ?*Split.Elem {
+        return switch (self) {
+            .none, .tab_ => null,
+            .split_tl => |ptr| ptr,
+            .split_br => |ptr| ptr,
         };
     }
 };
@@ -422,7 +449,7 @@ pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
 }
 
 pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
-    log.debug("splitting surface, direction: {}", .{direction});
+    log.debug("splitting direction={}", .{direction});
 
     switch (self.parent) {
         .none => return,

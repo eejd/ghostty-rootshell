@@ -56,9 +56,13 @@ pub fn init(self: *Paned, sibling: *Surface, direction: input.SplitDirection) !v
     const gtk_paned: *c.GtkPaned = @ptrCast(paned);
     self.paned = gtk_paned;
 
-    const tab = sibling.container.tab().?; // TODO
-    const surface = try tab.newSurface(&sibling.core_surface);
-    surface.setParent(.{ .paned = .{ self, .end } });
+    const alloc = sibling.app.core_app.alloc;
+    var surface = try Surface.create(alloc, sibling.app, .{
+        .parent2 = &sibling.core_surface,
+        .parent = .{ .paned = .{ self, .end } },
+    });
+    errdefer surface.destroy(alloc);
+    surface.container = sibling.container; // TODO
 
     self.addChild1(.{ .surface = sibling });
     self.addChild2(.{ .surface = surface });

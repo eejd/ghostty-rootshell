@@ -149,22 +149,6 @@ pub fn deinit(self: *Tab) void {
     }
 }
 
-/// Allocates and initializes a new Surface, but doesn't add it to the Tab yet.
-/// Can also be added to a Paned.
-pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
-    const alloc = self.window.app.core_app.alloc;
-    var surface = try Surface.create(alloc, self.window.app, .{
-        .parent2 = parent_,
-        .parent = .{
-            .tab = self,
-        },
-    });
-    errdefer surface.destroy(alloc);
-    surface.setContainer(.{ .tab_ = self });
-
-    return surface;
-}
-
 /// Splits the current child surface into a Paned in given direction. Child of
 /// Tab must be a Surface.
 pub fn splitSurface(self: *Tab, direction: input.SplitDirection) !void {
