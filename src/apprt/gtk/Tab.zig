@@ -168,7 +168,6 @@ pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
     c.gtk_widget_set_vexpand(gl_area, 1);
 
     try surface.init(self.window.app, .{
-        .tab = self,
         .parent = .{
             .tab = self,
         },
@@ -176,6 +175,7 @@ pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
         .gl_area = @ptrCast(gl_area),
         .font_size = font_size,
     });
+    surface.setContainer(.{ .tab_ = self });
 
     return surface;
 }

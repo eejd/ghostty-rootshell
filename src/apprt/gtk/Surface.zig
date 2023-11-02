@@ -28,9 +28,6 @@ const log = std.log.scoped(.gtk_surface);
 pub const opengl_single_threaded_draw = true;
 
 pub const Options = struct {
-    /// The tab that this surface is attached to.
-    tab: *Tab,
-
     /// The parent this surface is created under.
     parent: Parent,
 
@@ -190,7 +187,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     // Build our result
     self.* = .{
         .app = app,
-        .container = .{ .tab_ = opts.tab },
+        .container = .{ .none = {} },
         .parent = opts.parent,
         .gl_area = opts.gl_area,
         .title_text_buf = undefined,
@@ -288,6 +285,14 @@ pub fn deinit(self: *Surface) void {
     c.g_object_unref(self.im_context);
 
     if (self.cursor) |cursor| c.g_object_unref(cursor);
+}
+
+// TODO: move this
+/// Change the container for the surface to `container`.
+pub fn setContainer(self: *Surface, container: Container) void {
+    self.container = container;
+
+    // TODO: do we need to ever update our title or anything here?
 }
 
 fn render(self: *Surface) !void {
