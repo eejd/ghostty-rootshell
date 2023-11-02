@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const list_fonts = @import("list_fonts.zig");
 const version = @import("version.zig");
+const list_keybinds = @import("list_keybinds.zig");
 
 /// Special commands that can be invoked via CLI flags. These are all
 /// invoked by using `+<action>` as a CLI flag. The only exception is
@@ -13,6 +14,9 @@ pub const Action = enum {
 
     /// List available fonts
     @"list-fonts",
+
+    /// List available keybinds
+    @"list-keybinds",
 
     pub const Error = error{
         /// Multiple actions were detected. You can specify at most one
@@ -52,6 +56,7 @@ pub const Action = enum {
         return switch (self) {
             .version => try version.run(),
             .@"list-fonts" => try list_fonts.run(alloc),
+            .@"list-keybinds" => try list_keybinds.run(alloc),
         };
     }
 };
