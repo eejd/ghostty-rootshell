@@ -148,33 +148,14 @@ pub fn deinit(self: *Tab) void {
 /// Allocates and initializes a new Surface, but doesn't add it to the Tab yet.
 /// Can also be added to a Paned.
 pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
-    // Grab a surface allocation we'll need it later.
-    var surface = try self.window.app.core_app.alloc.create(Surface);
-    errdefer self.window.app.core_app.alloc.destroy(surface);
-
-    // Inherit the parent's font size if we are configured to.
-    const font_size: ?font.face.DesiredSize = font_size: {
-        if (!self.window.app.config.@"window-inherit-font-size") break :font_size null;
-        const parent = parent_ orelse break :font_size null;
-        break :font_size parent.font_size;
-    };
-
-    // Initialize the GtkGLArea and attach it to our surface.
-    // The surface starts in the "unrealized" state because we have to
-    // wait for the "realize" callback from GTK to know that the OpenGL
-    // context is ready. See Surface docs for more info.
-    const gl_area = c.gtk_gl_area_new();
-    c.gtk_widget_set_hexpand(gl_area, 1);
-    c.gtk_widget_set_vexpand(gl_area, 1);
-
-    try surface.init(self.window.app, .{
+    const alloc = self.window.app.core_app.alloc;
+    var surface = try Surface.create(alloc, self.window.app, .{
+        .parent2 = parent_,
         .parent = .{
             .tab = self,
         },
-        .parentSurface = parent_ != null,
-        .gl_area = @ptrCast(gl_area),
-        .font_size = font_size,
     });
+    errdefer surface.destroy(alloc);
     surface.setContainer(.{ .tab_ = self });
 
     return surface;

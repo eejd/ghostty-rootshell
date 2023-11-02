@@ -4,6 +4,7 @@
 const Surface = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const configpkg = @import("../../config.zig");
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
@@ -28,21 +29,12 @@ const log = std.log.scoped(.gtk_surface);
 pub const opengl_single_threaded_draw = true;
 
 pub const Options = struct {
+    /// The parent surface to inherit settings such as font size, working
+    /// directory, etc. from.
+    parent2: ?*CoreSurface = null,
+
     /// The parent this surface is created under.
     parent: Parent,
-
-    /// The GL area that this surface should draw to.
-    gl_area: *c.GtkGLArea,
-
-    /// A font size to set on the surface once it is initialized.
-    font_size: ?font.face.DesiredSize = null,
-
-    /// True if this surface has a parent. This is a bit of a hack currently
-    /// to work around newConfig unconditinally inheriting the working
-    /// directory. The proper long term fix is to have the working directory
-    /// inherited upstream likely at the point where this field would be set,
-    /// then remove this field.
-    parentSurface: bool = false,
 };
 
 /// The container that this surface is directly attached to.
@@ -129,12 +121,24 @@ im_composing: bool = false,
 im_buf: [128]u8 = undefined,
 im_len: u7 = 0,
 
+pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
+    var surface = try alloc.create(Surface);
+    errdefer alloc.destroy(surface);
+    try surface.init(app, opts);
+    return surface;
+}
+
 pub fn init(self: *Surface, app: *App, opts: Options) !void {
-    const widget = @as(*c.GtkWidget, @ptrCast(opts.gl_area));
-    c.gtk_gl_area_set_required_version(opts.gl_area, 3, 3);
-    c.gtk_gl_area_set_has_stencil_buffer(opts.gl_area, 0);
-    c.gtk_gl_area_set_has_depth_buffer(opts.gl_area, 0);
-    c.gtk_gl_area_set_use_es(opts.gl_area, 0);
+    const widget: *c.GtkWidget = c.gtk_gl_area_new();
+    const gl_area: *c.GtkGLArea = @ptrCast(widget);
+    c.gtk_widget_set_hexpand(widget, 1);
+    c.gtk_widget_set_vexpand(widget, 1);
+
+    c.gtk_widget_set_cursor_from_name(@ptrCast(gl_area), "text");
+    c.gtk_gl_area_set_required_version(gl_area, 3, 3);
+    c.gtk_gl_area_set_has_stencil_buffer(gl_area, 0);
+    c.gtk_gl_area_set_has_depth_buffer(gl_area, 0);
+    c.gtk_gl_area_set_use_es(gl_area, 0);
 
     // Key event controller will tell us about raw keypress events.
     const ec_key = c.gtk_event_controller_key_new();
@@ -184,17 +188,24 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     c.gtk_widget_set_focusable(widget, 1);
     c.gtk_widget_set_focus_on_click(widget, 1);
 
+    // Inherit the parent's font size if we have a parent.
+    const font_size: ?font.face.DesiredSize = font_size: {
+        if (!app.config.@"window-inherit-font-size") break :font_size null;
+        const parent = opts.parent2 orelse break :font_size null;
+        break :font_size parent.font_size;
+    };
+
     // Build our result
     self.* = .{
         .app = app,
         .container = .{ .none = {} },
         .parent = opts.parent,
-        .gl_area = opts.gl_area,
+        .gl_area = gl_area,
         .title_text_buf = undefined,
         .title_text_buf_len = 0,
         .core_surface = undefined,
-        .font_size = opts.font_size,
-        .parentSurface = opts.parentSurface,
+        .font_size = font_size,
+        .parentSurface = opts.parent2 != null,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
@@ -205,11 +216,11 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     try self.setMouseShape(.text);
 
     // GL events
-    _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "unrealize", c.G_CALLBACK(&gtkUnrealize), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "unrealize", c.G_CALLBACK(&gtkUnrealize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
 
     _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_key_press, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, c.G_CONNECT_DEFAULT);
@@ -265,6 +276,11 @@ fn realize(self: *Surface) !void {
 
     // Note we're realized
     self.realized = true;
+}
+
+pub fn destroy(self: *Surface, alloc: Allocator) void {
+    self.deinit();
+    alloc.free(self);
 }
 
 pub fn deinit(self: *Surface) void {
