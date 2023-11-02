@@ -260,16 +260,17 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
 pub fn closeSurface(self: *Window, surface: *Surface) void {
     assert(surface.container.window().? == self);
 
-    switch (surface.parent) {
-        .none => unreachable,
-        .tab => |tab| self.closeTab(tab),
-        .paned => |paned_tuple| {
-            const paned = paned_tuple[0];
-            const position = paned_tuple[1];
-
-            self.closeSurfaceInPaned(surface, paned, position);
-        },
-    }
+    // TODO: fixme
+    // switch (surface.parent) {
+    //     .none => unreachable,
+    //     .tab => |tab| self.closeTab(tab),
+    //     .paned => |paned_tuple| {
+    //         const paned = paned_tuple[0];
+    //         const position = paned_tuple[1];
+    //
+    //         self.closeSurfaceInPaned(surface, paned, position);
+    //     },
+    // }
 }
 
 fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position: Position) void {

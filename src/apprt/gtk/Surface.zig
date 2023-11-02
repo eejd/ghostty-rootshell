@@ -32,9 +32,6 @@ pub const Options = struct {
     /// The parent surface to inherit settings such as font size, working
     /// directory, etc. from.
     parent2: ?*CoreSurface = null,
-
-    /// The parent this surface is created under.
-    parent: Parent,
 };
 
 /// The container that this surface is directly attached to.
@@ -49,8 +46,33 @@ pub const Container = union(enum) {
 
     /// A split within a split hierarchy. The key determines the
     /// position of the split within the parent split.
-    split_tl: *Split.Elem,
-    split_br: *Split.Elem,
+    split_tl: *Elem,
+    split_br: *Elem,
+
+    /// Elem is the possible element of any container. A container can
+    /// hold both a surface and a split. Any valid container should
+    /// have an Elem value so that it can be properly used with
+    /// splits.
+    pub const Elem = union(enum) {
+        /// A surface is a leaf element of the split -- a terminal
+        /// surface.
+        surface: *Surface,
+
+        /// A split is a nested split within a split. This lets you
+        /// for example have a horizontal split with a vertical split
+        /// on the left side (amongst all other possible
+        /// combinations).
+        split: *Split,
+
+        /// Returns the GTK widget to add to the paned for the given
+        /// element
+        pub fn widget(self: Elem) *c.GtkWidget {
+            return switch (self) {
+                .surface => |s| @ptrCast(s.gl_area),
+                .split => |s| @ptrCast(@alignCast(s.paned)),
+            };
+        }
+    };
 
     /// Returns the window that this surface is attached to.
     pub fn window(self: Container) ?*Window {
@@ -85,14 +107,19 @@ pub const Container = union(enum) {
         };
     }
 
-    /// Returns the element of the split that this container
-    /// is attached to.
-    pub fn splitElem(self: Container) ?*Split.Elem {
-        return switch (self) {
-            .none, .tab_ => null,
-            .split_tl => |ptr| ptr,
-            .split_br => |ptr| ptr,
-        };
+    /// Replace the container's element with this element. This is
+    /// used by children to modify their parents to for example change
+    /// from a surface to a split or a split back to a surface or
+    /// a split to a nested split and so on.
+    pub fn replace(self: Container, elem: Elem) void {
+        switch (self) {
+            .none => {},
+            .tab_ => |t| t.replaceElem(elem),
+            inline .split_tl, .split_br => |ptr| {
+                const s = self.split().?;
+                s.replace(ptr, elem);
+            },
+        }
     }
 };
 
@@ -110,9 +137,6 @@ container: Container = .{ .none = {} },
 
 /// The app we're part of
 app: *App,
-
-/// The parent we belong to
-parent: Parent,
 
 /// Our GTK area
 gl_area: *c.GtkGLArea,
@@ -158,9 +182,20 @@ pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
 pub fn init(self: *Surface, app: *App, opts: Options) !void {
     const widget: *c.GtkWidget = c.gtk_gl_area_new();
     const gl_area: *c.GtkGLArea = @ptrCast(widget);
+
+    // We grab the floating reference to GL area. This lets the
+    // GL area be moved around i.e. between a split, a tab, etc.
+    // without having to be really careful about ordering to
+    // prevent a destroy.
+    // TODO: unref in deinit
+    _ = c.g_object_ref_sink(@ptrCast(gl_area));
+    errdefer c.g_object_unref(@ptrCast(gl_area));
+
+    // We want the gl area to expand to fill the parent container.
     c.gtk_widget_set_hexpand(widget, 1);
     c.gtk_widget_set_vexpand(widget, 1);
 
+    // Various other GL properties
     c.gtk_widget_set_cursor_from_name(@ptrCast(gl_area), "text");
     c.gtk_gl_area_set_required_version(gl_area, 3, 3);
     c.gtk_gl_area_set_has_stencil_buffer(gl_area, 0);
@@ -226,7 +261,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     self.* = .{
         .app = app,
         .container = .{ .none = {} },
-        .parent = opts.parent,
         .gl_area = gl_area,
         .title_text_buf = undefined,
         .title_text_buf_len = 0,
@@ -450,19 +484,21 @@ pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
 
 pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
     log.debug("splitting direction={}", .{direction});
+    const alloc = self.app.core_app.alloc;
+    _ = try Split.create(alloc, self, direction);
 
-    switch (self.parent) {
-        .none => return,
-        .paned => |parent_paned_tuple| {
-            const paned = parent_paned_tuple[0];
-            const position = parent_paned_tuple[1];
-
-            try paned.splitSurfaceInPosition(position, direction);
-        },
-        .tab => |tab| {
-            try tab.splitSurface(direction);
-        },
-    }
+    // switch (self.parent) {
+    //     .none => return,
+    //     .paned => |parent_paned_tuple| {
+    //         const paned = parent_paned_tuple[0];
+    //         const position = parent_paned_tuple[1];
+    //
+    //         try paned.splitSurfaceInPosition(position, direction);
+    //     },
+    //     .tab => |tab| {
+    //         try tab.splitSurface(direction);
+    //     },
+    // }
 }
 
 pub fn newTab(self: *Surface) !void {
@@ -852,6 +888,7 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
 fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     _ = area;
 
+    log.debug("gl surface unrealized", .{});
     const self = userdataSelf(ud.?);
     self.core_surface.renderer.displayUnrealized();
 
@@ -973,7 +1010,8 @@ fn gtkMouseDown(
 
         // If we have siblings, we also update the title, since it means
         // another sibling might have updated the title.
-        if (self.parent != Parent.tab) self.updateTitleLabels();
+        // TODO: fixme
+        //if (self.parent != Parent.tab) self.updateTitleLabels();
     }
 
     self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {

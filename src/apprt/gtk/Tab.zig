@@ -22,12 +22,21 @@ const log = std.log.scoped(.gtk);
 pub const GHOSTTY_TAB = "ghostty_tab";
 
 window: *Window,
+
+/// The tab label.
 label_text: *c.GtkLabel,
-// We'll put our children into this box instead of packing them directly, so
-// that we can send the box into `c.g_signal_connect_data` for the close button
+
+/// We'll put our children into this box instead of packing them
+/// directly, so that we can send the box into `c.g_signal_connect_data`
+/// for the close button
 box: *c.GtkBox,
+
+/// The element of this tab so that we can handle splits and so on.
+elem: Surface.Container.Elem,
+
 // The child can be either a Surface if the tab is not split or a Paned
 child: Child,
+
 // We'll update this every time a Surface gains focus, so that we have it
 // when we switch to another Tab. Then when we switch back to this tab, we
 // can easily re-focus that terminal.
@@ -47,6 +56,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         .window = window,
         .label_text = undefined,
         .box = undefined,
+        .elem = undefined,
         .child = undefined,
         .focus_child = undefined,
     };
@@ -92,11 +102,11 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Create the initial surface since all tabs start as a single non-split
     var surface = try Surface.create(window.app.core_app.alloc, window.app, .{
         .parent2 = parent_,
-        .parent = .{ .tab = self },
     });
     errdefer surface.destroy(window.app.core_app.alloc);
     surface.setContainer(.{ .tab_ = self });
     self.child = .{ .surface = surface };
+    self.elem = .{ .surface = surface };
 
     // Add Surface to the Tab
     const gl_area_widget = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
@@ -176,6 +186,17 @@ pub fn removeChild(self: *Tab) void {
     c.gtk_box_remove(self.box, widget);
 
     self.child = .none;
+}
+
+// TODO: move this
+/// Replace the surface element that this tab is showing.
+pub fn replaceElem(self: *Tab, elem: Surface.Container.Elem) void {
+    // Remove our previous widget
+    c.gtk_box_remove(self.box, self.elem.widget());
+
+    // Add our new one
+    c.gtk_box_append(self.box, elem.widget());
+    self.elem = elem;
 }
 
 /// Sets child to given child and sets parent on child.

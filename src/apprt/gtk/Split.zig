@@ -12,7 +12,6 @@ const CoreSurface = @import("../../Surface.zig");
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const Position = @import("relation.zig").Position;
-const Parent = @import("relation.zig").Parent;
 const Child = @import("relation.zig").Child;
 const c = @import("c.zig");
 
@@ -25,27 +24,8 @@ paned: *c.GtkPaned,
 container: Surface.Container,
 
 /// The elements of this split panel.
-top_left: Elem,
-bottom_right: Elem,
-
-/// Elem is the possible element of the split.
-pub const Elem = union(enum) {
-    /// A surface is a leaf element of the split -- a terminal surface.
-    surface: *Surface,
-
-    /// A split is a nested split within a split. This lets you for example
-    /// have a horizontal split with a vertical split on the left side
-    /// (amongst all other possible combinations).
-    split: *Split,
-
-    /// Returns the GTK widget to add to the paned for the given element
-    pub fn widget(self: Child) *c.GtkWidget {
-        return switch (self) {
-            .surface => |surface| @ptrCast(surface.gl_area),
-            .split => |split| @ptrCast(@alignCast(split.paned)),
-        };
-    }
-};
+top_left: Surface.Container.Elem,
+bottom_right: Surface.Container.Elem,
 
 /// Create a new split panel with the given sibling surface in the given
 /// direction. The direction is where the new surface will be initialized.
@@ -73,7 +53,6 @@ pub fn init(
     const alloc = sibling.app.core_app.alloc;
     var surface = try Surface.create(alloc, sibling.app, .{
         .parent2 = &sibling.core_surface,
-        .parent = .{ .paned = .{ self, .end } },
     });
     errdefer surface.destroy(alloc);
 
@@ -93,25 +72,21 @@ pub fn init(
     sibling.container = .{ .split_tl = &self.top_left };
     surface.container = .{ .split_br = &self.bottom_right };
 
-    // If the sibling is already in a split, then we need to
-    // nest them properly. This gets the pointer to the split element
-    // that the original split was in, then updates it to point to this
-    // split. This split then contains the surface as an element.
-    if (container.splitElem()) |parent_elem| {
-        parent_elem.* = .{ .split = self };
-    }
-
     self.* = .{
         .paned = @ptrCast(paned),
         .container = container,
         .top_left = .{ .surface = sibling },
         .bottom_right = .{ .surface = surface },
     };
-}
 
-/// Set the parent of Split.
-pub fn setParent(self: *Split, parent: Parent) void {
-    self.parent = parent;
+    // Replace the previous containers element with our split.
+    // This allows a non-split to become a split, a split to
+    // become a nested split, etc.
+    container.replace(.{ .split = self });
+
+    // Update our children so that our GL area is properly
+    // added to the paned.
+    self.updateChildren();
 }
 
 /// Focus on first Surface that can be found in given position. If there's a
@@ -209,6 +184,23 @@ fn removeChildInPosition(self: *Split, position: Position) void {
             c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
         },
     }
+}
+
+// TODO: ehhhhhh
+pub fn replace(
+    self: *Split,
+    ptr: *Surface.Container.Elem,
+    new: Surface.Container.Elem,
+) void {
+    // We can write our element directly. There's nothing special.
+    assert(&self.top_left == ptr or &self.bottom_right == ptr);
+    ptr.* = new;
+
+    // Update our paned children. This will reset the divider
+    // position but we want to keep it in place so save and restore it.
+    const pos = c.gtk_paned_get_position(self.paned);
+    self.updateChildren();
+    c.gtk_paned_set_position(self.paned, pos);
 }
 
 /// Update the paned children to represent the current state.
