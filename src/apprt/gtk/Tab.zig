@@ -168,7 +168,6 @@ pub fn newSurface(self: *Tab, parent_: ?*CoreSurface) !*Surface {
     c.gtk_widget_set_vexpand(gl_area, 1);
 
     try surface.init(self.window.app, .{
-        .window = self.window,
         .tab = self,
         .parent = .{
             .tab = self,

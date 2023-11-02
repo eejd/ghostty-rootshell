@@ -258,7 +258,7 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
 
 /// Close the surface. This surface must be definitely part of this window.
 pub fn closeSurface(self: *Window, surface: *Surface) void {
-    assert(surface.window == self);
+    assert(surface.container.window().? == self);
 
     switch (surface.parent) {
         .none => unreachable,
@@ -485,8 +485,9 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
 
     // If none of our surfaces need confirmation, we can just exit.
     for (self.app.core_app.surfaces.items) |surface| {
-        if (surface.window == self) {
-            if (surface.core_surface.needsConfirmQuit()) break;
+        if (surface.container.window()) |window| {
+            if (window == self and
+                surface.core_surface.needsConfirmQuit()) break;
         }
     } else {
         c.gtk_window_destroy(self.window);

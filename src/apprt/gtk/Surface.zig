@@ -21,16 +21,13 @@ const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
 
-const log = std.log.scoped(.gtk);
+const log = std.log.scoped(.gtk_surface);
 
 /// This is detected by the OpenGL renderer to move to a single-threaded
 /// draw operation. This basically puts locks around our draw path.
 pub const opengl_single_threaded_draw = true;
 
 pub const Options = struct {
-    /// The window that this surface is attached to.
-    window: *Window,
-
     /// The tab that this surface is attached to.
     tab: *Tab,
 
@@ -107,9 +104,6 @@ container: Container = .{ .none = {} },
 
 /// The app we're part of
 app: *App,
-
-/// The window we're part of
-window: *Window,
 
 /// The parent we belong to
 parent: Parent,
@@ -209,7 +203,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     // Build our result
     self.* = .{
         .app = app,
-        .window = opts.window,
         .container = .{ .tab_ = opts.tab },
         .parent = opts.parent,
         .gl_area = opts.gl_area,
@@ -329,14 +322,20 @@ pub fn redraw(self: *Surface) void {
 
 /// Close this surface.
 pub fn close(self: *Surface, processActive: bool) void {
+    // If we are not currently in a window, then we don't need to do any
+    // cleanup. If we are in a window, we need to potentially confirm,
+    // remove ourselves from the view hierarchy, etc.
+    const window = self.container.window() orelse return;
+
     if (!processActive) {
-        self.window.closeSurface(self);
+        // TODO: change to container doing this directly
+        window.closeSurface(self);
         return;
     }
 
     // Setup our basic message
     const alert = c.gtk_message_dialog_new(
-        self.window.window,
+        window.window,
         c.GTK_DIALOG_MODAL,
         c.GTK_MESSAGE_QUESTION,
         c.GTK_BUTTONS_YES_NO,
@@ -396,7 +395,15 @@ pub fn controlInspector(self: *Surface, mode: input.InspectorMode) void {
 }
 
 pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFullscreen) void {
-    self.window.toggleFullscreen(mac_non_native);
+    const window = self.container.window() orelse {
+        log.info(
+            "toggleFullscreen invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.toggleFullscreen(mac_non_native);
 }
 
 pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
@@ -427,23 +434,53 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
 }
 
 pub fn newTab(self: *Surface) !void {
-    try self.window.newTab(&self.core_surface);
+    const window = self.container.window() orelse {
+        log.info("surface cannot create new tab when not attached to a window", .{});
+        return;
+    };
+
+    try window.newTab(&self.core_surface);
 }
 
 pub fn hasTabs(self: *const Surface) bool {
-    return self.window.hasTabs();
+    const window = self.container.window() orelse return false;
+    return window.hasTabs();
 }
 
 pub fn gotoPreviousTab(self: *Surface) void {
-    self.window.gotoPreviousTab(self);
+    const window = self.container.window() orelse {
+        log.info(
+            "gotoPreviousTab invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.gotoPreviousTab(self);
 }
 
 pub fn gotoNextTab(self: *Surface) void {
-    self.window.gotoNextTab(self);
+    const window = self.container.window() orelse {
+        log.info(
+            "gotoNextTab invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.gotoNextTab(self);
 }
 
 pub fn gotoTab(self: *Surface, n: usize) void {
-    self.window.gotoTab(n);
+    const window = self.container.window() orelse {
+        log.info(
+            "gotoTab invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.gotoTab(n);
 }
 
 pub fn setShouldClose(self: *Surface) void {
@@ -467,10 +504,13 @@ pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
 }
 
 pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+    // This operation only makes sense if we're within a window view hierarchy.
+    const window = self.container.window() orelse return;
+
     // Note: this doesn't properly take into account the window decorations.
     // I'm not currently sure how to do that.
     c.gtk_window_set_default_size(
-        @ptrCast(self.window.window),
+        @ptrCast(window.window),
         @intCast(width),
         @intCast(height),
     );
@@ -504,7 +544,10 @@ fn updateTitleLabels(self: *Surface) void {
 
             const slice: []u8 = self.title_text_buf[0..self.title_text_buf_len];
             c.gtk_label_set_text(label, @as([*c]const u8, @ptrCast(slice)));
-            c.gtk_window_set_title(self.window.window, c.gtk_label_get_text(label));
+            c.gtk_window_set_title(
+                self.container.window().?.window, // TODO: messy
+                c.gtk_label_get_text(label),
+            );
         },
     }
 }
@@ -810,8 +853,8 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
         };
 
         const window_scale_factor = scale: {
-            const window = @as(*c.GtkNative, @ptrCast(self.window.window));
-            const gdk_surface = c.gtk_native_get_surface(window);
+            const window = self.container.window() orelse break :scale 0;
+            const gdk_surface = c.gtk_native_get_surface(@ptrCast(window.window));
             break :scale c.gdk_surface_get_scale_factor(gdk_surface);
         };
 
@@ -1359,7 +1402,8 @@ fn gtkCloseConfirmation(
     c.gtk_window_destroy(@ptrCast(alert));
     if (response == c.GTK_RESPONSE_YES) {
         const self = userdataSelf(ud.?);
-        self.window.closeSurface(self);
+        const window = self.container.window() orelse return;
+        window.closeSurface(self);
     }
 }
 

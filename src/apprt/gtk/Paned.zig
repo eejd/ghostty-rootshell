@@ -100,7 +100,7 @@ pub fn splitSurfaceInPosition(self: *Paned, position: Position, direction: input
     // Create new Paned
     // NOTE: We cannot use `replaceChildInPosition` here because we need to
     // first remove the surface before we create a new pane.
-    const paned = try Paned.create(surface.window.app.core_app.alloc, surface, direction);
+    const paned = try Paned.create(surface.app.core_app.alloc, surface, direction);
     switch (position) {
         .start => self.addChild1(.{ .paned = paned }),
         .end => self.addChild2(.{ .paned = paned }),
