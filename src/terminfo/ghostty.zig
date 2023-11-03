@@ -120,7 +120,7 @@ pub const ghostty: Source = .{
         .{ .name = "Ms", .value = .{ .string = "\\E]52;%p1%s;%p2%s\\007" } },
 
         // Synchronized output
-        .{ .name = "Sync", .value = .{ .string = "\\E[?2026%?%p1%{1}%-%tl%eh" } },
+        .{ .name = "Sync", .value = .{ .string = "\\E[?2026%?%p1%{1}%-%tl%eh%" } },
 
         // Bracketed paste mode
         .{ .name = "BD", .value = .{ .string = "\\E[?2004l" } },
