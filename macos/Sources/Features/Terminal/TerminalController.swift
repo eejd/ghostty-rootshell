@@ -28,13 +28,6 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// True when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
     
-    /// The style mask to use for the new window
-    private var styleMask: NSWindow.StyleMask {
-        var mask: NSWindow.StyleMask = [.resizable, .closable, .miniaturizable]
-        if (ghostty.windowDecorations) { mask.insert(.titled) }
-        return mask
-    }
-    
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
         super.init(window: nil)
@@ -76,7 +69,9 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     override func windowDidLoad() {
         guard let window = window else { return }
-        window.styleMask = self.styleMask
+
+        // If window decorations are disabled, remove our title
+        if (!ghostty.windowDecorations) { window.styleMask.remove(.titled) }
         
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
