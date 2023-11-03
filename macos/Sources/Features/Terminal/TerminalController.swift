@@ -96,6 +96,10 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         // If window decorations are disabled, remove our title
         if (!ghostty.windowDecorations) { window.styleMask.remove(.titled) }
         
+        // If we aren't in full screen, then we want to disable tabbing (see comment
+        // in the delegate function)
+        if (!window.styleMask.contains(.fullScreen)) { disableTabbing() }
+        
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
         // covered in thie GitHub issue: https://github.com/mitchellh/ghostty/pull/376
@@ -173,6 +177,27 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
 
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
+    }
+    
+    func windowWillExitFullScreen(_ notification: Notification) {
+        // See comment in this function
+        disableTabbing()
+    }
+    
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        // We re-enable the automatic tabbing mode when we enter full screen otherwise
+        // every new tab also enters a new screen.
+        guard let window = self.window else { return }
+        window.tabbingMode = .automatic
+    }
+    
+    private func disableTabbing() {
+        // For new windows, explicitly disallow tabbing with other windows.
+        // This overrides the value of userTabbingPreference. Rationale:
+        // Ghostty provides separate "New Tab" and "New Window" actions so
+        // there's no reason to make "New Window" open in a tab.
+        guard let window = self.window else { return }
+        window.tabbingMode = .disallowed;
     }
 
     //MARK: - First Responder
