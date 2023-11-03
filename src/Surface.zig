@@ -2104,11 +2104,7 @@ fn dragLeftClickSingle(
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
     // xpos/ypos need to be adjusted for window padding
-    // (i.e. "window-padding-*" settings. NOTE we don't adjust for
-    // "window-padding-balance" because we don't have access to the balance
-    // amount from the renderer. This is a bug but realistically balanced
-    // padding is so small it doesn't affect selection. This may not be true
-    // at large font sizes...
+    // (i.e. "window-padding-*" settings.
     const pad = if (self.config.window_padding_balance)
         renderer.Padding.balanced(self.screen_size, self.grid_size, self.cell_size)
     else
