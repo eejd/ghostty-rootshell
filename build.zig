@@ -669,6 +669,10 @@ fn addDeps(
         .@"enable-freetype" = true,
         .@"enable-coretext" = font_backend.hasCoretext(),
     });
+    const ziglyph_dep = b.dependency("ziglyph", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
 
     // Wasm we do manually since it is such a different build.
     if (step.target.getCpuArch() == .wasm32) {
@@ -716,6 +720,7 @@ fn addDeps(
     step.addModule("xev", libxev_dep.module("xev"));
     step.addModule("pixman", pixman_dep.module("pixman"));
     step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
+    step.addModule("ziglyph", ziglyph_dep.module("ziglyph"));
 
     // Mac Stuff
     if (step.target.isDarwin()) {

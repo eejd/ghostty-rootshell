@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ziglyph = @import("ziglyph");
 const font = @import("../main.zig");
 const shape = @import("../shape.zig");
 const terminal = @import("../../terminal/main.zig");
@@ -109,12 +110,20 @@ pub const RunIterator = struct {
                 // presentation format must be directly adjacent to the codepoint.
                 var it = self.row.codepointIterator(j);
                 if (it.next()) |cp| {
-                    if (cp == 0xFE0E) break :p font.Presentation.text;
-                    if (cp == 0xFE0F) break :p font.Presentation.emoji;
+                    if (cp == 0xFE0E) break :p .text;
+                    if (cp == 0xFE0F) break :p .emoji;
                 }
 
                 break :p null;
-            } else null;
+            } else emoji: {
+                // If we're not a grapheme, our individual char could be
+                // an emoji so we want to check if we expect emoji presentation.
+                if (ziglyph.emoji.isEmojiPresentation(@intCast(cell.char))) {
+                    break :emoji .emoji;
+                }
+
+                break :emoji .text;
+            };
 
             // If our cursor is on this line then we break the run around the
             // cursor. This means that any row with a cursor has at least
