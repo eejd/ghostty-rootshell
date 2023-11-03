@@ -28,6 +28,7 @@
 , freetype
 , glib
 , gtk4
+, libadwaita
 , harfbuzz
 , libpng
 , libGL
@@ -59,6 +60,7 @@ let
     libXi
     libXrandr
 
+    libadwaita
     gtk4
     glib
   ];
@@ -120,6 +122,7 @@ in mkShell rec {
     libXrandr
 
     # Only needed for GTK builds
+    libadwaita
     gtk4
     glib
   ];
