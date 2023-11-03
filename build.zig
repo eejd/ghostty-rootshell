@@ -90,9 +90,9 @@ pub fn build(b: *std.Build) !void {
 
     libadwaita = b.option(
         bool,
-        "libadwaita",
+        "gtk-libadwaita",
         "Enables the use of libadwaita when using the gtk rendering backend.",
-    ) orelse false;
+    ) orelse true;
 
     renderer_impl = b.option(
         renderer.Impl,
