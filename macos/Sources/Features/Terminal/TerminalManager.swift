@@ -86,6 +86,11 @@ class TerminalManager {
     private func newTab(to parent: NSWindow, withBaseConfig base: Ghostty.SurfaceConfiguration?) {
         // Create a new window and add it to the parent
         let window = createWindow(withBaseConfig: base).window!
+        
+        // If the parent is miniaturized, then macOS exhibits really strange behaviors
+        // so we have to bring it back out.
+        if (parent.isMiniaturized) { parent.deminiaturize(self) }
+        
         parent.addTabbedWindow(window, ordered: .above)
         window.makeKeyAndOrderFront(self)
     }
