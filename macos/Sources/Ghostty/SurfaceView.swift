@@ -510,6 +510,9 @@ extension Ghostty {
             guard let windowController = windowControllerRaw as? TerminalController else { return }
             guard case .noSplit = windowController.surfaceTree else { return }
             
+            // If our window is full screen, we do not set the frame
+            guard !window.styleMask.contains(.fullScreen) else { return }
+            
             // Setup our frame. We need to first subtract the views frame so that we can
             // just get the chrome frame so that we only affect the surface view size.
             var frame = window.frame

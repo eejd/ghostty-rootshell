@@ -95,12 +95,6 @@ class TerminalManager {
         // Initialize our controller to load the window
         let c = TerminalController(ghostty, withBaseConfig: base)
 
-        // For new windows, explicitly disallow tabbing with other windows.
-        // This overrides the value of userTabbingPreference. Rationale:
-        // Ghostty provides separate "New Tab" and "New Window" actions so
-        // there's no reason to make "New Window" open in a tab.
-        c.window!.tabbingMode = .disallowed;
-
         // Create a listener for when the window is closed so we can remove it.
         let pubClose = NotificationCenter.default.publisher(
             for: NSWindow.willCloseNotification,
