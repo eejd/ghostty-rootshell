@@ -17,6 +17,8 @@ const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
 
+const UnsafePasteWindow = @import("UnsafePasteWindow.zig");
+
 const log = std.log.scoped(.gtk);
 
 /// This is detected by the OpenGL renderer to move to a single-threaded
@@ -546,9 +548,22 @@ fn gtkClipboardRead(
         return;
     }
     defer c.g_free(cstr);
-
     const str = std.mem.sliceTo(cstr, 0);
-    self.core_surface.completeClipboardRequest(req.state, str) catch |err| {
+
+    self.core_surface.completeClipboardRequest(req.state, str, false) catch |err| {
+        if (err == error.UnsafePaste) {
+            // Create a dialog and ask the user if they want to paste anyway.
+            UnsafePasteWindow.create(
+                self.app,
+                str,
+                self.core_surface,
+                req.state,
+            ) catch |window_err| {
+                log.err("failed to create unsafe paste window err={}", .{window_err});
+            };
+            return;
+        }
+
         log.err("failed to complete clipboard request err={}", .{err});
     };
 }
@@ -559,7 +574,6 @@ fn getClipboard(widget: *c.GtkWidget, clipboard: apprt.Clipboard) ?*c.GdkClipboa
         .selection => c.gtk_widget_get_primary_clipboard(widget),
     };
 }
-
 pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
     return self.cursor_pos;
 }

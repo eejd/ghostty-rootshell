@@ -2177,7 +2177,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             // If you split it across two then the shell can interpret it
             // as two literals.
             var buf: [128]u8 = undefined;
-            const full_data = try std.fmt.bufPrint(&buf, "\x1b{s}{s}", .{if(action==.csi)"["else"", data});
+            const full_data = try std.fmt.bufPrint(&buf, "\x1b{s}{s}", .{ if (action == .csi) "[" else "", data });
             _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
                 self.alloc,
                 full_data,
@@ -2457,9 +2457,10 @@ pub fn completeClipboardRequest(
     self: *Surface,
     req: apprt.ClipboardRequest,
     data: []const u8,
+    force: bool, // Dialog has been shown, and ignoring unsafe pastes.
 ) !void {
     switch (req) {
-        .paste => try self.completeClipboardPaste(data),
+        .paste => try self.completeClipboardPaste(data, force),
         .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind),
     }
 }
@@ -2485,8 +2486,23 @@ fn startClipboardRequest(
     try self.rt_surface.clipboardRequest(loc, req);
 }
 
-fn completeClipboardPaste(self: *Surface, data: []const u8) !void {
+fn sanatizeClipboardPaste(data: []const u8) !void {
+    // Split into lines.
+    var lines = std.mem.splitSequence(u8, data, "\n");
+
+    // If there's only one line no need to proceed.
+    if (std.mem.eql(u8, lines.next().?, data)) return;
+
+    // Warning popup.
+    return error.UnsafePaste;
+}
+
+fn completeClipboardPaste(self: *Surface, data: []const u8, force: bool) !void {
     if (data.len == 0) return;
+
+    if (!force) {
+        try sanatizeClipboardPaste(data);
+    }
 
     const bracketed = bracketed: {
         self.renderer_state.mutex.lock();
