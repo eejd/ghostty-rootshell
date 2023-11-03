@@ -1165,7 +1165,7 @@ pub fn keyCallback(
 /// if bracketed mode is on this will do a bracketed paste. Otherwise,
 /// this will filter newlines to '\r'.
 pub fn textCallback(self: *Surface, text: []const u8) !void {
-    try self.completeClipboardPaste(text);
+    try self.completeClipboardPaste(text, false);
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {
@@ -2463,6 +2463,7 @@ pub fn completeClipboardRequest(
 ) !void {
     switch (req) {
         .paste => try self.completeClipboardPaste(data, force),
+        // TODO: Support sanaization for OSC 52
         .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind),
     }
 }

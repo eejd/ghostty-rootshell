@@ -589,7 +589,7 @@ pub const Surface = struct {
         };
 
         // Complete our request
-        try self.core_surface.completeClipboardRequest(state, str);
+        try self.core_surface.completeClipboardRequest(state, str, false);
     }
 
     /// Set the clipboard.
