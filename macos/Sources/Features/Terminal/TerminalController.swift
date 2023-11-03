@@ -59,7 +59,30 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         let center = NotificationCenter.default
         center.removeObserver(self)
     }
-    
+
+    /// Update the accessory view of each tab according to the keyboard
+    /// shortcut that activates it (if any). This is called when the key window
+    /// changes and when a window is closed.
+    func relabelTabs() {
+        guard let windows = self.window?.tabbedWindows else { return }
+        guard let cfg = ghostty.config else { return }
+        for (index, window) in windows.enumerated().prefix(9) {
+            let action = "goto_tab:\(index + 1)"
+            let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
+            guard let equiv = Ghostty.keyEquivalentLabel(key: trigger.key, mods: trigger.mods) else {
+                continue
+            }
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.labelFont(ofSize: 0),
+                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+            ]
+            let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
+            let text = NSTextField(labelWithAttributedString: attributedString)
+            window.tab.accessoryView = text
+        }
+    }
+
     //MARK: - NSWindowController
     
     override func windowWillLoad() {
@@ -144,8 +167,14 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         // the view and the window so we had to nil this out to break it but I think this
         // may now be resolved. We should verify that no memory leaks and we can remove this.
         self.window?.contentView = nil
+
+        self.relabelTabs()
     }
-    
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        self.relabelTabs()
+    }
+
     //MARK: - First Responder
     
     @IBAction func newWindow(_ sender: Any?) {

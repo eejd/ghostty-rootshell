@@ -87,7 +87,6 @@ class TerminalManager {
         // Create a new window and add it to the parent
         let window = createWindow(withBaseConfig: base).window!
         parent.addTabbedWindow(window, ordered: .above)
-        relabelTabs(parent)
         window.makeKeyAndOrderFront(self)
     }
     
@@ -130,12 +129,6 @@ class TerminalManager {
         // Ensure any publishers we have are cancelled
         w.closePublisher.cancel()
         
-        // Removing the window can change tabs, so we need to relabel all tabs.
-        // At this point, the window is already removed from the tab bar so
-        // I don't know a way to only relabel the active tab bar, so just relabel
-        // all of them.
-        relabelAllTabs()
-        
         // If we remove a window, we reset the cascade point to the key window so that
         // the next window cascade's from that one.
         if let focusedWindow = NSApplication.shared.keyWindow {
@@ -157,32 +150,7 @@ class TerminalManager {
     /// Relabels all the tabs with the proper keyboard shortcut.
     func relabelAllTabs() {
         for w in windows {
-            if let window = w.controller.window {
-                relabelTabs(window)
-            }
-        }
-    }
-    
-    /// Update the accessory view of each tab according to the keyboard
-    /// shortcut that activates it (if any). This is called when the key window
-    /// changes and when a window is closed.
-    private func relabelTabs(_ window: NSWindow) {
-        guard let windows = window.tabbedWindows else { return }
-        guard let cfg = ghostty.config else { return }
-        for (index, window) in windows.enumerated().prefix(9) {
-            let action = "goto_tab:\(index + 1)"
-            let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
-            guard let equiv = Ghostty.keyEquivalentLabel(key: trigger.key, mods: trigger.mods) else {
-                continue
-            }
-
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.labelFont(ofSize: 0),
-                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ]
-            let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
-            let text = NSTextField(labelWithAttributedString: attributedString)
-            window.tab.accessoryView = text
+            w.controller.relabelTabs()
         }
     }
     
