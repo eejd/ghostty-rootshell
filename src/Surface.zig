@@ -152,6 +152,7 @@ const DerivedConfig = struct {
     vt_kam_allowed: bool,
     window_padding_x: u32,
     window_padding_y: u32,
+    window_padding_balance: bool,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -174,6 +175,7 @@ const DerivedConfig = struct {
             .vt_kam_allowed = config.@"vt-kam-allowed",
             .window_padding_x = config.@"window-padding-x",
             .window_padding_y = config.@"window-padding-y",
+            .window_padding_balance = config.@"window-padding-balance",
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -2102,13 +2104,14 @@ fn dragLeftClickSingle(
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {
     // xpos/ypos need to be adjusted for window padding
-    // (i.e. "window-padding-*" settings. NOTE we don't adjust for
-    // "window-padding-balance" because we don't have access to the balance
-    // amount from the renderer. This is a bug but realistically balanced
-    // padding is so small it doesn't affect selection. This may not be true
-    // at large font sizes...
-    const xpos_adjusted: f64 = xpos - @as(f64, @floatFromInt(self.padding.left));
-    const ypos_adjusted: f64 = ypos - @as(f64, @floatFromInt(self.padding.top));
+    // (i.e. "window-padding-*" settings.
+    const pad = if (self.config.window_padding_balance)
+        renderer.Padding.balanced(self.screen_size, self.grid_size, self.cell_size)
+    else
+        self.padding;
+
+    const xpos_adjusted: f64 = xpos - @as(f64, @floatFromInt(pad.left));
+    const ypos_adjusted: f64 = ypos - @as(f64, @floatFromInt(pad.top));
 
     // xpos and ypos can be negative if while dragging, the user moves the
     // mouse off the surface. Likewise, they can be larger than our surface
