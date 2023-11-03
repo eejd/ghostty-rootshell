@@ -977,16 +977,17 @@ pub const Surface = struct {
 
         for (paths) |path| {
             const path_slice = std.mem.span(path);
-            const writer = list.writer();
 
-            list.ensureTotalCapacity(path_slice.len * 2 + 1) catch |err| { // preallocate worst case of escaping every char + space
+            // preallocate worst case of escaping every char + space
+            list.ensureTotalCapacity(path_slice.len * 2 + 1) catch |err| {
                 log.err("error in drop callback err={}", .{err});
                 return;
             };
 
+            const writer = list.writer();
             for (path_slice) |c| {
                 if (std.mem.indexOfScalar(u8, "\\ ()[]{}<>\"'`!#$&;|*?\t", c)) |_| {
-                    writer.print("\\{c}", .{c}) catch unreachable; // only error is OOM, memory preallocated
+                    writer.print("\\{c}", .{c}) catch unreachable; //  memory preallocated
                 } else writer.writeByte(c) catch unreachable; // same here
             }
             writer.writeByte(' ') catch unreachable; // separate paths
