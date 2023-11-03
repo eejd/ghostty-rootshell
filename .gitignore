@@ -1,5 +1,9 @@
+*~
+.*.swp
+.swp
+*.log
 .DS_Store
-.vscode
+.vscode/
 .direnv/
 .flatpak-builder/
 zig-cache/
