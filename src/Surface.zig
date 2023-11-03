@@ -142,6 +142,7 @@ const DerivedConfig = struct {
     clipboard_read: bool,
     clipboard_write: bool,
     clipboard_trim_trailing_spaces: bool,
+    clipboard_paste_protection: bool,
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
     mouse_interval: u64,
@@ -165,6 +166,7 @@ const DerivedConfig = struct {
             .clipboard_read = config.@"clipboard-read",
             .clipboard_write = config.@"clipboard-write",
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+            .clipboard_paste_protection = config.@"clipboard-paste-protection",
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
@@ -2500,7 +2502,7 @@ fn sanatizeClipboardPaste(data: []const u8) !void {
 fn completeClipboardPaste(self: *Surface, data: []const u8, force: bool) !void {
     if (data.len == 0) return;
 
-    if (!force) {
+    if (!force and self.config.clipboard_paste_protection) {
         try sanatizeClipboardPaste(data);
     }
 

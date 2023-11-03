@@ -423,6 +423,10 @@ keybind: Keybinds = .{},
 /// This does not affect data sent to the clipboard via "clipboard-write".
 @"clipboard-trim-trailing-spaces": bool = true,
 
+/// Creates a pop-up window when active, warning the user that they are pasting
+/// contents that contains more than one line. This could be a "copy paste attack"
+@"clipboard-paste-protection": bool = true,
+
 /// The total amount of bytes that can be used for image data (i.e.
 /// the Kitty image protocol) per terminal scren. The maximum value
 /// is 4,294,967,295 (4GB). The default is 320MB. If this is set to zero,

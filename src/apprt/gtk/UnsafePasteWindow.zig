@@ -1,4 +1,4 @@
-/// Configuration errors window.
+/// Unsafe Paste Window
 const UnsafePaste = @This();
 
 const std = @import("std");
@@ -44,7 +44,7 @@ pub fn create(
 /// Not public because this should be called by the GTK lifecycle.
 fn destroy(self: *UnsafePaste) void {
     const alloc = self.app.core_app.alloc;
-    self.app.config_errors_window = null;
+    self.app.unsafe_paste_window = null;
     alloc.destroy(self);
 }
 
@@ -55,12 +55,13 @@ fn init(
     core_surface: CoreSurface,
     request: ClipboardRequest,
 ) !void {
+
     // Create the window
     const window = c.gtk_window_new();
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
     c.gtk_window_set_title(gtk_window, "Unsafe Paste!");
-    c.gtk_window_set_default_size(gtk_window, 600, 400);
+    c.gtk_window_set_default_size(gtk_window, 400, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
     _ = c.g_signal_connect_data(
         window,
@@ -86,6 +87,10 @@ fn init(
     self.view = view;
     c.gtk_window_set_child(@ptrCast(window), view.root);
     c.gtk_widget_show(window);
+
+    // Block the main window from input.
+    // This will auto-revert when the window is closed.
+    c.gtk_window_set_modal(gtk_window, 1);
 }
 
 fn gtkDestroy(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
@@ -164,6 +169,9 @@ const ButtonsView = struct {
         const paste_button = c.gtk_button_new_with_label("Paste");
         errdefer c.g_object_unref(paste_button);
 
+        // TODO: Focus on the paste button
+        // c.gtk_widget_grab_focus(paste_button);
+
         // Create our view
         const view = try View.init(&.{
             .{ .name = "cancel", .widget = cancel_button },
@@ -194,8 +202,6 @@ const ButtonsView = struct {
     fn gtkCancelClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
         const self: *UnsafePaste = @ptrCast(@alignCast(ud));
         c.gtk_window_destroy(@ptrCast(self.window));
-
-        self.app.unsafe_paste_window = null;
     }
 
     fn gtkPasteClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
@@ -207,7 +213,6 @@ const ButtonsView = struct {
         };
 
         c.gtk_window_destroy(@ptrCast(self.window));
-        self.app.unsafe_paste_window = null;
     }
 
     const vfl = [_][*:0]const u8{
