@@ -63,15 +63,7 @@ fn iterConfig(stdout: anytype, iter: anytype) !u8 {
     while (iter.next()) |next| {
         const keys = next.key_ptr.*;
         const value = next.value_ptr.*;
-        try stdout.print("{s}", .{@tagName(value)});
-        switch (value) {
-            .goto_tab => |val| try stdout.print(" {d}:", .{val}),
-            .jump_to_prompt => |val| try stdout.print(" {d}:", .{val}),
-            .increase_font_size, .decrease_font_size => |val| try stdout.print(" {d}:", .{val}),
-            .goto_split => |val| try stdout.print(" {s}:", .{@tagName(val)}),
-            .inspector => |val| try stdout.print(" {s}:", .{@tagName(val)}),
-            inline else => try stdout.print(":", .{}),
-        }
+        try stdout.print("{}", .{value});
 
         switch (keys.key) {
             .one, .two, .three, .four, .five, .six, .seven, .eight, .nine => try stdout.print(" {d} +", .{(@intFromEnum(keys.key) - start) + 1}),
