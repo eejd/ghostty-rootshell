@@ -19,6 +19,7 @@ const internal_os = @import("../../os/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
+const build_options = @import("build_options");
 
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
@@ -52,6 +53,9 @@ running: bool = true,
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
+    // Initialize libadwaita
+    if (build_options.libadwaita) c.adw_init();
+
     // Load our configuration
     var config = try Config.load(core_app.alloc);
     errdefer config.deinit();
@@ -61,6 +65,18 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         for (config._errors.list.items) |err| {
             log.warn("configuration error: {s}", .{err.message});
         }
+    }
+
+    // Set the style based on our configuration file
+    if (build_options.libadwaita) {
+        c.adw_style_manager_set_color_scheme(
+            c.adw_style_manager_get_default(),
+            switch (config.@"window-theme") {
+                .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
+                .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
+                .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+            },
+        );
     }
 
     // The "none" cursor is used for hiding the cursor

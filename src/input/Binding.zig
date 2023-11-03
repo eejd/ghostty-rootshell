@@ -117,6 +117,9 @@ pub const Action = union(enum) {
     /// without the CSI header ("ESC ]" or "\x1b]").
     csi: []const u8,
 
+    /// Send an ESC sequence.
+    esc: []const u8,
+
     /// Send data to the pty depending on whether cursor key mode is
     /// enabled ("application") or disabled ("normal").
     cursor_key: CursorKey,
@@ -664,6 +667,12 @@ test "parse: action with string" {
         const binding = try parse("a=csi:A");
         try testing.expect(binding.action == .csi);
         try testing.expectEqualStrings("A", binding.action.csi);
+    }
+    // parameter
+    {
+        const binding = try parse("a=esc:A");
+        try testing.expect(binding.action == .esc);
+        try testing.expectEqualStrings("A", binding.action.esc);
     }
 }
 

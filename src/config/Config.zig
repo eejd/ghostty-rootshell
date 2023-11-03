@@ -321,6 +321,8 @@ command: ?[]const u8 = null,
 ///     is removed, and the key will be sent through to the child command
 ///     if it is printable.
 ///   - "csi:text" - Send a CSI sequence. i.e. "csi:A" sends "cursor up".
+///   - "esc:text" - Send an Escape sequence. i.e. "esc:d" deletes to the
+///     end of the word to the right.
 ///
 /// Some notes for the action:
 ///
@@ -378,7 +380,7 @@ keybind: Keybinds = .{},
 /// also be set to "light" or "dark" to force a specific theme regardless
 /// of the system settings.
 ///
-/// This is currently only supported on macOS.
+/// This is currently only supported on macOS and linux.
 @"window-theme": WindowTheme = .system,
 
 /// The initial window size. This size is in terminal grid cells by default.

@@ -2169,19 +2169,19 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .reload_config => try self.app.reloadConfig(self.rt_app),
 
-        .csi => |data| {
-            // We need to send the CSI sequence as a single write request.
+        .csi, .esc => |data| {
+            // We need to send the CSI/ESC sequence as a single write request.
             // If you split it across two then the shell can interpret it
             // as two literals.
             var buf: [128]u8 = undefined;
-            const full_data = try std.fmt.bufPrint(&buf, "\x1b[{s}", .{data});
+            const full_data = try std.fmt.bufPrint(&buf, "\x1b{s}{s}", .{if(action==.csi)"["else"", data});
             _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
                 self.alloc,
                 full_data,
             ), .{ .forever = {} });
             try self.io_thread.wakeup.notify();
 
-            // CSI triggers a scroll.
+            // CSI/ESC triggers a scroll.
             {
                 self.renderer_state.mutex.lock();
                 defer self.renderer_state.mutex.unlock();
