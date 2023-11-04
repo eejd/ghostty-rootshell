@@ -142,6 +142,7 @@ const DerivedConfig = struct {
     clipboard_read: bool,
     clipboard_write: bool,
     clipboard_trim_trailing_spaces: bool,
+    clipboard_paste_protection: bool,
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
     mouse_interval: u64,
@@ -165,6 +166,7 @@ const DerivedConfig = struct {
             .clipboard_read = config.@"clipboard-read",
             .clipboard_write = config.@"clipboard-write",
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
+            .clipboard_paste_protection = config.@"clipboard-paste-protection",
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
@@ -1163,7 +1165,7 @@ pub fn keyCallback(
 /// if bracketed mode is on this will do a bracketed paste. Otherwise,
 /// this will filter newlines to '\r'.
 pub fn textCallback(self: *Surface, text: []const u8) !void {
-    try self.completeClipboardPaste(text);
+    try self.completeClipboardPaste(text, true);
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {
@@ -2177,7 +2179,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             // If you split it across two then the shell can interpret it
             // as two literals.
             var buf: [128]u8 = undefined;
-            const full_data = try std.fmt.bufPrint(&buf, "\x1b{s}{s}", .{if(action==.csi)"["else"", data});
+            const full_data = try std.fmt.bufPrint(&buf, "\x1b{s}{s}", .{ if (action == .csi) "[" else "", data });
             _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
                 self.alloc,
                 full_data,
@@ -2453,13 +2455,19 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 /// Call this to complete a clipboard request sent to apprt. This should
 /// only be called once for each request. The data is immediately copied so
 /// it is safe to free the data after this call.
+///
+/// If "allow_unsafe" is false, then the data is checked for "safety" prior.
+/// If unsafe data is detected, this will return error.UnsafePaste. Unsafe
+/// data is defined as data that contains newlines, though this definition
+/// may change later to detect other scenarios.
 pub fn completeClipboardRequest(
     self: *Surface,
     req: apprt.ClipboardRequest,
     data: []const u8,
+    allow_unsafe: bool,
 ) !void {
     switch (req) {
-        .paste => try self.completeClipboardPaste(data),
+        .paste => try self.completeClipboardPaste(data, allow_unsafe),
         .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind),
     }
 }
@@ -2485,8 +2493,23 @@ fn startClipboardRequest(
     try self.rt_surface.clipboardRequest(loc, req);
 }
 
-fn completeClipboardPaste(self: *Surface, data: []const u8) !void {
+fn completeClipboardPaste(
+    self: *Surface,
+    data: []const u8,
+    allow_unsafe: bool,
+) !void {
     if (data.len == 0) return;
+
+    // If we have paste protection enabled, we detect unsafe pastes and return
+    // an error. The error approach allows apprt to attempt to complete the paste
+    // before falling back to requesting confirmation.
+    if (self.config.clipboard_paste_protection and
+        !allow_unsafe and
+        !terminal.isSafePaste(data))
+    {
+        log.info("potentially unsafe paste detected, rejecting until confirmation", .{});
+        return error.UnsafePaste;
+    }
 
     const bracketed = bracketed: {
         self.renderer_state.mutex.lock();

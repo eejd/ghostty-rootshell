@@ -423,6 +423,13 @@ keybind: Keybinds = .{},
 /// This does not affect data sent to the clipboard via "clipboard-write".
 @"clipboard-trim-trailing-spaces": bool = true,
 
+/// Require confirmation before pasting text that appears unsafe. This helps
+/// prevent a "copy/paste attack" where a user may accidentally execute unsafe
+/// commands by pasting text with newlines.
+///
+/// This currently only works on Linux (GTK).
+@"clipboard-paste-protection": bool = true,
+
 /// The total amount of bytes that can be used for image data (i.e.
 /// the Kitty image protocol) per terminal scren. The maximum value
 /// is 4,294,967,295 (4GB). The default is 320MB. If this is set to zero,
