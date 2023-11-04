@@ -303,6 +303,41 @@ pub const Action = union(enum) {
         return Error.InvalidAction;
     }
 
+    /// Implements the formatter for the fmt package. This encodes the
+    /// action back into the format used by parse.
+    pub fn format(
+        self: Action,
+        comptime layout: []const u8,
+        opts: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = layout;
+        _ = opts;
+
+        switch (self) {
+            inline else => |value| {
+                const Value = @TypeOf(value);
+                const value_info = @typeInfo(Value);
+
+                // All actions start with the tag.
+                try writer.print("{s}", .{@tagName(self)});
+
+                // Write the value depending on the type
+                switch (Value) {
+                    void => {},
+                    []const u8 => try writer.print(":{s}", .{value}),
+                    else => switch (value_info) {
+                        .Enum => try writer.print(":{s}", .{@tagName(value)}),
+                        .Float => try writer.print(":{d}", .{value}),
+                        .Int => try writer.print(":{d}", .{value}),
+                        .Struct => try writer.print("{} (not configurable)", .{value}),
+                        else => @compileError("unhandled type: " ++ @typeName(Value)),
+                    },
+                }
+            },
+        }
+    }
+
     /// Returns a hash code that can be used to uniquely identify this
     /// action.
     pub fn hash(self: Action) u64 {
@@ -380,6 +415,27 @@ pub const Trigger = extern struct {
         std.hash.autoHash(&hasher, self.mods.binding());
         std.hash.autoHash(&hasher, self.physical);
         return hasher.final();
+    }
+
+    /// Format implementation for fmt package.
+    pub fn format(
+        self: Trigger,
+        comptime layout: []const u8,
+        opts: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = layout;
+        _ = opts;
+
+        // Modifiers first
+        if (self.mods.super) try writer.writeAll("super+");
+        if (self.mods.ctrl) try writer.writeAll("ctrl+");
+        if (self.mods.alt) try writer.writeAll("alt+");
+        if (self.mods.shift) try writer.writeAll("shift+");
+
+        // Key
+        if (self.physical) try writer.writeAll("physical:");
+        try writer.print("{s}", .{@tagName(self.key)});
     }
 };
 
