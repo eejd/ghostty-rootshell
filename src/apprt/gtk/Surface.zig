@@ -13,11 +13,10 @@ const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
 const Window = @import("Window.zig");
+const UnsafePasteWindow = @import("UnsafePasteWindow.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
-
-const UnsafePasteWindow = @import("UnsafePasteWindow.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -550,8 +549,12 @@ fn gtkClipboardRead(
     defer c.g_free(cstr);
     const str = std.mem.sliceTo(cstr, 0);
 
-    self.core_surface.completeClipboardRequest(req.state, str, false) catch |err| {
-        if (err == error.UnsafePaste) {
+    self.core_surface.completeClipboardRequest(
+        req.state,
+        str,
+        false,
+    ) catch |err| switch (err) {
+        error.UnsafePaste => {
             // Create a dialog and ask the user if they want to paste anyway.
             UnsafePasteWindow.create(
                 self.app,
@@ -562,9 +565,9 @@ fn gtkClipboardRead(
                 log.err("failed to create unsafe paste window err={}", .{window_err});
             };
             return;
-        }
+        },
 
-        log.err("failed to complete clipboard request err={}", .{err});
+        else => log.err("failed to complete clipboard request err={}", .{err}),
     };
 }
 

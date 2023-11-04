@@ -55,13 +55,12 @@ fn init(
     core_surface: CoreSurface,
     request: ClipboardRequest,
 ) !void {
-
     // Create the window
     const window = c.gtk_window_new();
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
-    c.gtk_window_set_title(gtk_window, "Unsafe Paste!");
-    c.gtk_window_set_default_size(gtk_window, 400, 275);
+    c.gtk_window_set_title(gtk_window, "Warning: Potentially Unsafe Paste");
+    c.gtk_window_set_default_size(gtk_window, 600, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
     _ = c.g_signal_connect_data(
         window,
@@ -94,12 +93,8 @@ fn init(
 }
 
 fn gtkDestroy(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
-    const self = userdataSelf(ud.?);
+    const self: *UnsafePaste = @ptrCast(@alignCast(ud orelse return));
     self.destroy();
-}
-
-fn userdataSelf(ud: *anyopaque) *UnsafePaste {
-    return @ptrCast(@alignCast(ud));
 }
 
 const PrimaryView = struct {
@@ -109,8 +104,8 @@ const PrimaryView = struct {
     pub fn init(root: *UnsafePaste, data: []const u8) !PrimaryView {
         // All our widgets
         const label = c.gtk_label_new(
-            \\ Pasting this text into the terminal may be dangerous as 
-            \\ unintended commands may be be executed.
+            \\ Pasting this text into the terminal may be dangerous as
+            \\ it looks like some commands may be executed.
         );
         const buf = unsafeBuffer(data);
         defer c.g_object_unref(buf);
@@ -205,10 +200,13 @@ const ButtonsView = struct {
     }
 
     fn gtkPasteClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+        // Requeue the paste with force.
         const self: *UnsafePaste = @ptrCast(@alignCast(ud));
-
-        // Requeue the paste, this time forcing it.
-        self.core_surface.completeClipboardRequest(self.pending_req, self.data, true) catch |err| {
+        self.core_surface.completeClipboardRequest(
+            self.pending_req,
+            self.data,
+            true,
+        ) catch |err| {
             std.log.err("Failed to requeue clipboard request: {}", .{err});
         };
 
