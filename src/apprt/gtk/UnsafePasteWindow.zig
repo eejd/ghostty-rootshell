@@ -60,7 +60,7 @@ fn init(
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
     c.gtk_window_set_title(gtk_window, "Warning: Potentially Unsafe Paste");
-    c.gtk_window_set_default_size(gtk_window, 600, 275);
+    c.gtk_window_set_default_size(gtk_window, 550, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
     _ = c.g_signal_connect_data(
         window,
@@ -104,8 +104,8 @@ const PrimaryView = struct {
     pub fn init(root: *UnsafePaste, data: []const u8) !PrimaryView {
         // All our widgets
         const label = c.gtk_label_new(
-            \\ Pasting this text into the terminal may be dangerous as
-            \\ it looks like some commands may be executed.
+            "Pasting this text into the terminal may be dangerous as " ++
+                "it looks like some commands may be executed.",
         );
         const buf = unsafeBuffer(data);
         defer c.g_object_unref(buf);
