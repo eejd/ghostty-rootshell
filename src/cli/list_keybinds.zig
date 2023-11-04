@@ -57,40 +57,10 @@ fn listDefaultKeybinds(alloc: Allocator) !u8 {
 }
 
 fn iterConfig(stdout: anytype, iter: anytype) !u8 {
-    const start = @intFromEnum(inputpkg.Key.one);
-    var amount: u8 = 0;
-
     while (iter.next()) |next| {
         const keys = next.key_ptr.*;
         const value = next.value_ptr.*;
-        try stdout.print("{}", .{value});
-
-        switch (keys.key) {
-            .one, .two, .three, .four, .five, .six, .seven, .eight, .nine => try stdout.print(" {d} +", .{(@intFromEnum(keys.key) - start) + 1}),
-            inline else => try stdout.print(" {s} +", .{@tagName(keys.key)}),
-        }
-        const fields = @typeInfo(@TypeOf(keys.mods)).Struct.fields;
-        inline for (fields) |field| {
-            switch (field.type) {
-                bool => {
-                    if (@field(keys.mods, field.name)) {
-                        if (amount >= 1) {
-                            try stdout.print(" +", .{});
-                        }
-                        try stdout.print(" {s}", .{field.name});
-                        amount += 1;
-                    }
-                },
-                u6 => continue,
-
-                inline else => {
-                    try stdout.print("\n", .{});
-                    continue;
-                },
-            }
-        }
-
-        amount = 0;
+        try stdout.print("{}={}\n", .{ keys, value });
     }
 
     return 0;

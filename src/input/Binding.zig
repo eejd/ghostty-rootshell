@@ -416,6 +416,27 @@ pub const Trigger = extern struct {
         std.hash.autoHash(&hasher, self.physical);
         return hasher.final();
     }
+
+    /// Format implementation for fmt package.
+    pub fn format(
+        self: Trigger,
+        comptime layout: []const u8,
+        opts: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = layout;
+        _ = opts;
+
+        // Modifiers first
+        if (self.mods.super) try writer.writeAll("super+");
+        if (self.mods.ctrl) try writer.writeAll("ctrl+");
+        if (self.mods.alt) try writer.writeAll("alt+");
+        if (self.mods.shift) try writer.writeAll("shift+");
+
+        // Key
+        if (self.physical) try writer.writeAll("physical:");
+        try writer.print("{s}", .{@tagName(self.key)});
+    }
 };
 
 /// A structure that contains a set of bindings and focuses on fast lookup.
