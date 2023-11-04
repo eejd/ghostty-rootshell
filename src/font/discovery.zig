@@ -397,10 +397,13 @@ pub const CoreText = struct {
     const Score = packed struct {
         const Backing = @typeInfo(@This()).Struct.backing_integer.?;
 
+        glyph_count: u16 = 0, // clamped if > intmax
+        traits: Traits = .unmatched,
         style: Style = .unmatched,
         monospace: bool = false,
         codepoint: bool = false,
 
+        const Traits = enum(u8) { unmatched = 0, _ };
         const Style = enum(u8) { unmatched = 0, match = 0xFF, _ };
 
         pub fn int(self: Score) Backing {
@@ -411,12 +414,27 @@ pub const CoreText = struct {
     fn score(desc: *const Descriptor, ct_desc: *const macos.text.FontDescriptor) Score {
         var score_acc: Score = .{};
 
+        // We always load the font if we can since some things can only be
+        // inspected on the font itself.
+        const font_: ?*macos.text.Font = macos.text.Font.createWithFontDescriptor(
+            ct_desc,
+            12,
+        ) catch null;
+        defer if (font_) |font| font.release();
+
+        // If we have a font, prefer the font with more glyphs.
+        if (font_) |font| {
+            const Type = @TypeOf(score_acc.glyph_count);
+            score_acc.glyph_count = std.math.cast(
+                Type,
+                font.getGlyphCount(),
+            ) orelse std.math.maxInt(Type);
+        }
+
         // If we're searching for a codepoint, prioritize fonts that
         // have that codepoint.
         if (desc.codepoint > 0) codepoint: {
-            const font = macos.text.Font.createWithFontDescriptor(ct_desc, 12) catch
-                break :codepoint;
-            defer font.release();
+            const font = font_ orelse break :codepoint;
 
             // Turn UTF-32 into UTF-16 for CT API
             var unichars: [2]u16 = undefined;
@@ -446,19 +464,42 @@ pub const CoreText = struct {
 
         score_acc.monospace = symbolic_traits.monospace;
 
-        score_acc.style = if (desc.style) |desired_style| style: {
+        score_acc.style = style: {
             const style = ct_desc.copyAttribute(.style_name);
             defer style.release();
-            var buf: [128]u8 = undefined;
-            const style_str = style.cstring(&buf, .utf8) orelse break :style .unmatched;
 
-            // Matching style string gets highest score
-            if (std.mem.eql(u8, desired_style, style_str)) break :style .match;
+            // If we have a specific desired style, attempt to search for that.
+            if (desc.style) |desired_style| {
+                var buf: [128]u8 = undefined;
+                const style_str = style.cstring(&buf, .utf8) orelse break :style .unmatched;
 
-            // Otherwise the score is based on the length of the style string.
-            // Shorter styles are scored higher.
-            break :style @enumFromInt(100 -| style_str.len);
-        } else .unmatched;
+                // Matching style string gets highest score
+                if (std.mem.eql(u8, desired_style, style_str)) break :style .match;
+
+                // Otherwise the score is based on the length of the style string.
+                // Shorter styles are scored higher.
+                break :style @enumFromInt(100 -| style_str.len);
+            }
+
+            // If we do not, and we have no symbolic traits, then we try
+            // to find "regular" (or no style). If we have symbolic traits
+            // we do nothing but we can improve scoring by taking that into
+            // account, too.
+            if (!desc.bold and !desc.italic) {
+                var buf: [128]u8 = undefined;
+                const style_str = style.cstring(&buf, .utf8) orelse break :style .unmatched;
+                if (std.mem.eql(u8, "Regular", style_str)) break :style .match;
+            }
+
+            break :style .unmatched;
+        };
+
+        score_acc.traits = traits: {
+            var count: u8 = 0;
+            if (desc.bold == symbolic_traits.bold) count += 1;
+            if (desc.italic == symbolic_traits.italic) count += 1;
+            break :traits @enumFromInt(count);
+        };
 
         return score_acc;
     }
