@@ -589,7 +589,8 @@ pub const Surface = struct {
         };
 
         // Complete our request
-        try self.core_surface.completeClipboardRequest(state, str, false);
+        // TODO: Support sanaization for GLFW (force: false)
+        try self.core_surface.completeClipboardRequest(state, str, true);
     }
 
     /// Set the clipboard.

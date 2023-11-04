@@ -1165,7 +1165,7 @@ pub fn keyCallback(
 /// if bracketed mode is on this will do a bracketed paste. Otherwise,
 /// this will filter newlines to '\r'.
 pub fn textCallback(self: *Surface, text: []const u8) !void {
-    try self.completeClipboardPaste(text, false);
+    try self.completeClipboardPaste(text, true);
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {

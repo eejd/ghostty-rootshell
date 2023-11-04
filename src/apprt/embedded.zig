@@ -1360,7 +1360,8 @@ pub const CAPI = struct {
 
         if (str_len == 0) return;
         const str = str_ptr[0..str_len];
-        ptr.core_surface.completeClipboardRequest(state.*, str, false) catch |err| {
+        // TODO: Support sanaization for MacOS (force: false)
+        ptr.core_surface.completeClipboardRequest(state.*, str, true) catch |err| {
             log.err("error completing clipboard request err={}", .{err});
             return;
         };
