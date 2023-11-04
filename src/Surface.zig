@@ -2500,20 +2500,28 @@ fn completeClipboardPaste(
 ) !void {
     if (data.len == 0) return;
 
-    // If we have paste protection enabled, we detect unsafe pastes and return
-    // an error. The error approach allows apprt to attempt to complete the paste
-    // before falling back to requesting confirmation.
-    if (self.config.clipboard_paste_protection and
-        !allow_unsafe and
-        !terminal.isSafePaste(data))
-    {
-        log.info("potentially unsafe paste detected, rejecting until confirmation", .{});
-        return error.UnsafePaste;
-    }
-
-    const bracketed = bracketed: {
+    const critical: struct {
+        bracketed: bool,
+    } = critical: {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
+
+        const bracketed = self.io.terminal.modes.get(.bracketed_paste);
+
+        // If we have paste protection enabled, we detect unsafe pastes and return
+        // an error. The error approach allows apprt to attempt to complete the paste
+        // before falling back to requesting confirmation.
+        //
+        // We do not do this for bracketed pastes because bracketed pastes are
+        // by definition safe since they're framed.
+        if (!bracketed and
+            self.config.clipboard_paste_protection and
+            !allow_unsafe and
+            !terminal.isSafePaste(data))
+        {
+            log.info("potentially unsafe paste detected, rejecting until confirmation", .{});
+            return error.UnsafePaste;
+        }
 
         // With the lock held, we must scroll to the bottom.
         // We always scroll to the bottom for these inputs.
@@ -2521,10 +2529,12 @@ fn completeClipboardPaste(
             log.warn("error scrolling to bottom err={}", .{err});
         };
 
-        break :bracketed self.io.terminal.modes.get(.bracketed_paste);
+        break :critical .{
+            .bracketed = bracketed,
+        };
     };
 
-    if (bracketed) {
+    if (critical.bracketed) {
         // If we're bracketd we write the data as-is to the terminal with
         // the bracketed paste escape codes around it.
         _ = self.io_thread.mailbox.push(.{
