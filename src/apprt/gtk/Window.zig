@@ -88,7 +88,7 @@ pub fn init(self: *Window, app: *App) !void {
             const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
             c.gtk_widget_set_tooltip_text(btn, "New Tab");
             c.gtk_header_bar_pack_end(@ptrCast(header), btn);
-            _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkActionNewTab), self, null, c.G_CONNECT_DEFAULT);
+            _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
         }
     } else {
         // Hide window decoration if configured. This has to happen before
@@ -352,6 +352,17 @@ fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     surface.core_surface.close();
 }
 
+// Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
+// sends an undefined value.
+fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
 fn gtkPageAdded(
     _: *c.GtkNotebook,
     child: *c.GtkWidget,
@@ -549,12 +560,8 @@ fn gtkActionNewTab(
     _: *c.GVariant,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+    // We can use undefined because the button is not used.
+    gtkTabNewClick(undefined, ud);
 }
 
 fn gtkActionToggleInspector(
