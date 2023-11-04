@@ -588,8 +588,8 @@ pub const Surface = struct {
             },
         };
 
-        // Complete our request
-        // TODO: Support sanaization for GLFW (force: false)
+        // Complete our request. We always allow unsafe because we don't
+        // want to deal with user confirmation in this runtime.
         try self.core_surface.completeClipboardRequest(state, str, true);
     }
 

@@ -2455,15 +2455,19 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 /// Call this to complete a clipboard request sent to apprt. This should
 /// only be called once for each request. The data is immediately copied so
 /// it is safe to free the data after this call.
+///
+/// If "allow_unsafe" is false, then the data is checked for "safety" prior.
+/// If unsafe data is detected, this will return error.UnsafePaste. Unsafe
+/// data is defined as data that contains newlines, though this definition
+/// may change later to detect other scenarios.
 pub fn completeClipboardRequest(
     self: *Surface,
     req: apprt.ClipboardRequest,
     data: []const u8,
-    force: bool, // Dialog has been shown, and ignoring unsafe pastes.
+    allow_unsafe: bool,
 ) !void {
     switch (req) {
-        .paste => try self.completeClipboardPaste(data, force),
-        // TODO: Support sanaization for OSC 52
+        .paste => try self.completeClipboardPaste(data, allow_unsafe),
         .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind),
     }
 }
@@ -2489,22 +2493,22 @@ fn startClipboardRequest(
     try self.rt_surface.clipboardRequest(loc, req);
 }
 
-fn sanatizeClipboardPaste(data: []const u8) !void {
-    // Split into lines.
-    var lines = std.mem.splitSequence(u8, data, "\n");
-
-    // If there's only one line no need to proceed.
-    if (std.mem.eql(u8, lines.next().?, data)) return;
-
-    // Warning popup.
-    return error.UnsafePaste;
-}
-
-fn completeClipboardPaste(self: *Surface, data: []const u8, force: bool) !void {
+fn completeClipboardPaste(
+    self: *Surface,
+    data: []const u8,
+    allow_unsafe: bool,
+) !void {
     if (data.len == 0) return;
 
-    if (!force and self.config.clipboard_paste_protection) {
-        try sanatizeClipboardPaste(data);
+    // If we have paste protection enabled, we detect unsafe pastes and return
+    // an error. The error approach allows apprt to attempt to complete the paste
+    // before falling back to requesting confirmation.
+    if (self.config.clipboard_paste_protection and
+        !allow_unsafe and
+        !terminal.isSafePaste(data))
+    {
+        log.info("potentially unsafe paste detected, rejecting until confirmation", .{});
+        return error.UnsafePaste;
     }
 
     const bracketed = bracketed: {

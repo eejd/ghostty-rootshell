@@ -423,8 +423,11 @@ keybind: Keybinds = .{},
 /// This does not affect data sent to the clipboard via "clipboard-write".
 @"clipboard-trim-trailing-spaces": bool = true,
 
-/// Creates a pop-up window when active, warning the user that they are pasting
-/// contents that contains more than one line. This could be a "copy paste attack"
+/// Require confirmation before pasting text that appears unsafe. This helps
+/// prevent a "copy/paste attack" where a user may accidentally execute unsafe
+/// commands by pasting text with newlines.
+///
+/// This currently only works on Linux (GTK).
 @"clipboard-paste-protection": bool = true,
 
 /// The total amount of bytes that can be used for image data (i.e.
