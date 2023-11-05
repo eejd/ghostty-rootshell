@@ -154,6 +154,7 @@ const DerivedConfig = struct {
     window_padding_x: u32,
     window_padding_y: u32,
     window_padding_balance: bool,
+    title: ?[:0]const u8,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -178,6 +179,7 @@ const DerivedConfig = struct {
             .window_padding_x = config.@"window-padding-x",
             .window_padding_y = config.@"window-padding-y",
             .window_padding_balance = config.@"window-padding-balance",
+            .title = config.title,
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -542,6 +544,10 @@ pub fn init(
             log.warn("unable to set initial window size: {s}", .{err});
         };
     }
+
+    if (config.fullscreen) {
+        rt_surface.toggleFullscreen(config.@"macos-non-native-fullscreen");
+    }
 }
 
 pub fn deinit(self: *Surface) void {
@@ -663,9 +669,13 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .set_title => |*v| {
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
-            const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);
-            log.debug("changing title \"{s}\"", .{slice});
-            try self.rt_surface.setTitle(slice);
+            if (self.config.title) |title| {
+                try self.rt_surface.setTitle(title);
+            } else {
+                const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);
+                log.debug("changing title \"{s}\"", .{slice});
+                try self.rt_surface.setTitle(slice);
+            }
         },
 
         .set_mouse_shape => |shape| {
@@ -676,12 +686,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .cell_size => |size| try self.setCellSize(size),
 
         .clipboard_read => |kind| {
+            _ = kind;
             if (!self.config.clipboard_read) {
                 log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
                 return;
             }
-
-            try self.startClipboardRequest(.standard, .{ .osc_52 = kind });
         },
 
         .clipboard_write => |req| switch (req) {
@@ -1857,8 +1866,7 @@ pub fn mouseButtonCallback(
                 .clipboard => .standard,
                 .false => unreachable,
             };
-
-            try self.startClipboardRequest(clipboard, .{ .paste = {} });
+            _ = clipboard;
         }
     }
 }
@@ -1950,7 +1958,6 @@ fn dragLeftClickDouble(
     // Get the word under our current point. If there isn't a word, do nothing.
     const word = self.io.terminal.screen.selectWord(screen_point) orelse return;
 
-    // Get our selection to grow it. If we don't have a selection, start it now.
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectWord(self.mouse.left_click_point) orelse {
@@ -1959,9 +1966,7 @@ fn dragLeftClickDouble(
     };
 
     // Grow our selection
-    if (screen_point.before(self.mouse.left_click_point)) {
-        sel.start = word.start;
-    } else {
+    if (screen_point.before(self.mouse.left_click_point)) {} else {
         sel.end = word.end;
     }
     self.setSelection(sel);
@@ -1975,7 +1980,6 @@ fn dragLeftClickTriple(
     // Get the word under our current point. If there isn't a word, do nothing.
     const word = self.io.terminal.screen.selectLine(screen_point) orelse return;
 
-    // Get our selection to grow it. If we don't have a selection, start it now.
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectLine(self.mouse.left_click_point) orelse {
@@ -1984,9 +1988,7 @@ fn dragLeftClickTriple(
     };
 
     // Grow our selection
-    if (screen_point.before(self.mouse.left_click_point)) {
-        sel.start = word.start;
-    } else {
+    if (screen_point.before(self.mouse.left_click_point)) {} else {
         sel.end = word.end;
     }
     self.setSelection(sel);

@@ -278,6 +278,20 @@ command: ?[]const u8 = null,
 /// indicate that it is a login shell, depending on the OS).
 @"command-arg": RepeatableString = .{},
 
+/// The setting to tell Ghostty to start in fullscreen mode.
+/// By default with will start windowed.
+fullscreen: bool = false,
+
+/// The setting that will change the application class value.
+/// This is usefull if you want to have multiple instances of Ghostty
+/// running with separate classes making it possible to have unique behavior for each of them.
+class: ?[:0]const u8 = null,
+
+/// The setting that will tell Ghostty which title to display.
+/// By default Ghostty will output the current directory or what application is running as the title,
+/// but with this setting it will force Ghostty to output that title independent of what is happening in terminal.
+title: ?[:0]const u8 = null,
+
 /// The directory to change to after starting the command.
 ///
 /// This setting is secondary to the "window-inherit-working-directory"

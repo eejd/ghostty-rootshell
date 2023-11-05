@@ -103,11 +103,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // Our app ID determines uniqueness and maps to our desktop file.
     // We append "-debug" to the ID if we're in debug mode so that we
     // can develop Ghostty in Ghostty.
-    const app_id: [:0]const u8 = comptime app_id: {
-        var id = "com.mitchellh.ghostty";
-        break :app_id if (builtin.mode == .Debug) id ++ "-debug" else id;
+    const app_id: [:0]const u8 = app_id: {
+        var id = config.class orelse "com.mitchellh.ghostty";
+        break :app_id if (builtin.mode == .Debug) "com.mitchellh.ghostty-debug" else id;
     };
-
     // Create our GTK Application which encapsulates our process.
     log.debug("creating GTK application id={s} single-instance={}", .{
         app_id,
@@ -159,7 +158,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
-
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
