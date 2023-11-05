@@ -46,7 +46,6 @@ struct PasteProtectionView: View {
     }
     
     private func onCancel() {
-        AppDelegate.logger.warning("PASTE onCancel")
         delegate?.pasteProtectionComplete(.cancel)
     }
     

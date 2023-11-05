@@ -108,6 +108,10 @@ extension Ghostty.Notification {
     
     /// Notification to show/hide the inspector
     static let didControlInspector = Notification.Name("com.mitchellh.ghostty.didControlInspector")
+    
+    static let confirmUnsafePaste = Notification.Name("com.mitchellh.ghostty.confirmUnsafePaste")
+    static let UnsafePasteStrKey = confirmUnsafePaste.rawValue + ".str"
+    static let UnsafePasteStateKey = confirmUnsafePaste.rawValue + ".state"
 }
 
 // Make the input enum hashable.

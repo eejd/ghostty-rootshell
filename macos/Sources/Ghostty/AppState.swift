@@ -141,6 +141,7 @@ extension Ghostty {
                 set_mouse_shape_cb: { userdata, shape in AppState.setMouseShape(userdata, shape: shape) },
                 set_mouse_visibility_cb: { userdata, visible in AppState.setMouseVisibility(userdata, visible: visible) },
                 read_clipboard_cb: { userdata, loc, state in AppState.readClipboard(userdata, location: loc, state: state) },
+                confirm_read_clipboard_cb: { userdata, str, state in AppState.confirmReadClipboard(userdata, string: str, state: state ) },
                 write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
                 new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
@@ -390,9 +391,31 @@ extension Ghostty {
             completeClipboardRequest(surface, data: str, state: state)
         }
         
-        static private func completeClipboardRequest(_ surface: ghostty_surface_t, data: String, state: UnsafeMutableRawPointer?) {
+        static func confirmReadClipboard(
+            _ userdata: UnsafeMutableRawPointer?,
+            string: UnsafePointer<CChar>?,
+            state: UnsafeMutableRawPointer?
+        ) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
+            NotificationCenter.default.post(
+                name: Notification.confirmUnsafePaste,
+                object: surface,
+                userInfo: [
+                    Notification.UnsafePasteStrKey: valueStr,
+                    Notification.UnsafePasteStateKey: state as Any
+                ]
+            )
+        }
+        
+        static func completeClipboardRequest(
+            _ surface: ghostty_surface_t,
+            data: String,
+            state: UnsafeMutableRawPointer?,
+            confirmed: Bool = false
+        ) {
             data.withCString { ptr in
-                ghostty_surface_complete_clipboard_request(surface, ptr, UInt(data.utf8.count), state)
+                ghostty_surface_complete_clipboard_request(surface, ptr, state, confirmed)
             }
         }
 
