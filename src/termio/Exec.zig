@@ -194,15 +194,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
 
     // Create our pipe that we'll use to kill our read thread.
     // pipe[0] is the read end, pipe[1] is the write end.
-    const pipe = if (builtin.os.tag == .windows) pipe: {
-        var read: windows.HANDLE = undefined;
-        var write: windows.HANDLE = undefined;
-        if (windows.exp.kernel32.CreatePipe(&read, &write, null, 0) == 0) {
-            return windows.unexpectedError(windows.kernel32.GetLastError());
-        }
-
-        break :pipe .{ read, write };
-    } else try std.os.pipe();
+    const pipe = try internal_os.pipe();
     errdefer std.os.close(pipe[0]);
     errdefer std.os.close(pipe[1]);
 
@@ -1140,7 +1132,6 @@ const ReadThread = struct {
         }
     }
 
-    /// The main entrypoint for the thread.
     fn threadMainWindows(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
         // Always close our end of the pipe when we exit.
         defer std.os.close(quit);
@@ -1154,6 +1145,7 @@ const ReadThread = struct {
                     switch (err) {
                         // Check for a quit signal
                         .OPERATION_ABORTED => break,
+
                         else => {
                             log.err("io reader error err={}", .{err});
                             unreachable;
