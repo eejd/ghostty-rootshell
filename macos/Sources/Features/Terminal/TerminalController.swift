@@ -4,7 +4,10 @@ import SwiftUI
 import GhosttyKit
 
 /// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
-class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate, TerminalViewModel {
+class TerminalController: NSWindowController, NSWindowDelegate, 
+                          TerminalViewDelegate, TerminalViewModel,
+                          PasteProtectionViewDelegate
+{
     override var windowNibName: NSNib.Name? { "Terminal" }
     
     /// The app instance that this terminal view will represent.
@@ -27,6 +30,9 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     /// True when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
+    
+    /// The paste protection window, if shown.
+    private var pasteProtection: NSWindow? = nil
     
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
@@ -117,7 +123,8 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         ))
         
         // TODO: remove this, just for dev
-        let pp = PasteProtectionController()
+        let pp = PasteProtectionController(delegate: self)
+        self.pasteProtection = pp.window
         window.beginSheet(pp.window!)
     }
     
@@ -311,6 +318,17 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     
     func lastSurfaceDidClose() {
         self.window?.close()
+    }
+    
+    //MARK: - PasteProtectionViewDelegate
+    
+    func pasteProtectionComplete(_ action: PasteProtectionView.Action) {
+        if let pasteWindow = self.pasteProtection {
+            window?.endSheet(pasteWindow)
+            self.pasteProtection = nil
+        }
+        
+        AppDelegate.logger.warning("PASTE action=\(action.rawValue)")
     }
     
     //MARK: - Notifications
