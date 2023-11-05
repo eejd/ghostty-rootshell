@@ -14,16 +14,12 @@
 //!   * posix_spawn is used for Mac, but doesn't support the necessary
 //!     features for tty setup.
 //!
-//! TODO:
-//!
-//!   * Mac
-//!
 const Command = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
 const internal_os = @import("os/main.zig");
-const windows = @import("windows.zig");
+const windows = internal_os.windows;
 const TempDir = internal_os.TempDir;
 const mem = std.mem;
 const os = std.os;
@@ -297,15 +293,19 @@ fn setupFd(src: File.Handle, target: i32) !void {
 
 /// Wait for the command to exit and return information about how it exited.
 pub fn wait(self: Command, block: bool) !Exit {
-    if (builtin.os.tag == .windows) {
-
-        // Block until the process exits. This returns immediately if the process already exited.
+    if (comptime builtin.os.tag == .windows) {
+        // Block until the process exits. This returns immediately if the
+        // process already exited.
         const result = windows.kernel32.WaitForSingleObject(self.pid.?, windows.INFINITE);
-        if (result == windows.WAIT_FAILED) return windows.unexpectedError(windows.kernel32.GetLastError());
+        if (result == windows.WAIT_FAILED) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
 
         var exit_code: windows.DWORD = undefined;
         var has_code = windows.kernel32.GetExitCodeProcess(self.pid.?, &exit_code) != 0;
-        if (!has_code) return windows.unexpectedError(windows.kernel32.GetLastError());
+        if (!has_code) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
 
         return .{ .Exited = exit_code };
     }
@@ -444,7 +444,7 @@ fn createNullDelimitedEnvMap(arena: mem.Allocator, env_map: *const EnvMap) ![:nu
 
 // Copied from Zig. This is a publicly exported function but there is no
 // way to get it from the std package.
-pub fn createWindowsEnvBlock(allocator: mem.Allocator, env_map: *const EnvMap) ![]u16 {
+fn createWindowsEnvBlock(allocator: mem.Allocator, env_map: *const EnvMap) ![]u16 {
     // count bytes needed
     const max_chars_needed = x: {
         var max_chars_needed: usize = 4; // 4 for the final 4 null bytes
@@ -571,7 +571,11 @@ test "Command: pre exec" {
 fn createTestStdout(dir: std.fs.Dir) !File {
     const file = try dir.createFile("stdout.txt", .{ .read = true });
     if (builtin.os.tag == .windows) {
-        try windows.SetHandleInformation(file.handle, windows.HANDLE_FLAG_INHERIT, windows.HANDLE_FLAG_INHERIT);
+        try windows.SetHandleInformation(
+            file.handle,
+            windows.HANDLE_FLAG_INHERIT,
+            windows.HANDLE_FLAG_INHERIT,
+        );
     }
 
     return file;

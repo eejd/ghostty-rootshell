@@ -13,3 +13,4 @@ pub usingnamespace @import("resourcesdir.zig");
 pub const TempDir = @import("TempDir.zig");
 pub const passwd = @import("passwd.zig");
 pub const xdg = @import("xdg.zig");
+pub const windows = @import("windows.zig");

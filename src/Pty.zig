@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const windows = @import("windows.zig");
+const windows = @import("os/main.zig").windows;
 const fd_t = std.os.fd_t;
 
 const c = switch (builtin.os.tag) {
@@ -37,7 +37,6 @@ else
 /// of Linux syscalls. The caller is responsible for detail-oriented handling
 /// of the returned file handles.
 pub const PosixPty = struct {
-
     // https://github.com/ziglang/zig/issues/13277
     // Once above is fixed, use `c.TIOCSCTTY`
     const TIOCSCTTY = if (builtin.os.tag == .macos) 536900705 else c.TIOCSCTTY;

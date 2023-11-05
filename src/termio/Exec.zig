@@ -10,7 +10,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
-const Pty = @import("../Pty.zig").Pty;
+const Pty = @import("../pty.zig").Pty;
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
 const terminal = @import("../terminal/main.zig");
 const terminfo = @import("../terminfo/main.zig");
@@ -21,9 +21,9 @@ const trace = tracy.trace;
 const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
 const internal_os = @import("../os/main.zig");
+const windows = internal_os.windows;
 const configpkg = @import("../config.zig");
 const shell_integration = @import("shell_integration.zig");
-const windows = @import("../windows.zig");
 
 const log = std.log.scoped(.io_exec);
 
