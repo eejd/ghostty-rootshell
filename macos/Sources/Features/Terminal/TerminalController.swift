@@ -4,7 +4,10 @@ import SwiftUI
 import GhosttyKit
 
 /// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
-class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate, TerminalViewModel {
+class TerminalController: NSWindowController, NSWindowDelegate, 
+                          TerminalViewDelegate, TerminalViewModel,
+                          PasteProtectionViewDelegate
+{
     override var windowNibName: NSNib.Name? { "Terminal" }
     
     /// The app instance that this terminal view will represent.
@@ -28,6 +31,9 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
     /// True when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
     
+    /// The paste protection window, if shown.
+    private var pasteProtection: PasteProtectionController? = nil
+    
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
         super.init(window: nil)
@@ -47,6 +53,11 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
             self,
             selector: #selector(onGotoTab),
             name: Ghostty.Notification.ghosttyGotoTab,
+            object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onConfirmUnsafePaste),
+            name: Ghostty.Notification.confirmUnsafePaste,
             object: nil)
     }
     
@@ -309,6 +320,30 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         self.window?.close()
     }
     
+    //MARK: - Paste Protection
+    
+    func pasteProtectionComplete(_ action: PasteProtectionView.Action) {
+        // End our paste protection no matter what
+        guard let pp = self.pasteProtection else { return }
+        self.pasteProtection = nil
+        
+        // Close the sheet
+        if let ppWindow = pp.window {
+            window?.endSheet(ppWindow)
+        }
+        
+        let str: String
+        switch (action) {
+        case .cancel:
+            str = ""
+            
+        case .paste:
+            str = pp.contents
+        }
+        
+        Ghostty.AppState.completeClipboardRequest(pp.surface, data: str, state: pp.state, confirmed: true)
+    }
+    
     //MARK: - Notifications
     
     @objc private func onGotoTab(notification: SwiftUI.Notification) {
@@ -366,5 +401,34 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
         if let focusedSurface {
             Ghostty.moveFocus(to: focusedSurface)
         }
+    }
+    
+    @objc private func onConfirmUnsafePaste(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard target == self.focusedSurface else { return }
+        guard let surface = target.surface else { return }
+        
+        // We need a window
+        guard let window = self.window else { return }
+        
+        // Check whether we use non-native fullscreen
+        guard let str = notification.userInfo?[Ghostty.Notification.UnsafePasteStrKey] as? String else { return }
+        guard let state = notification.userInfo?[Ghostty.Notification.UnsafePasteStateKey] as? UnsafeMutableRawPointer? else { return }
+        
+        // If we already have a paste protection view up, we ignore this request.
+        // This shouldn't be possible...
+        guard self.pasteProtection == nil else {
+            Ghostty.AppState.completeClipboardRequest(surface, data: "", state: state, confirmed: true)
+            return
+        }
+        
+        // Show our paste confirmation
+        self.pasteProtection = PasteProtectionController(
+            surface: surface,
+            contents: str,
+            state: state,
+            delegate: self
+        )
+        window.beginSheet(self.pasteProtection!.window!)
     }
 }

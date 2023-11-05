@@ -430,6 +430,12 @@ keybind: Keybinds = .{},
 /// This currently only works on Linux (GTK).
 @"clipboard-paste-protection": bool = true,
 
+/// If true, bracketed pastes will be considered safe. By default,
+/// bracketed pastes are considered safe. "Bracketed" pastes are pastes
+/// while the running program has bracketed paste mode enabled (a setting
+/// set by the running program, not the terminal emulator).
+@"clipboard-paste-bracketed-safe": bool = true,
+
 /// The total amount of bytes that can be used for image data (i.e.
 /// the Kitty image protocol) per terminal scren. The maximum value
 /// is 4,294,967,295 (4GB). The default is 320MB. If this is set to zero,

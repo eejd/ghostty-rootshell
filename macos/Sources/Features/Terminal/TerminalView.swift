@@ -4,7 +4,7 @@ import GhosttyKit
 /// This delegate is notified of actions and property changes regarding the terminal view. This
 /// delegate is optional and can be used by a TerminalView caller to react to changes such as
 /// titles being set, cell sizes being changed, etc.
-protocol TerminalViewDelegate: AnyObject, ObservableObject {
+protocol TerminalViewDelegate: AnyObject {
     /// Called when the currently focused surface changed. This can be nil.
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?)
     

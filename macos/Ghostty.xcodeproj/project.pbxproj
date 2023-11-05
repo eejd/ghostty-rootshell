@@ -40,6 +40,9 @@
 		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
 		A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */; };
 		A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
+		A5E112932AF73E6E00C6E0C2 /* PasteProtection.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5E112922AF73E6E00C6E0C2 /* PasteProtection.xib */; };
+		A5E112952AF73E8A00C6E0C2 /* PasteProtectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112942AF73E8A00C6E0C2 /* PasteProtectionController.swift */; };
+		A5E112972AF7401B00C6E0C2 /* PasteProtectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112962AF7401B00C6E0C2 /* PasteProtectionView.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
 /* End PBXBuildFile section */
 
@@ -80,6 +83,9 @@
 		A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Divider.swift; sourceTree = "<group>"; };
 		A5CEAFFE29C2410700646FDA /* Backport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backport.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
+		A5E112922AF73E6E00C6E0C2 /* PasteProtection.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PasteProtection.xib; sourceTree = "<group>"; };
+		A5E112942AF73E8A00C6E0C2 /* PasteProtectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteProtectionController.swift; sourceTree = "<group>"; };
+		A5E112962AF7401B00C6E0C2 /* PasteProtectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteProtectionView.swift; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -101,6 +107,7 @@
 			children = (
 				A56D58872ACDE6BE00508D2C /* Services */,
 				A59630982AEE1C4400D64628 /* Terminal */,
+				A5E112912AF73E4D00C6E0C2 /* Paste Protection */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 			);
 			path = Features;
@@ -227,6 +234,16 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		A5E112912AF73E4D00C6E0C2 /* Paste Protection */ = {
+			isa = PBXGroup;
+			children = (
+				A5E112922AF73E6E00C6E0C2 /* PasteProtection.xib */,
+				A5E112942AF73E8A00C6E0C2 /* PasteProtectionController.swift */,
+				A5E112962AF7401B00C6E0C2 /* PasteProtectionView.swift */,
+			);
+			path = "Paste Protection";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -289,6 +306,7 @@
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
 				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
+				A5E112932AF73E6E00C6E0C2 /* PasteProtection.xib in Resources */,
 				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
 				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 			);
@@ -324,9 +342,11 @@
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
+				A5E112952AF73E8A00C6E0C2 /* PasteProtectionController.swift in Sources */,
 				8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */,
 				A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */,
 				A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */,
+				A5E112972AF7401B00C6E0C2 /* PasteProtectionView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

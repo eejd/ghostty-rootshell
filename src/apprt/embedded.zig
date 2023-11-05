@@ -61,6 +61,15 @@ pub const App = struct {
         /// value then this should return null.
         read_clipboard: *const fn (SurfaceUD, c_int, *apprt.ClipboardRequest) callconv(.C) void,
 
+        /// This may be called after a read clipboard call to request
+        /// confirmation that the clipboard value is safe to read. The embedder
+        /// must call complete_clipboard_request with the given request.
+        confirm_read_clipboard: *const fn (
+            SurfaceUD,
+            [*:0]const u8,
+            *apprt.ClipboardRequest,
+        ) callconv(.C) void,
+
         /// Write the clipboard value.
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int) callconv(.C) void,
 
@@ -449,6 +458,45 @@ pub const Surface = struct {
             @intCast(@intFromEnum(clipboard_type)),
             state_ptr,
         );
+    }
+
+    fn completeClipboardRequest(
+        self: *Surface,
+        str: [:0]const u8,
+        state: *apprt.ClipboardRequest,
+        confirmed: bool,
+    ) void {
+        const alloc = self.app.core_app.alloc;
+
+        // If there is no string, then we don't do anything and complete.
+        if (str.len == 0) {
+            alloc.destroy(state);
+            return;
+        }
+
+        // Attempt to complete the request, but if its unsafe we may request
+        // confirmation.
+        self.core_surface.completeClipboardRequest(
+            state.*,
+            str,
+            confirmed,
+        ) catch |err| switch (err) {
+            error.UnsafePaste => {
+                self.app.opts.confirm_read_clipboard(
+                    self.opts.userdata,
+                    str.ptr,
+                    state,
+                );
+
+                return;
+            },
+
+            else => log.err("error completing clipboard request err={}", .{err}),
+        };
+
+        // We don't defer this because the unsafe paste route preserves
+        // the clipboard request.
+        alloc.destroy(state);
     }
 
     pub fn setClipboardString(
@@ -1351,20 +1399,15 @@ pub const CAPI = struct {
     /// with a request the request pointer will be invalidated.
     export fn ghostty_surface_complete_clipboard_request(
         ptr: *Surface,
-        str_ptr: [*]const u8,
-        str_len: usize,
+        str: [*:0]const u8,
         state: *apprt.ClipboardRequest,
+        confirmed: bool,
     ) void {
-        // The state is unusable after this
-        defer ptr.core_surface.app.alloc.destroy(state);
-
-        if (str_len == 0) return;
-        const str = str_ptr[0..str_len];
-        // TODO: Support sanaization for MacOS (force: false)
-        ptr.core_surface.completeClipboardRequest(state.*, str, true) catch |err| {
-            log.err("error completing clipboard request err={}", .{err});
-            return;
-        };
+        ptr.completeClipboardRequest(
+            std.mem.sliceTo(str, 0),
+            state,
+            confirmed,
+        );
     }
 
     export fn ghostty_surface_inspector(ptr: *Surface) ?*Inspector {

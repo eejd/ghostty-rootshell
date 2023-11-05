@@ -143,6 +143,7 @@ const DerivedConfig = struct {
     clipboard_write: bool,
     clipboard_trim_trailing_spaces: bool,
     clipboard_paste_protection: bool,
+    clipboard_paste_bracketed_safe: bool,
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
     mouse_interval: u64,
@@ -167,6 +168,7 @@ const DerivedConfig = struct {
             .clipboard_write = config.@"clipboard-write",
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
             .clipboard_paste_protection = config.@"clipboard-paste-protection",
+            .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
@@ -2514,7 +2516,7 @@ fn completeClipboardPaste(
         //
         // We do not do this for bracketed pastes because bracketed pastes are
         // by definition safe since they're framed.
-        if (!bracketed and
+        if ((!self.config.clipboard_paste_bracketed_safe or !bracketed) and
             self.config.clipboard_paste_protection and
             !allow_unsafe and
             !terminal.isSafePaste(data))
