@@ -1960,6 +1960,7 @@ fn dragLeftClickDouble(
     // Get the word under our current point. If there isn't a word, do nothing.
     const word = self.io.terminal.screen.selectWord(screen_point) orelse return;
 
+    // Get our selection to grow it. If we don't have a selection, start it now.
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectWord(self.mouse.left_click_point) orelse {
