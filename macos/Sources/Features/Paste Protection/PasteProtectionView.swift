@@ -1,16 +1,21 @@
 import SwiftUI
 
+/// This delegate is notified of the completion result of the paste protection dialog.
 protocol PasteProtectionViewDelegate: AnyObject {
     func pasteProtectionComplete(_ action: PasteProtectionView.Action)
 }
 
+/// The SwiftUI view for showing a paste protection dialog.
 struct PasteProtectionView: View {
     enum Action : String {
         case cancel
         case paste
     }
     
+    /// The contents of the paste.
     let contents: String
+    
+    /// Optional delegate to get results. If this is nil, then this view will never close on its own.
     weak var delegate: PasteProtectionViewDelegate? = nil
     
     var body: some View {

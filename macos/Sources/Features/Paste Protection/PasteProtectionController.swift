@@ -3,6 +3,8 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
+/// This initializes an "unsafe paste" warning window. The window itself WILL NOT show automatically
+/// and the caller must show the window via showWindow, beginSheet, etc.
 class PasteProtectionController: NSWindowController {
     override var windowNibName: NSNib.Name? { "PasteProtection" }
     
