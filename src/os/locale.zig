@@ -21,10 +21,8 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
     // process.
     if (comptime builtin.target.isDarwin()) {
         // Set the lang if it is not set or if its empty.
-        if (lang) |l| {
-            if (l.value.len == 0) {
-                setLangFromCocoa();
-            }
+        if (lang == null or lang.?.value.len == 0) {
+            setLangFromCocoa();
         }
     }
 
