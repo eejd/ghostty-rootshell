@@ -546,7 +546,9 @@ pub fn init(
     }
 
     if (config.fullscreen) {
-        rt_surface.toggleFullscreen(config.@"macos-non-native-fullscreen");
+        if (builtin.target.isDarwin() or builtin.os.tag == .linux) {
+            rt_surface.toggleFullscreen(config.@"macos-non-native-fullscreen");
+        }
     }
 }
 
