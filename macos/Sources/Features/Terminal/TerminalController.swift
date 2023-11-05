@@ -115,6 +115,10 @@ class TerminalController: NSWindowController, NSWindowDelegate, TerminalViewDele
             viewModel: self,
             delegate: self
         ))
+        
+        // TODO: remove this, just for dev
+        let pp = PasteProtectionController()
+        window.beginSheet(pp.window!)
     }
     
     // Shows the "+" button in the tab bar, responds to that click.
