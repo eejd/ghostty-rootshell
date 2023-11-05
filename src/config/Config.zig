@@ -963,6 +963,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .i, .mods = .{ .alt = true, .super = true } },
             .{ .inspector = .toggle },
         );
+
+        // Alternate keybind, common to Mac programs
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .f, .mods = .{ .super = true, .ctrl = true } },
+            .{ .toggle_fullscreen = {} },
+        );
     }
 
     return result;
