@@ -103,6 +103,7 @@ fn homeWindows(buf: []u8) !?[]u8 {
         if (homepath.ptr != path_buf.ptr) @panic("codebug");
         break :blk homepath.len;
     };
+
     return buf[0 .. drive_len + path_len];
 }
 
