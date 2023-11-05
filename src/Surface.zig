@@ -17,6 +17,7 @@ pub const Message = apprt.surface.Message;
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
@@ -546,7 +547,7 @@ pub fn init(
     }
 
     if (config.fullscreen) {
-        if (builtin.target.isDarwin() or builtin.os.tag == .linux) {
+        if (build_config.app_runtime == .gtk or build_config.app_runtime == .none) {
             rt_surface.toggleFullscreen(config.@"macos-non-native-fullscreen");
         }
     }
