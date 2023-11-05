@@ -2514,7 +2514,7 @@ fn completeClipboardPaste(
         //
         // We do not do this for bracketed pastes because bracketed pastes are
         // by definition safe since they're framed.
-        if ((true or !bracketed) and
+        if (!bracketed and
             self.config.clipboard_paste_protection and
             !allow_unsafe and
             !terminal.isSafePaste(data))
