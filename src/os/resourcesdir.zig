@@ -10,6 +10,8 @@ const Allocator = std.mem.Allocator;
 /// some point but we can cross that bridge if we ever need to.
 pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
     // If we have an environment variable set, we always use that.
+    // Note: we ALWAYS want to allocate here because the result is always
+    // freed, do not try to use internal_os.getenv or posix getenv.
     if (std.process.getEnvVarOwned(alloc, "GHOSTTY_RESOURCES_DIR")) |dir| {
         if (dir.len > 0) return dir;
     } else |err| switch (err) {
