@@ -22,7 +22,7 @@ class PasteProtectionController: NSWindowController {
     override func windowDidLoad() {
         guard let window = window else { return }
         window.contentView = NSHostingView(rootView: PasteProtectionView(
-            contents: "Hello",
+            contents: "Hello\nWorld",
             delegate: delegate
         ))
     }

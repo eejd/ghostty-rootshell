@@ -29,7 +29,6 @@ struct PasteProtectionView: View {
             }
             
             TextEditor(text: .constant(contents))
-                .disabled(true)
                 .textSelection(.enabled)
                 .font(.system(.body, design: .monospaced))
                 .padding(.all, 4)
