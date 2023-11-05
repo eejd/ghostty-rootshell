@@ -686,11 +686,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .cell_size => |size| try self.setCellSize(size),
 
         .clipboard_read => |kind| {
-            _ = kind;
             if (!self.config.clipboard_read) {
                 log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
                 return;
             }
+
+            try self.startClipboardRequest(.standard, .{ .osc_52 = kind });
         },
 
         .clipboard_write => |req| switch (req) {
@@ -1866,7 +1867,8 @@ pub fn mouseButtonCallback(
                 .clipboard => .standard,
                 .false => unreachable,
             };
-            _ = clipboard;
+
+            try self.startClipboardRequest(clipboard, .{ .paste = {} });
         }
     }
 }
@@ -1966,7 +1968,9 @@ fn dragLeftClickDouble(
     };
 
     // Grow our selection
-    if (screen_point.before(self.mouse.left_click_point)) {} else {
+    if (screen_point.before(self.mouse.left_click_point)) {
+        sel.start = word.start;
+    } else {
         sel.end = word.end;
     }
     self.setSelection(sel);
@@ -1980,6 +1984,7 @@ fn dragLeftClickTriple(
     // Get the word under our current point. If there isn't a word, do nothing.
     const word = self.io.terminal.screen.selectLine(screen_point) orelse return;
 
+    // Get our selection to grow it. If we don't have a selection, start it now.
     // We may not have a selection if we started our dbl-click in an area
     // that had no data, then we dragged our mouse into an area with data.
     var sel = self.io.terminal.screen.selectLine(self.mouse.left_click_point) orelse {
@@ -1988,7 +1993,9 @@ fn dragLeftClickTriple(
     };
 
     // Grow our selection
-    if (screen_point.before(self.mouse.left_click_point)) {} else {
+    if (screen_point.before(self.mouse.left_click_point)) {
+        sel.start = word.start;
+    } else {
         sel.end = word.end;
     }
     self.setSelection(sel);
