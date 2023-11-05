@@ -143,6 +143,13 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
 
+    // If we have an initial pwd requested by the subprocess, then we
+    // set that on the terminal now. This allows rapidly initializing
+    // new surfaces to use the proper pwd.
+    if (subprocess.cwd) |cwd| term.setPwd(cwd) catch |err| {
+        log.warn("error setting initial pwd err={}", .{err});
+    };
+
     // Initial width/height based on subprocess
     term.width_px = subprocess.screen_size.width;
     term.height_px = subprocess.screen_size.height;
