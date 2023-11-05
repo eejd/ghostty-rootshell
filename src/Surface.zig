@@ -547,9 +547,9 @@ pub fn init(
     }
 
     if (config.fullscreen) {
-        if (build_config.app_runtime == .gtk or build_config.app_runtime == .none) {
+        if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
             rt_surface.toggleFullscreen(config.@"macos-non-native-fullscreen");
-        }
+        } else log.warn("runtime doesn't implement toggleFullscreen", .{});
     }
 }
 
