@@ -670,6 +670,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
             if (self.config.title) |title| {
+                log.debug("setting title \"{s}\"", .{title});
                 try self.rt_surface.setTitle(title);
             } else {
                 const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);
