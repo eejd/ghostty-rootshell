@@ -243,9 +243,9 @@ pub const GlobalState = struct {
         // maybe once for logging) so for now this is an easy way to do
         // this. Env vars are useful for logging too because they are
         // easy to set.
-        if ((try internal_os.getEnvVarOwned(self.alloc, "GHOSTTY_LOG"))) |v| {
-            defer self.alloc.free(v);
-            if (v.len > 0) {
+        if ((try internal_os.getenv(self.alloc, "GHOSTTY_LOG"))) |v| {
+            defer v.deinit(self.alloc);
+            if (v.value.len > 0) {
                 self.logging = .{ .stderr = {} };
             }
         }

@@ -12,8 +12,8 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
 
     // Get our LANG env var. We use this many times but we also need
     // the original value later.
-    const lang = try internal_os.getEnvVarOwned(alloc, "LANG");
-    defer if (lang) |v| alloc.free(v);
+    const lang = try internal_os.getenv(alloc, "LANG");
+    defer if (lang) |v| v.deinit(alloc);
 
     // On macOS, pre-populate the LANG env var with system preferences.
     // When launching the .app, LANG is not set so we must query it from the
@@ -22,7 +22,7 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
     if (comptime builtin.target.isDarwin()) {
         // Set the lang if it is not set or if its empty.
         if (lang) |l| {
-            if (l.len == 0) {
+            if (l.value.len == 0) {
                 setLangFromCocoa();
             }
         }
@@ -37,13 +37,13 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
     // setlocale failed. This is probably because the LANG env var is
     // invalid. Try to set it without the LANG var set to use the system
     // default.
-    if ((try internal_os.getEnvVarOwned(alloc, "LANG"))) |old_lang| {
-        defer alloc.free(old_lang);
-        if (old_lang.len > 0) {
+    if ((try internal_os.getenv(alloc, "LANG"))) |old_lang| {
+        defer old_lang.deinit(alloc);
+        if (old_lang.value.len > 0) {
             // We don't need to do both of these things but we do them
             // both to be sure that lang is either empty or unset completely.
-            _ = internal_os.setEnv("LANG", "");
-            _ = internal_os.unsetEnv("LANG");
+            _ = internal_os.setenv("LANG", "");
+            _ = internal_os.unsetenv("LANG");
 
             if (setlocale(LC_ALL, "")) |v| {
                 log.info("setlocale after unset lang result={s}", .{v});
@@ -59,7 +59,7 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
     // Failure again... fallback to en_US.UTF-8
     log.warn("setlocale failed with LANG and system default. Falling back to en_US.UTF-8", .{});
     if (setlocale(LC_ALL, "en_US.UTF-8")) |v| {
-        _ = internal_os.setEnv("LANG", "en_US.UTF-8");
+        _ = internal_os.setenv("LANG", "en_US.UTF-8");
         log.info("setlocale default result={s}", .{v});
         return;
     } else log.err("setlocale failed even with the fallback, uncertain results", .{});
@@ -100,7 +100,7 @@ fn setLangFromCocoa() void {
     log.info("detected system locale={s}", .{env_value});
 
     // Set it onto our environment
-    if (internal_os.setEnv("LANG", env_value) < 0) {
+    if (internal_os.setenv("LANG", env_value) < 0) {
         log.err("error setting locale env var", .{});
         return;
     }

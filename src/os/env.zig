@@ -25,6 +25,61 @@ pub fn appendEnv(
     });
 }
 
+/// The result of getenv, with a shared deinit to properly handle allocation
+/// on Windows.
+pub const GetEnvResult = struct {
+    value: []const u8,
+
+    pub fn deinit(self: GetEnvResult, alloc: Allocator) void {
+        switch (builtin.os.tag) {
+            .windows => alloc.free(self.value),
+            else => {},
+        }
+    }
+};
+
+/// Gets the value of an environment variable, or null if not found.
+/// This will allocate on Windows but not on other platforms. The returned
+/// value should have deinit called to do the proper cleanup no matter what
+/// platform you are on.
+pub fn getenv(alloc: Allocator, key: []const u8) !?GetEnvResult {
+    return switch (builtin.os.tag) {
+        // Non-Windows doesn't need to allocate
+        else => if (std.os.getenv(key)) |v| .{ .value = v } else null,
+
+        // Windows needs to allocate
+        .windows => if (std.process.getEnvVarOwned(alloc, key)) |v| .{
+            .value = v,
+        } else |err| switch (err) {
+            error.EnvironmentVariableNotFound => null,
+            else => err,
+        },
+    };
+}
+
+pub fn setenv(key: [:0]const u8, value: [:0]const u8) c_int {
+    return switch (builtin.os.tag) {
+        .windows => c._putenv_s(key.ptr, value.ptr),
+        else => c.setenv(key.ptr, value.ptr, 1),
+    };
+}
+
+pub fn unsetenv(key: [:0]const u8) c_int {
+    return switch (builtin.os.tag) {
+        .windows => c._putenv_s(key.ptr, ""),
+        else => c.unsetenv(key.ptr),
+    };
+}
+
+const c = struct {
+    // POSIX
+    extern "c" fn setenv(name: ?[*]const u8, value: ?[*]const u8, overwrite: c_int) c_int;
+    extern "c" fn unsetenv(name: ?[*]const u8) c_int;
+
+    // Windows
+    extern "c" fn _putenv_s(varname: ?[*]const u8, value_string: ?[*]const u8) c_int;
+};
+
 test "appendEnv empty" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -45,37 +100,4 @@ test "appendEnv existing" {
     } else {
         try testing.expectEqualStrings(result, "a:b:foo");
     }
-}
-
-extern "c" fn setenv(name: ?[*]const u8, value: ?[*]const u8, overwrite: c_int) c_int;
-extern "c" fn unsetenv(name: ?[*]const u8) c_int;
-extern "c" fn _putenv_s(varname: ?[*]const u8, value_string: ?[*]const u8) c_int;
-
-pub fn setEnv(key: [:0]const u8, value: [:0]const u8) c_int {
-    if (builtin.os.tag == .windows) {
-        return _putenv_s(key.ptr, value.ptr);
-    } else {
-        return setenv(key.ptr, value.ptr, 1);
-    }
-}
-
-pub fn unsetEnv(key: [:0]const u8) c_int {
-    if (builtin.os.tag == .windows) {
-        return _putenv_s(key.ptr, "");
-    } else {
-        return unsetenv(key.ptr);
-    }
-}
-
-/// Returns the value of an environment variable, or null if not found.
-/// The returned value is always allocated so it must be freed.
-pub fn getEnvVarOwned(alloc: std.mem.Allocator, key: []const u8) !?[]u8 {
-    if (std.process.getEnvVarOwned(alloc, key)) |v| {
-        return v;
-    } else |err| switch (err) {
-        error.EnvironmentVariableNotFound => {},
-        else => return err,
-    }
-
-    return null;
 }
