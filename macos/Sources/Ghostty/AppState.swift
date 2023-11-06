@@ -158,6 +158,8 @@ extension Ghostty {
                 control_inspector_cb: { userdata, mode in AppState.controlInspector(userdata, mode: mode) },
                 close_surface_cb: { userdata, processAlive in AppState.closeSurface(userdata, processAlive: processAlive) },
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
+                resize_split_cb: { userdata, direction, amount in
+                    AppState.resizeSplit(userdata, direction: direction, amount: amount) },
                 toggle_split_zoom_cb: { userdata in AppState.toggleSplitZoom(userdata) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
@@ -292,6 +294,10 @@ extension Ghostty {
             ghostty_surface_split_focus(surface, direction.toNative())
         }
 
+        func splitResize(surface: ghostty_surface_t, direction: SplitResizeDirection, amount: UInt16) {
+            ghostty_surface_split_resize(surface, direction.toNative(), amount)
+        }
+
         func splitToggleZoom(surface: ghostty_surface_t) {
             let action = "toggle_split_zoom"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
@@ -360,6 +366,19 @@ extension Ghostty {
                 object: surface,
                 userInfo: [
                     Notification.SplitDirectionKey: splitDirection,
+                ]
+            )
+        }
+
+        static func resizeSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_resize_direction_e, amount: UInt16) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            guard let resizeDirection = SplitResizeDirection.from(direction: direction) else { return }
+            NotificationCenter.default.post(
+                name: Notification.didResizeSplit,
+                object: surface,
+                userInfo: [
+                    Notification.ResizeSplitDirectionKey: resizeDirection,
+                    Notification.ResizeSplitAmountKey: amount,
                 ]
             )
         }
@@ -570,37 +589,5 @@ extension Ghostty {
         static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView? {
             return Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         }
-    }
-}
-
-// MARK: AppState Environment Keys
-
-private struct GhosttyAppKey: EnvironmentKey {
-    static let defaultValue: ghostty_app_t? = nil
-}
-
-private struct GhosttyConfigKey: EnvironmentKey {
-    static let defaultValue: ghostty_config_t? = nil
-}
-
-extension EnvironmentValues {
-    var ghosttyApp: ghostty_app_t? {
-        get { self[GhosttyAppKey.self] }
-        set { self[GhosttyAppKey.self] = newValue }
-    }
-
-    var ghosttyConfig: ghostty_config_t? {
-        get { self[GhosttyConfigKey.self] }
-        set { self[GhosttyConfigKey.self] = newValue }
-    }
-}
-
-extension View {
-    func ghosttyApp(_ app: ghostty_app_t?) -> some View {
-        environment(\.ghosttyApp, app)
-    }
-
-    func ghosttyConfig(_ config: ghostty_config_t?) -> some View {
-        environment(\.ghosttyConfig, config)
     }
 }

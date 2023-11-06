@@ -33,7 +33,7 @@ extension Ghostty {
             .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
         }
     }
-    
+
     /// The root of a split tree. This sets up the initial SplitNode state and renders. There is only ever
     /// one of these in a split tree.
     private struct TerminalSplitRoot: View {
@@ -61,25 +61,15 @@ extension Ghostty {
                     case nil:
                         Color(.clear)
                         
-                    case .noSplit(let leaf):
+                    case .leaf(let leaf):
                         TerminalSplitLeaf(
                             leaf: leaf,
                             neighbors: .empty,
                             node: $node
                         )
 
-                    case .horizontal(let container):
+                    case .split(let container):
                         TerminalSplitContainer(
-                            direction: .horizontal,
-                            neighbors: .empty,
-                            node: $node,
-                            container: container
-                        )
-                        .onReceive(pubZoom) { onZoom(notification: $0) }
-
-                    case .vertical(let container):
-                        TerminalSplitContainer(
-                            direction: .vertical,
                             neighbors: .empty,
                             node: $node,
                             container: container
@@ -105,7 +95,7 @@ extension Ghostty {
         
         func onZoom(notification: SwiftUI.Notification) {
             // Our node must be split to receive zooms. You can't zoom an unsplit terminal.
-            if case .noSplit = node {
+            if case .leaf = node {
                 preconditionFailure("TerminalSplitRoom must not be zoom-able if no splits exist")
             }
 
@@ -163,11 +153,13 @@ extension Ghostty {
             let pub = center.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
             let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: leaf.surface)
             let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: leaf.surface)
+            let pubResize = center.publisher(for: Notification.didResizeSplit, object: leaf.surface)
 
             InspectableSurface(surfaceView: leaf.surface, isSplit: !neighbors.isEmpty())
                 .onReceive(pub) { onNewSplit(notification: $0) }
                 .onReceive(pubClose) { onClose(notification: $0) }
                 .onReceive(pubFocus) { onMoveFocus(notification: $0) }
+                .onReceive(pubResize) { onResize(notification: $0) }
         }
 
         private func onClose(notification: SwiftUI.Notification) {
@@ -234,16 +226,10 @@ extension Ghostty {
             }
 
             // Setup our new container since we are now split
-            let container = SplitNode.Container(from: leaf, baseConfig: config)
+            let container = SplitNode.Container(from: leaf, direction: splitDirection, baseConfig: config)
 
-            // Depending on the direction, change the parent node. This will trigger
-            // the parent to relayout our views.
-            switch (splitDirection) {
-            case .horizontal:
-                node = .horizontal(container)
-            case .vertical:
-                node = .vertical(container)
-            }
+            // Change the parent node. This will trigger the parent to relayout our views.
+            node = .split(container)
 
             // See moveFocus comment, we have to run this whenever split changes.
             Ghostty.moveFocus(to: container.bottomRight.preferredFocus(), from: node!.preferredFocus())
@@ -259,18 +245,35 @@ extension Ghostty {
                 to: next.preferredFocus(direction)
             )
         }
+
+        /// Handle a resize event.
+        private func onResize(notification: SwiftUI.Notification) {
+            // If this leaf is not part of a split then there is nothing to do
+            guard let parent = leaf.parent else { return }
+
+            guard let directionAny = notification.userInfo?[Ghostty.Notification.ResizeSplitDirectionKey] else { return }
+            guard let direction = directionAny as? Ghostty.SplitResizeDirection else { return }
+
+            guard let amountAny = notification.userInfo?[Ghostty.Notification.ResizeSplitAmountKey] else { return }
+            guard let amount = amountAny as? UInt16 else { return }
+
+            parent.resize(direction: direction, amount: amount)
+        }
     }
     
     /// This represents a split view that is in the horizontal or vertical split state.
     private struct TerminalSplitContainer: View {
-        let direction: SplitViewDirection
         let neighbors: SplitNode.Neighbors
         @Binding var node: SplitNode?
         @StateObject var container: SplitNode.Container
 
         var body: some View {
-            SplitView(direction, left: {
-                let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.right : \.bottom
+            SplitView(
+                container.direction,
+                resizeIncrements: .init(width: 1, height: 1),
+                resizePublisher: container.resizeEvent,
+                left: {
+                let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = container.direction == .horizontal ? \.right : \.bottom
 
                 TerminalSplitNested(
                     node: closeableTopLeft(),
@@ -280,8 +283,8 @@ extension Ghostty {
                     ])
                 )
             }, right: {
-                let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = direction == .horizontal ? \.left : \.top
-                
+                let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = container.direction == .horizontal ? \.left : \.top
+
                 TerminalSplitNested(
                     node: closeableBottomRight(),
                     neighbors: neighbors.update([
@@ -304,7 +307,16 @@ extension Ghostty {
                 // Closing
                 container.topLeft.close()
                 node = container.bottomRight
-                
+
+                switch (node) {
+                case .leaf(let l):
+                    l.parent = container.parent
+                case .split(let c):
+                    c.parent = container.parent
+                case .none:
+                    break
+                }
+
                 DispatchQueue.main.async {
                     Ghostty.moveFocus(
                         to: container.bottomRight.preferredFocus(),
@@ -326,7 +338,16 @@ extension Ghostty {
                 // Closing
                 container.bottomRight.close()
                 node = container.topLeft
-                
+
+                switch (node) {
+                case .leaf(let l):
+                    l.parent = container.parent
+                case .split(let c):
+                    c.parent = container.parent
+                case .none:
+                    break
+                }
+
                 DispatchQueue.main.async {
                     Ghostty.moveFocus(
                         to: container.topLeft.preferredFocus(),
@@ -350,24 +371,15 @@ extension Ghostty {
                 case nil:
                     Color(.clear)
 
-                case .noSplit(let leaf):
+                case .leaf(let leaf):
                     TerminalSplitLeaf(
                         leaf: leaf,
                         neighbors: neighbors,
                         node: $node
                     )
 
-                case .horizontal(let container):
+                case .split(let container):
                     TerminalSplitContainer(
-                        direction: .horizontal,
-                        neighbors: neighbors,
-                        node: $node,
-                        container: container
-                    )
-
-                case .vertical(let container):
-                    TerminalSplitContainer(
-                        direction: .vertical,
                         neighbors: neighbors,
                         node: $node,
                         container: container

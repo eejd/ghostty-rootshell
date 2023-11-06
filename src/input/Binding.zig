@@ -179,6 +179,10 @@ pub const Action = union(enum) {
     /// zoom/unzoom the current split.
     toggle_split_zoom: void,
 
+    /// Resize the current split by moving the split divider in the given
+    /// direction
+    resize_split: SplitResizeParameter,
+
     /// Show, hide, or toggle the terminal inspector for the currently
     /// focused terminal.
     inspector: InspectorMode,
@@ -228,11 +232,71 @@ pub const Action = union(enum) {
     };
 
     // Extern because it is used in the embedded runtime ABI.
+    pub const SplitResizeDirection = enum(c_int) {
+        up,
+        down,
+        left,
+        right,
+    };
+
+    pub const SplitResizeParameter = struct {
+        SplitResizeDirection,
+        u16,
+    };
+
+    // Extern because it is used in the embedded runtime ABI.
     pub const InspectorMode = enum(c_int) {
         toggle,
         show,
         hide,
     };
+
+    fn parseEnum(comptime T: type, value: []const u8) !T {
+        return std.meta.stringToEnum(T, value) orelse return Error.InvalidFormat;
+    }
+
+    fn parseInt(comptime T: type, value: []const u8) !T {
+        return std.fmt.parseInt(T, value, 10) catch return Error.InvalidFormat;
+    }
+
+    fn parseFloat(comptime T: type, value: []const u8) !T {
+        return std.fmt.parseFloat(T, value) catch return Error.InvalidFormat;
+    }
+
+    fn parseParameter(
+        comptime field: std.builtin.Type.UnionField,
+        param: []const u8,
+    ) !field.type {
+        return switch (@typeInfo(field.type)) {
+            .Enum => try parseEnum(field.type, param),
+            .Int => try parseInt(field.type, param),
+            .Float => try parseFloat(field.type, param),
+            .Struct => |info| blk: {
+                // Only tuples are supported to avoid ambiguity with field
+                // ordering
+                comptime assert(info.is_tuple);
+
+                var it = std.mem.split(u8, param, ",");
+                var value: field.type = undefined;
+                inline for (info.fields) |field_| {
+                    const next = it.next() orelse return Error.InvalidFormat;
+                    @field(value, field_.name) = switch (@typeInfo(field_.type)) {
+                        .Enum => try parseEnum(field_.type, next),
+                        .Int => try parseInt(field_.type, next),
+                        .Float => try parseFloat(field_.type, next),
+                        else => unreachable,
+                    };
+                }
+
+                // If we have extra parameters it is an error
+                if (it.next() != null) return Error.InvalidFormat;
+
+                break :blk value;
+            },
+
+            else => unreachable,
+        };
+    }
 
     /// Parse an action in the format of "key=value" where key is the
     /// action name and value is the action parameter. The parameter
@@ -266,35 +330,14 @@ pub const Action = union(enum) {
                     // Cursor keys can't be set currently
                     Action.CursorKey => return Error.InvalidAction,
 
-                    else => switch (@typeInfo(field.type)) {
-                        .Enum => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = input[idx + 1 ..];
-                            const value = std.meta.stringToEnum(
-                                field.type,
-                                param,
-                            ) orelse return Error.InvalidFormat;
-
-                            return @unionInit(Action, field.name, value);
-                        },
-
-                        .Int => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = input[idx + 1 ..];
-                            const value = std.fmt.parseInt(field.type, param, 10) catch
-                                return Error.InvalidFormat;
-                            return @unionInit(Action, field.name, value);
-                        },
-
-                        .Float => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = input[idx + 1 ..];
-                            const value = std.fmt.parseFloat(field.type, param) catch
-                                return Error.InvalidFormat;
-                            return @unionInit(Action, field.name, value);
-                        },
-
-                        else => unreachable,
+                    else => {
+                        const idx = colonIdx orelse return Error.InvalidFormat;
+                        const param = input[idx + 1 ..];
+                        return @unionInit(
+                            Action,
+                            field.name,
+                            try parseParameter(field, param),
+                        );
                     },
                 }
             }
@@ -316,24 +359,38 @@ pub const Action = union(enum) {
 
         switch (self) {
             inline else => |value| {
-                const Value = @TypeOf(value);
-                const value_info = @typeInfo(Value);
-
                 // All actions start with the tag.
                 try writer.print("{s}", .{@tagName(self)});
 
                 // Write the value depending on the type
-                switch (Value) {
-                    void => {},
-                    []const u8 => try writer.print(":{s}", .{value}),
-                    else => switch (value_info) {
-                        .Enum => try writer.print(":{s}", .{@tagName(value)}),
-                        .Float => try writer.print(":{d}", .{value}),
-                        .Int => try writer.print(":{d}", .{value}),
-                        .Struct => try writer.print("{} (not configurable)", .{value}),
-                        else => @compileError("unhandled type: " ++ @typeName(Value)),
-                    },
-                }
+                try writer.writeAll(":");
+                try formatValue(writer, value);
+            },
+        }
+    }
+
+    fn formatValue(
+        writer: anytype,
+        value: anytype,
+    ) !void {
+        const Value = @TypeOf(value);
+        const value_info = @typeInfo(Value);
+        switch (Value) {
+            void => {},
+            []const u8 => try writer.print("{s}", .{value}),
+            else => switch (value_info) {
+                .Enum => try writer.print("{s}", .{@tagName(value)}),
+                .Float => try writer.print("{d}", .{value}),
+                .Int => try writer.print("{d}", .{value}),
+                .Struct => |info| if (!info.is_tuple) {
+                    try writer.print("{} (not configurable)", .{value});
+                } else {
+                    inline for (info.fields, 0..) |field, i| {
+                        try formatValue(writer, @field(value, field.name));
+                        if (i + 1 < info.fields.len) try writer.writeAll(",");
+                    }
+                },
+                else => @compileError("unhandled type: " ++ @typeName(Value)),
             },
         }
     }
@@ -773,6 +830,27 @@ test "parse: action with float" {
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, 0.5), binding.action.scroll_page_fractional);
     }
+}
+
+test "parse: action with a tuple" {
+    const testing = std.testing;
+
+    // parameter
+    {
+        const binding = try parse("a=resize_split:up,10");
+        try testing.expect(binding.action == .resize_split);
+        try testing.expectEqual(Action.SplitResizeDirection.up, binding.action.resize_split[0]);
+        try testing.expectEqual(@as(u16, 10), binding.action.resize_split[1]);
+    }
+
+    // missing parameter
+    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up"));
+
+    // too many
+    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,10,12"));
+
+    // invalid type
+    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,four"));
 }
 
 test "set: maintains reverse mapping" {

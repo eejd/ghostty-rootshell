@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// A split view shows a left and right (or top and bottom) view with a divider in the middle to do resizing.
 /// The terminlogy "left" and "right" is always used but for vertical splits "left" is "top" and "right" is "bottom".
@@ -9,13 +10,20 @@ struct SplitView<L: View, R: View>: View {
     /// Direction of the split
     let direction: SplitViewDirection
     
+    /// If set, the split view supports programmatic resizing via events sent via the publisher.
+    /// Minimum increment (in points) that this split can be resized by, in
+    /// each direction. Both `height` and `width` should be whole numbers
+    /// greater than or equal to 1.0
+    let resizeIncrements: NSSize
+    let resizePublisher: PassthroughSubject<Double, Never>
+    
     /// The left and right views to render.
     let left: L
     let right: R
     
     /// The current fractional width of the split view. 0.5 means L/R are equally sized, for example.
     @State var split: CGFloat = 0.5
-    
+
     /// The visible size of the splitter, in points. The invisible size is a transparent hitbox that can still
     /// be used for getting a resize handle. The total width/height of the splitter is the sum of both.
     private let splitterVisibleSize: CGFloat = 1
@@ -38,15 +46,51 @@ struct SplitView<L: View, R: View>: View {
                     .position(splitterPoint)
                     .gesture(dragGesture(geo.size, splitterPoint: splitterPoint))
             }
+            .onReceive(resizePublisher) { value in
+                resize(for: geo.size, amount: value)
+            }
         }
     }
     
+    /// Initialize a split view. This view isn't programmatically resizable; it can only be resized
+    /// by manually dragging the divider.
     init(_ direction: SplitViewDirection, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
+        self.init(
+            direction,
+            resizeIncrements: .init(width: 1, height: 1),
+            resizePublisher: .init(),
+            left: left,
+            right: right
+        )
+    }
+    
+    /// Initialize a split view that supports programmatic resizing.
+    init(
+        _ direction: SplitViewDirection,
+        resizeIncrements: NSSize,
+        resizePublisher: PassthroughSubject<Double, Never>,
+        @ViewBuilder left: (() -> L),
+        @ViewBuilder right: (() -> R)
+    ) {
         self.direction = direction
+        self.resizeIncrements = resizeIncrements
+        self.resizePublisher = resizePublisher
         self.left = left()
         self.right = right()
     }
     
+    private func resize(for size: CGSize, amount: Double) {
+        switch (direction) {
+        case .horizontal:
+            split += amount / size.width
+        case .vertical:
+            split += amount / size.height
+        }
+
+        // Ensure split is clamped between 0 and 1
+        split = max(0.0, min(split, 1.0))
+    }
+
     private func dragGesture(_ size: CGSize, splitterPoint: CGPoint) -> some Gesture {
         return DragGesture()
             .onChanged { gesture in
@@ -72,10 +116,12 @@ struct SplitView<L: View, R: View>: View {
         case .horizontal:
             result.size.width = result.size.width * split
             result.size.width -= splitterVisibleSize / 2
+            result.size.width -= result.size.width.truncatingRemainder(dividingBy: self.resizeIncrements.width)
             
         case .vertical:
             result.size.height = result.size.height * split
             result.size.height -= splitterVisibleSize / 2
+            result.size.height -= result.size.height.truncatingRemainder(dividingBy: self.resizeIncrements.height)
         }
         
         return result

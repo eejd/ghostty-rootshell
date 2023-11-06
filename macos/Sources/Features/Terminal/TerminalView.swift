@@ -84,8 +84,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 }
                 
                 Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
-                    .ghosttyApp(ghostty.app!)
-                    .ghosttyConfig(ghostty.config!)
+                    .environmentObject(ghostty)
                     .focused($focused)
                     .onAppear { self.focused = true }
                     .onChange(of: focusedSurface) { newValue in

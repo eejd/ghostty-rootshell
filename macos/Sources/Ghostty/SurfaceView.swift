@@ -4,11 +4,11 @@ import GhosttyKit
 extension Ghostty {
     /// Render a terminal for the active app in the environment.
     struct Terminal: View {
-        @Environment(\.ghosttyApp) private var app
+        @EnvironmentObject private var ghostty: Ghostty.AppState
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
 
         var body: some View {
-            if let app = self.app {
+            if let app = self.ghostty.app {
                 SurfaceForApp(app) { surfaceView in
                     SurfaceWrapper(surfaceView: surfaceView)
                 }
@@ -48,7 +48,7 @@ extension Ghostty {
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
 
-        @Environment(\.ghosttyConfig) private var ghostty_config
+        @EnvironmentObject private var ghostty: Ghostty.AppState
 
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.
@@ -58,7 +58,7 @@ extension Ghostty {
         private var unfocusedOpacity: Double {
             var opacity: Double = 0.85
             let key = "unfocused-split-opacity"
-            _ = ghostty_config_get(ghostty_config, &opacity, key, UInt(key.count))
+            _ = ghostty_config_get(ghostty.config, &opacity, key, UInt(key.count))
             return 1 - opacity
         }
 
@@ -508,7 +508,7 @@ extension Ghostty {
             guard let window = self.window else { return }
             guard let windowControllerRaw = window.windowController else { return }
             guard let windowController = windowControllerRaw as? TerminalController else { return }
-            guard case .noSplit = windowController.surfaceTree else { return }
+            guard case .leaf = windowController.surfaceTree else { return }
             
             // If our window is full screen, we do not set the frame
             guard !window.styleMask.contains(.fullScreen) else { return }

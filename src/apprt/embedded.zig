@@ -92,6 +92,9 @@ pub const App = struct {
         /// Focus the previous/next split (if any).
         focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
 
+        /// Resize the current split.
+        resize_split: ?*const fn (SurfaceUD, input.SplitResizeDirection, u16) callconv(.C) void = null,
+
         /// Zoom the current split.
         toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
 
@@ -382,6 +385,15 @@ pub const Surface = struct {
         };
 
         func(self.opts.userdata, direction);
+    }
+
+    pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
+        const func = self.app.opts.resize_split orelse {
+            log.info("runtime embedder does not support resize split", .{});
+            return;
+        };
+
+        func(self.opts.userdata, direction, amount);
     }
 
     pub fn toggleSplitZoom(self: *const Surface) void {
@@ -1372,6 +1384,14 @@ pub const CAPI = struct {
     /// Focus on the next split (if any).
     export fn ghostty_surface_split_focus(ptr: *Surface, direction: input.SplitFocusDirection) void {
         ptr.gotoSplit(direction);
+    }
+
+    /// Resize the current split by moving the split divider in the given
+    /// direction. `direction` specifies which direction the split divider will
+    /// move relative to the focused split. `amount` is a fractional value
+    /// between 0 and 1 that specifies by how much the divider will move.
+    export fn ghostty_surface_split_resize(ptr: *Surface, direction: input.SplitResizeDirection, amount: u16) void {
+        ptr.resizeSplit(direction, amount);
     }
 
     /// Invoke an action on the surface.

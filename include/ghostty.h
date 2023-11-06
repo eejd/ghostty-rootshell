@@ -50,6 +50,13 @@ typedef enum {
 } ghostty_split_focus_direction_e;
 
 typedef enum {
+    GHOSTTY_SPLIT_RESIZE_UP,
+    GHOSTTY_SPLIT_RESIZE_DOWN,
+    GHOSTTY_SPLIT_RESIZE_LEFT,
+    GHOSTTY_SPLIT_RESIZE_RIGHT,
+} ghostty_split_resize_direction_e;
+
+typedef enum {
     GHOSTTY_INSPECTOR_TOGGLE,
     GHOSTTY_INSPECTOR_SHOW,
     GHOSTTY_INSPECTOR_HIDE,
@@ -333,6 +340,7 @@ typedef void (*ghostty_runtime_new_window_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_control_inspector_cb)(void *, ghostty_inspector_mode_e);
 typedef void (*ghostty_runtime_close_surface_cb)(void *, bool);
 typedef void (*ghostty_runtime_focus_split_cb)(void *, ghostty_split_focus_direction_e);
+typedef void (*ghostty_runtime_resize_split_cb)(void *, ghostty_split_resize_direction_e, uint16_t);
 typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void *);
 typedef void (*ghostty_runtime_goto_tab_cb)(void *, int32_t);
 typedef void (*ghostty_runtime_toggle_fullscreen_cb)(void *, ghostty_non_native_fullscreen_e);
@@ -357,6 +365,7 @@ typedef struct {
     ghostty_runtime_control_inspector_cb control_inspector_cb;
     ghostty_runtime_close_surface_cb close_surface_cb;
     ghostty_runtime_focus_split_cb focus_split_cb;
+    ghostty_runtime_resize_split_cb resize_split_cb;
     ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;
     ghostty_runtime_goto_tab_cb goto_tab_cb;
     ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
@@ -412,6 +421,7 @@ void ghostty_surface_ime_point(ghostty_surface_t, double *, double *);
 void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t, ghostty_split_focus_direction_e);
+void ghostty_surface_split_resize(ghostty_surface_t, ghostty_split_resize_direction_e, uint16_t);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char *, uintptr_t);
 void ghostty_surface_complete_clipboard_request(ghostty_surface_t, const char *, void *, bool);
 

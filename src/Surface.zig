@@ -2436,6 +2436,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement gotoSplit", .{});
         },
 
+        .resize_split => |param| {
+            if (@hasDecl(apprt.Surface, "resizeSplit")) {
+                const direction = param[0];
+                const amount = param[1];
+                self.rt_surface.resizeSplit(direction, amount);
+            } else log.warn("runtime doesn't implement resizeSplit", .{});
+        },
+
         .toggle_split_zoom => {
             if (@hasDecl(apprt.Surface, "toggleSplitZoom")) {
                 self.rt_surface.toggleSplitZoom();

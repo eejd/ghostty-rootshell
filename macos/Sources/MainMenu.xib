@@ -19,6 +19,10 @@
                 <outlet property="menuCopy" destination="Jqf-pv-Zcu" id="bKd-1C-oy9"/>
                 <outlet property="menuDecreaseFontSize" destination="kzb-SZ-dOA" id="Y1B-Vh-6Z2"/>
                 <outlet property="menuIncreaseFontSize" destination="CIH-ey-Z6x" id="hkc-9C-80E"/>
+                <outlet property="menuMoveSplitDividerDown" destination="Zj7-2W-fdF" id="997-LL-nlN"/>
+                <outlet property="menuMoveSplitDividerLeft" destination="wSR-ny-j1a" id="HCZ-CI-2ob"/>
+                <outlet property="menuMoveSplitDividerRight" destination="CcX-ql-QU4" id="rIn-PK-fVM"/>
+                <outlet property="menuMoveSplitDividerUp" destination="h9Y-40-3oo" id="dDi-Vq-I3r"/>
                 <outlet property="menuNewTab" destination="uTG-Vz-hJU" id="eMg-R3-SeS"/>
                 <outlet property="menuNewWindow" destination="Was-JA-tGl" id="lK7-3I-CPG"/>
                 <outlet property="menuNextSplit" destination="bD7-ei-wKU" id="LeT-xw-eh4"/>
@@ -257,6 +261,37 @@
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="splitMoveFocusRight:" target="-1" id="ELo-QZ-O6q"/>
+                                            </connections>
+                                        </menuItem>
+                                    </items>
+                                </menu>
+                            </menuItem>
+                            <menuItem title="Resize Split" id="BJO-3W-fkO" userLabel="Resize Split">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <menu key="submenu" title="Resize Split" id="t7T-Ti-0im">
+                                    <items>
+                                        <menuItem title="Move Divider Up" id="h9Y-40-3oo">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="moveSplitDividerUp:" target="-1" id="NhD-6U-Eq2"/>
+                                            </connections>
+                                        </menuItem>
+                                        <menuItem title="Move Divider Down" id="Zj7-2W-fdF">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="moveSplitDividerDown:" target="-1" id="jeD-bm-wJX"/>
+                                            </connections>
+                                        </menuItem>
+                                        <menuItem title="Move Divider Left" id="wSR-ny-j1a">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="moveSplitDividerLeft:" target="-1" id="mlg-SJ-ZZO"/>
+                                            </connections>
+                                        </menuItem>
+                                        <menuItem title="Move Divider Right" id="CcX-ql-QU4">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="moveSplitDividerRight:" target="-1" id="h3W-wY-PI7"/>
                                             </connections>
                                         </menuItem>
                                     </items>
