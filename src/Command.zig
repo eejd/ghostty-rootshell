@@ -112,145 +112,153 @@ pub fn start(self: *Command, alloc: Allocator) !void {
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    if (builtin.os.tag == .windows) {
-        const application_w = try std.unicode.utf8ToUtf16LeWithNull(arena, self.path);
-        const cwd_w = if (self.cwd) |cwd| try std.unicode.utf8ToUtf16LeWithNull(arena, cwd) else null;
-        const command_line_w = if (self.args.len > 0) b: {
-            const command_line = try windowsCreateCommandLine(arena, self.args);
-            break :b try std.unicode.utf8ToUtf16LeWithNull(arena, command_line);
-        } else null;
-        const env_w = if (self.env) |env_map| try createWindowsEnvBlock(arena, env_map) else null;
+    switch (builtin.os.tag) {
+        .windows => try self.startWindows(arena),
+        else => try self.startPosix(arena),
+    }
+}
 
-        const any_null_fd = self.stdin == null or self.stdout == null or self.stderr == null;
-        const null_fd = if (any_null_fd) try windows.OpenFile(
-            &[_]u16{ '\\', 'D', 'e', 'v', 'i', 'c', 'e', '\\', 'N', 'u', 'l', 'l' },
-            .{
-                .access_mask = windows.GENERIC_READ | windows.SYNCHRONIZE,
-                .share_access = windows.FILE_SHARE_READ,
-                .creation = windows.OPEN_EXISTING,
-                .io_mode = .blocking,
-            },
-        ) else null;
-        defer if (null_fd) |fd| std.os.close(fd);
+fn startPosix(self: *Command, arena: Allocator) !void {
+    // Null-terminate all our arguments
+    const pathZ = try arena.dupeZ(u8, self.path);
+    const argsZ = try arena.allocSentinel(?[*:0]u8, self.args.len, null);
+    for (self.args, 0..) |arg, i| argsZ[i] = (try arena.dupeZ(u8, arg)).ptr;
 
-        // TODO: In the case of having FDs instead of pty, need to set up attributes such that the
-        //       child process only inherits these handles, then set bInheritsHandles below.
+    // Determine our env vars
+    const envp = if (self.env) |env_map|
+        (try createNullDelimitedEnvMap(arena, env_map)).ptr
+    else if (builtin.link_libc)
+        std.c.environ
+    else
+        @compileError("missing env vars");
 
-        const attribute_list, const stdin, const stdout, const stderr = if (self.pseudo_console) |pseudo_console| b: {
-            var attribute_list_size: usize = undefined;
-            _ = windows.exp.kernel32.InitializeProcThreadAttributeList(
-                null,
-                1,
-                0,
-                &attribute_list_size,
-            );
+    // Fork
+    const pid = try std.os.fork();
+    if (pid != 0) {
+        // Parent, return immediately.
+        self.pid = @intCast(pid);
+        return;
+    }
 
-            const attribute_list_buf = try arena.alloc(u8, attribute_list_size);
-            if (windows.exp.kernel32.InitializeProcThreadAttributeList(
-                attribute_list_buf.ptr,
-                1,
-                0,
-                &attribute_list_size,
-            ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
+    // We are the child.
 
-            if (windows.exp.kernel32.UpdateProcThreadAttribute(
-                attribute_list_buf.ptr,
-                0,
-                windows.exp.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                pseudo_console,
-                @sizeOf(windows.exp.HPCON),
-                null,
-                null,
-            ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
+    // Setup our file descriptors for std streams.
+    if (self.stdin) |f| try setupFd(f.handle, os.STDIN_FILENO);
+    if (self.stdout) |f| try setupFd(f.handle, os.STDOUT_FILENO);
+    if (self.stderr) |f| try setupFd(f.handle, os.STDERR_FILENO);
 
-            break :b .{ attribute_list_buf.ptr, null, null, null };
-        } else b: {
-            const stdin = if (self.stdin) |f| f.handle else null_fd.?;
-            const stdout = if (self.stdout) |f| f.handle else null_fd.?;
-            const stderr = if (self.stderr) |f| f.handle else null_fd.?;
-            break :b .{ null, stdin, stdout, stderr };
-        };
+    // Setup our working directory
+    if (self.cwd) |cwd| try os.chdir(cwd);
 
-        var startup_info_ex = windows.exp.STARTUPINFOEX{
-            .StartupInfo = .{
-                .cb = if (attribute_list != null) @sizeOf(windows.exp.STARTUPINFOEX) else @sizeOf(windows.STARTUPINFOW),
-                .hStdError = stderr,
-                .hStdOutput = stdout,
-                .hStdInput = stdin,
-                .dwFlags = windows.STARTF_USESTDHANDLES,
-                .lpReserved = null,
-                .lpDesktop = null,
-                .lpTitle = null,
-                .dwX = 0,
-                .dwY = 0,
-                .dwXSize = 0,
-                .dwYSize = 0,
-                .dwXCountChars = 0,
-                .dwYCountChars = 0,
-                .dwFillAttribute = 0,
-                .wShowWindow = 0,
-                .cbReserved2 = 0,
-                .lpReserved2 = null,
-            },
-            .lpAttributeList = attribute_list,
-        };
+    // If the user requested a pre exec callback, call it now.
+    if (self.pre_exec) |f| f(self);
 
-        var flags: windows.DWORD = windows.exp.CREATE_UNICODE_ENVIRONMENT;
-        if (attribute_list != null) flags |= windows.exp.EXTENDED_STARTUPINFO_PRESENT;
+    // Finally, replace our process.
+    _ = std.os.execveZ(pathZ, argsZ, envp) catch null;
+}
 
-        var process_information: windows.PROCESS_INFORMATION = undefined;
-        if (windows.exp.kernel32.CreateProcessW(
-            application_w.ptr,
-            if (command_line_w) |w| w.ptr else null,
+fn startWindows(self: *Command, arena: Allocator) !void {
+    const application_w = try std.unicode.utf8ToUtf16LeWithNull(arena, self.path);
+    const cwd_w = if (self.cwd) |cwd| try std.unicode.utf8ToUtf16LeWithNull(arena, cwd) else null;
+    const command_line_w = if (self.args.len > 0) b: {
+        const command_line = try windowsCreateCommandLine(arena, self.args);
+        break :b try std.unicode.utf8ToUtf16LeWithNull(arena, command_line);
+    } else null;
+    const env_w = if (self.env) |env_map| try createWindowsEnvBlock(arena, env_map) else null;
+
+    const any_null_fd = self.stdin == null or self.stdout == null or self.stderr == null;
+    const null_fd = if (any_null_fd) try windows.OpenFile(
+        &[_]u16{ '\\', 'D', 'e', 'v', 'i', 'c', 'e', '\\', 'N', 'u', 'l', 'l' },
+        .{
+            .access_mask = windows.GENERIC_READ | windows.SYNCHRONIZE,
+            .share_access = windows.FILE_SHARE_READ,
+            .creation = windows.OPEN_EXISTING,
+            .io_mode = .blocking,
+        },
+    ) else null;
+    defer if (null_fd) |fd| std.os.close(fd);
+
+    // TODO: In the case of having FDs instead of pty, need to set up
+    // attributes such that the child process only inherits these handles,
+    // then set bInheritsHandles below.
+
+    const attribute_list, const stdin, const stdout, const stderr = if (self.pseudo_console) |pseudo_console| b: {
+        var attribute_list_size: usize = undefined;
+        _ = windows.exp.kernel32.InitializeProcThreadAttributeList(
             null,
-            null,
-            windows.TRUE,
-            flags,
-            if (env_w) |w| w.ptr else null,
-            if (cwd_w) |w| w.ptr else null,
-            @ptrCast(&startup_info_ex.StartupInfo),
-            &process_information,
+            1,
+            0,
+            &attribute_list_size,
+        );
+
+        const attribute_list_buf = try arena.alloc(u8, attribute_list_size);
+        if (windows.exp.kernel32.InitializeProcThreadAttributeList(
+            attribute_list_buf.ptr,
+            1,
+            0,
+            &attribute_list_size,
         ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
 
-        self.pid = process_information.hProcess;
-    } else {
-        // Null-terminate all our arguments
-        const pathZ = try arena.dupeZ(u8, self.path);
-        const argsZ = try arena.allocSentinel(?[*:0]u8, self.args.len, null);
-        for (self.args, 0..) |arg, i| argsZ[i] = (try arena.dupeZ(u8, arg)).ptr;
+        if (windows.exp.kernel32.UpdateProcThreadAttribute(
+            attribute_list_buf.ptr,
+            0,
+            windows.exp.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+            pseudo_console,
+            @sizeOf(windows.exp.HPCON),
+            null,
+            null,
+        ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
 
-        // Determine our env vars
-        const envp = if (self.env) |env_map|
-            (try createNullDelimitedEnvMap(arena, env_map)).ptr
-        else if (builtin.link_libc)
-            std.c.environ
-        else
-            @compileError("missing env vars");
+        break :b .{ attribute_list_buf.ptr, null, null, null };
+    } else b: {
+        const stdin = if (self.stdin) |f| f.handle else null_fd.?;
+        const stdout = if (self.stdout) |f| f.handle else null_fd.?;
+        const stderr = if (self.stderr) |f| f.handle else null_fd.?;
+        break :b .{ null, stdin, stdout, stderr };
+    };
 
-        // Fork
-        const pid = try std.os.fork();
-        if (pid != 0) {
-            // Parent, return immediately.
-            self.pid = @intCast(pid);
-            return;
-        }
+    var startup_info_ex = windows.exp.STARTUPINFOEX{
+        .StartupInfo = .{
+            .cb = if (attribute_list != null) @sizeOf(windows.exp.STARTUPINFOEX) else @sizeOf(windows.STARTUPINFOW),
+            .hStdError = stderr,
+            .hStdOutput = stdout,
+            .hStdInput = stdin,
+            .dwFlags = windows.STARTF_USESTDHANDLES,
+            .lpReserved = null,
+            .lpDesktop = null,
+            .lpTitle = null,
+            .dwX = 0,
+            .dwY = 0,
+            .dwXSize = 0,
+            .dwYSize = 0,
+            .dwXCountChars = 0,
+            .dwYCountChars = 0,
+            .dwFillAttribute = 0,
+            .wShowWindow = 0,
+            .cbReserved2 = 0,
+            .lpReserved2 = null,
+        },
+        .lpAttributeList = attribute_list,
+    };
 
-        // We are the child.
+    var flags: windows.DWORD = windows.exp.CREATE_UNICODE_ENVIRONMENT;
+    if (attribute_list != null) flags |= windows.exp.EXTENDED_STARTUPINFO_PRESENT;
 
-        // Setup our file descriptors for std streams.
-        if (self.stdin) |f| try setupFd(f.handle, os.STDIN_FILENO);
-        if (self.stdout) |f| try setupFd(f.handle, os.STDOUT_FILENO);
-        if (self.stderr) |f| try setupFd(f.handle, os.STDERR_FILENO);
+    var process_information: windows.PROCESS_INFORMATION = undefined;
+    if (windows.exp.kernel32.CreateProcessW(
+        application_w.ptr,
+        if (command_line_w) |w| w.ptr else null,
+        null,
+        null,
+        windows.TRUE,
+        flags,
+        if (env_w) |w| w.ptr else null,
+        if (cwd_w) |w| w.ptr else null,
+        @ptrCast(&startup_info_ex.StartupInfo),
+        &process_information,
+    ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
 
-        // Setup our working directory
-        if (self.cwd) |cwd| try os.chdir(cwd);
-
-        // If the user requested a pre exec callback, call it now.
-        if (self.pre_exec) |f| f(self);
-
-        // Finally, replace our process.
-        _ = std.os.execveZ(pathZ, argsZ, envp) catch null;
-    }
+    self.pid = process_information.hProcess;
 }
 
 fn setupFd(src: File.Handle, target: i32) !void {
