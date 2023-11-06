@@ -285,6 +285,7 @@ fullscreen: bool = false,
 /// The setting that will change the application class value.
 /// This is usefull if you want to have multiple instances of Ghostty
 /// running with separate classes making it possible to have unique behavior for each of them.
+/// This is currently only supported on Gtk builds.
 class: ?[:0]const u8 = null,
 
 /// The setting that will tell Ghostty which title to display.
