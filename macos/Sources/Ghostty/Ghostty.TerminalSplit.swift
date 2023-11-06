@@ -345,33 +345,36 @@ extension Ghostty {
         let neighbors: SplitNode.Neighbors
 
         var body: some View {
-            switch (node) {
-            case nil:
-                Color(.clear)
-                
-            case .noSplit(let leaf):
-                TerminalSplitLeaf(
-                    leaf: leaf,
-                    neighbors: neighbors,
-                    node: $node
-                )
+            Group {
+                switch (node) {
+                case nil:
+                    Color(.clear)
 
-            case .horizontal(let container):
-                TerminalSplitContainer(
-                    direction: .horizontal,
-                    neighbors: neighbors,
-                    node: $node,
-                    container: container
-                )
+                case .noSplit(let leaf):
+                    TerminalSplitLeaf(
+                        leaf: leaf,
+                        neighbors: neighbors,
+                        node: $node
+                    )
 
-            case .vertical(let container):
-                TerminalSplitContainer(
-                    direction: .vertical,
-                    neighbors: neighbors,
-                    node: $node,
-                    container: container
-                )
+                case .horizontal(let container):
+                    TerminalSplitContainer(
+                        direction: .horizontal,
+                        neighbors: neighbors,
+                        node: $node,
+                        container: container
+                    )
+
+                case .vertical(let container):
+                    TerminalSplitContainer(
+                        direction: .vertical,
+                        neighbors: neighbors,
+                        node: $node,
+                        container: container
+                    )
+                }
             }
+            .id(node)
         }
     }
     
