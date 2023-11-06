@@ -546,10 +546,8 @@ pub fn init(
         };
     }
 
-    if (config.fullscreen) {
-        if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
-            rt_surface.toggleFullscreen(config.@"macos-non-native-fullscreen");
-        } else log.warn("runtime doesn't implement toggleFullscreen", .{});
+    if (config.title) |title| {
+        try self.rt_surface.setTitle(title);
     }
 }
 
@@ -670,16 +668,15 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .change_config => |config| try self.changeConfig(config),
 
         .set_title => |*v| {
+            // We ignore the message in case the title was set via config.
+            if (self.config.title) |_| {
+                return;
+            }
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
-            if (self.config.title) |title| {
-                log.debug("setting title \"{s}\"", .{title});
-                try self.rt_surface.setTitle(title);
-            } else {
-                const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);
-                log.debug("changing title \"{s}\"", .{slice});
-                try self.rt_surface.setTitle(slice);
-            }
+            const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);
+            log.debug("changing title \"{s}\"", .{slice});
+            try self.rt_surface.setTitle(slice);
         },
 
         .set_mouse_shape => |shape| {
