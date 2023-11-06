@@ -101,8 +101,6 @@ pub const App = struct {
 
         /// Called when the cell size changes.
         set_cell_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
-
-        fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
     };
 
     /// Special values for the goto_tab callback.
