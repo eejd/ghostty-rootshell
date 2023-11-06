@@ -2,17 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const windows = @import("os/main.zig").windows;
 
-const c = switch (builtin.os.tag) {
-    .macos => @cImport({
-        @cInclude("sys/ioctl.h"); // ioctl and constants
-        @cInclude("util.h"); // openpty()
-    }),
-    else => @cImport({
-        @cInclude("sys/ioctl.h"); // ioctl and constants
-        @cInclude("pty.h");
-    }),
-};
-
 const log = std.log.scoped(.pty);
 
 /// Redeclare this winsize struct so we can just use a Zig struct. This
@@ -25,8 +14,6 @@ pub const winsize = extern struct {
     ws_ypixel: u16 = 600,
 };
 
-pub extern "c" fn setsid() std.c.pid_t;
-
 pub const Pty = if (builtin.os.tag == .windows)
     WindowsPty
 else
@@ -35,7 +22,7 @@ else
 /// Linux PTY creation and management. This is just a thin layer on top
 /// of Linux syscalls. The caller is responsible for detail-oriented handling
 /// of the returned file handles.
-pub const PosixPty = struct {
+const PosixPty = struct {
     pub const Fd = std.os.fd_t;
 
     // https://github.com/ziglang/zig/issues/13277
@@ -43,6 +30,19 @@ pub const PosixPty = struct {
     const TIOCSCTTY = if (builtin.os.tag == .macos) 536900705 else c.TIOCSCTTY;
     const TIOCSWINSZ = if (builtin.os.tag == .macos) 2148037735 else c.TIOCSWINSZ;
     const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
+    extern "c" fn setsid() std.c.pid_t;
+    const c = struct {
+        usingnamespace switch (builtin.os.tag) {
+            .macos => @cImport({
+                @cInclude("sys/ioctl.h"); // ioctl and constants
+                @cInclude("util.h"); // openpty()
+            }),
+            else => @cImport({
+                @cInclude("sys/ioctl.h"); // ioctl and constants
+                @cInclude("pty.h");
+            }),
+        };
+    };
 
     /// The file descriptors for the master and slave side of the pty.
     master: Fd,
@@ -128,7 +128,7 @@ pub const PosixPty = struct {
 };
 
 /// Windows PTY creation and management.
-pub const WindowsPty = struct {
+const WindowsPty = struct {
     pub const Fd = windows.HANDLE;
 
     // Process-wide counter for pipe names
@@ -150,10 +150,16 @@ pub const WindowsPty = struct {
         const pipe_path = std.fmt.bufPrintZ(
             &pipe_path_buf,
             "\\\\.\\pipe\\LOCAL\\ghostty-pty-{d}-{d}",
-            .{ windows.kernel32.GetCurrentProcessId(), pipe_name_counter.fetchAdd(1, .Monotonic) },
+            .{
+                windows.kernel32.GetCurrentProcessId(),
+                pipe_name_counter.fetchAdd(1, .Monotonic),
+            },
         ) catch unreachable;
 
-        const pipe_path_w_len = std.unicode.utf8ToUtf16Le(&pipe_path_buf_w, pipe_path) catch unreachable;
+        const pipe_path_w_len = std.unicode.utf8ToUtf16Le(
+            &pipe_path_buf_w,
+            pipe_path,
+        ) catch unreachable;
         pipe_path_buf_w[pipe_path_w_len] = 0;
         const pipe_path_w = pipe_path_buf_w[0..pipe_path_w_len :0];
 
@@ -165,7 +171,9 @@ pub const WindowsPty = struct {
 
         pty.in_pipe = windows.kernel32.CreateNamedPipeW(
             pipe_path_w.ptr,
-            windows.PIPE_ACCESS_OUTBOUND | windows.exp.FILE_FLAG_FIRST_PIPE_INSTANCE | windows.FILE_FLAG_OVERLAPPED,
+            windows.PIPE_ACCESS_OUTBOUND |
+                windows.exp.FILE_FLAG_FIRST_PIPE_INSTANCE |
+                windows.FILE_FLAG_OVERLAPPED,
             windows.PIPE_TYPE_BYTE,
             1,
             4096,
@@ -173,7 +181,9 @@ pub const WindowsPty = struct {
             0,
             &security_attributes,
         );
-        if (pty.in_pipe == windows.INVALID_HANDLE_VALUE) return windows.unexpectedError(windows.kernel32.GetLastError());
+        if (pty.in_pipe == windows.INVALID_HANDLE_VALUE) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
         errdefer _ = windows.kernel32.CloseHandle(pty.in_pipe);
 
         var security_attributes_read = security_attributes;
@@ -186,13 +196,17 @@ pub const WindowsPty = struct {
             windows.FILE_ATTRIBUTE_NORMAL,
             null,
         );
-        if (pty.in_pipe_pty == windows.INVALID_HANDLE_VALUE) return windows.unexpectedError(windows.kernel32.GetLastError());
+        if (pty.in_pipe_pty == windows.INVALID_HANDLE_VALUE) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
         errdefer _ = windows.kernel32.CloseHandle(pty.in_pipe_pty);
 
-        // The in_pipe needs to be created as a named pipe, since anonymous pipes created with CreatePipe do not
-        // support overlapped operations, and the IOCP backend of libxev only uses overlapped operations on files.
+        // The in_pipe needs to be created as a named pipe, since anonymous
+        // pipes created with CreatePipe do not support overlapped operations,
+        // and the IOCP backend of libxev only uses overlapped operations on files.
         //
-        // It would be ideal to use CreatePipe here, so that our pipe isn't visible to any other processes.
+        // It would be ideal to use CreatePipe here, so that our pipe isn't
+        // visible to any other processes.
 
         // if (windows.exp.kernel32.CreatePipe(&pty.in_pipe_pty, &pty.in_pipe, null, 0) == 0) {
         //     return windows.unexpectedError(windows.kernel32.GetLastError());
@@ -222,7 +236,6 @@ pub const WindowsPty = struct {
             0,
             &pty.pseudo_console,
         );
-
         if (result != windows.S_OK) return error.Unexpected;
 
         pty.size = size;
@@ -255,8 +268,8 @@ pub const WindowsPty = struct {
     }
 };
 
-const testing = std.testing;
 test {
+    const testing = std.testing;
     var ws: winsize = .{
         .ws_row = 50,
         .ws_col = 80,
