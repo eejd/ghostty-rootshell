@@ -509,7 +509,7 @@ fn isValidAppId(app_id: [:0]const u8) bool {
         switch (char) {
             'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
             '.' => hasDot = true,
-            0 => return false,
+            else => return false,
         }
     }
     if (!hasDot) return false;
