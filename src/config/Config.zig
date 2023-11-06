@@ -281,6 +281,10 @@ command: ?[]const u8 = null,
 /// Start new windows in fullscreen. This setting applies to new
 /// windows and does not apply to tabs, splits, etc. However, this
 /// setting will apply to all new windows, not just the first one.
+///
+/// On macOS, this always creates the window in native fullscreen.
+/// Non-native fullscreen is not currently supported with this
+/// setting.
 fullscreen: bool = false,
 
 /// The title Ghostty will use for the window. This will force the title
