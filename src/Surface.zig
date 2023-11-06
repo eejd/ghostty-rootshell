@@ -1121,6 +1121,9 @@ pub fn keyCallback(
         self.hideMouse();
     }
 
+    // When we are in the middle of a mouse event and we press shift,
+    // we change the mouse to a text shape so that selection appears
+    // possible.
     if (self.io.terminal.flags.mouse_event != .none and
         event.physical_key == .left_shift or
         event.physical_key == .right_shift)
@@ -1128,7 +1131,7 @@ pub fn keyCallback(
         switch (event.action) {
             .press => try self.rt_surface.setMouseShape(.text),
             .release => try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape),
-            else => {},
+            .repeat => {},
         }
     }
 

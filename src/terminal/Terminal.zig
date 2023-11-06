@@ -85,6 +85,7 @@ previous_char: ?u21 = null,
 /// The modes that this terminal currently has active.
 modes: modes.ModeState = .{},
 
+/// The most recently set mouse shape for the terminal.
 mouse_shape: mouse_shape.MouseShape = .text,
 
 /// These are just a packed set of flags we may set on the terminal.
