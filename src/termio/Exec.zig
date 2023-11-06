@@ -68,7 +68,7 @@ grid_size: renderer.GridSize,
 /// The default cursor style. We need to know this so that we can set
 /// it when a CSI q with default is called.
 default_cursor_style: terminal.Cursor.Style,
-default_cursor_blink: bool,
+default_cursor_blink: ?bool,
 
 /// Default foreground color for OSC 10 reporting.
 default_foreground_color: terminal.color.RGB,
@@ -89,7 +89,7 @@ pub const DerivedConfig = struct {
     palette: terminal.color.Palette,
     image_storage_limit: usize,
     cursor_style: terminal.Cursor.Style,
-    cursor_blink: bool,
+    cursor_blink: ?bool,
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -139,7 +139,10 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     try term.secondary_screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
 
     // Set default cursor blink settings
-    term.modes.set(.cursor_blinking, opts.config.cursor_blink);
+    term.modes.set(
+        .cursor_blinking,
+        opts.config.cursor_blink orelse true,
+    );
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
@@ -1321,7 +1324,7 @@ const StreamHandler = struct {
     /// set to true when we're currently in the default cursor state.
     default_cursor: bool = true,
     default_cursor_style: terminal.Cursor.Style,
-    default_cursor_blink: bool,
+    default_cursor_blink: ?bool,
     default_foreground_color: terminal.color.RGB,
     default_background_color: terminal.color.RGB,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -1343,7 +1346,7 @@ const StreamHandler = struct {
     pub fn changeDefaultCursor(
         self: *StreamHandler,
         style: terminal.Cursor.Style,
-        blink: bool,
+        blink: ?bool,
     ) void {
         self.default_cursor_style = style;
         self.default_cursor_blink = blink;
@@ -1602,6 +1605,41 @@ const StreamHandler = struct {
         // terminal locks because it is only called from process() which
         // grabs the lock.
 
+        // If we are setting cursor blinking, we ignore it if we have
+        // a default cursor blink setting set. This is a really weird
+        // behavior so this comment will go deep into trying to explain it.
+        //
+        // There are two ways to set cursor blinks: DECSCUSR (CSI _ q)
+        // and DEC mode 12. DECSCUSR is the modern approach and has a
+        // way to revert to the "default" (as defined by the terminal)
+        // cursor style and blink by doing "CSI 0 q". DEC mode 12 controls
+        // blinking and is either on or off and has no way to set a
+        // default. DEC mode 12 is also the more antiquated approach.
+        //
+        // The problem is that if the user specifies a desired default
+        // cursor blink with `cursor-style-blink`, the moment a running
+        // program uses DEC mode 12, the cursor blink can never be reset
+        // to the default without an explicit DECSCUSR. But if a program
+        // is using mode 12, it is by definition not using DECSCUSR.
+        // This makes for somewhat annoying interactions where a poorly
+        // (or legacy) behaved program will stop blinking, and it simply
+        // never restarts.
+        //
+        // To get around this, we have a special case where if the user
+        // specifies some explicit default cursor blink desire, we ignore
+        // DEC mode 12. We allow DECSCUSR to still set the cursor blink
+        // because programs using DECSCUSR usually are well behaved and
+        // reset the cursor blink to the default when they exit.
+        //
+        // To be extra safe, users can also add a manual `CSI 0 q` to
+        // their shell config when they render prompts to ensure the
+        // cursor is exactly as they request.
+        if (mode == .cursor_blinking and
+            self.default_cursor_blink != null)
+        {
+            return;
+        }
+
         // We first always set the raw mode on our mode state.
         self.terminal.modes.set(mode, enabled);
 
@@ -1756,7 +1794,10 @@ const StreamHandler = struct {
             .default => {
                 self.default_cursor = true;
                 self.terminal.screen.cursor.style = self.default_cursor_style;
-                self.terminal.modes.set(.cursor_blinking, self.default_cursor_blink);
+                self.terminal.modes.set(
+                    .cursor_blinking,
+                    self.default_cursor_blink orelse true,
+                );
             },
 
             .blinking_block => {
