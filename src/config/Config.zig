@@ -280,6 +280,7 @@ command: ?[]const u8 = null,
 
 /// The setting to tell Ghostty to start in fullscreen mode.
 /// By default with will start windowed.
+/// New windows created when this is set to true will not start in fullscreen.
 fullscreen: bool = false,
 
 /// The setting that will change the application class value.
