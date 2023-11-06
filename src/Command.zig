@@ -14,16 +14,12 @@
 //!   * posix_spawn is used for Mac, but doesn't support the necessary
 //!     features for tty setup.
 //!
-//! TODO:
-//!
-//!   * Windows
-//!   * Mac
-//!
 const Command = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
 const internal_os = @import("os/main.zig");
+const windows = internal_os.windows;
 const TempDir = internal_os.TempDir;
 const mem = std.mem;
 const os = std.os;
@@ -64,15 +60,22 @@ stderr: ?File = null,
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
 pre_exec: ?*const PreExecFn = null,
 
+/// If set, then the process will be created attached to this pseudo console.
+/// `stdin`, `stdout`, and `stderr` will be ignored if set.
+pseudo_console: if (builtin.os.tag == .windows) ?windows.exp.HPCON else void =
+    if (builtin.os.tag == .windows) null else {},
+
 /// User data that is sent to the callback. Set with setData and getData
 /// for a more user-friendly API.
 data: ?*anyopaque = null,
 
 /// Process ID is set after start is called.
-pid: ?i32 = null,
+pid: ?os.pid_t = null,
 
 /// The various methods a process may exit.
-pub const Exit = union(enum) {
+pub const Exit = if (builtin.os.tag == .windows) union(enum) {
+    Exited: u32,
+} else union(enum) {
     /// Exited by normal exit call, value is exit status
     Exited: u8,
 
@@ -109,6 +112,13 @@ pub fn start(self: *Command, alloc: Allocator) !void {
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
+    switch (builtin.os.tag) {
+        .windows => try self.startWindows(arena),
+        else => try self.startPosix(arena),
+    }
+}
+
+fn startPosix(self: *Command, arena: Allocator) !void {
     // Null-terminate all our arguments
     const pathZ = try arena.dupeZ(u8, self.path);
     const argsZ = try arena.allocSentinel(?[*:0]u8, self.args.len, null);
@@ -121,9 +131,6 @@ pub fn start(self: *Command, alloc: Allocator) !void {
         std.c.environ
     else
         @compileError("missing env vars");
-
-    if (builtin.os.tag == .windows)
-        @panic("start not implemented on windows");
 
     // Fork
     const pid = try std.os.fork();
@@ -148,6 +155,110 @@ pub fn start(self: *Command, alloc: Allocator) !void {
 
     // Finally, replace our process.
     _ = std.os.execveZ(pathZ, argsZ, envp) catch null;
+}
+
+fn startWindows(self: *Command, arena: Allocator) !void {
+    const application_w = try std.unicode.utf8ToUtf16LeWithNull(arena, self.path);
+    const cwd_w = if (self.cwd) |cwd| try std.unicode.utf8ToUtf16LeWithNull(arena, cwd) else null;
+    const command_line_w = if (self.args.len > 0) b: {
+        const command_line = try windowsCreateCommandLine(arena, self.args);
+        break :b try std.unicode.utf8ToUtf16LeWithNull(arena, command_line);
+    } else null;
+    const env_w = if (self.env) |env_map| try createWindowsEnvBlock(arena, env_map) else null;
+
+    const any_null_fd = self.stdin == null or self.stdout == null or self.stderr == null;
+    const null_fd = if (any_null_fd) try windows.OpenFile(
+        &[_]u16{ '\\', 'D', 'e', 'v', 'i', 'c', 'e', '\\', 'N', 'u', 'l', 'l' },
+        .{
+            .access_mask = windows.GENERIC_READ | windows.SYNCHRONIZE,
+            .share_access = windows.FILE_SHARE_READ,
+            .creation = windows.OPEN_EXISTING,
+            .io_mode = .blocking,
+        },
+    ) else null;
+    defer if (null_fd) |fd| std.os.close(fd);
+
+    // TODO: In the case of having FDs instead of pty, need to set up
+    // attributes such that the child process only inherits these handles,
+    // then set bInheritsHandles below.
+
+    const attribute_list, const stdin, const stdout, const stderr = if (self.pseudo_console) |pseudo_console| b: {
+        var attribute_list_size: usize = undefined;
+        _ = windows.exp.kernel32.InitializeProcThreadAttributeList(
+            null,
+            1,
+            0,
+            &attribute_list_size,
+        );
+
+        const attribute_list_buf = try arena.alloc(u8, attribute_list_size);
+        if (windows.exp.kernel32.InitializeProcThreadAttributeList(
+            attribute_list_buf.ptr,
+            1,
+            0,
+            &attribute_list_size,
+        ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
+
+        if (windows.exp.kernel32.UpdateProcThreadAttribute(
+            attribute_list_buf.ptr,
+            0,
+            windows.exp.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+            pseudo_console,
+            @sizeOf(windows.exp.HPCON),
+            null,
+            null,
+        ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
+
+        break :b .{ attribute_list_buf.ptr, null, null, null };
+    } else b: {
+        const stdin = if (self.stdin) |f| f.handle else null_fd.?;
+        const stdout = if (self.stdout) |f| f.handle else null_fd.?;
+        const stderr = if (self.stderr) |f| f.handle else null_fd.?;
+        break :b .{ null, stdin, stdout, stderr };
+    };
+
+    var startup_info_ex = windows.exp.STARTUPINFOEX{
+        .StartupInfo = .{
+            .cb = if (attribute_list != null) @sizeOf(windows.exp.STARTUPINFOEX) else @sizeOf(windows.STARTUPINFOW),
+            .hStdError = stderr,
+            .hStdOutput = stdout,
+            .hStdInput = stdin,
+            .dwFlags = windows.STARTF_USESTDHANDLES,
+            .lpReserved = null,
+            .lpDesktop = null,
+            .lpTitle = null,
+            .dwX = 0,
+            .dwY = 0,
+            .dwXSize = 0,
+            .dwYSize = 0,
+            .dwXCountChars = 0,
+            .dwYCountChars = 0,
+            .dwFillAttribute = 0,
+            .wShowWindow = 0,
+            .cbReserved2 = 0,
+            .lpReserved2 = null,
+        },
+        .lpAttributeList = attribute_list,
+    };
+
+    var flags: windows.DWORD = windows.exp.CREATE_UNICODE_ENVIRONMENT;
+    if (attribute_list != null) flags |= windows.exp.EXTENDED_STARTUPINFO_PRESENT;
+
+    var process_information: windows.PROCESS_INFORMATION = undefined;
+    if (windows.exp.kernel32.CreateProcessW(
+        application_w.ptr,
+        if (command_line_w) |w| w.ptr else null,
+        null,
+        null,
+        windows.TRUE,
+        flags,
+        if (env_w) |w| w.ptr else null,
+        if (cwd_w) |w| w.ptr else null,
+        @ptrCast(&startup_info_ex.StartupInfo),
+        &process_information,
+    ) == 0) return windows.unexpectedError(windows.kernel32.GetLastError());
+
+    self.pid = process_information.hProcess;
 }
 
 fn setupFd(src: File.Handle, target: i32) !void {
@@ -190,8 +301,22 @@ fn setupFd(src: File.Handle, target: i32) !void {
 
 /// Wait for the command to exit and return information about how it exited.
 pub fn wait(self: Command, block: bool) !Exit {
-    if (builtin.os.tag == .windows)
-        @panic("wait not implemented on windows");
+    if (comptime builtin.os.tag == .windows) {
+        // Block until the process exits. This returns immediately if the
+        // process already exited.
+        const result = windows.kernel32.WaitForSingleObject(self.pid.?, windows.INFINITE);
+        if (result == windows.WAIT_FAILED) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
+
+        var exit_code: windows.DWORD = undefined;
+        var has_code = windows.kernel32.GetExitCodeProcess(self.pid.?, &exit_code) != 0;
+        if (!has_code) {
+            return windows.unexpectedError(windows.kernel32.GetLastError());
+        }
+
+        return .{ .Exited = exit_code };
+    }
 
     const res = if (block) std.os.waitpid(self.pid.?, 0) else res: {
         // We specify NOHANG because its not our fault if the process we launch
@@ -325,6 +450,79 @@ fn createNullDelimitedEnvMap(arena: mem.Allocator, env_map: *const EnvMap) ![:nu
     return envp_buf;
 }
 
+// Copied from Zig. This is a publicly exported function but there is no
+// way to get it from the std package.
+fn createWindowsEnvBlock(allocator: mem.Allocator, env_map: *const EnvMap) ![]u16 {
+    // count bytes needed
+    const max_chars_needed = x: {
+        var max_chars_needed: usize = 4; // 4 for the final 4 null bytes
+        var it = env_map.iterator();
+        while (it.next()) |pair| {
+            // +1 for '='
+            // +1 for null byte
+            max_chars_needed += pair.key_ptr.len + pair.value_ptr.len + 2;
+        }
+        break :x max_chars_needed;
+    };
+    const result = try allocator.alloc(u16, max_chars_needed);
+    errdefer allocator.free(result);
+
+    var it = env_map.iterator();
+    var i: usize = 0;
+    while (it.next()) |pair| {
+        i += try std.unicode.utf8ToUtf16Le(result[i..], pair.key_ptr.*);
+        result[i] = '=';
+        i += 1;
+        i += try std.unicode.utf8ToUtf16Le(result[i..], pair.value_ptr.*);
+        result[i] = 0;
+        i += 1;
+    }
+    result[i] = 0;
+    i += 1;
+    result[i] = 0;
+    i += 1;
+    result[i] = 0;
+    i += 1;
+    result[i] = 0;
+    i += 1;
+    return try allocator.realloc(result, i);
+}
+
+/// Copied from Zig. This function could be made public in child_process.zig instead.
+fn windowsCreateCommandLine(allocator: mem.Allocator, argv: []const []const u8) ![:0]u8 {
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
+
+    for (argv, 0..) |arg, arg_i| {
+        if (arg_i != 0) try buf.append(' ');
+        if (mem.indexOfAny(u8, arg, " \t\n\"") == null) {
+            try buf.appendSlice(arg);
+            continue;
+        }
+        try buf.append('"');
+        var backslash_count: usize = 0;
+        for (arg) |byte| {
+            switch (byte) {
+                '\\' => backslash_count += 1,
+                '"' => {
+                    try buf.appendNTimes('\\', backslash_count * 2 + 1);
+                    try buf.append('"');
+                    backslash_count = 0;
+                },
+                else => {
+                    try buf.appendNTimes('\\', backslash_count);
+                    try buf.append(byte);
+                    backslash_count = 0;
+                },
+            }
+        }
+        try buf.appendNTimes('\\', backslash_count * 2);
+        try buf.append('"');
+    }
+
+    return buf.toOwnedSliceSentinel(0);
+}
+
 test "createNullDelimitedEnvMap" {
     const allocator = testing.allocator;
     var envmap = EnvMap.init(allocator);
@@ -378,14 +576,30 @@ test "Command: pre exec" {
     try testing.expect(exit.Exited == 42);
 }
 
+fn createTestStdout(dir: std.fs.Dir) !File {
+    const file = try dir.createFile("stdout.txt", .{ .read = true });
+    if (builtin.os.tag == .windows) {
+        try windows.SetHandleInformation(
+            file.handle,
+            windows.HANDLE_FLAG_INHERIT,
+            windows.HANDLE_FLAG_INHERIT,
+        );
+    }
+
+    return file;
+}
+
 test "Command: redirect stdout to file" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
     var td = try TempDir.init();
     defer td.deinit();
-    var stdout = try td.dir.createFile("stdout.txt", .{ .read = true });
+    var stdout = try createTestStdout(td.dir);
     defer stdout.close();
 
-    var cmd: Command = .{
+    var cmd: Command = if (builtin.os.tag == .windows) .{
+        .path = "C:\\Windows\\System32\\whoami.exe",
+        .args = &.{"C:\\Windows\\System32\\whoami.exe"},
+        .stdout = stdout,
+    } else .{
         .path = "/usr/bin/env",
         .args = &.{ "/usr/bin/env", "-v" },
         .stdout = stdout,
@@ -395,7 +609,7 @@ test "Command: redirect stdout to file" {
     try testing.expect(cmd.pid != null);
     const exit = try cmd.wait(true);
     try testing.expect(exit == .Exited);
-    try testing.expect(exit.Exited == 0);
+    try testing.expectEqual(@as(u32, 0), @as(u32, exit.Exited));
 
     // Read our stdout
     try stdout.seekTo(0);
@@ -405,17 +619,21 @@ test "Command: redirect stdout to file" {
 }
 
 test "Command: custom env vars" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
     var td = try TempDir.init();
     defer td.deinit();
-    var stdout = try td.dir.createFile("stdout.txt", .{ .read = true });
+    var stdout = try createTestStdout(td.dir);
     defer stdout.close();
 
     var env = EnvMap.init(testing.allocator);
     defer env.deinit();
     try env.put("VALUE", "hello");
 
-    var cmd: Command = .{
+    var cmd: Command = if (builtin.os.tag == .windows) .{
+        .path = "C:\\Windows\\System32\\cmd.exe",
+        .args = &.{ "C:\\Windows\\System32\\cmd.exe", "/C", "echo %VALUE%" },
+        .stdout = stdout,
+        .env = &env,
+    } else .{
         .path = "/usr/bin/env",
         .args = &.{ "/usr/bin/env", "sh", "-c", "echo $VALUE" },
         .stdout = stdout,
@@ -432,17 +650,26 @@ test "Command: custom env vars" {
     try stdout.seekTo(0);
     const contents = try stdout.readToEndAlloc(testing.allocator, 4096);
     defer testing.allocator.free(contents);
-    try testing.expectEqualStrings("hello\n", contents);
+
+    if (builtin.os.tag == .windows) {
+        try testing.expectEqualStrings("hello\r\n", contents);
+    } else {
+        try testing.expectEqualStrings("hello\n", contents);
+    }
 }
 
 test "Command: custom working directory" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
     var td = try TempDir.init();
     defer td.deinit();
-    var stdout = try td.dir.createFile("stdout.txt", .{ .read = true });
+    var stdout = try createTestStdout(td.dir);
     defer stdout.close();
 
-    var cmd: Command = .{
+    var cmd: Command = if (builtin.os.tag == .windows) .{
+        .path = "C:\\Windows\\System32\\cmd.exe",
+        .args = &.{ "C:\\Windows\\System32\\cmd.exe", "/C", "cd" },
+        .stdout = stdout,
+        .cwd = "C:\\Windows\\System32",
+    } else .{
         .path = "/usr/bin/env",
         .args = &.{ "/usr/bin/env", "sh", "-c", "pwd" },
         .stdout = stdout,
@@ -459,5 +686,10 @@ test "Command: custom working directory" {
     try stdout.seekTo(0);
     const contents = try stdout.readToEndAlloc(testing.allocator, 4096);
     defer testing.allocator.free(contents);
-    try testing.expectEqualStrings("/usr/bin\n", contents);
+
+    if (builtin.os.tag == .windows) {
+        try testing.expectEqualStrings("C:\\Windows\\System32\r\n", contents);
+    } else {
+        try testing.expectEqualStrings("/usr/bin\n", contents);
+    }
 }

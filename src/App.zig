@@ -61,11 +61,8 @@ pub fn create(
 
     // Find our resources directory once for the app so every launch
     // hereafter can use this cached value.
-    var resources_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    const resources_dir = if (try internal_os.resourcesDir(&resources_buf)) |dir|
-        try alloc.dupe(u8, dir)
-    else
-        null;
+    const resources_dir = try internal_os.resourcesDir(alloc);
+    errdefer if (resources_dir) |dir| alloc.free(dir);
 
     app.* = .{
         .alloc = alloc,
