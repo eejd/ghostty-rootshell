@@ -48,7 +48,7 @@ things, but I've been using it full time since April 2022.
 | ------------------ | ------------------------------------------------------------------------ | -------------------------- |
 | macOS              | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip) | MacOS 12+ Universal Binary |
 | Linux              | [Build from Source](#developing-ghostty)                                 |                            |
-| Windows            | n/a                                                                      | Not supported yet          |
+| Windows            | [Build from Source](#developing-ghostty)                                 | [Notes](#windows-notes)    |
 
 ### Configuration
 
@@ -439,13 +439,30 @@ $ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
 ...
 ```
 
+### Windows Notes
+
+Windows support is still a [work-in-progress](https://github.com/mitchellh/ghostty/issues/437).
+The current status is that a bare bones glfw-based build _works_! The experience
+with this build is super minimal: there are no native experiences, only a
+single window is supported, no tabs, etc. Therefore, the current status is
+simply that the core terminal experience works.
+
+If you want to help with Windows development, please see the
+[tracking issue](https://github.com/mitchellh/ghostty/issues/437). We plan
+on vastly improving this experience over time.
+
 ### Linting
 
-Ghostty's docs and resources (not including Zig code) are linted using [Prettier](https://prettier.io) with out-of-the-box settings. A Prettier CI check will fail builds with improper formatting. Therefore, if you are modifying anything Prettier will lint, you may want to install it locally and run this from the repo root before you commit:
+Ghostty's docs and resources (not including Zig code) are linted using
+[Prettier](https://prettier.io) with out-of-the-box settings. A Prettier CI
+check will fail builds with improper formatting. Therefore, if you are
+modifying anything Prettier will lint, you may want to install it locally and
+run this from the repo root before you commit:
 
 ```
 npm install -g prettier
 prettier --write .
 ```
 
-Or simply install one of the many Prettier extensions out there for your editor of choice.
+Or simply install one of the many Prettier extensions out there for your
+editor of choice.
