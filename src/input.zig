@@ -11,6 +11,7 @@ pub const KeyEncoder = @import("input/KeyEncoder.zig");
 pub const InspectorMode = Binding.Action.InspectorMode;
 pub const SplitDirection = Binding.Action.SplitDirection;
 pub const SplitFocusDirection = Binding.Action.SplitFocusDirection;
+pub const SplitResizeDirection = Binding.Action.SplitResizeDirection;
 
 // Keymap is only available on macOS right now. We could implement it
 // in theory for XKB too on Linux but we don't need it right now.

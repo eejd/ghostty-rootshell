@@ -179,6 +179,10 @@ pub const Action = union(enum) {
     /// zoom/unzoom the current split.
     toggle_split_zoom: void,
 
+    /// Resize the current split by moving the split divider in the given
+    /// direction
+    resize_split: SplitResizeParameter,
+
     /// Show, hide, or toggle the terminal inspector for the currently
     /// focused terminal.
     inspector: InspectorMode,
@@ -225,6 +229,19 @@ pub const Action = union(enum) {
         left,
         bottom,
         right,
+    };
+
+    // Extern because it is used in the embedded runtime ABI.
+    pub const SplitResizeDirection = enum(c_int) {
+        up,
+        down,
+        left,
+        right,
+    };
+
+    pub const SplitResizeParameter = struct {
+        SplitResizeDirection,
+        u16,
     };
 
     // Extern because it is used in the embedded runtime ABI.
