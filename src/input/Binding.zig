@@ -57,10 +57,24 @@ pub fn parse(raw_input: []const u8) !Binding {
                     if (std.mem.eql(u8, part, field.name)) {
                         // Repeat not allowed
                         if (@field(result.mods, field.name)) return Error.InvalidFormat;
-
                         @field(result.mods, field.name) = true;
                         continue :loop;
                     }
+                }
+            }
+
+            // Alias modifiers
+            const alias_mods = .{
+                .{ "cmd", "super" },    .{ "command", "super" },
+                .{ "opt", "alt" },      .{ "option", "alt" },
+                .{ "control", "ctrl" },
+            };
+            inline for (alias_mods) |pair| {
+                if (std.mem.eql(u8, part, pair[0])) {
+                    // Repeat not allowed
+                    if (@field(result.mods, pair[1])) return Error.InvalidFormat;
+                    @field(result.mods, pair[1]) = true;
+                    continue :loop;
                 }
             }
 
@@ -752,6 +766,48 @@ test "parse: triggers" {
 
     // multiple character
     try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
+}
+
+test "parse: modifier aliases" {
+    const testing = std.testing;
+
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .super = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("cmd+a=ignore"));
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .super = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("command+a=ignore"));
+
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .alt = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("opt+a=ignore"));
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .alt = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("option+a=ignore"));
+
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .ctrl = true },
+            .key = .a,
+        },
+        .action = .{ .ignore = {} },
+    }, try parse("control+a=ignore"));
 }
 
 test "parse: action invalid" {

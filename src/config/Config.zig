@@ -335,6 +335,11 @@ class: ?[:0]const u8 = null,
 ///     but valid.
 ///   - only a single key input is allowed, "ctrl+a+b" is invalid.
 ///
+/// Valid modifiers are "shift", "ctrl" (alias: "control"),
+/// "alt" (alias: "opt", "option"), and "super" (alias: "cmd", "command").
+/// You may use the modifier or the alias. When debugging keybinds,
+/// the non-aliased modifier will always be used in output.
+///
 /// Action is the action to take when the trigger is satisfied. It takes
 /// the format "action" or "action:param". The latter form is only valid
 /// if the action requires a parameter.
