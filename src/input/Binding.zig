@@ -288,6 +288,9 @@ pub const Action = union(enum) {
                     };
                 }
 
+                // If we have extra parameters it is an error
+                if (it.next() != null) return Error.InvalidFormat;
+
                 break :blk value;
             },
 
@@ -827,6 +830,27 @@ test "parse: action with float" {
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, 0.5), binding.action.scroll_page_fractional);
     }
+}
+
+test "parse: action with a tuple" {
+    const testing = std.testing;
+
+    // parameter
+    {
+        const binding = try parse("a=resize_split:up,10");
+        try testing.expect(binding.action == .resize_split);
+        try testing.expectEqual(Action.SplitResizeDirection.up, binding.action.resize_split[0]);
+        try testing.expectEqual(@as(u16, 10), binding.action.resize_split[1]);
+    }
+
+    // missing parameter
+    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up"));
+
+    // too many
+    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,10,12"));
+
+    // invalid type
+    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,four"));
 }
 
 test "set: maintains reverse mapping" {
