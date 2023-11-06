@@ -104,7 +104,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // Our app ID determines uniqueness and maps to our desktop file.
     // We append "-debug" to the ID if we're in debug mode so that we
     // can develop Ghostty in Ghostty.
-    const default_id = "com.mitchellh.ghostty";
     const app_id: [:0]const u8 = app_id: {
         if (config.class) |class| {
             if (isValidAppId(class)) {
@@ -114,7 +113,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             }
         }
 
-        break :app_id if (builtin.mode == .Debug) "com.mitchellh.ghostty-debug" else default_id;
+        const default_id = "com.mitchellh.ghostty";
+        break :app_id if (builtin.mode == .Debug) default_id ++ "-debug" else default_id;
     };
 
     // Create our GTK Application which encapsulates our process.
