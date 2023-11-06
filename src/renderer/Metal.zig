@@ -421,7 +421,7 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     self.font_group.group.sprite = font.sprite.Face{
         .width = self.cell_size.width,
         .height = self.cell_size.height,
-        .thickness = 2 * @as(u32, if (self.config.font_thicken) 2 else 1),
+        .thickness = metrics.underline_thickness * @as(u32, if (self.config.font_thicken) 2 else 1),
         .underline_position = metrics.underline_position,
     };
 
