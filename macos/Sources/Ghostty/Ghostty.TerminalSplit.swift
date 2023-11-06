@@ -267,19 +267,10 @@ extension Ghostty {
         @Binding var node: SplitNode?
         @StateObject var container: SplitNode.Container
 
-        @EnvironmentObject private var ghostty: Ghostty.AppState
-
-        /// The cell size of the currently focused view. We use this to
-        /// (optionally) set the resizeIncrements binding for the SplitView
-        @FocusedValue(\.ghosttySurfaceCellSize) private var focusedCellSize
-
-        /// Resize increments used by the split view
-        @State private var resizeIncrements: NSSize = .init(width: 1.0, height: 1.0)
-
         var body: some View {
             SplitView(
                 container.direction,
-                resizeIncrements: resizeIncrements,
+                resizeIncrements: .init(width: 1, height: 1),
                 resizePublisher: container.resizeEvent,
                 left: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = container.direction == .horizontal ? \.right : \.bottom
@@ -302,11 +293,6 @@ extension Ghostty {
                     ])
                 )
             })
-            .onChange(of: focusedCellSize) { newValue in
-                guard let increments = newValue else { return }
-                guard ghostty.windowStepResize else { return }
-                self.resizeIncrements = increments
-            }
         }
         
         private func closeableTopLeft() -> Binding<SplitNode?> {
