@@ -105,6 +105,15 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
+        
+        /// Whether to open new windows in fullscreen.
+        var windowFullscreen: Bool {
+            guard let config = self.config else { return true }
+            var v = false
+            let key = "fullscreen"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
 
         /// The background opacity.
         var backgroundOpacity: Double {

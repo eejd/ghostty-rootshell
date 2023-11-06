@@ -28,6 +28,7 @@ const UnsafePasteWindow = @import("UnsafePasteWindow.zig");
 const c = @import("c.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
+const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
 
@@ -103,9 +104,17 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // Our app ID determines uniqueness and maps to our desktop file.
     // We append "-debug" to the ID if we're in debug mode so that we
     // can develop Ghostty in Ghostty.
-    const app_id: [:0]const u8 = comptime app_id: {
-        var id = "com.mitchellh.ghostty";
-        break :app_id if (builtin.mode == .Debug) id ++ "-debug" else id;
+    const app_id: [:0]const u8 = app_id: {
+        if (config.class) |class| {
+            if (isValidAppId(class)) {
+                break :app_id class;
+            } else {
+                log.warn("invalid 'class' in config, ignoring", .{});
+            }
+        }
+
+        const default_id = "com.mitchellh.ghostty";
+        break :app_id if (builtin.mode == .Debug) default_id ++ "-debug" else default_id;
     };
 
     // Create our GTK Application which encapsulates our process.
@@ -159,7 +168,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
-
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
@@ -489,4 +497,33 @@ fn initMenu(self: *App) void {
     // }
 
     self.menu = menu;
+}
+
+fn isValidAppId(app_id: [:0]const u8) bool {
+    if (app_id.len > 255 or app_id.len == 0) return false;
+    if (app_id[0] == '.') return false;
+    if (app_id[app_id.len - 1] == '.') return false;
+
+    var hasDot = false;
+    for (app_id) |char| {
+        switch (char) {
+            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
+            '.' => hasDot = true,
+            else => return false,
+        }
+    }
+    if (!hasDot) return false;
+
+    return true;
+}
+
+test "isValidAppId" {
+    try testing.expect(isValidAppId("foo.bar"));
+    try testing.expect(isValidAppId("foo.bar.baz"));
+    try testing.expect(!isValidAppId("foo"));
+    try testing.expect(!isValidAppId("foo.bar?"));
+    try testing.expect(!isValidAppId("foo."));
+    try testing.expect(!isValidAppId(".foo"));
+    try testing.expect(!isValidAppId(""));
+    try testing.expect(!isValidAppId("foo" ** 86));
 }

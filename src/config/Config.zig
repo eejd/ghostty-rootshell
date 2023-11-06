@@ -278,6 +278,30 @@ command: ?[]const u8 = null,
 /// indicate that it is a login shell, depending on the OS).
 @"command-arg": RepeatableString = .{},
 
+/// Start new windows in fullscreen. This setting applies to new
+/// windows and does not apply to tabs, splits, etc. However, this
+/// setting will apply to all new windows, not just the first one.
+///
+/// On macOS, this always creates the window in native fullscreen.
+/// Non-native fullscreen is not currently supported with this
+/// setting.
+fullscreen: bool = false,
+
+/// The title Ghostty will use for the window. This will force the title
+/// of the window to be this title at all times and Ghostty will ignore any
+/// set title escape sequences programs (such as Neovim) may send.
+title: ?[:0]const u8 = null,
+
+/// The setting that will change the application class value. This value is
+/// often used with Linux window managers to change behavior (such as
+/// floating vs tiled). If you don't know what this is, don't set it.
+///
+/// The class name must follow the GTK requirements defined here:
+/// https://docs.gtk.org/gio/type_func.Application.id_is_valid.html
+///
+/// This only affects GTK builds.
+class: ?[:0]const u8 = null,
+
 /// The directory to change to after starting the command.
 ///
 /// This setting is secondary to the "window-inherit-working-directory"

@@ -67,6 +67,11 @@ class TerminalManager {
             Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
         }
         
+        if (ghostty.windowFullscreen) {
+            // NOTE: this doesn't properly handle non-native fullscreen yet
+            c.window?.toggleFullScreen(nil)
+        }
+        
         c.showWindow(self)
     }
     

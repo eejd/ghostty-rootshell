@@ -155,6 +155,7 @@ const DerivedConfig = struct {
     window_padding_x: u32,
     window_padding_y: u32,
     window_padding_balance: bool,
+    title: ?[:0]const u8,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -180,6 +181,7 @@ const DerivedConfig = struct {
             .window_padding_x = config.@"window-padding-x",
             .window_padding_y = config.@"window-padding-y",
             .window_padding_balance = config.@"window-padding-balance",
+            .title = config.title,
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -544,6 +546,8 @@ pub fn init(
             log.warn("unable to set initial window size: {s}", .{err});
         };
     }
+
+    if (config.title) |title| try rt_surface.setTitle(title);
 }
 
 pub fn deinit(self: *Surface) void {
@@ -663,6 +667,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .change_config => |config| try self.changeConfig(config),
 
         .set_title => |*v| {
+            // We ignore the message in case the title was set via config.
+            if (self.config.title != null) {
+                log.debug("ignoring title change request since static title is set via config", .{});
+                return;
+            }
+
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);

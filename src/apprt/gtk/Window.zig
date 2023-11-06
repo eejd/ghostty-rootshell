@@ -123,6 +123,9 @@ pub fn init(self: *Window, app: *App) !void {
     }
     c.gtk_box_append(@ptrCast(box), notebook_widget);
 
+    // If we are in fullscreen mode, new windows start fullscreen.
+    if (app.config.fullscreen) c.gtk_window_fullscreen(self.window);
+
     // All of our events
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
