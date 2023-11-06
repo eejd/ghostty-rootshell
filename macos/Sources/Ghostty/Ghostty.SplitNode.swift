@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import GhosttyKit
 
 extension Ghostty {
@@ -123,6 +124,8 @@ extension Ghostty {
             @Published var topLeft: SplitNode
             @Published var bottomRight: SplitNode
 
+            var resizeEvent: PassthroughSubject<Double, Never> = .init()
+
             weak var parent: SplitNode.Container?
 
             /// A container is always initialized from some prior leaf because a split has to originate
@@ -143,6 +146,30 @@ extension Ghostty {
                 from.parent = self
                 bottomRight.parent = self
             }
+
+            /// Resize the split by moving the split divider in the given
+            /// direction by the given amount. If this container is not split
+            /// in the given direction, navigate up the tree until we find a
+            /// container that is
+            func resize(direction: SplitResizeDirection, amount: UInt16) {
+                 // We send a resize event to our publisher which will be
+                 // received by the SplitView.
+                switch (self.direction) {
+                case .horizontal:
+                    switch (direction) {
+                    case .left: resizeEvent.send(-Double(amount))
+                    case .right: resizeEvent.send(Double(amount))
+                    default: parent?.resize(direction: direction, amount: amount)
+                    }
+                case .vertical:
+                    switch (direction) {
+                    case .up: resizeEvent.send(-Double(amount))
+                    case .down: resizeEvent.send(Double(amount))
+                    default: parent?.resize(direction: direction, amount: amount)
+                    }
+                }
+            }
+
             
             // MARK: - Hashable
             

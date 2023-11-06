@@ -38,6 +38,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuResetFontSize: NSMenuItem?
     @IBOutlet private var menuTerminalInspector: NSMenuItem?
 
+    @IBOutlet private var menuMoveSplitDividerUp: NSMenuItem?
+    @IBOutlet private var menuMoveSplitDividerDown: NSMenuItem?
+    @IBOutlet private var menuMoveSplitDividerLeft: NSMenuItem?
+    @IBOutlet private var menuMoveSplitDividerRight: NSMenuItem?
+
     /// The dock menu
     private var dockMenu: NSMenu = NSMenu()
     
@@ -206,6 +211,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "goto_split:bottom", menuItem: self.menuSelectSplitBelow)
         syncMenuShortcut(action: "goto_split:left", menuItem: self.menuSelectSplitLeft)
         syncMenuShortcut(action: "goto_split:right", menuItem: self.menuSelectSplitRight)
+        syncMenuShortcut(action: "resize_split:up,10", menuItem: self.menuMoveSplitDividerUp)
+        syncMenuShortcut(action: "resize_split:down,10", menuItem: self.menuMoveSplitDividerDown)
+        syncMenuShortcut(action: "resize_split:right,10", menuItem: self.menuMoveSplitDividerRight)
+        syncMenuShortcut(action: "resize_split:left,10", menuItem: self.menuMoveSplitDividerLeft)
 
         syncMenuShortcut(action: "increase_font_size:1", menuItem: self.menuIncreaseFontSize)
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)

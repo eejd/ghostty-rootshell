@@ -33,7 +33,7 @@ extension Ghostty {
             .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
         }
     }
-    
+
     /// The root of a split tree. This sets up the initial SplitNode state and renders. There is only ever
     /// one of these in a split tree.
     private struct TerminalSplitRoot: View {
@@ -153,11 +153,13 @@ extension Ghostty {
             let pub = center.publisher(for: Notification.ghosttyNewSplit, object: leaf.surface)
             let pubClose = center.publisher(for: Notification.ghosttyCloseSurface, object: leaf.surface)
             let pubFocus = center.publisher(for: Notification.ghosttyFocusSplit, object: leaf.surface)
+            let pubResize = center.publisher(for: Notification.didResizeSplit, object: leaf.surface)
 
             InspectableSurface(surfaceView: leaf.surface, isSplit: !neighbors.isEmpty())
                 .onReceive(pub) { onNewSplit(notification: $0) }
                 .onReceive(pubClose) { onClose(notification: $0) }
                 .onReceive(pubFocus) { onMoveFocus(notification: $0) }
+                .onReceive(pubResize) { onResize(notification: $0) }
         }
 
         private func onClose(notification: SwiftUI.Notification) {
@@ -243,6 +245,20 @@ extension Ghostty {
                 to: next.preferredFocus(direction)
             )
         }
+
+        /// Handle a resize event.
+        private func onResize(notification: SwiftUI.Notification) {
+            // If this leaf is not part of a split then there is nothing to do
+            guard let parent = leaf.parent else { return }
+
+            guard let directionAny = notification.userInfo?[Ghostty.Notification.ResizeSplitDirectionKey] else { return }
+            guard let direction = directionAny as? Ghostty.SplitResizeDirection else { return }
+
+            guard let amountAny = notification.userInfo?[Ghostty.Notification.ResizeSplitAmountKey] else { return }
+            guard let amount = amountAny as? UInt16 else { return }
+
+            parent.resize(direction: direction, amount: amount)
+        }
     }
     
     /// This represents a split view that is in the horizontal or vertical split state.
@@ -250,6 +266,15 @@ extension Ghostty {
         let neighbors: SplitNode.Neighbors
         @Binding var node: SplitNode?
         @StateObject var container: SplitNode.Container
+
+        @EnvironmentObject private var ghostty: Ghostty.AppState
+
+        /// The cell size of the currently focused view. We use this to
+        /// (optionally) set the resizeIncrements binding for the SplitView
+        @FocusedValue(\.ghosttySurfaceCellSize) private var focusedCellSize
+
+        /// Resize increments used by the split view
+        @State private var resizeIncrements: NSSize = .init(width: 1.0, height: 1.0)
 
         var body: some View {
             SplitView(container.direction, left: {
@@ -273,6 +298,13 @@ extension Ghostty {
                     ])
                 )
             })
+            .onChange(of: focusedCellSize) { newValue in
+                guard let increments = newValue else { return }
+                guard ghostty.windowStepResize else { return }
+                self.resizeIncrements = increments
+            }
+            .resizeIncrements(resizeIncrements)
+            .resizePublisher(container.resizeEvent)
         }
         
         private func closeableTopLeft() -> Binding<SplitNode?> {

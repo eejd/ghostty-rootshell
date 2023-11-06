@@ -61,6 +61,39 @@ extension Ghostty {
             }
         }
     }
+
+    /// Enum used for resizing splits. This is the direction the split divider will move.
+    enum SplitResizeDirection {
+        case up, down, left, right
+
+        static func from(direction: ghostty_split_resize_direction_e) -> Self? {
+            switch (direction) {
+            case GHOSTTY_SPLIT_RESIZE_UP:
+                return .up;
+            case GHOSTTY_SPLIT_RESIZE_DOWN:
+                return .down;
+            case GHOSTTY_SPLIT_RESIZE_LEFT:
+                return .left;
+            case GHOSTTY_SPLIT_RESIZE_RIGHT:
+                return .right;
+            default:
+                return nil
+            }
+        }
+
+        func toNative() -> ghostty_split_resize_direction_e {
+            switch (self) {
+            case .up:
+                return GHOSTTY_SPLIT_RESIZE_UP;
+            case .down:
+                return GHOSTTY_SPLIT_RESIZE_DOWN;
+            case .left:
+                return GHOSTTY_SPLIT_RESIZE_LEFT;
+            case .right:
+                return GHOSTTY_SPLIT_RESIZE_RIGHT;
+            }
+        }
+    }
 }
 
 extension Ghostty.Notification {
@@ -112,6 +145,11 @@ extension Ghostty.Notification {
     static let confirmUnsafePaste = Notification.Name("com.mitchellh.ghostty.confirmUnsafePaste")
     static let UnsafePasteStrKey = confirmUnsafePaste.rawValue + ".str"
     static let UnsafePasteStateKey = confirmUnsafePaste.rawValue + ".state"
+
+    /// Notification sent to the active split view to resize the split.
+    static let didResizeSplit = Notification.Name("com.mitchellh.ghostty.didResizeSplit")
+    static let ResizeSplitDirectionKey = didResizeSplit.rawValue + ".direction"
+    static let ResizeSplitAmountKey = didResizeSplit.rawValue + ".amount"
 }
 
 // Make the input enum hashable.

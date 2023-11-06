@@ -84,6 +84,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 }
                 
                 Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
+                    .environmentObject(ghostty)
                     .ghosttyApp(ghostty.app!)
                     .ghosttyConfig(ghostty.config!)
                     .focused($focused)

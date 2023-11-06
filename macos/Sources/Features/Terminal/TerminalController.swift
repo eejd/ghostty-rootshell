@@ -270,7 +270,27 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     @IBAction func splitMoveFocusRight(_ sender: Any) {
         splitMoveFocus(direction: .right)
     }
-    
+
+    @IBAction func moveSplitDividerUp(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.splitResize(surface: surface, direction: .up, amount: 10)
+    }
+
+    @IBAction func moveSplitDividerDown(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.splitResize(surface: surface, direction: .down, amount: 10)
+    }
+
+    @IBAction func moveSplitDividerLeft(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.splitResize(surface: surface, direction: .left, amount: 10)
+    }
+
+    @IBAction func moveSplitDividerRight(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.splitResize(surface: surface, direction: .right, amount: 10)
+    }
+
     private func splitMoveFocus(direction: Ghostty.SplitFocusDirection) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.splitMoveFocus(surface: surface, direction: direction)
