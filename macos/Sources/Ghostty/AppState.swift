@@ -582,35 +582,3 @@ extension Ghostty {
         }
     }
 }
-
-// MARK: AppState Environment Keys
-
-private struct GhosttyAppKey: EnvironmentKey {
-    static let defaultValue: ghostty_app_t? = nil
-}
-
-private struct GhosttyConfigKey: EnvironmentKey {
-    static let defaultValue: ghostty_config_t? = nil
-}
-
-extension EnvironmentValues {
-    var ghosttyApp: ghostty_app_t? {
-        get { self[GhosttyAppKey.self] }
-        set { self[GhosttyAppKey.self] = newValue }
-    }
-
-    var ghosttyConfig: ghostty_config_t? {
-        get { self[GhosttyConfigKey.self] }
-        set { self[GhosttyConfigKey.self] = newValue }
-    }
-}
-
-extension View {
-    func ghosttyApp(_ app: ghostty_app_t?) -> some View {
-        environment(\.ghosttyApp, app)
-    }
-
-    func ghosttyConfig(_ config: ghostty_config_t?) -> some View {
-        environment(\.ghosttyConfig, config)
-    }
-}
