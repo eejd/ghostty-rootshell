@@ -234,6 +234,50 @@ pub const Action = union(enum) {
         hide,
     };
 
+    fn parseEnum(comptime T: type, value: []const u8) !T {
+        return std.meta.stringToEnum(T, value) orelse return Error.InvalidFormat;
+    }
+
+    fn parseInt(comptime T: type, value: []const u8) !T {
+        return std.fmt.parseInt(T, value, 10) catch return Error.InvalidFormat;
+    }
+
+    fn parseFloat(comptime T: type, value: []const u8) !T {
+        return std.fmt.parseFloat(T, value) catch return Error.InvalidFormat;
+    }
+
+    fn parseParameter(
+        comptime field: std.builtin.Type.UnionField,
+        param: []const u8,
+    ) !field.type {
+        return switch (@typeInfo(field.type)) {
+            .Enum => try parseEnum(field.type, param),
+            .Int => try parseInt(field.type, param),
+            .Float => try parseFloat(field.type, param),
+            .Struct => |info| blk: {
+                // Only tuples are supported to avoid ambiguity with field
+                // ordering
+                comptime assert(info.is_tuple);
+
+                var it = std.mem.split(u8, param, ",");
+                var value: field.type = undefined;
+                inline for (info.fields) |field_| {
+                    const next = it.next() orelse return Error.InvalidFormat;
+                    @field(value, field_.name) = switch (@typeInfo(field_.type)) {
+                        .Enum => try parseEnum(field_.type, next),
+                        .Int => try parseInt(field_.type, next),
+                        .Float => try parseFloat(field_.type, next),
+                        else => unreachable,
+                    };
+                }
+
+                break :blk value;
+            },
+
+            else => unreachable,
+        };
+    }
+
     /// Parse an action in the format of "key=value" where key is the
     /// action name and value is the action parameter. The parameter
     /// is optional depending on the action.
@@ -266,35 +310,14 @@ pub const Action = union(enum) {
                     // Cursor keys can't be set currently
                     Action.CursorKey => return Error.InvalidAction,
 
-                    else => switch (@typeInfo(field.type)) {
-                        .Enum => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = input[idx + 1 ..];
-                            const value = std.meta.stringToEnum(
-                                field.type,
-                                param,
-                            ) orelse return Error.InvalidFormat;
-
-                            return @unionInit(Action, field.name, value);
-                        },
-
-                        .Int => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = input[idx + 1 ..];
-                            const value = std.fmt.parseInt(field.type, param, 10) catch
-                                return Error.InvalidFormat;
-                            return @unionInit(Action, field.name, value);
-                        },
-
-                        .Float => {
-                            const idx = colonIdx orelse return Error.InvalidFormat;
-                            const param = input[idx + 1 ..];
-                            const value = std.fmt.parseFloat(field.type, param) catch
-                                return Error.InvalidFormat;
-                            return @unionInit(Action, field.name, value);
-                        },
-
-                        else => unreachable,
+                    else => {
+                        const idx = colonIdx orelse return Error.InvalidFormat;
+                        const param = input[idx + 1 ..];
+                        return @unionInit(
+                            Action,
+                            field.name,
+                            try parseParameter(field, param),
+                        );
                     },
                 }
             }
