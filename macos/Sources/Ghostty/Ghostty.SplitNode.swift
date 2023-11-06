@@ -11,9 +11,8 @@ extension Ghostty {
     ///   values can further be split infinitely.
     ///
     enum SplitNode: Equatable, Hashable {
-        case noSplit(Leaf)
-        case horizontal(Container)
-        case vertical(Container)
+        case leaf(Leaf)
+        case split(Container)
         
         /// Returns the view that would prefer receiving focus in this tree. This is always the
         /// top-left-most view. This is used when creating a split or closing a split to find the
@@ -21,14 +20,11 @@ extension Ghostty {
         func preferredFocus(_ direction: SplitFocusDirection = .top) -> SurfaceView {
             let container: Container
             switch (self) {
-            case .noSplit(let leaf):
+            case .leaf(let leaf):
                 // noSplit is easy because there is only one thing to focus
                 return leaf.surface
 
-            case .horizontal(let c):
-                container = c
-
-            case .vertical(let c):
+            case .split(let c):
                 container = c
             }
             
@@ -48,14 +44,10 @@ extension Ghostty {
         /// surface. At this point, the surface view in this node tree can never be used again.
         func close() {
             switch (self) {
-            case .noSplit(let leaf):
+            case .leaf(let leaf):
                 leaf.surface.close()
 
-            case .horizontal(let container):
-                container.topLeft.close()
-                container.bottomRight.close()
-
-            case .vertical(let container):
+            case .split(let container):
                 container.topLeft.close()
                 container.bottomRight.close()
             }
@@ -64,14 +56,10 @@ extension Ghostty {
         /// Returns true if any surface in the split stack requires quit confirmation.
         func needsConfirmQuit() -> Bool {
             switch (self) {
-            case .noSplit(let leaf):
+            case .leaf(let leaf):
                 return leaf.surface.needsConfirmQuit
 
-            case .horizontal(let container):
-                return container.topLeft.needsConfirmQuit() ||
-                    container.bottomRight.needsConfirmQuit()
-
-            case .vertical(let container):
+            case .split(let container):
                 return container.topLeft.needsConfirmQuit() ||
                     container.bottomRight.needsConfirmQuit()
             }
@@ -80,14 +68,10 @@ extension Ghostty {
         /// Returns true if the split tree contains the given view.
         func contains(view: SurfaceView) -> Bool {
             switch (self) {
-            case .noSplit(let leaf):
+            case .leaf(let leaf):
                 return leaf.surface == view
 
-            case .horizontal(let container):
-                return container.topLeft.contains(view: view) ||
-                    container.bottomRight.contains(view: view)
-
-            case .vertical(let container):
+            case .split(let container):
                 return container.topLeft.contains(view: view) ||
                     container.bottomRight.contains(view: view)
             }
@@ -97,11 +81,9 @@ extension Ghostty {
         
         static func == (lhs: SplitNode, rhs: SplitNode) -> Bool {
             switch (lhs, rhs) {
-            case (.noSplit(let lhs_v), .noSplit(let rhs_v)):
+            case (.leaf(let lhs_v), .leaf(let rhs_v)):
                 return lhs_v === rhs_v
-            case (.horizontal(let lhs_v), .horizontal(let rhs_v)):
-                return lhs_v === rhs_v
-            case (.vertical(let lhs_v), .vertical(let rhs_v)):
+            case (.split(let lhs_v), .split(let rhs_v)):
                 return lhs_v === rhs_v
             default:
                 return false
@@ -111,6 +93,8 @@ extension Ghostty {
         class Leaf: ObservableObject, Equatable, Hashable {
             let app: ghostty_app_t
             @Published var surface: SurfaceView
+
+            weak var parent: SplitNode.Container?
 
             /// Initialize a new leaf which creates a new terminal surface.
             init(_ app: ghostty_app_t, _ baseConfig: SurfaceConfiguration?) {
@@ -134,25 +118,37 @@ extension Ghostty {
 
         class Container: ObservableObject, Equatable, Hashable {
             let app: ghostty_app_t
+            let direction: SplitViewDirection
+
             @Published var topLeft: SplitNode
             @Published var bottomRight: SplitNode
+
+            weak var parent: SplitNode.Container?
 
             /// A container is always initialized from some prior leaf because a split has to originate
             /// from a non-split value. When initializing, we inherit the leaf's surface and then
             /// initialize a new surface for the new pane.
-            init(from: Leaf, baseConfig: SurfaceConfiguration? = nil) {
+            init(from: Leaf, direction: SplitViewDirection, baseConfig: SurfaceConfiguration? = nil) {
                 self.app = from.app
+                self.direction = direction
+                self.parent = from.parent
 
                 // Initially, both topLeft and bottomRight are in the "nosplit"
                 // state since this is a new split.
-                self.topLeft = .noSplit(from)
-                self.bottomRight = .noSplit(.init(app, baseConfig))
+                self.topLeft = .leaf(from)
+
+                let bottomRight: Leaf = .init(app, baseConfig)
+                self.bottomRight = .leaf(bottomRight)
+
+                from.parent = self
+                bottomRight.parent = self
             }
             
             // MARK: - Hashable
             
             func hash(into hasher: inout Hasher) {
                 hasher.combine(app)
+                hasher.combine(direction)
                 hasher.combine(topLeft)
                 hasher.combine(bottomRight)
             }
@@ -161,6 +157,7 @@ extension Ghostty {
             
             static func == (lhs: Container, rhs: Container) -> Bool {
                 return lhs.app == rhs.app &&
+                    lhs.direction == rhs.direction &&
                     lhs.topLeft == rhs.topLeft &&
                     lhs.bottomRight == rhs.bottomRight
             }

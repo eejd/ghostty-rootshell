@@ -508,7 +508,7 @@ extension Ghostty {
             guard let window = self.window else { return }
             guard let windowControllerRaw = window.windowController else { return }
             guard let windowController = windowControllerRaw as? TerminalController else { return }
-            guard case .noSplit = windowController.surfaceTree else { return }
+            guard case .leaf = windowController.surfaceTree else { return }
             
             // If our window is full screen, we do not set the frame
             guard !window.styleMask.contains(.fullScreen) else { return }
