@@ -155,6 +155,7 @@ const DerivedConfig = struct {
     window_padding_y: u32,
     window_padding_balance: bool,
     title: ?[:0]const u8,
+    fullscreen: bool,
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -180,6 +181,7 @@ const DerivedConfig = struct {
             .window_padding_y = config.@"window-padding-y",
             .window_padding_balance = config.@"window-padding-balance",
             .title = config.title,
+            .fullscreen = config.fullscreen,
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.

@@ -325,6 +325,15 @@ pub fn redrawInspector(self: *App, surface: *Surface) void {
 pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
     const alloc = self.core_app.alloc;
 
+    // If we are in fullscreen mode and have a parent surface we force the disable of this setting.
+    // This prevents that new windows get created in fullscreen mode.
+    // This also prevents that the settings always gets set to false everytime a new window is created.
+    if (self.config.fullscreen) {
+        if (parent_) |_| {
+            self.config.fullscreen = false;
+        }
+    }
+
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
     // compared to the steady-state terminal operation so we use heap
