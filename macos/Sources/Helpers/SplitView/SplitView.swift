@@ -10,19 +10,19 @@ struct SplitView<L: View, R: View>: View {
     /// Direction of the split
     let direction: SplitViewDirection
     
+    /// If set, the split view supports programmatic resizing via events sent via the publisher.
+    /// Minimum increment (in points) that this split can be resized by, in
+    /// each direction. Both `height` and `width` should be whole numbers
+    /// greater than or equal to 1.0
+    let resizeIncrements: NSSize
+    let resizePublisher: PassthroughSubject<Double, Never>
+    
     /// The left and right views to render.
     let left: L
     let right: R
     
     /// The current fractional width of the split view. 0.5 means L/R are equally sized, for example.
     @State var split: CGFloat = 0.5
-
-    /// Minimum increment (in points) that this split can be resized by, in
-    /// each direction. Both `height` and `width` should be whole numbers
-    /// greater than or equal to 1.0
-    @Environment(\.resizeIncrements) var resizeIncrements
-
-    @Environment(\.resizePublisher) var resizePublisher
 
     /// The visible size of the splitter, in points. The invisible size is a transparent hitbox that can still
     /// be used for getting a resize handle. The total width/height of the splitter is the sum of both.
@@ -52,8 +52,29 @@ struct SplitView<L: View, R: View>: View {
         }
     }
     
+    /// Initialize a split view. This view isn't programmatically resizable; it can only be resized
+    /// by manually dragging the divider.
     init(_ direction: SplitViewDirection, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
+        self.init(
+            direction,
+            resizeIncrements: .init(width: 1, height: 1),
+            resizePublisher: .init(),
+            left: left,
+            right: right
+        )
+    }
+    
+    /// Initialize a split view that supports programmatic resizing.
+    init(
+        _ direction: SplitViewDirection,
+        resizeIncrements: NSSize,
+        resizePublisher: PassthroughSubject<Double, Never>,
+        @ViewBuilder left: (() -> L),
+        @ViewBuilder right: (() -> R)
+    ) {
         self.direction = direction
+        self.resizeIncrements = resizeIncrements
+        self.resizePublisher = resizePublisher
         self.left = left()
         self.right = right()
     }
@@ -141,35 +162,4 @@ struct SplitView<L: View, R: View>: View {
 
 enum SplitViewDirection {
     case horizontal, vertical
-}
-
-private struct ResizeIncrementsKey: EnvironmentKey {
-    static let defaultValue: CGSize = .init(width: 1.0, height: 1.0)
-}
-
-private struct ResizePublisherKey: EnvironmentKey {
-    static let defaultValue: PassthroughSubject<Double, Never> = .init()
-}
-
-extension EnvironmentValues {
-    /// An environment value that specifies the resize increments of a resizable view
-    var resizeIncrements: CGSize {
-        get { self[ResizeIncrementsKey.self] }
-        set { self[ResizeIncrementsKey.self] = newValue }
-    }
-
-    var resizePublisher: PassthroughSubject<Double, Never> {
-        get { self[ResizePublisherKey.self] }
-        set { self[ResizePublisherKey.self] = newValue }
-    }
-}
-
-extension View {
-    func resizeIncrements(_ increments: CGSize) -> some View {
-        environment(\.resizeIncrements, increments)
-    }
-
-    func resizePublisher(_ publisher: PassthroughSubject<Double, Never>) -> some View {
-        environment(\.resizePublisher, publisher)
-    }
 }

@@ -277,7 +277,11 @@ extension Ghostty {
         @State private var resizeIncrements: NSSize = .init(width: 1.0, height: 1.0)
 
         var body: some View {
-            SplitView(container.direction, left: {
+            SplitView(
+                container.direction,
+                resizeIncrements: resizeIncrements,
+                resizePublisher: container.resizeEvent,
+                left: {
                 let neighborKey: WritableKeyPath<SplitNode.Neighbors, SplitNode?> = container.direction == .horizontal ? \.right : \.bottom
 
                 TerminalSplitNested(
@@ -303,8 +307,6 @@ extension Ghostty {
                 guard ghostty.windowStepResize else { return }
                 self.resizeIncrements = increments
             }
-            .resizeIncrements(resizeIncrements)
-            .resizePublisher(container.resizeEvent)
         }
         
         private func closeableTopLeft() -> Binding<SplitNode?> {
