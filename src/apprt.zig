@@ -57,6 +57,9 @@ pub const Runtime = enum {
         // The Linux default is GTK because it is full featured.
         if (target.isLinux()) return .gtk;
 
+        // Windows we currently only support glfw
+        if (target.isWindows()) return .glfw;
+
         // Otherwise, we do NONE so we don't create an exe. The GLFW
         // build is opt-in because it is missing so many features compared
         // to the other builds that are impossible due to the GLFW interface.
