@@ -1121,6 +1121,20 @@ pub fn keyCallback(
         self.hideMouse();
     }
 
+    // When we are in the middle of a mouse event and we press shift,
+    // we change the mouse to a text shape so that selection appears
+    // possible.
+    if (self.io.terminal.flags.mouse_event != .none and
+        event.physical_key == .left_shift or
+        event.physical_key == .right_shift)
+    {
+        switch (event.action) {
+            .press => try self.rt_surface.setMouseShape(.text),
+            .release => try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape),
+            .repeat => {},
+        }
+    }
+
     // No binding, so we have to perform an encoding task. This
     // may still result in no encoding. Under different modes and
     // inputs there are many keybindings that result in no encoding
