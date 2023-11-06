@@ -16,6 +16,18 @@ pub fn renderInTable(cursor: *const terminal.Screen.Cursor) void {
         }
     }
 
+    {
+        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+        {
+            _ = cimgui.c.igTableSetColumnIndex(0);
+            cimgui.c.igText("Style");
+        }
+        {
+            _ = cimgui.c.igTableSetColumnIndex(1);
+            cimgui.c.igText("%s", @tagName(cursor.style).ptr);
+        }
+    }
+
     if (cursor.pending_wrap) {
         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
         {
