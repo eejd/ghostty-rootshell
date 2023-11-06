@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const windows = @import("os/main.zig").windows;
-const fd_t = std.os.fd_t;
 
 const c = switch (builtin.os.tag) {
     .macos => @cImport({
@@ -37,6 +36,8 @@ else
 /// of Linux syscalls. The caller is responsible for detail-oriented handling
 /// of the returned file handles.
 pub const PosixPty = struct {
+    pub const Fd = std.os.fd_t;
+
     // https://github.com/ziglang/zig/issues/13277
     // Once above is fixed, use `c.TIOCSCTTY`
     const TIOCSCTTY = if (builtin.os.tag == .macos) 536900705 else c.TIOCSCTTY;
@@ -44,16 +45,16 @@ pub const PosixPty = struct {
     const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
 
     /// The file descriptors for the master and slave side of the pty.
-    master: fd_t,
-    slave: fd_t,
+    master: Fd,
+    slave: Fd,
 
     /// Open a new PTY with the given initial size.
     pub fn open(size: winsize) !Pty {
         // Need to copy so that it becomes non-const.
         var sizeCopy = size;
 
-        var master_fd: fd_t = undefined;
-        var slave_fd: fd_t = undefined;
+        var master_fd: Fd = undefined;
+        var slave_fd: Fd = undefined;
         if (c.openpty(
             &master_fd,
             &slave_fd,
@@ -128,6 +129,8 @@ pub const PosixPty = struct {
 
 /// Windows PTY creation and management.
 pub const WindowsPty = struct {
+    pub const Fd = windows.HANDLE;
+
     // Process-wide counter for pipe names
     var pipe_name_counter = std.atomic.Atomic(u32).init(1);
 

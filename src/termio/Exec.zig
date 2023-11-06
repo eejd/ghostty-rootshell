@@ -185,7 +185,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     const alloc = self.alloc;
 
     // Start our subprocess
-    try self.subprocess.start(alloc);
+    const pty_fds = try self.subprocess.start(alloc);
     errdefer self.subprocess.stop();
     const pid = pid: {
         const command = self.subprocess.command orelse return error.ProcessNotStarted;
@@ -203,8 +203,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     errdefer alloc.destroy(ev_data_ptr);
 
     // Setup our stream so that we can write.
-    const write_fd = if (builtin.os.tag == .windows) self.subprocess.pty.?.in_pipe else self.subprocess.pty.?.master;
-    var stream = xev.Stream.initFd(write_fd);
+    var stream = xev.Stream.initFd(pty_fds.write);
     errdefer stream.deinit();
 
     // Wakeup watcher for the writer thread.
@@ -264,11 +263,10 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     );
 
     // Start our reader thread
-    const read_fd = if (builtin.os.tag == .windows) self.subprocess.pty.?.out_pipe else self.subprocess.pty.?.master;
     const read_thread = try std.Thread.spawn(
         .{},
         if (builtin.os.tag == .windows) ReadThread.threadMainWindows else ReadThread.threadMainPosix,
-        .{ read_fd, ev_data_ptr, pipe[0] },
+        .{ pty_fds.read, ev_data_ptr, pipe[0] },
     );
     read_thread.setName("io-reader") catch {};
 
@@ -278,7 +276,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .ev = ev_data_ptr,
         .read_thread = read_thread,
         .read_thread_pipe = pipe[1],
-        .read_thread_fd = if (builtin.os.tag == .windows) read_fd else {},
+        .read_thread_fd = if (builtin.os.tag == .windows) pty_fds.read else {},
     };
 }
 
@@ -296,7 +294,7 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     _ = std.os.write(data.read_thread_pipe, "x") catch |err|
         log.warn("error writing to read thread quit pipe err={}", .{err});
 
-    if (builtin.os.tag == .windows) {
+    if (comptime builtin.os.tag == .windows) {
         // Interrupt the blocking read so the thread can see the quit message
         if (windows.kernel32.CancelIoEx(data.read_thread_fd, null) == 0) {
             switch (windows.kernel32.GetLastError()) {
@@ -678,9 +676,13 @@ const Subprocess = struct {
         const alloc = arena.allocator();
 
         // Determine the path to the binary we're executing
-        const default_command = if (builtin.os.tag == .windows) "cmd.exe" else "sh";
-        const path = (try Command.expandPath(alloc, opts.full_config.command orelse default_command)) orelse
-            return error.CommandNotFound;
+        const path = try Command.expandPath(
+            alloc,
+            opts.full_config.command orelse switch (builtin.os.tag) {
+                .windows => "cmd.exe",
+                else => "sh",
+            },
+        ) orelse return error.CommandNotFound;
 
         // On macOS, we launch the program as a login shell. This is a Mac-specific
         // behavior (see other terminals). Terminals in general should NOT be
@@ -850,7 +852,10 @@ const Subprocess = struct {
 
     /// Start the subprocess. If the subprocess is already started this
     /// will crash.
-    pub fn start(self: *Subprocess, alloc: Allocator) !void {
+    pub fn start(self: *Subprocess, alloc: Allocator) !struct {
+        read: Pty.Fd,
+        write: Pty.Fd,
+    } {
         assert(self.pty == null and self.command == null);
 
         // Create our pty
@@ -903,6 +908,11 @@ const Subprocess = struct {
             // wait right now but that is fine too. This lets us read the
             // parent and detect EOF.
             _ = std.os.close(pty.slave);
+
+            return .{
+                .read = pty.master,
+                .write = pty.master,
+            };
         }
 
         // If we can't access the cwd, then don't set any cwd and inherit.
@@ -937,10 +947,23 @@ const Subprocess = struct {
             .data = &self.pty.?,
         };
         try cmd.start(alloc);
-        errdefer killCommand(cmd);
+        errdefer killCommand(&cmd) catch |err| {
+            log.warn("error killing command during cleanup err={}", .{err});
+        };
         log.info("started subcommand path={s} pid={?}", .{ self.path, cmd.pid });
 
         self.command = cmd;
+        return switch (builtin.os.tag) {
+            .windows => .{
+                .read = pty.out_pipe,
+                .write = pty.in_pipe,
+            },
+
+            else => .{
+                .read = pty.master,
+                .write = pty.master,
+            },
+        };
     }
 
     /// Called to notify that we exited externally so we can unset our
@@ -998,35 +1021,39 @@ const Subprocess = struct {
     /// process. This doesn't wait for the child process to be exited.
     fn killCommand(command: *Command) !void {
         if (command.pid) |pid| {
-            if (builtin.os.tag == .windows) {
-                if (windows.kernel32.TerminateProcess(pid, 0) == 0) {
-                    return windows.unexpectedError(windows.kernel32.GetLastError());
-                }
-            } else {
-                const pgid_: ?c.pid_t = pgid: {
-                    const pgid = c.getpgid(pid);
-
-                    // Don't know why it would be zero but its not a valid pid
-                    if (pgid == 0) break :pgid null;
-
-                    // If the pid doesn't exist then... okay.
-                    if (pgid == c.ESRCH) break :pgid null;
-
-                    // If we have an error...
-                    if (pgid < 0) {
-                        log.warn("error getting pgid for kill", .{});
-                        break :pgid null;
+            switch (builtin.os.tag) {
+                .windows => {
+                    if (windows.kernel32.TerminateProcess(pid, 0) == 0) {
+                        return windows.unexpectedError(windows.kernel32.GetLastError());
                     }
+                },
 
-                    break :pgid pgid;
-                };
+                else => {
+                    const pgid_: ?c.pid_t = pgid: {
+                        const pgid = c.getpgid(pid);
 
-                if (pgid_) |pgid| {
-                    if (c.killpg(pgid, c.SIGHUP) < 0) {
-                        log.warn("error killing process group pgid={}", .{pgid});
-                        return error.KillFailed;
+                        // Don't know why it would be zero but its not a valid pid
+                        if (pgid == 0) break :pgid null;
+
+                        // If the pid doesn't exist then... okay.
+                        if (pgid == c.ESRCH) break :pgid null;
+
+                        // If we have an error...
+                        if (pgid < 0) {
+                            log.warn("error getting pgid for kill", .{});
+                            break :pgid null;
+                        }
+
+                        break :pgid pgid;
+                    };
+
+                    if (pgid_) |pgid| {
+                        if (c.killpg(pgid, c.SIGHUP) < 0) {
+                            log.warn("error killing process group pgid={}", .{pgid});
+                            return error.KillFailed;
+                        }
                     }
-                }
+                },
             }
         }
     }
