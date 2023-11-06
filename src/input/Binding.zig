@@ -356,24 +356,38 @@ pub const Action = union(enum) {
 
         switch (self) {
             inline else => |value| {
-                const Value = @TypeOf(value);
-                const value_info = @typeInfo(Value);
-
                 // All actions start with the tag.
                 try writer.print("{s}", .{@tagName(self)});
 
                 // Write the value depending on the type
-                switch (Value) {
-                    void => {},
-                    []const u8 => try writer.print(":{s}", .{value}),
-                    else => switch (value_info) {
-                        .Enum => try writer.print(":{s}", .{@tagName(value)}),
-                        .Float => try writer.print(":{d}", .{value}),
-                        .Int => try writer.print(":{d}", .{value}),
-                        .Struct => try writer.print("{} (not configurable)", .{value}),
-                        else => @compileError("unhandled type: " ++ @typeName(Value)),
-                    },
-                }
+                try writer.writeAll(":");
+                try formatValue(writer, value);
+            },
+        }
+    }
+
+    fn formatValue(
+        writer: anytype,
+        value: anytype,
+    ) !void {
+        const Value = @TypeOf(value);
+        const value_info = @typeInfo(Value);
+        switch (Value) {
+            void => {},
+            []const u8 => try writer.print("{s}", .{value}),
+            else => switch (value_info) {
+                .Enum => try writer.print("{s}", .{@tagName(value)}),
+                .Float => try writer.print("{d}", .{value}),
+                .Int => try writer.print("{d}", .{value}),
+                .Struct => |info| if (!info.is_tuple) {
+                    try writer.print("{} (not configurable)", .{value});
+                } else {
+                    inline for (info.fields, 0..) |field, i| {
+                        try formatValue(writer, @field(value, field.name));
+                        if (i + 1 < info.fields.len) try writer.writeAll(",");
+                    }
+                },
+                else => @compileError("unhandled type: " ++ @typeName(Value)),
             },
         }
     }
