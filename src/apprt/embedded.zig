@@ -480,12 +480,6 @@ pub const Surface = struct {
     ) void {
         const alloc = self.app.core_app.alloc;
 
-        // If there is no string, then we don't do anything and complete.
-        if (str.len == 0) {
-            alloc.destroy(state);
-            return;
-        }
-
         // Attempt to complete the request, but if its unsafe we may request
         // confirmation.
         self.core_surface.completeClipboardRequest(
