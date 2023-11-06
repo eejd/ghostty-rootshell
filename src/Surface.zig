@@ -545,9 +545,7 @@ pub fn init(
         };
     }
 
-    if (config.title) |title| {
-        try self.rt_surface.setTitle(title);
-    }
+    if (config.title) |title| try rt_surface.setTitle(title);
 }
 
 pub fn deinit(self: *Surface) void {
@@ -668,9 +666,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .set_title => |*v| {
             // We ignore the message in case the title was set via config.
-            if (self.config.title) |_| {
+            if (self.config.title != null) {
+                log.debug("ignoring title change request since static title is set via config", .{});
                 return;
             }
+
             // The ptrCast just gets sliceTo to return the proper type.
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);

@@ -107,31 +107,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const default_id = "com.mitchellh.ghostty";
     const app_id: [:0]const u8 = app_id: {
         if (config.class) |class| {
-            break :app_id if (builtin.mode == .Debug) "com.mitchellh.ghostty-debug" else isValidGtkId(class) catch |err| switch (err) {
-                error.InvalidChar => {
-                    log.warn("Invalid char found in class. Setting app id to default value", .{});
-                    break :app_id default_id;
-                },
-                error.InvalidLength => {
-                    log.warn("Class name value doesn't have valid length (> 0 or 255 <=). Setting app id to default value", .{});
-                    break :app_id default_id;
-                },
-                error.NoDotInId => {
-                    log.warn("Class name has no dot char. Setting app id to default value", .{});
-                    break :app_id default_id;
-                },
-                error.StartWithDot => {
-                    log.warn("Class name start with dot. Setting app id to default value", .{});
-                    break :app_id default_id;
-                },
-                error.EndsWithDot => {
-                    log.warn("Class name ends with dot. Setting app id to default value", .{});
-                    break :app_id default_id;
-                },
-            };
-        } else {
-            break :app_id if (builtin.mode == .Debug) "com.mitchellh.ghostty-debug" else default_id;
+            if (isValidAppId(class)) {
+                break :app_id class;
+            } else {
+                log.warn("invalid 'class' in config, ignoring", .{});
+            }
         }
+
+        break :app_id if (builtin.mode == .Debug) "com.mitchellh.ghostty-debug" else default_id;
     };
 
     // Create our GTK Application which encapsulates our process.
@@ -516,53 +499,31 @@ fn initMenu(self: *App) void {
     self.menu = menu;
 }
 
-fn isValidGtkId(app_id: [:0]const u8) ![:0]const u8 {
-    var position: u8 = 0;
+fn isValidAppId(app_id: [:0]const u8) bool {
+    if (app_id.len > 255 or app_id.len == 0) return false;
+    if (app_id[0] == '.') return false;
+    if (app_id[app_id.len - 1] == '.') return false;
+
     var hasDot = false;
-
-    if (app_id.len > 255 or app_id.len == 0)
-        return error.InvalidLength;
-
-    if (app_id[position] == '.')
-        return error.StartWithDot;
-
-    if (app_id[app_id.len - 1] == '.')
-        return error.EndsWithDot;
-
-    while (true) {
-        const char = app_id[position];
-
+    for (app_id) |char| {
         switch (char) {
-            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {
-                position += 1;
-                continue;
-            },
-            '.' => {
-                hasDot = true;
-                position += 1;
-                continue;
-            },
-            0 => {
-                if (position != app_id.len) return error.InvalidChar;
-                break;
-            },
-            else => return error.InvalidChar,
+            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
+            '.' => hasDot = true,
+            0 => return false,
         }
     }
+    if (!hasDot) return false;
 
-    if (!hasDot) return error.NoDotInId;
-
-    return app_id;
+    return true;
 }
 
-test "ValidGtkClassName" {
-    try testing.expectEqualStrings("foo.bar", try isValidGtkId("foo.bar"));
-    try testing.expectEqualStrings("foo.bar.baz", try isValidGtkId("foo.bar.baz"));
-
-    try testing.expectError(error.NoDotInId, isValidGtkId("foo"));
-    try testing.expectError(error.InvalidChar, isValidGtkId("foo.bar?"));
-    try testing.expectError(error.EndsWithDot, isValidGtkId("foo."));
-    try testing.expectError(error.StartWithDot, isValidGtkId(".foo"));
-    try testing.expectError(error.InvalidLength, isValidGtkId(""));
-    try testing.expectError(error.InvalidLength, isValidGtkId("foo" ** 86));
+test "isValidAppId" {
+    try testing.expect(isValidAppId("foo.bar"));
+    try testing.expect(isValidAppId("foo.bar.baz"));
+    try testing.expect(!isValidAppId("foo"));
+    try testing.expect(!isValidAppId("foo.bar?"));
+    try testing.expect(!isValidAppId("foo."));
+    try testing.expect(!isValidAppId(".foo"));
+    try testing.expect(!isValidAppId(""));
+    try testing.expect(!isValidAppId("foo" ** 86));
 }

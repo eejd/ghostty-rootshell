@@ -278,22 +278,25 @@ command: ?[]const u8 = null,
 /// indicate that it is a login shell, depending on the OS).
 @"command-arg": RepeatableString = .{},
 
-/// The setting to tell Ghostty to start in fullscreen mode.
-/// By default with will start windowed.
-/// New windows created when this is set to true will not start in fullscreen.
+/// Start new windows in fullscreen. This setting applies to new
+/// windows and does not apply to tabs, splits, etc. However, this
+/// setting will apply to all new windows, not just the first one.
 fullscreen: bool = false,
 
-/// The setting that will change the application class value.
-/// This is usefull if you want to have multiple instances of Ghostty
-/// running with separate classes making it possible to have unique behavior for each of them.
-/// This is currently only supported on Gtk builds.
-/// The class name must follow the GTK requirements defined here: https://docs.gtk.org/gio/type_func.Application.id_is_valid.html
-class: ?[:0]const u8 = null,
-
-/// The setting that will tell Ghostty which title to display.
-/// By default Ghostty will output the current directory or what application is running as the title,
-/// but with this setting it will force Ghostty to output that title independent of what is happening in the terminal.
+/// The title Ghostty will use for the window. This will force the title
+/// of the window to be this title at all times and Ghostty will ignore any
+/// set title escape sequences programs (such as Neovim) may send.
 title: ?[:0]const u8 = null,
+
+/// The setting that will change the application class value. This value is
+/// often used with Linux window managers to change behavior (such as
+/// floating vs tiled). If you don't know what this is, don't set it.
+///
+/// The class name must follow the GTK requirements defined here:
+/// https://docs.gtk.org/gio/type_func.Application.id_is_valid.html
+///
+/// This only affects GTK builds.
+class: ?[:0]const u8 = null,
 
 /// The directory to change to after starting the command.
 ///
