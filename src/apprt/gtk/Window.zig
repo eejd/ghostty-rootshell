@@ -125,6 +125,9 @@ pub fn init(self: *Window, app: *App) !void {
 
     if (app.config.fullscreen) {
         c.gtk_window_fullscreen(self.window);
+
+        // We disable this because we just want to start the first window in fullscreen.
+        app.config.fullscreen = false;
     }
 
     // All of our events

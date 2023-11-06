@@ -291,7 +291,7 @@ class: ?[:0]const u8 = null,
 
 /// The setting that will tell Ghostty which title to display.
 /// By default Ghostty will output the current directory or what application is running as the title,
-/// but with this setting it will force Ghostty to output that title independent of what is happening in terminal.
+/// but with this setting it will force Ghostty to output that title independent of what is happening in the terminal.
 title: ?[:0]const u8 = null,
 
 /// The directory to change to after starting the command.

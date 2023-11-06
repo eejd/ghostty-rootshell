@@ -113,7 +113,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
                     break :app_id default_id;
                 },
                 error.InvalidLength => {
-                    log.warn("Class name value is over 255 chars in length. Setting app id to default value", .{});
+                    log.warn("Class name value doesn't have valid length (> 0 or 255 <=). Setting app id to default value", .{});
                     break :app_id default_id;
                 },
                 error.NoDotInId => {
@@ -324,15 +324,6 @@ pub fn redrawInspector(self: *App, surface: *Surface) void {
 /// Called by CoreApp to create a new window with a new surface.
 pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
     const alloc = self.core_app.alloc;
-
-    // If we are in fullscreen mode and have a parent surface we force the disable of this setting.
-    // This prevents that new windows get created in fullscreen mode.
-    // This also prevents that the settings always gets set to false everytime a new window is created.
-    if (self.config.fullscreen) {
-        if (parent_) |_| {
-            self.config.fullscreen = false;
-        }
-    }
 
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
