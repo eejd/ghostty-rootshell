@@ -286,6 +286,7 @@ fullscreen: bool = false,
 /// This is usefull if you want to have multiple instances of Ghostty
 /// running with separate classes making it possible to have unique behavior for each of them.
 /// This is currently only supported on Gtk builds.
+/// The class name must follow the GTK requirements defined here: https://docs.gtk.org/gio/type_func.Application.id_is_valid.html
 class: ?[:0]const u8 = null,
 
 /// The setting that will tell Ghostty which title to display.
