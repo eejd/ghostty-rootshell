@@ -270,6 +270,7 @@ extension Ghostty {
         var body: some View {
             SplitView(
                 container.direction,
+                $container.split,
                 resizeIncrements: .init(width: 1, height: 1),
                 resizePublisher: container.resizeEvent,
                 left: {
