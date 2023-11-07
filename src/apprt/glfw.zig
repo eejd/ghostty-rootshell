@@ -153,13 +153,18 @@ pub const App = struct {
             const monitor = win.getMonitor() orelse monitor: {
                 log.warn("window had null monitor, getting primary monitor", .{});
                 break :monitor glfw.Monitor.getPrimary() orelse {
-                    log.warn("window could not get any monitor. Will not perform action", .{});
+                    log.warn("window could not get any monitor. will not perform action", .{});
                     return;
                 };
             };
+            const video_mode = monitor.getVideoMode() orelse {
+                log.warn("failed to get video mode. will not perform action", .{});
+                return;
+            };
+
             const position = win.getPos();
             const size = surface.getSize() catch {
-                log.warn("Failed to get window size. Will not perform fullscreen action", .{});
+                log.warn("failed to get window size. will not perform fullscreen action", .{});
                 return;
             };
 
@@ -170,7 +175,7 @@ pub const App = struct {
                 .position_y = position.y,
             };
 
-            win.setMonitor(monitor, 0, 0, surface.window_dimensions.width, surface.window_dimensions.height, 0);
+            win.setMonitor(monitor, 0, 0, video_mode.getWidth(), video_mode.getHeight(), 0);
         } else {
             win.setMonitor(null, @as(i32, @intCast(surface.window_dimensions.position_x)), @as(i32, @intCast(surface.window_dimensions.position_y)), surface.window_dimensions.width, surface.window_dimensions.height, 0);
         }
