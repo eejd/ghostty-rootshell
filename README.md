@@ -98,10 +98,11 @@ palette = 7=#a89984
 palette = 15=#fbf1c7
 ```
 
-The available keys and valid values are not easily documented yet, but they
-are easily visible if you're mildly comfortable with Zig. The available keys
-are just the keys (verbatim) in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
-The keys are documented there, too.
+While the set of config keys and values are not yet documented, they are
+easily discoverable in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
+The available keys are simply the keys verbatim, and their possible values
+are often documented in the comments. You also can search for the [public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
+of many ghostty users for examples and inspiration.
 
 #### Configuration Errors
 
