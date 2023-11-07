@@ -10,6 +10,9 @@ const ErrorList = @import("../config/ErrorList.zig");
 //   - Only `--long=value` format is accepted. Do we want to allow
 //     `--long value`? Not currently allowed.
 
+// For trimming
+const whitespace = " \t";
+
 /// The base errors for arg parsing. Additional errors can be returned due
 /// to type-specific parsing but these are always possible.
 pub const Error = error{
@@ -191,18 +194,6 @@ fn parseIntoField(
                 }
             }
 
-            switch (fieldInfo) {
-                .Enum => {
-                    @field(dst, field.name) = std.meta.stringToEnum(
-                        Field,
-                        value orelse return error.ValueRequired,
-                    ) orelse return error.InvalidValue;
-                    return;
-                },
-
-                else => {},
-            }
-
             // No parseCLI, magic the value based on the type
             @field(dst, field.name) = switch (Field) {
                 []const u8 => value: {
@@ -239,7 +230,19 @@ fn parseIntoField(
                     value orelse return error.ValueRequired,
                 ) catch return error.InvalidValue,
 
-                else => unreachable,
+                else => switch (fieldInfo) {
+                    .Enum => std.meta.stringToEnum(
+                        Field,
+                        value orelse return error.ValueRequired,
+                    ) orelse return error.InvalidValue,
+
+                    .Struct => try parsePackedStruct(
+                        Field,
+                        value orelse return error.ValueRequired,
+                    ),
+
+                    else => unreachable,
+                },
             };
 
             return;
@@ -247,6 +250,42 @@ fn parseIntoField(
     }
 
     return error.InvalidField;
+}
+
+fn parsePackedStruct(comptime T: type, v: []const u8) !T {
+    const info = @typeInfo(T).Struct;
+    assert(info.layout == .Packed);
+
+    var result: T = .{};
+
+    // We split each value by ","
+    var iter = std.mem.splitSequence(u8, v, ",");
+    loop: while (iter.next()) |part_raw| {
+        // Determine the field we're looking for and the value. If the
+        // field is prefixed with "no-" then we set the value to false.
+        const part, const value = part: {
+            const negation_prefix = "no-";
+            const trimmed = std.mem.trim(u8, part_raw, whitespace);
+            if (std.mem.startsWith(u8, trimmed, negation_prefix)) {
+                break :part .{ trimmed[negation_prefix.len..], false };
+            } else {
+                break :part .{ trimmed, true };
+            }
+        };
+
+        inline for (info.fields) |field| {
+            assert(field.type == bool);
+            if (std.mem.eql(u8, field.name, part)) {
+                @field(result, field.name) = value;
+                continue :loop;
+            }
+        }
+
+        // No field matched
+        return error.InvalidValue;
+    }
+
+    return result;
 }
 
 fn parseBool(v: []const u8) !bool {
@@ -462,6 +501,63 @@ test "parseIntoField: enums" {
     try testing.expectEqual(Enum.two, data.v);
 }
 
+test "parseIntoField: packed struct" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Field = packed struct {
+        a: bool = false,
+        b: bool = true,
+    };
+    var data: struct {
+        v: Field,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "v", "b");
+    try testing.expect(!data.v.a);
+    try testing.expect(data.v.b);
+}
+
+test "parseIntoField: packed struct negation" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Field = packed struct {
+        a: bool = false,
+        b: bool = true,
+    };
+    var data: struct {
+        v: Field,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "v", "a,no-b");
+    try testing.expect(data.v.a);
+    try testing.expect(!data.v.b);
+}
+
+test "parseIntoField: packed struct whitespace" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Field = packed struct {
+        a: bool = false,
+        b: bool = true,
+    };
+    var data: struct {
+        v: Field,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "v", " a, no-b ");
+    try testing.expect(data.v.a);
+    try testing.expect(!data.v.b);
+}
+
 test "parseIntoField: optional field" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);
@@ -582,7 +678,6 @@ pub fn LineIterator(comptime ReaderType: type) type {
                     } orelse return null;
 
                     // Trim any whitespace around it
-                    const whitespace = " \t";
                     const trim = std.mem.trim(u8, entry, whitespace);
                     if (trim.len != entry.len) {
                         std.mem.copy(u8, entry, trim);

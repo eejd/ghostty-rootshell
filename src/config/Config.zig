@@ -2187,6 +2187,11 @@ pub const ShellIntegration = enum {
     @"no-cursor",
 };
 
+/// Shell integration features
+pub const ShellIntegrationFeatures = packed struct {
+    cursor: bool = true,
+};
+
 /// OSC 10 and 11 default color reporting format.
 pub const OSCColorReportFormat = enum {
     none,
