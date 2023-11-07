@@ -2150,8 +2150,8 @@ const StreamHandler = struct {
         }
     }
 
-    /// Implements OSC 10 and OSC 11, which reports default foreground and
-    /// background color respectively.
+    /// Implements OSC 4, OSC 10, and OSC 11, which reports palette color,
+    /// default foreground color, and background color respectively.
     pub fn reportDefaultColor(
         self: *StreamHandler,
         kind: terminal.osc.Command.DefaultColorKind,
@@ -2162,6 +2162,7 @@ const StreamHandler = struct {
         const color = switch (kind) {
             .foreground => self.default_foreground_color,
             .background => self.default_background_color,
+            .palette => |i| self.terminal.color_palette[i],
         };
 
         var msg: termio.Message = .{ .write_small = .{} };

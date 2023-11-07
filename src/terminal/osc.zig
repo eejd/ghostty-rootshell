@@ -94,9 +94,10 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
-    /// OSC 10 and OSC 11 default color report.
+    /// OSC 4, OSC 10, and OSC 11 default color report.
     report_default_color: struct {
-        /// OSC 10 requests the foreground color, OSC 11 the background color.
+        /// OSC 4 requests a palette color, OSC 10 requests the foreground
+        /// color, OSC 11 the background color.
         kind: DefaultColorKind,
 
         /// We must reply with the same string terminator (ST) as used in the
@@ -104,14 +105,16 @@ pub const Command = union(enum) {
         terminator: Terminator = .st,
     },
 
-    pub const DefaultColorKind = enum {
+    pub const DefaultColorKind = union(enum) {
         foreground,
         background,
+        palette: u8,
 
         pub fn code(self: DefaultColorKind) []const u8 {
             return switch (self) {
                 .foreground => "10",
                 .background => "11",
+                .palette => "4",
             };
         }
     };
@@ -199,6 +202,7 @@ pub const Parser = struct {
         @"133",
         @"2",
         @"22",
+        @"4",
         @"5",
         @"52",
         @"7",
@@ -223,6 +227,10 @@ pub const Parser = struct {
         // Get/set clipboard states
         clipboard_kind,
         clipboard_kind_end,
+
+        // Get/set color palette index
+        color_palette_index,
+        color_palette_index_end,
 
         // Expect a string parameter. param_str must be set as well as
         // buf_start.
@@ -277,6 +285,7 @@ pub const Parser = struct {
                 '0' => self.state = .@"0",
                 '1' => self.state = .@"1",
                 '2' => self.state = .@"2",
+                '4' => self.state = .@"4",
                 '5' => self.state = .@"5",
                 '7' => self.state = .@"7",
                 else => self.state = .invalid,
@@ -344,6 +353,39 @@ pub const Parser = struct {
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.mouse_shape.value };
                     self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .@"4" => switch (c) {
+                ';' => {
+                    self.state = .color_palette_index;
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .color_palette_index => switch (c) {
+                '0'...'9' => {},
+                ';' => {
+                    if (std.fmt.parseUnsigned(u8, self.buf[self.buf_start .. self.buf_idx - 1], 10)) |num| {
+                        self.state = .color_palette_index_end;
+                        self.temp_state = .{ .num = num };
+                    } else |err| switch (err) {
+                        error.Overflow => self.state = .invalid,
+                        error.InvalidCharacter => unreachable,
+                    }
+                },
+                else => self.state = .invalid,
+            },
+
+            .color_palette_index_end => switch (c) {
+                '?' => {
+                    self.command = .{ .report_default_color = .{
+                        .kind = .{ .palette = @intCast(self.temp_state.num) },
+                    } };
+
+                    self.complete = true;
                 },
                 else => self.state = .invalid,
             },
@@ -920,4 +962,18 @@ test "OSC: report default background color" {
     try testing.expect(cmd == .report_default_color);
     try testing.expectEqual(cmd.report_default_color.kind, .background);
     try testing.expectEqual(cmd.report_default_color.terminator, .bel);
+}
+
+test "OSC: get palette color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "4;1;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .report_default_color);
+    try testing.expectEqual(cmd.report_default_color.kind, .{ .palette = 1 });
+    try testing.expectEqual(cmd.report_default_color.terminator, .st);
 }
