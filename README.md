@@ -102,7 +102,7 @@ While the set of config keys and values are not yet documented, they are
 easily discoverable in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
 The available keys are simply the keys verbatim, and their possible values
 are often documented in the comments. You also can search for the [public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
-of many ghostty users for examples and inspiration.
+of many Ghostty users for examples and inspiration.
 
 #### Configuration Errors
 
@@ -324,15 +324,13 @@ a work-in-progress. Similar improvements will follow with Linux.
 
 ## Developing Ghostty
 
-Ghostty is built using both the [Zig](https://ziglang.org/) programming
-language as well as the Zig build system. At a minimum, Zig and Git must be installed.
-For [Nix](https://nixos.org/) users, a `shell.nix` is available which includes
-all the necessary dependencies pinned to exact versions.
+The official "golden setup" for developing Ghostty is managed by Nix in [shell.nix](https://github.com/mitchellh/ghostty/blob/main/shell.nix).
+It is the environment in which CI runs tests and builds artifacts. You don't have to use Nix for development, but the
+builds produced by your environment mustn't be different from the Nix build; Nix is the source of truth.
 
 **Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig. I plan on stabilizing on a release version when I get
-closer to generally releasing this to ease downstream packagers. During
-development, I'm sticking to nightly Zig. You can find binary releases of nightly builds
+releases of Zig while it is still in beta. I plan on stabilizing on a release version when I get
+closer to generally releasing this to ease downstream packagers. You can find binary releases of nightly builds
 on the [Zig downloads page](https://ziglang.org/download/).
 
 With Zig installed, a binary can be built using `zig build`:
