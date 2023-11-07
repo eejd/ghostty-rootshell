@@ -2,7 +2,7 @@
 <h1>
 <p align="center">
   <img src="https://user-images.githubusercontent.com/1299/199110421-9ff5fc30-a244-441e-9882-26070662adf9.png" alt="Logo" width="100">
-  <br>ghostty
+  <br>Ghostty
 </h1>
   <p align="center">
     GPU-accelerated terminal emulator pushing modern features.
@@ -22,18 +22,18 @@
 
 ## About
 
-ghostty is a cross-platform, GPU-accelerated terminal emulator that aims to
+Ghostty is a cross-platform, GPU-accelerated terminal emulator that aims to
 push the boundaries of what is possible with a terminal emulator by exposing
 modern, opt-in features that enable CLI tool developers to build more feature
 rich, interactive applications.
 
 There are a number of excellent terminal emulator options that exist
-today. The unique goal of ghostty is to have a platform for experimenting
+today. The unique goal of Ghostty is to have a platform for experimenting
 with modern, optional, non-standards-compliant features to enhance the
 capabilities of CLI applications. We aim to be the best in this category,
 and competitive in the rest.
 
-While aiming for this ambitious goal, ghostty is a fully standards compliant
+While aiming for this ambitious goal, Ghostty is a fully standards compliant
 terminal emulator that aims to remain compatible with all existing shells
 and software. You can use this as a drop-in replacement for your existing
 terminal emulator.
@@ -359,7 +359,7 @@ Other useful commands:
 - `zig build run -Dconformance=<name>` runs a conformance test case from
   the `conformance` directory. The `name` is the name of the file. This runs
   in the current running terminal emulator so if you want to check the
-  behavior of this project, you must run this command in ghostty.
+  behavior of this project, you must run this command in Ghostty.
 
 ### Compiling a Release Build
 
