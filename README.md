@@ -453,9 +453,7 @@ modifying anything Prettier will lint, you may want to install it locally and
 run this from the repo root before you commit:
 
 ```
-npm install -g prettier
 prettier --write .
 ```
 
-Or simply install one of the many Prettier extensions out there for your
-editor of choice.
+Make sure your Prettier version matches the version of in [devshell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devshell.nix).
