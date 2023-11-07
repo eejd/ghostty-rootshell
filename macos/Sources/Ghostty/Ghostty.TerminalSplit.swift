@@ -139,13 +139,8 @@ extension Ghostty {
         }
 
         func onEqualize(notification: SwiftUI.Notification) {
-            // If there are no splits then there is nothing to do
-            switch (node) {
-            case .split(let c):
-                _ = c.equalize()
-            default:
-                return
-            }
+            guard case .split(let c) = node else { return }
+            _ = c.equalize()
         }
     }
 
