@@ -405,13 +405,17 @@ pub const Surface = struct {
         win.setMouseButtonCallback(mouseButtonCallback);
         win.setDropCallback(dropCallback);
 
+        const pos = win.getPos();
+        const size = win.getFramebufferSize();
+
+        const dimensions = .{ .width = size.width, .height = size.height, .position_x = pos.x, .position_y = pos.y };
         // Build our result
         self.* = .{
             .app = app,
             .window = win,
             .cursor = null,
             .core_surface = undefined,
-            .window_dimensions = undefined,
+            .window_dimensions = dimensions,
         };
         errdefer self.* = undefined;
 
