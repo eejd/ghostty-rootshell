@@ -54,7 +54,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-const utf8proc = @import("utf8proc");
+const ziglyph = @import("ziglyph");
 const trace = @import("tracy").trace;
 const ansi = @import("ansi.zig");
 const modes = @import("modes.zig");
@@ -2795,12 +2795,12 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
             // If we have a previous cell, we check if we're part of a grapheme.
             if (grapheme.cell) |prev_cell| {
                 const grapheme_break = brk: {
-                    var state: i32 = 0;
+                    var state: u3 = 0;
                     var cp1 = @as(u21, @intCast(prev_cell.char));
                     if (prev_cell.attrs.grapheme) {
                         var it = row.codepointIterator(grapheme.x);
                         while (it.next()) |cp2| {
-                            assert(!utf8proc.graphemeBreakStateful(
+                            assert(!ziglyph.graphemeBreak(
                                 cp1,
                                 cp2,
                                 &state,
@@ -2810,7 +2810,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                         }
                     }
 
-                    break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+                    break :brk ziglyph.graphemeBreak(cp1, c, &state);
                 };
 
                 if (!grapheme_break) {
@@ -2820,7 +2820,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
             }
         }
 
-        const width = utf8proc.charwidth(c);
+        const width: usize = @intCast(@max(0, ziglyph.display_width.codePointWidth(c, .half)));
         //log.warn("c={x} width={}", .{ c, width });
 
         // Zero-width are attached as grapheme data.

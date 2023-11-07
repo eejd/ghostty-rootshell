@@ -667,10 +667,6 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
-    const utf8proc_dep = b.dependency("utf8proc", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    });
     const harfbuzz_dep = b.dependency("harfbuzz", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -687,11 +683,7 @@ fn addDeps(
         // We link this package but its a no-op since Tracy
         // never actually WORKS with wasm.
         step.addModule("tracy", tracy_dep.module("tracy"));
-        step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
         step.addModule("zig-js", js_dep.module("zig-js"));
-
-        // utf8proc
-        step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
 
         return static_libs;
     }
@@ -729,7 +721,6 @@ fn addDeps(
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
     step.addModule("pixman", pixman_dep.module("pixman"));
-    step.addModule("utf8proc", utf8proc_dep.module("utf8proc"));
     step.addModule("ziglyph", ziglyph_dep.module("ziglyph"));
 
     // Mac Stuff
@@ -751,10 +742,6 @@ fn addDeps(
         step.linkLibrary(tracy_dep.artifact("tracy"));
         try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
     }
-
-    // utf8proc
-    step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
-    try static_libs.append(utf8proc_dep.artifact("utf8proc").getEmittedBin());
 
     // Dynamic link
     if (!static) {
