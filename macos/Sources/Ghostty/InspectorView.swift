@@ -12,7 +12,10 @@ extension Ghostty {
         
         // Maintain whether our view has focus or not
         @FocusState private var inspectorFocus: Bool
-        
+
+        // The fractional area of the surface view vs. the inspector (0.5 means a 50/50 split)
+        @State private var split: CGFloat = 0.5
+
         var body: some View {
             let center = NotificationCenter.default
             let pubInspector = center.publisher(for: Notification.didControlInspector, object: surfaceView)
@@ -21,7 +24,7 @@ extension Ghostty {
                 if (!surfaceView.inspectorVisible) {
                     SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
                 } else {
-                    SplitView(.vertical, left: {
+                    SplitView(.vertical, $split, left: {
                         SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
                     }, right: {
                         InspectorViewRepresentable(surfaceView: surfaceView)

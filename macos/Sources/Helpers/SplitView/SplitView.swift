@@ -22,7 +22,7 @@ struct SplitView<L: View, R: View>: View {
     let right: R
     
     /// The current fractional width of the split view. 0.5 means L/R are equally sized, for example.
-    @State var split: CGFloat = 0.5
+    @Binding var split: CGFloat
 
     /// The visible size of the splitter, in points. The invisible size is a transparent hitbox that can still
     /// be used for getting a resize handle. The total width/height of the splitter is the sum of both.
@@ -54,9 +54,10 @@ struct SplitView<L: View, R: View>: View {
     
     /// Initialize a split view. This view isn't programmatically resizable; it can only be resized
     /// by manually dragging the divider.
-    init(_ direction: SplitViewDirection, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
+    init(_ direction: SplitViewDirection, _ split: Binding<CGFloat>, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
         self.init(
             direction,
+            split,
             resizeIncrements: .init(width: 1, height: 1),
             resizePublisher: .init(),
             left: left,
@@ -67,12 +68,14 @@ struct SplitView<L: View, R: View>: View {
     /// Initialize a split view that supports programmatic resizing.
     init(
         _ direction: SplitViewDirection,
+        _ split: Binding<CGFloat>,
         resizeIncrements: NSSize,
         resizePublisher: PassthroughSubject<Double, Never>,
         @ViewBuilder left: (() -> L),
         @ViewBuilder right: (() -> R)
     ) {
         self.direction = direction
+        self._split = split
         self.resizeIncrements = resizeIncrements
         self.resizePublisher = resizePublisher
         self.left = left()

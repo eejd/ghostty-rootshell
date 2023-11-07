@@ -123,6 +123,7 @@ extension Ghostty {
 
             @Published var topLeft: SplitNode
             @Published var bottomRight: SplitNode
+            @Published var split: CGFloat = 0.5
 
             var resizeEvent: PassthroughSubject<Double, Never> = .init()
 
