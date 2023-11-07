@@ -6,7 +6,7 @@ const Terminal = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const utf8proc = @import("utf8proc");
+const ziglyph = @import("ziglyph");
 const testing = std.testing;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -682,12 +682,12 @@ pub fn print(self: *Terminal, c: u21) !void {
         if (prev.cell.char == 0) break :grapheme;
 
         const grapheme_break = brk: {
-            var state: i32 = 0;
-            var cp1 = @as(u21, @intCast(prev.cell.char));
+            var state: u3 = 0;
+            var cp1: u21 = @intCast(prev.cell.char);
             if (prev.cell.attrs.grapheme) {
                 var it = row.codepointIterator(prev.x);
                 while (it.next()) |cp2| {
-                    assert(!utf8proc.graphemeBreakStateful(
+                    assert(!ziglyph.graphemeBreak(
                         cp1,
                         cp2,
                         &state,
@@ -697,7 +697,7 @@ pub fn print(self: *Terminal, c: u21) !void {
                 }
             }
 
-            break :brk utf8proc.graphemeBreakStateful(cp1, c, &state);
+            break :brk ziglyph.graphemeBreak(cp1, c, &state);
         };
 
         // If we can NOT break, this means that "c" is part of a grapheme
@@ -764,7 +764,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // Determine the width of this character so we can handle
     // non-single-width characters properly.
-    const width = utf8proc.charwidth(c);
+    const width: usize = @intCast(@max(0, ziglyph.display_width.codePointWidth(c, .half)));
     assert(width <= 2);
     // log.debug("c={x} width={}", .{ c, width });
 
