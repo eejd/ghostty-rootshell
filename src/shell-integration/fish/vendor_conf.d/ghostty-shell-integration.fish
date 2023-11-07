@@ -51,12 +51,17 @@ status --is-interactive || ghostty_exit
 function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     functions -e __ghostty_setup
 
-    # Change the cursor to a beam on prompt.
-    function __ghostty_set_cursor_beam --on-event fish_prompt -d "Set cursor shape"
-        echo -en "\e[5 q"
-    end
-    function __ghostty_reset_cursor --on-event fish_preexec -d "Reset cursor shape"
-        echo -en "\e[0 q"
+    # Check if we are setting cursors
+    set --local no_cursor "$GHOSTTY_SHELL_INTEGRATION_NO_CURSOR"
+
+    if test -z $no_cursor
+        # Change the cursor to a beam on prompt.
+        function __ghostty_set_cursor_beam --on-event fish_prompt -d "Set cursor shape"
+            echo -en "\e[5 q"
+        end
+        function __ghostty_reset_cursor --on-event fish_preexec -d "Reset cursor shape"
+            echo -en "\e[0 q"
+        end
     end
 
     # Setup prompt marking
@@ -82,7 +87,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
     # Report pwd. This is actually built-in to fish but only for terminals
     # that match an allowlist and that isn't us.
-   function __update_cwd_osc --on-variable PWD -d 'Notify capable terminals when $PWD changes'
+    function __update_cwd_osc --on-variable PWD -d 'Notify capable terminals when $PWD changes'
         if status --is-command-substitution || set -q INSIDE_EMACS
             return
         end
@@ -93,7 +98,9 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     set --global fish_handle_reflow 1
 
     # Initial calls for first prompt
-    __ghostty_set_cursor_beam
+    if test -z $no_cursor
+        __ghostty_set_cursor_beam
+    end
     __ghostty_mark_prompt_start
     __update_cwd_osc
 end

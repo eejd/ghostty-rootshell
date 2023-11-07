@@ -532,6 +532,8 @@ keybind: Keybinds = .{},
 ///     configure your shell to enable the integration.
 ///   * "detect" - Detect the shell based on the filename.
 ///   * "fish", "zsh" - Use this specific shell injection scheme.
+///   * "no-cursor" - Detect the shell as in 'detect', but doesn't set cursor
+///     shapes
 ///
 /// The default value is "detect".
 @"shell-integration": ShellIntegration = .detect,
@@ -2182,6 +2184,7 @@ pub const ShellIntegration = enum {
     detect,
     fish,
     zsh,
+    @"no-cursor",
 };
 
 /// OSC 10 and 11 default color reporting format.
