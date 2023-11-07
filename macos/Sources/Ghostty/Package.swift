@@ -150,6 +150,9 @@ extension Ghostty.Notification {
     static let didResizeSplit = Notification.Name("com.mitchellh.ghostty.didResizeSplit")
     static let ResizeSplitDirectionKey = didResizeSplit.rawValue + ".direction"
     static let ResizeSplitAmountKey = didResizeSplit.rawValue + ".amount"
+
+    /// Notification sent to the split root to equalize split sizes
+    static let didEqualizeSplits = Notification.Name("com.mitchellh.ghostty.didEqualizeSplits")
 }
 
 // Make the input enum hashable.

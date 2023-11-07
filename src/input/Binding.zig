@@ -197,6 +197,9 @@ pub const Action = union(enum) {
     /// direction
     resize_split: SplitResizeParameter,
 
+    /// Equalize all splits in the current window
+    equalize_splits: void,
+
     /// Show, hide, or toggle the terminal inspector for the currently
     /// focused terminal.
     inspector: InspectorMode,

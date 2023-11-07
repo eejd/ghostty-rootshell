@@ -1016,6 +1016,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .right, .mods = .{ .super = true, .ctrl = true } },
             .{ .resize_split = .{ .right, 10 } },
         );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .equal, .mods = .{ .shift = true, .alt = true } },
+            .{ .equalize_splits = {} },
+        );
 
         // Inspector, matching Chromium
         try result.keybind.set.put(

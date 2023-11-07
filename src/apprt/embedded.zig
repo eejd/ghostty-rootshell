@@ -95,6 +95,9 @@ pub const App = struct {
         /// Resize the current split.
         resize_split: ?*const fn (SurfaceUD, input.SplitResizeDirection, u16) callconv(.C) void = null,
 
+        /// Equalize all splits in the current window
+        equalize_splits: ?*const fn (SurfaceUD) callconv(.C) void = null,
+
         /// Zoom the current split.
         toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
 
@@ -394,6 +397,15 @@ pub const Surface = struct {
         };
 
         func(self.opts.userdata, direction, amount);
+    }
+
+    pub fn equalizeSplits(self: *const Surface) void {
+        const func = self.app.opts.equalize_splits orelse {
+            log.info("runtime embedder does not support equalize splits", .{});
+            return;
+        };
+
+        func(self.opts.userdata);
     }
 
     pub fn toggleSplitZoom(self: *const Surface) void {
@@ -1386,6 +1398,11 @@ pub const CAPI = struct {
     /// between 0 and 1 that specifies by how much the divider will move.
     export fn ghostty_surface_split_resize(ptr: *Surface, direction: input.SplitResizeDirection, amount: u16) void {
         ptr.resizeSplit(direction, amount);
+    }
+
+    /// Equalize the size of all splits in the current window.
+    export fn ghostty_surface_split_equalize(ptr: *Surface) void {
+        ptr.equalizeSplits();
     }
 
     /// Invoke an action on the surface.
