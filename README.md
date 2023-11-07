@@ -22,25 +22,20 @@
 
 ## About
 
-Ghostty is a cross-platform, GPU-accelerated terminal emulator that aims to
-push the boundaries of what is possible with a terminal emulator by exposing
-modern, opt-in features that enable CLI tool developers to build more feature
-rich, interactive applications.
+Ghostty is an innovative terminal emulator with very ambitious goals.
 
-There are a number of excellent terminal emulator options that exist
-today. The unique goal of Ghostty is to have a platform for experimenting
-with modern, optional, non-standards-compliant features to enhance the
-capabilities of CLI applications. We aim to be the best in this category,
-and competitive in the rest.
+- ✅ performance competitive with the fastest GPU-accelerated terminals
+- ✅ highly customizable: variable fonts, background blurring, cursor opacity, window themes
+- ✅ feature-rich: splits, shell integration, emojis, Kitty graphics protocol support, and more
+- ✅ cross-platform with native UI on macOS and Linux (and Windows is on the roadmap)
+- 🚧 introduce cutting-edge, opt-in terminal capabilities that CLIs can utilize
 
-While aiming for this ambitious goal, Ghostty is a fully standards compliant
-terminal emulator that aims to remain compatible with all existing shells
-and software. You can use this as a drop-in replacement for your existing
-terminal emulator.
+On the last goal, there are many excellent terminal emulators that exist today, but Ghostty is
+unique in this. By exposing new [terminal capabilities that CLIs can leverage](https://en.wikipedia.org/wiki/ANSI_escape_code#CSIsection)]
+for richer interactivity, Ghostty can push the boundaries of what is possible with a terminal emulator.
 
-**Project Status:** Beta. Ghostty implements most of the baseline features
-you'd expect for a terminal you can work in every day. We're still missing
-things, but I've been using it full time since April 2022.
+**Project Status:** Beta. Ghostty implements most of the features you'd expect for a daily driver.
+We're still missing things, but I've been using it full time since April 2022.
 
 ## Download
 
