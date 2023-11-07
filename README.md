@@ -31,10 +31,10 @@ Ghostty is an innovative terminal emulator with very ambitious goals.
 - 🚧 introduce cutting-edge, opt-in terminal capabilities that CLIs can utilize
 
 On the last goal, there are many excellent terminal emulators that exist today, but Ghostty is
-unique in this. By exposing new [terminal capabilities that CLIs can leverage](https://en.wikipedia.org/wiki/ANSI_escape_code#CSIsection)
+unique in this. By exposing new [terminal capabilities](https://en.wikipedia.org/wiki/ANSI_escape_code#CSIsection) that CLIs can leverage
 for richer interactivity, Ghostty can push the boundaries of what is possible with a terminal emulator.
 
-**Project Status:** Ghostty is still in beta but implements most of the features you'd expect for a daily driver. See more in [Roadmap and Status](#roadmap-and-status)
+**Project Status:** Ghostty is still in beta but implements most of the features you'd expect for a daily driver. See more in [Roadmap and Status](#roadmap-and-status).
 
 ## Download
 
