@@ -34,8 +34,7 @@ On the last goal, there are many excellent terminal emulators that exist today, 
 unique in this. By exposing new [terminal capabilities that CLIs can leverage](https://en.wikipedia.org/wiki/ANSI_escape_code#CSIsection)]
 for richer interactivity, Ghostty can push the boundaries of what is possible with a terminal emulator.
 
-**Project Status:** Beta. Ghostty implements most of the features you'd expect for a daily driver.
-We're still missing things, but I've been using it full time since April 2022.
+**Project Status:** Ghostty is still in beta but implements most of the features you'd expect for a daily driver. See more in [Roadmap and Status](#roadmap-and-status)
 
 ## Download
 
