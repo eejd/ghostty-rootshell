@@ -2458,6 +2458,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement resizeSplit", .{});
         },
 
+        .equalize_splits => {
+            if (@hasDecl(apprt.Surface, "equalizeSplits")) {
+                self.rt_surface.equalizeSplits();
+            } else log.warn("runtime doesn't implement equalizeSplits", .{});
+        },
+
         .toggle_split_zoom => {
             if (@hasDecl(apprt.Surface, "toggleSplitZoom")) {
                 self.rt_surface.toggleSplitZoom();

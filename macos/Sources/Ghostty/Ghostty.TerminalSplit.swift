@@ -50,6 +50,7 @@ extension Ghostty {
         var body: some View {
             let center = NotificationCenter.default
             let pubZoom = center.publisher(for: Notification.didToggleSplitZoom)
+            let pubEqualize = center.publisher(for: Notification.didEqualizeSplits)
 
             // If we're zoomed, we don't render anything, we are transparent. This
             // ensures that the View stays around so we don't lose our state, but
@@ -75,6 +76,7 @@ extension Ghostty {
                             container: container
                         )
                         .onReceive(pubZoom) { onZoom(notification: $0) }
+                        .onReceive(pubEqualize) { onEqualize(notification: $0) }
                     }
                 }
                 .navigationTitle(surfaceTitle ?? "Ghostty")
@@ -135,8 +137,13 @@ extension Ghostty {
                 }
             }
         }
+
+        func onEqualize(notification: SwiftUI.Notification) {
+            guard case .split(let c) = node else { return }
+            _ = c.equalize()
+        }
     }
-    
+
     /// A noSplit leaf node of a split tree.
     private struct TerminalSplitLeaf: View {
         /// The leaf to draw the surface for.

@@ -38,6 +38,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
     @IBOutlet private var menuResetFontSize: NSMenuItem?
     @IBOutlet private var menuTerminalInspector: NSMenuItem?
 
+    @IBOutlet private var menuEqualizeSplits: NSMenuItem?
     @IBOutlet private var menuMoveSplitDividerUp: NSMenuItem?
     @IBOutlet private var menuMoveSplitDividerDown: NSMenuItem?
     @IBOutlet private var menuMoveSplitDividerLeft: NSMenuItem?
@@ -215,6 +216,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, GhosttyApp
         syncMenuShortcut(action: "resize_split:down,10", menuItem: self.menuMoveSplitDividerDown)
         syncMenuShortcut(action: "resize_split:right,10", menuItem: self.menuMoveSplitDividerRight)
         syncMenuShortcut(action: "resize_split:left,10", menuItem: self.menuMoveSplitDividerLeft)
+        syncMenuShortcut(action: "equalize_splits", menuItem: self.menuEqualizeSplits)
 
         syncMenuShortcut(action: "increase_font_size:1", menuItem: self.menuIncreaseFontSize)
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)

@@ -160,6 +160,8 @@ extension Ghostty {
                 focus_split_cb: { userdata, direction in AppState.focusSplit(userdata, direction: direction) },
                 resize_split_cb: { userdata, direction, amount in
                     AppState.resizeSplit(userdata, direction: direction, amount: amount) },
+                equalize_splits_cb: { userdata in
+                    AppState.equalizeSplits(userdata) },
                 toggle_split_zoom_cb: { userdata in AppState.toggleSplitZoom(userdata) },
                 goto_tab_cb: { userdata, n in AppState.gotoTab(userdata, n: n) },
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
@@ -298,6 +300,10 @@ extension Ghostty {
             ghostty_surface_split_resize(surface, direction.toNative(), amount)
         }
 
+        func splitEqualize(surface: ghostty_surface_t) {
+            ghostty_surface_split_equalize(surface)
+        }
+
         func splitToggleZoom(surface: ghostty_surface_t) {
             let action = "toggle_split_zoom"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
@@ -381,6 +387,11 @@ extension Ghostty {
                     Notification.ResizeSplitAmountKey: amount,
                 ]
             )
+        }
+
+        static func equalizeSplits(_ userdata: UnsafeMutableRawPointer?) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            NotificationCenter.default.post(name: Notification.didEqualizeSplits, object: surface)
         }
 
         static func toggleSplitZoom(_ userdata: UnsafeMutableRawPointer?) {

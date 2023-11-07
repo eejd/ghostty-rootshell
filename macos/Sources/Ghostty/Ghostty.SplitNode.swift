@@ -171,7 +171,31 @@ extension Ghostty {
                 }
             }
 
-            
+            /// Equalize the splits in this container. Each split is equalized
+            /// based on its weight, i.e. the number of leaves it contains.
+            /// This function returns the weight of this container.
+            func equalize() -> UInt {
+                let topLeftWeight: UInt
+                switch (topLeft) {
+                case .leaf:
+                    topLeftWeight = 1
+                case .split(let c):
+                    topLeftWeight = c.equalize()
+                }
+
+                let bottomRightWeight: UInt
+                switch (bottomRight) {
+                case .leaf:
+                    bottomRightWeight = 1
+                case .split(let c):
+                    bottomRightWeight = c.equalize()
+                }
+
+                let weight = topLeftWeight + bottomRightWeight
+                split = Double(topLeftWeight) / Double(weight)
+                return weight
+            }
+
             // MARK: - Hashable
             
             func hash(into hasher: inout Hasher) {
