@@ -4,6 +4,7 @@ const Config = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const fontpkg = @import("../font/main.zig");
@@ -1370,7 +1371,11 @@ fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
             src orelse return null,
         ),
 
-        .Struct => return try src.clone(alloc),
+        .Struct => |info| {
+            // Packed structs we can return directly as copies.
+            assert(info.layout == .Packed);
+            return src;
+        },
 
         else => {
             @compileLog(T);
