@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const ziglyph = @import("ziglyph");
 const font = @import("../main.zig");
 const shape = @import("../shape.zig");
 const terminal = @import("../../terminal/main.zig");
@@ -118,11 +117,9 @@ pub const RunIterator = struct {
             } else emoji: {
                 // If we're not a grapheme, our individual char could be
                 // an emoji so we want to check if we expect emoji presentation.
-                if (ziglyph.emoji.isEmojiPresentation(@intCast(cell.char))) {
-                    break :emoji .emoji;
-                }
-
-                break :emoji .text;
+                // The font group indexForCodepoint we use below will do this
+                // automatically.
+                break :emoji null;
             };
 
             // If our cursor is on this line then we break the run around the

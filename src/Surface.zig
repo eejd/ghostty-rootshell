@@ -348,11 +348,11 @@ pub fn init(
         // Our built-in font will be used as a backup
         _ = try group.addFace(
             .regular,
-            .{ .loaded = try font.Face.init(font_lib, face_ttf, group.faceOptions()) },
+            .{ .fallback_loaded = try font.Face.init(font_lib, face_ttf, group.faceOptions()) },
         );
         _ = try group.addFace(
             .bold,
-            .{ .loaded = try font.Face.init(font_lib, face_bold_ttf, group.faceOptions()) },
+            .{ .fallback_loaded = try font.Face.init(font_lib, face_bold_ttf, group.faceOptions()) },
         );
 
         // Auto-italicize if we have to.
@@ -363,11 +363,11 @@ pub fn init(
         if (builtin.os.tag != .macos or font.Discover == void) {
             _ = try group.addFace(
                 .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
+                .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
             );
             _ = try group.addFace(
                 .regular,
-                .{ .loaded = try font.Face.init(font_lib, face_emoji_text_ttf, group.faceOptions()) },
+                .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_text_ttf, group.faceOptions()) },
             );
         }
 
