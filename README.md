@@ -25,9 +25,9 @@
 Ghostty is an innovative terminal emulator with very ambitious goals.
 
 - ✅ performance competitive with the fastest GPU-accelerated terminals
-- ✅ highly customizable: variable fonts, background blurring, cursor opacity, window themes
-- ✅ feature-rich: splits, shell integration, emojis, [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol), terminal inspector
 - ✅ cross-platform with native UI on macOS and Linux (and Windows is on the roadmap)
+- ✅ feature-rich: splits, shell integration, emojis, [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol), terminal inspector
+- ✅ highly customizable: variable fonts, background blurring, cursor opacity, window themes
 - 🚧 introduce cutting-edge, opt-in terminal capabilities that CLIs can utilize
 
 On the last goal, there are many excellent terminal emulators today, but Ghostty is unique in this.
