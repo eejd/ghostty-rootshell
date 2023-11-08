@@ -532,11 +532,22 @@ keybind: Keybinds = .{},
 ///     configure your shell to enable the integration.
 ///   * "detect" - Detect the shell based on the filename.
 ///   * "fish", "zsh" - Use this specific shell injection scheme.
-///   * "no-cursor" - Detect the shell as in 'detect', but doesn't set cursor
-///     shapes
 ///
 /// The default value is "detect".
 @"shell-integration": ShellIntegration = .detect,
+
+/// Shell integration features to enable if shell integration itself is enabled.
+/// The format of this is a list of features to enable separated by commas.
+/// If you prefix a feature with "no-" then it is disabled. If you omit
+/// a feature, its default value is used, so you must explicitly disable
+/// features you don't want.
+///
+/// Available features:
+///
+///   - "cursor" - Set the cursor to a blinking bar at the prompt.
+///
+/// Example: "cursor", "no-cursor"
+@"shell-integration-features": ShellIntegrationFeatures = .{},
 
 /// Sets the reporting format for OSC sequences that request color information.
 /// Ghostty currently supports OSC 10 (foreground) and OSC 11 (background) queries,
@@ -2184,7 +2195,6 @@ pub const ShellIntegration = enum {
     detect,
     fish,
     zsh,
-    @"no-cursor",
 };
 
 /// Shell integration features

@@ -9,6 +9,7 @@ pub const Keybinds = Config.Keybinds;
 pub const MouseShiftCapture = Config.MouseShiftCapture;
 pub const NonNativeFullscreen = Config.NonNativeFullscreen;
 pub const OptionAsAlt = Config.OptionAsAlt;
+pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");

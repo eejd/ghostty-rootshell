@@ -812,13 +812,6 @@ const Subprocess = struct {
                 .detect => null,
                 .fish => .fish,
                 .zsh => .zsh,
-                .@"no-cursor" => nc: {
-                    // We add an environment variable for the shell integration
-                    // scripts to pick up to prevent setting cursor shapes.
-                    // Setting to "no_cursor" means we will detect the shell
-                    try env.put("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR", "1");
-                    break :nc null;
-                },
             };
 
             const dir = opts.resources_dir orelse break :shell null;
@@ -827,6 +820,7 @@ const Subprocess = struct {
                 final_path,
                 &env,
                 force,
+                opts.full_config.@"shell-integration-features",
             );
         };
         if (shell_integrated) |shell| {
