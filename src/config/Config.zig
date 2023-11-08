@@ -1069,30 +1069,53 @@ fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
     return copy;
 }
 
-/// Load the configuration from the default file locations. Currently,
-/// this loads from $XDG_CONFIG_HOME/ghostty/config.
-pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
-    const home_config_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
+/// Get the configuration file default location as a std.fs.Dir
+/// Currently, this loads from $XDG_CONFIG_HOME/ghostty.
+fn getConfigDir(alloc: Allocator) std.fs.Dir {
+    const home_config_path = internal_os.xdg.config(alloc, .{ .subdir = "ghostty" }) catch "";
     defer alloc.free(home_config_path);
 
     const cwd = std.fs.cwd();
-    if (cwd.openFile(home_config_path, .{})) |file| {
-        defer file.close();
-        std.log.info("reading configuration file path={s}", .{home_config_path});
-
-        var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli.args.lineIterator(buf_reader.reader());
-        try cli.args.parse(Config, alloc, self, &iter);
+    if (cwd.openDir(home_config_path, .{})) |dir| {
+        std.log.info("using configuration file path={s}", .{home_config_path});
+        return dir;
     } else |err| switch (err) {
         error.FileNotFound => std.log.info(
-            "homedir config not found, not loading path={s}",
+            "homedir not found, not loading from path={s}",
             .{home_config_path},
         ),
 
         else => std.log.warn(
-            "error reading homedir config file, not loading err={} path={s}",
+            "error reading homedir, not loading err={!} path={s}",
             .{ err, home_config_path },
         ),
+    }
+    std.log.warn("configuration file path not found. defaulting to current working dir", .{});
+    return cwd;
+}
+
+/// Load the configuration from the default configuration file.
+pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
+    const cfgdir = getConfigDir(alloc);
+    if (cfgdir.openFile("config", .{})) |file| {
+        defer file.close();
+
+        var buf_reader = std.io.bufferedReader(file.reader());
+        var iter = cli.args.lineIterator(buf_reader.reader());
+        try cli.args.parse(Config, alloc, self, &iter);
+    } else |err| {
+        const cfgpath = cfgdir.realpathAlloc(alloc, "config") catch "config";
+        switch (err) {
+            error.FileNotFound => std.log.info(
+                "homedir config not found, not loading path={s}",
+                .{cfgpath},
+            ),
+
+            else => std.log.warn(
+                "error reading config file, not loading err={} path={s}",
+                .{ err, cfgpath },
+            ),
+        }
     }
 }
 
@@ -1117,17 +1140,18 @@ pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
     // TODO(mitchellh): detect cycles when nesting
 
     if (self.@"config-file".list.items.len == 0) return;
-
     const arena_alloc = self._arena.?.allocator();
-    const cwd = std.fs.cwd();
+
+    const cfgdir = getConfigDir(alloc);
     const len = self.@"config-file".list.items.len;
     for (self.@"config-file".list.items) |path| {
-        var file = cwd.openFile(path, .{}) catch |err| {
+        var file = cfgdir.openFile(path, .{}) catch |err| {
+            const cfgpath = cfgdir.realpathAlloc(arena_alloc, path) catch path;
             try self._errors.add(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "error opening config-file {s}: {}",
-                    .{ path, err },
+                    .{ cfgpath, err },
                 ),
             });
             continue;
