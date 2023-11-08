@@ -1136,44 +1136,45 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
 
 /// Load and parse the config files that were added in the "config-file" key.
 pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
-    // TODO(mitchellh): support nesting (config-file in a config file)
-    // TODO(mitchellh): detect cycles when nesting
-
     if (self.@"config-file".list.items.len == 0) return;
     const arena_alloc = self._arena.?.allocator();
 
+    var loaded = std.StringHashMap(void).init(alloc);
+    defer loaded.deinit();
+
     const cfgdir = getConfigDir(alloc);
-    const len = self.@"config-file".list.items.len;
-    for (self.@"config-file".list.items) |path| {
-        var file = cfgdir.openFile(path, .{}) catch |err| {
+    more_found: while (true) {
+        const len = self.@"config-file".list.items.len;
+        for (self.@"config-file".list.items) |path| {
             const cfgpath = cfgdir.realpathAlloc(arena_alloc, path) catch path;
-            try self._errors.add(arena_alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    arena_alloc,
-                    "error opening config-file {s}: {}",
-                    .{ cfgpath, err },
-                ),
-            });
-            continue;
-        };
-        defer file.close();
 
-        var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli.args.lineIterator(buf_reader.reader());
-        try cli.args.parse(Config, alloc, self, &iter);
+            if (loaded.contains(cfgpath)) continue;
+            try loaded.put(cfgpath, {});
 
-        // We don't currently support adding more config files to load
-        // from within a loaded config file. This can be supported
-        // later.
-        if (self.@"config-file".list.items.len > len) {
-            try self._errors.add(arena_alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    arena_alloc,
-                    "config-file cannot be used in a config-file. Found in {s}",
-                    .{path},
-                ),
-            });
+            var file = cfgdir.openFile(path, .{}) catch |err| {
+                try self._errors.add(arena_alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        arena_alloc,
+                        "error opening config-file {s}: {}",
+                        .{ cfgpath, err },
+                    ),
+                });
+                continue;
+            };
+            defer file.close();
+
+            log.info("loading config-file path={s}", .{cfgpath});
+            var buf_reader = std.io.bufferedReader(file.reader());
+            var iter = cli.args.lineIterator(buf_reader.reader());
+            try cli.args.parse(Config, alloc, self, &iter);
+
+            // Added more config files, so the list's backing array might have
+            // been resized, so start the iteration over
+            if (self.@"config-file".list.items.len > len) {
+                continue :more_found;
+            }
         }
+        break;
     }
 }
 
