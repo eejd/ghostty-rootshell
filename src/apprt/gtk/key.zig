@@ -189,6 +189,9 @@ const keymap: []const RawEntry = &.{
     .{ c.GDK_KEY_KP_Add, .kp_add },
     .{ c.GDK_KEY_KP_Enter, .kp_enter },
     .{ c.GDK_KEY_KP_Equal, .kp_equal },
+
+    // These are all just aliases to the non-kp variants because Ghostty
+    // core doesn't distinguish between them currently.
     .{ c.GDK_KEY_KP_Home, .home },
     .{ c.GDK_KEY_KP_End, .end },
     .{ c.GDK_KEY_KP_Page_Up, .page_up },
