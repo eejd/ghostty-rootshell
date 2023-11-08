@@ -90,6 +90,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             ]
             let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
             let text = NSTextField(labelWithAttributedString: attributedString)
+            text.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
             window.tab.accessoryView = text
         }
     }
