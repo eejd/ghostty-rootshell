@@ -820,6 +820,7 @@ const Subprocess = struct {
                 final_path,
                 &env,
                 force,
+                opts.full_config.@"shell-integration-features",
             );
         };
         if (shell_integrated) |shell| {

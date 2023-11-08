@@ -1,5 +1,6 @@
 const std = @import("std");
 const EnvMap = std.process.EnvMap;
+const config = @import("../config.zig");
 
 const log = std.log.scoped(.shell_integration);
 
@@ -18,23 +19,31 @@ pub fn setup(
     command_path: []const u8,
     env: *EnvMap,
     force_shell: ?Shell,
+    features: config.ShellIntegrationFeatures,
 ) !?Shell {
     const exe = if (force_shell) |shell| switch (shell) {
         .fish => "/fish",
         .zsh => "/zsh",
     } else std.fs.path.basename(command_path);
 
-    if (std.mem.eql(u8, "fish", exe)) {
-        try setupFish(resource_dir, env);
-        return .fish;
-    }
+    const shell: Shell = shell: {
+        if (std.mem.eql(u8, "fish", exe)) {
+            try setupFish(resource_dir, env);
+            break :shell .fish;
+        }
 
-    if (std.mem.eql(u8, "zsh", exe)) {
-        try setupZsh(resource_dir, env);
-        return .zsh;
-    }
+        if (std.mem.eql(u8, "zsh", exe)) {
+            try setupZsh(resource_dir, env);
+            break :shell .zsh;
+        }
 
-    return null;
+        return null;
+    };
+
+    // Setup our feature env vars
+    if (!features.cursor) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR", "1");
+
+    return shell;
 }
 
 /// Setup the fish automatic shell integration. This works by

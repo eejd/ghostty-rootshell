@@ -41,8 +41,10 @@ function __ghostty_precmd() {
       PS2=$PS2'\[\e]133;B\a\]'
 
       # Cursor
+    if test "$GHOSTTY_SHELL_INTEGRATION_NO_CURSOR" != "1"; then
       PS1=$PS1'\[\e[5 q\]'
       PS0=$PS0'\[\e[0 q\]'
+    fi
 
       # Command
       PS0=$PS0'$(__ghostty_get_current_command)'
