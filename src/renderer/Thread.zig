@@ -263,11 +263,11 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .foreground_color => |color| {
-                self.renderer.config.foreground = color;
+                self.renderer.foreground_color = color;
             },
 
             .background_color => |color| {
-                self.renderer.config.background = color;
+                self.renderer.background_color = color;
             },
 
             .resize => |v| {

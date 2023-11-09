@@ -94,8 +94,8 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
-    /// OSC 4, OSC 10, and OSC 11 default color report.
-    report_default_color: struct {
+    /// OSC 4, OSC 10, and OSC 11 color report.
+    report_color: struct {
         /// OSC 4 requests a palette color, OSC 10 requests the foreground
         /// color, OSC 11 the background color.
         kind: DefaultColorKind,
@@ -105,7 +105,7 @@ pub const Command = union(enum) {
         terminator: Terminator = .st,
     },
 
-    set_default_color: struct {
+    set_color: struct {
         /// OSC 4 sets a palette color, OSC 10 sets the foreground color, OSC 11
         /// the background color.
         kind: DefaultColorKind,
@@ -390,20 +390,20 @@ pub const Parser = struct {
 
             .color_palette_index_end => switch (c) {
                 '?' => {
-                    self.command = .{ .report_default_color = .{
+                    self.command = .{ .report_color = .{
                         .kind = .{ .palette = @intCast(self.temp_state.num) },
                     } };
 
                     self.complete = true;
                 },
                 else => {
-                    self.command = .{ .set_default_color = .{
+                    self.command = .{ .set_color = .{
                         .kind = .{ .palette = @intCast(self.temp_state.num) },
                         .value = "",
                     } };
 
                     self.state = .string;
-                    self.temp_state = .{ .str = &self.command.set_default_color.value };
+                    self.temp_state = .{ .str = &self.command.set_color.value };
                     self.buf_start = self.buf_idx - 1;
                 },
             },
@@ -456,34 +456,34 @@ pub const Parser = struct {
 
             .query_default_fg => switch (c) {
                 '?' => {
-                    self.command = .{ .report_default_color = .{ .kind = .foreground } };
+                    self.command = .{ .report_color = .{ .kind = .foreground } };
                     self.complete = true;
                 },
                 else => {
-                    self.command = .{ .set_default_color = .{
+                    self.command = .{ .set_color = .{
                         .kind = .foreground,
                         .value = "",
                     } };
 
                     self.state = .string;
-                    self.temp_state = .{ .str = &self.command.set_default_color.value };
+                    self.temp_state = .{ .str = &self.command.set_color.value };
                     self.buf_start = self.buf_idx - 1;
                 },
             },
 
             .query_default_bg => switch (c) {
                 '?' => {
-                    self.command = .{ .report_default_color = .{ .kind = .background } };
+                    self.command = .{ .report_color = .{ .kind = .background } };
                     self.complete = true;
                 },
                 else => {
-                    self.command = .{ .set_default_color = .{
+                    self.command = .{ .set_color = .{
                         .kind = .background,
                         .value = "",
                     } };
 
                     self.state = .string;
-                    self.temp_state = .{ .str = &self.command.set_default_color.value };
+                    self.temp_state = .{ .str = &self.command.set_color.value };
                     self.buf_start = self.buf_idx - 1;
                 },
             },
@@ -694,7 +694,7 @@ pub const Parser = struct {
         }
 
         switch (self.command) {
-            .report_default_color => |*c| c.terminator = Terminator.init(terminator_ch),
+            .report_color => |*c| c.terminator = Terminator.init(terminator_ch),
             else => {},
         }
 
@@ -980,9 +980,9 @@ test "OSC: report default foreground color" {
 
     // This corresponds to ST = ESC followed by \
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .report_default_color);
-    try testing.expectEqual(cmd.report_default_color.kind, .foreground);
-    try testing.expectEqual(cmd.report_default_color.terminator, .st);
+    try testing.expect(cmd == .report_color);
+    try testing.expectEqual(cmd.report_color.kind, .foreground);
+    try testing.expectEqual(cmd.report_color.terminator, .st);
 }
 
 test "OSC: set foreground color" {
@@ -994,9 +994,9 @@ test "OSC: set foreground color" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x07').?;
-    try testing.expect(cmd == .set_default_color);
-    try testing.expectEqual(cmd.set_default_color.kind, .foreground);
-    try testing.expectEqualStrings(cmd.set_default_color.value, "rgbi:0.0/0.5/1.0");
+    try testing.expect(cmd == .set_color);
+    try testing.expectEqual(cmd.set_color.kind, .foreground);
+    try testing.expectEqualStrings(cmd.set_color.value, "rgbi:0.0/0.5/1.0");
 }
 
 test "OSC: report default background color" {
@@ -1009,9 +1009,9 @@ test "OSC: report default background color" {
 
     // This corresponds to ST = BEL character
     const cmd = p.end('\x07').?;
-    try testing.expect(cmd == .report_default_color);
-    try testing.expectEqual(cmd.report_default_color.kind, .background);
-    try testing.expectEqual(cmd.report_default_color.terminator, .bel);
+    try testing.expect(cmd == .report_color);
+    try testing.expectEqual(cmd.report_color.kind, .background);
+    try testing.expectEqual(cmd.report_color.terminator, .bel);
 }
 
 test "OSC: set background color" {
@@ -1023,9 +1023,9 @@ test "OSC: set background color" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .set_default_color);
-    try testing.expectEqual(cmd.set_default_color.kind, .background);
-    try testing.expectEqualStrings(cmd.set_default_color.value, "rgb:f/ff/ffff");
+    try testing.expect(cmd == .set_color);
+    try testing.expectEqual(cmd.set_color.kind, .background);
+    try testing.expectEqualStrings(cmd.set_color.value, "rgb:f/ff/ffff");
 }
 
 test "OSC: get palette color" {
@@ -1037,9 +1037,9 @@ test "OSC: get palette color" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .report_default_color);
-    try testing.expectEqual(cmd.report_default_color.kind, .{ .palette = 1 });
-    try testing.expectEqual(cmd.report_default_color.terminator, .st);
+    try testing.expect(cmd == .report_color);
+    try testing.expectEqual(cmd.report_color.kind, .{ .palette = 1 });
+    try testing.expectEqual(cmd.report_color.terminator, .st);
 }
 
 test "OSC: set palette color" {
@@ -1051,7 +1051,7 @@ test "OSC: set palette color" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .set_default_color);
-    try testing.expectEqual(cmd.set_default_color.kind, .{ .palette = 17 });
-    try testing.expectEqualStrings(cmd.set_default_color.value, "rgb:aa/bb/cc");
+    try testing.expect(cmd == .set_color);
+    try testing.expectEqual(cmd.set_color.kind, .{ .palette = 17 });
+    try testing.expectEqualStrings(cmd.set_color.value, "rgb:aa/bb/cc");
 }

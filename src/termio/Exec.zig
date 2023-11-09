@@ -70,11 +70,17 @@ grid_size: renderer.GridSize,
 default_cursor_style: terminal.Cursor.Style,
 default_cursor_blink: ?bool,
 
-/// Default foreground color for OSC 10 reporting.
+/// Default foreground color as set by the config file
 default_foreground_color: terminal.color.RGB,
 
-/// Default background color for OSC 11 reporting.
+/// Default background color as set by the config file
 default_background_color: terminal.color.RGB,
+
+/// Actual foreground color
+foreground_color: terminal.color.RGB,
+
+/// Actual background color
+background_color: terminal.color.RGB,
 
 /// The OSC 10/11 reply style.
 osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -171,6 +177,8 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .default_cursor_blink = opts.config.cursor_blink,
         .default_foreground_color = config.foreground.toTerminalRGB(),
         .default_background_color = config.background.toTerminalRGB(),
+        .foreground_color = config.foreground.toTerminalRGB(),
+        .background_color = config.background.toTerminalRGB(),
         .osc_color_report_format = config.osc_color_report_format,
         .data = null,
     };
@@ -238,6 +246,8 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .default_cursor_blink = self.default_cursor_blink,
                 .default_foreground_color = self.default_foreground_color,
                 .default_background_color = self.default_background_color,
+                .foreground_color = self.foreground_color,
+                .background_color = self.background_color,
                 .osc_color_report_format = self.osc_color_report_format,
             },
 
@@ -328,7 +338,7 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     self.default_cursor_style = config.cursor_style;
     self.default_cursor_blink = config.cursor_blink;
 
-    // Update foreground and background colors
+    // Update default foreground and background colors
     self.default_foreground_color = config.foreground.toTerminalRGB();
     self.default_background_color = config.background.toTerminalRGB();
 
@@ -1330,8 +1340,19 @@ const StreamHandler = struct {
     default_cursor: bool = true,
     default_cursor_style: terminal.Cursor.Style,
     default_cursor_blink: ?bool,
+
+    /// The default foreground and background color are those set by the user's
+    /// config file. These can be overridden by terminal applications using OSC
+    /// 10 and OSC 11, respectively.
     default_foreground_color: terminal.color.RGB,
     default_background_color: terminal.color.RGB,
+
+    /// The actual foreground and background color. Normally this will be the
+    /// same as the default foreground and background color, unless changed by a
+    /// terminal application.
+    foreground_color: terminal.color.RGB,
+    background_color: terminal.color.RGB,
+
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
     pub fn deinit(self: *StreamHandler) void {
@@ -2156,7 +2177,7 @@ const StreamHandler = struct {
 
     /// Implements OSC 4, OSC 10, and OSC 11, which reports palette color,
     /// default foreground color, and background color respectively.
-    pub fn reportDefaultColor(
+    pub fn reportColor(
         self: *StreamHandler,
         kind: terminal.osc.Command.DefaultColorKind,
         terminator: terminal.osc.Terminator,
@@ -2164,8 +2185,8 @@ const StreamHandler = struct {
         if (self.osc_color_report_format == .none) return;
 
         const color = switch (kind) {
-            .foreground => self.default_foreground_color,
-            .background => self.default_background_color,
+            .foreground => self.foreground_color,
+            .background => self.background_color,
             .palette => |i| self.terminal.color_palette[i],
         };
 
@@ -2201,7 +2222,7 @@ const StreamHandler = struct {
         self.messageWriter(msg);
     }
 
-    pub fn setDefaultColor(
+    pub fn setColor(
         self: *StreamHandler,
         kind: terminal.osc.Command.DefaultColorKind,
         value: []const u8,
@@ -2210,13 +2231,13 @@ const StreamHandler = struct {
 
         switch (kind) {
             .foreground => {
-                self.default_foreground_color = color;
+                self.foreground_color = color;
                 _ = self.ev.renderer_mailbox.push(.{
                     .foreground_color = color,
                 }, .{ .forever = {} });
             },
             .background => {
-                self.default_background_color = color;
+                self.background_color = color;
                 _ = self.ev.renderer_mailbox.push(.{
                     .background_color = color,
                 }, .{ .forever = {} });

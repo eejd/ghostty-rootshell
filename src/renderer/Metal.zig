@@ -64,6 +64,14 @@ padding: renderer.Options.Padding,
 /// True if the window is focused
 focused: bool,
 
+/// The actual foreground color. May differ from the config foreground color if
+/// changed by a terminal application
+foreground_color: terminal.color.RGB,
+
+/// The actual background color. May differ from the config background color if
+/// changed by a terminal application
+background_color: terminal.color.RGB,
+
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
@@ -254,6 +262,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .screen_size = null,
         .padding = options.padding,
         .focused = true,
+        .foreground_color = options.config.foreground,
+        .background_color = options.config.background,
 
         // Render state
         .cells_bg = .{},
@@ -461,15 +471,15 @@ pub fn render(
         }
 
         // Swap bg/fg if the terminal is reversed
-        const bg = self.config.background;
-        const fg = self.config.foreground;
+        const bg = self.background_color;
+        const fg = self.foreground_color;
         defer {
-            self.config.background = bg;
-            self.config.foreground = fg;
+            self.background_color = bg;
+            self.foreground_color = fg;
         }
         if (state.terminal.modes.get(.reverse_colors)) {
-            self.config.background = fg;
-            self.config.foreground = bg;
+            self.background_color = fg;
+            self.foreground_color = bg;
         }
 
         // We used to share terminal state, but we've since learned through
@@ -509,7 +519,7 @@ pub fn render(
         }
 
         break :critical .{
-            .bg = self.config.background,
+            .bg = self.background_color,
             .selection = selection,
             .screen = screen_copy,
             .preedit = if (cursor_style != null) state.preedit else null,
@@ -1267,21 +1277,21 @@ pub fn updateCell(
     const colors: BgFg = colors: {
         // If we are selected, we our colors are just inverted fg/bg
         var selection_res: ?BgFg = if (selected) .{
-            .bg = self.config.selection_background orelse self.config.foreground,
-            .fg = self.config.selection_foreground orelse self.config.background,
+            .bg = self.config.selection_background orelse self.foreground_color,
+            .fg = self.config.selection_foreground orelse self.background_color,
         } else null;
 
         const res: BgFg = selection_res orelse if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = if (cell.attrs.has_bg) cell.bg else null,
-            .fg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
+            .fg = if (cell.attrs.has_fg) cell.fg else self.foreground_color,
         } else .{
             // In inverted mode, the background MUST be set to something
             // (is never null) so it is either the fg or default fg. The
             // fg is either the bg or default background.
-            .bg = if (cell.attrs.has_fg) cell.fg else self.config.foreground,
-            .fg = if (cell.attrs.has_bg) cell.bg else self.config.background,
+            .bg = if (cell.attrs.has_fg) cell.fg else self.foreground_color,
+            .fg = if (cell.attrs.has_bg) cell.bg else self.background_color,
         };
 
         // If the cell is "invisible" then we just make fg = bg so that
@@ -1289,7 +1299,7 @@ pub fn updateCell(
         if (cell.attrs.invisible) {
             break :colors BgFg{
                 .bg = res.bg,
-                .fg = res.bg orelse self.config.background,
+                .fg = res.bg orelse self.background_color,
             };
         }
 
@@ -1316,7 +1326,7 @@ pub fn updateCell(
 
             // If we have a background and its not the default background
             // then we apply background opacity
-            if (cell.attrs.has_bg and !std.meta.eql(rgb, self.config.background)) {
+            if (cell.attrs.has_bg and !std.meta.eql(rgb, self.background_color)) {
                 break :bg_alpha alpha;
             }
 
@@ -1434,7 +1444,7 @@ fn addCursor(
         ), screen.cursor.x - 1 };
     };
 
-    const color = self.config.cursor_color orelse self.config.foreground;
+    const color = self.config.cursor_color orelse self.foreground_color;
     const alpha: u8 = if (!self.focused) 255 else alpha: {
         const alpha = 255 * self.config.cursor_opacity;
         break :alpha @intFromFloat(@ceil(alpha));
