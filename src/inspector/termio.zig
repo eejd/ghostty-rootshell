@@ -241,7 +241,8 @@ pub const VTEvent = struct {
                 try alloc.dupeZ(u8, @tagName(value)),
             ),
 
-            .Union => |u| if (u.tag_type) |Tag| {
+            .Union => |u| {
+                const Tag = u.tag_type orelse @compileError("Unions must have a tag");
                 const tag_name = @tagName(@as(Tag, value));
                 inline for (u.fields) |field| {
                     if (std.mem.eql(u8, field.name, tag_name)) {
@@ -256,8 +257,6 @@ pub const VTEvent = struct {
                         try md.put(key, s);
                     }
                 }
-            } else {
-                @compileError("Unions must have a tag");
             },
 
             else => switch (Value) {

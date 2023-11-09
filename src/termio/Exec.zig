@@ -2257,7 +2257,7 @@ const StreamHandler = struct {
         switch (kind) {
             .palette => |i| {
                 self.terminal.color_palette.colors[i] = color;
-                self.terminal.color_palette.mask |= @as(u256, 1) << i;
+                self.terminal.color_palette.mask.set(i);
             },
             .foreground => {
                 self.foreground_color = color;
@@ -2287,19 +2287,15 @@ const StreamHandler = struct {
     ) !void {
         switch (kind) {
             .palette => {
-                var mask = self.terminal.color_palette.mask;
-                defer self.terminal.color_palette.mask = mask;
-
+                const mask = &self.terminal.color_palette.mask;
                 if (value.len == 0) {
                     // Find all bit positions in the mask which are set and
                     // reset those indices to the default palette
-                    while (mask != 0) {
-                        // Safe to truncate, mask is non-zero so @ctz can never
-                        // return a u9
-                        const i: u8 = @truncate(@ctz(mask));
+                    var it = mask.iterator(.{});
+                    while (it.next()) |i| {
                         log.warn("Resetting palette color {}", .{i});
                         self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
-                        mask ^= @as(u256, 1) << i;
+                        mask.unset(i);
                     }
                 } else {
                     var it = std.mem.tokenizeScalar(u8, value, ';');
@@ -2307,9 +2303,9 @@ const StreamHandler = struct {
                         // Skip invalid parameters
                         const i = std.fmt.parseUnsigned(u8, param, 10) catch continue;
                         log.warn("Resetting palette color {}", .{i});
-                        if (mask & (@as(u256, 1) << i) != 0) {
+                        if (mask.isSet(i)) {
                             self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
-                            mask ^= @as(u256, 1) << i;
+                            mask.unset(i);
                         }
                     }
                 }

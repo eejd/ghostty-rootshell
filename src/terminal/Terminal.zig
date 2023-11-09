@@ -82,8 +82,9 @@ default_palette: color.Palette = color.default,
 /// The color palette to use. The mask indicates which palette indices have been
 /// modified with OSC 4
 color_palette: struct {
+    const Mask = std.StaticBitSet(@typeInfo(color.Palette).Array.len);
     colors: color.Palette = color.default,
-    mask: u256 = 0,
+    mask: Mask = Mask.initEmpty(),
 } = .{},
 
 /// The previous printed character. This is used for the repeat previous
