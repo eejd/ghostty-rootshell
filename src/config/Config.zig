@@ -1069,53 +1069,60 @@ fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
     return copy;
 }
 
-/// Get the configuration file default location as a std.fs.Dir
-/// Currently, this loads from $XDG_CONFIG_HOME/ghostty.
-fn getConfigDir(alloc: Allocator) std.fs.Dir {
-    const home_config_path = internal_os.xdg.config(alloc, .{ .subdir = "ghostty" }) catch "";
-    defer alloc.free(home_config_path);
-
-    const cwd = std.fs.cwd();
-    if (cwd.openDir(home_config_path, .{})) |dir| {
-        std.log.info("using configuration file path={s}", .{home_config_path});
-        return dir;
-    } else |err| switch (err) {
-        error.FileNotFound => std.log.info(
-            "homedir not found, not loading from path={s}",
-            .{home_config_path},
-        ),
-
-        else => std.log.warn(
-            "error reading homedir, not loading err={!} path={s}",
-            .{ err, home_config_path },
-        ),
-    }
-    std.log.warn("configuration file path not found. defaulting to current working dir", .{});
-    return cwd;
-}
-
 /// Load the configuration from the default configuration file.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
-    const cfgdir = getConfigDir(alloc);
-    if (cfgdir.openFile("config", .{})) |file| {
+    const config_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
+    defer alloc.free(config_path);
+
+    const cwd = std.fs.cwd();
+    if (cwd.openFile(config_path, .{})) |file| {
         defer file.close();
+        std.log.info("reading configuration file path={s}", .{config_path});
 
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
         try cli.args.parse(Config, alloc, self, &iter);
-    } else |err| {
-        const cfgpath = cfgdir.realpathAlloc(alloc, "config") catch "config";
-        switch (err) {
-            error.FileNotFound => std.log.info(
-                "homedir config not found, not loading path={s}",
-                .{cfgpath},
-            ),
+        try self.expandConfigFiles(std.fs.path.dirname(config_path).?);
+    } else |err| switch (err) {
+        error.FileNotFound => std.log.info(
+            "homedir config not found, not loading path={s}",
+            .{config_path},
+        ),
 
-            else => std.log.warn(
-                "error reading config file, not loading err={} path={s}",
-                .{ err, cfgpath },
-            ),
-        }
+        else => std.log.warn(
+            "error reading config file, not loading err={} path={s}",
+            .{ err, config_path },
+        ),
+    }
+}
+
+/// Expand the relative paths in config-files to be absolute paths
+/// relative to the base directory.
+fn expandConfigFiles(self: *Config, base: []const u8) !void {
+    assert(std.fs.path.isAbsolute(base));
+    var dir = try std.fs.cwd().openDir(base, .{});
+    defer dir.close();
+
+    const arena_alloc = self._arena.?.allocator();
+    for (self.@"config-file".list.items, 0..) |path, i| {
+        // If it is already absolute we can ignore it.
+        if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
+
+        // If it isn't absolute, we need to make it absolute relative to the base.
+        const abs = dir.realpathAlloc(arena_alloc, path) catch |err| {
+            try self._errors.add(arena_alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "error resolving config-file {s}: {}",
+                    .{ path, err },
+                ),
+            });
+            self.@"config-file".list.items[i] = "";
+            continue;
+        };
+
+        log.debug("expanding config-file path relative={s} abs={s}", .{ path, abs });
+        self.@"config-file".list.items[i] = abs;
     }
 }
 
@@ -1132,49 +1139,64 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
     try cli.args.parse(Config, alloc_gpa, self, &iter);
+
+    // Config files loaded from the CLI args are relative to pwd
+    if (self.@"config-file".list.items.len > 0) {
+        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        try self.expandConfigFiles(try std.fs.cwd().realpath(".", &buf));
+    }
 }
 
 /// Load and parse the config files that were added in the "config-file" key.
-pub fn loadRecursiveFiles(self: *Config, alloc: Allocator) !void {
+pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     if (self.@"config-file".list.items.len == 0) return;
     const arena_alloc = self._arena.?.allocator();
 
-    var loaded = std.StringHashMap(void).init(alloc);
+    // Keeps track of loaded files to prevent cycles.
+    var loaded = std.StringHashMap(void).init(alloc_gpa);
     defer loaded.deinit();
 
-    const cfgdir = getConfigDir(alloc);
-    more_found: while (true) {
-        const len = self.@"config-file".list.items.len;
-        for (self.@"config-file".list.items) |path| {
-            const cfgpath = cfgdir.realpathAlloc(arena_alloc, path) catch path;
+    const cwd = std.fs.cwd();
+    var i: usize = 0;
+    while (i < self.@"config-file".list.items.len) : (i += 1) {
+        const path = self.@"config-file".list.items[i];
 
-            if (loaded.contains(cfgpath)) continue;
-            try loaded.put(cfgpath, {});
+        // Error paths
+        if (path.len == 0) continue;
 
-            var file = cfgdir.openFile(path, .{}) catch |err| {
-                try self._errors.add(arena_alloc, .{
-                    .message = try std.fmt.allocPrintZ(
-                        arena_alloc,
-                        "error opening config-file {s}: {}",
-                        .{ cfgpath, err },
-                    ),
-                });
-                continue;
-            };
-            defer file.close();
+        // All paths should already be absolute at this point because
+        // they're fixed up after each load.
+        assert(std.fs.path.isAbsolute(path));
 
-            log.info("loading config-file path={s}", .{cfgpath});
-            var buf_reader = std.io.bufferedReader(file.reader());
-            var iter = cli.args.lineIterator(buf_reader.reader());
-            try cli.args.parse(Config, alloc, self, &iter);
-
-            // Added more config files, so the list's backing array might have
-            // been resized, so start the iteration over
-            if (self.@"config-file".list.items.len > len) {
-                continue :more_found;
-            }
+        // We must only load a unique file once
+        if (try loaded.fetchPut(path, {}) != null) {
+            try self._errors.add(arena_alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "config-file {s}: cycle detected",
+                    .{path},
+                ),
+            });
+            continue;
         }
-        break;
+
+        var file = cwd.openFile(path, .{}) catch |err| {
+            try self._errors.add(arena_alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "error opening config-file {s}: {}",
+                    .{ path, err },
+                ),
+            });
+            continue;
+        };
+        defer file.close();
+
+        log.info("loading config-file path={s}", .{path});
+        var buf_reader = std.io.bufferedReader(file.reader());
+        var iter = cli.args.lineIterator(buf_reader.reader());
+        try cli.args.parse(Config, alloc_gpa, self, &iter);
+        try self.expandConfigFiles(std.fs.path.dirname(path).?);
     }
 }
 
