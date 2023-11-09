@@ -200,6 +200,16 @@ pub fn newTab(self: *Window, parent_: ?*CoreSurface) !void {
         c.gtk_widget_set_halign(label_box_widget, c.GTK_ALIGN_FILL);
         c.gtk_widget_set_hexpand(label_text, 1);
         c.gtk_widget_set_halign(label_text, c.GTK_ALIGN_FILL);
+
+        // This ensures that tabs are always equal width. If they're too
+        // long, they'll be truncated with an ellipsis.
+        c.gtk_label_set_max_width_chars(@ptrCast(label_text), 1);
+        c.gtk_label_set_ellipsize(@ptrCast(label_text), c.PANGO_ELLIPSIZE_END);
+
+        // We need to set a minimum width so that at a certain point
+        // the notebook will have an arrow button rather than shrinking tabs
+        // to an unreadably small size.
+        c.gtk_widget_set_size_request(@ptrCast(label_text), 100, 1);
     }
 
     const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
