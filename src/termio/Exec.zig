@@ -328,6 +328,10 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     self.default_cursor_style = config.cursor_style;
     self.default_cursor_blink = config.cursor_blink;
 
+    // Update foreground and background colors
+    self.default_foreground_color = config.foreground.toTerminalRGB();
+    self.default_background_color = config.background.toTerminalRGB();
+
     // If we have event data, then update our active stream too
     if (self.data) |data| {
         data.terminal_stream.handler.changeDefaultCursor(
