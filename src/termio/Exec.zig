@@ -69,12 +69,22 @@ grid_size: renderer.GridSize,
 /// it when a CSI q with default is called.
 default_cursor_style: terminal.Cursor.Style,
 default_cursor_blink: ?bool,
+default_cursor_color: ?terminal.color.RGB,
 
-/// Default foreground color for OSC 10 reporting.
+/// Actual cursor color
+cursor_color: ?terminal.color.RGB,
+
+/// Default foreground color as set by the config file
 default_foreground_color: terminal.color.RGB,
 
-/// Default background color for OSC 11 reporting.
+/// Default background color as set by the config file
 default_background_color: terminal.color.RGB,
+
+/// Actual foreground color
+foreground_color: terminal.color.RGB,
+
+/// Actual background color
+background_color: terminal.color.RGB,
 
 /// The OSC 10/11 reply style.
 osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -90,6 +100,7 @@ pub const DerivedConfig = struct {
     image_storage_limit: usize,
     cursor_style: terminal.Cursor.Style,
     cursor_blink: ?bool,
+    cursor_color: ?configpkg.Config.Color,
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -106,6 +117,7 @@ pub const DerivedConfig = struct {
             .image_storage_limit = config.@"image-storage-limit",
             .cursor_style = config.@"cursor-style",
             .cursor_blink = config.@"cursor-style-blink",
+            .cursor_color = config.@"cursor-color",
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
@@ -132,7 +144,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         opts.grid_size.rows,
     );
     errdefer term.deinit(alloc);
-    term.color_palette = opts.config.palette;
+    term.default_palette = opts.config.palette;
 
     // Set the image size limits
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
@@ -169,8 +181,18 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .grid_size = opts.grid_size,
         .default_cursor_style = opts.config.cursor_style,
         .default_cursor_blink = opts.config.cursor_blink,
+        .default_cursor_color = if (opts.config.cursor_color) |col|
+            col.toTerminalRGB()
+        else
+            null,
+        .cursor_color = if (opts.config.cursor_color) |col|
+            col.toTerminalRGB()
+        else
+            null,
         .default_foreground_color = config.foreground.toTerminalRGB(),
         .default_background_color = config.background.toTerminalRGB(),
+        .foreground_color = config.foreground.toTerminalRGB(),
+        .background_color = config.background.toTerminalRGB(),
         .osc_color_report_format = config.osc_color_report_format,
         .data = null,
     };
@@ -236,8 +258,12 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .grid_size = &self.grid_size,
                 .default_cursor_style = self.default_cursor_style,
                 .default_cursor_blink = self.default_cursor_blink,
+                .default_cursor_color = self.default_cursor_color,
+                .cursor_color = self.cursor_color,
                 .default_foreground_color = self.default_foreground_color,
                 .default_background_color = self.default_background_color,
+                .foreground_color = self.foreground_color,
+                .background_color = self.background_color,
                 .osc_color_report_format = self.osc_color_report_format,
             },
 
@@ -322,11 +348,19 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
 
     // Update the palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
-    self.terminal.color_palette = config.palette;
+    self.terminal.default_palette = config.palette;
 
     // Update our default cursor style
     self.default_cursor_style = config.cursor_style;
     self.default_cursor_blink = config.cursor_blink;
+    self.default_cursor_color = if (config.cursor_color) |col|
+        col.toTerminalRGB()
+    else
+        null;
+
+    // Update default foreground and background colors
+    self.default_foreground_color = config.foreground.toTerminalRGB();
+    self.default_background_color = config.background.toTerminalRGB();
 
     // If we have event data, then update our active stream too
     if (self.data) |data| {
@@ -1326,8 +1360,23 @@ const StreamHandler = struct {
     default_cursor: bool = true,
     default_cursor_style: terminal.Cursor.Style,
     default_cursor_blink: ?bool,
+    default_cursor_color: ?terminal.color.RGB,
+
+    /// Actual cursor color. This can be changed with OSC 12.
+    cursor_color: ?terminal.color.RGB,
+
+    /// The default foreground and background color are those set by the user's
+    /// config file. These can be overridden by terminal applications using OSC
+    /// 10 and OSC 11, respectively.
     default_foreground_color: terminal.color.RGB,
     default_background_color: terminal.color.RGB,
+
+    /// The actual foreground and background color. Normally this will be the
+    /// same as the default foreground and background color, unless changed by a
+    /// terminal application.
+    foreground_color: terminal.color.RGB,
+    background_color: terminal.color.RGB,
+
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
     pub fn deinit(self: *StreamHandler) void {
@@ -2150,18 +2199,20 @@ const StreamHandler = struct {
         }
     }
 
-    /// Implements OSC 10 and OSC 11, which reports default foreground and
-    /// background color respectively.
-    pub fn reportDefaultColor(
+    /// Implements OSC 4, OSC 10, and OSC 11, which reports palette color,
+    /// default foreground color, and background color respectively.
+    pub fn reportColor(
         self: *StreamHandler,
-        kind: terminal.osc.Command.DefaultColorKind,
+        kind: terminal.osc.Command.ColorKind,
         terminator: terminal.osc.Terminator,
     ) !void {
         if (self.osc_color_report_format == .none) return;
 
         const color = switch (kind) {
-            .foreground => self.default_foreground_color,
-            .background => self.default_background_color,
+            .palette => |i| self.terminal.color_palette.colors[i],
+            .foreground => self.foreground_color,
+            .background => self.background_color,
+            .cursor => self.cursor_color orelse self.foreground_color,
         };
 
         var msg: termio.Message = .{ .write_small = .{} };
@@ -2194,5 +2245,89 @@ const StreamHandler = struct {
         };
         msg.write_small.len = @intCast(resp.len);
         self.messageWriter(msg);
+    }
+
+    pub fn setColor(
+        self: *StreamHandler,
+        kind: terminal.osc.Command.ColorKind,
+        value: []const u8,
+    ) !void {
+        const color = try terminal.color.RGB.parse(value);
+
+        switch (kind) {
+            .palette => |i| {
+                self.terminal.color_palette.colors[i] = color;
+                self.terminal.color_palette.mask.set(i);
+            },
+            .foreground => {
+                self.foreground_color = color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .foreground_color = color,
+                }, .{ .forever = {} });
+            },
+            .background => {
+                self.background_color = color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .background_color = color,
+                }, .{ .forever = {} });
+            },
+            .cursor => {
+                self.cursor_color = color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .cursor_color = color,
+                }, .{ .forever = {} });
+            },
+        }
+    }
+
+    pub fn resetColor(
+        self: *StreamHandler,
+        kind: terminal.osc.Command.ColorKind,
+        value: []const u8,
+    ) !void {
+        switch (kind) {
+            .palette => {
+                const mask = &self.terminal.color_palette.mask;
+                if (value.len == 0) {
+                    // Find all bit positions in the mask which are set and
+                    // reset those indices to the default palette
+                    var it = mask.iterator(.{});
+                    while (it.next()) |i| {
+                        log.warn("Resetting palette color {}", .{i});
+                        self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                        mask.unset(i);
+                    }
+                } else {
+                    var it = std.mem.tokenizeScalar(u8, value, ';');
+                    while (it.next()) |param| {
+                        // Skip invalid parameters
+                        const i = std.fmt.parseUnsigned(u8, param, 10) catch continue;
+                        log.warn("Resetting palette color {}", .{i});
+                        if (mask.isSet(i)) {
+                            self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                            mask.unset(i);
+                        }
+                    }
+                }
+            },
+            .foreground => {
+                self.foreground_color = self.default_foreground_color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .foreground_color = self.foreground_color,
+                }, .{ .forever = {} });
+            },
+            .background => {
+                self.background_color = self.default_background_color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .background_color = self.background_color,
+                }, .{ .forever = {} });
+            },
+            .cursor => {
+                self.cursor_color = self.default_cursor_color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .cursor_color = self.cursor_color,
+                }, .{ .forever = {} });
+            },
+        }
     }
 };

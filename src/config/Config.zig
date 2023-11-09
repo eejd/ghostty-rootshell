@@ -551,15 +551,16 @@ keybind: Keybinds = .{},
 @"shell-integration-features": ShellIntegrationFeatures = .{},
 
 /// Sets the reporting format for OSC sequences that request color information.
-/// Ghostty currently supports OSC 10 (foreground) and OSC 11 (background) queries,
-/// and by default the reported values are scaled-up RGB values, where each component
-/// are 16 bits. This is how most terminals report these values. However, some legacy
-/// applications may require 8-bit, unscaled, components. We also support turning off
-/// reporting alltogether. The components are lowercase hex values.
+/// Ghostty currently supports OSC 10 (foreground), OSC 11 (background), and OSC
+/// 4 (256 color palette) queries, and by default the reported values are
+/// scaled-up RGB values, where each component are 16 bits. This is how most
+/// terminals report these values. However, some legacy applications may require
+/// 8-bit, unscaled, components. We also support turning off reporting
+/// alltogether. The components are lowercase hex values.
 ///
 /// Allowable values are:
 ///
-///   * "none" - OSC 10/11 queries receive no reply
+///   * "none" - OSC 4/10/11 queries receive no reply
 ///   * "8-bit" - Color components are return unscaled, i.e. rr/gg/bb
 ///   * "16-bit" - Color components are returned scaled, e.g. rrrr/gggg/bbbb
 ///

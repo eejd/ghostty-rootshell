@@ -1045,17 +1045,26 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .report_default_color => |v| {
-                    if (@hasDecl(T, "reportDefaultColor")) {
-                        try self.handler.reportDefaultColor(v.kind, v.terminator);
+                .report_color => |v| {
+                    if (@hasDecl(T, "reportColor")) {
+                        try self.handler.reportColor(v.kind, v.terminator);
                         return;
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                else => if (@hasDecl(T, "oscUnimplemented"))
-                    try self.handler.oscUnimplemented(cmd)
-                else
-                    log.warn("unimplemented OSC command: {}", .{cmd}),
+                .set_color => |v| {
+                    if (@hasDecl(T, "setColor")) {
+                        try self.handler.setColor(v.kind, v.value);
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
+                .reset_color => |v| {
+                    if (@hasDecl(T, "resetColor")) {
+                        try self.handler.resetColor(v.kind, v.value);
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
             }
 
             // Fall through for when we don't have a handler.

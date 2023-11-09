@@ -64,10 +64,6 @@ pub const Command = union(enum) {
         // TODO: err option
     },
 
-    /// Reset the color for the cursor. This reverts changes made with
-    /// change/read cursor color.
-    reset_cursor_color: void,
-
     /// Set or get clipboard contents. If data is null, then the current
     /// clipboard contents are sent to the pty. If data is set, this
     /// contents is set on the clipboard.
@@ -94,24 +90,49 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
-    /// OSC 10 and OSC 11 default color report.
-    report_default_color: struct {
-        /// OSC 10 requests the foreground color, OSC 11 the background color.
-        kind: DefaultColorKind,
+    /// OSC 4, OSC 10, and OSC 11 color report.
+    report_color: struct {
+        /// OSC 4 requests a palette color, OSC 10 requests the foreground
+        /// color, OSC 11 the background color.
+        kind: ColorKind,
 
         /// We must reply with the same string terminator (ST) as used in the
         /// request.
         terminator: Terminator = .st,
     },
 
-    pub const DefaultColorKind = enum {
+    /// Modify the foreground (OSC 10) or background color (OSC 11), or a palette color (OSC 4)
+    set_color: struct {
+        /// OSC 4 sets a palette color, OSC 10 sets the foreground color, OSC 11
+        /// the background color.
+        kind: ColorKind,
+
+        /// The color spec as a string
+        value: []const u8,
+    },
+
+    /// Reset a palette color (OSC 104) or the foreground (OSC 110), background
+    /// (OSC 111), or cursor (OSC 112) color.
+    reset_color: struct {
+        kind: ColorKind,
+
+        /// OSC 104 can have parameters indicating which palette colors to
+        /// reset.
+        value: []const u8,
+    },
+
+    pub const ColorKind = union(enum) {
+        palette: u8,
         foreground,
         background,
+        cursor,
 
-        pub fn code(self: DefaultColorKind) []const u8 {
+        pub fn code(self: ColorKind) []const u8 {
             return switch (self) {
+                .palette => "4",
                 .foreground => "10",
                 .background => "11",
+                .cursor => "12",
             };
         }
     };
@@ -195,21 +216,24 @@ pub const Parser = struct {
         @"1",
         @"10",
         @"11",
+        @"12",
         @"13",
         @"133",
         @"2",
         @"22",
+        @"4",
         @"5",
         @"52",
         @"7",
 
-        // OSC 10 is used to query the default foreground color, and to set the default foreground color.
-        // Only querying is currently supported.
-        query_default_fg,
+        // OSC 10 is used to query or set the current foreground color.
+        query_fg_color,
 
-        // OSC 11 is used to query the default background color, and to set the default background color.
-        // Only querying is currently supported.
-        query_default_bg,
+        // OSC 11 is used to query or set the current background color.
+        query_bg_color,
+
+        // OSC 12 is used to query or set the current cursor color.
+        query_cursor_color,
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -223,6 +247,13 @@ pub const Parser = struct {
         // Get/set clipboard states
         clipboard_kind,
         clipboard_kind_end,
+
+        // Get/set color palette index
+        color_palette_index,
+        color_palette_index_end,
+
+        // Reset color palette index
+        reset_color_palette_index,
 
         // Expect a string parameter. param_str must be set as well as
         // buf_start.
@@ -277,6 +308,7 @@ pub const Parser = struct {
                 '0' => self.state = .@"0",
                 '1' => self.state = .@"1",
                 '2' => self.state = .@"2",
+                '4' => self.state = .@"4",
                 '5' => self.state = .@"5",
                 '7' => self.state = .@"7",
                 else => self.state = .invalid,
@@ -296,22 +328,47 @@ pub const Parser = struct {
             .@"1" => switch (c) {
                 '0' => self.state = .@"10",
                 '1' => self.state = .@"11",
+                '2' => self.state = .@"12",
                 '3' => self.state = .@"13",
                 else => self.state = .invalid,
             },
 
             .@"10" => switch (c) {
-                ';' => self.state = .query_default_fg,
+                ';' => self.state = .query_fg_color,
+                '4' => {
+                    self.command = .{ .reset_color = .{
+                        .kind = .{ .palette = 0 },
+                        .value = "",
+                    } };
+
+                    self.state = .reset_color_palette_index;
+                    self.complete = true;
+                },
                 else => self.state = .invalid,
             },
 
             .@"11" => switch (c) {
-                ';' => self.state = .query_default_bg,
-                '2' => {
+                ';' => self.state = .query_bg_color,
+                '0' => {
+                    self.command = .{ .reset_color = .{ .kind = .foreground, .value = undefined } };
                     self.complete = true;
-                    self.command = .{ .reset_cursor_color = {} };
                     self.state = .invalid;
                 },
+                '1' => {
+                    self.command = .{ .reset_color = .{ .kind = .background, .value = undefined } };
+                    self.complete = true;
+                    self.state = .invalid;
+                },
+                '2' => {
+                    self.command = .{ .reset_color = .{ .kind = .cursor, .value = undefined } };
+                    self.complete = true;
+                    self.state = .invalid;
+                },
+                else => self.state = .invalid,
+            },
+
+            .@"12" => switch (c) {
+                ';' => self.state = .query_cursor_color,
                 else => self.state = .invalid,
             },
 
@@ -346,6 +403,61 @@ pub const Parser = struct {
                     self.buf_start = self.buf_idx;
                 },
                 else => self.state = .invalid,
+            },
+
+            .@"4" => switch (c) {
+                ';' => {
+                    self.state = .color_palette_index;
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .color_palette_index => switch (c) {
+                '0'...'9' => {},
+                ';' => {
+                    if (std.fmt.parseUnsigned(u8, self.buf[self.buf_start .. self.buf_idx - 1], 10)) |num| {
+                        self.state = .color_palette_index_end;
+                        self.temp_state = .{ .num = num };
+                    } else |err| switch (err) {
+                        error.Overflow => self.state = .invalid,
+                        error.InvalidCharacter => unreachable,
+                    }
+                },
+                else => self.state = .invalid,
+            },
+
+            .color_palette_index_end => switch (c) {
+                '?' => {
+                    self.command = .{ .report_color = .{
+                        .kind = .{ .palette = @intCast(self.temp_state.num) },
+                    } };
+
+                    self.complete = true;
+                },
+                else => {
+                    self.command = .{ .set_color = .{
+                        .kind = .{ .palette = @intCast(self.temp_state.num) },
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
+            },
+
+            .reset_color_palette_index => switch (c) {
+                ';' => {
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.reset_color.value };
+                    self.buf_start = self.buf_idx;
+                    self.complete = false;
+                },
+                else => {
+                    self.state = .invalid;
+                    self.complete = false;
+                },
             },
 
             .@"5" => switch (c) {
@@ -394,20 +506,58 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .query_default_fg => switch (c) {
+            .query_fg_color => switch (c) {
                 '?' => {
-                    self.command = .{ .report_default_color = .{ .kind = .foreground } };
+                    self.command = .{ .report_color = .{ .kind = .foreground } };
                     self.complete = true;
+                    self.state = .invalid;
                 },
-                else => self.state = .invalid,
+                else => {
+                    self.command = .{ .set_color = .{
+                        .kind = .foreground,
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
             },
 
-            .query_default_bg => switch (c) {
+            .query_bg_color => switch (c) {
                 '?' => {
-                    self.command = .{ .report_default_color = .{ .kind = .background } };
+                    self.command = .{ .report_color = .{ .kind = .background } };
                     self.complete = true;
+                    self.state = .invalid;
                 },
-                else => self.state = .invalid,
+                else => {
+                    self.command = .{ .set_color = .{
+                        .kind = .background,
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
+            },
+
+            .query_cursor_color => switch (c) {
+                '?' => {
+                    self.command = .{ .report_color = .{ .kind = .cursor } };
+                    self.complete = true;
+                    self.state = .invalid;
+                },
+                else => {
+                    self.command = .{ .set_color = .{
+                        .kind = .cursor,
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
             },
 
             .semantic_prompt => switch (c) {
@@ -616,7 +766,7 @@ pub const Parser = struct {
         }
 
         switch (self.command) {
-            .report_default_color => |*c| c.terminator = Terminator.init(terminator_ch),
+            .report_color => |*c| c.terminator = Terminator.init(terminator_ch),
             else => {},
         }
 
@@ -788,7 +938,7 @@ test "OSC: end_of_input" {
     try testing.expect(cmd == .end_of_input);
 }
 
-test "OSC: reset_cursor_color" {
+test "OSC: reset cursor color" {
     const testing = std.testing;
 
     var p: Parser = .{};
@@ -797,7 +947,8 @@ test "OSC: reset_cursor_color" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end(null).?;
-    try testing.expect(cmd == .reset_cursor_color);
+    try testing.expect(cmd == .reset_color);
+    try testing.expectEqual(cmd.reset_color.kind, .cursor);
 }
 
 test "OSC: get/set clipboard" {
@@ -902,9 +1053,23 @@ test "OSC: report default foreground color" {
 
     // This corresponds to ST = ESC followed by \
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .report_default_color);
-    try testing.expectEqual(cmd.report_default_color.kind, .foreground);
-    try testing.expectEqual(cmd.report_default_color.terminator, .st);
+    try testing.expect(cmd == .report_color);
+    try testing.expectEqual(cmd.report_color.kind, .foreground);
+    try testing.expectEqual(cmd.report_color.terminator, .st);
+}
+
+test "OSC: set foreground color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "10;rgbi:0.0/0.5/1.0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x07').?;
+    try testing.expect(cmd == .set_color);
+    try testing.expectEqual(cmd.set_color.kind, .foreground);
+    try testing.expectEqualStrings(cmd.set_color.value, "rgbi:0.0/0.5/1.0");
 }
 
 test "OSC: report default background color" {
@@ -917,7 +1082,49 @@ test "OSC: report default background color" {
 
     // This corresponds to ST = BEL character
     const cmd = p.end('\x07').?;
-    try testing.expect(cmd == .report_default_color);
-    try testing.expectEqual(cmd.report_default_color.kind, .background);
-    try testing.expectEqual(cmd.report_default_color.terminator, .bel);
+    try testing.expect(cmd == .report_color);
+    try testing.expectEqual(cmd.report_color.kind, .background);
+    try testing.expectEqual(cmd.report_color.terminator, .bel);
+}
+
+test "OSC: set background color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "11;rgb:f/ff/ffff";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .set_color);
+    try testing.expectEqual(cmd.set_color.kind, .background);
+    try testing.expectEqualStrings(cmd.set_color.value, "rgb:f/ff/ffff");
+}
+
+test "OSC: get palette color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "4;1;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .report_color);
+    try testing.expectEqual(cmd.report_color.kind, .{ .palette = 1 });
+    try testing.expectEqual(cmd.report_color.terminator, .st);
+}
+
+test "OSC: set palette color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "4;17;rgb:aa/bb/cc";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .set_color);
+    try testing.expectEqual(cmd.set_color.kind, .{ .palette = 17 });
+    try testing.expectEqualStrings(cmd.set_color.value, "rgb:aa/bb/cc");
 }

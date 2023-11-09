@@ -262,6 +262,18 @@ fn drainMailbox(self: *Thread) !void {
                 try self.renderer.setFontSize(size);
             },
 
+            .foreground_color => |color| {
+                self.renderer.foreground_color = color;
+            },
+
+            .background_color => |color| {
+                self.renderer.background_color = color;
+            },
+
+            .cursor_color => |color| {
+                self.renderer.cursor_color = color;
+            },
+
             .resize => |v| {
                 try self.renderer.setScreenSize(v.screen_size, v.padding);
             },
