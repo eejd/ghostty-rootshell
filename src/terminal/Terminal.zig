@@ -75,8 +75,16 @@ scrolling_region: ScrollingRegion,
 /// The last reported pwd, if any.
 pwd: std.ArrayList(u8),
 
-/// The color palette to use
-color_palette: color.Palette = color.default,
+/// The default color palette. This is only modified by changing the config file
+/// and is used to reset the palette when receiving an OSC 104 command.
+default_palette: color.Palette = color.default,
+
+/// The color palette to use. The mask indicates which palette indices have been
+/// modified with OSC 4
+color_palette: struct {
+    colors: color.Palette = color.default,
+    mask: u256 = 0,
+} = .{},
 
 /// The previous printed character. This is used for the repeat previous
 /// char CSI (ESC [ <n> b).
@@ -560,12 +568,12 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .@"8_fg" => |n| {
             self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette[@intFromEnum(n)];
+            self.screen.cursor.pen.fg = self.color_palette.colors[@intFromEnum(n)];
         },
 
         .@"8_bg" => |n| {
             self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette[@intFromEnum(n)];
+            self.screen.cursor.pen.bg = self.color_palette.colors[@intFromEnum(n)];
         },
 
         .reset_fg => self.screen.cursor.pen.attrs.has_fg = false,
@@ -574,22 +582,22 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .@"8_bright_fg" => |n| {
             self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette[@intFromEnum(n)];
+            self.screen.cursor.pen.fg = self.color_palette.colors[@intFromEnum(n)];
         },
 
         .@"8_bright_bg" => |n| {
             self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette[@intFromEnum(n)];
+            self.screen.cursor.pen.bg = self.color_palette.colors[@intFromEnum(n)];
         },
 
         .@"256_fg" => |idx| {
             self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette[idx];
+            self.screen.cursor.pen.fg = self.color_palette.colors[idx];
         },
 
         .@"256_bg" => |idx| {
             self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette[idx];
+            self.screen.cursor.pen.bg = self.color_palette.colors[idx];
         },
 
         .unknown => return error.InvalidAttribute,

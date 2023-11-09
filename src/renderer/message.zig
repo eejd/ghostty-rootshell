@@ -22,11 +22,11 @@ pub const Message = union(enum) {
     font_size: font.face.DesiredSize,
 
     /// Change the foreground color. This can be done separately from changing
-    /// the config file in response to an OSC 10 command
+    /// the config file in response to an OSC 10 command.
     foreground_color: terminal.color.RGB,
 
     /// Change the background color. This can be done separately from changing
-    /// the config file in response to an OSC 11 command
+    /// the config file in response to an OSC 11 command.
     background_color: terminal.color.RGB,
 
     /// Changes the screen size.

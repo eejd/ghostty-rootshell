@@ -98,32 +98,43 @@ pub const Command = union(enum) {
     report_color: struct {
         /// OSC 4 requests a palette color, OSC 10 requests the foreground
         /// color, OSC 11 the background color.
-        kind: DefaultColorKind,
+        kind: ColorKind,
 
         /// We must reply with the same string terminator (ST) as used in the
         /// request.
         terminator: Terminator = .st,
     },
 
+    /// Modify the foreground (OSC 10) or background color (OSC 11), or a palette color (OSC 4)
     set_color: struct {
         /// OSC 4 sets a palette color, OSC 10 sets the foreground color, OSC 11
         /// the background color.
-        kind: DefaultColorKind,
+        kind: ColorKind,
 
         /// The color spec as a string
         value: []const u8,
     },
 
-    pub const DefaultColorKind = union(enum) {
+    /// Reset a palette color (OSC 104) or the foreground (OSC 110), background
+    /// (OSC 111), or cursor (OSC 112) color.
+    reset_color: struct {
+        kind: ColorKind,
+
+        /// OSC 104 can have parameters indicating which palette colors to
+        /// reset.
+        value: []const u8,
+    },
+
+    pub const ColorKind = union(enum) {
+        palette: u8,
         foreground,
         background,
-        palette: u8,
 
-        pub fn code(self: DefaultColorKind) []const u8 {
+        pub fn code(self: ColorKind) []const u8 {
             return switch (self) {
+                .palette => "4",
                 .foreground => "10",
                 .background => "11",
-                .palette => "4",
             };
         }
     };
@@ -216,13 +227,11 @@ pub const Parser = struct {
         @"52",
         @"7",
 
-        // OSC 10 is used to query the default foreground color, and to set the default foreground color.
-        // Only querying is currently supported.
-        query_default_fg,
+        // OSC 10 is used to query or set the current foreground color.
+        query_fg_color,
 
-        // OSC 11 is used to query the default background color, and to set the default background color.
-        // Only querying is currently supported.
-        query_default_bg,
+        // OSC 11 is used to query or set the current background color.
+        query_bg_color,
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -240,6 +249,9 @@ pub const Parser = struct {
         // Get/set color palette index
         color_palette_index,
         color_palette_index_end,
+
+        // Reset color palette index
+        reset_color_palette_index,
 
         // Expect a string parameter. param_str must be set as well as
         // buf_start.
@@ -319,12 +331,31 @@ pub const Parser = struct {
             },
 
             .@"10" => switch (c) {
-                ';' => self.state = .query_default_fg,
+                ';' => self.state = .query_fg_color,
+                '4' => {
+                    self.command = .{ .reset_color = .{
+                        .kind = .{ .palette = 0 },
+                        .value = "",
+                    } };
+
+                    self.state = .reset_color_palette_index;
+                    self.complete = true;
+                },
                 else => self.state = .invalid,
             },
 
             .@"11" => switch (c) {
-                ';' => self.state = .query_default_bg,
+                ';' => self.state = .query_bg_color,
+                '0' => {
+                    self.command = .{ .reset_color = .{ .kind = .foreground, .value = undefined } };
+                    self.complete = true;
+                    self.state = .invalid;
+                },
+                '1' => {
+                    self.command = .{ .reset_color = .{ .kind = .background, .value = undefined } };
+                    self.complete = true;
+                    self.state = .invalid;
+                },
                 '2' => {
                     self.complete = true;
                     self.command = .{ .reset_cursor_color = {} };
@@ -408,6 +439,19 @@ pub const Parser = struct {
                 },
             },
 
+            .reset_color_palette_index => switch (c) {
+                ';' => {
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.reset_color.value };
+                    self.buf_start = self.buf_idx;
+                    self.complete = false;
+                },
+                else => {
+                    self.state = .invalid;
+                    self.complete = false;
+                },
+            },
+
             .@"5" => switch (c) {
                 '2' => self.state = .@"52",
                 else => self.state = .invalid,
@@ -454,10 +498,11 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .query_default_fg => switch (c) {
+            .query_fg_color => switch (c) {
                 '?' => {
                     self.command = .{ .report_color = .{ .kind = .foreground } };
                     self.complete = true;
+                    self.state = .invalid;
                 },
                 else => {
                     self.command = .{ .set_color = .{
@@ -471,10 +516,11 @@ pub const Parser = struct {
                 },
             },
 
-            .query_default_bg => switch (c) {
+            .query_bg_color => switch (c) {
                 '?' => {
                     self.command = .{ .report_color = .{ .kind = .background } };
                     self.complete = true;
+                    self.state = .invalid;
                 },
                 else => {
                     self.command = .{ .set_color = .{

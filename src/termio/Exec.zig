@@ -138,7 +138,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         opts.grid_size.rows,
     );
     errdefer term.deinit(alloc);
-    term.color_palette = opts.config.palette;
+    term.default_palette = opts.config.palette;
 
     // Set the image size limits
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
@@ -332,7 +332,7 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
 
     // Update the palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
-    self.terminal.color_palette = config.palette;
+    self.terminal.default_palette = config.palette;
 
     // Update our default cursor style
     self.default_cursor_style = config.cursor_style;
@@ -2179,15 +2179,15 @@ const StreamHandler = struct {
     /// default foreground color, and background color respectively.
     pub fn reportColor(
         self: *StreamHandler,
-        kind: terminal.osc.Command.DefaultColorKind,
+        kind: terminal.osc.Command.ColorKind,
         terminator: terminal.osc.Terminator,
     ) !void {
         if (self.osc_color_report_format == .none) return;
 
         const color = switch (kind) {
+            .palette => |i| self.terminal.color_palette.colors[i],
             .foreground => self.foreground_color,
             .background => self.background_color,
-            .palette => |i| self.terminal.color_palette[i],
         };
 
         var msg: termio.Message = .{ .write_small = .{} };
@@ -2224,12 +2224,16 @@ const StreamHandler = struct {
 
     pub fn setColor(
         self: *StreamHandler,
-        kind: terminal.osc.Command.DefaultColorKind,
+        kind: terminal.osc.Command.ColorKind,
         value: []const u8,
     ) !void {
         const color = try terminal.color.RGB.parse(value);
 
         switch (kind) {
+            .palette => |i| {
+                self.terminal.color_palette.colors[i] = color;
+                self.terminal.color_palette.mask |= @as(u256, 1) << i;
+            },
             .foreground => {
                 self.foreground_color = color;
                 _ = self.ev.renderer_mailbox.push(.{
@@ -2242,7 +2246,55 @@ const StreamHandler = struct {
                     .background_color = color,
                 }, .{ .forever = {} });
             },
-            .palette => |i| self.terminal.color_palette[i] = color,
+        }
+    }
+
+    pub fn resetColor(
+        self: *StreamHandler,
+        kind: terminal.osc.Command.ColorKind,
+        value: []const u8,
+    ) !void {
+        switch (kind) {
+            .palette => {
+                var mask = self.terminal.color_palette.mask;
+                defer self.terminal.color_palette.mask = mask;
+
+                if (value.len == 0) {
+                    // Find all bit positions in the mask which are set and
+                    // reset those indices to the default palette
+                    while (mask != 0) {
+                        // Safe to truncate, mask is non-zero so @ctz can never
+                        // return a u9
+                        const i: u8 = @truncate(@ctz(mask));
+                        log.warn("Resetting palette color {}", .{i});
+                        self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                        mask ^= @as(u256, 1) << i;
+                    }
+                } else {
+                    var it = std.mem.tokenizeScalar(u8, value, ';');
+                    while (it.next()) |param| {
+                        // Skip invalid parameters
+                        const i = std.fmt.parseUnsigned(u8, param, 10) catch continue;
+                        log.warn("Resetting palette color {}", .{i});
+                        if (mask & (@as(u256, 1) << i) != 0) {
+                            self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                            mask ^= @as(u256, 1) << i;
+                        }
+                    }
+                }
+            },
+            .foreground => {
+                self.foreground_color = self.default_foreground_color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .foreground_color = self.foreground_color,
+                }, .{ .forever = {} });
+            },
+            .background => {
+                self.background_color = self.default_background_color;
+                _ = self.ev.renderer_mailbox.push(.{
+                    .background_color = self.background_color,
+                }, .{ .forever = {} });
+            },
         }
     }
 };
