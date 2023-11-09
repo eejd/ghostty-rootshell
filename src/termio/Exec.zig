@@ -2201,107 +2201,12 @@ const StreamHandler = struct {
         self.messageWriter(msg);
     }
 
-    /// Parse a color from a string of hexadecimal digits or a floating point
-    /// intensity value.
-    ///
-    /// If `intensity` is false, the string can contain 1, 2, 3, or 4 characters
-    /// and represents the color value scaled in 4, 8, 12, or 16 bits,
-    /// respectively.
-    ///
-    /// If `intensity` is true, the string should contain a floating point value
-    /// between 0.0 and 1.0, inclusive.
-    fn parseColor(value: []const u8, intensity: bool) !u8 {
-        if (intensity) {
-            const i = try std.fmt.parseFloat(f64, value);
-            if (i < 0.0 or i > 1.0) {
-                return error.InvalidValue;
-            }
-
-            return @intFromFloat(i * std.math.maxInt(u8));
-        }
-
-        if (value.len == 0 or value.len > 4) {
-            return error.InvalidValue;
-        }
-
-        const color = try std.fmt.parseUnsigned(u16, value, 16);
-        const divisor: usize = switch (value.len) {
-            1 => std.math.maxInt(u4),
-            2 => std.math.maxInt(u8),
-            3 => std.math.maxInt(u12),
-            4 => std.math.maxInt(u16),
-            else => unreachable,
-        };
-
-        return @intCast(color * std.math.maxInt(u8) / divisor);
-    }
-
-    /// Parse a color specification of the form
-    ///
-    ///     rgb:<red>/<green>/<blue>
-    ///
-    ///     <red>, <green>, <blue> := h | hh | hhh | hhhh
-    ///
-    /// where `h` is a single hexadecimal digit.
-    ///
-    /// Alternatively, the form
-    ///
-    ///     rgbi:<red>/<green>/<blue>
-    ///
-    /// where <red>, <green>, and <blue> are floating point values between 0.0
-    /// and 1.0 (inclusive) is also accepted.
-    fn parseColorSpec(value: []const u8) !terminal.color.RGB {
-        const minimum_length = "rgb:a/a/a".len;
-        if (value.len < minimum_length or !std.mem.eql(u8, value[0..3], "rgb")) {
-            return error.InvalidFormat;
-        }
-
-        var i: usize = 3;
-
-        const use_intensity = if (value[i] == 'i') blk: {
-            i += 1;
-            break :blk true;
-        } else false;
-
-        if (value[i] != ':') {
-            return error.InvalidFormat;
-        }
-
-        i += 1;
-
-        const r = r: {
-            const slash_i = std.mem.indexOfScalarPos(u8, value, i, '/') orelse
-                return error.InvalidFormat;
-
-            const r = try parseColor(value[i..slash_i], use_intensity);
-            i = slash_i + 1;
-            break :r r;
-        };
-
-        const g = g: {
-            const slash_i = std.mem.indexOfScalarPos(u8, value, i, '/') orelse
-                return error.InvalidFormat;
-
-            const g = try parseColor(value[i..slash_i], use_intensity);
-            i = slash_i + 1;
-            break :g g;
-        };
-
-        const b = try parseColor(value[i..], use_intensity);
-
-        return terminal.color.RGB{
-            .r = r,
-            .g = g,
-            .b = b,
-        };
-    }
-
     pub fn setDefaultColor(
         self: *StreamHandler,
         kind: terminal.osc.Command.DefaultColorKind,
         value: []const u8,
     ) !void {
-        const color = try parseColorSpec(value);
+        const color = try terminal.color.RGB.parse(value);
 
         switch (kind) {
             .foreground => {
