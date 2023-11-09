@@ -149,36 +149,45 @@ pub const App = struct {
         _ = self;
         const win = surface.window;
 
-        if (!surface.isFullscreen()) {
-            const monitor = win.getMonitor() orelse monitor: {
-                log.warn("window had null monitor, getting primary monitor", .{});
-                break :monitor glfw.Monitor.getPrimary() orelse {
-                    log.warn("window could not get any monitor. will not perform action", .{});
-                    return;
-                };
-            };
-            const video_mode = monitor.getVideoMode() orelse {
-                log.warn("failed to get video mode. will not perform action", .{});
-                return;
-            };
-
-            const position = win.getPos();
-            const size = surface.getSize() catch {
-                log.warn("failed to get window size. will not perform fullscreen action", .{});
-                return;
-            };
-
-            surface.window_dimensions = .{
-                .width = size.width,
-                .height = size.height,
-                .position_x = position.x,
-                .position_y = position.y,
-            };
-
-            win.setMonitor(monitor, 0, 0, video_mode.getWidth(), video_mode.getHeight(), 0);
-        } else {
-            win.setMonitor(null, @as(i32, @intCast(surface.window_dimensions.position_x)), @as(i32, @intCast(surface.window_dimensions.position_y)), surface.window_dimensions.width, surface.window_dimensions.height, 0);
+        if (surface.isFullscreen()) {
+            win.setMonitor(
+                null,
+                @intCast(surface.monitor_dims.position_x),
+                @intCast(surface.monitor_dims.position_y),
+                surface.monitor_dims.width,
+                surface.monitor_dims.height,
+                0,
+            );
+            return;
         }
+
+        const monitor = win.getMonitor() orelse monitor: {
+            log.warn("window had null monitor, getting primary monitor", .{});
+            break :monitor glfw.Monitor.getPrimary() orelse {
+                log.warn("window could not get any monitor. will not perform action", .{});
+                return;
+            };
+        };
+
+        const video_mode = monitor.getVideoMode() orelse {
+            log.warn("failed to get video mode. will not perform action", .{});
+            return;
+        };
+
+        const position = win.getPos();
+        const size = surface.getSize() catch {
+            log.warn("failed to get window size. will not perform fullscreen action", .{});
+            return;
+        };
+
+        surface.monitor_dims = .{
+            .width = size.width,
+            .height = size.height,
+            .position_x = position.x,
+            .position_y = position.y,
+        };
+
+        win.setMonitor(monitor, 0, 0, video_mode.getWidth(), video_mode.getHeight(), 0);
     }
 
     /// Create a new window for the app.
@@ -304,8 +313,8 @@ pub const App = struct {
     };
 };
 
-/// These are used to keep track of the original monitor values so that we can safely
-/// toggle on and off of fullscreen.
+/// These are used to keep track of the original monitor values so that we can
+/// safely toggle on and off of fullscreen.
 const MonitorDimensions = struct {
     width: u32,
     height: u32,
@@ -343,21 +352,21 @@ pub const Surface = struct {
     /// (GLFW guarantees that charCallback is called after keyCallback).
     key_event: ?input.KeyEvent = null,
 
-    window_dimensions: MonitorDimensions,
+    /// The monitor dimensions so we can toggle fullscreen on and off.
+    monitor_dims: MonitorDimensions,
 
     pub const Options = struct {};
 
     /// Initialize the surface into the given self pointer. This gives a
     /// stable pointer to the destination that can be used for callbacks.
     pub fn init(self: *Surface, app: *App) !void {
-        const fullscreen = if (app.config.fullscreen) glfw.Monitor.getPrimary().? else null;
 
         // Create our window
         const win = glfw.Window.create(
             640,
             480,
             "ghostty",
-            fullscreen,
+            if (app.config.fullscreen) glfw.Monitor.getPrimary() else null,
             null,
             Renderer.glfwWindowHints(&app.config),
         ) orelse return glfw.mustGetErrorCode();
@@ -405,17 +414,24 @@ pub const Surface = struct {
         win.setMouseButtonCallback(mouseButtonCallback);
         win.setDropCallback(dropCallback);
 
-        const pos = win.getPos();
-        const size = win.getFramebufferSize();
+        const dimensions: MonitorDimensions = dimensions: {
+            const pos = win.getPos();
+            const size = win.getFramebufferSize();
+            break :dimensions .{
+                .width = size.width,
+                .height = size.height,
+                .position_x = pos.x,
+                .position_y = pos.y,
+            };
+        };
 
-        const dimensions = .{ .width = size.width, .height = size.height, .position_x = pos.x, .position_y = pos.y };
         // Build our result
         self.* = .{
             .app = app,
             .window = win,
             .cursor = null,
             .core_surface = undefined,
-            .window_dimensions = dimensions,
+            .monitor_dims = dimensions,
         };
         errdefer self.* = undefined;
 
