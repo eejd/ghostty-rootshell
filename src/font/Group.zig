@@ -602,7 +602,12 @@ pub fn faceFromIndex(self: *Group, index: FontIndex) !*Face {
                 .fallback_deferred => .{ .fallback_loaded = face },
                 else => unreachable,
             };
-            break :deferred &item.loaded;
+
+            break :deferred switch (tag) {
+                .deferred => &item.loaded,
+                .fallback_deferred => &item.fallback_loaded,
+                else => unreachable,
+            };
         },
 
         .loaded, .fallback_loaded => |*f| f,
