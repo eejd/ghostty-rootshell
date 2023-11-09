@@ -29,6 +29,10 @@ pub const Message = union(enum) {
     /// the config file in response to an OSC 11 command.
     background_color: terminal.color.RGB,
 
+    /// Change the cursor color. This can be done separately from changing the
+    /// config file in response to an OSC 12 command.
+    cursor_color: ?terminal.color.RGB,
+
     /// Changes the screen size.
     resize: struct {
         /// The full screen (drawable) size. This does NOT include padding.

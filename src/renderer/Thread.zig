@@ -270,6 +270,10 @@ fn drainMailbox(self: *Thread) !void {
                 self.renderer.background_color = color;
             },
 
+            .cursor_color => |color| {
+                self.renderer.cursor_color = color;
+            },
+
             .resize => |v| {
                 try self.renderer.setScreenSize(v.screen_size, v.padding);
             },

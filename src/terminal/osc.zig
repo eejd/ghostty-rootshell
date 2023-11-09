@@ -64,10 +64,6 @@ pub const Command = union(enum) {
         // TODO: err option
     },
 
-    /// Reset the color for the cursor. This reverts changes made with
-    /// change/read cursor color.
-    reset_cursor_color: void,
-
     /// Set or get clipboard contents. If data is null, then the current
     /// clipboard contents are sent to the pty. If data is set, this
     /// contents is set on the clipboard.
@@ -129,12 +125,14 @@ pub const Command = union(enum) {
         palette: u8,
         foreground,
         background,
+        cursor,
 
         pub fn code(self: ColorKind) []const u8 {
             return switch (self) {
                 .palette => "4",
                 .foreground => "10",
                 .background => "11",
+                .cursor => "12",
             };
         }
     };
@@ -218,6 +216,7 @@ pub const Parser = struct {
         @"1",
         @"10",
         @"11",
+        @"12",
         @"13",
         @"133",
         @"2",
@@ -232,6 +231,9 @@ pub const Parser = struct {
 
         // OSC 11 is used to query or set the current background color.
         query_bg_color,
+
+        // OSC 12 is used to query or set the current cursor color.
+        query_cursor_color,
 
         // We're in a semantic prompt OSC command but we aren't sure
         // what the command is yet, i.e. `133;`
@@ -326,6 +328,7 @@ pub const Parser = struct {
             .@"1" => switch (c) {
                 '0' => self.state = .@"10",
                 '1' => self.state = .@"11",
+                '2' => self.state = .@"12",
                 '3' => self.state = .@"13",
                 else => self.state = .invalid,
             },
@@ -357,10 +360,15 @@ pub const Parser = struct {
                     self.state = .invalid;
                 },
                 '2' => {
+                    self.command = .{ .reset_color = .{ .kind = .cursor, .value = undefined } };
                     self.complete = true;
-                    self.command = .{ .reset_cursor_color = {} };
                     self.state = .invalid;
                 },
+                else => self.state = .invalid,
+            },
+
+            .@"12" => switch (c) {
+                ';' => self.state = .query_cursor_color,
                 else => self.state = .invalid,
             },
 
@@ -525,6 +533,24 @@ pub const Parser = struct {
                 else => {
                     self.command = .{ .set_color = .{
                         .kind = .background,
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
+            },
+
+            .query_cursor_color => switch (c) {
+                '?' => {
+                    self.command = .{ .report_color = .{ .kind = .cursor } };
+                    self.complete = true;
+                    self.state = .invalid;
+                },
+                else => {
+                    self.command = .{ .set_color = .{
+                        .kind = .cursor,
                         .value = "",
                     } };
 
@@ -912,7 +938,7 @@ test "OSC: end_of_input" {
     try testing.expect(cmd == .end_of_input);
 }
 
-test "OSC: reset_cursor_color" {
+test "OSC: reset cursor color" {
     const testing = std.testing;
 
     var p: Parser = .{};
@@ -921,7 +947,8 @@ test "OSC: reset_cursor_color" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end(null).?;
-    try testing.expect(cmd == .reset_cursor_color);
+    try testing.expect(cmd == .reset_color);
+    try testing.expectEqual(cmd.reset_color.kind, .cursor);
 }
 
 test "OSC: get/set clipboard" {

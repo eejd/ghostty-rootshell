@@ -75,6 +75,10 @@ foreground_color: terminal.color.RGB,
 /// changed by a terminal application
 background_color: terminal.color.RGB,
 
+/// The actual cursor color. May differ from the config cursor color if changed
+/// by a terminal application
+cursor_color: ?terminal.color.RGB,
+
 /// Padding options
 padding: renderer.Options.Padding,
 
@@ -320,6 +324,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .focused = true,
         .foreground_color = options.config.foreground,
         .background_color = options.config.background,
+        .cursor_color = options.config.cursor_color,
         .padding = options.padding,
         .surface_mailbox = options.surface_mailbox,
         .deferred_font_size = .{ .metrics = metrics },
@@ -888,7 +893,7 @@ fn addCursor(
         ), screen.cursor.x - 1 };
     };
 
-    const color = self.config.cursor_color orelse self.foreground_color;
+    const color = self.cursor_color orelse self.foreground_color;
     const alpha: u8 = if (!self.focused) 255 else alpha: {
         const alpha = 255 * self.config.cursor_opacity;
         break :alpha @intFromFloat(@ceil(alpha));
