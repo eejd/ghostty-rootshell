@@ -105,6 +105,15 @@ pub const Command = union(enum) {
         terminator: Terminator = .st,
     },
 
+    set_default_color: struct {
+        /// OSC 4 sets a palette color, OSC 10 sets the foreground color, OSC 11
+        /// the background color.
+        kind: DefaultColorKind,
+
+        /// The color spec as a string
+        value: []const u8,
+    },
+
     pub const DefaultColorKind = union(enum) {
         foreground,
         background,
@@ -387,7 +396,16 @@ pub const Parser = struct {
 
                     self.complete = true;
                 },
-                else => self.state = .invalid,
+                else => {
+                    self.command = .{ .set_default_color = .{
+                        .kind = .{ .palette = @intCast(self.temp_state.num) },
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_default_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
             },
 
             .@"5" => switch (c) {
@@ -441,7 +459,16 @@ pub const Parser = struct {
                     self.command = .{ .report_default_color = .{ .kind = .foreground } };
                     self.complete = true;
                 },
-                else => self.state = .invalid,
+                else => {
+                    self.command = .{ .set_default_color = .{
+                        .kind = .foreground,
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_default_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
             },
 
             .query_default_bg => switch (c) {
@@ -449,7 +476,16 @@ pub const Parser = struct {
                     self.command = .{ .report_default_color = .{ .kind = .background } };
                     self.complete = true;
                 },
-                else => self.state = .invalid,
+                else => {
+                    self.command = .{ .set_default_color = .{
+                        .kind = .background,
+                        .value = "",
+                    } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.set_default_color.value };
+                    self.buf_start = self.buf_idx - 1;
+                },
             },
 
             .semantic_prompt => switch (c) {
@@ -949,6 +985,20 @@ test "OSC: report default foreground color" {
     try testing.expectEqual(cmd.report_default_color.terminator, .st);
 }
 
+test "OSC: set foreground color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "10;rgbi:0.0/0.5/1.0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x07').?;
+    try testing.expect(cmd == .set_default_color);
+    try testing.expectEqual(cmd.set_default_color.kind, .foreground);
+    try testing.expectEqualStrings(cmd.set_default_color.value, "rgbi:0.0/0.5/1.0");
+}
+
 test "OSC: report default background color" {
     const testing = std.testing;
 
@@ -964,6 +1014,20 @@ test "OSC: report default background color" {
     try testing.expectEqual(cmd.report_default_color.terminator, .bel);
 }
 
+test "OSC: set background color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "11;rgb:f/ff/ffff";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .set_default_color);
+    try testing.expectEqual(cmd.set_default_color.kind, .background);
+    try testing.expectEqualStrings(cmd.set_default_color.value, "rgb:f/ff/ffff");
+}
+
 test "OSC: get palette color" {
     const testing = std.testing;
 
@@ -976,4 +1040,18 @@ test "OSC: get palette color" {
     try testing.expect(cmd == .report_default_color);
     try testing.expectEqual(cmd.report_default_color.kind, .{ .palette = 1 });
     try testing.expectEqual(cmd.report_default_color.terminator, .st);
+}
+
+test "OSC: set palette color" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "4;17;rgb:aa/bb/cc";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .set_default_color);
+    try testing.expectEqual(cmd.set_default_color.kind, .{ .palette = 17 });
+    try testing.expectEqualStrings(cmd.set_default_color.value, "rgb:aa/bb/cc");
 }
