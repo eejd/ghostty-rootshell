@@ -284,6 +284,9 @@ extension Ghostty {
         private var focused: Bool = true
         private var cursor: NSCursor = .iBeam
         private var cursorVisible: CursorVisibility = .visible
+        
+        // This is set to non-null during keyDown to accumulate insertText contents
+        private var keyTextAccumulator: [String]? = nil
 
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
@@ -722,18 +725,36 @@ extension Ghostty {
         }
 
         override func keyDown(with event: NSEvent) {
-            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
-            keyAction(action, event: event)
+            // By setting this to non-nil, we note that we'rein a keyDown event. From here,
+            // we call interpretKeyEvents so that we can handle complex input such as Korean
+            // language.
+            keyTextAccumulator = []
+            defer { keyTextAccumulator = nil }
+            self.interpretKeyEvents([event])
 
-            // We specifically DO NOT call interpretKeyEvents because ghostty_surface_key
-            // automatically handles all key translation, and we don't handle any commands
-            // currently.
-            //
-            // It is possible that in the future we'll have to modify ghostty_surface_key
-            // and the embedding API so that we can call this because macOS needs to do
-            // some things with certain keys. I'm not sure. For now this works.
-            //
-            // self.interpretKeyEvents([event])
+            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+            
+            // If we have text, then we've composed a character, send that down. We do this
+            // first because if we completed a preedit, the text will be available here
+            // AND we'll have a preedit.
+            var handled: Bool = false
+            if let list = keyTextAccumulator, list.count > 0 {
+                handled = true
+                for text in list {
+                    keyAction(action, event: event, text: text)
+                }
+            }
+            
+            // If we have marked text, we're in a preedit state. Send that down.
+            if (markedText.length > 0) {
+                handled = true
+                keyAction(action, event: event, preedit: markedText.string)
+            }
+            
+            if (!handled) {
+                // No text or anything, we want to handle this manually.
+                keyAction(action, event: event)
+            }
         }
 
         override func keyUp(with event: NSEvent) {
@@ -764,8 +785,41 @@ extension Ghostty {
 
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
-            let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_key(surface, action, UInt32(event.keyCode), mods)
+            
+            var key_ev = ghostty_input_key_s()
+            key_ev.action = action
+            key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
+            key_ev.keycode = UInt32(event.keyCode)
+            key_ev.text = nil
+            key_ev.composing = false
+            ghostty_surface_key(surface, key_ev)
+        }
+        
+        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, preedit: String) {
+            guard let surface = self.surface else { return }
+
+            preedit.withCString { ptr in
+                var key_ev = ghostty_input_key_s()
+                key_ev.action = action
+                key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
+                key_ev.keycode = UInt32(event.keyCode)
+                key_ev.text = ptr
+                key_ev.composing = true
+                ghostty_surface_key(surface, key_ev)
+            }
+        }
+        
+        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, text: String) {
+            guard let surface = self.surface else { return }
+
+            text.withCString { ptr in
+                var key_ev = ghostty_input_key_s()
+                key_ev.action = action
+                key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
+                key_ev.keycode = UInt32(event.keyCode)
+                key_ev.text = ptr
+                ghostty_surface_key(surface, key_ev)
+            }
         }
 
         // MARK: Menu Handlers
@@ -870,6 +924,17 @@ extension Ghostty {
             case let v as String:
                 chars = v
             default:
+                return
+            }
+            
+            // If insertText is called, our preedit must be over.
+            unmarkText()
+            
+            // If we have an accumulator we're in another key event so we just
+            // accumulate and return.
+            if var acc = keyTextAccumulator {
+                acc.append(chars)
+                keyTextAccumulator = acc
                 return
             }
             
