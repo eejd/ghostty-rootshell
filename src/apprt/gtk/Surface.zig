@@ -13,7 +13,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
 const Window = @import("Window.zig");
-const UnsafePasteWindow = @import("UnsafePasteWindow.zig");
+const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
@@ -517,10 +517,19 @@ pub fn setClipboardString(
     clipboard_type: apprt.Clipboard,
     confirm: bool,
 ) !void {
-    // TODO: implement confirmation dialog when clipboard-write is "ask"
-    _ = confirm;
-    const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
-    c.gdk_clipboard_set_text(clipboard, val.ptr);
+    if (!confirm) {
+        const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
+        c.gdk_clipboard_set_text(clipboard, val.ptr);
+    } else {
+        ClipboardConfirmationWindow.create(
+            self.app,
+            val,
+            self.core_surface,
+            .{ .osc_52_write = clipboard_type },
+        ) catch |window_err| {
+            log.err("failed to create clipboard confirmation window err={}", .{window_err});
+        };
+    }
 }
 
 const ClipboardRequest = struct {
@@ -557,15 +566,17 @@ fn gtkClipboardRead(
         str,
         false,
     ) catch |err| switch (err) {
-        error.UnsafePaste => {
+        error.UnsafePaste,
+        error.UnauthorizedPaste,
+        => {
             // Create a dialog and ask the user if they want to paste anyway.
-            UnsafePasteWindow.create(
+            ClipboardConfirmationWindow.create(
                 self.app,
                 str,
                 self.core_surface,
                 req.state,
             ) catch |window_err| {
-                log.err("failed to create unsafe paste window err={}", .{window_err});
+                log.err("failed to create clipboard confirmation window err={}", .{window_err});
             };
             return;
         },

@@ -38,8 +38,11 @@ pub const ClipboardRequest = union(enum) {
     /// A direct paste of clipboard contents.
     paste: void,
 
+    /// A request to read clipboard contents via OSC 52.
+    osc_52_read: Clipboard,
+
     /// A request to write clipboard contents via OSC 52.
-    osc_52: u8,
+    osc_52_write: Clipboard,
 };
 
 /// The reason for displaying a clipboard prompt to the user

@@ -688,21 +688,21 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .cell_size => |size| try self.setCellSize(size),
 
-        .clipboard_read => |kind| {
+        .clipboard_read => |clipboard| {
             if (self.config.clipboard_read == .deny) {
                 log.info("application attempted to read clipboard, but 'clipboard-read' is set to deny", .{});
                 return;
             }
 
-            try self.startClipboardRequest(.standard, .{ .osc_52 = kind });
+            try self.startClipboardRequest(.standard, .{ .osc_52_read = clipboard });
         },
 
-        .clipboard_write => |req| switch (req) {
-            .small => |v| try self.clipboardWrite(v.data[0..v.len], .standard),
-            .stable => |v| try self.clipboardWrite(v, .standard),
+        .clipboard_write => |w| switch (w.req) {
+            .small => |v| try self.clipboardWrite(v.data[0..v.len], w.clipboard_type),
+            .stable => |v| try self.clipboardWrite(v, w.clipboard_type),
             .alloc => |v| {
                 defer v.alloc.free(v.data);
-                try self.clipboardWrite(v.data, .standard);
+                try self.clipboardWrite(v.data, w.clipboard_type);
             },
         },
 
@@ -856,6 +856,9 @@ fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) 
     };
     assert(buf[buf.len] == 0);
 
+    // When clipboard-write is "ask" a prompt is displayed to the user asking
+    // them to confirm the clipboard access. Each app runtime handles this
+    // differently.
     const confirm = self.config.clipboard_write == .ask;
     self.rt_surface.setClipboardString(buf, loc, confirm) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
@@ -2516,19 +2519,21 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 ///     data is defined as data that contains newlines, though this definition
 ///     may change later to detect other scenarios.
 ///
-///   - For OSC 52 pastes no prompt is shown to the user if `confirmed` is true.
+///   - For OSC 52 reads and writes no prompt is shown to the user if
+///     `confirmed` is true.
 ///
-/// If `confirmed` is false and either unsafe data is detected or the
-/// `clipboard-read` option is set to `ask`, this will return error.UnsafePaste.
+/// If `confirmed` is false then this may return either an UnsafePaste or
+/// UnauthorizedPaste error, depending on the type of clipboard request.
 pub fn completeClipboardRequest(
     self: *Surface,
     req: apprt.ClipboardRequest,
-    data: []const u8,
+    data: [:0]const u8,
     confirmed: bool,
 ) !void {
     switch (req) {
         .paste => try self.completeClipboardPaste(data, confirmed),
-        .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind, confirmed),
+        .osc_52_read => |clipboard| try self.completeClipboardReadOSC52(data, clipboard, confirmed),
+        .osc_52_write => |clipboard| try self.rt_surface.setClipboardString(data, clipboard, !confirmed),
     }
 }
 
@@ -2541,13 +2546,16 @@ fn startClipboardRequest(
 ) !void {
     switch (req) {
         .paste => {}, // always allowed
-        .osc_52 => if (self.config.clipboard_read == .deny) {
+        .osc_52_read => if (self.config.clipboard_read == .deny) {
             log.info(
                 "application attempted to read clipboard, but 'clipboard-read' is set to deny",
                 .{},
             );
             return;
         },
+
+        // No clipboard write code paths travel through this function
+        .osc_52_write => unreachable,
     }
 
     try self.rt_surface.clipboardRequest(loc, req);
@@ -2642,7 +2650,12 @@ fn completeClipboardPaste(
     try self.io_thread.wakeup.notify();
 }
 
-fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8, confirmed: bool) !void {
+fn completeClipboardReadOSC52(
+    self: *Surface,
+    data: []const u8,
+    clipboard_type: apprt.Clipboard,
+    confirmed: bool,
+) !void {
     // We should never get here if clipboard-read is set to deny
     assert(self.config.clipboard_read != .deny);
 
@@ -2659,6 +2672,11 @@ fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8, confir
     const size = enc.calcSize(data.len);
     var buf = try self.alloc.alloc(u8, size + 9); // const for OSC
     defer self.alloc.free(buf);
+
+    const kind: u8 = switch (clipboard_type) {
+        .standard => 'c',
+        .selection => 's',
+    };
 
     // Wrap our data with the OSC code
     const prefix = try std.fmt.bufPrint(buf, "\x1b]52;{c};", .{kind});

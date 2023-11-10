@@ -24,7 +24,7 @@ const build_options = @import("build_options");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
-const UnsafePasteWindow = @import("UnsafePasteWindow.zig");
+const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const c = @import("c.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
@@ -49,8 +49,8 @@ menu: ?*c.GMenu = null,
 /// The configuration errors window, if it is currently open.
 config_errors_window: ?*ConfigErrorsWindow = null,
 
-/// The unsafe paste window, if it is currently open.
-unsafe_paste_window: ?*UnsafePasteWindow = null,
+/// The clipboard confirmation window, if it is currently open.
+clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
 /// This is set to false when the main loop should exit.
 running: bool = true,

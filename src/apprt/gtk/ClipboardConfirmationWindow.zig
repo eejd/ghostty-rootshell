@@ -1,11 +1,12 @@
-/// Unsafe Paste Window
-const UnsafePaste = @This();
+/// Clipboard Confirmation Window
+const ClipboardConfirmation = @This();
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const CoreSurface = @import("../../Surface.zig");
 const ClipboardRequest = @import("../structs.zig").ClipboardRequest;
+const ClipboardPromptReason = @import("../structs.zig").ClipboardPromptReason;
 const App = @import("App.zig");
 const View = @import("View.zig");
 const c = @import("c.zig");
@@ -16,9 +17,10 @@ app: *App,
 window: *c.GtkWindow,
 view: PrimaryView,
 
-data: []u8,
+data: [:0]u8,
 core_surface: CoreSurface,
 pending_req: ClipboardRequest,
+reason: ClipboardPromptReason,
 
 pub fn create(
     app: *App,
@@ -26,40 +28,49 @@ pub fn create(
     core_surface: CoreSurface,
     request: ClipboardRequest,
 ) !void {
-    if (app.unsafe_paste_window != null) return error.WindowAlreadyExists;
+    if (app.clipboard_confirmation_window != null) return error.WindowAlreadyExists;
 
     const alloc = app.core_app.alloc;
-    const self = try alloc.create(UnsafePaste);
+    const self = try alloc.create(ClipboardConfirmation);
     errdefer alloc.destroy(self);
+
+    const reason: ClipboardPromptReason = switch (request) {
+        .paste => .unsafe,
+        .osc_52_read => .read,
+        .osc_52_write => .write,
+    };
+
     try self.init(
         app,
         data,
         core_surface,
         request,
+        reason,
     );
 
-    app.unsafe_paste_window = self;
+    app.clipboard_confirmation_window = self;
 }
 
 /// Not public because this should be called by the GTK lifecycle.
-fn destroy(self: *UnsafePaste) void {
+fn destroy(self: *ClipboardConfirmation) void {
     const alloc = self.app.core_app.alloc;
-    self.app.unsafe_paste_window = null;
+    self.app.clipboard_confirmation_window = null;
     alloc.destroy(self);
 }
 
 fn init(
-    self: *UnsafePaste,
+    self: *ClipboardConfirmation,
     app: *App,
     data: []const u8,
     core_surface: CoreSurface,
     request: ClipboardRequest,
+    reason: ClipboardPromptReason,
 ) !void {
     // Create the window
     const window = c.gtk_window_new();
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
-    c.gtk_window_set_title(gtk_window, "Warning: Potentially Unsafe Paste");
+    c.gtk_window_set_title(gtk_window, titleText(reason));
     c.gtk_window_set_default_size(gtk_window, 550, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
     _ = c.g_signal_connect_data(
@@ -76,9 +87,10 @@ fn init(
         .app = app,
         .window = gtk_window,
         .view = undefined,
-        .data = try app.core_app.alloc.dupe(u8, data),
+        .data = try app.core_app.alloc.dupeZ(u8, data),
         .core_surface = core_surface,
         .pending_req = request,
+        .reason = reason,
     };
 
     // Show the window
@@ -93,7 +105,7 @@ fn init(
 }
 
 fn gtkDestroy(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
-    const self: *UnsafePaste = @ptrCast(@alignCast(ud orelse return));
+    const self: *ClipboardConfirmation = @ptrCast(@alignCast(ud orelse return));
     self.destroy();
 }
 
@@ -101,12 +113,9 @@ const PrimaryView = struct {
     root: *c.GtkWidget,
     text: *c.GtkTextView,
 
-    pub fn init(root: *UnsafePaste, data: []const u8) !PrimaryView {
+    pub fn init(root: *ClipboardConfirmation, data: []const u8) !PrimaryView {
         // All our widgets
-        const label = c.gtk_label_new(
-            "Pasting this text into the terminal may be dangerous as " ++
-                "it looks like some commands may be executed.",
-        );
+        const label = c.gtk_label_new(promptText(root.reason));
         const buf = unsafeBuffer(data);
         defer c.g_object_unref(buf);
         const buttons = try ButtonsView.init(root);
@@ -157,20 +166,26 @@ const PrimaryView = struct {
 const ButtonsView = struct {
     root: *c.GtkWidget,
 
-    pub fn init(root: *UnsafePaste) !ButtonsView {
-        const cancel_button = c.gtk_button_new_with_label("Cancel");
+    pub fn init(root: *ClipboardConfirmation) !ButtonsView {
+        const cancel_text, const confirm_text = switch (root.reason) {
+            .unsafe => .{ "Cancel", "Paste" },
+            .read, .write => .{ "Deny", "Allow" },
+            _ => unreachable,
+        };
+
+        const cancel_button = c.gtk_button_new_with_label(cancel_text);
         errdefer c.g_object_unref(cancel_button);
 
-        const paste_button = c.gtk_button_new_with_label("Paste");
-        errdefer c.g_object_unref(paste_button);
+        const confirm_button = c.gtk_button_new_with_label(confirm_text);
+        errdefer c.g_object_unref(confirm_button);
 
         // TODO: Focus on the paste button
-        // c.gtk_widget_grab_focus(paste_button);
+        // c.gtk_widget_grab_focus(confirm_button);
 
         // Create our view
         const view = try View.init(&.{
             .{ .name = "cancel", .widget = cancel_button },
-            .{ .name = "paste", .widget = paste_button },
+            .{ .name = "confirm", .widget = confirm_button },
         }, &vfl);
 
         // Signals
@@ -183,9 +198,9 @@ const ButtonsView = struct {
             c.G_CONNECT_DEFAULT,
         );
         _ = c.g_signal_connect_data(
-            paste_button,
+            confirm_button,
             "clicked",
-            c.G_CALLBACK(&gtkPasteClick),
+            c.G_CALLBACK(&gtkConfirmClick),
             root,
             null,
             c.G_CONNECT_DEFAULT,
@@ -195,13 +210,13 @@ const ButtonsView = struct {
     }
 
     fn gtkCancelClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
-        const self: *UnsafePaste = @ptrCast(@alignCast(ud));
+        const self: *ClipboardConfirmation = @ptrCast(@alignCast(ud));
         c.gtk_window_destroy(@ptrCast(self.window));
     }
 
-    fn gtkPasteClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+    fn gtkConfirmClick(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
         // Requeue the paste with force.
-        const self: *UnsafePaste = @ptrCast(@alignCast(ud));
+        const self: *ClipboardConfirmation = @ptrCast(@alignCast(ud));
         self.core_surface.completeClipboardRequest(
             self.pending_req,
             self.data,
@@ -214,6 +229,34 @@ const ButtonsView = struct {
     }
 
     const vfl = [_][*:0]const u8{
-        "H:[cancel]-8-[paste]-8-|",
+        "H:[cancel]-8-[confirm]-8-|",
     };
 };
+
+/// The title of the window, based on the reason the prompt is being shown.
+fn titleText(reason: ClipboardPromptReason) [:0]const u8 {
+    return switch (reason) {
+        .unsafe => "Warning: Potentially Unsafe Paste",
+        .read, .write => "Authorize Clipboard Access",
+        _ => unreachable,
+    };
+}
+
+/// The text to display in the prompt window, based on the reason the prompt
+/// is being shown.
+fn promptText(reason: ClipboardPromptReason) [:0]const u8 {
+    return switch (reason) {
+        .unsafe =>
+        \\Pasting this text into the terminal may be dangerous as it looks like some commands may be executed.
+        ,
+        .read =>
+        \\An appliclication is attempting to read from the clipboard.
+        \\The current clipboard contents are shown below.
+        ,
+        .write =>
+        \\An application is attempting to write to the clipboard.
+        \\The content to write is shown below.
+        ,
+        _ => unreachable,
+    };
+}
