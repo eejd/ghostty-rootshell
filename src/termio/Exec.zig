@@ -145,6 +145,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     );
     errdefer term.deinit(alloc);
     term.default_palette = opts.config.palette;
+    term.color_palette.colors = opts.config.palette;
 
     // Set the image size limits
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
