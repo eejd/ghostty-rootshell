@@ -244,6 +244,20 @@ pub const Surface = struct {
         working_directory: [*:0]const u8 = "",
     };
 
+    /// This is the key event sent for ghostty_surface_key.
+    pub const KeyEvent = struct {
+        /// The three below are absolutely required.
+        action: input.Action,
+        mods: input.Mods,
+        keycode: u32,
+
+        /// Optionally, the embedder can handle text translation and send
+        /// the text value here. If text is non-nil, it is assumed that the
+        /// embedder also handles dead key states and sets composing as necessary.
+        text: ?[:0]const u8,
+        composing: bool,
+    };
+
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
         const nsview = objc.Object.fromId(opts.nsview orelse
             return error.NSViewMustBeSet);
@@ -625,10 +639,12 @@ pub const Surface = struct {
 
     pub fn keyCallback(
         self: *Surface,
-        action: input.Action,
-        keycode: u32,
-        mods: input.Mods,
+        event: KeyEvent,
     ) !void {
+        const action = event.action;
+        const keycode = event.keycode;
+        const mods = event.mods;
+
         // True if this is a key down event
         const is_down = action == .press or action == .repeat;
 
@@ -666,7 +682,12 @@ pub const Surface = struct {
         // the raw keycode.
         var buf: [128]u8 = undefined;
         const result: input.Keymap.Translation = if (is_down) translate: {
-            const result = try self.app.keymap.translate(
+            // If the event provided us with text, then we use this as a result
+            // and do not do manual translation.
+            const result: input.Keymap.Translation = if (event.text) |text| .{
+                .text = text,
+                .composing = event.composing,
+            } else try self.app.keymap.translate(
                 &buf,
                 &self.keymap_state,
                 @intCast(keycode),
@@ -1165,6 +1186,29 @@ pub const Inspector = struct {
 pub const CAPI = struct {
     const global = &@import("../main.zig").state;
 
+    /// This is the same as Surface.KeyEvent but this is the raw C API version.
+    const KeyEvent = extern struct {
+        action: input.Action,
+        mods: c_int,
+        keycode: u32,
+        text: ?[*:0]const u8,
+        composing: bool,
+
+        /// Convert to surface key event.
+        fn keyEvent(self: KeyEvent) Surface.KeyEvent {
+            return .{
+                .action = self.action,
+                .mods = @bitCast(@as(
+                    input.Mods.Backing,
+                    @truncate(@as(c_uint, @bitCast(self.mods))),
+                )),
+                .keycode = self.keycode,
+                .text = if (self.text) |ptr| std.mem.sliceTo(ptr, 0) else null,
+                .composing = self.composing,
+            };
+        }
+    };
+
     /// Create a new app.
     export fn ghostty_app_new(
         opts: *const apprt.runtime.App.Options,
@@ -1307,18 +1351,9 @@ pub const CAPI = struct {
     /// with a keypress, i.e. IME keyboard.
     export fn ghostty_surface_key(
         surface: *Surface,
-        action: input.Action,
-        keycode: u32,
-        c_mods: c_int,
+        event: KeyEvent,
     ) void {
-        surface.keyCallback(
-            action,
-            keycode,
-            @bitCast(@as(
-                input.Mods.Backing,
-                @truncate(@as(c_uint, @bitCast(c_mods))),
-            )),
-        ) catch |err| {
+        surface.keyCallback(event.keyEvent()) catch |err| {
             log.err("error processing key event err={}", .{err});
             return;
         };
