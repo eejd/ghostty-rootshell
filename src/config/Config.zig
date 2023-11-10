@@ -503,7 +503,14 @@ keybind: Keybinds = .{},
 /// is determined by the OS settings. On every other platform it is 500ms.
 @"click-repeat-interval": u32 = 0,
 
-/// Additional configuration files to read.
+/// Additional configuration files to read. This configuration can be repeated
+/// to read multiple configuration files. Configuration files themselves can
+/// load more configuration files. Paths are relative to the file containing
+/// the `config-file` directive. For command-line arguments, paths are
+/// relative to the current working directory.
+///
+/// Cycles are not allowed. If a cycle is detected, an error will be logged
+/// and the configuration file will be ignored.
 @"config-file": RepeatableString = .{},
 
 /// Confirms that a surface should be closed before closing it. This defaults
@@ -1069,7 +1076,8 @@ fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
     return copy;
 }
 
-/// Load the configuration from the default configuration file.
+/// Load the configuration from the default configuration file. The default
+/// configuration file is at `$XDG_CONFIG_HOME/ghostty/config`.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
     const config_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
     defer alloc.free(config_path);
@@ -1093,36 +1101,6 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
             "error reading config file, not loading err={} path={s}",
             .{ err, config_path },
         ),
-    }
-}
-
-/// Expand the relative paths in config-files to be absolute paths
-/// relative to the base directory.
-fn expandConfigFiles(self: *Config, base: []const u8) !void {
-    assert(std.fs.path.isAbsolute(base));
-    var dir = try std.fs.cwd().openDir(base, .{});
-    defer dir.close();
-
-    const arena_alloc = self._arena.?.allocator();
-    for (self.@"config-file".list.items, 0..) |path, i| {
-        // If it is already absolute we can ignore it.
-        if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
-
-        // If it isn't absolute, we need to make it absolute relative to the base.
-        const abs = dir.realpathAlloc(arena_alloc, path) catch |err| {
-            try self._errors.add(arena_alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    arena_alloc,
-                    "error resolving config-file {s}: {}",
-                    .{ path, err },
-                ),
-            });
-            self.@"config-file".list.items[i] = "";
-            continue;
-        };
-
-        log.debug("expanding config-file path relative={s} abs={s}", .{ path, abs });
-        self.@"config-file".list.items[i] = abs;
     }
 }
 
@@ -1197,6 +1175,36 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         var iter = cli.args.lineIterator(buf_reader.reader());
         try cli.args.parse(Config, alloc_gpa, self, &iter);
         try self.expandConfigFiles(std.fs.path.dirname(path).?);
+    }
+}
+
+/// Expand the relative paths in config-files to be absolute paths
+/// relative to the base directory.
+fn expandConfigFiles(self: *Config, base: []const u8) !void {
+    assert(std.fs.path.isAbsolute(base));
+    var dir = try std.fs.cwd().openDir(base, .{});
+    defer dir.close();
+
+    const arena_alloc = self._arena.?.allocator();
+    for (self.@"config-file".list.items, 0..) |path, i| {
+        // If it is already absolute we can ignore it.
+        if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
+
+        // If it isn't absolute, we need to make it absolute relative to the base.
+        const abs = dir.realpathAlloc(arena_alloc, path) catch |err| {
+            try self._errors.add(arena_alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "error resolving config-file {s}: {}",
+                    .{ path, err },
+                ),
+            });
+            self.@"config-file".list.items[i] = "";
+            continue;
+        };
+
+        log.debug("expanding config-file path relative={s} abs={s}", .{ path, abs });
+        self.@"config-file".list.items[i] = abs;
     }
 }
 
