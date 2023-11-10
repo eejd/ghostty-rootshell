@@ -55,6 +55,7 @@ pub fn create(
 fn destroy(self: *ClipboardConfirmation) void {
     const alloc = self.app.core_app.alloc;
     self.app.clipboard_confirmation_window = null;
+    alloc.free(self.data);
     alloc.destroy(self);
 }
 
