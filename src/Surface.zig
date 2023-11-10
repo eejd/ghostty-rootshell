@@ -140,8 +140,8 @@ const DerivedConfig = struct {
     /// For docs for these, see the associated config they are derived from.
     original_font_size: u8,
     keybind: configpkg.Keybinds,
-    clipboard_read: configpkg.Config.ClipboardRequest,
-    clipboard_write: configpkg.Config.ClipboardRequest,
+    clipboard_read: configpkg.Config.ClipboardAccess,
+    clipboard_write: configpkg.Config.ClipboardAccess,
     clipboard_trim_trailing_spaces: bool,
     clipboard_paste_protection: bool,
     clipboard_paste_bracketed_safe: bool,

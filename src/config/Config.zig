@@ -458,8 +458,8 @@ keybind: Keybinds = .{},
 /// the system clipboard (OSC 52, for googling). The default is to
 /// allow clipboard reading after prompting the user and allow writing
 /// unconditionally.
-@"clipboard-read": ClipboardRequest = .ask,
-@"clipboard-write": ClipboardRequest = .allow,
+@"clipboard-read": ClipboardAccess = .ask,
+@"clipboard-write": ClipboardAccess = .allow,
 
 /// Trims trailing whitespace on data that is copied to the clipboard.
 /// This does not affect data sent to the clipboard via "clipboard-write".
@@ -2307,7 +2307,7 @@ pub const MouseShiftCapture = enum {
 };
 
 /// How to treat requests to write to or read from the clipboard
-pub const ClipboardRequest = enum {
+pub const ClipboardAccess = enum {
     allow,
     deny,
     ask,
