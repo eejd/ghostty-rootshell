@@ -346,9 +346,17 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     //   - command, working-directory: we never restart the underlying
     //   process so we don't care or need to know about these.
 
-    // Update the palette. Note this will only apply to new colors drawn
+    // Update the default palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
     self.terminal.default_palette = config.palette;
+
+    // Update the active palette, except for any colors that were modified with
+    // OSC 4
+    for (0..config.palette.len) |i| {
+        if (!self.terminal.color_palette.mask.isSet(i)) {
+            self.terminal.color_palette.colors[i] = config.palette[i];
+        }
+    }
 
     // Update our default cursor style
     self.default_cursor_style = config.cursor_style;
@@ -2293,7 +2301,6 @@ const StreamHandler = struct {
                     // reset those indices to the default palette
                     var it = mask.iterator(.{});
                     while (it.next()) |i| {
-                        log.warn("Resetting palette color {}", .{i});
                         self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                         mask.unset(i);
                     }
@@ -2302,7 +2309,6 @@ const StreamHandler = struct {
                     while (it.next()) |param| {
                         // Skip invalid parameters
                         const i = std.fmt.parseUnsigned(u8, param, 10) catch continue;
-                        log.warn("Resetting palette color {}", .{i});
                         if (mask.isSet(i)) {
                             self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                             mask.unset(i);
