@@ -94,6 +94,61 @@ extension Ghostty {
             }
         }
     }
+
+    /// The reason a clipboard prompt is shown to the user
+    enum ClipboardPromptReason {
+        /// An unsafe paste may cause commands to be executed
+        case unsafe
+
+        /// An application is attempting to read from the clipboard
+        case read
+
+        /// An applciation is attempting to write to the clipboard
+        case write
+
+        func text() -> String {
+            switch (self) {
+            case .unsafe:
+                return """
+                Pasting this text to the terminal may be dangerous as it looks like some commands may be executed.
+                """
+            case .read:
+                return """
+                An application is attempting to read from the clipboard.
+                The current clipboard contents are shown below.
+                """
+            case .write:
+                return """
+                An application is attempting to write to the clipboard.
+                The content to write is shown below.
+                """
+            }
+        }
+
+        static func from(reason: ghostty_clipboard_prompt_reason_e) -> ClipboardPromptReason? {
+            switch (reason) {
+            case GHOSTTY_CLIPBOARD_PROMPT_UNSAFE:
+                return .unsafe
+            case GHOSTTY_CLIPBOARD_PROMPT_READ:
+                return .read
+            case GHOSTTY_CLIPBOARD_PROMPT_WRITE:
+                return .write
+            default:
+                return nil
+            }
+        }
+
+        func toNative() -> ghostty_clipboard_prompt_reason_e {
+            switch (self) {
+            case .unsafe:
+                return GHOSTTY_CLIPBOARD_PROMPT_UNSAFE
+            case .read:
+                return GHOSTTY_CLIPBOARD_PROMPT_READ
+            case .write:
+                return GHOSTTY_CLIPBOARD_PROMPT_WRITE
+            }
+        }
+    }
 }
 
 extension Ghostty.Notification {
@@ -142,9 +197,10 @@ extension Ghostty.Notification {
     /// Notification to show/hide the inspector
     static let didControlInspector = Notification.Name("com.mitchellh.ghostty.didControlInspector")
     
-    static let confirmUnsafePaste = Notification.Name("com.mitchellh.ghostty.confirmUnsafePaste")
-    static let UnsafePasteStrKey = confirmUnsafePaste.rawValue + ".str"
-    static let UnsafePasteStateKey = confirmUnsafePaste.rawValue + ".state"
+    static let confirmClipboard = Notification.Name("com.mitchellh.ghostty.confirmClipboard")
+    static let ConfirmClipboardStrKey = confirmClipboard.rawValue + ".str"
+    static let ConfirmClipboardStateKey = confirmClipboard.rawValue + ".state"
+    static let ConfirmClipboardReasonKey = confirmClipboard.rawValue + ".reason"
 
     /// Notification sent to the active split view to resize the split.
     static let didResizeSplit = Notification.Name("com.mitchellh.ghostty.didResizeSplit")

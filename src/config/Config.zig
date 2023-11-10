@@ -456,9 +456,10 @@ keybind: Keybinds = .{},
 
 /// Whether to allow programs running in the terminal to read/write to
 /// the system clipboard (OSC 52, for googling). The default is to
-/// disallow clipboard reading but allow writing.
-@"clipboard-read": bool = false,
-@"clipboard-write": bool = true,
+/// allow clipboard reading after prompting the user and allow writing
+/// unconditionally.
+@"clipboard-read": ClipboardRequest = .ask,
+@"clipboard-write": ClipboardRequest = .allow,
 
 /// Trims trailing whitespace on data that is copied to the clipboard.
 /// This does not affect data sent to the clipboard via "clipboard-write".
@@ -467,8 +468,6 @@ keybind: Keybinds = .{},
 /// Require confirmation before pasting text that appears unsafe. This helps
 /// prevent a "copy/paste attack" where a user may accidentally execute unsafe
 /// commands by pasting text with newlines.
-///
-/// This currently only works on Linux (GTK).
 @"clipboard-paste-protection": bool = true,
 
 /// If true, bracketed pastes will be considered safe. By default,
@@ -2278,7 +2277,7 @@ pub const ShellIntegrationFeatures = packed struct {
     cursor: bool = true,
 };
 
-/// OSC 10 and 11 default color reporting format.
+/// OSC 4, 10, 11, and 12 default color reporting format.
 pub const OSCColorReportFormat = enum {
     none,
     @"8-bit",
@@ -2305,4 +2304,11 @@ pub const MouseShiftCapture = enum {
     true,
     always,
     never,
+};
+
+/// How to treat requests to write to or read from the clipboard
+pub const ClipboardRequest = enum {
+    allow,
+    deny,
+    ask,
 };

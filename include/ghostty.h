@@ -36,6 +36,12 @@ typedef enum {
 } ghostty_clipboard_e;
 
 typedef enum {
+    GHOSTTY_CLIPBOARD_PROMPT_UNSAFE = 1,
+    GHOSTTY_CLIPBOARD_PROMPT_READ = 2,
+    GHOSTTY_CLIPBOARD_PROMPT_WRITE = 3,
+} ghostty_clipboard_prompt_reason_e;
+
+typedef enum {
     GHOSTTY_SPLIT_RIGHT,
     GHOSTTY_SPLIT_DOWN
 } ghostty_split_direction_e;
@@ -340,8 +346,8 @@ typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef void (*ghostty_runtime_set_mouse_shape_cb)(void *, ghostty_mouse_shape_e);
 typedef void (*ghostty_runtime_set_mouse_visibility_cb)(void *, bool);
 typedef void (*ghostty_runtime_read_clipboard_cb)(void *, ghostty_clipboard_e, void *);
-typedef void (*ghostty_runtime_confirm_read_clipboard_cb)(void *, const char*, void *);
-typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty_clipboard_e);
+typedef void (*ghostty_runtime_confirm_read_clipboard_cb)(void *, const char*, void *, ghostty_clipboard_prompt_reason_e);
+typedef void (*ghostty_runtime_write_clipboard_cb)(void *, const char *, ghostty_clipboard_e, bool);
 typedef void (*ghostty_runtime_new_split_cb)(void *, ghostty_split_direction_e, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_tab_cb)(void *, ghostty_surface_config_s);
 typedef void (*ghostty_runtime_new_window_cb)(void *, ghostty_surface_config_s);

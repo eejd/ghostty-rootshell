@@ -150,8 +150,8 @@ extension Ghostty {
                 set_mouse_shape_cb: { userdata, shape in AppState.setMouseShape(userdata, shape: shape) },
                 set_mouse_visibility_cb: { userdata, visible in AppState.setMouseVisibility(userdata, visible: visible) },
                 read_clipboard_cb: { userdata, loc, state in AppState.readClipboard(userdata, location: loc, state: state) },
-                confirm_read_clipboard_cb: { userdata, str, state in AppState.confirmReadClipboard(userdata, string: str, state: state ) },
-                write_clipboard_cb: { userdata, str, loc in AppState.writeClipboard(userdata, string: str, location: loc) },
+                confirm_read_clipboard_cb: { userdata, str, state, reason in AppState.confirmReadClipboard(userdata, string: str, state: state, reason: reason ) },
+                write_clipboard_cb: { userdata, str, loc, confirm in AppState.writeClipboard(userdata, string: str, location: loc, confirm: confirm) },
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
                 new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
                 new_window_cb: { userdata, surfaceConfig in AppState.newWindow(userdata, config: surfaceConfig) },
@@ -433,16 +433,19 @@ extension Ghostty {
         static func confirmReadClipboard(
             _ userdata: UnsafeMutableRawPointer?,
             string: UnsafePointer<CChar>?,
-            state: UnsafeMutableRawPointer?
+            state: UnsafeMutableRawPointer?,
+            reason: ghostty_clipboard_prompt_reason_e
         ) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
             guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
+            guard let reason = Ghostty.ClipboardPromptReason.from(reason: reason) else { return }
             NotificationCenter.default.post(
-                name: Notification.confirmUnsafePaste,
+                name: Notification.confirmClipboard,
                 object: surface,
                 userInfo: [
-                    Notification.UnsafePasteStrKey: valueStr,
-                    Notification.UnsafePasteStateKey: state as Any
+                    Notification.ConfirmClipboardStrKey: valueStr,
+                    Notification.ConfirmClipboardStateKey: state as Any,
+                    Notification.ConfirmClipboardReasonKey: reason,
                 ]
             )
         }
@@ -458,14 +461,27 @@ extension Ghostty {
             }
         }
 
-        static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e) {
+        static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e, confirm: Bool) {
+            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+
             // We only support the standard clipboard
             if (location != GHOSTTY_CLIPBOARD_STANDARD) { return }
 
             guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
-            let pb = NSPasteboard.general
-            pb.declareTypes([.string], owner: nil)
-            pb.setString(valueStr, forType: .string)
+            if !confirm {
+                let pb = NSPasteboard.general
+                pb.declareTypes([.string], owner: nil)
+                pb.setString(valueStr, forType: .string)
+            } else {
+                NotificationCenter.default.post(
+                    name: Notification.confirmClipboard,
+                    object: surface,
+                    userInfo: [
+                        Notification.ConfirmClipboardStrKey: valueStr,
+                        Notification.ConfirmClipboardReasonKey: Ghostty.ClipboardPromptReason.write,
+                    ]
+                )
+            }
         }
 
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {

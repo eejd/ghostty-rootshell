@@ -678,7 +678,9 @@ pub const Surface = struct {
         self: *const Surface,
         val: [:0]const u8,
         clipboard_type: apprt.Clipboard,
+        confirm: bool,
     ) !void {
+        _ = confirm;
         _ = self;
         switch (clipboard_type) {
             .standard => glfw.setClipboardString(val),

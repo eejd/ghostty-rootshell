@@ -41,3 +41,18 @@ pub const ClipboardRequest = union(enum) {
     /// A request to write clipboard contents via OSC 52.
     osc_52: u8,
 };
+
+/// The reason for displaying a clipboard prompt to the user
+pub const ClipboardPromptReason = enum(i32) {
+    /// For pasting data only. Pasted data contains potentially unsafe
+    /// characters
+    unsafe = 1,
+
+    /// The user must authorize the application to read from the clipboard
+    read = 2,
+
+    /// The user must authorize the application to write to the clipboard
+    write = 3,
+
+    _,
+};

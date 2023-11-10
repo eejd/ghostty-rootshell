@@ -140,8 +140,8 @@ const DerivedConfig = struct {
     /// For docs for these, see the associated config they are derived from.
     original_font_size: u8,
     keybind: configpkg.Keybinds,
-    clipboard_read: bool,
-    clipboard_write: bool,
+    clipboard_read: configpkg.Config.ClipboardRequest,
+    clipboard_write: configpkg.Config.ClipboardRequest,
     clipboard_trim_trailing_spaces: bool,
     clipboard_paste_protection: bool,
     clipboard_paste_bracketed_safe: bool,
@@ -689,8 +689,8 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .cell_size => |size| try self.setCellSize(size),
 
         .clipboard_read => |kind| {
-            if (!self.config.clipboard_read) {
-                log.info("application attempted to read clipboard, but 'clipboard-read' setting is off", .{});
+            if (self.config.clipboard_read == .deny) {
+                log.info("application attempted to read clipboard, but 'clipboard-read' is set to deny", .{});
                 return;
             }
 
@@ -822,8 +822,8 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 }
 
 fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) !void {
-    if (!self.config.clipboard_write) {
-        log.info("application attempted to write clipboard, but 'clipboard-write' setting is off", .{});
+    if (self.config.clipboard_write == .deny) {
+        log.info("application attempted to write clipboard, but 'clipboard-write' is set to deny", .{});
         return;
     }
 
@@ -856,7 +856,8 @@ fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) 
     };
     assert(buf[buf.len] == 0);
 
-    self.rt_surface.setClipboardString(buf, loc) catch |err| {
+    const confirm = self.config.clipboard_write == .ask;
+    self.rt_surface.setClipboardString(buf, loc, confirm) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -901,7 +902,7 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) void {
     };
     defer self.alloc.free(buf);
 
-    self.rt_surface.setClipboardString(buf, clipboard) catch |err| {
+    self.rt_surface.setClipboardString(buf, clipboard, false) catch |err| {
         log.err("error setting clipboard string err={}", .{err});
         return;
     };
@@ -2279,7 +2280,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 };
                 defer self.alloc.free(buf);
 
-                self.rt_surface.setClipboardString(buf, .standard) catch |err| {
+                self.rt_surface.setClipboardString(buf, .standard, false) catch |err| {
                     log.err("error setting clipboard string err={}", .{err});
                     return true;
                 };
@@ -2509,19 +2510,25 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 /// only be called once for each request. The data is immediately copied so
 /// it is safe to free the data after this call.
 ///
-/// If "allow_unsafe" is false, then the data is checked for "safety" prior.
-/// If unsafe data is detected, this will return error.UnsafePaste. Unsafe
-/// data is defined as data that contains newlines, though this definition
-/// may change later to detect other scenarios.
+/// If `confirmed` is true then any clipboard confirmation prompts are skipped:
+///
+///   - For "regular" pasting this means that unsafe pastes are allowed. Unsafe
+///     data is defined as data that contains newlines, though this definition
+///     may change later to detect other scenarios.
+///
+///   - For OSC 52 pastes no prompt is shown to the user if `confirmed` is true.
+///
+/// If `confirmed` is false and either unsafe data is detected or the
+/// `clipboard-read` option is set to `ask`, this will return error.UnsafePaste.
 pub fn completeClipboardRequest(
     self: *Surface,
     req: apprt.ClipboardRequest,
     data: []const u8,
-    allow_unsafe: bool,
+    confirmed: bool,
 ) !void {
     switch (req) {
-        .paste => try self.completeClipboardPaste(data, allow_unsafe),
-        .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind),
+        .paste => try self.completeClipboardPaste(data, confirmed),
+        .osc_52 => |kind| try self.completeClipboardReadOSC52(data, kind, confirmed),
     }
 }
 
@@ -2534,9 +2541,9 @@ fn startClipboardRequest(
 ) !void {
     switch (req) {
         .paste => {}, // always allowed
-        .osc_52 => if (!self.config.clipboard_read) {
+        .osc_52 => if (self.config.clipboard_read == .deny) {
             log.info(
-                "application attempted to read clipboard, but 'clipboard-read' setting is off",
+                "application attempted to read clipboard, but 'clipboard-read' is set to deny",
                 .{},
             );
             return;
@@ -2635,7 +2642,16 @@ fn completeClipboardPaste(
     try self.io_thread.wakeup.notify();
 }
 
-fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8) !void {
+fn completeClipboardReadOSC52(self: *Surface, data: []const u8, kind: u8, confirmed: bool) !void {
+    // We should never get here if clipboard-read is set to deny
+    assert(self.config.clipboard_read != .deny);
+
+    // If clipboard-read is set to ask and we haven't confirmed with the user,
+    // do that now
+    if (self.config.clipboard_read == .ask and !confirmed) {
+        return error.UnauthorizedPaste;
+    }
+
     // Even if the clipboard data is empty we reply, since presumably
     // the client app is expecting a reply. We first allocate our buffer.
     // This must hold the base64 encoded data PLUS the OSC code surrounding it.

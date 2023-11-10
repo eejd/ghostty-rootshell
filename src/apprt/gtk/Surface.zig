@@ -515,7 +515,10 @@ pub fn setClipboardString(
     self: *const Surface,
     val: [:0]const u8,
     clipboard_type: apprt.Clipboard,
+    confirm: bool,
 ) !void {
+    // TODO: implement confirmation dialog when clipboard-write is "ask"
+    _ = confirm;
     const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
     c.gdk_clipboard_set_text(clipboard, val.ptr);
 }
