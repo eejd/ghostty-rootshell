@@ -1215,6 +1215,7 @@ fn rebuildCells(
                 var cell: mtl_shaders.Cell = cursor_cell orelse
                     (real_cursor_cell orelse break :preedit).*;
                 cell.color = .{ 0, 0, 0, 255 };
+                cell.cell_width = if (preedit_v.wide) 2 else 1;
 
                 // If preedit rendering succeeded then we don't want to
                 // re-render the underlying cell fg
