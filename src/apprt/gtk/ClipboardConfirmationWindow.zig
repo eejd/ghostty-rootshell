@@ -4,9 +4,8 @@ const ClipboardConfirmation = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const apprt = @import("../../apprt.zig");
 const CoreSurface = @import("../../Surface.zig");
-const ClipboardRequest = @import("../structs.zig").ClipboardRequest;
-const ClipboardPromptReason = @import("../structs.zig").ClipboardPromptReason;
 const App = @import("App.zig");
 const View = @import("View.zig");
 const c = @import("c.zig");
@@ -19,14 +18,13 @@ view: PrimaryView,
 
 data: [:0]u8,
 core_surface: CoreSurface,
-pending_req: ClipboardRequest,
-reason: ClipboardPromptReason,
+pending_req: apprt.ClipboardRequest,
 
 pub fn create(
     app: *App,
     data: []const u8,
     core_surface: CoreSurface,
-    request: ClipboardRequest,
+    request: apprt.ClipboardRequest,
 ) !void {
     if (app.clipboard_confirmation_window != null) return error.WindowAlreadyExists;
 
@@ -34,18 +32,11 @@ pub fn create(
     const self = try alloc.create(ClipboardConfirmation);
     errdefer alloc.destroy(self);
 
-    const reason: ClipboardPromptReason = switch (request) {
-        .paste => .unsafe,
-        .osc_52_read => .read,
-        .osc_52_write => .write,
-    };
-
     try self.init(
         app,
         data,
         core_surface,
         request,
-        reason,
     );
 
     app.clipboard_confirmation_window = self;
@@ -64,14 +55,13 @@ fn init(
     app: *App,
     data: []const u8,
     core_surface: CoreSurface,
-    request: ClipboardRequest,
-    reason: ClipboardPromptReason,
+    request: apprt.ClipboardRequest,
 ) !void {
     // Create the window
     const window = c.gtk_window_new();
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer c.gtk_window_destroy(gtk_window);
-    c.gtk_window_set_title(gtk_window, titleText(reason));
+    c.gtk_window_set_title(gtk_window, titleText(request));
     c.gtk_window_set_default_size(gtk_window, 550, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
     _ = c.g_signal_connect_data(
@@ -91,7 +81,6 @@ fn init(
         .data = try app.core_app.alloc.dupeZ(u8, data),
         .core_surface = core_surface,
         .pending_req = request,
-        .reason = reason,
     };
 
     // Show the window
@@ -116,7 +105,7 @@ const PrimaryView = struct {
 
     pub fn init(root: *ClipboardConfirmation, data: []const u8) !PrimaryView {
         // All our widgets
-        const label = c.gtk_label_new(promptText(root.reason));
+        const label = c.gtk_label_new(promptText(root.pending_req));
         const buf = unsafeBuffer(data);
         defer c.g_object_unref(buf);
         const buttons = try ButtonsView.init(root);
@@ -168,10 +157,9 @@ const ButtonsView = struct {
     root: *c.GtkWidget,
 
     pub fn init(root: *ClipboardConfirmation) !ButtonsView {
-        const cancel_text, const confirm_text = switch (root.reason) {
-            .unsafe => .{ "Cancel", "Paste" },
-            .read, .write => .{ "Deny", "Allow" },
-            _ => unreachable,
+        const cancel_text, const confirm_text = switch (root.pending_req) {
+            .paste => .{ "Cancel", "Paste" },
+            .osc_52_read, .osc_52_write => .{ "Deny", "Allow" },
         };
 
         const cancel_button = c.gtk_button_new_with_label(cancel_text);
@@ -235,29 +223,27 @@ const ButtonsView = struct {
 };
 
 /// The title of the window, based on the reason the prompt is being shown.
-fn titleText(reason: ClipboardPromptReason) [:0]const u8 {
-    return switch (reason) {
-        .unsafe => "Warning: Potentially Unsafe Paste",
-        .read, .write => "Authorize Clipboard Access",
-        _ => unreachable,
+fn titleText(req: apprt.ClipboardRequest) [:0]const u8 {
+    return switch (req) {
+        .paste => "Warning: Potentially Unsafe Paste",
+        .osc_52_read, .osc_52_write => "Authorize Clipboard Access",
     };
 }
 
 /// The text to display in the prompt window, based on the reason the prompt
 /// is being shown.
-fn promptText(reason: ClipboardPromptReason) [:0]const u8 {
-    return switch (reason) {
-        .unsafe =>
+fn promptText(req: apprt.ClipboardRequest) [:0]const u8 {
+    return switch (req) {
+        .paste =>
         \\Pasting this text into the terminal may be dangerous as it looks like some commands may be executed.
         ,
-        .read =>
+        .osc_52_read =>
         \\An appliclication is attempting to read from the clipboard.
         \\The current clipboard contents are shown below.
         ,
-        .write =>
+        .osc_52_write =>
         \\An application is attempting to write to the clipboard.
         \\The content to write is shown below.
         ,
-        _ => unreachable,
     };
 }

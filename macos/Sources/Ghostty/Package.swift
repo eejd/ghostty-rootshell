@@ -95,29 +95,30 @@ extension Ghostty {
         }
     }
 
-    /// The reason a clipboard prompt is shown to the user
-    enum ClipboardPromptReason {
-        /// An unsafe paste may cause commands to be executed
-        case unsafe
+    /// The type of a clipboard request
+    enum ClipboardRequest {
+        /// A direct paste of clipboard contents
+        case paste
 
-        /// An application is attempting to read from the clipboard
-        case read
+        /// An application is attempting to read from the clipboard using OSC 52
+        case osc_52_read
 
-        /// An applciation is attempting to write to the clipboard
-        case write
+        /// An applciation is attempting to write to the clipboard using OSC 52
+        case osc_52_write
 
+        /// The text to show in the clipboard confirmation prompt for a given request type
         func text() -> String {
             switch (self) {
-            case .unsafe:
+            case .paste:
                 return """
                 Pasting this text to the terminal may be dangerous as it looks like some commands may be executed.
                 """
-            case .read:
+            case .osc_52_read:
                 return """
                 An application is attempting to read from the clipboard.
                 The current clipboard contents are shown below.
                 """
-            case .write:
+            case .osc_52_write:
                 return """
                 An application is attempting to write to the clipboard.
                 The content to write is shown below.
@@ -125,27 +126,16 @@ extension Ghostty {
             }
         }
 
-        static func from(reason: ghostty_clipboard_prompt_reason_e) -> ClipboardPromptReason? {
-            switch (reason) {
-            case GHOSTTY_CLIPBOARD_PROMPT_UNSAFE:
-                return .unsafe
-            case GHOSTTY_CLIPBOARD_PROMPT_READ:
-                return .read
-            case GHOSTTY_CLIPBOARD_PROMPT_WRITE:
-                return .write
+        static func from(request: ghostty_clipboard_request_e) -> ClipboardRequest? {
+            switch (request) {
+            case GHOSTTY_CLIPBOARD_REQUEST_PASTE:
+                return .paste
+            case GHOSTTY_CLIPBOARD_REQUEST_OSC_52_READ:
+                return .osc_52_read
+            case GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE:
+                return .osc_52_write
             default:
                 return nil
-            }
-        }
-
-        func toNative() -> ghostty_clipboard_prompt_reason_e {
-            switch (self) {
-            case .unsafe:
-                return GHOSTTY_CLIPBOARD_PROMPT_UNSAFE
-            case .read:
-                return GHOSTTY_CLIPBOARD_PROMPT_READ
-            case .write:
-                return GHOSTTY_CLIPBOARD_PROMPT_WRITE
             }
         }
     }
@@ -200,7 +190,7 @@ extension Ghostty.Notification {
     static let confirmClipboard = Notification.Name("com.mitchellh.ghostty.confirmClipboard")
     static let ConfirmClipboardStrKey = confirmClipboard.rawValue + ".str"
     static let ConfirmClipboardStateKey = confirmClipboard.rawValue + ".state"
-    static let ConfirmClipboardReasonKey = confirmClipboard.rawValue + ".reason"
+    static let ConfirmClipboardRequestKey = confirmClipboard.rawValue + ".request"
 
     /// Notification sent to the active split view to resize the split.
     static let didResizeSplit = Notification.Name("com.mitchellh.ghostty.didResizeSplit")

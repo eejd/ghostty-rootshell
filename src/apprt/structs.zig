@@ -32,9 +32,15 @@ pub const Clipboard = enum(u1) {
     selection = 1, // also known as the "primary" clipboard
 };
 
+pub const ClipboardRequestType = enum(u8) {
+    paste,
+    osc_52_read,
+    osc_52_write,
+};
+
 /// Clipboard request. This is used to request clipboard contents and must
 /// be sent as a response to a ClipboardRequest event.
-pub const ClipboardRequest = union(enum) {
+pub const ClipboardRequest = union(ClipboardRequestType) {
     /// A direct paste of clipboard contents.
     paste: void,
 
@@ -43,19 +49,4 @@ pub const ClipboardRequest = union(enum) {
 
     /// A request to write clipboard contents via OSC 52.
     osc_52_write: Clipboard,
-};
-
-/// The reason for displaying a clipboard prompt to the user
-pub const ClipboardPromptReason = enum(i32) {
-    /// For pasting data only. Pasted data contains potentially unsafe
-    /// characters
-    unsafe = 1,
-
-    /// The user must authorize the application to read from the clipboard
-    read = 2,
-
-    /// The user must authorize the application to write to the clipboard
-    write = 3,
-
-    _,
 };

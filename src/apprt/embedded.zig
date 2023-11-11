@@ -17,7 +17,6 @@ const CoreInspector = @import("../inspector/main.zig").Inspector;
 const CoreSurface = @import("../Surface.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
-const ClipboardPromptReason = @import("../apprt/structs.zig").ClipboardPromptReason;
 
 const log = std.log.scoped(.embedded_window);
 
@@ -69,7 +68,7 @@ pub const App = struct {
             SurfaceUD,
             [*:0]const u8,
             *apprt.ClipboardRequest,
-            ClipboardPromptReason,
+            apprt.ClipboardRequestType,
         ) callconv(.C) void,
 
         /// Write the clipboard value.
@@ -508,6 +507,8 @@ pub const Surface = struct {
     ) void {
         const alloc = self.app.core_app.alloc;
 
+        const request_type = @as(apprt.ClipboardRequestType, state.*);
+
         // Attempt to complete the request, but we may request
         // confirmation.
         self.core_surface.completeClipboardRequest(
@@ -515,22 +516,14 @@ pub const Surface = struct {
             str,
             confirmed,
         ) catch |err| switch (err) {
-            error.UnsafePaste => {
+            error.UnsafePaste,
+            error.UnauthorizedPaste,
+            => {
                 self.app.opts.confirm_read_clipboard(
                     self.opts.userdata,
                     str.ptr,
                     state,
-                    .unsafe,
-                );
-
-                return;
-            },
-            error.UnauthorizedPaste => {
-                self.app.opts.confirm_read_clipboard(
-                    self.opts.userdata,
-                    str.ptr,
-                    state,
-                    .read,
+                    request_type,
                 );
 
                 return;

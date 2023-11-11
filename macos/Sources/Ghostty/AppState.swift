@@ -150,7 +150,7 @@ extension Ghostty {
                 set_mouse_shape_cb: { userdata, shape in AppState.setMouseShape(userdata, shape: shape) },
                 set_mouse_visibility_cb: { userdata, visible in AppState.setMouseVisibility(userdata, visible: visible) },
                 read_clipboard_cb: { userdata, loc, state in AppState.readClipboard(userdata, location: loc, state: state) },
-                confirm_read_clipboard_cb: { userdata, str, state, reason in AppState.confirmReadClipboard(userdata, string: str, state: state, reason: reason ) },
+                confirm_read_clipboard_cb: { userdata, str, state, request in AppState.confirmReadClipboard(userdata, string: str, state: state, request: request ) },
                 write_clipboard_cb: { userdata, str, loc, confirm in AppState.writeClipboard(userdata, string: str, location: loc, confirm: confirm) },
                 new_split_cb: { userdata, direction, surfaceConfig in AppState.newSplit(userdata, direction: direction, config: surfaceConfig) },
                 new_tab_cb: { userdata, surfaceConfig in AppState.newTab(userdata, config: surfaceConfig) },
@@ -434,18 +434,18 @@ extension Ghostty {
             _ userdata: UnsafeMutableRawPointer?,
             string: UnsafePointer<CChar>?,
             state: UnsafeMutableRawPointer?,
-            reason: ghostty_clipboard_prompt_reason_e
+            request: ghostty_clipboard_request_e
         ) {
             guard let surface = self.surfaceUserdata(from: userdata) else { return }
             guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
-            guard let reason = Ghostty.ClipboardPromptReason.from(reason: reason) else { return }
+            guard let request = Ghostty.ClipboardRequest.from(request: request) else { return }
             NotificationCenter.default.post(
                 name: Notification.confirmClipboard,
                 object: surface,
                 userInfo: [
                     Notification.ConfirmClipboardStrKey: valueStr,
                     Notification.ConfirmClipboardStateKey: state as Any,
-                    Notification.ConfirmClipboardReasonKey: reason,
+                    Notification.ConfirmClipboardRequestKey: request,
                 ]
             )
         }
@@ -478,7 +478,7 @@ extension Ghostty {
                     object: surface,
                     userInfo: [
                         Notification.ConfirmClipboardStrKey: valueStr,
-                        Notification.ConfirmClipboardReasonKey: Ghostty.ClipboardPromptReason.write,
+                        Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write,
                     ]
                 )
             }

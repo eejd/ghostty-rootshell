@@ -2,7 +2,7 @@ import SwiftUI
 
 /// This delegate is notified of the completion result of the clipboard confirmation dialog.
 protocol ClipboardConfirmationViewDelegate: AnyObject {
-    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ reason: Ghostty.ClipboardPromptReason)
+    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest)
 }
 
 /// The SwiftUI view for showing a clipboard confirmation dialog.
@@ -11,18 +11,16 @@ struct ClipboardConfirmationView: View {
         case cancel
         case confirm
 
-        static func text(_ action: Action, _ reason: Ghostty.ClipboardPromptReason) -> String {
-            switch (action) {
-            case .cancel:
-                switch (reason) {
-                case .unsafe: return "Cancel"
-                case .read, .write: return "Deny"
-                }
-            case .confirm:
-                switch (reason) {
-                case .unsafe: return "Paste"
-                case .read, .write: return "Allow"
-                }
+        static func text(_ action: Action, _ reason: Ghostty.ClipboardRequest) -> String {
+            switch (action, reason) {
+            case (.cancel, .paste):
+                return "Cancel"
+            case (.cancel, .osc_52_read), (.cancel, .osc_52_write):
+                return "Deny"
+            case (.confirm, .paste):
+                return "Paste"
+            case (.confirm, .osc_52_read), (.confirm, .osc_52_write):
+                return "Allow"
             }
         }
     }
@@ -30,8 +28,8 @@ struct ClipboardConfirmationView: View {
     /// The contents of the paste.
     let contents: String
 
-    /// The reason for displaying the view
-    let reason: Ghostty.ClipboardPromptReason
+    /// The type of the clipboard request
+    let request: Ghostty.ClipboardRequest
 
     /// Optional delegate to get results. If this is nil, then this view will never close on its own.
     weak var delegate: ClipboardConfirmationViewDelegate? = nil
@@ -45,7 +43,7 @@ struct ClipboardConfirmationView: View {
                     .padding()
                     .frame(alignment: .center)
 
-                Text(reason.text())
+                Text(request.text())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
@@ -57,9 +55,9 @@ struct ClipboardConfirmationView: View {
 
             HStack {
                 Spacer()
-                Button(Action.text(.cancel, reason)) { onCancel() }
+                Button(Action.text(.cancel, request)) { onCancel() }
                     .keyboardShortcut(.cancelAction)
-                Button(Action.text(.confirm, reason)) { onPaste() }
+                Button(Action.text(.confirm, request)) { onPaste() }
                     .keyboardShortcut(.defaultAction)
                 Spacer()
             }
@@ -68,10 +66,10 @@ struct ClipboardConfirmationView: View {
     }
 
     private func onCancel() {
-        delegate?.clipboardConfirmationComplete(.cancel, reason)
+        delegate?.clipboardConfirmationComplete(.cancel, request)
     }
 
     private func onPaste() {
-        delegate?.clipboardConfirmationComplete(.confirm, reason)
+        delegate?.clipboardConfirmationComplete(.confirm, request)
     }
 }

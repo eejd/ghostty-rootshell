@@ -348,7 +348,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     //MARK: - Clipboard Confirmation
     
-    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ reason: Ghostty.ClipboardPromptReason) {
+    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest) {
         // End our clipboard confirmation no matter what
         guard let cc = self.clipboardConfirmation else { return }
         self.clipboardConfirmation = nil
@@ -358,13 +358,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window?.endSheet(ccWindow)
         }
 
-        switch (reason) {
-        case .write:
+        switch (request) {
+        case .osc_52_write:
             guard case .confirm = action else { break }
             let pb = NSPasteboard.general
             pb.declareTypes([.string], owner: nil)
             pb.setString(cc.contents, forType: .string)
-        case .read, .unsafe:
+        case .osc_52_read, .paste:
             let str: String
             switch (action) {
             case .cancel:
@@ -448,7 +448,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Check whether we use non-native fullscreen
         guard let str = notification.userInfo?[Ghostty.Notification.ConfirmClipboardStrKey] as? String else { return }
         guard let state = notification.userInfo?[Ghostty.Notification.ConfirmClipboardStateKey] as? UnsafeMutableRawPointer? else { return }
-        guard let reason = notification.userInfo?[Ghostty.Notification.ConfirmClipboardReasonKey] as? Ghostty.ClipboardPromptReason else { return }
+        guard let request = notification.userInfo?[Ghostty.Notification.ConfirmClipboardRequestKey] as? Ghostty.ClipboardRequest else { return }
         
         // If we already have a clipboard confirmation view up, we ignore this request.
         // This shouldn't be possible...
@@ -461,7 +461,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         self.clipboardConfirmation = ClipboardConfirmationController(
             surface: surface,
             contents: str,
-            reason: reason,
+            request: request,
             state: state,
             delegate: self
         )

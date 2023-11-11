@@ -11,14 +11,14 @@ class ClipboardConfirmationController: NSWindowController {
 
     let surface: ghostty_surface_t
     let contents: String
-    let reason: Ghostty.ClipboardPromptReason
+    let request: Ghostty.ClipboardRequest
     let state: UnsafeMutableRawPointer?
     weak private var delegate: ClipboardConfirmationViewDelegate? = nil
 
-    init(surface: ghostty_surface_t, contents: String, reason: Ghostty.ClipboardPromptReason, state: UnsafeMutableRawPointer?, delegate: ClipboardConfirmationViewDelegate) {
+    init(surface: ghostty_surface_t, contents: String, request: Ghostty.ClipboardRequest, state: UnsafeMutableRawPointer?, delegate: ClipboardConfirmationViewDelegate) {
         self.surface = surface
         self.contents = contents
-        self.reason = reason
+        self.request = request
         self.state = state
         self.delegate = delegate
         super.init(window: nil)
@@ -33,16 +33,16 @@ class ClipboardConfirmationController: NSWindowController {
     override func windowDidLoad() {
         guard let window = window else { return }
 
-        switch (reason) {
-        case .unsafe:
+        switch (request) {
+        case .paste:
             window.title = "Warning: Potentially Unsafe Paste"
-        case .read, .write:
+        case .osc_52_read, .osc_52_write:
             window.title = "Authorize Clipboard Access"
         }
 
         window.contentView = NSHostingView(rootView: ClipboardConfirmationView(
             contents: contents,
-            reason: reason,
+            request: request,
             delegate: delegate
         ))
     }
