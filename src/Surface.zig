@@ -20,6 +20,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const ziglyph = @import("ziglyph");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -1020,12 +1021,24 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
 /// The core surface will NOT reset the preedit state on charCallback or
 /// keyCallback and we rely completely on the apprt implementation to track
 /// the preedit state correctly.
-pub fn preeditCallback(self: *Surface, preedit: ?u21) !void {
+pub fn preeditCallback(self: *Surface, preedit_: ?u21) !void {
+    const preedit: ?renderer.State.Preedit = if (preedit_) |cp| preedit: {
+        const width = ziglyph.display_width.codePointWidth(cp, .half);
+
+        // This shouldn't ever happen in well-behaved programs because
+        // preedit text must be visible, but we want to protect against it
+        // at this point.
+        if (width <= 0) break :preedit null;
+
+        break :preedit .{
+            .codepoint = cp,
+            .wide = width >= 2,
+        };
+    } else null;
+
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
-    self.renderer_state.preedit = if (preedit) |v| .{
-        .codepoint = v,
-    } else null;
+    self.renderer_state.preedit = preedit;
     try self.queueRender();
 }
 

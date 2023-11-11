@@ -1203,7 +1203,7 @@ fn rebuildCells(
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
     if (cursor_style_) |cursor_style| {
-        const real_cursor_cell = self.addCursor(screen, cursor_style);
+        const real_cursor_cell = self.addCursor(screen, cursor_style, preedit);
 
         // If we have a preedit, we try to render the preedit text on top
         // of the cursor.
@@ -1215,6 +1215,7 @@ fn rebuildCells(
                 var cell: mtl_shaders.Cell = cursor_cell orelse
                     (real_cursor_cell orelse break :preedit).*;
                 cell.color = .{ 0, 0, 0, 255 };
+                cell.cell_width = if (preedit_v.wide) 2 else 1;
 
                 // If preedit rendering succeeded then we don't want to
                 // re-render the underlying cell fg
@@ -1427,10 +1428,18 @@ fn addCursor(
     self: *Metal,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
+    preedit: ?renderer.State.Preedit,
 ) ?*const mtl_shaders.Cell {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
-    const cell, const x = cell: {
+    const wide, const x = cell: {
+        // If we have preedit text, our width is based on that.
+        if (preedit) |p| {
+            if (p.codepoint > 0) {
+                break :cell .{ p.wide, screen.cursor.x };
+            }
+        }
+
         // The cursor goes over the screen cursor position.
         const cell = screen.getCell(
             .active,
@@ -1438,7 +1447,7 @@ fn addCursor(
             screen.cursor.x,
         );
         if (!cell.attrs.wide_spacer_tail or screen.cursor.x == 0)
-            break :cell .{ cell, screen.cursor.x };
+            break :cell .{ cell.attrs.wide, screen.cursor.x };
 
         // If we're part of a wide character, we move the cursor back to
         // the actual character.
@@ -1446,7 +1455,7 @@ fn addCursor(
             .active,
             screen.cursor.y,
             screen.cursor.x - 1,
-        ), screen.cursor.x - 1 };
+        ).attrs.wide, screen.cursor.x - 1 };
     };
 
     const color = self.cursor_color orelse self.foreground_color;
@@ -1466,7 +1475,7 @@ fn addCursor(
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
-        .{ .cell_width = if (cell.attrs.wide) 2 else 1 },
+        .{ .cell_width = if (wide) 2 else 1 },
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
         return null;
@@ -1478,7 +1487,7 @@ fn addCursor(
             @as(f32, @floatFromInt(x)),
             @as(f32, @floatFromInt(screen.cursor.y)),
         },
-        .cell_width = if (cell.attrs.wide) 2 else 1,
+        .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
         .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
         .glyph_size = .{ glyph.width, glyph.height },
