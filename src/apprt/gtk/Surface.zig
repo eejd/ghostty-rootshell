@@ -520,16 +520,17 @@ pub fn setClipboardString(
     if (!confirm) {
         const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type);
         c.gdk_clipboard_set_text(clipboard, val.ptr);
-    } else {
-        ClipboardConfirmationWindow.create(
-            self.app,
-            val,
-            self.core_surface,
-            .{ .osc_52_write = clipboard_type },
-        ) catch |window_err| {
-            log.err("failed to create clipboard confirmation window err={}", .{window_err});
-        };
+        return;
     }
+
+    ClipboardConfirmationWindow.create(
+        self.app,
+        val,
+        self.core_surface,
+        .{ .osc_52_write = clipboard_type },
+    ) catch |window_err| {
+        log.err("failed to create clipboard confirmation window err={}", .{window_err});
+    };
 }
 
 const ClipboardRequest = struct {

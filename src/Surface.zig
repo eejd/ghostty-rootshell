@@ -2532,8 +2532,18 @@ pub fn completeClipboardRequest(
 ) !void {
     switch (req) {
         .paste => try self.completeClipboardPaste(data, confirmed),
-        .osc_52_read => |clipboard| try self.completeClipboardReadOSC52(data, clipboard, confirmed),
-        .osc_52_write => |clipboard| try self.rt_surface.setClipboardString(data, clipboard, !confirmed),
+
+        .osc_52_read => |clipboard| try self.completeClipboardReadOSC52(
+            data,
+            clipboard,
+            confirmed,
+        ),
+
+        .osc_52_write => |clipboard| try self.rt_surface.setClipboardString(
+            data,
+            clipboard,
+            !confirmed,
+        ),
     }
 }
 

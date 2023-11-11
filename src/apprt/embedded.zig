@@ -507,8 +507,6 @@ pub const Surface = struct {
     ) void {
         const alloc = self.app.core_app.alloc;
 
-        const request_type: apprt.ClipboardRequestType = state.*;
-
         // Attempt to complete the request, but we may request
         // confirmation.
         self.core_surface.completeClipboardRequest(
@@ -523,7 +521,7 @@ pub const Surface = struct {
                     self.opts.userdata,
                     str.ptr,
                     state,
-                    request_type,
+                    state.*,
                 );
 
                 return;

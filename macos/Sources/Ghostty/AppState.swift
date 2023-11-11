@@ -472,16 +472,17 @@ extension Ghostty {
                 let pb = NSPasteboard.general
                 pb.declareTypes([.string], owner: nil)
                 pb.setString(valueStr, forType: .string)
-            } else {
-                NotificationCenter.default.post(
-                    name: Notification.confirmClipboard,
-                    object: surface,
-                    userInfo: [
-                        Notification.ConfirmClipboardStrKey: valueStr,
-                        Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write,
-                    ]
-                )
+                return
             }
+            
+            NotificationCenter.default.post(
+                name: Notification.confirmClipboard,
+                object: surface,
+                userInfo: [
+                    Notification.ConfirmClipboardStrKey: valueStr,
+                    Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write,
+                ]
+            )
         }
 
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
