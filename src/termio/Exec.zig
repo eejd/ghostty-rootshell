@@ -1398,7 +1398,21 @@ const StreamHandler = struct {
     }
 
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
-        _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
+        // Try to write to the mailbox with an instant timeout. If the
+        // mailbox is full, then we wake up the writer thread mid-processing
+        // so it can process the message and then try again with a forever
+        // wait.
+        if (self.ev.writer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+            self.ev.writer_wakeup.notify() catch |err| {
+                log.warn("failed to wake up writer, data will be dropped err={}", .{err});
+                return;
+            };
+
+            _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
+        }
+
+        // Normally, we just flag this true to wake up the writer thread
+        // once per batch of data.
         self.writer_messaged = true;
     }
 
