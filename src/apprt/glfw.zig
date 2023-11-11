@@ -662,8 +662,9 @@ pub const Surface = struct {
                 // Not supported except on Linux
                 if (comptime builtin.os.tag != .linux) break :selection "";
 
-                break :selection glfwNative.getX11SelectionString() orelse
+                const raw = glfwNative.getX11SelectionString() orelse
                     return glfw.mustGetErrorCode();
+                break :selection std.mem.span(raw);
             },
         };
 
