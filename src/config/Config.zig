@@ -874,7 +874,17 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
 
             try result.keybind.set.put(
                 alloc,
-                .{ .key = @enumFromInt(i), .mods = mods },
+                .{
+                    .key = @enumFromInt(i),
+                    .mods = mods,
+
+                    // On macOS, we use the physical key for tab changing so
+                    // that this works across all keyboard layouts. This may
+                    // want to be true on other platforms as well but this
+                    // is definitely true on macOS so we just do it here for
+                    // now (#817)
+                    .physical = builtin.target.isDarwin(),
+                },
                 .{ .goto_tab = (i - start) + 1 },
             );
         }
