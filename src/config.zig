@@ -10,6 +10,7 @@ pub const MouseShiftCapture = Config.MouseShiftCapture;
 pub const NonNativeFullscreen = Config.NonNativeFullscreen;
 pub const OptionAsAlt = Config.OptionAsAlt;
 pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
+pub const ClipboardAccess = Config.ClipboardAccess;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");

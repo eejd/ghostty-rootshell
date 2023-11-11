@@ -6,7 +6,7 @@ import GhosttyKit
 /// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
 class TerminalController: NSWindowController, NSWindowDelegate, 
                           TerminalViewDelegate, TerminalViewModel,
-                          PasteProtectionViewDelegate
+                          ClipboardConfirmationViewDelegate
 {
     override var windowNibName: NSNib.Name? { "Terminal" }
     
@@ -31,8 +31,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// True when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
     
-    /// The paste protection window, if shown.
-    private var pasteProtection: PasteProtectionController? = nil
+    /// The clipboard confirmation window, if shown.
+    private var clipboardConfirmation: ClipboardConfirmationController? = nil
     
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
@@ -56,8 +56,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             object: nil)
         center.addObserver(
             self,
-            selector: #selector(onConfirmUnsafePaste),
-            name: Ghostty.Notification.confirmUnsafePaste,
+            selector: #selector(onConfirmClipboardRequest),
+            name: Ghostty.Notification.confirmClipboard,
             object: nil)
     }
     
@@ -346,28 +346,36 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         self.window?.close()
     }
     
-    //MARK: - Paste Protection
+    //MARK: - Clipboard Confirmation
     
-    func pasteProtectionComplete(_ action: PasteProtectionView.Action) {
-        // End our paste protection no matter what
-        guard let pp = self.pasteProtection else { return }
-        self.pasteProtection = nil
-        
+    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest) {
+        // End our clipboard confirmation no matter what
+        guard let cc = self.clipboardConfirmation else { return }
+        self.clipboardConfirmation = nil
+
         // Close the sheet
-        if let ppWindow = pp.window {
-            window?.endSheet(ppWindow)
+        if let ccWindow = cc.window {
+            window?.endSheet(ccWindow)
         }
-        
-        let str: String
-        switch (action) {
-        case .cancel:
-            str = ""
-            
-        case .paste:
-            str = pp.contents
+
+        switch (request) {
+        case .osc_52_write:
+            guard case .confirm = action else { break }
+            let pb = NSPasteboard.general
+            pb.declareTypes([.string], owner: nil)
+            pb.setString(cc.contents, forType: .string)
+        case .osc_52_read, .paste:
+            let str: String
+            switch (action) {
+            case .cancel:
+                str = ""
+
+            case .confirm:
+                str = cc.contents
+            }
+
+            Ghostty.AppState.completeClipboardRequest(cc.surface, data: str, state: cc.state, confirmed: true)
         }
-        
-        Ghostty.AppState.completeClipboardRequest(pp.surface, data: str, state: pp.state, confirmed: true)
     }
     
     //MARK: - Notifications
@@ -429,7 +437,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         }
     }
     
-    @objc private func onConfirmUnsafePaste(notification: SwiftUI.Notification) {
+    @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
         guard let surface = target.surface else { return }
@@ -438,23 +446,25 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let window = self.window else { return }
         
         // Check whether we use non-native fullscreen
-        guard let str = notification.userInfo?[Ghostty.Notification.UnsafePasteStrKey] as? String else { return }
-        guard let state = notification.userInfo?[Ghostty.Notification.UnsafePasteStateKey] as? UnsafeMutableRawPointer? else { return }
+        guard let str = notification.userInfo?[Ghostty.Notification.ConfirmClipboardStrKey] as? String else { return }
+        guard let state = notification.userInfo?[Ghostty.Notification.ConfirmClipboardStateKey] as? UnsafeMutableRawPointer? else { return }
+        guard let request = notification.userInfo?[Ghostty.Notification.ConfirmClipboardRequestKey] as? Ghostty.ClipboardRequest else { return }
         
-        // If we already have a paste protection view up, we ignore this request.
+        // If we already have a clipboard confirmation view up, we ignore this request.
         // This shouldn't be possible...
-        guard self.pasteProtection == nil else {
+        guard self.clipboardConfirmation == nil else {
             Ghostty.AppState.completeClipboardRequest(surface, data: "", state: state, confirmed: true)
             return
         }
         
         // Show our paste confirmation
-        self.pasteProtection = PasteProtectionController(
+        self.clipboardConfirmation = ClipboardConfirmationController(
             surface: surface,
             contents: str,
+            request: request,
             state: state,
             delegate: self
         )
-        window.beginSheet(self.pasteProtection!.window!)
+        window.beginSheet(self.clipboardConfirmation!.window!)
     }
 }

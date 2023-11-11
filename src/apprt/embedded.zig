@@ -68,10 +68,11 @@ pub const App = struct {
             SurfaceUD,
             [*:0]const u8,
             *apprt.ClipboardRequest,
+            apprt.ClipboardRequestType,
         ) callconv(.C) void,
 
         /// Write the clipboard value.
-        write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int) callconv(.C) void,
+        write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int, bool) callconv(.C) void,
 
         /// Create a new split view. If the embedder doesn't support split
         /// views then this can be null.
@@ -506,18 +507,21 @@ pub const Surface = struct {
     ) void {
         const alloc = self.app.core_app.alloc;
 
-        // Attempt to complete the request, but if its unsafe we may request
+        // Attempt to complete the request, but we may request
         // confirmation.
         self.core_surface.completeClipboardRequest(
             state.*,
             str,
             confirmed,
         ) catch |err| switch (err) {
-            error.UnsafePaste => {
+            error.UnsafePaste,
+            error.UnauthorizedPaste,
+            => {
                 self.app.opts.confirm_read_clipboard(
                     self.opts.userdata,
                     str.ptr,
                     state,
+                    state.*,
                 );
 
                 return;
@@ -526,8 +530,8 @@ pub const Surface = struct {
             else => log.err("error completing clipboard request err={}", .{err}),
         };
 
-        // We don't defer this because the unsafe paste route preserves
-        // the clipboard request.
+        // We don't defer this because the clipboard confirmation route
+        // preserves the clipboard request.
         alloc.destroy(state);
     }
 
@@ -535,11 +539,13 @@ pub const Surface = struct {
         self: *const Surface,
         val: [:0]const u8,
         clipboard_type: apprt.Clipboard,
+        confirm: bool,
     ) !void {
         self.app.opts.write_clipboard(
             self.opts.userdata,
             val.ptr,
             @intCast(@intFromEnum(clipboard_type)),
+            confirm,
         );
     }
 

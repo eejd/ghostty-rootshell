@@ -656,7 +656,7 @@ pub const Surface = struct {
         state: apprt.ClipboardRequest,
     ) !void {
         // GLFW can read clipboards immediately so just do that.
-        const str: []const u8 = switch (clipboard_type) {
+        const str: [:0]const u8 = switch (clipboard_type) {
             .standard => glfw.getClipboardString() orelse return glfw.mustGetErrorCode(),
             .selection => selection: {
                 // Not supported except on Linux
@@ -678,7 +678,9 @@ pub const Surface = struct {
         self: *const Surface,
         val: [:0]const u8,
         clipboard_type: apprt.Clipboard,
+        confirm: bool,
     ) !void {
+        _ = confirm;
         _ = self;
         switch (clipboard_type) {
             .standard => glfw.setClipboardString(val),

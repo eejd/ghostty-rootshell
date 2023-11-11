@@ -2108,20 +2108,29 @@ const StreamHandler = struct {
         // iTerm also appears to do this but other terminals seem to only allow
         // certain. Let's investigate more.
 
+        const clipboard_type: apprt.Clipboard = switch (kind) {
+            'c' => .standard,
+            's' => .selection,
+            else => .standard,
+        };
+
         // Get clipboard contents
         if (data.len == 1 and data[0] == '?') {
             _ = self.ev.surface_mailbox.push(.{
-                .clipboard_read = kind,
+                .clipboard_read = clipboard_type,
             }, .{ .forever = {} });
             return;
         }
 
         // Write clipboard contents
         _ = self.ev.surface_mailbox.push(.{
-            .clipboard_write = try apprt.surface.Message.WriteReq.init(
-                self.alloc,
-                data,
-            ),
+            .clipboard_write = .{
+                .req = try apprt.surface.Message.WriteReq.init(
+                    self.alloc,
+                    data,
+                ),
+                .clipboard_type = clipboard_type,
+            },
         }, .{ .forever = {} });
     }
 

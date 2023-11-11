@@ -32,12 +32,21 @@ pub const Clipboard = enum(u1) {
     selection = 1, // also known as the "primary" clipboard
 };
 
+pub const ClipboardRequestType = enum(u8) {
+    paste,
+    osc_52_read,
+    osc_52_write,
+};
+
 /// Clipboard request. This is used to request clipboard contents and must
 /// be sent as a response to a ClipboardRequest event.
-pub const ClipboardRequest = union(enum) {
+pub const ClipboardRequest = union(ClipboardRequestType) {
     /// A direct paste of clipboard contents.
     paste: void,
 
+    /// A request to read clipboard contents via OSC 52.
+    osc_52_read: Clipboard,
+
     /// A request to write clipboard contents via OSC 52.
-    osc_52: u8,
+    osc_52_write: Clipboard,
 };
