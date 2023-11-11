@@ -466,10 +466,15 @@ pub const Face = struct {
         } = metrics: {
             const ascent = @round(ct_font.getAscent());
             const descent = @round(ct_font.getDescent());
-            const leading = @round(ct_font.getLeading());
+
+            // Leading is the value between lines at the TOP of a line.
+            // Because we are rendering a fixed size terminal grid, we
+            // want the leading to be split equally between the top and bottom.
+            const leading = ct_font.getLeading();
+
             break :metrics .{
-                .height = @floatCast(ascent + descent + leading),
-                .ascent = @floatCast(ascent),
+                .height = @floatCast(@round(ascent + descent + leading)),
+                .ascent = @floatCast(@round(ascent + (leading / 2))),
             };
         };
 
