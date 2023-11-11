@@ -507,7 +507,7 @@ pub const Surface = struct {
     ) void {
         const alloc = self.app.core_app.alloc;
 
-        const request_type = @as(apprt.ClipboardRequestType, state.*);
+        const request_type: apprt.ClipboardRequestType = state.*;
 
         // Attempt to complete the request, but we may request
         // confirmation.
