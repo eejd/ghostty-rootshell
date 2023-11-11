@@ -34,4 +34,7 @@ pub const Preedit = struct {
     /// This can also be "0" in which case we can know we're in a preedit
     /// mode but we don't have any preedit text to render.
     codepoint: u21 = 0,
+
+    /// True if the preedit text should be rendered "wide" (two cells)
+    wide: bool = false,
 };
