@@ -1162,6 +1162,7 @@ pub fn keyCallback(
         const t = &self.io.terminal;
         break :enc .{
             .event = event,
+            .macos_option_as_alt = self.config.macos_option_as_alt,
             .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
             .cursor_key_application = t.modes.get(.cursor_keys),
             .keypad_key_application = t.modes.get(.keypad_keys),

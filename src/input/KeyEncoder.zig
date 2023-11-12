@@ -6,9 +6,11 @@
 const KeyEncoder = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const testing = std.testing;
 
 const key = @import("key.zig");
+const config = @import("../config.zig");
 const function_keys = @import("function_keys.zig");
 const terminal = @import("../terminal/main.zig");
 const KittyEntry = @import("kitty.zig").Entry;
@@ -20,6 +22,7 @@ const log = std.log.scoped(.key_encoder);
 event: key.KeyEvent,
 
 /// The state of various modes of a terminal that impact encoding.
+macos_option_as_alt: config.OptionAsAlt = .false,
 alt_esc_prefix: bool = false,
 cursor_key_application: bool = false,
 keypad_key_application: bool = false,
@@ -290,12 +293,39 @@ fn legacy(
 
     // If we have alt-pressed and alt-esc-prefix is enabled, then
     // we need to prefix the utf8 sequence with an esc.
-    if (binding_mods.alt and
-        self.alt_esc_prefix and
-        utf8.len == 1 and
-        utf8[0] < 0x7F)
-    {
-        return try std.fmt.bufPrint(buf, "\x1B{u}", .{utf8[0]});
+    if (binding_mods.alt and self.alt_esc_prefix) alt: {
+        const byte = byte: {
+            // On macOS, we only handle option like alt in certain circumstances.
+            // Otherwise, macOS does a unicode translation and we allow that to
+            // happen.
+            if (comptime builtin.target.isDarwin()) {
+                switch (self.macos_option_as_alt) {
+                    .false => break :alt,
+                    .left => if (all_mods.sides.alt == .right) break :alt,
+                    .right => if (all_mods.sides.alt == .left) break :alt,
+                    .true => {},
+                }
+
+                if (self.event.unshifted_codepoint > 0) {
+                    if (std.math.cast(u8, self.event.unshifted_codepoint)) |byte| {
+                        break :byte byte;
+                    }
+                }
+            }
+
+            // Otherwise, we require utf8 to already have the byte represented.
+            if (utf8.len == 1) {
+                if (std.math.cast(u8, utf8[0])) |byte| {
+                    break :byte byte;
+                }
+            }
+
+            // Else, we can't figure out the byte to alt-prefix so we
+            // exit this handling.
+            break :alt;
+        };
+
+        return try std.fmt.bufPrint(buf, "\x1B{c}", .{byte});
     }
 
     return try copyToBuf(buf, utf8);
@@ -1141,6 +1171,26 @@ test "legacy: alt+c" {
             .mods = .{ .alt = true },
         },
         .alt_esc_prefix = true,
+        .macos_option_as_alt = .true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1Bc", actual);
+}
+
+test "legacy: alt+x macos" {
+    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .c,
+            .utf8 = "≈",
+            .unshifted_codepoint = 'c',
+            .mods = .{ .alt = true },
+        },
+        .alt_esc_prefix = true,
+        .macos_option_as_alt = .true,
     };
 
     const actual = try enc.legacy(&buf);
