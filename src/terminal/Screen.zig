@@ -1494,6 +1494,30 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
     };
 }
 
+/// Select the nearest word to start point that is between start_pt and
+/// end_pt (inclusive). Because it selects "nearest" to start point, start
+/// point can be before or after end point.
+pub fn selectWordBetween(
+    self: *Screen,
+    start_pt: point.ScreenPoint,
+    end_pt: point.ScreenPoint,
+) ?Selection {
+    const dir: point.Direction = if (start_pt.before(end_pt)) .right_down else .left_up;
+    var it = start_pt.iterator(self, dir);
+    while (it.next()) |pt| {
+        // Boundary conditions
+        switch (dir) {
+            .right_down => if (end_pt.before(pt)) return null,
+            .left_up => if (pt.before(end_pt)) return null,
+        }
+
+        // If we found a word, then return it
+        if (self.selectWord(pt)) |sel| return sel;
+    }
+
+    return null;
+}
+
 /// Select the word under the given point. A word is any consecutive series
 /// of characters that are exclusively whitespace or exclusively non-whitespace.
 /// A selection can span multiple physical lines if they are soft-wrapped.
