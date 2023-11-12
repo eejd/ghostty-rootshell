@@ -1990,24 +1990,37 @@ fn dragLeftClickDouble(
     self: *Surface,
     screen_point: terminal.point.ScreenPoint,
 ) void {
-    // Get the word under our current point. If there isn't a word, do nothing.
-    const word = self.io.terminal.screen.selectWord(screen_point) orelse return;
-
-    // Get our selection to grow it. If we don't have a selection, start it now.
-    // We may not have a selection if we started our dbl-click in an area
-    // that had no data, then we dragged our mouse into an area with data.
-    var sel = self.io.terminal.screen.selectWord(self.mouse.left_click_point) orelse {
-        self.setSelection(word);
+    // Get the word closest to our starting click.
+    const word_start = self.io.terminal.screen.selectWordBetween(
+        self.mouse.left_click_point,
+        screen_point,
+    ) orelse {
+        self.setSelection(null);
         return;
     };
 
-    // Grow our selection
+    // Get the word closest to our current point.
+    const word_current = self.io.terminal.screen.selectWordBetween(
+        screen_point,
+        self.mouse.left_click_point,
+    ) orelse {
+        self.setSelection(null);
+        return;
+    };
+
+    // If our current mouse position is before the starting position,
+    // then the seletion start is the word nearest our current position.
     if (screen_point.before(self.mouse.left_click_point)) {
-        sel.start = word.start;
+        self.setSelection(.{
+            .start = word_current.start,
+            .end = word_start.end,
+        });
     } else {
-        sel.end = word.end;
+        self.setSelection(.{
+            .start = word_start.start,
+            .end = word_current.end,
+        });
     }
-    self.setSelection(sel);
 }
 
 /// Triple-click dragging moves the selection one "line" at a time.
