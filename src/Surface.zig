@@ -147,6 +147,7 @@ const DerivedConfig = struct {
     clipboard_paste_bracketed_safe: bool,
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
+    desktop_notifications: bool,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
     mouse_shift_capture: configpkg.MouseShiftCapture,
@@ -173,6 +174,7 @@ const DerivedConfig = struct {
             .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
+            .desktop_notifications = config.@"desktop-notifications",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
             .mouse_shift_capture = config.@"mouse-shift-capture",
@@ -712,6 +714,27 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .child_exited => {
             self.child_exited = true;
             self.close();
+        },
+
+        .desktop_notification => |notification| {
+            if (!self.config.desktop_notifications) {
+                log.info("application attempted to display a desktop notification, but 'desktop-notifications' is disabled", .{});
+                return;
+            }
+
+            const title: [:0]const u8 = switch (notification.title) {
+                .small => |v| v.data[0..v.len :0],
+                // Stream handler only sends small messages
+                else => unreachable,
+            };
+
+            const body: [:0]const u8 = switch (notification.body) {
+                .small => |v| v.data[0..v.len :0],
+                // Stream handler only sends small messages
+                else => unreachable,
+            };
+
+            try self.showDesktopNotification(title, body);
         },
     }
 }
@@ -2719,6 +2742,12 @@ fn completeClipboardReadOSC52(
         buf,
     ), .{ .forever = {} });
     self.io_thread.wakeup.notify() catch {};
+}
+
+fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
+    if (@hasDecl(apprt.Surface, "showDesktopNotification")) {
+        try self.rt_surface.showDesktopNotification(title, body);
+    } else log.warn("runtime doesn't support desktop notifications", .{});
 }
 
 pub const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");

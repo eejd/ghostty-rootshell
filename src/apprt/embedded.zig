@@ -117,6 +117,9 @@ pub const App = struct {
 
         /// Called when the cell size changes.
         set_cell_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
+
+        /// Show a desktop notification to the user.
+        show_desktop_notification: ?*const fn (SurfaceUD, [*:0]const u8, [*:0]const u8) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -938,6 +941,20 @@ pub const Surface = struct {
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
+    }
+
+    /// Show a desktop notification.
+    pub fn showDesktopNotification(
+        self: *const Surface,
+        title: [:0]const u8,
+        body: [:0]const u8,
+    ) !void {
+        const func = self.app.opts.show_desktop_notification orelse {
+            log.info("runtime embedder does not support show_desktop_notification", .{});
+            return;
+        };
+
+        func(self.opts.userdata, title, body);
     }
 };
 

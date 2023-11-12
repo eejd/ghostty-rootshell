@@ -2388,4 +2388,34 @@ const StreamHandler = struct {
             },
         }
     }
+
+    pub fn showDesktopNotification(
+        self: *StreamHandler,
+        title: []const u8,
+        body: []const u8,
+    ) !void {
+        // Subtract one to leave room for the sentinel
+        const max_length = apprt.surface.Message.WriteReq.Small.Max - 1;
+        if (title.len >= max_length or body.len >= max_length) {
+            log.warn("requested notification is too long", .{});
+            return;
+        }
+
+        var req_title: apprt.surface.Message.WriteReq.Small = .{};
+        @memcpy(req_title.data[0..title.len], title);
+        req_title.data[title.len] = 0;
+        req_title.len = @intCast(title.len);
+
+        var req_body: apprt.surface.Message.WriteReq.Small = .{};
+        @memcpy(req_body.data[0..body.len], body);
+        req_body.data[body.len] = 0;
+        req_body.len = @intCast(body.len);
+
+        _ = self.ev.surface_mailbox.push(.{
+            .desktop_notification = .{
+                .title = .{ .small = req_title },
+                .body = .{ .small = req_body },
+            },
+        }, .{ .forever = {} });
+    }
 };

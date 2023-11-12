@@ -650,6 +650,10 @@ keybind: Keybinds = .{},
 /// libadwaita support.
 @"gtk-adwaita": bool = true,
 
+/// If true (default), applications running in the terminal can show desktop
+/// notifications using certain escape sequences such as OSC 9 or OSC 777.
+@"desktop-notifications": bool = true,
+
 /// This will be used to set the TERM environment variable.
 /// HACK: We set this with an "xterm" prefix because vim uses that to enable key
 /// protocols (specifically this will enable 'modifyOtherKeys'), among other

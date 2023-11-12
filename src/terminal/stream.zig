@@ -1067,6 +1067,13 @@ pub fn Stream(comptime Handler: type) type {
                         return;
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
+
+                .show_desktop_notification => |v| {
+                    if (@hasDecl(T, "showDesktopNotification")) {
+                        try self.handler.showDesktopNotification(v.title, v.body);
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
             }
 
             // Fall through for when we don't have a handler.
