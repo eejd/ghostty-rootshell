@@ -1398,16 +1398,29 @@ const StreamHandler = struct {
     }
 
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
-        // Try to write to the mailbox with an instant timeout. If the
-        // mailbox is full, then we wake up the writer thread mid-processing
-        // so it can process the message and then try again with a forever
-        // wait.
+        // Try to write to the mailbox with an instant timeout. This is the
+        // fast path because we can queue without a lock.
         if (self.ev.writer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+            // If we enter this conditional, the mailbox is full. We wake up
+            // the writer thread so that it can process messages to clear up
+            // space. However, the writer thread may require the renderer
+            // lock so we need to unlock.
             self.ev.writer_wakeup.notify() catch |err| {
                 log.warn("failed to wake up writer, data will be dropped err={}", .{err});
                 return;
             };
 
+            // Unlock the renderer state so the writer thread can acquire it.
+            // Then try to queue our message before continuing. This is a very
+            // slow path because we are having a lot of contention for data.
+            // But this only gets triggered in certain pathological cases.
+            //
+            // Note that writes themselves don't require a lock, but there
+            // are other messages in the writer mailbox (resize, focus) that
+            // could acquire the lock. This is why we have to release our lock
+            // here.
+            self.ev.renderer_state.mutex.unlock();
+            defer self.ev.renderer_state.mutex.lock();
             _ = self.ev.writer_mailbox.push(msg, .{ .forever = {} });
         }
 
