@@ -185,6 +185,7 @@ const entries: []const ModeEntry = &.{
     // DEC
     .{ .name = "cursor_keys", .value = 1 }, // DECCKM
     .{ .name = "132_column", .value = 3 },
+    .{ .name = "slow_scroll", .value = 4 },
     .{ .name = "reverse_colors", .value = 5 },
     .{ .name = "origin", .value = 6 },
     .{ .name = "wraparound", .value = 7, .default = true },
