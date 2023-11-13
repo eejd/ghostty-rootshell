@@ -69,7 +69,7 @@ pub const ModeState = struct {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
         // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(4, @sizeOf(ModePacked));
+        try std.testing.expectEqual(8, @sizeOf(ModePacked));
     }
 };
 
