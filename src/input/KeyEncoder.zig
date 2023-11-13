@@ -223,9 +223,16 @@ fn legacy(
         return buf[0..1];
     }
 
-    // If we have no UTF8 text then at this point there is nothing to do.
+    // If we have no UTF8 text then the only possibility is the
+    // alt-prefix handling of unshifted codepoints... so we process that.
     const utf8 = self.event.utf8;
-    if (utf8.len == 0) return "";
+    if (utf8.len == 0) {
+        if (try self.legacyAltPrefix(binding_mods, all_mods)) |byte| {
+            return try std.fmt.bufPrint(buf, "\x1B{c}", .{byte});
+        }
+
+        return "";
+    }
 
     // In modify other keys state 2, we send the CSI 27 sequence
     // for any char with a modifier. Ctrl sequences like Ctrl+a
@@ -293,42 +300,53 @@ fn legacy(
 
     // If we have alt-pressed and alt-esc-prefix is enabled, then
     // we need to prefix the utf8 sequence with an esc.
-    if (binding_mods.alt and self.alt_esc_prefix) alt: {
-        const byte = byte: {
-            // On macOS, we only handle option like alt in certain circumstances.
-            // Otherwise, macOS does a unicode translation and we allow that to
-            // happen.
-            if (comptime builtin.target.isDarwin()) {
-                switch (self.macos_option_as_alt) {
-                    .false => break :alt,
-                    .left => if (all_mods.sides.alt == .right) break :alt,
-                    .right => if (all_mods.sides.alt == .left) break :alt,
-                    .true => {},
-                }
-
-                if (self.event.unshifted_codepoint > 0) {
-                    if (std.math.cast(u8, self.event.unshifted_codepoint)) |byte| {
-                        break :byte byte;
-                    }
-                }
-            }
-
-            // Otherwise, we require utf8 to already have the byte represented.
-            if (utf8.len == 1) {
-                if (std.math.cast(u8, utf8[0])) |byte| {
-                    break :byte byte;
-                }
-            }
-
-            // Else, we can't figure out the byte to alt-prefix so we
-            // exit this handling.
-            break :alt;
-        };
-
+    if (try self.legacyAltPrefix(binding_mods, all_mods)) |byte| {
         return try std.fmt.bufPrint(buf, "\x1B{c}", .{byte});
     }
 
     return try copyToBuf(buf, utf8);
+}
+
+fn legacyAltPrefix(
+    self: *const KeyEncoder,
+    binding_mods: key.Mods,
+    mods: key.Mods,
+) !?u8 {
+    // This only takes effect with alt pressed
+    if (!binding_mods.alt or !self.alt_esc_prefix) return null;
+
+    // On macOS, we only handle option like alt in certain
+    // circumstances. Otherwise, macOS does a unicode translation
+    // and we allow that to happen.
+    if (comptime builtin.target.isDarwin()) {
+        switch (self.macos_option_as_alt) {
+            .false => return null,
+            .left => if (mods.sides.alt == .right) return null,
+            .right => if (mods.sides.alt == .left) return null,
+            .true => {},
+        }
+
+        if (self.event.unshifted_codepoint > 0) {
+            if (std.math.cast(
+                u8,
+                self.event.unshifted_codepoint,
+            )) |byte| {
+                return byte;
+            }
+        }
+    }
+
+    // Otherwise, we require utf8 to already have the byte represented.
+    const utf8 = self.event.utf8;
+    if (utf8.len == 1) {
+        if (std.math.cast(u8, utf8[0])) |byte| {
+            return byte;
+        }
+    }
+
+    // Else, we can't figure out the byte to alt-prefix so we
+    // exit this handling.
+    return null;
 }
 
 /// A helper to memcpy a src value to a buffer and return the result.
@@ -1176,6 +1194,22 @@ test "legacy: alt+c" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("\x1Bc", actual);
+}
+
+test "legacy: alt+e only unshifted" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .e,
+            .unshifted_codepoint = 'e',
+            .mods = .{ .alt = true },
+        },
+        .alt_esc_prefix = true,
+        .macos_option_as_alt = .true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1Be", actual);
 }
 
 test "legacy: alt+x macos" {
