@@ -725,12 +725,51 @@ extension Ghostty {
         }
 
         override func keyDown(with event: NSEvent) {
+            guard let surface = self.surface else { 
+                self.interpretKeyEvents([event])
+                return
+            }
+            
+            // We need to translate the mods (maybe) to handle configs such as option-as-alt
+            let translationModsGhostty = Ghostty.eventModifierFlags(
+                mods: ghostty_surface_key_translation_mods(
+                    surface,
+                    Ghostty.ghosttyMods(event.modifierFlags)
+                )
+            )
+            
+            // There are hidden bits set in our event that matter for certain dead keys
+            // so we can't use translationModsGhostty directly. Instead, we just check
+            // for exact states and set them.
+            var translationMods = event.modifierFlags
+            for flag in [NSEvent.ModifierFlags.shift, .control, .option, .command] {
+                if (translationModsGhostty.contains(flag)) {
+                    translationMods.insert(flag)
+                } else {
+                    translationMods.remove(flag)
+                }
+            }
+            
+            // Build a new NSEvent we use only for translation
+            let translationEvent = NSEvent.keyEvent(
+                with: event.type,
+                location: event.locationInWindow,
+                modifierFlags: translationMods,
+                timestamp: event.timestamp,
+                windowNumber: event.windowNumber,
+                context: nil,
+                characters: event.characters ?? "",
+                charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+                isARepeat: event.isARepeat,
+                keyCode: event.keyCode
+            ) ?? event
+            
             // By setting this to non-nil, we note that we'rein a keyDown event. From here,
             // we call interpretKeyEvents so that we can handle complex input such as Korean
             // language.
             keyTextAccumulator = []
             defer { keyTextAccumulator = nil }
-            self.interpretKeyEvents([event])
+            self.interpretKeyEvents([translationEvent])
 
             let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             

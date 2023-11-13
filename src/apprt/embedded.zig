@@ -1348,6 +1348,24 @@ pub const CAPI = struct {
         surface.focusCallback(focused);
     }
 
+    /// Filter the mods if necessary. This handles settings such as
+    /// `macos-option-as-alt`. The filtered mods should be used for
+    /// key translation but should NOT be sent back via the `_key`
+    /// function -- the original mods should be used for that.
+    export fn ghostty_surface_key_translation_mods(
+        surface: *Surface,
+        mods_raw: c_int,
+    ) c_int {
+        const mods: input.Mods = @bitCast(@as(
+            input.Mods.Backing,
+            @truncate(@as(c_uint, @bitCast(mods_raw))),
+        ));
+        const result = mods.translation(
+            surface.core_surface.config.macos_option_as_alt,
+        );
+        return @intCast(@as(input.Mods.Backing, @bitCast(result)));
+    }
+
     /// Send this for raw keypresses (i.e. the keyDown event on macOS).
     /// This will handle the keymap translation and send the appropriate
     /// key and char events.
