@@ -69,7 +69,7 @@ pub const ModeState = struct {
         // We have this here so that we explicitly fail when we change the
         // size of modes. The size of modes is NOT particularly important,
         // we just want to be mentally aware when it happens.
-        try std.testing.expectEqual(4, @sizeOf(ModePacked));
+        try std.testing.expectEqual(8, @sizeOf(ModePacked));
     }
 };
 
@@ -185,6 +185,7 @@ const entries: []const ModeEntry = &.{
     // DEC
     .{ .name = "cursor_keys", .value = 1 }, // DECCKM
     .{ .name = "132_column", .value = 3 },
+    .{ .name = "slow_scroll", .value = 4 },
     .{ .name = "reverse_colors", .value = 5 },
     .{ .name = "origin", .value = 6 },
     .{ .name = "wraparound", .value = 7, .default = true },

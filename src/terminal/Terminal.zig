@@ -290,39 +290,36 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    // TODO: test
-
-    // We need to support this. This corresponds to xterm's private mode 40
-    // bit. If the mode "?40" is set, then "?3" (DECCOLM) is supported. This
-    // doesn't exactly match VT100 semantics but modern terminals no longer
-    // blindly accept mode 3 since its so weird in modern practice.
-    if (!self.modes.get(.enable_mode_3)) return;
+    // If DEC mode 40 isn't enabled, then this is ignored. We also make
+    // sure that we don't have deccolm set because we want to fully ignore
+    // set mode.
+    if (!self.modes.get(.enable_mode_3)) {
+        self.modes.set(.@"132_column", false);
+        return;
+    }
 
     // Enable it
     self.modes.set(.@"132_column", mode == .@"132_cols");
 
-    // Resize -- we can set cols to 0 because deccolm will force it
-    try self.resize(alloc, 0, self.rows);
+    // Resize to the requested size
+    try self.resize(
+        alloc,
+        switch (mode) {
+            .@"132_cols" => 132,
+            .@"80_cols" => 80,
+        },
+        self.rows,
+    );
 
-    // TODO: do not clear screen flag mode
+    // Erase our display and move our cursor.
     self.eraseDisplay(alloc, .complete, false);
     self.setCursorPos(1, 1);
-
-    // TODO: left/right margins
 }
 
 /// Resize the underlying terminal.
-pub fn resize(self: *Terminal, alloc: Allocator, cols_req: usize, rows: usize) !void {
+pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    // If we have deccolm supported then we are fixed at either 80 or 132
-    // columns depending on if mode 3 is set or not.
-    // TODO: test
-    const cols: usize = if (self.modes.get(.enable_mode_3))
-        if (self.modes.get(.@"132_column")) 132 else 80
-    else
-        cols_req;
 
     // If our cols/rows didn't change then we're done
     if (self.cols == cols and self.rows == rows) return;
@@ -6776,4 +6773,81 @@ test "Terminal: printRepeat no previous character" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("", str);
     }
+}
+
+test "Terminal: DECCOLM without DEC mode 40" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.@"132_column", true);
+    try t.deccolm(alloc, .@"132_cols");
+    try testing.expectEqual(@as(usize, 5), t.cols);
+    try testing.expectEqual(@as(usize, 5), t.rows);
+    try testing.expect(!t.modes.get(.@"132_column"));
+}
+
+test "Terminal: DECCOLM unset" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.enable_mode_3, true);
+    try t.deccolm(alloc, .@"80_cols");
+    try testing.expectEqual(@as(usize, 80), t.cols);
+    try testing.expectEqual(@as(usize, 5), t.rows);
+}
+
+test "Terminal: DECCOLM resets pending wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+
+    t.modes.set(.enable_mode_3, true);
+    try t.deccolm(alloc, .@"80_cols");
+    try testing.expectEqual(@as(usize, 80), t.cols);
+    try testing.expectEqual(@as(usize, 5), t.rows);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+}
+
+test "Terminal: DECCOLM preserves SGR bg" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    const pen: Screen.Cell = .{
+        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
+        .attrs = .{ .has_bg = true },
+    };
+
+    t.screen.cursor.pen = pen;
+    t.modes.set(.enable_mode_3, true);
+    try t.deccolm(alloc, .@"80_cols");
+
+    {
+        const cell = t.screen.getCell(.active, 0, 0);
+        try testing.expectEqual(pen, cell);
+    }
+}
+
+test "Terminal: DECCOLM resets scroll region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setTopAndBottomMargin(2, 3);
+    t.setLeftAndRightMargin(3, 5);
+
+    t.modes.set(.enable_mode_3, true);
+    try t.deccolm(alloc, .@"80_cols");
+
+    try testing.expect(t.modes.get(.enable_left_and_right_margin));
+    try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
+    try testing.expectEqual(@as(usize, 4), t.scrolling_region.bottom);
+    try testing.expectEqual(@as(usize, 0), t.scrolling_region.left);
+    try testing.expectEqual(@as(usize, 79), t.scrolling_region.right);
 }
