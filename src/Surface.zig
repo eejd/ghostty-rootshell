@@ -1026,6 +1026,8 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
 /// keyCallback and we rely completely on the apprt implementation to track
 /// the preedit state correctly.
 pub fn preeditCallback(self: *Surface, preedit_: ?u21) !void {
+    // log.debug("preedit cp={any}", .{preedit_});
+
     const preedit: ?renderer.State.Preedit = if (preedit_) |cp| preedit: {
         const width = ziglyph.display_width.codePointWidth(cp, .half);
 

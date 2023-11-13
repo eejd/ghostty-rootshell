@@ -1,6 +1,8 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const cimgui = @import("cimgui");
+const config = @import("../config.zig");
 
 /// A generic key input event. This is the information that is necessary
 /// regardless of apprt in order to generate the proper terminal
@@ -121,6 +123,37 @@ pub const Mods = packed struct(Mods.Backing) {
         return copy;
     }
 
+    /// Return the mods to use for key translation. This handles settings
+    /// like macos-option-as-alt. The translation mods should be used for
+    /// translation but never sent back in for the key callback.
+    pub fn translation(self: Mods, option_as_alt: config.OptionAsAlt) Mods {
+        // We currently only process macos-option-as-alt so other
+        // platforms don't need to do anything.
+        if (comptime !builtin.target.isDarwin()) return self;
+
+        // We care if only alt is set.
+        const alt_only: bool = alt_only: {
+            const alt_mods: Mods = .{ .alt = true };
+            var compare = self;
+            compare.sides = .{};
+            break :alt_only alt_mods.equal(compare);
+        };
+        if (!alt_only) return self;
+
+        // Alt has to be set only on the correct side
+        switch (option_as_alt) {
+            .false => return self,
+            .true => {},
+            .left => if (self.sides.alt == .right) return self,
+            .right => if (self.sides.alt == .left) return self,
+        }
+
+        // Unset alt
+        var result = self;
+        result.alt = false;
+        return result;
+    }
+
     // For our own understanding
     test {
         const testing = std.testing;
@@ -129,6 +162,45 @@ pub const Mods = packed struct(Mods.Backing) {
             @as(Backing, @bitCast(Mods{ .shift = true })),
             @as(Backing, 0b0000_0001),
         );
+    }
+
+    test "translation macos-option-as-alt" {
+        if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+        const testing = std.testing;
+
+        // Unset
+        {
+            const mods: Mods = .{};
+            const result = mods.translation(.true);
+            try testing.expectEqual(result, mods);
+        }
+
+        // Set
+        {
+            const mods: Mods = .{ .alt = true };
+            const result = mods.translation(.true);
+            try testing.expectEqual(Mods{}, result);
+        }
+
+        // Set but disabled
+        {
+            const mods: Mods = .{ .alt = true };
+            const result = mods.translation(.false);
+            try testing.expectEqual(result, mods);
+        }
+
+        // Set wrong side
+        {
+            const mods: Mods = .{ .alt = true, .sides = .{ .alt = .right } };
+            const result = mods.translation(.left);
+            try testing.expectEqual(result, mods);
+        }
+        {
+            const mods: Mods = .{ .alt = true, .sides = .{ .alt = .left } };
+            const result = mods.translation(.right);
+            try testing.expectEqual(result, mods);
+        }
     }
 };
 
