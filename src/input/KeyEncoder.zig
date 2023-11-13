@@ -344,6 +344,16 @@ fn legacyAltPrefix(
         }
     }
 
+    // If UTF8 isn't set, we will allow unshifted codepoints through.
+    if (self.event.unshifted_codepoint > 0) {
+        if (std.math.cast(
+            u8,
+            self.event.unshifted_codepoint,
+        )) |byte| {
+            return byte;
+        }
+    }
+
     // Else, we can't figure out the byte to alt-prefix so we
     // exit this handling.
     return null;
