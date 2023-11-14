@@ -364,7 +364,7 @@ fn renderCallback(
     }
 
     // Draw
-    t.renderer.drawFrame() catch |err|
+    t.renderer.drawFrame(t.surface) catch |err|
         log.warn("error drawing err={}", .{err});
 
     return .disarm;

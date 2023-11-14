@@ -574,7 +574,9 @@ pub fn updateFrame(
 }
 
 /// Draw the frame to the screen.
-pub fn drawFrame(self: *Metal) !void {
+pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
+    _ = surface;
+
     // @autoreleasepool {}
     const pool = objc.AutoreleasePool.init();
     defer pool.deinit();

@@ -576,12 +576,14 @@ fn resetFontMetrics(
 }
 
 /// The primary render callback that is completely thread-safe.
-pub fn render(
+pub fn updateFrame(
     self: *OpenGL,
     surface: *apprt.Surface,
     state: *renderer.State,
     cursor_blink_visible: bool,
 ) !void {
+    _ = surface;
+
     // Data we extract out of the critical area.
     const Critical = struct {
         gl_bg: terminal.color.RGB,
@@ -668,19 +670,6 @@ pub fn render(
             critical.preedit,
             critical.cursor_style,
         );
-    }
-
-    // We're out of the critical path now. Let's render. We only render if
-    // we're not single threaded. If we're single threaded we expect the
-    // runtime to call draw.
-    if (single_threaded_draw) return;
-
-    try self.draw();
-
-    // Swap our window buffers
-    switch (apprt.runtime) {
-        else => @compileError("unsupported runtime"),
-        apprt.glfw => surface.window.swapBuffers(),
     }
 }
 
@@ -1448,7 +1437,7 @@ fn flushAtlas(self: *OpenGL) !void {
 
 /// Render renders the current cell state. This will not modify any of
 /// the cells.
-pub fn draw(self: *OpenGL) !void {
+pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     const t = trace(@src());
     defer t.end();
 
@@ -1507,6 +1496,13 @@ pub fn draw(self: *OpenGL) !void {
 
     try self.drawCells(binding, self.cells_bg);
     try self.drawCells(binding, self.cells);
+
+    // Swap our window buffers
+    switch (apprt.runtime) {
+        apprt.glfw => surface.window.swapBuffers(),
+        apprt.gtk => {},
+        else => @compileError("unsupported runtime"),
+    }
 }
 
 /// Loads some set of cell data into our buffer and issues a draw call.
