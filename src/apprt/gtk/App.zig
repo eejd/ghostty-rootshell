@@ -58,9 +58,6 @@ running: bool = true,
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
-    // Initialize libadwaita
-    if (build_options.libadwaita) c.adw_init();
-
     // Load our configuration
     var config = try Config.load(core_app.alloc);
     errdefer config.deinit();
@@ -72,8 +69,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         }
     }
 
-    // Set the style based on our configuration file
-    if (build_options.libadwaita) {
+    // Initialize libadwaita
+    if (build_options.libadwaita and config.@"gtk-adwaita") {
+        log.debug("initializing libadwaita", .{});
+        c.adw_init();
         c.adw_style_manager_set_color_scheme(
             c.adw_style_manager_get_default(),
             switch (config.@"window-theme") {
