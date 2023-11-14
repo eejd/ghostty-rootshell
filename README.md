@@ -22,19 +22,26 @@
 
 ## About
 
-Ghostty is an innovative terminal emulator with very ambitious goals.
+Ghostty is a cross-platform, GPU-accelerated terminal emulator that aims to
+push the boundaries of what is possible with a terminal emulator by exposing
+modern, opt-in features that enable CLI tool developers to build more feature
+rich, interactive applications.
 
-- ✅ performance competitive with the fastest GPU-accelerated terminals
-- ✅ cross-platform with native UI on macOS and Linux (and Windows is on the roadmap)
-- ✅ feature-rich: splits, shell integration, emojis, [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol), terminal inspector
-- ✅ highly customizable: variable fonts, background blurring, cursor opacity, window themes
-- 🚧 introduce cutting-edge, opt-in terminal capabilities that CLIs can utilize
+There are a number of excellent terminal emulator options that exist
+today. The unique goal of Ghostty is to have a platform for experimenting
+with modern, optional, non-standards-compliant features to enhance the
+capabilities of CLI applications. We aim to be the best in this category,
+and competitive in the rest.
 
-On the last goal, there are many excellent terminal emulators today, but Ghostty is unique in this.
-By exposing new [terminal capabilities](https://en.wikipedia.org/wiki/ANSI_escape_code#CSIsection) that CLIs can
-leverage for richer interactivity, Ghostty pushes the boundaries of what is possible with a terminal emulator.
+While aiming for this ambitious goal, Ghostty is a fully standards compliant
+terminal emulator that aims to remain compatible with all existing shells
+and software. You can use this as a drop-in replacement for your existing
+terminal emulator.
 
-**Project Status:** Ghostty is still in beta but implements most of the features you'd expect for a daily driver. See more in [Roadmap and Status](#roadmap-and-status).
+**Project Status:** Ghostty is still in beta but implements most of the
+features you'd expect for a daily driver. We currently have hundreds of active
+beta users using Ghostty as their primary terminal. See more in
+[Roadmap and Status](#roadmap-and-status).
 
 ## Download
 
@@ -93,9 +100,10 @@ palette = 15=#fbf1c7
 ```
 
 While the set of config keys and values are not yet documented, they are
-easily discoverable in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
-The available keys are simply the keys verbatim, and their possible values
-are often documented in the comments. You also can search for the [public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
+discoverable in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
+The available keys are the keys verbatim, and their possible values are typically
+documented in the comments. You also can search for the
+[public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
 of many Ghostty users for examples and inspiration.
 
 #### Configuration Errors
@@ -318,14 +326,18 @@ a work-in-progress. Similar improvements will follow with Linux.
 
 ## Developing Ghostty
 
-The official "golden setup" for developing Ghostty is managed by Nix in [shell.nix](https://github.com/mitchellh/ghostty/blob/main/shell.nix).
-It is the environment in which CI runs tests and builds artifacts. You don't have to use Nix for development, but the
-builds produced by your environment mustn't be different from the Nix build; Nix is the source of truth.
+To build Ghostty, you only need [Zig](https://ziglang.org/) installed.
+
+The official development environment is defined by Nix. You do not need
+to use Nix to develop Ghostty, but the Nix environment is the environment
+which runs CI tests and builds release artifacts. Any development work on
+Ghostty must pass within these Nix environments.
 
 **Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig while it is still in beta. I plan on stabilizing on a release version when I get
-closer to generally releasing this to ease downstream packagers. You can find binary releases of nightly builds
-on the [Zig downloads page](https://ziglang.org/download/).
+releases of Zig while it is still in beta. I plan on stabilizing on a release
+version when I get closer to generally releasing this to ease downstream
+packagers. You can find binary releases of nightly builds on the
+[Zig downloads page](https://ziglang.org/download/).
 
 With Zig installed, a binary can be built using `zig build`:
 
