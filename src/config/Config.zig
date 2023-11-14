@@ -626,6 +626,20 @@ keybind: Keybinds = .{},
 /// which is the old style.
 @"gtk-wide-tabs": bool = true,
 
+/// If true (default), Ghostty will enable libadwaita theme support. This
+/// will make `window-theme` work properly and will also allow Ghostty to
+/// properly respond to system theme changes, light/dark mode changing, etc.
+/// This requires a GTK4 desktop with a GTK4 theme.
+///
+/// If you are running GTK3 or have a GTK3 theme, you may have to set this
+/// to false to get your theme picked up properly. Having this set to true
+/// with GTK3 should not cause any problems, but it may not work exactly as
+/// expected.
+///
+/// This configuration only has an effect if Ghostty was built with
+/// libadwaita support.
+@"gtk-adwaita": bool = true,
+
 /// This will be used to set the TERM environment variable.
 /// HACK: We set this with an "xterm" prefix because vim uses that to enable key
 /// protocols (specifically this will enable 'modifyOtherKeys'), among other
