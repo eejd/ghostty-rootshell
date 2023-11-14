@@ -2,7 +2,7 @@
 <h1>
 <p align="center">
   <img src="https://user-images.githubusercontent.com/1299/199110421-9ff5fc30-a244-441e-9882-26070662adf9.png" alt="Logo" width="100">
-  <br>ghostty
+  <br>Ghostty
 </h1>
   <p align="center">
     GPU-accelerated terminal emulator pushing modern features.
@@ -22,25 +22,26 @@
 
 ## About
 
-ghostty is a cross-platform, GPU-accelerated terminal emulator that aims to
+Ghostty is a cross-platform, GPU-accelerated terminal emulator that aims to
 push the boundaries of what is possible with a terminal emulator by exposing
 modern, opt-in features that enable CLI tool developers to build more feature
 rich, interactive applications.
 
 There are a number of excellent terminal emulator options that exist
-today. The unique goal of ghostty is to have a platform for experimenting
+today. The unique goal of Ghostty is to have a platform for experimenting
 with modern, optional, non-standards-compliant features to enhance the
 capabilities of CLI applications. We aim to be the best in this category,
 and competitive in the rest.
 
-While aiming for this ambitious goal, ghostty is a fully standards compliant
+While aiming for this ambitious goal, Ghostty is a fully standards compliant
 terminal emulator that aims to remain compatible with all existing shells
 and software. You can use this as a drop-in replacement for your existing
 terminal emulator.
 
-**Project Status:** Beta. Ghostty implements most of the baseline features
-you'd expect for a terminal you can work in every day. We're still missing
-things, but I've been using it full time since April 2022.
+**Project Status:** Ghostty is still in beta but implements most of the
+features you'd expect for a daily driver. We currently have hundreds of active
+beta users using Ghostty as their primary terminal. See more in
+[Roadmap and Status](#roadmap-and-status).
 
 ## Download
 
@@ -98,10 +99,12 @@ palette = 7=#a89984
 palette = 15=#fbf1c7
 ```
 
-The available keys and valid values are not easily documented yet, but they
-are easily visible if you're mildly comfortable with Zig. The available keys
-are just the keys (verbatim) in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
-The keys are documented there, too.
+While the set of config keys and values are not yet documented, they are
+discoverable in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
+The available keys are the keys verbatim, and their possible values are typically
+documented in the comments. You also can search for the
+[public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
+of many Ghostty users for examples and inspiration.
 
 #### Configuration Errors
 
@@ -323,16 +326,18 @@ a work-in-progress. Similar improvements will follow with Linux.
 
 ## Developing Ghostty
 
-Ghostty is built using both the [Zig](https://ziglang.org/) programming
-language as well as the Zig build system. At a minimum, Zig and Git must be installed.
-For [Nix](https://nixos.org/) users, a `shell.nix` is available which includes
-all the necessary dependencies pinned to exact versions.
+To build Ghostty, you only need [Zig](https://ziglang.org/) installed.
+
+The official development environment is defined by Nix. You do not need
+to use Nix to develop Ghostty, but the Nix environment is the environment
+which runs CI tests and builds release artifacts. Any development work on
+Ghostty must pass within these Nix environments.
 
 **Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig. I plan on stabilizing on a release version when I get
-closer to generally releasing this to ease downstream packagers. During
-development, I'm sticking to nightly Zig. You can find binary releases of nightly builds
-on the [Zig downloads page](https://ziglang.org/download/).
+releases of Zig while it is still in beta. I plan on stabilizing on a release
+version when I get closer to generally releasing this to ease downstream
+packagers. You can find binary releases of nightly builds on the
+[Zig downloads page](https://ziglang.org/download/).
 
 With Zig installed, a binary can be built using `zig build`:
 
@@ -360,7 +365,7 @@ Other useful commands:
 - `zig build run -Dconformance=<name>` runs a conformance test case from
   the `conformance` directory. The `name` is the name of the file. This runs
   in the current running terminal emulator so if you want to check the
-  behavior of this project, you must run this command in ghostty.
+  behavior of this project, you must run this command in Ghostty.
 
 ### Compiling a Release Build
 
@@ -460,9 +465,7 @@ modifying anything Prettier will lint, you may want to install it locally and
 run this from the repo root before you commit:
 
 ```
-npm install -g prettier
 prettier --write .
 ```
 
-Or simply install one of the many Prettier extensions out there for your
-editor of choice.
+Make sure your Prettier version matches the version of in [devshell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devshell.nix).
