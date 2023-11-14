@@ -749,20 +749,29 @@ extension Ghostty {
                     translationMods.remove(flag)
                 }
             }
-            
-            // Build a new NSEvent we use only for translation
-            let translationEvent = NSEvent.keyEvent(
-                with: event.type,
-                location: event.locationInWindow,
-                modifierFlags: translationMods,
-                timestamp: event.timestamp,
-                windowNumber: event.windowNumber,
-                context: nil,
-                characters: event.characters(byApplyingModifiers: translationMods) ?? "",
-                charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
-                isARepeat: event.isARepeat,
-                keyCode: event.keyCode
-            ) ?? event
+
+            // If the translation modifiers are not equal to our original modifiers
+            // then we need to construct a new NSEvent. If they are equal we reuse the
+            // old one. IMPORTANT: we MUST reuse the old event if they're equal because
+            // this keeps things like Korean input working. There must be some object
+            // equality happening in AppKit somewhere because this is required.
+            let translationEvent: NSEvent
+            if (translationMods == event.modifierFlags) {
+                translationEvent = event
+            } else {
+                translationEvent = NSEvent.keyEvent(
+                    with: event.type,
+                    location: event.locationInWindow,
+                    modifierFlags: translationMods,
+                    timestamp: event.timestamp,
+                    windowNumber: event.windowNumber,
+                    context: nil,
+                    characters: event.characters(byApplyingModifiers: translationMods) ?? "",
+                    charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+                    isARepeat: event.isARepeat,
+                    keyCode: event.keyCode
+                ) ?? event
+            }
             
             // By setting this to non-nil, we note that we'rein a keyDown event. From here,
             // we call interpretKeyEvents so that we can handle complex input such as Korean
