@@ -658,15 +658,14 @@ pub const Surface = struct {
         // then we strip the alt modifier from the mods for translation.
         const translate_mods = translate_mods: {
             var translate_mods = mods;
-            switch (self.app.config.@"macos-option-as-alt") {
-                .false => {},
-                .true => translate_mods.alt = false,
-                .left => if (mods.sides.alt == .left) {
-                    translate_mods.alt = false;
-                },
-                .right => if (mods.sides.alt == .right) {
-                    translate_mods.alt = false;
-                },
+            if (comptime builtin.target.isDarwin()) {
+                const strip = switch (self.app.config.@"macos-option-as-alt") {
+                    .false => false,
+                    .true => mods.alt,
+                    .left => mods.sides.alt == .left,
+                    .right => mods.sides.alt == .right,
+                };
+                if (strip) translate_mods.alt = false;
             }
 
             // On macOS we strip ctrl because UCKeyTranslate

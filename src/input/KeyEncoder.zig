@@ -325,15 +325,6 @@ fn legacyAltPrefix(
             .right => if (mods.sides.alt == .left) return null,
             .true => {},
         }
-
-        if (self.event.unshifted_codepoint > 0) {
-            if (std.math.cast(
-                u8,
-                self.event.unshifted_codepoint,
-            )) |byte| {
-                return byte;
-            }
-        }
     }
 
     // Otherwise, we require utf8 to already have the byte represented.
@@ -1239,6 +1230,25 @@ test "legacy: alt+x macos" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("\x1Bc", actual);
+}
+
+test "legacy: shift+alt+. macos" {
+    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .period,
+            .utf8 = ">",
+            .unshifted_codepoint = '.',
+            .mods = .{ .alt = true, .shift = true },
+        },
+        .alt_esc_prefix = true,
+        .macos_option_as_alt = .true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1B>", actual);
 }
 
 test "legacy: alt+ф" {

@@ -758,7 +758,7 @@ extension Ghostty {
                 timestamp: event.timestamp,
                 windowNumber: event.windowNumber,
                 context: nil,
-                characters: event.characters ?? "",
+                characters: event.characters(byApplyingModifiers: translationMods) ?? "",
                 charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
                 isARepeat: event.isARepeat,
                 keyCode: event.keyCode

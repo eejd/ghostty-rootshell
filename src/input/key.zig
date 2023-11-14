@@ -131,15 +131,6 @@ pub const Mods = packed struct(Mods.Backing) {
         // platforms don't need to do anything.
         if (comptime !builtin.target.isDarwin()) return self;
 
-        // We care if only alt is set.
-        const alt_only: bool = alt_only: {
-            const alt_mods: Mods = .{ .alt = true };
-            var compare = self;
-            compare.sides = .{};
-            break :alt_only alt_mods.equal(compare);
-        };
-        if (!alt_only) return self;
-
         // Alt has to be set only on the correct side
         switch (option_as_alt) {
             .false => return self,
@@ -200,6 +191,13 @@ pub const Mods = packed struct(Mods.Backing) {
             const mods: Mods = .{ .alt = true, .sides = .{ .alt = .left } };
             const result = mods.translation(.right);
             try testing.expectEqual(result, mods);
+        }
+
+        // Set with other mods
+        {
+            const mods: Mods = .{ .alt = true, .shift = true };
+            const result = mods.translation(.true);
+            try testing.expectEqual(Mods{ .shift = true }, result);
         }
     }
 };
