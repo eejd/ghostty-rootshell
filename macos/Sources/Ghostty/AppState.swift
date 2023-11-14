@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import GhosttyKit
 
 protocol GhosttyAppStateDelegate: AnyObject {
@@ -167,7 +168,10 @@ extension Ghostty {
                 toggle_fullscreen_cb: { userdata, nonNativeFullscreen in AppState.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
                 set_initial_window_size_cb: { userdata, width, height in AppState.setInitialWindowSize(userdata, width: width, height: height) },
                 render_inspector_cb: { userdata in AppState.renderInspector(userdata) },
-                set_cell_size_cb: { userdata, width, height in AppState.setCellSize(userdata, width: width, height: height) }
+                set_cell_size_cb: { userdata, width, height in AppState.setCellSize(userdata, width: width, height: height) },
+                show_desktop_notification_cb: { userdata, title, body in
+                    AppState.showUserNotification(userdata, title: title, body: body)
+                }
             )
 
             // Create the ghostty app.
@@ -561,6 +565,54 @@ extension Ghostty {
             let surfaceView = self.surfaceUserdata(from: userdata)
             let backingSize = NSSize(width: Double(width), height: Double(height))
             surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
+        }
+
+        static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {
+            let surfaceView = self.surfaceUserdata(from: userdata)
+            guard let title = String(cString: title!, encoding: .utf8) else { return }
+            guard let body = String(cString: body!, encoding: .utf8) else { return }
+
+            let center = UNUserNotificationCenter.current()
+            center.requestAuthorization(options: [.alert, .sound]) { _, error in
+                if let error = error {
+                    AppDelegate.logger.error("Error while requesting notification authorization: \(error)")
+                }
+            }
+
+            center.getNotificationSettings() { settings in
+                guard settings.authorizationStatus == .authorized else { return }
+                surfaceView.showUserNotification(title: title, body: body)
+            }
+        }
+
+        /// Handle a received user notification. This is called when a user notification is clicked or dismissed by the user
+        func handleUserNotification(response: UNNotificationResponse) {
+            let userInfo = response.notification.request.content.userInfo
+            guard let address = userInfo["address"] as? Int else { return }
+            guard let userdata = UnsafeMutableRawPointer(bitPattern: address) else { return }
+            let surface = Ghostty.AppState.surfaceUserdata(from: userdata)
+
+            switch (response.actionIdentifier) {
+            case UNNotificationDefaultActionIdentifier, Ghostty.userNotificationActionShow:
+                // The user clicked on a notification
+                surface.handleUserNotification(notification: response.notification, focus: true)
+            case UNNotificationDismissActionIdentifier:
+                // The user dismissed the notification
+                surface.handleUserNotification(notification: response.notification, focus: false)
+            default:
+                break
+            }
+        }
+
+        /// Determine if a given notification should be presented to the user when Ghostty is running in the foreground.
+        func shouldPresentNotification(notification: UNNotification) -> Bool {
+            let userInfo = notification.request.content.userInfo
+            guard let address = userInfo["address"] as? Int else { return false }
+            guard let userdata = UnsafeMutableRawPointer(bitPattern: address) else { return false }
+            let surface = Ghostty.AppState.surfaceUserdata(from: userdata)
+
+            guard let window = surface.window else { return false }
+            return !window.isKeyWindow || !surface.focused
         }
 
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
