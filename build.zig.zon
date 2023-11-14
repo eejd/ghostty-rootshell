@@ -13,8 +13,8 @@
             .hash = "12202da6b8e9024c653f5d67f55a8065b401c42b3c08b69333d95400fe85d6019a59",
         },
         .zig_objc = .{
-            .url = "https://github.com/mitchellh/zig-objc/archive/146a50bb018d8e1ac5b9a1454d9db9a5eba5361f.tar.gz",
-            .hash = "12209f62dae4fccae478f5bd5670725c55308d8d985506110ba122ee2fb5e73122e0",
+            .url = "https://github.com/mitchellh/zig-objc/archive/a38331cb6ee366b3f22d0068297810ef14c0c400.tar.gz",
+            .hash = "1220dcb34ec79a9b02c46372a41a446212f2366e7c69c8eba68e88f0f25b5ddf475d",
         },
         .zig_js = .{
             .url = "https://github.com/mitchellh/zig-js/archive/60ac42ab137461cdba2b38cc6c5e16376470aae6.tar.gz",

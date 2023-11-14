@@ -137,7 +137,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
     // Cell as input.
     const vertex_desc = vertex_desc: {
         const desc = init: {
-            const Class = objc.Class.getClass("MTLVertexDescriptor").?;
+            const Class = objc.getClass("MTLVertexDescriptor").?;
             const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
             const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
             break :init id_init;
@@ -242,7 +242,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
     // Create our descriptor
     const desc = init: {
-        const Class = objc.Class.getClass("MTLRenderPipelineDescriptor").?;
+        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
         const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;
@@ -320,7 +320,7 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
     // Image as input.
     const vertex_desc = vertex_desc: {
         const desc = init: {
-            const Class = objc.Class.getClass("MTLVertexDescriptor").?;
+            const Class = objc.getClass("MTLVertexDescriptor").?;
             const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
             const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
             break :init id_init;
@@ -392,7 +392,7 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
     // Create our descriptor
     const desc = init: {
-        const Class = objc.Class.getClass("MTLRenderPipelineDescriptor").?;
+        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
         const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;

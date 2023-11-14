@@ -291,7 +291,7 @@ pub const App = struct {
         tabbing_id: *macos.foundation.String,
 
         pub fn init() !Darwin {
-            const NSWindow = objc.Class.getClass("NSWindow").?;
+            const NSWindow = objc.getClass("NSWindow").?;
             NSWindow.msgSend(void, objc.sel("setAllowsAutomaticWindowTabbing:"), .{true});
 
             // Our tabbing ID allows all of our windows to group together

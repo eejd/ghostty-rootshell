@@ -203,7 +203,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
     const swapchain = swapchain: {
-        const CAMetalLayer = objc.Class.getClass("CAMetalLayer").?;
+        const CAMetalLayer = objc.getClass("CAMetalLayer").?;
         const swapchain = CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
         swapchain.setProperty("device", device.value);
         swapchain.setProperty("opaque", options.config.background_opacity >= 1);
@@ -587,7 +587,7 @@ pub fn render(
     {
         // MTLRenderPassDescriptor
         const desc = desc: {
-            const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
+            const MTLRenderPassDescriptor = objc.getClass("MTLRenderPassDescriptor").?;
             const desc = MTLRenderPassDescriptor.msgSend(
                 objc.Object,
                 objc.sel("renderPassDescriptor"),
@@ -1625,7 +1625,7 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
 
     // Create our descriptor
     const desc = init: {
-        const Class = objc.Class.getClass("MTLTextureDescriptor").?;
+        const Class = objc.getClass("MTLTextureDescriptor").?;
         const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;
