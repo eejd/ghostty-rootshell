@@ -257,8 +257,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer buf_instance.deinit();
 
     // Initialize our shaders
-    var shaders = try Shaders.init(device);
-    errdefer shaders.deinit();
+    var shaders = try Shaders.init(alloc, device, &.{});
+    errdefer shaders.deinit(alloc);
 
     // Font atlas textures
     const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
@@ -328,7 +328,7 @@ pub fn deinit(self: *Metal) void {
     deinitMTLResource(self.texture_color);
     self.queue.msgSend(void, objc.sel("release"), .{});
 
-    self.shaders.deinit();
+    self.shaders.deinit(self.alloc);
 
     self.* = undefined;
 }
