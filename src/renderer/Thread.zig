@@ -346,7 +346,8 @@ fn renderCallback(
         _ = t.app_mailbox.push(.{ .redraw_inspector = t.surface }, .{ .instant = {} });
     }
 
-    t.renderer.render(
+    // Update our frame data
+    t.renderer.updateFrame(
         t.surface,
         t.state,
         t.flags.cursor_blink_visible,
@@ -359,7 +360,12 @@ fn renderCallback(
         renderer.OpenGL.single_threaded_draw)
     {
         _ = t.app_mailbox.push(.{ .redraw_surface = t.surface }, .{ .instant = {} });
+        return .disarm;
     }
+
+    // Draw
+    t.renderer.drawFrame() catch |err|
+        log.warn("error drawing err={}", .{err});
 
     return .disarm;
 }

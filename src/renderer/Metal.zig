@@ -76,6 +76,10 @@ background_color: terminal.color.RGB,
 /// by a terminal application
 cursor_color: ?terminal.color.RGB,
 
+/// The current frame background color. This is only updated during
+/// the updateFrame method.
+current_background_color: terminal.color.RGB,
+
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
@@ -271,6 +275,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .foreground_color = options.config.foreground,
         .background_color = options.config.background,
         .cursor_color = options.config.cursor_color,
+        .current_background_color = options.config.background,
 
         // Render state
         .cells_bg = .{},
@@ -448,8 +453,8 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     }, .{ .forever = {} });
 }
 
-/// The primary render callback that is completely thread-safe.
-pub fn render(
+/// Update the frame data.
+pub fn updateFrame(
     self: *Metal,
     surface: *apprt.Surface,
     state: *renderer.State,
@@ -535,10 +540,6 @@ pub fn render(
     };
     defer critical.screen.deinit();
 
-    // @autoreleasepool {}
-    const pool = objc.AutoreleasePool.init();
-    defer pool.deinit();
-
     // Build our GPU cells
     try self.rebuildCells(
         critical.selection,
@@ -547,18 +548,8 @@ pub fn render(
         critical.cursor_style,
     );
 
-    // Get our drawable (CAMetalDrawable)
-    const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
-
-    // If our font atlas changed, sync the texture data
-    if (self.font_group.atlas_greyscale.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
-        self.font_group.atlas_greyscale.modified = false;
-    }
-    if (self.font_group.atlas_color.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
-        self.font_group.atlas_color.modified = false;
-    }
+    // Update our background color
+    self.current_background_color = critical.bg;
 
     // Go through our images and see if we need to setup any textures.
     {
@@ -579,6 +570,26 @@ pub fn render(
                 },
             }
         }
+    }
+}
+
+/// Draw the frame to the screen.
+pub fn drawFrame(self: *Metal) !void {
+    // @autoreleasepool {}
+    const pool = objc.AutoreleasePool.init();
+    defer pool.deinit();
+
+    // Get our drawable (CAMetalDrawable)
+    const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
+
+    // If our font atlas changed, sync the texture data
+    if (self.font_group.atlas_greyscale.modified) {
+        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
+        self.font_group.atlas_greyscale.modified = false;
+    }
+    if (self.font_group.atlas_color.modified) {
+        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
+        self.font_group.atlas_color.modified = false;
     }
 
     // Command buffer (MTLCommandBuffer)
@@ -612,9 +623,9 @@ pub fn render(
                 attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
                 attachment.setProperty("texture", texture);
                 attachment.setProperty("clearColor", mtl.MTLClearColor{
-                    .red = @as(f32, @floatFromInt(critical.bg.r)) / 255,
-                    .green = @as(f32, @floatFromInt(critical.bg.g)) / 255,
-                    .blue = @as(f32, @floatFromInt(critical.bg.b)) / 255,
+                    .red = @as(f32, @floatFromInt(self.current_background_color.r)) / 255,
+                    .green = @as(f32, @floatFromInt(self.current_background_color.g)) / 255,
+                    .blue = @as(f32, @floatFromInt(self.current_background_color.b)) / 255,
                     .alpha = self.config.background_opacity,
                 });
             }
