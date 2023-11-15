@@ -27,14 +27,25 @@ preedit: ?Preedit = null,
 
 /// The pre-edit state. See Surface.preeditCallback for more information.
 pub const Preedit = struct {
-    /// The codepoint to render as preedit text. We only support single
-    /// codepoint for now. In theory this can be multiple codepoints but
-    /// that is left as a future exercise.
-    ///
-    /// This can also be "0" in which case we can know we're in a preedit
-    /// mode but we don't have any preedit text to render.
-    codepoint: u21 = 0,
+    /// The codepoints to render as preedit text. We allow up to 16 codepoints
+    /// as a sort of arbitrary limit. If we experience a realisitic use case
+    /// where we need more please open an issue.
+    codepoints: [16]Codepoint = undefined,
+    len: u8 = 0,
 
-    /// True if the preedit text should be rendered "wide" (two cells)
-    wide: bool = false,
+    /// A single codepoint to render as preedit text.
+    pub const Codepoint = struct {
+        codepoint: u21,
+        wide: bool = false,
+    };
+
+    /// The width in cells of all codepoints in the preedit.
+    pub fn width(self: *const Preedit) usize {
+        var result: usize = 0;
+        for (self.codepoints[0..self.len]) |cp| {
+            result += if (cp.wide) 2 else 1;
+        }
+
+        return result;
+    }
 };
