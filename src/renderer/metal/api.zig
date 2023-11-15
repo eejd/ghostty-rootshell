@@ -57,6 +57,7 @@ pub const MTLVertexStepFunction = enum(c_ulong) {
 /// https://developer.apple.com/documentation/metal/mtlpixelformat?language=objc
 pub const MTLPixelFormat = enum(c_ulong) {
     r8unorm = 10,
+    rgba8unorm = 70,
     rgba8uint = 73,
     bgra8unorm = 80,
 };
@@ -96,6 +97,15 @@ pub const MTLBlendOperation = enum(c_ulong) {
     reverse_subtract = 2,
     min = 3,
     max = 4,
+};
+
+/// https://developer.apple.com/documentation/metal/mtltextureusage?language=objc<D-j>
+pub const MTLTextureUsage = enum(c_ulong) {
+    unknown = 0,
+    shader_read = 1,
+    shader_write = 2,
+    render_target = 4,
+    pixel_format_view = 8,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlresourceoptions?language=objc

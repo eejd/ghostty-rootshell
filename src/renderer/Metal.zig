@@ -257,7 +257,9 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer buf_instance.deinit();
 
     // Initialize our shaders
-    var shaders = try Shaders.init(alloc, device, &.{});
+    var shaders = try Shaders.init(alloc, device, &.{
+        @embedFile("shaders/temp3.metal"),
+    });
     errdefer shaders.deinit(alloc);
 
     // Font atlas textures
@@ -584,6 +586,36 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // Get our drawable (CAMetalDrawable)
     const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
+    // Make our intermediate texture
+    const target = target: {
+        const desc = init: {
+            const Class = objc.getClass("MTLTextureDescriptor").?;
+            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+            break :init id_init;
+        };
+
+        // Set our properties
+        desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.bgra8unorm));
+        desc.setProperty("width", @as(c_ulong, @intCast(self.screen_size.?.width)));
+        desc.setProperty("height", @as(c_ulong, @intCast(self.screen_size.?.height)));
+        desc.setProperty(
+            "usage",
+            @intFromEnum(mtl.MTLTextureUsage.render_target) |
+                @intFromEnum(mtl.MTLTextureUsage.shader_read) |
+                @intFromEnum(mtl.MTLTextureUsage.shader_write),
+        );
+
+        const id = self.device.msgSend(
+            ?*anyopaque,
+            objc.sel("newTextureWithDescriptor:"),
+            .{desc},
+        ) orelse return error.MetalFailed;
+
+        break :target objc.Object.fromId(id);
+    };
+    defer target.msgSend(void, objc.sel("release"), .{});
+
     // If our font atlas changed, sync the texture data
     if (self.font_group.atlas_greyscale.modified) {
         try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
@@ -620,10 +652,10 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
                 // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
                 // which ironically doesn't implement CAMetalDrawable as a
                 // property so we just send a message.
-                const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
+                //const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
                 attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
                 attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
-                attachment.setProperty("texture", texture);
+                attachment.setProperty("texture", target.value);
                 attachment.setProperty("clearColor", mtl.MTLClearColor{
                     .red = @as(f32, @floatFromInt(self.current_background_color.r)) / 255,
                     .green = @as(f32, @floatFromInt(self.current_background_color.g)) / 255,
@@ -659,8 +691,130 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
     }
 
+    {
+        // MTLRenderPassDescriptor
+        const desc = desc: {
+            const MTLRenderPassDescriptor = objc.getClass("MTLRenderPassDescriptor").?;
+            const desc = MTLRenderPassDescriptor.msgSend(
+                objc.Object,
+                objc.sel("renderPassDescriptor"),
+                .{},
+            );
+
+            // Set our color attachment to be our drawable surface.
+            const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+            {
+                const attachment = attachments.msgSend(
+                    objc.Object,
+                    objc.sel("objectAtIndexedSubscript:"),
+                    .{@as(c_ulong, 0)},
+                );
+
+                // Texture is a property of CAMetalDrawable but if you run
+                // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
+                // which ironically doesn't implement CAMetalDrawable as a
+                // property so we just send a message.
+                const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
+                attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
+                attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
+                attachment.setProperty("texture", texture);
+                attachment.setProperty("clearColor", mtl.MTLClearColor{
+                    .red = 0,
+                    .green = 0,
+                    .blue = 0,
+                    .alpha = 1,
+                });
+            }
+
+            break :desc desc;
+        };
+
+        // MTLRenderCommandEncoder
+        const encoder = buffer.msgSend(
+            objc.Object,
+            objc.sel("renderCommandEncoderWithDescriptor:"),
+            .{desc.value},
+        );
+        defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+
+        try self.drawPostShader(encoder, target.value);
+    }
+
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+var post_time: f32 = 1;
+
+fn drawPostShader(
+    self: *Metal,
+    encoder: objc.Object,
+    texture: objc.c.id,
+) !void {
+    // Use our image shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{self.shaders.post_pipelines[0].value},
+    );
+
+    // Set our uniform, which is the only shared buffer
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBytes:length:atIndex:"),
+        .{
+            @as(*const anyopaque, @ptrCast(&self.uniforms)),
+            @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
+            @as(c_ulong, 1),
+        },
+    );
+
+    const Buffer = mtl_buffer.Buffer(mtl_shaders.PostUniforms);
+    var buf = try Buffer.initFill(self.device, &.{.{
+        .resolution = .{
+            @floatFromInt(self.screen_size.?.width),
+            @floatFromInt(self.screen_size.?.height),
+            1,
+        },
+        .time = post_time,
+        .time_delta = 1,
+        .frame_rate = 1,
+        .frame = 1,
+        .channel_time = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
+        .channel_resolution = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
+        .mouse = .{ 0, 0, 0, 0 },
+        .date = .{ 0, 0, 0, 0 },
+        .sample_rate = 1,
+    }});
+    defer buf.deinit();
+    post_time += 1;
+
+    // Set our buffer
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentBuffer:offset:atIndex:"),
+        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+    );
+
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            texture,
+            @as(c_ulong, 0),
+        },
+    );
+
+    // Draw!
+    encoder.msgSend(
+        void,
+        objc.sel("drawPrimitives:vertexStart:vertexCount:"),
+        .{
+            @intFromEnum(mtl.MTLPrimitiveType.triangle_strip),
+            @as(c_ulong, 0),
+            @as(c_ulong, 4),
+        },
+    );
 }
 
 fn drawImagePlacements(
