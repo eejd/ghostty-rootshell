@@ -1101,10 +1101,9 @@ fn rebuildCells(
         y: usize,
         x: [2]usize,
     } = if (preedit) |preedit_v| preedit: {
-        var x = screen.cursor.x;
         break :preedit .{
             .y = screen.cursor.y,
-            .x = .{ x, x + preedit_v.width() },
+            .x = preedit_v.range(screen.cursor.x, screen.cols - 1),
         };
     } else null;
 

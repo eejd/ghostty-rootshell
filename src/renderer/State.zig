@@ -48,4 +48,12 @@ pub const Preedit = struct {
 
         return result;
     }
+
+    pub fn range(self: *const Preedit, start: usize, max: usize) [2]usize {
+        // If our preedit goes off the end of the screen, we adjust it so
+        // that it shifts left.
+        const end = start + self.width();
+        const offset = if (end > max) end - max else 0;
+        return .{ start -| offset, end -| offset };
+    }
 };
