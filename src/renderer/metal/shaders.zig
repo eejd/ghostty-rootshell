@@ -348,6 +348,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
         break :vertex_desc desc;
     };
+    defer vertex_desc.msgSend(void, objc.sel("release"), .{});
 
     // Create our descriptor
     const desc = init: {
@@ -356,6 +357,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;
     };
+    defer desc.msgSend(void, objc.sel("release"), .{});
 
     // Set our properties
     desc.setProperty("vertexFunction", func_vert);
@@ -393,6 +395,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
         .{ desc, &err },
     );
     try checkError(err);
+    errdefer pipeline_state.msgSend(void, objc.sel("release"), .{});
 
     return pipeline_state;
 }
