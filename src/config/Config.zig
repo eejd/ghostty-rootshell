@@ -278,6 +278,16 @@ palette: Palette = .{},
 ///   - SHELL environment variable
 ///   - passwd entry (user information)
 ///
+/// The command is the path to only the binary to run. This cannot
+/// also contain arguments, because Ghostty does not perform any
+/// shell string parsing. To provide additional arguments, use the
+/// "command-arg" configuration (repeated for multiple arguments).
+///
+/// If you're using the `ghostty` CLI there is also a shortcut
+/// to run a command with argumens directly: you can use the `-e`
+/// flag. For example: `ghostty -e fish --with --custom --args`.
+/// This is just shorthand for specifying "command" and
+/// "command-arg" in the configuration.
 command: ?[]const u8 = null,
 
 /// A single argument to pass to the command. This can be repeated to

@@ -722,13 +722,28 @@ const Subprocess = struct {
         const alloc = arena.allocator();
 
         // Determine the path to the binary we're executing
+        const default_path = switch (builtin.os.tag) {
+            .windows => "cmd.exe",
+            else => "sh",
+        };
         const path = try Command.expandPath(
             alloc,
-            opts.full_config.command orelse switch (builtin.os.tag) {
-                .windows => "cmd.exe",
-                else => "sh",
-            },
-        ) orelse return error.CommandNotFound;
+            opts.full_config.command orelse default_path,
+        ) orelse path: {
+            // If we had a command specified, try to at least fall
+            // back to a default value like "sh" so that Ghostty
+            // launches.
+            if (opts.full_config.command) |command| {
+                log.warn("unable to find command, fallbacking back to default command={s}", .{command});
+                if (try Command.expandPath(
+                    alloc,
+                    default_path,
+                )) |path| break :path path;
+            }
+
+            log.warn("unable to find default command to launch, exiting", .{});
+            return error.CommandNotFound;
+        };
 
         // On macOS, we launch the program as a login shell. This is a Mac-specific
         // behavior (see other terminals). Terminals in general should NOT be
