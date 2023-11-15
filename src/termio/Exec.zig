@@ -2394,28 +2394,16 @@ const StreamHandler = struct {
         title: []const u8,
         body: []const u8,
     ) !void {
-        // Subtract one to leave room for the sentinel
-        const max_length = apprt.surface.Message.WriteReq.Small.Max - 1;
-        if (title.len >= max_length or body.len >= max_length) {
-            log.warn("requested notification is too long", .{});
-            return;
-        }
+        var message = apprt.surface.Message{ .desktop_notification = undefined };
 
-        var req_title: apprt.surface.Message.WriteReq.Small = .{};
-        @memcpy(req_title.data[0..title.len], title);
-        req_title.data[title.len] = 0;
-        req_title.len = @intCast(title.len);
+        const title_len = @min(title.len, message.desktop_notification.title.len);
+        @memcpy(message.desktop_notification.title[0..title_len], title[0..title_len]);
+        message.desktop_notification.title[title_len] = 0;
 
-        var req_body: apprt.surface.Message.WriteReq.Small = .{};
-        @memcpy(req_body.data[0..body.len], body);
-        req_body.data[body.len] = 0;
-        req_body.len = @intCast(body.len);
+        const body_len = @min(body.len, message.desktop_notification.body.len);
+        @memcpy(message.desktop_notification.body[0..body_len], body[0..body_len]);
+        message.desktop_notification.body[body_len] = 0;
 
-        _ = self.ev.surface_mailbox.push(.{
-            .desktop_notification = .{
-                .title = .{ .small = req_title },
-                .body = .{ .small = req_body },
-            },
-        }, .{ .forever = {} });
+        _ = self.ev.surface_mailbox.push(message, .{ .forever = {} });
     }
 };

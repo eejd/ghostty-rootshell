@@ -722,18 +722,8 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
                 return;
             }
 
-            const title: [:0]const u8 = switch (notification.title) {
-                .small => |v| v.data[0..v.len :0],
-                // Stream handler only sends small messages
-                else => unreachable,
-            };
-
-            const body: [:0]const u8 = switch (notification.body) {
-                .small => |v| v.data[0..v.len :0],
-                // Stream handler only sends small messages
-                else => unreachable,
-            };
-
+            const title = std.mem.sliceTo(&notification.title, 0);
+            const body = std.mem.sliceTo(&notification.body, 0);
             try self.showDesktopNotification(title, body);
         },
     }

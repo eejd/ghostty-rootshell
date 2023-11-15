@@ -49,10 +49,10 @@ pub const Message = union(enum) {
     /// Show a desktop notification.
     desktop_notification: struct {
         /// Desktop notification title.
-        title: WriteReq,
+        title: [63:0]u8,
 
         /// Desktop notification body.
-        body: WriteReq,
+        body: [255:0]u8,
     },
 };
 
