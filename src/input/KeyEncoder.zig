@@ -204,7 +204,16 @@ fn legacy(
         self.cursor_key_application,
         self.keypad_key_application,
         self.modify_other_keys_state_2,
-    )) |sequence| return copyToBuf(buf, sequence);
+    )) |sequence| pc_style: {
+        // If we're pressing enter and have UTF-8 text, we probably are
+        // clearing a dead key state. This happens specifically on macOS.
+        // We have a unit test for this.
+        if (self.event.key == .enter and self.event.utf8.len > 0) {
+            break :pc_style;
+        }
+
+        return copyToBuf(buf, sequence);
+    }
 
     // If we match a control sequence, we output that directly. For
     // ctrlSeq we have to use all mods because we want it to only
@@ -1166,6 +1175,20 @@ test "kitty: alternates omit control characters" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[3~", actual);
+}
+
+test "legacy: enter with utf8 (dead key state)" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .enter,
+            .utf8 = "A",
+            .unshifted_codepoint = 0x0D,
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("A", actual);
 }
 
 test "legacy: ctrl+alt+c" {
