@@ -1138,22 +1138,24 @@ pub fn updateCell(
         // in an attempt to make transparency look the best for various
         // situations. See inline comments.
         const bg_alpha: u8 = bg_alpha: {
-            if (self.config.background_opacity >= 1) break :bg_alpha alpha;
+            const default: u8 = 255;
+
+            if (self.config.background_opacity >= 1) break :bg_alpha default;
 
             // If we're selected, we do not apply background opacity
-            if (selected) break :bg_alpha alpha;
+            if (selected) break :bg_alpha default;
 
             // If we're reversed, do not apply background opacity
-            if (cell.attrs.inverse) break :bg_alpha alpha;
+            if (cell.attrs.inverse) break :bg_alpha default;
 
             // If we have a background and its not the default background
             // then we apply background opacity
             if (cell.attrs.has_bg and !std.meta.eql(rgb, self.background_color)) {
-                break :bg_alpha alpha;
+                break :bg_alpha default;
             }
 
             // We apply background opacity.
-            var bg_alpha: f64 = @floatFromInt(alpha);
+            var bg_alpha: f64 = @floatFromInt(default);
             bg_alpha *= self.config.background_opacity;
             bg_alpha = @ceil(bg_alpha);
             break :bg_alpha @intFromFloat(bg_alpha);
