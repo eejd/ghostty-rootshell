@@ -1080,7 +1080,7 @@ pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !bool {
-    log.debug("text keyCallback event={}", .{event});
+    // log.debug("text keyCallback event={}", .{event});
 
     // Setup our inspector event if we have an inspector.
     var insp_ev: ?inspector.key.Event = if (self.inspector != null) ev: {
