@@ -718,6 +718,18 @@ pub fn rebuildCells(
     // We've written no data to the GPU, refresh it all
     self.gl_cells_written = 0;
 
+    // Determine our x/y range for preedit. We don't want to render anything
+    // here because we will render the preedit separately.
+    const preedit_range: ?struct {
+        y: usize,
+        x: [2]usize,
+    } = if (preedit) |preedit_v| preedit: {
+        break :preedit .{
+            .y = screen.cursor.y,
+            .x = preedit_v.range(screen.cursor.x, screen.cols - 1),
+        };
+    } else null;
+
     // This is the cell that has [mode == .fg] and is underneath our cursor.
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
@@ -789,6 +801,18 @@ pub fn rebuildCells(
         );
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
+                // If this cell falls within our preedit range then we skip it.
+                // We do this so we don't have conflicting data on the same
+                // cell.
+                if (preedit_range) |range| {
+                    if (range.y == y and
+                        shaper_cell.x >= range.x[0] and
+                        shaper_cell.x <= range.x[1])
+                    {
+                        continue;
+                    }
+                }
+
                 if (self.updateCell(
                     term_selection,
                     screen,
@@ -816,33 +840,29 @@ pub fn rebuildCells(
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    if (cursor_style_) |cursor_style| {
-        const real_cursor_cell = self.addCursor(screen, cursor_style, preedit);
-
+    if (cursor_style_) |cursor_style| cursor_style: {
         // If we have a preedit, we try to render the preedit text on top
         // of the cursor.
-        if (preedit) |preedit_v| preedit: {
-            if (preedit_v.codepoint > 0) {
-                // We try to base on the cursor cell but if its not there
-                // we use the actual cursor and if thats not there we give
-                // up on preedit rendering.
-                var cell: GPUCell = cursor_cell orelse
-                    (real_cursor_cell orelse break :preedit).*;
-                cell.fg_r = 0;
-                cell.fg_g = 0;
-                cell.fg_b = 0;
-                cell.fg_a = 255;
-                cell.grid_width = if (preedit_v.wide) 2 else 1;
+        if (preedit) |preedit_v| {
+            const range = preedit_range.?;
+            var x = range.x[0];
+            for (preedit_v.codepoints[0..preedit_v.len]) |cp| {
+                self.addPreeditCell(cp, x, range.y) catch |err| {
+                    log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
+                        x,
+                        range.y,
+                        err,
+                    });
+                };
 
-                // If preedit rendering succeeded then we don't want to
-                // re-render the underlying cell fg
-                if (self.updateCellChar(&cell, preedit_v.codepoint)) {
-                    cursor_cell = null;
-                    self.cells.appendAssumeCapacity(cell);
-                }
+                x += if (cp.wide) 2 else 1;
             }
+
+            // Preedit hides the cursor
+            break :cursor_style;
         }
 
+        _ = self.addCursor(screen, cursor_style);
         if (cursor_cell) |*cell| {
             if (cell.mode == .fg) {
                 if (self.config.cursor_text) |txt| {
@@ -868,22 +888,97 @@ pub fn rebuildCells(
     }
 }
 
+fn addPreeditCell(
+    self: *OpenGL,
+    cp: renderer.State.Preedit.Codepoint,
+    x: usize,
+    y: usize,
+) !void {
+    // Preedit is rendered inverted
+    const bg = self.foreground_color;
+    const fg = self.background_color;
+
+    // Get the font for this codepoint.
+    const font_index = if (self.font_group.indexForCodepoint(
+        self.alloc,
+        @intCast(cp.codepoint),
+        .regular,
+        .text,
+    )) |index| index orelse return else |_| return;
+
+    // Get the font face so we can get the glyph
+    const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
+        log.warn("error getting face for font_index={} err={}", .{ font_index, err });
+        return;
+    };
+
+    // Use the face to now get the glyph index
+    const glyph_index = face.glyphIndex(@intCast(cp.codepoint)) orelse return;
+
+    // Render the glyph for our preedit text
+    const glyph = self.font_group.renderGlyph(
+        self.alloc,
+        font_index,
+        glyph_index,
+        .{},
+    ) catch |err| {
+        log.warn("error rendering preedit glyph err={}", .{err});
+        return;
+    };
+
+    // Add our opaque background cell
+    self.cells_bg.appendAssumeCapacity(.{
+        .mode = .bg,
+        .grid_col = @intCast(x),
+        .grid_row = @intCast(y),
+        .grid_width = if (cp.wide) 2 else 1,
+        .glyph_x = 0,
+        .glyph_y = 0,
+        .glyph_width = 0,
+        .glyph_height = 0,
+        .glyph_offset_x = 0,
+        .glyph_offset_y = 0,
+        .fg_r = 0,
+        .fg_g = 0,
+        .fg_b = 0,
+        .fg_a = 0,
+        .bg_r = bg.r,
+        .bg_g = bg.g,
+        .bg_b = bg.b,
+        .bg_a = 255,
+    });
+
+    // Add our text
+    self.cells.appendAssumeCapacity(.{
+        .mode = .fg,
+        .grid_col = @intCast(x),
+        .grid_row = @intCast(y),
+        .grid_width = if (cp.wide) 2 else 1,
+        .glyph_x = glyph.atlas_x,
+        .glyph_y = glyph.atlas_y,
+        .glyph_width = glyph.width,
+        .glyph_height = glyph.height,
+        .glyph_offset_x = glyph.offset_x,
+        .glyph_offset_y = glyph.offset_y,
+        .fg_r = fg.r,
+        .fg_g = fg.g,
+        .fg_b = fg.b,
+        .fg_a = 255,
+        .bg_r = 0,
+        .bg_g = 0,
+        .bg_b = 0,
+        .bg_a = 0,
+    });
+}
+
 fn addCursor(
     self: *OpenGL,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
-    preedit: ?renderer.State.Preedit,
 ) ?*const GPUCell {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
     const wide, const x = cell: {
-        // If we have preedit text, our width is based on that.
-        if (preedit) |p| {
-            if (p.codepoint > 0) {
-                break :cell .{ p.wide, screen.cursor.x };
-            }
-        }
-
         // The cursor goes over the screen cursor position.
         const cell = screen.getCell(
             .active,
@@ -947,47 +1042,6 @@ fn addCursor(
     });
 
     return &self.cells.items[self.cells.items.len - 1];
-}
-
-/// Updates cell with the the given character. This returns true if the
-/// cell was successfully updated.
-fn updateCellChar(self: *OpenGL, cell: *GPUCell, cp: u21) bool {
-    // Get the font index for this codepoint
-    const font_index = if (self.font_group.indexForCodepoint(
-        self.alloc,
-        @intCast(cp),
-        .regular,
-        .text,
-    )) |index| index orelse return false else |_| return false;
-
-    // Get the font face so we can get the glyph
-    const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
-        log.warn("error getting face for font_index={} err={}", .{ font_index, err });
-        return false;
-    };
-
-    // Use the face to now get the glyph index
-    const glyph_index = face.glyphIndex(@intCast(cp)) orelse return false;
-
-    // Render the glyph for our preedit text
-    const glyph = self.font_group.renderGlyph(
-        self.alloc,
-        font_index,
-        glyph_index,
-        .{},
-    ) catch |err| {
-        log.warn("error rendering preedit glyph err={}", .{err});
-        return false;
-    };
-
-    // Update the cell glyph
-    cell.glyph_x = glyph.atlas_x;
-    cell.glyph_y = glyph.atlas_y;
-    cell.glyph_width = glyph.width;
-    cell.glyph_height = glyph.height;
-    cell.glyph_offset_x = glyph.offset_x;
-    cell.glyph_offset_y = glyph.offset_y;
-    return true;
 }
 
 /// Update a single cell. The bool returns whether the cell was updated

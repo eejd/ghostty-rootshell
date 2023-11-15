@@ -702,14 +702,7 @@ pub const Surface = struct {
             // If this is a dead key, then we're composing a character and
             // we need to set our proper preedit state.
             if (result.composing) {
-                const view = std.unicode.Utf8View.init(result.text) catch |err| {
-                    log.warn("cannot build utf8 view over input: {}", .{err});
-                    return;
-                };
-                var it = view.iterator();
-
-                const cp: u21 = it.nextCodepoint() orelse 0;
-                self.core_surface.preeditCallback(cp) catch |err| {
+                self.core_surface.preeditCallback(result.text) catch |err| {
                     log.err("error in preedit callback err={}", .{err});
                     return;
                 };

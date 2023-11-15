@@ -1095,6 +1095,18 @@ fn rebuildCells(
         (screen.rows * screen.cols * 2) + 1,
     );
 
+    // Determine our x/y range for preedit. We don't want to render anything
+    // here because we will render the preedit separately.
+    const preedit_range: ?struct {
+        y: usize,
+        x: [2]usize,
+    } = if (preedit) |preedit_v| preedit: {
+        break :preedit .{
+            .y = screen.cursor.y,
+            .x = preedit_v.range(screen.cursor.x, screen.cols - 1),
+        };
+    } else null;
+
     // This is the cell that has [mode == .fg] and is underneath our cursor.
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
@@ -1175,6 +1187,18 @@ fn rebuildCells(
         );
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
+                // If this cell falls within our preedit range then we skip it.
+                // We do this so we don't have conflicting data on the same
+                // cell.
+                if (preedit_range) |range| {
+                    if (range.y == y and
+                        shaper_cell.x >= range.x[0] and
+                        shaper_cell.x <= range.x[1])
+                    {
+                        continue;
+                    }
+                }
+
                 if (self.updateCell(
                     term_selection,
                     screen,
@@ -1202,30 +1226,29 @@ fn rebuildCells(
     // Add the cursor at the end so that it overlays everything. If we have
     // a cursor cell then we invert the colors on that and add it in so
     // that we can always see it.
-    if (cursor_style_) |cursor_style| {
-        const real_cursor_cell = self.addCursor(screen, cursor_style, preedit);
-
+    if (cursor_style_) |cursor_style| cursor_style: {
         // If we have a preedit, we try to render the preedit text on top
         // of the cursor.
-        if (preedit) |preedit_v| preedit: {
-            if (preedit_v.codepoint > 0) {
-                // We try to base on the cursor cell but if its not there
-                // we use the actual cursor and if thats not there we give
-                // up on preedit rendering.
-                var cell: mtl_shaders.Cell = cursor_cell orelse
-                    (real_cursor_cell orelse break :preedit).*;
-                cell.color = .{ 0, 0, 0, 255 };
-                cell.cell_width = if (preedit_v.wide) 2 else 1;
+        if (preedit) |preedit_v| {
+            const range = preedit_range.?;
+            var x = range.x[0];
+            for (preedit_v.codepoints[0..preedit_v.len]) |cp| {
+                self.addPreeditCell(cp, x, range.y) catch |err| {
+                    log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
+                        x,
+                        range.y,
+                        err,
+                    });
+                };
 
-                // If preedit rendering succeeded then we don't want to
-                // re-render the underlying cell fg
-                if (self.updateCellChar(&cell, preedit_v.codepoint)) {
-                    cursor_cell = null;
-                    self.cells.appendAssumeCapacity(cell);
-                }
+                x += if (cp.wide) 2 else 1;
             }
+
+            // Preedit hides the cursor
+            break :cursor_style;
         }
 
+        _ = self.addCursor(screen, cursor_style);
         if (cursor_cell) |*cell| {
             if (cell.mode == .fg) {
                 cell.color = if (self.config.cursor_text) |txt|
@@ -1428,18 +1451,10 @@ fn addCursor(
     self: *Metal,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
-    preedit: ?renderer.State.Preedit,
 ) ?*const mtl_shaders.Cell {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
     const wide, const x = cell: {
-        // If we have preedit text, our width is based on that.
-        if (preedit) |p| {
-            if (p.codepoint > 0) {
-                break :cell .{ p.wide, screen.cursor.x };
-            }
-        }
-
         // The cursor goes over the screen cursor position.
         const cell = screen.getCell(
             .active,
@@ -1497,25 +1512,32 @@ fn addCursor(
     return &self.cells.items[self.cells.items.len - 1];
 }
 
-/// Updates cell with the the given character. This returns true if the
-/// cell was successfully updated.
-fn updateCellChar(self: *Metal, cell: *mtl_shaders.Cell, cp: u21) bool {
-    // Get the font index for this codepoint
+fn addPreeditCell(
+    self: *Metal,
+    cp: renderer.State.Preedit.Codepoint,
+    x: usize,
+    y: usize,
+) !void {
+    // Preedit is rendered inverted
+    const bg = self.foreground_color;
+    const fg = self.background_color;
+
+    // Get the font for this codepoint.
     const font_index = if (self.font_group.indexForCodepoint(
         self.alloc,
-        @intCast(cp),
+        @intCast(cp.codepoint),
         .regular,
         .text,
-    )) |index| index orelse return false else |_| return false;
+    )) |index| index orelse return else |_| return;
 
     // Get the font face so we can get the glyph
     const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
         log.warn("error getting face for font_index={} err={}", .{ font_index, err });
-        return false;
+        return;
     };
 
     // Use the face to now get the glyph index
-    const glyph_index = face.glyphIndex(@intCast(cp)) orelse return false;
+    const glyph_index = face.glyphIndex(@intCast(cp.codepoint)) orelse return;
 
     // Render the glyph for our preedit text
     const glyph = self.font_group.renderGlyph(
@@ -1525,14 +1547,27 @@ fn updateCellChar(self: *Metal, cell: *mtl_shaders.Cell, cp: u21) bool {
         .{},
     ) catch |err| {
         log.warn("error rendering preedit glyph err={}", .{err});
-        return false;
+        return;
     };
 
-    // Update the cell glyph
-    cell.glyph_pos = .{ glyph.atlas_x, glyph.atlas_y };
-    cell.glyph_size = .{ glyph.width, glyph.height };
-    cell.glyph_offset = .{ glyph.offset_x, glyph.offset_y };
-    return true;
+    // Add our opaque background cell
+    self.cells_bg.appendAssumeCapacity(.{
+        .mode = .bg,
+        .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        .cell_width = if (cp.wide) 2 else 1,
+        .color = .{ bg.r, bg.g, bg.b, 255 },
+    });
+
+    // Add our text
+    self.cells.appendAssumeCapacity(.{
+        .mode = .fg,
+        .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        .cell_width = if (cp.wide) 2 else 1,
+        .color = .{ fg.r, fg.g, fg.b, 255 },
+        .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
+        .glyph_size = .{ glyph.width, glyph.height },
+        .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+    });
 }
 
 /// Sync the atlas data to the given texture. This copies the bytes

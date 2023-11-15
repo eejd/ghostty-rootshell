@@ -1025,25 +1025,50 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
 /// The core surface will NOT reset the preedit state on charCallback or
 /// keyCallback and we rely completely on the apprt implementation to track
 /// the preedit state correctly.
-pub fn preeditCallback(self: *Surface, preedit_: ?u21) !void {
-    // log.debug("preedit cp={any}", .{preedit_});
-
-    const preedit: ?renderer.State.Preedit = if (preedit_) |cp| preedit: {
-        const width = ziglyph.display_width.codePointWidth(cp, .half);
-
-        // This shouldn't ever happen in well-behaved programs because
-        // preedit text must be visible, but we want to protect against it
-        // at this point.
-        if (width <= 0) break :preedit null;
-
-        break :preedit .{
-            .codepoint = cp,
-            .wide = width >= 2,
-        };
-    } else null;
-
+///
+/// The preedit input must be UTF-8 encoded.
+pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // We always clear our prior preedit
+    self.renderer_state.preedit = null;
+
+    // If we have no text, we're done. We queue a render in case we cleared
+    // a prior preedit (likely).
+    const text = preedit_ orelse {
+        try self.queueRender();
+        return;
+    };
+
+    // We convert the UTF-8 text to codepoints.
+    const view = try std.unicode.Utf8View.init(text);
+    var it = view.iterator();
+
+    // Allocate the codepoints slice
+    var preedit: renderer.State.Preedit = .{};
+    while (it.nextCodepoint()) |cp| {
+        const width = ziglyph.display_width.codePointWidth(cp, .half);
+
+        // I've never seen a preedit text with a zero-width character. In
+        // theory its possible but we can't really handle it right now.
+        // Let's just ignore it.
+        if (width <= 0) continue;
+
+        preedit.codepoints[preedit.len] = .{ .codepoint = cp, .wide = width >= 2 };
+        preedit.len += 1;
+
+        // This is a strange edge case. We have a generous buffer for
+        // preedit text but if we exceed it, we just truncate.
+        if (preedit.len >= preedit.codepoints.len) {
+            log.warn("preedit text is longer than our buffer, truncating", .{});
+            break;
+        }
+    }
+
+    // If we have no codepoints, then we're done.
+    if (preedit.len == 0) return;
+
     self.renderer_state.preedit = preedit;
     try self.queueRender();
 }
@@ -1055,7 +1080,7 @@ pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !bool {
-    // log.debug("keyCallback event={}", .{event});
+    // log.debug("text keyCallback event={}", .{event});
 
     // Setup our inspector event if we have an inspector.
     var insp_ev: ?inspector.key.Event = if (self.inspector != null) ev: {
