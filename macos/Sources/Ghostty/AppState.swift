@@ -350,7 +350,7 @@ extension Ghostty {
         // MARK: Ghostty Callbacks
 
         static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e, config: ghostty_surface_config_s) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(name: Notification.ghosttyNewSplit, object: surface, userInfo: [
                 "direction": direction,
                 Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
@@ -358,14 +358,14 @@ extension Ghostty {
         }
 
         static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface, userInfo: [
                 "process_alive": processAlive,
             ])
         }
 
         static func focusSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_focus_direction_e) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             guard let splitDirection = SplitFocusDirection.from(direction: direction) else { return }
             NotificationCenter.default.post(
                 name: Notification.ghosttyFocusSplit,
@@ -377,7 +377,7 @@ extension Ghostty {
         }
 
         static func resizeSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_resize_direction_e, amount: UInt16) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             guard let resizeDirection = SplitResizeDirection.from(direction: direction) else { return }
             NotificationCenter.default.post(
                 name: Notification.didResizeSplit,
@@ -390,12 +390,12 @@ extension Ghostty {
         }
 
         static func equalizeSplits(_ userdata: UnsafeMutableRawPointer?) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(name: Notification.didEqualizeSplits, object: surface)
         }
 
         static func toggleSplitZoom(_ userdata: UnsafeMutableRawPointer?) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
 
             NotificationCenter.default.post(
                 name: Notification.didToggleSplitZoom,
@@ -404,7 +404,7 @@ extension Ghostty {
         }
 
         static func gotoTab(_ userdata: UnsafeMutableRawPointer?, n: Int32) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(
                 name: Notification.ghosttyGotoTab,
                 object: surface,
@@ -417,7 +417,7 @@ extension Ghostty {
         static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) {
             // If we don't even have a surface, something went terrible wrong so we have
             // to leak "state".
-            guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
+            let surfaceView = self.surfaceUserdata(from: userdata)
             guard let surface = surfaceView.surface else { return }
             
             // We only support the standard clipboard
@@ -436,7 +436,7 @@ extension Ghostty {
             state: UnsafeMutableRawPointer?,
             request: ghostty_clipboard_request_e
         ) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
             guard let request = Ghostty.ClipboardRequest.from(request: request) else { return }
             NotificationCenter.default.post(
@@ -462,7 +462,7 @@ extension Ghostty {
         }
 
         static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e, confirm: Bool) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
 
             // We only support the standard clipboard
             if (location != GHOSTTY_CLIPBOARD_STANDARD) { return }
@@ -515,7 +515,7 @@ extension Ghostty {
         }
         
         static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(
                 name: Notification.inspectorNeedsDisplay,
                 object: surface
@@ -523,7 +523,7 @@ extension Ghostty {
         }
 
         static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {
-            let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
+            let surfaceView = self.surfaceUserdata(from: userdata)
             guard let titleStr = String(cString: title!, encoding: .utf8) else { return }
             DispatchQueue.main.async {
                 surfaceView.title = titleStr
@@ -531,17 +531,17 @@ extension Ghostty {
         }
 
         static func setMouseShape(_ userdata: UnsafeMutableRawPointer?, shape: ghostty_mouse_shape_e) {
-            let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
+            let surfaceView = self.surfaceUserdata(from: userdata)
             surfaceView.setCursorShape(shape)
         }
 
         static func setMouseVisibility(_ userdata: UnsafeMutableRawPointer?, visible: Bool) {
-            let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
+            let surfaceView = self.surfaceUserdata(from: userdata)
             surfaceView.setCursorVisibility(visible)
         }
 
         static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(
                 name: Notification.ghosttyToggleFullscreen,
                 object: surface,
@@ -553,18 +553,18 @@ extension Ghostty {
         
         static func setInitialWindowSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
             // We need a window to set the frame
-            guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
+            let surfaceView = self.surfaceUserdata(from: userdata)
             surfaceView.initialSize = NSMakeSize(Double(width), Double(height))
         }
 
         static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
-            guard let surfaceView = self.surfaceUserdata(from: userdata) else { return }
+            let surfaceView = self.surfaceUserdata(from: userdata)
             let backingSize = NSSize(width: Double(width), height: Double(height))
             surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
         }
 
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             
             guard let appState = self.appState(fromView: surface) else { return }
             guard appState.windowDecorations else {
@@ -587,7 +587,7 @@ extension Ghostty {
         }
 
         static func newWindow(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
 
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewWindow,
@@ -599,7 +599,7 @@ extension Ghostty {
         }
         
         static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {
-            guard let surface = self.surfaceUserdata(from: userdata) else { return }
+            let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(name: Notification.didControlInspector, object: surface, userInfo: [
                 "mode": mode,
             ])
@@ -614,7 +614,7 @@ extension Ghostty {
         }
 
         /// Returns the surface view from the userdata.
-        static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView? {
+        static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView {
             return Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         }
     }
