@@ -1555,7 +1555,7 @@ fn addPreeditCell(
         .mode = .bg,
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
-        .color = .{ bg.r, bg.g, bg.b, 1 },
+        .color = .{ bg.r, bg.g, bg.b, 255 },
     });
 
     // Add our text

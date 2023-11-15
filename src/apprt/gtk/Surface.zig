@@ -894,14 +894,7 @@ fn keyEvent(
         // we need to set our proper preedit state.
         if (self.im_composing) preedit: {
             const text = self.im_buf[0..self.im_len];
-            const view = std.unicode.Utf8View.init(text) catch |err| {
-                log.warn("cannot build utf8 view over input: {}", .{err});
-                break :preedit;
-            };
-            var it = view.iterator();
-
-            const cp: u21 = it.nextCodepoint() orelse 0;
-            self.core_surface.preeditCallback(cp) catch |err| {
+            self.core_surface.preeditCallback(text) catch |err| {
                 log.err("error in preedit callback err={}", .{err});
                 break :preedit;
             };
