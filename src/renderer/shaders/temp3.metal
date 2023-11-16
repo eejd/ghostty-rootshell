@@ -102,7 +102,7 @@ void mainImage(thread float4& fragColor, thread const float2& fragCoord, constan
     fragColor = float4(col, 1.0);
 }
 
-fragment main0_out main0(constant Globals& _89 [[buffer(0)]], texture2d<float> iChannel0 [[texture(0)]], float4 gl_FragCoord [[position]])
+fragment main0_out main0(constant Globals& _89 [[buffer(0)]], texture2d<float> iChannel0 [[texture(0)]], sampler iChannel0Smplr [[sampler(0)]], float4 gl_FragCoord [[position]])
 {
     constexpr sampler iChannel0Smplr(address::clamp_to_edge, filter::linear);
 

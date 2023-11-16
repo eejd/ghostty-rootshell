@@ -103,7 +103,6 @@ fn buildGlslang(
             "SPIRV/SpvBuilder.cpp",
             "SPIRV/SpvPostProcess.cpp",
             "SPIRV/doc.cpp",
-            "SPIRV/SpvTools.cpp",
             "SPIRV/disassemble.cpp",
             "SPIRV/CInterface/spirv_c_interface.cpp",
         },

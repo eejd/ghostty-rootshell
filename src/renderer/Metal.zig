@@ -27,6 +27,7 @@ const Terminal = terminal.Terminal;
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
 const mtl_image = @import("metal/image.zig");
+const mtl_sampler = @import("metal/sampler.zig");
 const mtl_shaders = @import("metal/shaders.zig");
 const Image = mtl_image.Image;
 const ImageMap = mtl_image.ImageMap;
@@ -282,12 +283,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         log.warn("error loading custom shaders err={}", .{err});
         break :err &.{};
     };
-    _ = custom_shaders;
 
     // Initialize our shaders
-    var shaders = try Shaders.init(alloc, device, &.{
-        @embedFile("shaders/temp3.metal"),
-    });
+    var shaders = try Shaders.init(alloc, device, custom_shaders);
+    //var shaders = try Shaders.init(alloc, device, &.{@embedFile("shaders/temp3.metal")});
     errdefer shaders.deinit(alloc);
 
     // Font atlas textures
@@ -779,23 +778,9 @@ fn drawPostShader(
     encoder: objc.Object,
     texture: objc.c.id,
 ) !void {
-    // Use our image shader pipeline
-    encoder.msgSend(
-        void,
-        objc.sel("setRenderPipelineState:"),
-        .{self.shaders.post_pipelines[0].value},
-    );
-
-    // Set our uniform, which is the only shared buffer
-    encoder.msgSend(
-        void,
-        objc.sel("setVertexBytes:length:atIndex:"),
-        .{
-            @as(*const anyopaque, @ptrCast(&self.uniforms)),
-            @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
-            @as(c_ulong, 1),
-        },
-    );
+    // Build our sampler for our texture
+    var sampler = try mtl_sampler.Sampler.init(self.device);
+    defer sampler.deinit();
 
     const Buffer = mtl_buffer.Buffer(mtl_shaders.PostUniforms);
     var buf = try Buffer.initFill(self.device, &.{.{
@@ -816,6 +801,20 @@ fn drawPostShader(
     }});
     defer buf.deinit();
     post_time += 1;
+
+    // Use our custom shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{self.shaders.post_pipelines[0].value},
+    );
+
+    // Set our sampler
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentSamplerState:atIndex:"),
+        .{ sampler.sampler.value, @as(c_ulong, 0) },
+    );
 
     // Set our buffer
     encoder.msgSend(
