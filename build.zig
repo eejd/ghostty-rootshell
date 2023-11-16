@@ -647,6 +647,10 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const spirv_cross_dep = b.dependency("spirv_cross", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const mach_glfw_dep = b.dependency("mach_glfw", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -723,6 +727,7 @@ fn addDeps(
     );
     step.addModule("freetype", freetype_dep.module("freetype"));
     step.addModule("glslang", glslang_dep.module("glslang"));
+    step.addModule("spirv_cross", spirv_cross_dep.module("spirv_cross"));
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
     step.addModule("pixman", pixman_dep.module("pixman"));
@@ -751,6 +756,10 @@ fn addDeps(
     // Glslang
     step.linkLibrary(glslang_dep.artifact("glslang"));
     try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
+
+    // Spirv-Cross
+    step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
+    try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
 
     // Dynamic link
     if (!static) {

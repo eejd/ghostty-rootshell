@@ -29,13 +29,16 @@
         .cimgui = .{ .path = "./pkg/cimgui" },
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
-        .glslang = .{ .path = "./pkg/glslang" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .libpng = .{ .path = "./pkg/libpng" },
         .macos = .{ .path = "./pkg/macos" },
         .pixman = .{ .path = "./pkg/pixman" },
         .tracy = .{ .path = "./pkg/tracy" },
         .zlib = .{ .path = "./pkg/zlib" },
+
+        // Shader translation
+        .glslang = .{ .path = "./pkg/glslang" },
+        .spirv_cross = .{ .path = "./pkg/spirv-cross" },
 
         // System headers
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
