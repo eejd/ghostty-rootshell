@@ -658,7 +658,7 @@ pub const Surface = struct {
         // GLFW can read clipboards immediately so just do that.
         const str: [:0]const u8 = switch (clipboard_type) {
             .standard => glfw.getClipboardString() orelse return glfw.mustGetErrorCode(),
-            .selection => selection: {
+            .selection, .primary => selection: {
                 // Not supported except on Linux
                 if (comptime builtin.os.tag != .linux) break :selection "";
 
@@ -684,7 +684,7 @@ pub const Surface = struct {
         _ = self;
         switch (clipboard_type) {
             .standard => glfw.setClipboardString(val),
-            .selection => {
+            .selection, .primary => {
                 // Not supported except on Linux
                 if (comptime builtin.os.tag != .linux) return;
                 glfwNative.setX11SelectionString(val.ptr);

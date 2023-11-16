@@ -2139,6 +2139,7 @@ const StreamHandler = struct {
         const clipboard_type: apprt.Clipboard = switch (kind) {
             'c' => .standard,
             's' => .selection,
+            'p' => .primary,
             else => .standard,
         };
 

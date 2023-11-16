@@ -589,7 +589,7 @@ fn gtkClipboardRead(
 fn getClipboard(widget: *c.GtkWidget, clipboard: apprt.Clipboard) ?*c.GdkClipboard {
     return switch (clipboard) {
         .standard => c.gtk_widget_get_clipboard(widget),
-        .selection => c.gtk_widget_get_primary_clipboard(widget),
+        .selection, .primary => c.gtk_widget_get_primary_clipboard(widget),
     };
 }
 pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
