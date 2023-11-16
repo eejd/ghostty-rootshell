@@ -38,7 +38,7 @@ pub const Program = opaque {
         return c.glslang_program_SPIRV_get_ptr(@ptrCast(self));
     }
 
-    pub fn sprivGetMessages(self: *Program) ![:0]const u8 {
+    pub fn spirvGetMessages(self: *Program) ![:0]const u8 {
         const ptr = c.glslang_program_SPIRV_get_messages(@ptrCast(self));
         return std.mem.sliceTo(ptr, 0);
     }
