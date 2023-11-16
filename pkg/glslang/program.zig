@@ -23,15 +23,15 @@ pub const Program = opaque {
     }
 
     pub fn spirvGenerate(self: *Program, stage: c.glslang_stage_t) void {
-        c.glslang_program_spirv_generate(@ptrCast(self), stage);
+        c.glslang_program_SPIRV_generate(@ptrCast(self), stage);
     }
 
     pub fn spirvGetSize(self: *Program) usize {
-        return @intCast(c.glslang_program_spirv_get_size(@ptrCast(self)));
+        return @intCast(c.glslang_program_SPIRV_get_size(@ptrCast(self)));
     }
 
     pub fn spirvGet(self: *Program, buf: []u8) void {
-        c.glslang_program_spirv_get(@ptrCast(self), buf.ptr);
+        c.glslang_program_SPIRV_get(@ptrCast(self), buf.ptr);
     }
 
     pub fn spirvGetPtr(self: *Program) ![*]u8 {
@@ -39,7 +39,7 @@ pub const Program = opaque {
     }
 
     pub fn sprivGetMessages(self: *Program) ![:0]const u8 {
-        const ptr = c.glslang_program_spirv_get_messages(@ptrCast(self));
+        const ptr = c.glslang_program_SPIRV_get_messages(@ptrCast(self));
         return std.mem.sliceTo(ptr, 0);
     }
 

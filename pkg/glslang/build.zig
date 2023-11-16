@@ -95,6 +95,17 @@ fn buildGlslang(
             // ResourceLimits
             "glslang/ResourceLimits/ResourceLimits.cpp",
             "glslang/ResourceLimits/resource_limits_c.cpp",
+
+            // SPIRV
+            "SPIRV/GlslangToSpv.cpp",
+            "SPIRV/InReadableOrder.cpp",
+            "SPIRV/Logger.cpp",
+            "SPIRV/SpvBuilder.cpp",
+            "SPIRV/SpvPostProcess.cpp",
+            "SPIRV/doc.cpp",
+            "SPIRV/SpvTools.cpp",
+            "SPIRV/disassemble.cpp",
+            "SPIRV/CInterface/spirv_c_interface.cpp",
         },
     });
 
