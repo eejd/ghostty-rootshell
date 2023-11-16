@@ -205,7 +205,6 @@ test "shadertoy to msl" {
     var spvlist = std.ArrayList(u8).init(alloc);
     defer spvlist.deinit();
     try spirvFromGlsl(spvlist.writer(), null, src);
-    while (@mod(spvlist.items.len, 4) != 0) try spvlist.append(0);
 
     const msl = try mslFromSpv(alloc, spvlist.items);
     defer alloc.free(msl);
