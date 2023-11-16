@@ -67,6 +67,22 @@ pub const MTLPurgeableState = enum(c_ulong) {
     empty = 4,
 };
 
+/// https://developer.apple.com/documentation/metal/mtlsamplerminmagfilter?language=objc
+pub const MTLSamplerMinMagFilter = enum(c_ulong) {
+    nearest = 0,
+    linear = 1,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlsampleraddressmode?language=objc
+pub const MTLSamplerAddressMode = enum(c_ulong) {
+    clamp_to_edge = 0,
+    mirror_clamp_to_edge = 1,
+    repeat = 2,
+    mirror_repeat = 3,
+    clamp_to_zero = 4,
+    clamp_to_border_color = 5,
+};
+
 /// https://developer.apple.com/documentation/metal/mtlblendfactor?language=objc
 pub const MTLBlendFactor = enum(c_ulong) {
     zero = 0,

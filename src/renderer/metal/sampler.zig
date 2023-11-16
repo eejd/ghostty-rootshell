@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const objc = @import("objc");
 
+const mtl = @import("api.zig");
+
 pub const Sampler = struct {
     sampler: objc.Object,
 
@@ -14,6 +16,11 @@ pub const Sampler = struct {
             break :init id_init;
         };
         defer desc.msgSend(void, objc.sel("release"), .{});
+        desc.setProperty("rAddressMode", @intFromEnum(mtl.MTLSamplerAddressMode.clamp_to_edge));
+        desc.setProperty("sAddressMode", @intFromEnum(mtl.MTLSamplerAddressMode.clamp_to_edge));
+        desc.setProperty("tAddressMode", @intFromEnum(mtl.MTLSamplerAddressMode.clamp_to_edge));
+        desc.setProperty("minFilter", @intFromEnum(mtl.MTLSamplerMinMagFilter.linear));
+        desc.setProperty("magFilter", @intFromEnum(mtl.MTLSamplerMinMagFilter.linear));
 
         const sampler = device.msgSend(
             objc.Object,
