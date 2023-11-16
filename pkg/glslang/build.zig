@@ -21,6 +21,9 @@ pub fn build(b: *std.Build) !void {
         const tests_run = b.addRunArtifact(test_exe);
         const test_step = b.step("test", "Run tests");
         test_step.dependOn(&tests_run.step);
+
+        // Uncomment this if we're debugging tests
+        b.installArtifact(test_exe);
     }
 }
 
@@ -42,6 +45,10 @@ fn buildGlslang(
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
+    try flags.appendSlice(&.{
+        "-fno-sanitize=undefined",
+        "-fno-sanitize-trap=undefined",
+    });
 
     lib.addCSourceFiles(.{
         .dependency = upstream,
