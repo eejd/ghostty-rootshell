@@ -643,6 +643,10 @@ fn addDeps(
         .optimize = step.optimize,
         .@"enable-libpng" = true,
     });
+    const glslang_dep = b.dependency("glslang", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const mach_glfw_dep = b.dependency("mach_glfw", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -718,6 +722,7 @@ fn addDeps(
         fontconfig_dep.module("fontconfig"),
     );
     step.addModule("freetype", freetype_dep.module("freetype"));
+    step.addModule("glslang", glslang_dep.module("glslang"));
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
     step.addModule("pixman", pixman_dep.module("pixman"));
@@ -742,6 +747,10 @@ fn addDeps(
         step.linkLibrary(tracy_dep.artifact("tracy"));
         try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
     }
+
+    // Glslang
+    step.linkLibrary(glslang_dep.artifact("glslang"));
+    try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
 
     // Dynamic link
     if (!static) {

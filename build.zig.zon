@@ -29,6 +29,7 @@
         .cimgui = .{ .path = "./pkg/cimgui" },
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
+        .glslang = .{ .path = "./pkg/glslang" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .libpng = .{ .path = "./pkg/libpng" },
         .macos = .{ .path = "./pkg/macos" },

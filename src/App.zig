@@ -73,6 +73,41 @@ pub fn create(
     };
     errdefer app.surfaces.deinit(alloc);
 
+    // TODO: remove this temporary crap
+    // const glslang = @import("glslang");
+    // try glslang.init();
+    // {
+    //     const c = glslang.c;
+    //     const glsl_input: c.glslang_input_t = .{
+    //         .language = c.GLSLANG_SOURCE_GLSL,
+    //         .stage = c.GLSLANG_STAGE_FRAGMENT,
+    //         .client = c.GLSLANG_CLIENT_VULKAN,
+    //         .client_version = c.GLSLANG_TARGET_VULKAN_1_2,
+    //         .target_language = c.GLSLANG_TARGET_SPV,
+    //         .target_language_version = c.GLSLANG_TARGET_SPV_1_5,
+    //         .code = @embedFile("temp.frag"),
+    //         .default_version = 100,
+    //         .default_profile = c.GLSLANG_NO_PROFILE,
+    //         .force_default_version_and_profile = 0,
+    //         .forward_compatible = 0,
+    //         .messages = c.GLSLANG_MSG_DEFAULT_BIT,
+    //         .resource = c.glslang_default_resource(),
+    //     };
+    //
+    //     const shader = try glslang.Shader.create(&glsl_input);
+    //     defer shader.delete();
+    //     try shader.preprocess(&glsl_input);
+    //     try shader.parse(&glsl_input);
+    //
+    //     const program = try glslang.Program.create();
+    //     defer program.delete();
+    //     program.addShader(shader);
+    //     try program.link(c.GLSLANG_MSG_SPV_RULES_BIT | c.GLSLANG_MSG_VULKAN_RULES_BIT);
+    //     program.spirvGenerate(c.GLSLANG_STAGE_FRAGMENT);
+    //     const size = program.spirvGetSize();
+    //     log.warn("SPIRV PROGRAM size={d}", .{size});
+    // }
+
     return app;
 }
 
