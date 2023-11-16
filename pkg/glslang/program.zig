@@ -35,7 +35,7 @@ pub const Program = opaque {
     }
 
     pub fn spirvGetPtr(self: *Program) ![*]u8 {
-        return c.glslang_program_SPIRV_get_ptr(@ptrCast(self));
+        return @ptrCast(c.glslang_program_SPIRV_get_ptr(@ptrCast(self)));
     }
 
     pub fn spirvGetMessages(self: *Program) ![:0]const u8 {
