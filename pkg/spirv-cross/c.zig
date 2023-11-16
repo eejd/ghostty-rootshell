@@ -1,3 +1,3 @@
 pub usingnamespace @cImport({
-    @cInclude("spirv_cross/external_interface.h");
+    @cInclude("spirv_cross_c.h");
 });

@@ -75,7 +75,7 @@ fn buildSpirvCross(
     });
 
     lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("include"),
+        .source_dir = upstream.path(""),
         .install_dir = .header,
         .install_subdir = "",
         .include_extensions = &.{".h"},
