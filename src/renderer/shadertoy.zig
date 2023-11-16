@@ -2,8 +2,80 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const glslang = @import("glslang");
 const spvcross = @import("spirv_cross");
+
+const log = std.log.scoped(.shadertoy);
+
+/// The target to load shaders for.
+pub const Target = enum { msl };
+
+/// Load a set of shaders from files and convert them to the target
+/// format. The shader order is preserved.
+pub fn loadFromFiles(
+    alloc_gpa: Allocator,
+    paths: []const []const u8,
+    target: Target,
+) ![]const [:0]const u8 {
+    var list = std.ArrayList([:0]const u8).init(alloc_gpa);
+    defer list.deinit();
+    errdefer for (list.items) |shader| alloc_gpa.free(shader);
+
+    for (paths) |path| {
+        const shader = try loadFromFile(alloc_gpa, path, target);
+        log.info("loaded custom shader path={s}", .{path});
+        try list.append(shader);
+    }
+
+    return try list.toOwnedSlice();
+}
+
+/// Load a single shader from a file and convert it to the target language
+/// ready to be used with renderers.
+pub fn loadFromFile(
+    alloc_gpa: Allocator,
+    path: []const u8,
+    target: Target,
+) ![:0]const u8 {
+    var arena = ArenaAllocator.init(alloc_gpa);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Load the shader fiel
+    const cwd = std.fs.cwd();
+    const file = try cwd.openFile(path, .{});
+    defer file.close();
+
+    // Read it all into memory -- we don't expect shaders to be large.
+    var buf_reader = std.io.bufferedReader(file.reader());
+    const src = try buf_reader.reader().readAllAlloc(
+        alloc,
+        4 * 1024 * 1024, // 4MB
+    );
+
+    // Convert to full GLSL
+    const glsl: [:0]const u8 = glsl: {
+        var list = std.ArrayList(u8).init(alloc);
+        try glslFromShader(list.writer(), src);
+        try list.append(0);
+        break :glsl list.items[0 .. list.items.len - 1 :0];
+    };
+
+    // Convert to SPIR-V
+    const spirv: []const u8 = spirv: {
+        var list = std.ArrayList(u8).init(alloc);
+        try spirvFromGlsl(list.writer(), null, glsl);
+        break :spirv list.items;
+    };
+
+    // Convert to MSL
+    return switch (target) {
+        // Important: using the alloc_gpa here on purpose because this
+        // is the final result that will be returned to the caller.
+        .msl => try mslFromSpv(alloc_gpa, spirv),
+    };
+}
 
 /// Convert a ShaderToy shader into valid GLSL.
 ///

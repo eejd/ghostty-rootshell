@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const build_config = @import("build_config.zig");
 const options = @import("build_options");
 const glfw = @import("glfw");
+const glslang = @import("glslang");
 const macos = @import("macos");
 const tracy = @import("tracy");
 const cli = @import("cli.zig");
@@ -267,6 +268,9 @@ pub const GlobalState = struct {
         // We need to make sure the process locale is set properly. Locale
         // affects a lot of behaviors in a shell.
         try internal_os.ensureLocale(self.alloc);
+
+        // Initialize glslang for shader compilation
+        try glslang.init();
     }
 
     /// Cleans up the global state. This doesn't _need_ to be called but

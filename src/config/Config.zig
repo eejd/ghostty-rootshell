@@ -599,6 +599,29 @@ keybind: Keybinds = .{},
 /// need KAM, you don't need it.
 @"vt-kam-allowed": bool = false,
 
+/// Custom shaders to run after the default shaders. This is a file path
+/// to a GLSL-syntax shader for all platforms.
+///
+/// WARNING: Invalid shaders can cause Ghostty to become unusable such as by
+/// causing the window to be completely black. If this happens, you can
+/// unset this configuration to disable the shader.
+///
+/// The shader API is identical to the ShaderToy API: you specify a `mainImage`
+/// function and the available uniforms match ShaderToy. The iChannel0 uniform
+/// is a texture containing the rendered terminal screen.
+///
+/// If the shader fails to compile, the shader will be ignored. Any errors
+/// related to shader compilation will not show up as configuration errors
+/// and only show up in the log, since shader compilation happens after
+/// configuration loading on the dedicated render thread. If your shader is
+/// not working, another way to debug is to run the `ghostty
+/// +custom-shader-compile` command which will compile the shader and show any
+/// errors. For interactive development, use ShaderToy.com.
+///
+/// This can be repeated multiple times to load multiple shaders. The shaders
+/// will be run in the order they are specified.
+@"custom-shader": RepeatablePath = .{},
+
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
 /// using a new space. It's faster than the native fullscreen mode since it

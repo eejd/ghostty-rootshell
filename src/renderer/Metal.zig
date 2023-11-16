@@ -10,6 +10,7 @@ const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
+const glslang = @import("glslang");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -17,8 +18,10 @@ const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
+const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
 
 const mtl = @import("metal/api.zig");
@@ -116,8 +119,10 @@ texture_color: objc.Object, // MTLTexture
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
     font_thicken: bool,
-    font_features: std.ArrayList([]const u8),
+    font_features: std.ArrayListUnmanaged([]const u8),
     font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_opacity: f64,
@@ -128,17 +133,21 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    custom_shaders: std.ArrayListUnmanaged([]const u8),
 
     pub fn init(
         alloc_gpa: Allocator,
         config: *const configpkg.Config,
     ) !DerivedConfig {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        // Copy our shaders
+        const custom_shaders = try config.@"custom-shader".value.list.clone(alloc);
+
         // Copy our font features
-        var font_features = features: {
-            var clone = try config.@"font-feature".list.clone(alloc_gpa);
-            break :features clone.toManaged(alloc_gpa);
-        };
-        errdefer font_features.deinit();
+        const font_features = try config.@"font-feature".list.clone(alloc);
 
         // Get our font styles
         var font_styles = font.Group.StyleStatus.initFill(true);
@@ -177,11 +186,15 @@ pub const DerivedConfig = struct {
                 bg.toTerminalRGB()
             else
                 null,
+
+            .custom_shaders = custom_shaders,
+
+            .arena = arena,
         };
     }
 
     pub fn deinit(self: *DerivedConfig) void {
-        self.font_features.deinit();
+        self.arena.deinit();
     }
 };
 
@@ -203,6 +216,10 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
 }
 
 pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
     // Initialize our metal stuff
     const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
@@ -255,6 +272,17 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         1, 2, 3, // Bottom-right triangle
     });
     errdefer buf_instance.deinit();
+
+    // Load our custom shaders
+    const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
+        arena_alloc,
+        options.config.custom_shaders.items,
+        .msl,
+    ) catch |err| err: {
+        log.warn("error loading custom shaders err={}", .{err});
+        break :err &.{};
+    };
+    _ = custom_shaders;
 
     // Initialize our shaders
     var shaders = try Shaders.init(alloc, device, &.{
