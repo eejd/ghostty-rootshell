@@ -30,11 +30,11 @@ pub const Program = opaque {
         return @intCast(c.glslang_program_SPIRV_get_size(@ptrCast(self)));
     }
 
-    pub fn spirvGet(self: *Program, buf: []u8) void {
+    pub fn spirvGet(self: *Program, buf: []u32) void {
         c.glslang_program_SPIRV_get(@ptrCast(self), buf.ptr);
     }
 
-    pub fn spirvGetPtr(self: *Program) ![*]u8 {
+    pub fn spirvGetPtr(self: *Program) ![*]u32 {
         return @ptrCast(c.glslang_program_SPIRV_get_ptr(@ptrCast(self)));
     }
 

@@ -1,7 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const glslang = @import("glslang");
+const spvcross = @import("spirv_cross");
 
 /// Convert a ShaderToy shader into valid GLSL.
 ///
@@ -67,7 +69,9 @@ pub fn spirvFromGlsl(
     program.spirvGenerate(c.GLSLANG_STAGE_FRAGMENT);
     const size = program.spirvGetSize();
     const ptr = try program.spirvGetPtr();
-    try writer.writeAll(ptr[0..size]);
+    const ptr_u8: [*]u8 = @ptrCast(ptr);
+    const slice_u8: []u8 = ptr_u8[0 .. size * 4];
+    try writer.writeAll(slice_u8);
 }
 
 /// Retrieve errors from spirv compilation.
@@ -100,6 +104,59 @@ pub const SpirvLog = struct {
     }
 };
 
+/// Convert SPIR-V binary to MSL.
+pub fn mslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
+    // Spir-V is always a multiple of 4 because it is written as a series of words
+    if (@mod(spv.len, 4) != 0) return error.SpirvInvalid;
+
+    // Compiler context
+    const c = spvcross.c;
+    var ctx: c.spvc_context = undefined;
+    if (c.spvc_context_create(&ctx) != c.SPVC_SUCCESS) return error.SpvcFailed;
+    defer c.spvc_context_destroy(ctx);
+
+    // It would be better to get this out into an output parameter to
+    // show users but for now we can just log it.
+    c.spvc_context_set_error_callback(ctx, @ptrCast(&(struct {
+        fn callback(_: ?*anyopaque, msg_ptr: [*c]const u8) callconv(.C) void {
+            const msg = std.mem.sliceTo(msg_ptr, 0);
+            std.log.warn("spirv-cross error message={s}", .{msg});
+        }
+    }).callback), null);
+
+    // Parse the Spir-V binary to an IR
+    var ir: c.spvc_parsed_ir = undefined;
+    if (c.spvc_context_parse_spirv(
+        ctx,
+        @ptrCast(@alignCast(spv.ptr)),
+        spv.len / 4,
+        &ir,
+    ) != c.SPVC_SUCCESS) {
+        return error.SpvcFailed;
+    }
+
+    // Build our compiler to MSL
+    var compiler: c.spvc_compiler = undefined;
+    if (c.spvc_context_create_compiler(
+        ctx,
+        c.SPVC_BACKEND_MSL,
+        ir,
+        c.SPVC_CAPTURE_MODE_TAKE_OWNERSHIP,
+        &compiler,
+    ) != c.SPVC_SUCCESS) {
+        return error.SpvcFailed;
+    }
+
+    // Compile the resulting string. This string pointer is owned by the
+    // context so we don't need to free it.
+    var result: [*:0]const u8 = undefined;
+    if (c.spvc_compiler_compile(compiler, @ptrCast(&result)) != c.SPVC_SUCCESS) {
+        return error.SpvcFailed;
+    }
+
+    return try alloc.dupeZ(u8, std.mem.sliceTo(result, 0));
+}
+
 /// Convert ShaderToy shader to null-terminated glsl for testing.
 fn testGlslZ(alloc: Allocator, src: []const u8) ![:0]const u8 {
     var list = std.ArrayList(u8).init(alloc);
@@ -115,7 +172,7 @@ test "spirv" {
     const src = try testGlslZ(alloc, test_crt);
     defer alloc.free(src);
 
-    var buf: [4096]u8 = undefined;
+    var buf: [4096 * 4]u8 = undefined;
     var buf_stream = std.io.fixedBufferStream(&buf);
     const writer = buf_stream.writer();
     try spirvFromGlsl(writer, null, src);
@@ -128,7 +185,7 @@ test "spirv invalid" {
     const src = try testGlslZ(alloc, test_invalid);
     defer alloc.free(src);
 
-    var buf: [4096]u8 = undefined;
+    var buf: [4096 * 4]u8 = undefined;
     var buf_stream = std.io.fixedBufferStream(&buf);
     const writer = buf_stream.writer();
 
@@ -136,6 +193,22 @@ test "spirv invalid" {
     defer errlog.deinit();
     try testing.expectError(error.GlslangFailed, spirvFromGlsl(writer, &errlog, src));
     try testing.expect(errlog.info.len > 0);
+}
+
+test "shadertoy to msl" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const src = try testGlslZ(alloc, test_crt);
+    defer alloc.free(src);
+
+    var spvlist = std.ArrayList(u8).init(alloc);
+    defer spvlist.deinit();
+    try spirvFromGlsl(spvlist.writer(), null, src);
+    while (@mod(spvlist.items.len, 4) != 0) try spvlist.append(0);
+
+    const msl = try mslFromSpv(alloc, spvlist.items);
+    defer alloc.free(msl);
 }
 
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
