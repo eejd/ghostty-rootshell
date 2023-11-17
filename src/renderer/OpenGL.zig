@@ -1410,11 +1410,28 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     // Draw our terminal cells
     try self.drawCellProgram(&gl_state);
 
+    // Draw our custom shaders
+    try self.drawCustomPrograms(&gl_state);
+
     // Swap our window buffers
     switch (apprt.runtime) {
         apprt.glfw => surface.window.swapBuffers(),
         apprt.gtk => {},
         else => @compileError("unsupported runtime"),
+    }
+}
+
+fn drawCustomPrograms(
+    self: *OpenGL,
+    gl_state: *const GLState,
+) !void {
+    _ = self;
+
+    for (gl_state.custom_programs) |program| {
+        // Bind our cell program state, buffers
+        const bind = try program.bind();
+        defer bind.unbind();
+        try gl.drawElementsInstanced(gl.c.GL_TRIANGLES, 6, gl.c.GL_UNSIGNED_BYTE, 1);
     }
 }
 

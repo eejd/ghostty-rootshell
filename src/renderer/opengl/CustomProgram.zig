@@ -84,3 +84,32 @@ pub fn deinit(self: CustomProgram) void {
     self.vao.destroy();
     self.program.destroy();
 }
+
+pub fn bind(self: CustomProgram) !Binding {
+    const program = try self.program.use();
+    errdefer program.unbind();
+
+    const vao = try self.vao.bind();
+    errdefer vao.unbind();
+
+    const ebo = try self.ebo.bind(.element_array);
+    errdefer ebo.unbind();
+
+    return .{
+        .program = program,
+        .vao = vao,
+        .ebo = ebo,
+    };
+}
+
+pub const Binding = struct {
+    program: gl.Program.Binding,
+    vao: gl.VertexArray.Binding,
+    ebo: gl.Buffer.Binding,
+
+    pub fn unbind(self: Binding) void {
+        self.ebo.unbind();
+        self.vao.unbind();
+        self.program.unbind();
+    }
+};
