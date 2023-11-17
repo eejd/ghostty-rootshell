@@ -88,17 +88,17 @@ pub fn init() !CellProgram {
     // Element buffer (EBO)
     const ebo = try gl.Buffer.create();
     errdefer ebo.destroy();
-    var ebobind = try ebo.bind(.ElementArrayBuffer);
+    var ebobind = try ebo.bind(.element_array);
     defer ebobind.unbind();
     try ebobind.setData([6]u8{
         0, 1, 3, // Top-left triangle
         1, 2, 3, // Bottom-right triangle
-    }, .StaticDraw);
+    }, .static_draw);
 
     // Vertex buffer (VBO)
     const vbo = try gl.Buffer.create();
     errdefer vbo.destroy();
-    var vbobind = try vbo.bind(.ArrayBuffer);
+    var vbobind = try vbo.bind(.array);
     defer vbobind.unbind();
     var offset: usize = 0;
     try vbobind.attributeAdvanced(0, 2, gl.c.GL_UNSIGNED_SHORT, false, @sizeOf(Cell), offset);
@@ -148,10 +148,10 @@ pub fn bind(self: CellProgram) !Binding {
     const vao = try self.vao.bind();
     errdefer vao.unbind();
 
-    const ebo = try self.ebo.bind(.ElementArrayBuffer);
+    const ebo = try self.ebo.bind(.element_array);
     errdefer ebo.unbind();
 
-    const vbo = try self.vbo.bind(.ArrayBuffer);
+    const vbo = try self.vbo.bind(.array);
     errdefer vbo.unbind();
 
     return .{

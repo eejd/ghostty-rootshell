@@ -7,26 +7,22 @@ const glad = @import("glad.zig");
 
 id: c.GLuint,
 
-/// Enum for possible binding targets.
-pub const Target = enum(c_uint) {
-    ArrayBuffer = c.GL_ARRAY_BUFFER,
-    ElementArrayBuffer = c.GL_ELEMENT_ARRAY_BUFFER,
-    _,
-};
+/// Create a single buffer.
+pub fn create() !Buffer {
+    var vbo: c.GLuint = undefined;
+    glad.context.GenBuffers.?(1, &vbo);
+    return Buffer{ .id = vbo };
+}
 
-/// Enum for possible buffer usages.
-pub const Usage = enum(c_uint) {
-    StreamDraw = c.GL_STREAM_DRAW,
-    StreamRead = c.GL_STREAM_READ,
-    StreamCopy = c.GL_STREAM_COPY,
-    StaticDraw = c.GL_STATIC_DRAW,
-    StaticRead = c.GL_STATIC_READ,
-    StaticCopy = c.GL_STATIC_COPY,
-    DynamicDraw = c.GL_DYNAMIC_DRAW,
-    DynamicRead = c.GL_DYNAMIC_READ,
-    DynamicCopy = c.GL_DYNAMIC_COPY,
-    _,
-};
+/// glBindBuffer
+pub fn bind(v: Buffer, target: Target) !Binding {
+    glad.context.BindBuffer.?(@intFromEnum(target), v.id);
+    return Binding{ .target = target };
+}
+
+pub fn destroy(v: Buffer) void {
+    glad.context.DeleteBuffers.?(1, &v.id);
+}
 
 /// Binding is a bound buffer. By using this for functions that operate
 /// on bound buffers, you can easily defer unbinding and in safety-enabled
@@ -42,7 +38,12 @@ pub const Binding = struct {
         usage: Usage,
     ) !void {
         const info = dataInfo(&data);
-        glad.context.BufferData.?(@intFromEnum(b.target), info.size, info.ptr, @intFromEnum(usage));
+        glad.context.BufferData.?(
+            @intFromEnum(b.target),
+            info.size,
+            info.ptr,
+            @intFromEnum(usage),
+        );
         try errors.getError();
     }
 
@@ -54,7 +55,12 @@ pub const Binding = struct {
         data: anytype,
     ) !void {
         const info = dataInfo(data);
-        glad.context.BufferSubData.?(@intFromEnum(b.target), @intCast(offset), info.size, info.ptr);
+        glad.context.BufferSubData.?(
+            @intFromEnum(b.target),
+            @intCast(offset),
+            info.size,
+            info.ptr,
+        );
         try errors.getError();
     }
 
@@ -66,7 +72,12 @@ pub const Binding = struct {
         comptime T: type,
         usage: Usage,
     ) !void {
-        glad.context.BufferData.?(@intFromEnum(b.target), @sizeOf(T), null, @intFromEnum(usage));
+        glad.context.BufferData.?(
+            @intFromEnum(b.target),
+            @sizeOf(T),
+            null,
+            @intFromEnum(usage),
+        );
         try errors.getError();
     }
 
@@ -76,7 +87,12 @@ pub const Binding = struct {
         size: usize,
         usage: Usage,
     ) !void {
-        glad.context.BufferData.?(@intFromEnum(b.target), @intCast(size), null, @intFromEnum(usage));
+        glad.context.BufferData.?(
+            @intFromEnum(b.target),
+            @intCast(size),
+            null,
+            @intFromEnum(usage),
+        );
         try errors.getError();
     }
 
@@ -199,19 +215,24 @@ pub const Binding = struct {
     }
 };
 
-/// Create a single buffer.
-pub fn create() !Buffer {
-    var vbo: c.GLuint = undefined;
-    glad.context.GenBuffers.?(1, &vbo);
-    return Buffer{ .id = vbo };
-}
+/// Enum for possible binding targets.
+pub const Target = enum(c_uint) {
+    array = c.GL_ARRAY_BUFFER,
+    element_array = c.GL_ELEMENT_ARRAY_BUFFER,
+    uniform = c.GL_UNIFORM_BUFFER,
+    _,
+};
 
-/// glBindBuffer
-pub fn bind(v: Buffer, target: Target) !Binding {
-    glad.context.BindBuffer.?(@intFromEnum(target), v.id);
-    return Binding{ .target = target };
-}
-
-pub fn destroy(v: Buffer) void {
-    glad.context.DeleteBuffers.?(1, &v.id);
-}
+/// Enum for possible buffer usages.
+pub const Usage = enum(c_uint) {
+    stream_draw = c.GL_STREAM_DRAW,
+    stream_read = c.GL_STREAM_READ,
+    stream_copy = c.GL_STREAM_COPY,
+    static_draw = c.GL_STATIC_DRAW,
+    static_read = c.GL_STATIC_READ,
+    static_copy = c.GL_STATIC_COPY,
+    dynamic_draw = c.GL_DYNAMIC_DRAW,
+    dynamic_read = c.GL_DYNAMIC_READ,
+    dynamic_copy = c.GL_DYNAMIC_COPY,
+    _,
+};

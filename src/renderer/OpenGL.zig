@@ -1480,7 +1480,7 @@ fn drawCells(
 
         try binding.setDataNullManual(
             @sizeOf(CellProgram.Cell) * cells.capacity,
-            .StaticDraw,
+            .static_draw,
         );
 
         self.gl_cells_size = cells.capacity;
