@@ -64,7 +64,9 @@ pub fn loadFromFile(
 
     // Convert to SPIR-V
     const spirv: []const u8 = spirv: {
-        var list = std.ArrayList(u8).init(alloc);
+        // SpirV pointer must be aligned to 4 bytes since we expect
+        // a slice of words.
+        var list = std.ArrayListAligned(u8, @alignOf(u32)).init(alloc);
         var errlog: SpirvLog = .{ .alloc = alloc };
         defer errlog.deinit();
         spirvFromGlsl(list.writer(), &errlog, glsl) catch |err| {
@@ -190,6 +192,31 @@ pub const SpirvLog = struct {
 
 /// Convert SPIR-V binary to MSL.
 pub fn mslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
+    return try spvCross(alloc, spvcross.c.SPVC_BACKEND_MSL, spv, null);
+}
+
+/// Convert SPIR-V binary to GLSL..
+pub fn glslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
+    const c = spvcross.c;
+    return try spvCross(alloc, c.SPVC_BACKEND_GLSL, spv, (struct {
+        fn setOptions(options: c.spvc_compiler_options) error{SpvcFailed}!void {
+            if (c.spvc_compiler_options_set_uint(
+                options,
+                c.SPVC_COMPILER_OPTION_GLSL_VERSION,
+                330,
+            ) != c.SPVC_SUCCESS) {
+                return error.SpvcFailed;
+            }
+        }
+    }).setOptions);
+}
+
+fn spvCross(
+    alloc: Allocator,
+    backend: spvcross.c.spvc_backend,
+    spv: []const u8,
+    comptime optionsFn_: ?*const fn (c: spvcross.c.spvc_compiler_options) error{SpvcFailed}!void,
+) ![:0]const u8 {
     // Spir-V is always a multiple of 4 because it is written as a series of words
     if (@mod(spv.len, 4) != 0) return error.SpirvInvalid;
 
@@ -219,16 +246,30 @@ pub fn mslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
         return error.SpvcFailed;
     }
 
-    // Build our compiler to MSL
+    // Build our compiler to GLSL
     var compiler: c.spvc_compiler = undefined;
     if (c.spvc_context_create_compiler(
         ctx,
-        c.SPVC_BACKEND_MSL,
+        backend,
         ir,
         c.SPVC_CAPTURE_MODE_TAKE_OWNERSHIP,
         &compiler,
     ) != c.SPVC_SUCCESS) {
         return error.SpvcFailed;
+    }
+
+    // Setup our options if we have any
+    if (optionsFn_) |optionsFn| {
+        var options: c.spvc_compiler_options = undefined;
+        if (c.spvc_compiler_create_compiler_options(compiler, &options) != c.SPVC_SUCCESS) {
+            return error.SpvcFailed;
+        }
+
+        try optionsFn(options);
+
+        if (c.spvc_compiler_install_compiler_options(compiler, options) != c.SPVC_SUCCESS) {
+            return error.SpvcFailed;
+        }
     }
 
     // Compile the resulting string. This string pointer is owned by the
@@ -286,7 +327,7 @@ test "shadertoy to msl" {
     const src = try testGlslZ(alloc, test_crt);
     defer alloc.free(src);
 
-    var spvlist = std.ArrayList(u8).init(alloc);
+    var spvlist = std.ArrayListAligned(u8, @alignOf(u32)).init(alloc);
     defer spvlist.deinit();
     try spirvFromGlsl(spvlist.writer(), null, src);
 
