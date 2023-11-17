@@ -116,9 +116,21 @@ swapchain: objc.Object, // CAMetalLayer
 texture_greyscale: objc.Object, // MTLTexture
 texture_color: objc.Object, // MTLTexture
 
-/// The screen texture. This is only set if we have custom shaders. If
-/// we don't have custom shaders, we render directly to the drawable.
-texture_screen: ?objc.Object, // MTLTexture
+/// Custom shader state. This is only set if we have custom shaders.
+custom_shader_state: ?CustomShaderState = null,
+
+pub const CustomShaderState = struct {
+    /// The screen texture that we render the terminal to. If we don't have
+    /// custom shaders, we render directly to the drawable.
+    screen_texture: objc.Object, // MTLTexture
+    sampler: mtl_sampler.Sampler,
+    uniforms: mtl_shaders.PostUniforms,
+
+    pub fn deinit(self: *CustomShaderState) void {
+        deinitMTLResource(self.screen_texture);
+        self.sampler.deinit();
+    }
+};
 
 /// The configuration for this renderer that is derived from the main
 /// configuration. This must be exported so that we don't need to
@@ -288,9 +300,37 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         break :err &.{};
     };
 
+    // If we have custom shaders then setup our state
+    var custom_shader_state: ?CustomShaderState = state: {
+        if (custom_shaders.len == 0) break :state null;
+
+        // Build our sampler for our texture
+        var sampler = try mtl_sampler.Sampler.init(device);
+        errdefer sampler.deinit();
+
+        break :state .{
+            // Resolution and screen texture will be fixed up by first
+            // call to setScreenSize. This happens before any draw call.
+            .screen_texture = undefined,
+            .sampler = sampler,
+            .uniforms = .{
+                .resolution = .{ 0, 0, 1 },
+                .time = 1,
+                .time_delta = 1,
+                .frame_rate = 1,
+                .frame = 1,
+                .channel_time = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
+                .channel_resolution = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
+                .mouse = .{ 0, 0, 0, 0 },
+                .date = .{ 0, 0, 0, 0 },
+                .sample_rate = 1,
+            },
+        };
+    };
+    errdefer if (custom_shader_state) |*state| state.deinit();
+
     // Initialize our shaders
     var shaders = try Shaders.init(alloc, device, custom_shaders);
-    //var shaders = try Shaders.init(alloc, device, &.{@embedFile("shaders/temp3.metal")});
     errdefer shaders.deinit(alloc);
 
     // Font atlas textures
@@ -336,7 +376,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .swapchain = swapchain,
         .texture_greyscale = texture_greyscale,
         .texture_color = texture_color,
-        .texture_screen = null,
+        .custom_shader_state = custom_shader_state,
     };
 }
 
@@ -360,8 +400,9 @@ pub fn deinit(self: *Metal) void {
     self.buf_instance.deinit();
     deinitMTLResource(self.texture_greyscale);
     deinitMTLResource(self.texture_color);
-    if (self.texture_screen) |tex| deinitMTLResource(tex);
     self.queue.msgSend(void, objc.sel("release"), .{});
+
+    if (self.custom_shader_state) |*state| state.deinit();
 
     self.shaders.deinit(self.alloc);
 
@@ -621,7 +662,9 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // Get our screen texture. If we don't have a dedicated screen texture
     // then we just use the drawable texture.
-    const screen_texture = self.texture_screen orelse tex: {
+    const screen_texture = if (self.custom_shader_state) |state|
+        state.screen_texture
+    else tex: {
         const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
         break :tex objc.Object.fromId(texture);
     };
@@ -703,9 +746,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // If we have custom shaders AND we have a screen texture, then we
     // render the custom shaders.
-    if (self.config.custom_shaders.items.len > 0 and
-        self.texture_screen != null)
-    {
+    if (self.custom_shader_state) |state| {
         // MTLRenderPassDescriptor
         const desc = desc: {
             const MTLRenderPassDescriptor = objc.getClass("MTLRenderPassDescriptor").?;
@@ -751,7 +792,9 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
-        try self.drawPostShader(encoder, screen_texture.value);
+        for (self.shaders.post_pipelines) |pipeline| {
+            try self.drawPostShader(encoder, pipeline, &state);
+        }
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
@@ -761,57 +804,42 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 fn drawPostShader(
     self: *Metal,
     encoder: objc.Object,
-    texture: objc.c.id,
+    pipeline: objc.Object,
+    state: *const CustomShaderState,
 ) !void {
-    // Build our sampler for our texture
-    var sampler = try mtl_sampler.Sampler.init(self.device);
-    defer sampler.deinit();
-
-    const Buffer = mtl_buffer.Buffer(mtl_shaders.PostUniforms);
-    var buf = try Buffer.initFill(self.device, &.{.{
-        .resolution = .{
-            @floatFromInt(self.screen_size.?.width),
-            @floatFromInt(self.screen_size.?.height),
-            1,
-        },
-        .time = 1,
-        .time_delta = 1,
-        .frame_rate = 1,
-        .frame = 1,
-        .channel_time = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
-        .channel_resolution = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
-        .mouse = .{ 0, 0, 0, 0 },
-        .date = .{ 0, 0, 0, 0 },
-        .sample_rate = 1,
-    }});
-    defer buf.deinit();
+    _ = self;
 
     // Use our custom shader pipeline
     encoder.msgSend(
         void,
         objc.sel("setRenderPipelineState:"),
-        .{self.shaders.post_pipelines[0].value},
+        .{pipeline.value},
     );
 
     // Set our sampler
     encoder.msgSend(
         void,
         objc.sel("setFragmentSamplerState:atIndex:"),
-        .{ sampler.sampler.value, @as(c_ulong, 0) },
+        .{ state.sampler.sampler.value, @as(c_ulong, 0) },
     );
 
-    // Set our buffer
+    // Set our uniforms
     encoder.msgSend(
         void,
-        objc.sel("setFragmentBuffer:offset:atIndex:"),
-        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+        objc.sel("setFragmentBytes:length:atIndex:"),
+        .{
+            @as(*const anyopaque, @ptrCast(&state.uniforms)),
+            @as(c_ulong, @sizeOf(@TypeOf(state.uniforms))),
+            @as(c_ulong, 0),
+        },
     );
 
+    // Screen texture
     encoder.msgSend(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            texture,
+            state.screen_texture.value,
             @as(c_ulong, 0),
         },
     );
@@ -1248,44 +1276,50 @@ pub fn setScreenSize(
     self.cells.clearAndFree(self.alloc);
     self.cells_bg.clearAndFree(self.alloc);
 
-    // Setup our screen texture
-    const screen_texture: ?objc.Object = screen_texture: {
-        // If we have no custom shaders then we don't need a screen texture.
-        if (self.config.custom_shaders.items.len == 0) break :screen_texture null;
+    // If we have custom shaders then we update the state
+    if (self.custom_shader_state) |*state| {
+        // Only free our previous texture if this isn't our first
+        // time setting the custom shader state.
+        if (state.uniforms.resolution[0] > 0) {
+            deinitMTLResource(state.screen_texture);
+        }
 
-        // This texture is the size of our drawable but supports being a
-        // render target AND reading so that the custom shaders can read from it.
-        const desc = init: {
-            const Class = objc.getClass("MTLTextureDescriptor").?;
-            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-            break :init id_init;
+        state.uniforms.resolution = .{
+            @floatFromInt(dim.width),
+            @floatFromInt(dim.height),
+            1,
         };
-        desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.bgra8unorm));
-        desc.setProperty("width", @as(c_ulong, @intCast(dim.width)));
-        desc.setProperty("height", @as(c_ulong, @intCast(dim.height)));
-        desc.setProperty(
-            "usage",
-            @intFromEnum(mtl.MTLTextureUsage.render_target) |
-                @intFromEnum(mtl.MTLTextureUsage.shader_read) |
-                @intFromEnum(mtl.MTLTextureUsage.shader_write),
-        );
 
-        // If we fail to create the texture, then we just don't have a screen
-        // texture and our custom shaders won't run.
-        const id = self.device.msgSend(
-            ?*anyopaque,
-            objc.sel("newTextureWithDescriptor:"),
-            .{desc},
-        ) orelse break :screen_texture null;
+        state.screen_texture = screen_texture: {
+            // This texture is the size of our drawable but supports being a
+            // render target AND reading so that the custom shaders can read from it.
+            const desc = init: {
+                const Class = objc.getClass("MTLTextureDescriptor").?;
+                const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+                const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+                break :init id_init;
+            };
+            desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.bgra8unorm));
+            desc.setProperty("width", @as(c_ulong, @intCast(dim.width)));
+            desc.setProperty("height", @as(c_ulong, @intCast(dim.height)));
+            desc.setProperty(
+                "usage",
+                @intFromEnum(mtl.MTLTextureUsage.render_target) |
+                    @intFromEnum(mtl.MTLTextureUsage.shader_read) |
+                    @intFromEnum(mtl.MTLTextureUsage.shader_write),
+            );
 
-        break :screen_texture objc.Object.fromId(id);
-    };
-    errdefer if (screen_texture) |tex| tex.msgSend(void, objc.sel("release"), .{});
+            // If we fail to create the texture, then we just don't have a screen
+            // texture and our custom shaders won't run.
+            const id = self.device.msgSend(
+                ?*anyopaque,
+                objc.sel("newTextureWithDescriptor:"),
+                .{desc},
+            ) orelse return error.MetalFailed;
 
-    // Set our new screen texture
-    if (self.texture_screen) |tex| tex.msgSend(void, objc.sel("release"), .{});
-    self.texture_screen = screen_texture;
+            break :screen_texture objc.Object.fromId(id);
+        };
+    }
 
     log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
