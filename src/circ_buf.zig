@@ -49,7 +49,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
         /// Initialize a new circular buffer that can store size elements.
         pub fn init(alloc: Allocator, size: usize) !Self {
-            var buf = try alloc.alloc(T, size);
+            const buf = try alloc.alloc(T, size);
             @memset(buf, default);
 
             return Self{

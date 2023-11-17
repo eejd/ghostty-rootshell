@@ -143,14 +143,14 @@ pub fn build(b: *std.Build) !void {
         break :patch_rpath env.get("LD_LIBRARY_PATH");
     };
 
-    var version_string = b.option(
+    const version_string = b.option(
         []const u8,
         "version-string",
         "A specific version string to use for the build. " ++
             "If not specified, git will be used. This must be a semantic version.",
     );
 
-    var version: std.SemanticVersion = if (version_string) |v|
+    const version: std.SemanticVersion = if (version_string) |v|
         try std.SemanticVersion.parse(v)
     else version: {
         const vsn = try Version.detect(b);
@@ -589,7 +589,7 @@ pub fn build(b: *std.Build) !void {
     // Tests
     {
         const test_step = b.step("test", "Run all tests");
-        var test_filter = b.option([]const u8, "test-filter", "Filter for test");
+        const test_filter = b.option([]const u8, "test-filter", "Filter for test");
 
         const main_test = b.addTest(.{
             .name = "ghostty-test",

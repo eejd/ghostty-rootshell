@@ -353,7 +353,7 @@ pub const Surface = struct {
         if (self.inspector) |v| return v;
 
         const alloc = self.app.core_app.alloc;
-        var inspector = try alloc.create(Inspector);
+        const inspector = try alloc.create(Inspector);
         errdefer alloc.destroy(inspector);
         inspector.* = try Inspector.init(self);
         self.inspector = inspector;

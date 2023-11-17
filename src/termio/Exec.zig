@@ -855,7 +855,7 @@ const Subprocess = struct {
 
         // We have to copy the cwd because there is no guarantee that
         // pointers in full_config remain valid.
-        var cwd: ?[]u8 = if (opts.full_config.@"working-directory") |cwd|
+        const cwd: ?[]u8 = if (opts.full_config.@"working-directory") |cwd|
             try alloc.dupe(u8, cwd)
         else
             null;
@@ -2096,7 +2096,7 @@ const StreamHandler = struct {
                 build_config.version_string,
             },
         );
-        var msg = try termio.Message.writeReq(self.alloc, resp);
+        const msg = try termio.Message.writeReq(self.alloc, resp);
         self.messageWriter(msg);
     }
 

@@ -140,7 +140,7 @@ pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type 
                     }
 
                     // Otherwise, allocate
-                    var buf = try alloc.dupe(Elem, data);
+                    const buf = try alloc.dupe(Elem, data);
                     errdefer alloc.free(buf);
                     return Self{
                         .alloc = .{
