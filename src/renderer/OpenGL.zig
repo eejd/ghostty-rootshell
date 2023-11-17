@@ -22,6 +22,7 @@ const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 
 const CellProgram = @import("opengl/CellProgram.zig");
+const CustomProgram = @import("opengl/CustomProgram.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -296,7 +297,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
 pub fn deinit(self: *OpenGL) void {
     self.font_shaper.deinit();
 
-    if (self.gl_state) |*v| v.deinit();
+    if (self.gl_state) |*v| v.deinit(self.alloc);
 
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
@@ -370,7 +371,7 @@ pub fn displayUnrealized(self: *OpenGL) void {
     defer if (single_threaded_draw) self.draw_mutex.unlock();
 
     if (self.gl_state) |*v| {
-        v.deinit();
+        v.deinit(self.alloc);
         self.gl_state = null;
     }
 }
@@ -392,7 +393,7 @@ pub fn displayRealize(self: *OpenGL) !void {
     errdefer gl_state.deinit();
 
     // Unrealize if we have to
-    if (self.gl_state) |*v| v.deinit();
+    if (self.gl_state) |*v| v.deinit(self.alloc);
 
     // Set our new state
     self.gl_state = gl_state;
@@ -1512,6 +1513,7 @@ const GLState = struct {
     cell_program: CellProgram,
     texture: gl.Texture,
     texture_color: gl.Texture,
+    custom_programs: []const CustomProgram,
 
     pub fn init(
         alloc: Allocator,
@@ -1532,12 +1534,11 @@ const GLState = struct {
             break :err &.{};
         };
 
-        if (custom_shaders.len > 0) {
-            const cp = try gl.Program.createVF(
-                @embedFile("shaders/custom.v.glsl"),
-                custom_shaders[0],
-            );
-            _ = cp;
+        // Create our custom programs
+        const custom_programs = try CustomProgram.createList(alloc, custom_shaders);
+        errdefer {
+            for (custom_programs) |p| p.deinit();
+            alloc.free(custom_programs);
         }
 
         // Blending for text. We use GL_ONE here because we should be using
@@ -1595,12 +1596,15 @@ const GLState = struct {
 
         return .{
             .cell_program = cell_program,
+            .custom_programs = custom_programs,
             .texture = tex,
             .texture_color = tex_color,
         };
     }
 
-    pub fn deinit(self: *GLState) void {
+    pub fn deinit(self: *GLState, alloc: Allocator) void {
+        for (self.custom_programs) |p| p.deinit();
+        alloc.free(self.custom_programs);
         self.texture.destroy();
         self.texture_color.destroy();
         self.cell_program.deinit();

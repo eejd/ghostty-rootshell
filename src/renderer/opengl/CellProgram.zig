@@ -69,6 +69,7 @@ pub fn init() !CellProgram {
         @embedFile("../shaders/cell.v.glsl"),
         @embedFile("../shaders/cell.f.glsl"),
     );
+    errdefer program.destroy();
 
     // Set our cell dimensions
     const pbind = try program.use();
