@@ -65,7 +65,19 @@ pub fn loadFromFile(
     // Convert to SPIR-V
     const spirv: []const u8 = spirv: {
         var list = std.ArrayList(u8).init(alloc);
-        try spirvFromGlsl(list.writer(), null, glsl);
+        var errlog: SpirvLog = .{ .alloc = alloc };
+        defer errlog.deinit();
+        spirvFromGlsl(list.writer(), &errlog, glsl) catch |err| {
+            if (errlog.info.len > 0 or errlog.debug.len > 0) {
+                log.warn("spirv error path={s} info={s} debug={s}", .{
+                    path,
+                    errlog.info,
+                    errlog.debug,
+                });
+            }
+
+            return err;
+        };
         break :spirv list.items;
     };
 
