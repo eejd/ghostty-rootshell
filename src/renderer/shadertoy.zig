@@ -198,13 +198,21 @@ pub fn mslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
 
 /// Convert SPIR-V binary to GLSL..
 pub fn glslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
+    // Our minimum version for shadertoy shaders is OpenGL 4.2 because
+    // Spirv-Cross generates binding locations for uniforms which is
+    // only supported in OpenGL 4.2 and above.
+    //
+    // If we can figure out a way to NOT do this then we can lower this
+    // version.
+    const GLSL_VERSION = 420;
+
     const c = spvcross.c;
     return try spvCross(alloc, c.SPVC_BACKEND_GLSL, spv, (struct {
         fn setOptions(options: c.spvc_compiler_options) error{SpvcFailed}!void {
             if (c.spvc_compiler_options_set_uint(
                 options,
                 c.SPVC_COMPILER_OPTION_GLSL_VERSION,
-                430,
+                GLSL_VERSION,
             ) != c.SPVC_SUCCESS) {
                 return error.SpvcFailed;
             }

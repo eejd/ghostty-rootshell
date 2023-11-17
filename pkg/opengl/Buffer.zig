@@ -36,7 +36,7 @@ pub const Binding = struct {
 
     /// Sets the data of this bound buffer. The data can be any array-like
     /// type. The size of the data is automatically determined based on the type.
-    pub inline fn setData(
+    pub fn setData(
         b: Binding,
         data: anytype,
         usage: Usage,
@@ -48,7 +48,7 @@ pub const Binding = struct {
 
     /// Sets the data of this bound buffer. The data can be any array-like
     /// type. The size of the data is automatically determined based on the type.
-    pub inline fn setSubData(
+    pub fn setSubData(
         b: Binding,
         offset: usize,
         data: anytype,
@@ -61,7 +61,7 @@ pub const Binding = struct {
     /// Sets the buffer data with a null buffer that is expected to be
     /// filled in the future using subData. This requires the type just so
     /// we can setup the data size.
-    pub inline fn setDataNull(
+    pub fn setDataNull(
         b: Binding,
         comptime T: type,
         usage: Usage,
@@ -71,7 +71,7 @@ pub const Binding = struct {
     }
 
     /// Same as setDataNull but lets you manually specify the buffer size.
-    pub inline fn setDataNullManual(
+    pub fn setDataNullManual(
         b: Binding,
         size: usize,
         usage: Usage,
@@ -106,7 +106,7 @@ pub const Binding = struct {
         };
     }
 
-    pub inline fn enableAttribArray(_: Binding, idx: c.GLuint) !void {
+    pub fn enableAttribArray(_: Binding, idx: c.GLuint) !void {
         glad.context.EnableVertexAttribArray.?(idx);
     }
 
@@ -158,7 +158,7 @@ pub const Binding = struct {
         try errors.getError();
     }
 
-    pub inline fn attributeAdvanced(
+    pub fn attributeAdvanced(
         _: Binding,
         idx: c.GLuint,
         size: c.GLint,
@@ -177,7 +177,7 @@ pub const Binding = struct {
         try errors.getError();
     }
 
-    pub inline fn attributeIAdvanced(
+    pub fn attributeIAdvanced(
         _: Binding,
         idx: c.GLuint,
         size: c.GLint,
@@ -194,25 +194,24 @@ pub const Binding = struct {
         try errors.getError();
     }
 
-    pub inline fn unbind(b: *Binding) void {
+    pub fn unbind(b: Binding) void {
         glad.context.BindBuffer.?(@intFromEnum(b.target), 0);
-        b.* = undefined;
     }
 };
 
 /// Create a single buffer.
-pub inline fn create() !Buffer {
+pub fn create() !Buffer {
     var vbo: c.GLuint = undefined;
     glad.context.GenBuffers.?(1, &vbo);
     return Buffer{ .id = vbo };
 }
 
 /// glBindBuffer
-pub inline fn bind(v: Buffer, target: Target) !Binding {
+pub fn bind(v: Buffer, target: Target) !Binding {
     glad.context.BindBuffer.?(@intFromEnum(target), v.id);
     return Binding{ .target = target };
 }
 
-pub inline fn destroy(v: Buffer) void {
+pub fn destroy(v: Buffer) void {
     glad.context.DeleteBuffers.?(1, &v.id);
 }

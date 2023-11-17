@@ -21,6 +21,8 @@ const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 
+const CellProgram = @import("opengl/CellProgram.zig");
+
 const log = std.log.scoped(.grid);
 
 /// The runtime can request a single-threaded draw by setting this boolean
@@ -132,7 +134,7 @@ const SetScreenSize = struct {
         );
 
         // Update the projection uniform within our shader
-        try gl_state.program.setUniform(
+        try gl_state.cell_program.program.setUniform(
             "projection",
 
             // 2D orthographic projection with the full w/h
@@ -152,18 +154,18 @@ const SetFontSize = struct {
     fn apply(self: SetFontSize, r: *const OpenGL) !void {
         const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
 
-        try gl_state.program.setUniform(
+        try gl_state.cell_program.program.setUniform(
             "cell_size",
             @Vector(2, f32){
                 @floatFromInt(self.metrics.cell_width),
                 @floatFromInt(self.metrics.cell_height),
             },
         );
-        try gl_state.program.setUniform(
+        try gl_state.cell_program.program.setUniform(
             "strikethrough_position",
             @as(f32, @floatFromInt(self.metrics.strikethrough_position)),
         );
-        try gl_state.program.setUniform(
+        try gl_state.cell_program.program.setUniform(
             "strikethrough_thickness",
             @as(f32, @floatFromInt(self.metrics.strikethrough_thickness)),
         );
@@ -1471,17 +1473,9 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     );
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
-    // Setup our VAO
-    try gl_state.vao.bind();
-    defer gl.VertexArray.unbind() catch null;
-
-    // Bind EBO
-    var ebobind = try gl_state.ebo.bind(.ElementArrayBuffer);
-    defer ebobind.unbind();
-
-    // Bind VBO and set data
-    var binding = try gl_state.vbo.bind(.ArrayBuffer);
-    defer binding.unbind();
+    // Bind our cell program state, buffers
+    const bind = try gl_state.cell_program.bind();
+    defer bind.unbind();
 
     // Bind our textures
     try gl.Texture.active(gl.c.GL_TEXTURE0);
@@ -1491,10 +1485,6 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     try gl.Texture.active(gl.c.GL_TEXTURE1);
     var texbind1 = try gl_state.texture_color.bind(.@"2D");
     defer texbind1.unbind();
-
-    // Pick our shader to use
-    const pbind = try gl_state.program.use();
-    defer pbind.unbind();
 
     // If we have deferred operations, run them.
     if (self.deferred_screen_size) |v| {
@@ -1506,8 +1496,8 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
         self.deferred_font_size = null;
     }
 
-    try self.drawCells(binding, self.cells_bg);
-    try self.drawCells(binding, self.cells);
+    try self.drawCells(bind.vbo, self.cells_bg);
+    try self.drawCells(bind.vbo, self.cells);
 
     // Swap our window buffers
     switch (apprt.runtime) {
@@ -1573,10 +1563,7 @@ fn drawCells(
 /// easy to create/destroy these as a set in situations i.e. where the
 /// OpenGL context is replaced.
 const GLState = struct {
-    program: gl.Program,
-    vao: gl.VertexArray,
-    ebo: gl.Buffer,
-    vbo: gl.Buffer,
+    cell_program: CellProgram,
     texture: gl.Texture,
     texture_color: gl.Texture,
 
@@ -1613,74 +1600,6 @@ const GLState = struct {
         // pixels.
         try gl.enable(gl.c.GL_BLEND);
         try gl.blendFunc(gl.c.GL_ONE, gl.c.GL_ONE_MINUS_SRC_ALPHA);
-
-        // Shader
-        const program = try gl.Program.createVF(
-            @embedFile("shaders/cell.v.glsl"),
-            @embedFile("shaders/cell.f.glsl"),
-        );
-
-        // Set our cell dimensions
-        const pbind = try program.use();
-        defer pbind.unbind();
-
-        // Set all of our texture indexes
-        try program.setUniform("text", 0);
-        try program.setUniform("text_color", 1);
-
-        // Setup our VAO
-        const vao = try gl.VertexArray.create();
-        errdefer vao.destroy();
-        try vao.bind();
-        defer gl.VertexArray.unbind() catch null;
-
-        // Element buffer (EBO)
-        const ebo = try gl.Buffer.create();
-        errdefer ebo.destroy();
-        var ebobind = try ebo.bind(.ElementArrayBuffer);
-        defer ebobind.unbind();
-        try ebobind.setData([6]u8{
-            0, 1, 3, // Top-left triangle
-            1, 2, 3, // Bottom-right triangle
-        }, .StaticDraw);
-
-        // Vertex buffer (VBO)
-        const vbo = try gl.Buffer.create();
-        errdefer vbo.destroy();
-        var vbobind = try vbo.bind(.ArrayBuffer);
-        defer vbobind.unbind();
-        var offset: usize = 0;
-        try vbobind.attributeAdvanced(0, 2, gl.c.GL_UNSIGNED_SHORT, false, @sizeOf(GPUCell), offset);
-        offset += 2 * @sizeOf(u16);
-        try vbobind.attributeAdvanced(1, 2, gl.c.GL_UNSIGNED_INT, false, @sizeOf(GPUCell), offset);
-        offset += 2 * @sizeOf(u32);
-        try vbobind.attributeAdvanced(2, 2, gl.c.GL_UNSIGNED_INT, false, @sizeOf(GPUCell), offset);
-        offset += 2 * @sizeOf(u32);
-        try vbobind.attributeAdvanced(3, 2, gl.c.GL_INT, false, @sizeOf(GPUCell), offset);
-        offset += 2 * @sizeOf(i32);
-        try vbobind.attributeAdvanced(4, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
-        offset += 4 * @sizeOf(u8);
-        try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(GPUCell), offset);
-        offset += 4 * @sizeOf(u8);
-        try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
-        offset += 1 * @sizeOf(u8);
-        try vbobind.attributeIAdvanced(7, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(GPUCell), offset);
-        try vbobind.enableAttribArray(0);
-        try vbobind.enableAttribArray(1);
-        try vbobind.enableAttribArray(2);
-        try vbobind.enableAttribArray(3);
-        try vbobind.enableAttribArray(4);
-        try vbobind.enableAttribArray(5);
-        try vbobind.enableAttribArray(6);
-        try vbobind.enableAttribArray(7);
-        try vbobind.attributeDivisor(0, 1);
-        try vbobind.attributeDivisor(1, 1);
-        try vbobind.attributeDivisor(2, 1);
-        try vbobind.attributeDivisor(3, 1);
-        try vbobind.attributeDivisor(4, 1);
-        try vbobind.attributeDivisor(5, 1);
-        try vbobind.attributeDivisor(6, 1);
-        try vbobind.attributeDivisor(7, 1);
 
         // Build our texture
         const tex = try gl.Texture.create();
@@ -1724,11 +1643,12 @@ const GLState = struct {
             );
         }
 
+        // Build our cell renderer
+        const cell_program = try CellProgram.init();
+        errdefer cell_program.deinit();
+
         return .{
-            .program = program,
-            .vao = vao,
-            .ebo = ebo,
-            .vbo = vbo,
+            .cell_program = cell_program,
             .texture = tex,
             .texture_color = tex_color,
         };
@@ -1737,9 +1657,6 @@ const GLState = struct {
     pub fn deinit(self: *GLState) void {
         self.texture.destroy();
         self.texture_color.destroy();
-        self.vbo.destroy();
-        self.ebo.destroy();
-        self.vao.destroy();
-        self.program.destroy();
+        self.cell_program.deinit();
     }
 };
