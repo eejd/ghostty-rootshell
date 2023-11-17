@@ -49,8 +49,8 @@ screen_size: ?renderer.ScreenSize,
 
 /// The current set of cells to render. Each set of cells goes into
 /// a separate shader call.
-cells_bg: std.ArrayListUnmanaged(GPUCell),
-cells: std.ArrayListUnmanaged(GPUCell),
+cells_bg: std.ArrayListUnmanaged(CellProgram.Cell),
+cells: std.ArrayListUnmanaged(CellProgram.Cell),
 
 /// The size of the cells list that was sent to the GPU. This is used
 /// to detect when the cells array was reallocated/resized and handle that
@@ -169,60 +169,6 @@ const SetFontSize = struct {
             "strikethrough_thickness",
             @as(f32, @floatFromInt(self.metrics.strikethrough_thickness)),
         );
-    }
-};
-
-/// The raw structure that maps directly to the buffer sent to the vertex shader.
-/// This must be "extern" so that the field order is not reordered by the
-/// Zig compiler.
-const GPUCell = extern struct {
-    /// vec2 grid_coord
-    grid_col: u16,
-    grid_row: u16,
-
-    /// vec2 glyph_pos
-    glyph_x: u32 = 0,
-    glyph_y: u32 = 0,
-
-    /// vec2 glyph_size
-    glyph_width: u32 = 0,
-    glyph_height: u32 = 0,
-
-    /// vec2 glyph_size
-    glyph_offset_x: i32 = 0,
-    glyph_offset_y: i32 = 0,
-
-    /// vec4 fg_color_in
-    fg_r: u8,
-    fg_g: u8,
-    fg_b: u8,
-    fg_a: u8,
-
-    /// vec4 bg_color_in
-    bg_r: u8,
-    bg_g: u8,
-    bg_b: u8,
-    bg_a: u8,
-
-    /// uint mode
-    mode: GPUCellMode,
-
-    /// The width in grid cells that a rendering takes.
-    grid_width: u8,
-};
-
-const GPUCellMode = enum(u8) {
-    bg = 1,
-    fg = 2,
-    fg_color = 7,
-    strikethrough = 8,
-
-    // Non-exhaustive because masks change it
-    _,
-
-    /// Apply a mask to the mode.
-    pub fn mask(self: GPUCellMode, m: GPUCellMode) GPUCellMode {
-        return @enumFromInt(@intFromEnum(self) | @intFromEnum(m));
     }
 };
 
@@ -738,7 +684,7 @@ pub fn rebuildCells(
     // This is the cell that has [mode == .fg] and is underneath our cursor.
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
-    var cursor_cell: ?GPUCell = null;
+    var cursor_cell: ?CellProgram.Cell = null;
 
     // Build each cell
     var rowIter = screen.rowIterator(.viewport);
@@ -980,7 +926,7 @@ fn addCursor(
     self: *OpenGL,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
-) ?*const GPUCell {
+) ?*const CellProgram.Cell {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
     const wide, const x = cell: {
@@ -1211,7 +1157,7 @@ pub fn updateCell(
 
         // If we're rendering a color font, we use the color atlas
         const presentation = try self.font_group.group.presentationFromIndex(shaper_run.font_index);
-        const mode: GPUCellMode = switch (presentation) {
+        const mode: CellProgram.CellMode = switch (presentation) {
             .text => .fg,
             .emoji => .fg_color,
         };
@@ -1515,7 +1461,7 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
 fn drawCells(
     self: *OpenGL,
     binding: gl.Buffer.Binding,
-    cells: std.ArrayListUnmanaged(GPUCell),
+    cells: std.ArrayListUnmanaged(CellProgram.Cell),
 ) !void {
     // If we have no cells to render, then we render nothing.
     if (cells.items.len == 0) return;
@@ -1532,7 +1478,7 @@ fn drawCells(
         });
 
         try binding.setDataNullManual(
-            @sizeOf(GPUCell) * cells.capacity,
+            @sizeOf(CellProgram.Cell) * cells.capacity,
             .StaticDraw,
         );
 
@@ -1544,7 +1490,7 @@ fn drawCells(
     if (self.gl_cells_written < cells.items.len) {
         const data = cells.items[self.gl_cells_written..];
         // log.info("sending {} cells to GPU", .{data.len});
-        try binding.setSubData(self.gl_cells_written * @sizeOf(GPUCell), data);
+        try binding.setSubData(self.gl_cells_written * @sizeOf(CellProgram.Cell), data);
 
         self.gl_cells_written += data.len;
         assert(data.len > 0);

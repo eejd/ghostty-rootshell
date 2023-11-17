@@ -12,7 +12,7 @@ vbo: gl.Buffer,
 /// The raw structure that maps directly to the buffer sent to the vertex shader.
 /// This must be "extern" so that the field order is not reordered by the
 /// Zig compiler.
-const Cell = extern struct {
+pub const Cell = extern struct {
     /// vec2 grid_coord
     grid_col: u16,
     grid_row: u16,
@@ -48,7 +48,7 @@ const Cell = extern struct {
     grid_width: u8,
 };
 
-const CellMode = enum(u8) {
+pub const CellMode = enum(u8) {
     bg = 1,
     fg = 2,
     fg_color = 7,
