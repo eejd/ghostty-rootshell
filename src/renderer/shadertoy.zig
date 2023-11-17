@@ -335,5 +335,22 @@ test "shadertoy to msl" {
     defer alloc.free(msl);
 }
 
+test "shadertoy to glsl" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const src = try testGlslZ(alloc, test_crt);
+    defer alloc.free(src);
+
+    var spvlist = std.ArrayListAligned(u8, @alignOf(u32)).init(alloc);
+    defer spvlist.deinit();
+    try spirvFromGlsl(spvlist.writer(), null, src);
+
+    const glsl = try glslFromSpv(alloc, spvlist.items);
+    defer alloc.free(glsl);
+
+    //log.warn("glsl={s}", .{glsl});
+}
+
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
 const test_invalid = @embedFile("shaders/test_shadertoy_invalid.glsl");

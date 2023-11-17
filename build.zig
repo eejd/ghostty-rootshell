@@ -663,6 +663,7 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const opengl_dep = b.dependency("opengl", .{});
     const pixman_dep = b.dependency("pixman", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -730,6 +731,7 @@ fn addDeps(
     step.addModule("spirv_cross", spirv_cross_dep.module("spirv_cross"));
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
+    step.addModule("opengl", opengl_dep.module("opengl"));
     step.addModule("pixman", pixman_dep.module("pixman"));
     step.addModule("ziglyph", ziglyph_dep.module("ziglyph"));
 

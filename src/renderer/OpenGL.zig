@@ -7,6 +7,7 @@ const glfw = @import("glfw");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -14,7 +15,7 @@ const imgui = @import("imgui");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const Terminal = terminal.Terminal;
-const gl = @import("opengl/main.zig");
+const gl = @import("opengl");
 const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
@@ -226,8 +227,10 @@ const GPUCellMode = enum(u8) {
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
     font_thicken: bool,
-    font_features: std.ArrayList([]const u8),
+    font_features: std.ArrayListUnmanaged([]const u8),
     font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_text: ?terminal.color.RGB,
@@ -238,17 +241,21 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    custom_shaders: std.ArrayListUnmanaged([]const u8),
 
     pub fn init(
         alloc_gpa: Allocator,
         config: *const configpkg.Config,
     ) !DerivedConfig {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        // Copy our shaders
+        const custom_shaders = try config.@"custom-shader".value.list.clone(alloc);
+
         // Copy our font features
-        var font_features = features: {
-            var clone = try config.@"font-feature".list.clone(alloc_gpa);
-            break :features clone.toManaged(alloc_gpa);
-        };
-        errdefer font_features.deinit();
+        const font_features = try config.@"font-feature".list.clone(alloc);
 
         // Get our font styles
         var font_styles = font.Group.StyleStatus.initFill(true);
@@ -287,11 +294,15 @@ pub const DerivedConfig = struct {
                 bg.toTerminalRGB()
             else
                 null,
+
+            .custom_shaders = custom_shaders,
+
+            .arena = arena,
         };
     }
 
     pub fn deinit(self: *DerivedConfig) void {
-        self.font_features.deinit();
+        self.arena.deinit();
     }
 };
 
