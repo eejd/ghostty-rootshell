@@ -9,7 +9,7 @@ const spvcross = @import("spirv_cross");
 const log = std.log.scoped(.shadertoy);
 
 /// The target to load shaders for.
-pub const Target = enum { msl };
+pub const Target = enum { glsl, msl };
 
 /// Load a set of shaders from files and convert them to the target
 /// format. The shader order is preserved.
@@ -87,6 +87,7 @@ pub fn loadFromFile(
     return switch (target) {
         // Important: using the alloc_gpa here on purpose because this
         // is the final result that will be returned to the caller.
+        .glsl => try glslFromSpv(alloc_gpa, spirv),
         .msl => try mslFromSpv(alloc_gpa, spirv),
     };
 }
@@ -203,7 +204,7 @@ pub fn glslFromSpv(alloc: Allocator, spv: []const u8) ![:0]const u8 {
             if (c.spvc_compiler_options_set_uint(
                 options,
                 c.SPVC_COMPILER_OPTION_GLSL_VERSION,
-                330,
+                430,
             ) != c.SPVC_SUCCESS) {
                 return error.SpvcFailed;
             }
@@ -349,7 +350,7 @@ test "shadertoy to glsl" {
     const glsl = try glslFromSpv(alloc, spvlist.items);
     defer alloc.free(glsl);
 
-    //log.warn("glsl={s}", .{glsl});
+    log.warn("glsl={s}", .{glsl});
 }
 
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");

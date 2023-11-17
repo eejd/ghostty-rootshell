@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const shadertoy = @import("shadertoy.zig");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -320,7 +321,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         options.config.font_thicken,
     );
 
-    var gl_state = try GLState.init(options.font_group);
+    var gl_state = try GLState.init(alloc, options.config, options.font_group);
     errdefer gl_state.deinit();
 
     return OpenGL{
@@ -439,7 +440,7 @@ pub fn displayRealize(self: *OpenGL) !void {
     );
 
     // Make our new state
-    var gl_state = try GLState.init(self.font_group);
+    var gl_state = try GLState.init(self.alloc, self.config, self.font_group);
     errdefer gl_state.deinit();
 
     // Unrealize if we have to
@@ -1579,7 +1580,33 @@ const GLState = struct {
     texture: gl.Texture,
     texture_color: gl.Texture,
 
-    pub fn init(font_group: *font.GroupCache) !GLState {
+    pub fn init(
+        alloc: Allocator,
+        config: DerivedConfig,
+        font_group: *font.GroupCache,
+    ) !GLState {
+        var arena = ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const arena_alloc = arena.allocator();
+
+        // Load our custom shaders
+        const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
+            arena_alloc,
+            config.custom_shaders.items,
+            .glsl,
+        ) catch |err| err: {
+            log.warn("error loading custom shaders err={}", .{err});
+            break :err &.{};
+        };
+
+        if (custom_shaders.len > 0) {
+            const cp = try gl.Program.createVF(
+                @embedFile("shaders/custom.v.glsl"),
+                custom_shaders[0],
+            );
+            _ = cp;
+        }
+
         // Blending for text. We use GL_ONE here because we should be using
         // premultiplied alpha for all our colors in our fragment shaders.
         // This avoids having a blurry border where transparency is expected on
