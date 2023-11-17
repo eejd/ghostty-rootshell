@@ -913,6 +913,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         }
     }
 
+    // Select all
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .a, .mods = ctrlOrSuper(.{}) },
+        .{ .select_all = {} },
+    );
+
     // Toggle fullscreen
     try result.keybind.set.put(
         alloc,

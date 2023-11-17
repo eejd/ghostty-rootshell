@@ -223,6 +223,8 @@ pub const Action = union(enum) {
     /// Quit ghostty
     quit: void,
 
+    select_all: void,
+
     pub const CursorKey = struct {
         normal: []const u8,
         application: []const u8,

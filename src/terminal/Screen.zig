@@ -1392,6 +1392,71 @@ pub fn clear(self: *Screen, mode: ClearMode) !void {
     }
 }
 
+pub fn selectAll(self: *Screen) ?Selection {
+    const whitespace = &[_]u32{ 0, ' ', '\t' };
+    const y_max = self.rowsWritten() - 1;
+
+    const start: point.ScreenPoint = start: {
+        var y: usize = 0;
+        while (y <= y_max) : (y += 1) {
+            const current_row = self.getRow(.{ .screen = y });
+            var x: usize = 0;
+            while (x < self.cols) : (x += 1) {
+                const cell = current_row.getCell(x);
+
+                // Empty is whitespace
+                if (cell.empty()) continue;
+
+                // Non-empty means we found it.
+                const this_whitespace = std.mem.indexOfAny(
+                    u32,
+                    whitespace,
+                    &[_]u32{cell.char},
+                ) != null;
+                if (this_whitespace) continue;
+
+                break :start .{ .x = x, .y = y };
+            }
+        }
+
+        // There is no start point and therefore no line that can be selected.
+        return null;
+    };
+
+    const end: point.ScreenPoint = end: {
+        var y: usize = y_max;
+        while (true) {
+            const current_row = self.getRow(.{ .screen = y });
+
+            var x: usize = 0;
+            while (x < self.cols) : (x += 1) {
+                const real_x = self.cols - x - 1;
+                const cell = current_row.getCell(real_x);
+
+                // Empty or whitespace, ignore.
+                if (cell.empty()) continue;
+                const this_whitespace = std.mem.indexOfAny(
+                    u32,
+                    whitespace,
+                    &[_]u32{cell.char},
+                ) != null;
+                if (this_whitespace) continue;
+
+                // Got it
+                break :end .{ .x = real_x, .y = y };
+            }
+
+            if (y == 0) break;
+            y -= 1;
+        }
+    };
+
+    return Selection{
+        .start = start,
+        .end = end,
+    };
+}
+
 /// Select the line under the given point. This will select across soft-wrapped
 /// lines and will omit the leading and trailing whitespace. If the point is
 /// over whitespace but the line has non-whitespace characters elsewhere, the
@@ -3854,6 +3919,31 @@ test "Screen: selectLine" {
         try testing.expectEqual(@as(usize, 0), sel.start.y);
         try testing.expectEqual(@as(usize, 7), sel.end.x);
         try testing.expectEqual(@as(usize, 0), sel.end.y);
+    }
+}
+test "Screen: selectAll" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 10, 0);
+    defer s.deinit();
+
+    {
+        try s.testWriteString("ABC  DEF\n 123\n456");
+        const sel = s.selectAll().?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 2), sel.end.x);
+        try testing.expectEqual(@as(usize, 2), sel.end.y);
+    }
+
+    {
+        try s.testWriteString("\nFOO\n BAR\n BAZ\n QWERTY\n 12345678");
+        const sel = s.selectAll().?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 0), sel.start.y);
+        try testing.expectEqual(@as(usize, 8), sel.end.x);
+        try testing.expectEqual(@as(usize, 7), sel.end.y);
     }
 }
 
