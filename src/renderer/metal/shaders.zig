@@ -129,6 +129,9 @@ pub const Uniforms = extern struct {
 
 /// The uniforms used for custom postprocess shaders.
 pub const PostUniforms = extern struct {
+    // Note: all of the explicit aligmnments are copied from the
+    // MSL developer reference just so that we can be sure that we got
+    // it all exactly right.
     resolution: [3]f32 align(16),
     time: f32 align(4),
     time_delta: f32 align(4),

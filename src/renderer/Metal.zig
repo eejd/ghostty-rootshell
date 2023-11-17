@@ -125,6 +125,7 @@ pub const CustomShaderState = struct {
     screen_texture: objc.Object, // MTLTexture
     sampler: mtl_sampler.Sampler,
     uniforms: mtl_shaders.PostUniforms,
+    last_frame_time: std.time.Instant,
 
     pub fn deinit(self: *CustomShaderState) void {
         deinitMTLResource(self.screen_texture);
@@ -325,6 +326,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
                 .date = .{ 0, 0, 0, 0 },
                 .sample_rate = 1,
             },
+
+            .last_frame_time = try std.time.Instant.now(),
         };
     };
     errdefer if (custom_shader_state) |*state| state.deinit();
@@ -463,6 +466,12 @@ pub fn threadExit(self: *const Metal) void {
     _ = self;
 
     // Metal requires no per-thread state.
+}
+
+/// True if our renderer has animations so that a higher frequency
+/// timer is used.
+pub fn hasAnimations(self: *const Metal) bool {
+    return self.custom_shader_state != null;
 }
 
 /// Returns the grid size for a given screen size. This is safe to call
@@ -652,6 +661,14 @@ pub fn updateFrame(
 /// Draw the frame to the screen.
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
+
+    // If we have custom shaders, update the animation time.
+    if (self.custom_shader_state) |*state| {
+        const now = std.time.Instant.now() catch state.last_frame_time;
+        const since_ns: f32 = @floatFromInt(now.since(state.last_frame_time));
+        state.uniforms.time = since_ns / std.time.ns_per_s;
+        state.uniforms.time_delta = since_ns / std.time.ns_per_s;
+    }
 
     // @autoreleasepool {}
     const pool = objc.AutoreleasePool.init();
