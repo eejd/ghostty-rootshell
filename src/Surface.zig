@@ -422,7 +422,7 @@ pub fn init(
     );
 
     // The mutex used to protect our renderer state.
-    var mutex = try alloc.create(std.Thread.Mutex);
+    const mutex = try alloc.create(std.Thread.Mutex);
     mutex.* = .{};
     errdefer alloc.destroy(mutex);
 
@@ -604,7 +604,7 @@ pub fn activateInspector(self: *Surface) !void {
     if (self.inspector != null) return;
 
     // Setup the inspector
-    var ptr = try self.alloc.create(inspector.Inspector);
+    const ptr = try self.alloc.create(inspector.Inspector);
     errdefer self.alloc.destroy(ptr);
     ptr.* = try inspector.Inspector.init(self);
     self.inspector = ptr;
@@ -895,7 +895,7 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) void {
         }
     }
 
-    var buf = self.io.terminal.screen.selectionString(
+    const buf = self.io.terminal.screen.selectionString(
         self.alloc,
         sel,
         self.config.clipboard_trim_trailing_spaces,
@@ -2314,7 +2314,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             // We can read from the renderer state without holding
             // the lock because only we will write to this field.
             if (self.io.terminal.screen.selection) |sel| {
-                var buf = self.io.terminal.screen.selectionString(
+                const buf = self.io.terminal.screen.selectionString(
                     self.alloc,
                     sel,
                     self.config.clipboard_trim_trailing_spaces,

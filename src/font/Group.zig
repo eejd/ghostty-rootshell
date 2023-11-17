@@ -662,7 +662,7 @@ pub const Wasm = struct {
         var group = try Group.init(alloc, .{}, .{ .points = pts });
         errdefer group.deinit();
 
-        var result = try alloc.create(Group);
+        const result = try alloc.create(Group);
         errdefer alloc.destroy(result);
         result.* = group;
         return result;
@@ -749,7 +749,7 @@ pub const Wasm = struct {
             .max_height = max_height,
         });
 
-        var result = try alloc.create(Glyph);
+        const result = try alloc.create(Glyph);
         errdefer alloc.destroy(result);
         result.* = glyph;
         return result;

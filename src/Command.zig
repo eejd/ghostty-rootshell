@@ -310,7 +310,7 @@ pub fn wait(self: Command, block: bool) !Exit {
         }
 
         var exit_code: windows.DWORD = undefined;
-        var has_code = windows.kernel32.GetExitCodeProcess(self.pid.?, &exit_code) != 0;
+        const has_code = windows.kernel32.GetExitCodeProcess(self.pid.?, &exit_code) != 0;
         if (!has_code) {
             return windows.unexpectedError(windows.kernel32.GetLastError());
         }

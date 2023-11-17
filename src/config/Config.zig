@@ -1967,7 +1967,7 @@ pub const Keybinds = struct {
 
     pub fn parseCLI(self: *Keybinds, alloc: Allocator, input: ?[]const u8) !void {
         var copy: ?[]u8 = null;
-        var value = value: {
+        const value = value: {
             const value = input orelse return error.ValueRequired;
 
             // If we don't have a colon, use the value as-is, no copy

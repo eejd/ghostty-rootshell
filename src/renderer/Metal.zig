@@ -1305,7 +1305,7 @@ pub fn updateCell(
     // The colors for the cell.
     const colors: BgFg = colors: {
         // If we are selected, we our colors are just inverted fg/bg
-        var selection_res: ?BgFg = if (selected) .{
+        const selection_res: ?BgFg = if (selected) .{
             .bg = self.config.selection_background orelse self.foreground_color,
             .fg = self.config.selection_foreground orelse self.background_color,
         } else null;
