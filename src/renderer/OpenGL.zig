@@ -1407,6 +1407,22 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     defer if (single_threaded_draw) self.draw_mutex.unlock();
     const gl_state = self.gl_state orelse return;
 
+    // Draw our terminal cells
+    try self.drawCellProgram(&gl_state);
+
+    // Swap our window buffers
+    switch (apprt.runtime) {
+        apprt.glfw => surface.window.swapBuffers(),
+        apprt.gtk => {},
+        else => @compileError("unsupported runtime"),
+    }
+}
+
+/// Runs the cell program (shaders) to draw the terminal grid.
+fn drawCellProgram(
+    self: *OpenGL,
+    gl_state: *const GLState,
+) !void {
     // Try to flush our atlas, this will only do something if there
     // are changes to the atlas.
     try self.flushAtlas();
@@ -1443,15 +1459,9 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
         self.deferred_font_size = null;
     }
 
+    // Draw our background, then draw the fg on top of it.
     try self.drawCells(bind.vbo, self.cells_bg);
     try self.drawCells(bind.vbo, self.cells);
-
-    // Swap our window buffers
-    switch (apprt.runtime) {
-        apprt.glfw => surface.window.swapBuffers(),
-        apprt.gtk => {},
-        else => @compileError("unsupported runtime"),
-    }
 }
 
 /// Loads some set of cell data into our buffer and issues a draw call.
