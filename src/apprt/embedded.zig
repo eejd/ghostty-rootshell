@@ -474,7 +474,7 @@ pub const Surface = struct {
     ) bool {
         return switch (clipboard_type) {
             .standard => true,
-            .selection => self.app.opts.supports_selection_clipboard,
+            .selection, .primary => self.app.opts.supports_selection_clipboard,
         };
     }
 

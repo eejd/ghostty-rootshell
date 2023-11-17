@@ -2727,6 +2727,7 @@ fn completeClipboardReadOSC52(
     const kind: u8 = switch (clipboard_type) {
         .standard => 'c',
         .selection => 's',
+        .primary => 'p',
     };
 
     // Wrap our data with the OSC code
