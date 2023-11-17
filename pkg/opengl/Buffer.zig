@@ -15,20 +15,34 @@ pub fn create() !Buffer {
 }
 
 /// glBindBuffer
-pub fn bind(v: Buffer, target: Target) !Binding {
-    glad.context.BindBuffer.?(@intFromEnum(target), v.id);
-    return Binding{ .target = target };
+pub fn bind(self: Buffer, target: Target) !Binding {
+    glad.context.BindBuffer.?(@intFromEnum(target), self.id);
+    return Binding{ .id = self.id, .target = target };
 }
 
-pub fn destroy(v: Buffer) void {
-    glad.context.DeleteBuffers.?(1, &v.id);
+pub fn destroy(self: Buffer) void {
+    glad.context.DeleteBuffers.?(1, &self.id);
+}
+
+pub fn bindBase(self: Buffer, target: Target, idx: c.GLuint) !void {
+    glad.context.BindBufferBase.?(
+        @intFromEnum(target),
+        idx,
+        self.id,
+    );
+    try errors.getError();
 }
 
 /// Binding is a bound buffer. By using this for functions that operate
 /// on bound buffers, you can easily defer unbinding and in safety-enabled
 /// modes verify that unbound buffers are never accessed.
 pub const Binding = struct {
+    id: c.GLuint,
     target: Target,
+
+    pub fn unbind(b: Binding) void {
+        glad.context.BindBuffer.?(@intFromEnum(b.target), 0);
+    }
 
     /// Sets the data of this bound buffer. The data can be any array-like
     /// type. The size of the data is automatically determined based on the type.
@@ -103,7 +117,7 @@ pub const Binding = struct {
         return switch (@typeInfo(@TypeOf(data))) {
             .Pointer => |ptr| switch (ptr.size) {
                 .One => .{
-                    .size = @sizeOf(ptr.child) * data.len,
+                    .size = @sizeOf(ptr.child),
                     .ptr = data,
                 },
                 .Slice => .{
@@ -208,10 +222,6 @@ pub const Binding = struct {
 
         glad.context.VertexAttribIPointer.?(idx, size, typ, stride, offsetPtr);
         try errors.getError();
-    }
-
-    pub fn unbind(b: Binding) void {
-        glad.context.BindBuffer.?(@intFromEnum(b.target), 0);
     }
 };
 

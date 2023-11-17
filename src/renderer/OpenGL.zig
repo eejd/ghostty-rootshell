@@ -1431,6 +1431,11 @@ fn drawCustomPrograms(
         // Bind our cell program state, buffers
         const bind = try program.bind();
         defer bind.unbind();
+
+        // Sync the uniform data.
+        // TODO: only do this when the data has changed
+        try program.syncUniforms();
+
         try gl.drawElementsInstanced(gl.c.GL_TRIANGLES, 6, gl.c.GL_UNSIGNED_BYTE, 1);
     }
 }

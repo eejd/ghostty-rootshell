@@ -78,6 +78,15 @@ pub fn use(p: Program) !Binding {
     return .{};
 }
 
+pub fn uniformBlockBinding(
+    self: Program,
+    index: c.GLuint,
+    binding: c.GLuint,
+) !void {
+    glad.context.UniformBlockBinding.?(self.id, index, binding);
+    try errors.getError();
+}
+
 /// Requires the program is currently in use.
 pub fn setUniform(
     p: Program,
