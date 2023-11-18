@@ -20,8 +20,13 @@ pub fn destroy(v: Framebuffer) void {
 }
 
 pub fn bind(v: Framebuffer, target: Target) !Binding {
+    // The default framebuffer is documented as being zero but
+    // on multiple OpenGL drivers its not zero, so we grab it
+    // at runtime.
+    var current: c.GLint = undefined;
+    glad.context.GetIntegerv.?(c.GL_FRAMEBUFFER_BINDING, &current);
     glad.context.BindFramebuffer.?(@intFromEnum(target), v.id);
-    return .{ .target = target };
+    return .{ .target = target, .previous = @intCast(current) };
 }
 
 /// Enum for possible binding targets.
@@ -55,9 +60,13 @@ pub const Status = enum(c_uint) {
 
 pub const Binding = struct {
     target: Target,
+    previous: c.GLuint,
 
     pub fn unbind(self: Binding) void {
-        glad.context.BindFramebuffer.?(@intFromEnum(self.target), 0);
+        glad.context.BindFramebuffer.?(
+            @intFromEnum(self.target),
+            self.previous,
+        );
     }
 
     pub fn texture2D(
@@ -78,6 +87,6 @@ pub const Binding = struct {
     }
 
     pub fn checkStatus(self: Binding) Status {
-        return @enumFromInt(glad.context.CheckFramebufferStatus.?(self.target));
+        return @enumFromInt(glad.context.CheckFramebufferStatus.?(@intFromEnum(self.target)));
     }
 };

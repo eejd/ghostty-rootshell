@@ -1346,11 +1346,11 @@ fn flushAtlas(self: *OpenGL) !void {
                 atlas.resized = false;
                 try texbind.image2D(
                     0,
-                    .Red,
+                    .red,
                     @intCast(atlas.size),
                     @intCast(atlas.size),
                     0,
-                    .Red,
+                    .red,
                     .UnsignedByte,
                     atlas.data.ptr,
                 );
@@ -1361,7 +1361,7 @@ fn flushAtlas(self: *OpenGL) !void {
                     0,
                     @intCast(atlas.size),
                     @intCast(atlas.size),
-                    .Red,
+                    .red,
                     .UnsignedByte,
                     atlas.data.ptr,
                 );
@@ -1380,11 +1380,11 @@ fn flushAtlas(self: *OpenGL) !void {
                 atlas.resized = false;
                 try texbind.image2D(
                     0,
-                    .RGBA,
+                    .rgba,
                     @intCast(atlas.size),
                     @intCast(atlas.size),
                     0,
-                    .BGRA,
+                    .bgra,
                     .UnsignedByte,
                     atlas.data.ptr,
                 );
@@ -1395,7 +1395,7 @@ fn flushAtlas(self: *OpenGL) !void {
                     0,
                     @intCast(atlas.size),
                     @intCast(atlas.size),
-                    .BGRA,
+                    .bgra,
                     .UnsignedByte,
                     atlas.data.ptr,
                 );
@@ -1441,8 +1441,7 @@ fn drawCustomPrograms(
     const custom_bind = try custom_state.bind();
     defer custom_bind.unbind();
 
-    // Sync the uniform data.
-    // TODO: only do this when the data has changed
+    // Setup the new frame
     try custom_state.newFrame();
 
     // Go through each custom shader and draw it.
@@ -1468,6 +1467,14 @@ fn drawCellProgram(
     // Try to flush our atlas, this will only do something if there
     // are changes to the atlas.
     try self.flushAtlas();
+
+    // If we have custom shaders, then we draw to the custom
+    // shader framebuffer.
+    const fbobind: ?gl.Framebuffer.Binding = fbobind: {
+        const state = gl_state.custom orelse break :fbobind null;
+        break :fbobind try state.fbo.bind(.framebuffer);
+    };
+    defer if (fbobind) |v| v.unbind();
 
     // Clear the surface
     gl.clearColor(
@@ -1615,11 +1622,11 @@ const GLState = struct {
             try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
             try texbind.image2D(
                 0,
-                .Red,
+                .red,
                 @intCast(font_group.atlas_greyscale.size),
                 @intCast(font_group.atlas_greyscale.size),
                 0,
-                .Red,
+                .red,
                 .UnsignedByte,
                 font_group.atlas_greyscale.data.ptr,
             );
@@ -1636,11 +1643,11 @@ const GLState = struct {
             try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
             try texbind.image2D(
                 0,
-                .RGBA,
+                .rgba,
                 @intCast(font_group.atlas_color.size),
                 @intCast(font_group.atlas_color.size),
                 0,
-                .BGRA,
+                .bgra,
                 .UnsignedByte,
                 font_group.atlas_color.data.ptr,
             );

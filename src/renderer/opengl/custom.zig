@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 const gl = @import("opengl");
 const ScreenSize = @import("../size.zig").ScreenSize;
 
+const log = std.log.scoped(.opengl_custom);
+
 /// The "INDEX" is the index into the global GL state and the
 /// "BINDING" is the binding location in the shader.
 const UNIFORM_INDEX: gl.c.GLuint = 0;
@@ -27,9 +29,11 @@ pub const State = struct {
     uniforms: Uniforms,
 
     /// The OpenGL buffers
+    fbo: gl.Framebuffer,
     ubo: gl.Buffer,
     vao: gl.VertexArray,
     ebo: gl.Buffer,
+    fb_texture: gl.Texture,
 
     /// The set of programs for the custom shaders.
     programs: []const Program,
@@ -48,6 +52,44 @@ pub const State = struct {
         errdefer for (programs.items) |p| p.deinit();
         for (srcs) |src| {
             try programs.append(try Program.init(src));
+        }
+
+        // Create the texture for the framebuffer
+        const fb_tex = try gl.Texture.create();
+        errdefer fb_tex.destroy();
+        {
+            const texbind = try fb_tex.bind(.@"2D");
+            try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
+            try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
+            try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
+            try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
+            try texbind.image2D(
+                0,
+                .rgb,
+                1,
+                1,
+                0,
+                .rgb,
+                .UnsignedByte,
+                null,
+            );
+        }
+
+        // Create our framebuffer for rendering off screen.
+        // The shader prior to custom shaders should use this
+        // framebuffer.
+        const fbo = try gl.Framebuffer.create();
+        errdefer fbo.destroy();
+        const fbbind = try fbo.bind(.framebuffer);
+        defer fbbind.unbind();
+        try fbbind.texture2D(.color0, .@"2D", fb_tex, 0);
+        const fbstatus = fbbind.checkStatus();
+        if (fbstatus != .complete) {
+            log.warn(
+                "framebuffer is not complete state={}",
+                .{fbstatus},
+            );
+            return error.InvalidFramebuffer;
         }
 
         // Create our uniform buffer that is shared across all
@@ -79,9 +121,11 @@ pub const State = struct {
         return .{
             .programs = try programs.toOwnedSlice(),
             .uniforms = .{},
+            .fbo = fbo,
             .ubo = ubo,
             .vao = vao,
             .ebo = ebo,
+            .fb_texture = fb_tex,
             .last_frame_time = try std.time.Instant.now(),
         };
     }
@@ -92,6 +136,8 @@ pub const State = struct {
         self.ubo.destroy();
         self.ebo.destroy();
         self.vao.destroy();
+        self.fb_texture.destroy();
+        self.fbo.destroy();
     }
 
     pub fn setScreenSize(self: *State, size: ScreenSize) !void {
@@ -137,6 +183,11 @@ pub const State = struct {
         // the global state.
         try self.ubo.bindBase(.uniform, UNIFORM_INDEX);
 
+        // Bind our texture that is shared amongst all
+        try gl.Texture.active(gl.c.GL_TEXTURE0);
+        var texbind = try self.fb_texture.bind(.@"2D");
+        errdefer texbind.unbind();
+
         const vao = try self.vao.bind();
         errdefer vao.unbind();
 
@@ -146,16 +197,19 @@ pub const State = struct {
         return .{
             .vao = vao,
             .ebo = ebo,
+            .fb_texture = texbind,
         };
     }
 
     pub const Binding = struct {
         vao: gl.VertexArray.Binding,
         ebo: gl.Buffer.Binding,
+        fb_texture: gl.Texture.Binding,
 
         pub fn unbind(self: Binding) void {
             self.ebo.unbind();
             self.vao.unbind();
+            self.fb_texture.unbind();
         }
     };
 };
