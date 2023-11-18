@@ -609,21 +609,29 @@ keybind: Keybinds = .{},
 /// On Linux, this requires OpenGL 4.2. Ghostty typically only requires
 /// OpenGL 3.3, but custom shaders push that requirement up to 4.2.
 ///
-/// The shader API is identical to the ShaderToy API: you specify a `mainImage`
-/// function and the available uniforms match ShaderToy. The iChannel0 uniform
+/// The shader API is identical to the Shadertoy API: you specify a `mainImage`
+/// function and the available uniforms match Shadertoy. The iChannel0 uniform
 /// is a texture containing the rendered terminal screen.
 ///
 /// If the shader fails to compile, the shader will be ignored. Any errors
 /// related to shader compilation will not show up as configuration errors
 /// and only show up in the log, since shader compilation happens after
-/// configuration loading on the dedicated render thread. If your shader is
-/// not working, another way to debug is to run the `ghostty
-/// +custom-shader-compile` command which will compile the shader and show any
-/// errors. For interactive development, use ShaderToy.com.
+/// configuration loading on the dedicated render thread.  For interactive
+/// development, use Shadertoy.com.
 ///
 /// This can be repeated multiple times to load multiple shaders. The shaders
 /// will be run in the order they are specified.
 @"custom-shader": RepeatablePath = .{},
+
+/// If true (default), the focused terminal surface will run an animation
+/// loop when custom shaders are used. This uses slightly more CPU (generally
+/// less than 10%) but allows the shader to animate. This only runs if there
+/// are custom shaders.
+///
+/// If this is set to false, the terminal and custom shader will only render
+/// when the terminal is updated. This is more efficient but the shader will
+/// not animate.
+@"custom-shader-animation": bool = true,
 
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
