@@ -358,7 +358,7 @@ test "shadertoy to glsl" {
     const glsl = try glslFromSpv(alloc, spvlist.items);
     defer alloc.free(glsl);
 
-    log.warn("glsl={s}", .{glsl});
+    // log.warn("glsl={s}", .{glsl});
 }
 
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
