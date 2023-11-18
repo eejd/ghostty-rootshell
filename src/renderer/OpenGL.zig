@@ -237,6 +237,7 @@ pub const DerivedConfig = struct {
     foreground: terminal.color.RGB,
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
+    invert_selection_fg_bg: bool,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -275,6 +276,7 @@ pub const DerivedConfig = struct {
 
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
+            .invert_selection_fg_bg = config.@"invert-selection-fg-bg",
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -1088,8 +1090,8 @@ pub fn updateCell(
     const colors: BgFg = colors: {
         // If we are selected, we our colors are just inverted fg/bg
         const selection_res: ?BgFg = if (selected) .{
-            .bg = self.config.selection_background orelse self.foreground_color,
-            .fg = self.config.selection_foreground orelse self.background_color,
+            .bg = if (self.config.invert_selection_fg_bg) cell.fg else self.config.selection_background orelse self.foreground_color,
+            .fg = if (self.config.invert_selection_fg_bg) cell.bg else self.config.selection_foreground orelse self.background_color,
         } else null;
 
         const res: BgFg = selection_res orelse if (!cell.attrs.inverse) .{
