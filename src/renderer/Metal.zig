@@ -123,6 +123,7 @@ pub const DerivedConfig = struct {
     foreground: terminal.color.RGB,
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
+    invert_selection_fg_bg: bool,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -161,6 +162,7 @@ pub const DerivedConfig = struct {
 
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
+            .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -1304,13 +1306,8 @@ pub fn updateCell(
 
     // The colors for the cell.
     const colors: BgFg = colors: {
-        // If we are selected, we our colors are just inverted fg/bg
-        const selection_res: ?BgFg = if (selected) .{
-            .bg = self.config.selection_background orelse self.foreground_color,
-            .fg = self.config.selection_foreground orelse self.background_color,
-        } else null;
-
-        const res: BgFg = selection_res orelse if (!cell.attrs.inverse) .{
+        // The normal cell result
+        const cell_res: BgFg = if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = if (cell.attrs.has_bg) cell.bg else null,
@@ -1323,8 +1320,21 @@ pub fn updateCell(
             .fg = if (cell.attrs.has_bg) cell.bg else self.background_color,
         };
 
+        // If we are selected, we our colors are just inverted fg/bg
+        const selection_res: ?BgFg = if (selected) .{
+            .bg = if (self.config.invert_selection_fg_bg)
+                cell_res.fg
+            else
+                self.config.selection_background orelse self.foreground_color,
+            .fg = if (self.config.invert_selection_fg_bg)
+                cell_res.bg orelse self.background_color
+            else
+                self.config.selection_foreground orelse self.background_color,
+        } else null;
+
         // If the cell is "invisible" then we just make fg = bg so that
         // the cell is transparent but still copy-able.
+        const res: BgFg = selection_res orelse cell_res;
         if (cell.attrs.invisible) {
             break :colors BgFg{
                 .bg = res.bg,
