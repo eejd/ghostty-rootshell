@@ -107,8 +107,11 @@ draw_background: terminal.color.RGB,
 const SetScreenSize = struct {
     size: renderer.ScreenSize,
 
-    fn apply(self: SetScreenSize, r: *const OpenGL) !void {
-        const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
+    fn apply(self: SetScreenSize, r: *OpenGL) !void {
+        const gl_state: *GLState = if (r.gl_state) |*v|
+            v
+        else
+            return error.OpenGLUninitialized;
 
         // Apply our padding
         const padding = if (r.padding.balance)
@@ -146,6 +149,11 @@ const SetScreenSize = struct {
                 -1 * @as(f32, @floatFromInt(padding.top)),
             ),
         );
+
+        // Update our custom shader resolution
+        if (gl_state.custom) |*custom_state| {
+            try custom_state.setScreenSize(self.size);
+        }
     }
 };
 

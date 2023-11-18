@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const gl = @import("opengl");
+const ScreenSize = @import("../size.zig").ScreenSize;
 
 /// The "INDEX" is the index into the global GL state and the
 /// "BINDING" is the binding location in the shader.
@@ -93,6 +94,16 @@ pub const State = struct {
         self.vao.destroy();
     }
 
+    pub fn setScreenSize(self: *State, size: ScreenSize) !void {
+        // Update our uniforms
+        self.uniforms.resolution = .{
+            @floatFromInt(size.width),
+            @floatFromInt(size.height),
+            1,
+        };
+        try self.syncUniforms();
+    }
+
     /// Call this prior to drawing a frame to update the time
     /// and synchronize the uniforms. This synchronizes uniforms
     /// so you should make changes to uniforms prior to calling
@@ -105,11 +116,18 @@ pub const State = struct {
         self.uniforms.time_delta = since_ns / std.time.ns_per_s;
 
         // Sync our uniform changes
+        try self.syncUniforms();
+    }
+
+    fn syncUniforms(self: *State) !void {
         var ubobind = try self.ubo.bind(.uniform);
         defer ubobind.unbind();
         try ubobind.setData(self.uniforms, .static_draw);
     }
 
+    /// Call this to bind all the necessary OpenGL resources for
+    /// all custom shaders. Each individual shader needs to be bound
+    /// one at a time too.
     pub fn bind(self: *const State) !Binding {
         // Move our uniform buffer into proper global index. Note that
         // in theory we can do this globally once and never worry about
