@@ -19,9 +19,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// The surface tree for this window.
     @Published var surfaceTree: Ghostty.SplitNode? = nil {
         didSet {
-            // If our surface tree becomes nil then it means all our surfaces
-            // have closed, so we also close the window.
-            if (surfaceTree == nil) { lastSurfaceDidClose() }
+            // If our surface tree becomes nil then ensure all surfaces
+            // in the old tree have closed and then close the window.
+            if (surfaceTree == nil) {
+                oldValue?.close()
+                lastSurfaceDidClose()
+            }
         }
     }
     
