@@ -13,7 +13,7 @@ layout(binding = 0) uniform Globals {
     uniform float	iSampleRate;
 };
 
-layout(binding = 1) uniform sampler2D	iChannel0;
+layout(binding = 0) uniform sampler2D	iChannel0;
 
 // These are unused currently by Ghostty:
 // layout(binding = 1) uniform sampler2D	iChannel1;

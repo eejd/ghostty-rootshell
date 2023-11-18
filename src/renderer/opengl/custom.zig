@@ -148,6 +148,19 @@ pub const State = struct {
             1,
         };
         try self.syncUniforms();
+
+        // Update our texture
+        const texbind = try self.fb_texture.bind(.@"2D");
+        try texbind.image2D(
+            0,
+            .rgb,
+            @intCast(size.width),
+            @intCast(size.height),
+            0,
+            .rgb,
+            .UnsignedByte,
+            null,
+        );
     }
 
     /// Call this prior to drawing a frame to update the time
