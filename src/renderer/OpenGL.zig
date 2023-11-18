@@ -905,14 +905,10 @@ fn addPreeditCell(
         .glyph_height = 0,
         .glyph_offset_x = 0,
         .glyph_offset_y = 0,
-        .fg_r = 0,
-        .fg_g = 0,
-        .fg_b = 0,
-        .fg_a = 0,
-        .bg_r = bg.r,
-        .bg_g = bg.g,
-        .bg_b = bg.b,
-        .bg_a = 255,
+        .r = bg.r,
+        .g = bg.g,
+        .b = bg.b,
+        .a = 255,
     });
 
     // Add our text
@@ -927,14 +923,10 @@ fn addPreeditCell(
         .glyph_height = glyph.height,
         .glyph_offset_x = glyph.offset_x,
         .glyph_offset_y = glyph.offset_y,
-        .fg_r = fg.r,
-        .fg_g = fg.g,
-        .fg_b = fg.b,
-        .fg_a = 255,
-        .bg_r = 0,
-        .bg_g = 0,
-        .bg_b = 0,
-        .bg_a = 0,
+        .r = fg.r,
+        .g = fg.g,
+        .b = fg.b,
+        .a = 255,
     });
 }
 
