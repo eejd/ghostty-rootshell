@@ -621,6 +621,9 @@ keybind: Keybinds = .{},
 ///
 /// This can be repeated multiple times to load multiple shaders. The shaders
 /// will be run in the order they are specified.
+///
+/// Changing this value at runtime and reloading the configuration will only
+/// affect new windows, tabs, and splits.
 @"custom-shader": RepeatablePath = .{},
 
 /// If true (default), the focused terminal surface will run an animation
@@ -631,6 +634,9 @@ keybind: Keybinds = .{},
 /// If this is set to false, the terminal and custom shader will only render
 /// when the terminal is updated. This is more efficient but the shader will
 /// not animate.
+///
+/// This value can be changed at runtime and will affect all currently
+/// open terminals.
 @"custom-shader-animation": bool = true,
 
 /// If anything other than false, fullscreen mode on macOS will not use the
