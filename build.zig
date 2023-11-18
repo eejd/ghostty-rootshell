@@ -643,6 +643,14 @@ fn addDeps(
         .optimize = step.optimize,
         .@"enable-libpng" = true,
     });
+    const glslang_dep = b.dependency("glslang", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const spirv_cross_dep = b.dependency("spirv_cross", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const mach_glfw_dep = b.dependency("mach_glfw", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -655,6 +663,7 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const opengl_dep = b.dependency("opengl", .{});
     const pixman_dep = b.dependency("pixman", .{
         .target = step.target,
         .optimize = step.optimize,
@@ -718,8 +727,11 @@ fn addDeps(
         fontconfig_dep.module("fontconfig"),
     );
     step.addModule("freetype", freetype_dep.module("freetype"));
+    step.addModule("glslang", glslang_dep.module("glslang"));
+    step.addModule("spirv_cross", spirv_cross_dep.module("spirv_cross"));
     step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.addModule("xev", libxev_dep.module("xev"));
+    step.addModule("opengl", opengl_dep.module("opengl"));
     step.addModule("pixman", pixman_dep.module("pixman"));
     step.addModule("ziglyph", ziglyph_dep.module("ziglyph"));
 
@@ -742,6 +754,14 @@ fn addDeps(
         step.linkLibrary(tracy_dep.artifact("tracy"));
         try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
     }
+
+    // Glslang
+    step.linkLibrary(glslang_dep.artifact("glslang"));
+    try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
+
+    // Spirv-Cross
+    step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
+    try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
 
     // Dynamic link
     if (!static) {

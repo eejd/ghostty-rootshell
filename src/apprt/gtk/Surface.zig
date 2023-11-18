@@ -252,7 +252,7 @@ pub fn deinit(self: *Surface) void {
 }
 
 fn render(self: *Surface) !void {
-    try self.core_surface.renderer.draw();
+    try self.core_surface.renderer.drawFrame(self);
 }
 
 /// Queue the inspector to render if we have one.

@@ -528,7 +528,7 @@ keybind: Keybinds = .{},
 ///
 /// Cycles are not allowed. If a cycle is detected, an error will be logged
 /// and the configuration file will be ignored.
-@"config-file": RepeatableString = .{},
+@"config-file": RepeatablePath = .{},
 
 /// Confirms that a surface should be closed before closing it. This defaults
 /// to true. If set to false, surfaces will close without any confirmation.
@@ -598,6 +598,46 @@ keybind: Keybinds = .{},
 /// if you know you need KAM, you know. If you don't know if you
 /// need KAM, you don't need it.
 @"vt-kam-allowed": bool = false,
+
+/// Custom shaders to run after the default shaders. This is a file path
+/// to a GLSL-syntax shader for all platforms.
+///
+/// WARNING: Invalid shaders can cause Ghostty to become unusable such as by
+/// causing the window to be completely black. If this happens, you can
+/// unset this configuration to disable the shader.
+///
+/// On Linux, this requires OpenGL 4.2. Ghostty typically only requires
+/// OpenGL 3.3, but custom shaders push that requirement up to 4.2.
+///
+/// The shader API is identical to the Shadertoy API: you specify a `mainImage`
+/// function and the available uniforms match Shadertoy. The iChannel0 uniform
+/// is a texture containing the rendered terminal screen.
+///
+/// If the shader fails to compile, the shader will be ignored. Any errors
+/// related to shader compilation will not show up as configuration errors
+/// and only show up in the log, since shader compilation happens after
+/// configuration loading on the dedicated render thread.  For interactive
+/// development, use Shadertoy.com.
+///
+/// This can be repeated multiple times to load multiple shaders. The shaders
+/// will be run in the order they are specified.
+///
+/// Changing this value at runtime and reloading the configuration will only
+/// affect new windows, tabs, and splits.
+@"custom-shader": RepeatablePath = .{},
+
+/// If true (default), the focused terminal surface will run an animation
+/// loop when custom shaders are used. This uses slightly more CPU (generally
+/// less than 10%) but allows the shader to animate. This only runs if there
+/// are custom shaders.
+///
+/// If this is set to false, the terminal and custom shader will only render
+/// when the terminal is updated. This is more efficient but the shader will
+/// not animate.
+///
+/// This value can be changed at runtime and will affect all currently
+/// open terminals.
+@"custom-shader-animation": bool = true,
 
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
@@ -1143,7 +1183,7 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
         try cli.args.parse(Config, alloc, self, &iter);
-        try self.expandConfigFiles(std.fs.path.dirname(config_path).?);
+        try self.expandPaths(std.fs.path.dirname(config_path).?);
     } else |err| switch (err) {
         error.FileNotFound => std.log.info(
             "homedir config not found, not loading path={s}",
@@ -1172,15 +1212,15 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     try cli.args.parse(Config, alloc_gpa, self, &iter);
 
     // Config files loaded from the CLI args are relative to pwd
-    if (self.@"config-file".list.items.len > 0) {
+    if (self.@"config-file".value.list.items.len > 0) {
         var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        try self.expandConfigFiles(try std.fs.cwd().realpath(".", &buf));
+        try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
     }
 }
 
 /// Load and parse the config files that were added in the "config-file" key.
 pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
-    if (self.@"config-file".list.items.len == 0) return;
+    if (self.@"config-file".value.list.items.len == 0) return;
     const arena_alloc = self._arena.?.allocator();
 
     // Keeps track of loaded files to prevent cycles.
@@ -1189,8 +1229,8 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
     const cwd = std.fs.cwd();
     var i: usize = 0;
-    while (i < self.@"config-file".list.items.len) : (i += 1) {
-        const path = self.@"config-file".list.items[i];
+    while (i < self.@"config-file".value.list.items.len) : (i += 1) {
+        const path = self.@"config-file".value.list.items[i];
 
         // Error paths
         if (path.len == 0) continue;
@@ -1227,37 +1267,22 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
         try cli.args.parse(Config, alloc_gpa, self, &iter);
-        try self.expandConfigFiles(std.fs.path.dirname(path).?);
+        try self.expandPaths(std.fs.path.dirname(path).?);
     }
 }
 
 /// Expand the relative paths in config-files to be absolute paths
 /// relative to the base directory.
-fn expandConfigFiles(self: *Config, base: []const u8) !void {
-    assert(std.fs.path.isAbsolute(base));
-    var dir = try std.fs.cwd().openDir(base, .{});
-    defer dir.close();
-
+fn expandPaths(self: *Config, base: []const u8) !void {
     const arena_alloc = self._arena.?.allocator();
-    for (self.@"config-file".list.items, 0..) |path, i| {
-        // If it is already absolute we can ignore it.
-        if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
-
-        // If it isn't absolute, we need to make it absolute relative to the base.
-        const abs = dir.realpathAlloc(arena_alloc, path) catch |err| {
-            try self._errors.add(arena_alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    arena_alloc,
-                    "error resolving config-file {s}: {}",
-                    .{ path, err },
-                ),
-            });
-            self.@"config-file".list.items[i] = "";
-            continue;
-        };
-
-        log.debug("expanding config-file path relative={s} abs={s}", .{ path, abs });
-        self.@"config-file".list.items[i] = abs;
+    inline for (@typeInfo(Config).Struct.fields) |field| {
+        if (field.type == RepeatablePath) {
+            try @field(self, field.name).expand(
+                arena_alloc,
+                base,
+                &self._errors,
+            );
+        }
     }
 }
 
@@ -1886,6 +1911,69 @@ pub const RepeatableString = struct {
         try list.parseCLI(alloc, "B");
 
         try testing.expectEqual(@as(usize, 2), list.list.items.len);
+    }
+};
+
+/// RepeatablePath is like repeatable string but represents a path value.
+/// The difference is that when loading the configuration any values for
+/// this will be automatically expanded relative to the path of the config
+/// file.
+pub const RepeatablePath = struct {
+    const Self = @This();
+
+    value: RepeatableString = .{},
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
+        return self.value.parseCLI(alloc, input);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        return .{
+            .value = try self.value.clone(alloc),
+        };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        return self.value.equal(other.value);
+    }
+
+    /// Expand all the paths relative to the base directory.
+    pub fn expand(
+        self: *Self,
+        alloc: Allocator,
+        base: []const u8,
+        errors: *ErrorList,
+    ) !void {
+        assert(std.fs.path.isAbsolute(base));
+        var dir = try std.fs.cwd().openDir(base, .{});
+        defer dir.close();
+
+        for (self.value.list.items, 0..) |path, i| {
+            // If it is already absolute we can ignore it.
+            if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
+
+            // If it isn't absolute, we need to make it absolute relative
+            // to the base.
+            const abs = dir.realpathAlloc(alloc, path) catch |err| {
+                try errors.add(alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        alloc,
+                        "error resolving config-file {s}: {}",
+                        .{ path, err },
+                    ),
+                });
+                self.value.list.items[i] = "";
+                continue;
+            };
+
+            log.debug(
+                "expanding config-file path relative={s} abs={s}",
+                .{ path, abs },
+            );
+            self.value.list.items[i] = abs;
+        }
     }
 };
 

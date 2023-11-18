@@ -10,6 +10,7 @@ const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
+const glslang = @import("glslang");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -17,13 +18,16 @@ const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
+const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
 
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
 const mtl_image = @import("metal/image.zig");
+const mtl_sampler = @import("metal/sampler.zig");
 const mtl_shaders = @import("metal/shaders.zig");
 const Image = mtl_image.Image;
 const ImageMap = mtl_image.ImageMap;
@@ -76,6 +80,10 @@ background_color: terminal.color.RGB,
 /// by a terminal application
 cursor_color: ?terminal.color.RGB,
 
+/// The current frame background color. This is only updated during
+/// the updateFrame method.
+current_background_color: terminal.color.RGB,
+
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
@@ -108,12 +116,31 @@ swapchain: objc.Object, // CAMetalLayer
 texture_greyscale: objc.Object, // MTLTexture
 texture_color: objc.Object, // MTLTexture
 
+/// Custom shader state. This is only set if we have custom shaders.
+custom_shader_state: ?CustomShaderState = null,
+
+pub const CustomShaderState = struct {
+    /// The screen texture that we render the terminal to. If we don't have
+    /// custom shaders, we render directly to the drawable.
+    screen_texture: objc.Object, // MTLTexture
+    sampler: mtl_sampler.Sampler,
+    uniforms: mtl_shaders.PostUniforms,
+    last_frame_time: std.time.Instant,
+
+    pub fn deinit(self: *CustomShaderState) void {
+        deinitMTLResource(self.screen_texture);
+        self.sampler.deinit();
+    }
+};
+
 /// The configuration for this renderer that is derived from the main
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
     font_thicken: bool,
-    font_features: std.ArrayList([]const u8),
+    font_features: std.ArrayListUnmanaged([]const u8),
     font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_opacity: f64,
@@ -124,17 +151,22 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    custom_shaders: std.ArrayListUnmanaged([]const u8),
+    custom_shader_animation: bool,
 
     pub fn init(
         alloc_gpa: Allocator,
         config: *const configpkg.Config,
     ) !DerivedConfig {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        // Copy our shaders
+        const custom_shaders = try config.@"custom-shader".value.list.clone(alloc);
+
         // Copy our font features
-        var font_features = features: {
-            var clone = try config.@"font-feature".list.clone(alloc_gpa);
-            break :features clone.toManaged(alloc_gpa);
-        };
-        errdefer font_features.deinit();
+        const font_features = try config.@"font-feature".list.clone(alloc);
 
         // Get our font styles
         var font_styles = font.Group.StyleStatus.initFill(true);
@@ -173,11 +205,16 @@ pub const DerivedConfig = struct {
                 bg.toTerminalRGB()
             else
                 null,
+
+            .custom_shaders = custom_shaders,
+            .custom_shader_animation = config.@"custom-shader-animation",
+
+            .arena = arena,
         };
     }
 
     pub fn deinit(self: *DerivedConfig) void {
-        self.font_features.deinit();
+        self.arena.deinit();
     }
 };
 
@@ -199,11 +236,15 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
 }
 
 pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
     // Initialize our metal stuff
     const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
     const swapchain = swapchain: {
-        const CAMetalLayer = objc.Class.getClass("CAMetalLayer").?;
+        const CAMetalLayer = objc.getClass("CAMetalLayer").?;
         const swapchain = CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
         swapchain.setProperty("device", device.value);
         swapchain.setProperty("opaque", options.config.background_opacity >= 1);
@@ -252,9 +293,50 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     });
     errdefer buf_instance.deinit();
 
+    // Load our custom shaders
+    const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
+        arena_alloc,
+        options.config.custom_shaders.items,
+        .msl,
+    ) catch |err| err: {
+        log.warn("error loading custom shaders err={}", .{err});
+        break :err &.{};
+    };
+
+    // If we have custom shaders then setup our state
+    var custom_shader_state: ?CustomShaderState = state: {
+        if (custom_shaders.len == 0) break :state null;
+
+        // Build our sampler for our texture
+        var sampler = try mtl_sampler.Sampler.init(device);
+        errdefer sampler.deinit();
+
+        break :state .{
+            // Resolution and screen texture will be fixed up by first
+            // call to setScreenSize. This happens before any draw call.
+            .screen_texture = undefined,
+            .sampler = sampler,
+            .uniforms = .{
+                .resolution = .{ 0, 0, 1 },
+                .time = 1,
+                .time_delta = 1,
+                .frame_rate = 1,
+                .frame = 1,
+                .channel_time = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
+                .channel_resolution = [1][4]f32{.{ 0, 0, 0, 0 }} ** 4,
+                .mouse = .{ 0, 0, 0, 0 },
+                .date = .{ 0, 0, 0, 0 },
+                .sample_rate = 1,
+            },
+
+            .last_frame_time = try std.time.Instant.now(),
+        };
+    };
+    errdefer if (custom_shader_state) |*state| state.deinit();
+
     // Initialize our shaders
-    var shaders = try Shaders.init(device);
-    errdefer shaders.deinit();
+    var shaders = try Shaders.init(alloc, device, custom_shaders);
+    errdefer shaders.deinit(alloc);
 
     // Font atlas textures
     const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
@@ -271,6 +353,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .foreground_color = options.config.foreground,
         .background_color = options.config.background,
         .cursor_color = options.config.cursor_color,
+        .current_background_color = options.config.background,
 
         // Render state
         .cells_bg = .{},
@@ -298,6 +381,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .swapchain = swapchain,
         .texture_greyscale = texture_greyscale,
         .texture_color = texture_color,
+        .custom_shader_state = custom_shader_state,
     };
 }
 
@@ -323,7 +407,9 @@ pub fn deinit(self: *Metal) void {
     deinitMTLResource(self.texture_color);
     self.queue.msgSend(void, objc.sel("release"), .{});
 
-    self.shaders.deinit();
+    if (self.custom_shader_state) |*state| state.deinit();
+
+    self.shaders.deinit(self.alloc);
 
     self.* = undefined;
 }
@@ -382,6 +468,13 @@ pub fn threadExit(self: *const Metal) void {
     _ = self;
 
     // Metal requires no per-thread state.
+}
+
+/// True if our renderer has animations so that a higher frequency
+/// timer is used.
+pub fn hasAnimations(self: *const Metal) bool {
+    return self.custom_shader_state != null and
+        self.config.custom_shader_animation;
 }
 
 /// Returns the grid size for a given screen size. This is safe to call
@@ -448,8 +541,8 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     }, .{ .forever = {} });
 }
 
-/// The primary render callback that is completely thread-safe.
-pub fn render(
+/// Update the frame data.
+pub fn updateFrame(
     self: *Metal,
     surface: *apprt.Surface,
     state: *renderer.State,
@@ -535,10 +628,6 @@ pub fn render(
     };
     defer critical.screen.deinit();
 
-    // @autoreleasepool {}
-    const pool = objc.AutoreleasePool.init();
-    defer pool.deinit();
-
     // Build our GPU cells
     try self.rebuildCells(
         critical.selection,
@@ -547,18 +636,8 @@ pub fn render(
         critical.cursor_style,
     );
 
-    // Get our drawable (CAMetalDrawable)
-    const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
-
-    // If our font atlas changed, sync the texture data
-    if (self.font_group.atlas_greyscale.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
-        self.font_group.atlas_greyscale.modified = false;
-    }
-    if (self.font_group.atlas_color.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
-        self.font_group.atlas_color.modified = false;
-    }
+    // Update our background color
+    self.current_background_color = critical.bg;
 
     // Go through our images and see if we need to setup any textures.
     {
@@ -580,6 +659,45 @@ pub fn render(
             }
         }
     }
+}
+
+/// Draw the frame to the screen.
+pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
+    _ = surface;
+
+    // If we have custom shaders, update the animation time.
+    if (self.custom_shader_state) |*state| {
+        const now = std.time.Instant.now() catch state.last_frame_time;
+        const since_ns: f32 = @floatFromInt(now.since(state.last_frame_time));
+        state.uniforms.time = since_ns / std.time.ns_per_s;
+        state.uniforms.time_delta = since_ns / std.time.ns_per_s;
+    }
+
+    // @autoreleasepool {}
+    const pool = objc.AutoreleasePool.init();
+    defer pool.deinit();
+
+    // Get our drawable (CAMetalDrawable)
+    const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
+
+    // Get our screen texture. If we don't have a dedicated screen texture
+    // then we just use the drawable texture.
+    const screen_texture = if (self.custom_shader_state) |state|
+        state.screen_texture
+    else tex: {
+        const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
+        break :tex objc.Object.fromId(texture);
+    };
+
+    // If our font atlas changed, sync the texture data
+    if (self.font_group.atlas_greyscale.modified) {
+        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
+        self.font_group.atlas_greyscale.modified = false;
+    }
+    if (self.font_group.atlas_color.modified) {
+        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
+        self.font_group.atlas_color.modified = false;
+    }
 
     // Command buffer (MTLCommandBuffer)
     const buffer = self.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
@@ -587,7 +705,7 @@ pub fn render(
     {
         // MTLRenderPassDescriptor
         const desc = desc: {
-            const MTLRenderPassDescriptor = objc.Class.getClass("MTLRenderPassDescriptor").?;
+            const MTLRenderPassDescriptor = objc.getClass("MTLRenderPassDescriptor").?;
             const desc = MTLRenderPassDescriptor.msgSend(
                 objc.Object,
                 objc.sel("renderPassDescriptor"),
@@ -607,14 +725,14 @@ pub fn render(
                 // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
                 // which ironically doesn't implement CAMetalDrawable as a
                 // property so we just send a message.
-                const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
+                //const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
                 attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
                 attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
-                attachment.setProperty("texture", texture);
+                attachment.setProperty("texture", screen_texture.value);
                 attachment.setProperty("clearColor", mtl.MTLClearColor{
-                    .red = @as(f32, @floatFromInt(critical.bg.r)) / 255,
-                    .green = @as(f32, @floatFromInt(critical.bg.g)) / 255,
-                    .blue = @as(f32, @floatFromInt(critical.bg.b)) / 255,
+                    .red = @as(f32, @floatFromInt(self.current_background_color.r)) / 255,
+                    .green = @as(f32, @floatFromInt(self.current_background_color.g)) / 255,
+                    .blue = @as(f32, @floatFromInt(self.current_background_color.b)) / 255,
                     .alpha = self.config.background_opacity,
                 });
             }
@@ -646,8 +764,116 @@ pub fn render(
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
     }
 
+    // If we have custom shaders AND we have a screen texture, then we
+    // render the custom shaders.
+    if (self.custom_shader_state) |state| {
+        // MTLRenderPassDescriptor
+        const desc = desc: {
+            const MTLRenderPassDescriptor = objc.getClass("MTLRenderPassDescriptor").?;
+            const desc = MTLRenderPassDescriptor.msgSend(
+                objc.Object,
+                objc.sel("renderPassDescriptor"),
+                .{},
+            );
+
+            // Set our color attachment to be our drawable surface.
+            const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+            {
+                const attachment = attachments.msgSend(
+                    objc.Object,
+                    objc.sel("objectAtIndexedSubscript:"),
+                    .{@as(c_ulong, 0)},
+                );
+
+                // Texture is a property of CAMetalDrawable but if you run
+                // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
+                // which ironically doesn't implement CAMetalDrawable as a
+                // property so we just send a message.
+                const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
+                attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
+                attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
+                attachment.setProperty("texture", texture);
+                attachment.setProperty("clearColor", mtl.MTLClearColor{
+                    .red = 0,
+                    .green = 0,
+                    .blue = 0,
+                    .alpha = 1,
+                });
+            }
+
+            break :desc desc;
+        };
+
+        // MTLRenderCommandEncoder
+        const encoder = buffer.msgSend(
+            objc.Object,
+            objc.sel("renderCommandEncoderWithDescriptor:"),
+            .{desc.value},
+        );
+        defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+
+        for (self.shaders.post_pipelines) |pipeline| {
+            try self.drawPostShader(encoder, pipeline, &state);
+        }
+    }
+
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+fn drawPostShader(
+    self: *Metal,
+    encoder: objc.Object,
+    pipeline: objc.Object,
+    state: *const CustomShaderState,
+) !void {
+    _ = self;
+
+    // Use our custom shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{pipeline.value},
+    );
+
+    // Set our sampler
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentSamplerState:atIndex:"),
+        .{ state.sampler.sampler.value, @as(c_ulong, 0) },
+    );
+
+    // Set our uniforms
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentBytes:length:atIndex:"),
+        .{
+            @as(*const anyopaque, @ptrCast(&state.uniforms)),
+            @as(c_ulong, @sizeOf(@TypeOf(state.uniforms))),
+            @as(c_ulong, 0),
+        },
+    );
+
+    // Screen texture
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            state.screen_texture.value,
+            @as(c_ulong, 0),
+        },
+    );
+
+    // Draw!
+    encoder.msgSend(
+        void,
+        objc.sel("drawPrimitives:vertexStart:vertexCount:"),
+        .{
+            @intFromEnum(mtl.MTLPrimitiveType.triangle_strip),
+            @as(c_ulong, 0),
+            @as(c_ulong, 4),
+        },
+    );
 }
 
 fn drawImagePlacements(
@@ -1069,6 +1295,51 @@ pub fn setScreenSize(
     // shrinks but the performance cost really isn't that much.
     self.cells.clearAndFree(self.alloc);
     self.cells_bg.clearAndFree(self.alloc);
+
+    // If we have custom shaders then we update the state
+    if (self.custom_shader_state) |*state| {
+        // Only free our previous texture if this isn't our first
+        // time setting the custom shader state.
+        if (state.uniforms.resolution[0] > 0) {
+            deinitMTLResource(state.screen_texture);
+        }
+
+        state.uniforms.resolution = .{
+            @floatFromInt(dim.width),
+            @floatFromInt(dim.height),
+            1,
+        };
+
+        state.screen_texture = screen_texture: {
+            // This texture is the size of our drawable but supports being a
+            // render target AND reading so that the custom shaders can read from it.
+            const desc = init: {
+                const Class = objc.getClass("MTLTextureDescriptor").?;
+                const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+                const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+                break :init id_init;
+            };
+            desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.bgra8unorm));
+            desc.setProperty("width", @as(c_ulong, @intCast(dim.width)));
+            desc.setProperty("height", @as(c_ulong, @intCast(dim.height)));
+            desc.setProperty(
+                "usage",
+                @intFromEnum(mtl.MTLTextureUsage.render_target) |
+                    @intFromEnum(mtl.MTLTextureUsage.shader_read) |
+                    @intFromEnum(mtl.MTLTextureUsage.shader_write),
+            );
+
+            // If we fail to create the texture, then we just don't have a screen
+            // texture and our custom shaders won't run.
+            const id = self.device.msgSend(
+                ?*anyopaque,
+                objc.sel("newTextureWithDescriptor:"),
+                .{desc},
+            ) orelse return error.MetalFailed;
+
+            break :screen_texture objc.Object.fromId(id);
+        };
+    }
 
     log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
 }
@@ -1625,7 +1896,7 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
 
     // Create our descriptor
     const desc = init: {
-        const Class = objc.Class.getClass("MTLTextureDescriptor").?;
+        const Class = objc.getClass("MTLTextureDescriptor").?;
         const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;
