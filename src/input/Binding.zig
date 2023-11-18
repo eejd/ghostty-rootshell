@@ -152,6 +152,9 @@ pub const Action = union(enum) {
     /// Clear the screen. This also clears all scrollback.
     clear_screen: void,
 
+    /// Select all text on the screen.
+    select_all: void,
+
     /// Scroll the screen varying amounts.
     scroll_to_top: void,
     scroll_to_bottom: void,
@@ -222,8 +225,6 @@ pub const Action = union(enum) {
 
     /// Quit ghostty
     quit: void,
-
-    select_all: void,
 
     pub const CursorKey = struct {
         normal: []const u8,

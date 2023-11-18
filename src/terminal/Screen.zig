@@ -1392,6 +1392,8 @@ pub fn clear(self: *Screen, mode: ClearMode) !void {
     }
 }
 
+/// Return the selection for all contents on the screen. Surrounding
+/// whitespace is omitted. If there is no selection, this returns null.
 pub fn selectAll(self: *Screen) ?Selection {
     const whitespace = &[_]u32{ 0, ' ', '\t' };
     const y_max = self.rowsWritten() - 1;
