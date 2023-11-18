@@ -833,15 +833,15 @@ pub fn rebuildCells(
         if (cursor_cell) |*cell| {
             if (cell.mode == .fg) {
                 if (self.config.cursor_text) |txt| {
-                    cell.fg_r = txt.r;
-                    cell.fg_g = txt.g;
-                    cell.fg_b = txt.b;
-                    cell.fg_a = 255;
+                    cell.r = txt.r;
+                    cell.g = txt.g;
+                    cell.b = txt.b;
+                    cell.a = 255;
                 } else {
-                    cell.fg_r = 0;
-                    cell.fg_g = 0;
-                    cell.fg_b = 0;
-                    cell.fg_a = 255;
+                    cell.r = 0;
+                    cell.g = 0;
+                    cell.b = 0;
+                    cell.a = 255;
                 }
             }
             self.cells.appendAssumeCapacity(cell.*);
@@ -992,14 +992,10 @@ fn addCursor(
         .grid_col = @intCast(x),
         .grid_row = @intCast(screen.cursor.y),
         .grid_width = if (wide) 2 else 1,
-        .fg_r = color.r,
-        .fg_g = color.g,
-        .fg_b = color.b,
-        .fg_a = alpha,
-        .bg_r = 0,
-        .bg_g = 0,
-        .bg_b = 0,
-        .bg_a = 0,
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = alpha,
         .glyph_x = glyph.atlas_x,
         .glyph_y = glyph.atlas_y,
         .glyph_width = glyph.width,
@@ -1147,14 +1143,10 @@ pub fn updateCell(
             .glyph_height = 0,
             .glyph_offset_x = 0,
             .glyph_offset_y = 0,
-            .fg_r = 0,
-            .fg_g = 0,
-            .fg_b = 0,
-            .fg_a = 0,
-            .bg_r = rgb.r,
-            .bg_g = rgb.g,
-            .bg_b = rgb.b,
-            .bg_a = bg_alpha,
+            .r = rgb.r,
+            .g = rgb.g,
+            .b = rgb.b,
+            .a = bg_alpha,
         });
     }
 
@@ -1189,14 +1181,10 @@ pub fn updateCell(
             .glyph_height = glyph.height,
             .glyph_offset_x = glyph.offset_x,
             .glyph_offset_y = glyph.offset_y,
-            .fg_r = colors.fg.r,
-            .fg_g = colors.fg.g,
-            .fg_b = colors.fg.b,
-            .fg_a = alpha,
-            .bg_r = 0,
-            .bg_g = 0,
-            .bg_b = 0,
-            .bg_a = 0,
+            .r = colors.fg.r,
+            .g = colors.fg.g,
+            .b = colors.fg.b,
+            .a = alpha,
         });
     }
 
@@ -1230,14 +1218,10 @@ pub fn updateCell(
             .glyph_height = underline_glyph.height,
             .glyph_offset_x = underline_glyph.offset_x,
             .glyph_offset_y = underline_glyph.offset_y,
-            .fg_r = color.r,
-            .fg_g = color.g,
-            .fg_b = color.b,
-            .fg_a = alpha,
-            .bg_r = 0,
-            .bg_g = 0,
-            .bg_b = 0,
-            .bg_a = 0,
+            .r = color.r,
+            .g = color.g,
+            .b = color.b,
+            .a = alpha,
         });
     }
 
@@ -1253,14 +1237,10 @@ pub fn updateCell(
             .glyph_height = 0,
             .glyph_offset_x = 0,
             .glyph_offset_y = 0,
-            .fg_r = colors.fg.r,
-            .fg_g = colors.fg.g,
-            .fg_b = colors.fg.b,
-            .fg_a = alpha,
-            .bg_r = 0,
-            .bg_g = 0,
-            .bg_b = 0,
-            .bg_a = 0,
+            .r = colors.fg.r,
+            .g = colors.fg.g,
+            .b = colors.fg.b,
+            .a = alpha,
         });
     }
 
