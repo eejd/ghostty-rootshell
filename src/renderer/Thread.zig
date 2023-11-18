@@ -310,6 +310,11 @@ fn drainMailbox(self: *Thread) !void {
             .change_config => |config| {
                 defer config.alloc.destroy(config.ptr);
                 try self.renderer.changeConfig(config.ptr);
+
+                // Stop and start the draw timer to capture the new
+                // hasAnimations value.
+                self.stopDrawTimer();
+                self.startDrawTimer();
             },
 
             .inspector => |v| self.flags.has_inspector = v,
