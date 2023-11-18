@@ -1405,13 +1405,15 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     // If we're in single-threaded more we grab a lock since we use shared data.
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
-    const gl_state = self.gl_state orelse return;
+    const gl_state: *GLState = if (self.gl_state) |*v| v else return;
 
     // Draw our terminal cells
-    try self.drawCellProgram(&gl_state);
+    try self.drawCellProgram(gl_state);
 
     // Draw our custom shaders
-    try self.drawCustomPrograms(&gl_state);
+    if (gl_state.custom) |*custom_state| {
+        try self.drawCustomPrograms(custom_state);
+    }
 
     // Swap our window buffers
     switch (apprt.runtime) {
@@ -1423,12 +1425,9 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
 
 fn drawCustomPrograms(
     self: *OpenGL,
-    gl_state: *const GLState,
+    custom_state: *custom.State,
 ) !void {
     _ = self;
-
-    // If we have no custom shaders then we do nothing.
-    const custom_state = gl_state.custom orelse return;
 
     // Bind our state that is global to all custom shaders
     const custom_bind = try custom_state.bind();
@@ -1436,7 +1435,7 @@ fn drawCustomPrograms(
 
     // Sync the uniform data.
     // TODO: only do this when the data has changed
-    try custom_state.syncUniforms();
+    try custom_state.newFrame();
 
     // Go through each custom shader and draw it.
     for (custom_state.programs) |program| {

@@ -93,7 +93,18 @@ pub const State = struct {
         self.vao.destroy();
     }
 
-    pub fn syncUniforms(self: *const State) !void {
+    /// Call this prior to drawing a frame to update the time
+    /// and synchronize the uniforms. This synchronizes uniforms
+    /// so you should make changes to uniforms prior to calling
+    /// this.
+    pub fn newFrame(self: *State) !void {
+        // Update our frame time
+        const now = std.time.Instant.now() catch self.last_frame_time;
+        const since_ns: f32 = @floatFromInt(now.since(self.last_frame_time));
+        self.uniforms.time = since_ns / std.time.ns_per_s;
+        self.uniforms.time_delta = since_ns / std.time.ns_per_s;
+
+        // Sync our uniform changes
         var ubobind = try self.ubo.bind(.uniform);
         defer ubobind.unbind();
         try ubobind.setData(self.uniforms, .static_draw);
