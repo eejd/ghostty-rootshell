@@ -475,6 +475,13 @@ pub fn threadExit(self: *const OpenGL) void {
     }
 }
 
+/// True if our renderer has animations so that a higher frequency
+/// timer is used.
+pub fn hasAnimations(self: *const OpenGL) bool {
+    const state = self.gl_state orelse return false;
+    return state.custom != null;
+}
+
 /// Callback when the focus changes for the terminal this is rendering.
 ///
 /// Must be called on the render thread.
