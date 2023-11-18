@@ -10,6 +10,7 @@ const log = std.log.scoped(.opengl_custom);
 const UNIFORM_INDEX: gl.c.GLuint = 0;
 const UNIFORM_BINDING: gl.c.GLuint = 0;
 
+/// Global uniforms for custom shaders.
 pub const Uniforms = extern struct {
     resolution: [3]f32 align(16) = .{ 0, 0, 0 },
     time: f32 align(4) = 1,
@@ -23,7 +24,13 @@ pub const Uniforms = extern struct {
     sample_rate: f32 align(4) = 1,
 };
 
-/// The state associated with custom shaders.
+/// The state associated with custom shaders. This should only be initialized
+/// if there is at least one custom shader.
+///
+/// To use this, the main terminal shader should render to the framebuffer
+/// specified by "fbo". The resulting "fb_texture" will contain the color
+/// attachment. This is then used as the iChannel0 input to the custom
+/// shader.
 pub const State = struct {
     /// The uniform data
     uniforms: Uniforms,
@@ -40,12 +47,14 @@ pub const State = struct {
 
     /// The last time the frame was drawn. This is used to update
     /// the time uniform.
-    last_frame_time: std.time.Instant,
+    first_frame_time: std.time.Instant,
 
     pub fn init(
         alloc: Allocator,
         srcs: []const [:0]const u8,
     ) !State {
+        if (srcs.len == 0) return error.OneCustomShaderRequired;
+
         // Create our programs
         var programs = std.ArrayList(Program).init(alloc);
         defer programs.deinit();
@@ -126,7 +135,7 @@ pub const State = struct {
             .vao = vao,
             .ebo = ebo,
             .fb_texture = fb_tex,
-            .last_frame_time = try std.time.Instant.now(),
+            .first_frame_time = try std.time.Instant.now(),
         };
     }
 
@@ -169,8 +178,8 @@ pub const State = struct {
     /// this.
     pub fn newFrame(self: *State) !void {
         // Update our frame time
-        const now = std.time.Instant.now() catch self.last_frame_time;
-        const since_ns: f32 = @floatFromInt(now.since(self.last_frame_time));
+        const now = std.time.Instant.now() catch self.first_frame_time;
+        const since_ns: f32 = @floatFromInt(now.since(self.first_frame_time));
         self.uniforms.time = since_ns / std.time.ns_per_s;
         self.uniforms.time_delta = since_ns / std.time.ns_per_s;
 
@@ -249,6 +258,8 @@ pub const Program = struct {
         self.program.destroy();
     }
 
+    /// Bind the program for use. This should be called so that draw can
+    /// be called.
     pub fn bind(self: *const Program) !Binding {
         const program = try self.program.use();
         errdefer program.unbind();
@@ -263,6 +274,16 @@ pub const Program = struct {
 
         pub fn unbind(self: Binding) void {
             self.program.unbind();
+        }
+
+        pub fn draw(self: Binding) !void {
+            _ = self;
+            try gl.drawElementsInstanced(
+                gl.c.GL_TRIANGLES,
+                6,
+                gl.c.GL_UNSIGNED_BYTE,
+                1,
+            );
         }
     };
 };

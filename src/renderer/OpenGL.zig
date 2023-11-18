@@ -1438,6 +1438,7 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     }
 }
 
+/// Draw the custom shaders.
 fn drawCustomPrograms(
     self: *OpenGL,
     custom_state: *custom.State,
@@ -1456,13 +1457,7 @@ fn drawCustomPrograms(
         // Bind our cell program state, buffers
         const bind = try program.bind();
         defer bind.unbind();
-
-        try gl.drawElementsInstanced(
-            gl.c.GL_TRIANGLES,
-            6,
-            gl.c.GL_UNSIGNED_BYTE,
-            1,
-        );
+        try bind.draw();
     }
 }
 
