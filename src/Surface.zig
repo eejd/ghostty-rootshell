@@ -2534,6 +2534,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement toggleFullscreen", .{});
         },
 
+        .select_all => {
+            const sel = self.io.terminal.screen.selectAll();
+            if (sel) |s| {
+                self.setSelection(s);
+                try self.queueRender();
+            }
+        },
+
         .inspector => |mode| {
             if (@hasDecl(apprt.Surface, "controlInspector")) {
                 self.rt_surface.controlInspector(mode);
