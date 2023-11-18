@@ -165,12 +165,13 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 @"selection-foreground": ?Color = null,
 @"selection-background": ?Color = null,
 
-/// Inverts the cell color from foreground to background,
-/// and from background to foreground.
-/// This option does not take in consideration the color
-/// values defined for "selection-foreground" and "selection-background"
-/// as it will use the foreground and background of the cell.
-@"invert-selection-fg-bg": bool = false,
+/// Swap the foreground and background colors of cells for selection.
+/// This option overrides the "selection-foreground" and "selection-background"
+/// options.
+///
+/// If you select across cells with differing foregrounds and backgrounds,
+/// the selection color will vary across the selection.
+@"selection-invert-fg-bg": bool = false,
 
 /// Color palette for the 256 color form that many terminal applications
 /// use. The syntax of this configuration is "N=HEXCODE" where "n"
