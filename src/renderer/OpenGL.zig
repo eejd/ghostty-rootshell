@@ -22,7 +22,7 @@ const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 
 const CellProgram = @import("opengl/CellProgram.zig");
-const CustomProgram = @import("opengl/CustomProgram.zig");
+const custom = @import("opengl/custom.zig");
 
 const log = std.log.scoped(.grid);
 
@@ -1427,16 +1427,29 @@ fn drawCustomPrograms(
 ) !void {
     _ = self;
 
-    for (gl_state.custom_programs) |program| {
+    // If we have no custom shaders then we do nothing.
+    const custom_state = gl_state.custom orelse return;
+
+    // Bind our state that is global to all custom shaders
+    const custom_bind = try custom_state.bind();
+    defer custom_bind.unbind();
+
+    // Sync the uniform data.
+    // TODO: only do this when the data has changed
+    try custom_state.syncUniforms();
+
+    // Go through each custom shader and draw it.
+    for (custom_state.programs) |program| {
         // Bind our cell program state, buffers
         const bind = try program.bind();
         defer bind.unbind();
 
-        // Sync the uniform data.
-        // TODO: only do this when the data has changed
-        try program.syncUniforms();
-
-        try gl.drawElementsInstanced(gl.c.GL_TRIANGLES, 6, gl.c.GL_UNSIGNED_BYTE, 1);
+        try gl.drawElementsInstanced(
+            gl.c.GL_TRIANGLES,
+            6,
+            gl.c.GL_UNSIGNED_BYTE,
+            1,
+        );
     }
 }
 
@@ -1545,7 +1558,7 @@ const GLState = struct {
     cell_program: CellProgram,
     texture: gl.Texture,
     texture_color: gl.Texture,
-    custom_programs: []const CustomProgram,
+    custom: ?custom.State,
 
     pub fn init(
         alloc: Allocator,
@@ -1557,21 +1570,25 @@ const GLState = struct {
         const arena_alloc = arena.allocator();
 
         // Load our custom shaders
-        const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
-            arena_alloc,
-            config.custom_shaders.items,
-            .glsl,
-        ) catch |err| err: {
-            log.warn("error loading custom shaders err={}", .{err});
-            break :err &.{};
-        };
+        const custom_state: ?custom.State = custom: {
+            const shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
+                arena_alloc,
+                config.custom_shaders.items,
+                .glsl,
+            ) catch |err| err: {
+                log.warn("error loading custom shaders err={}", .{err});
+                break :err &.{};
+            };
+            if (shaders.len == 0) break :custom null;
 
-        // Create our custom programs
-        const custom_programs = try CustomProgram.createList(alloc, custom_shaders);
-        errdefer {
-            for (custom_programs) |p| p.deinit();
-            alloc.free(custom_programs);
-        }
+            break :custom custom.State.init(
+                alloc,
+                shaders,
+            ) catch |err| err: {
+                log.warn("error initializing custom shaders err={}", .{err});
+                break :err null;
+            };
+        };
 
         // Blending for text. We use GL_ONE here because we should be using
         // premultiplied alpha for all our colors in our fragment shaders.
@@ -1628,15 +1645,14 @@ const GLState = struct {
 
         return .{
             .cell_program = cell_program,
-            .custom_programs = custom_programs,
             .texture = tex,
             .texture_color = tex_color,
+            .custom = custom_state,
         };
     }
 
     pub fn deinit(self: *GLState, alloc: Allocator) void {
-        for (self.custom_programs) |p| p.deinit();
-        alloc.free(self.custom_programs);
+        if (self.custom) |v| v.deinit(alloc);
         self.texture.destroy();
         self.texture_color.destroy();
         self.cell_program.deinit();
