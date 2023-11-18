@@ -933,6 +933,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .i, .mods = .{ .shift = true, .ctrl = true } },
             .{ .inspector = .toggle },
         );
+
+        // Terminal
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .a, .mods = .{ .shift = true, .ctrl = true } },
+            .{ .select_all = {} },
+        );
     }
     {
         // Cmd+N for goto tab N
@@ -965,13 +972,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         }
     }
 
-    // Select all
-    try result.keybind.set.put(
-        alloc,
-        .{ .key = .a, .mods = ctrlOrSuper(.{}) },
-        .{ .select_all = {} },
-    );
-
     // Toggle fullscreen
     try result.keybind.set.put(
         alloc,
@@ -1003,6 +1003,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .k, .mods = .{ .super = true } },
             .{ .clear_screen = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .a, .mods = .{ .super = true } },
+            .{ .select_all = {} },
         );
 
         // Viewport scrolling
