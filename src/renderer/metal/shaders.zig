@@ -254,6 +254,8 @@ fn initPostPipeline(
         const ptr = post_library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
         break :func_frag objc.Object.fromId(ptr.?);
     };
+    defer func_vert.msgSend(void, objc.sel("release"), .{});
+    defer func_frag.msgSend(void, objc.sel("release"), .{});
 
     // Create our descriptor
     const desc = init: {
@@ -262,6 +264,7 @@ fn initPostPipeline(
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;
     };
+    defer desc.msgSend(void, objc.sel("release"), .{});
     desc.setProperty("vertexFunction", func_vert);
     desc.setProperty("fragmentFunction", func_frag);
 
@@ -315,6 +318,8 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
         const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
         break :func_frag objc.Object.fromId(ptr.?);
     };
+    defer func_vert.msgSend(void, objc.sel("release"), .{});
+    defer func_frag.msgSend(void, objc.sel("release"), .{});
 
     // Create the vertex descriptor. The vertex descriptor describes the
     // data layout of the vertex inputs. We use indexed (or "instanced")
@@ -501,6 +506,8 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
         const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
         break :func_frag objc.Object.fromId(ptr.?);
     };
+    defer func_vert.msgSend(void, objc.sel("release"), .{});
+    defer func_frag.msgSend(void, objc.sel("release"), .{});
 
     // Create the vertex descriptor. The vertex descriptor describes the
     // data layout of the vertex inputs. We use indexed (or "instanced")
@@ -577,6 +584,7 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
         break :vertex_desc desc;
     };
+    defer vertex_desc.msgSend(void, objc.sel("release"), .{});
 
     // Create our descriptor
     const desc = init: {
@@ -585,6 +593,7 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
         const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
         break :init id_init;
     };
+    defer desc.msgSend(void, objc.sel("release"), .{});
 
     // Set our properties
     desc.setProperty("vertexFunction", func_vert);
