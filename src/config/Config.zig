@@ -606,6 +606,9 @@ keybind: Keybinds = .{},
 /// causing the window to be completely black. If this happens, you can
 /// unset this configuration to disable the shader.
 ///
+/// On Linux, this requires OpenGL 4.2. Ghostty typically only requires
+/// OpenGL 3.3, but custom shaders push that requirement up to 4.2.
+///
 /// The shader API is identical to the ShaderToy API: you specify a `mainImage`
 /// function and the available uniforms match ShaderToy. The iChannel0 uniform
 /// is a texture containing the rendered terminal screen.
