@@ -121,6 +121,12 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
+    /// Show a desktop notification (OSC 9 or OSC 777)
+    show_desktop_notification: struct {
+        title: []const u8,
+        body: []const u8,
+    },
+
     pub const ColorKind = union(enum) {
         palette: u8,
         foreground,
@@ -225,6 +231,9 @@ pub const Parser = struct {
         @"5",
         @"52",
         @"7",
+        @"77",
+        @"777",
+        @"9",
 
         // OSC 10 is used to query or set the current foreground color.
         query_fg_color,
@@ -254,6 +263,13 @@ pub const Parser = struct {
 
         // Reset color palette index
         reset_color_palette_index,
+
+        // rxvt extension. Only used for OSC 777 and only the value "notify" is
+        // supported
+        rxvt_extension,
+
+        // Title of a desktop notification
+        notification_title,
 
         // Expect a string parameter. param_str must be set as well as
         // buf_start.
@@ -311,6 +327,7 @@ pub const Parser = struct {
                 '4' => self.state = .@"4",
                 '5' => self.state = .@"5",
                 '7' => self.state = .@"7",
+                '9' => self.state = .@"9",
                 else => self.state = .invalid,
             },
 
@@ -465,17 +482,6 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .@"7" => switch (c) {
-                ';' => {
-                    self.command = .{ .report_pwd = .{ .value = "" } };
-
-                    self.state = .string;
-                    self.temp_state = .{ .str = &self.command.report_pwd.value };
-                    self.buf_start = self.buf_idx;
-                },
-                else => self.state = .invalid,
-            },
-
             .@"52" => switch (c) {
                 ';' => {
                     self.command = .{ .clipboard_contents = undefined };
@@ -502,6 +508,72 @@ pub const Parser = struct {
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
                     self.prepAllocableString();
+                },
+                else => self.state = .invalid,
+            },
+
+            .@"7" => switch (c) {
+                ';' => {
+                    self.command = .{ .report_pwd = .{ .value = "" } };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.report_pwd.value };
+                    self.buf_start = self.buf_idx;
+                },
+                '7' => self.state = .@"77",
+                else => self.state = .invalid,
+            },
+
+            .@"77" => switch (c) {
+                '7' => self.state = .@"777",
+                else => self.state = .invalid,
+            },
+
+            .@"777" => switch (c) {
+                ';' => {
+                    self.state = .rxvt_extension;
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .rxvt_extension => switch (c) {
+                'a'...'z' => {},
+                ';' => {
+                    const ext = self.buf[self.buf_start .. self.buf_idx - 1];
+                    if (!std.mem.eql(u8, ext, "notify")) {
+                        log.warn("unknown rxvt extension: {s}", .{ext});
+                        self.state = .invalid;
+                        return;
+                    }
+
+                    self.command = .{ .show_desktop_notification = undefined };
+                    self.buf_start = self.buf_idx;
+                    self.state = .notification_title;
+                },
+                else => self.state = .invalid,
+            },
+
+            .notification_title => switch (c) {
+                ';' => {
+                    self.command.show_desktop_notification.title = self.buf[self.buf_start .. self.buf_idx - 1];
+                    self.temp_state = .{ .str = &self.command.show_desktop_notification.body };
+                    self.buf_start = self.buf_idx;
+                    self.state = .string;
+                },
+                else => {},
+            },
+
+            .@"9" => switch (c) {
+                ';' => {
+                    self.command = .{ .show_desktop_notification = .{
+                        .title = "",
+                        .body = undefined,
+                    } };
+
+                    self.temp_state = .{ .str = &self.command.show_desktop_notification.body };
+                    self.buf_start = self.buf_idx;
+                    self.state = .string;
                 },
                 else => self.state = .invalid,
             },
@@ -1127,4 +1199,32 @@ test "OSC: set palette color" {
     try testing.expect(cmd == .set_color);
     try testing.expectEqual(cmd.set_color.kind, .{ .palette = 17 });
     try testing.expectEqualStrings(cmd.set_color.value, "rgb:aa/bb/cc");
+}
+
+test "OSC: show desktop notification" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;Hello world";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_desktop_notification);
+    try testing.expectEqualStrings(cmd.show_desktop_notification.title, "");
+    try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Hello world");
+}
+
+test "OSC: show desktop notification with title" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "777;notify;Title;Body";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_desktop_notification);
+    try testing.expectEqualStrings(cmd.show_desktop_notification.title, "Title");
+    try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Body");
 }

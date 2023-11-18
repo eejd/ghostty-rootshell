@@ -4,6 +4,12 @@ import GhosttyKit
 struct Ghostty {
     // All the notifications that will be emitted will be put here.
     struct Notification {}
+
+    // The user notification category identifier
+    static let userNotificationCategory = "com.mitchellh.ghostty.userNotification"
+
+    // The user notification "Show" action
+    static let userNotificationActionShow = "com.mitchellh.ghostty.userNotification.Show"
 }
 
 // MARK: Surface Notifications

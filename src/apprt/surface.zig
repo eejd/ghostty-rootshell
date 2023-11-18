@@ -45,6 +45,15 @@ pub const Message = union(enum) {
     /// The child process running in the surface has exited. This may trigger
     /// a surface close, it may not.
     child_exited: void,
+
+    /// Show a desktop notification.
+    desktop_notification: struct {
+        /// Desktop notification title.
+        title: [63:0]u8,
+
+        /// Desktop notification body.
+        body: [255:0]u8,
+    },
 };
 
 /// A surface mailbox.

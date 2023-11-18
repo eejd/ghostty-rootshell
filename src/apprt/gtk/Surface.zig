@@ -596,6 +596,50 @@ pub fn getCursorPos(self: *const Surface) !apprt.CursorPos {
     return self.cursor_pos;
 }
 
+pub fn showDesktopNotification(
+    self: *Surface,
+    title: []const u8,
+    body: []const u8,
+) !void {
+    // Set a default title if we don't already have one
+    const t = switch (title.len) {
+        0 => "Ghostty",
+        else => title,
+    };
+    const notif = c.g_notification_new(t.ptr);
+    defer c.g_object_unref(notif);
+    c.g_notification_set_body(notif, body.ptr);
+
+    // Find our icon in the current icon theme. Not pretty, but the builtin GIO
+    // method "g_themed_icon_new" doesn't search XDG_DATA_DIRS, so any install
+    // not in /usr/share will be unable to find an icon
+    const display = c.gdk_display_get_default();
+    const theme = c.gtk_icon_theme_get_for_display(display);
+    const icon = c.gtk_icon_theme_lookup_icon(
+        theme,
+        "com.mitchellh.ghostty",
+        null,
+        48,
+        1, // Window scale
+        c.GTK_TEXT_DIR_LTR,
+        0,
+    );
+    defer c.g_object_unref(icon);
+    // Get the filepath of the icon we found
+    const file = c.gtk_icon_paintable_get_file(icon);
+    defer c.g_object_unref(file);
+    // Create a GIO icon
+    const gicon = c.g_file_icon_new(file);
+    defer c.g_object_unref(gicon);
+    c.g_notification_set_icon(notif, gicon);
+
+    const g_app: *c.GApplication = @ptrCast(self.app.app);
+
+    // We set the notification ID to the body content. If the content is the
+    // same, this notification may replace a previous notification
+    c.g_application_send_notification(g_app, body.ptr, notif);
+}
+
 fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     log.debug("gl surface realized", .{});
 

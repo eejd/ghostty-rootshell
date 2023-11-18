@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import GhosttyKit
 
 extension Ghostty {
@@ -275,13 +276,16 @@ extension Ghostty {
                 }
             }
         }
+
+        // Notification identifiers associated with this surface
+        var notificationIdentifiers: Set<String> = []
         
         private(set) var surface: ghostty_surface_t?
         var error: Error? = nil
 
         private var markedText: NSMutableAttributedString
         private var mouseEntered: Bool = false
-        private var focused: Bool = true
+        private(set) var focused: Bool = true
         private var cursor: NSCursor = .iBeam
         private var cursorVisible: CursorVisibility = .visible
         
@@ -348,6 +352,10 @@ extension Ghostty {
         /// Ghostty resources while references may still be held to this view. I've found that SwiftUI
         /// tends to hold this view longer than it should so we free the expensive stuff explicitly.
         func close() {
+            // Remove any notifications associated with this surface
+            let identifiers = Array(self.notificationIdentifiers)
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+
             guard let surface = self.surface else { return }
             ghostty_surface_free(surface)
             self.surface = nil
@@ -1000,6 +1008,52 @@ extension Ghostty {
             // we may want to make some of this work.
 
             print("SEL: \(selector)")
+        }
+
+        /// Show a user notification and associate it with this surface
+        func showUserNotification(title: String, body: String) {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.subtitle = self.title
+            content.body = body
+            content.sound = UNNotificationSound.default
+            content.categoryIdentifier = Ghostty.userNotificationCategory
+
+            // The userInfo must conform to NSSecureCoding, which SurfaceView
+            // does not. So instead we pass an integer representation of the
+            // SurfaceView's address, which is reconstructed back into a
+            // SurfaceView if the notification is clicked. This is safe to do
+            // so long as the SurfaceView removes all of its notifications when
+            // it closes so that there are no dangling pointers.
+            content.userInfo = [
+                "address": Int(bitPattern: Unmanaged.passUnretained(self).toOpaque()),
+            ]
+
+            let uuid = UUID().uuidString
+            let request = UNNotificationRequest(
+                identifier: uuid,
+                content: content,
+                trigger: nil
+            )
+
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    AppDelegate.logger.error("Error scheduling user notification: \(error)")
+                    return
+                }
+
+                self.notificationIdentifiers.insert(uuid)
+            }
+        }
+
+        /// Handle a user notification click
+        func handleUserNotification(notification: UNNotification, focus: Bool) {
+            let id = notification.request.identifier
+            guard self.notificationIdentifiers.remove(id) != nil else { return }
+            if focus {
+                self.window?.makeKeyAndOrderFront(self)
+                Ghostty.moveFocus(to: self)
+            }
         }
     }
 }
