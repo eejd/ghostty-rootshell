@@ -111,10 +111,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // If window decorations are disabled, remove our title
         if (!ghostty.windowDecorations) { window.styleMask.remove(.titled) }
         
-        // If we aren't in full screen, then we want to disable tabbing (see comment
-        // in the delegate function)
-        if (!window.styleMask.contains(.fullScreen)) { disableTabbing() }
-        
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
         // covered in thie GitHub issue: https://github.com/mitchellh/ghostty/pull/376
@@ -130,6 +126,23 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             viewModel: self,
             delegate: self
         ))
+        
+        // If the user tabbing preference is always, then macOS automatically tabs
+        // all new windows. Ghostty handles its own tabbing so we DONT want this behavior.
+        // This detects this scenario and undoes it.
+        //
+        // We don't run this logic in fullscreen because in fullscreen this will end up
+        // removing the window and putting it into its own dedicated fullscreen, which is not
+        // the expected or desired behavior of anyone I've found.
+        if (NSWindow.userTabbingPreference == .always &&
+            !window.styleMask.contains(.fullScreen)) {
+            // If we have more than 1 window in our tab group we know we're a new window.
+            // Since Ghostty manages tabbing manually this will never be more than one
+            // at this point in the AppKit lifecycle (we add to the group after this).
+            if let tabGroup = window.tabGroup, tabGroup.windows.count > 1 {
+                window.tabGroup?.removeWindow(window)
+            }
+        }
     }
     
     // Shows the "+" button in the tab bar, responds to that click.
@@ -192,27 +205,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
-    }
-    
-    func windowWillExitFullScreen(_ notification: Notification) {
-        // See comment in this function
-        disableTabbing()
-    }
-    
-    func windowWillEnterFullScreen(_ notification: Notification) {
-        // We re-enable the automatic tabbing mode when we enter full screen otherwise
-        // every new tab also enters a new screen.
-        guard let window = self.window else { return }
-        window.tabbingMode = .automatic
-    }
-    
-    private func disableTabbing() {
-        // For new windows, explicitly disallow tabbing with other windows.
-        // This overrides the value of userTabbingPreference. Rationale:
-        // Ghostty provides separate "New Tab" and "New Window" actions so
-        // there's no reason to make "New Window" open in a tab.
-        guard let window = self.window else { return }
-        window.tabbingMode = .disallowed;
     }
 
     //MARK: - First Responder
