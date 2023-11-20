@@ -1672,6 +1672,104 @@ fn drawCellProgram(
     );
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
 
+    // If we have deferred operations, run them.
+    if (self.deferred_screen_size) |v| {
+        try v.apply(self);
+        self.deferred_screen_size = null;
+    }
+    if (self.deferred_font_size) |v| {
+        try v.apply(self);
+        self.deferred_font_size = null;
+    }
+
+    // Draw background images first
+    try self.drawImages(gl_state, self.image_placements.items[0..self.image_bg_end]);
+
+    // Draw our background
+    try self.drawCells(gl_state, self.cells_bg);
+
+    // Then draw images under text
+    try self.drawImages(gl_state, self.image_placements.items[self.image_bg_end..self.image_text_end]);
+
+    // Drag foreground
+    try self.drawCells(gl_state, self.cells);
+
+    // Draw remaining images
+    try self.drawImages(gl_state, self.image_placements.items[self.image_text_end..]);
+}
+
+/// Runs the image program to draw images.
+fn drawImages(
+    self: *OpenGL,
+    gl_state: *const GLState,
+    placements: []const gl_image.Placement,
+) !void {
+    if (placements.len == 0) return;
+
+    // Bind our image program
+    const bind = try gl_state.image_program.bind();
+    defer bind.unbind();
+
+    // For each placement we need to bind the texture
+    for (placements) |p| {
+        // Get the image and image texture
+        const image = self.images.get(p.image_id) orelse {
+            log.warn("image not found for placement image_id={}", .{p.image_id});
+            continue;
+        };
+
+        const texture = switch (image) {
+            .ready => |t| t,
+            else => {
+                log.warn("image not ready for placement image_id={}", .{p.image_id});
+                continue;
+            },
+        };
+
+        // Bind the texture
+        try gl.Texture.active(gl.c.GL_TEXTURE0);
+        var texbind = try texture.bind(.@"2D");
+        defer texbind.unbind();
+
+        // Setup our data
+        try bind.vbo.setData(ImageProgram.Input{
+            .grid_col = @intCast(p.x),
+            .grid_row = @intCast(p.y),
+            .cell_offset_x = p.cell_offset_x,
+            .cell_offset_y = p.cell_offset_y,
+            .source_x = p.source_x,
+            .source_y = p.source_y,
+            .source_width = p.source_width,
+            .source_height = p.source_height,
+            .dest_width = p.width,
+            .dest_height = p.height,
+        }, .static_draw);
+
+        try gl.drawElementsInstanced(
+            gl.c.GL_TRIANGLES,
+            6,
+            gl.c.GL_UNSIGNED_BYTE,
+            1,
+        );
+    }
+}
+
+/// Loads some set of cell data into our buffer and issues a draw call.
+/// This expects all the OpenGL state to be setup.
+///
+/// Future: when we move to multiple shaders, this will go away and
+/// we'll have a draw call per-shader.
+fn drawCells(
+    self: *OpenGL,
+    gl_state: *const GLState,
+    cells: std.ArrayListUnmanaged(CellProgram.Cell),
+) !void {
+    // If we have no cells to render, then we render nothing.
+    if (cells.items.len == 0) return;
+
+    // Todo: get rid of this completely
+    self.gl_cells_written = 0;
+
     // Bind our cell program state, buffers
     const bind = try gl_state.cell_program.bind();
     defer bind.unbind();
@@ -1685,37 +1783,6 @@ fn drawCellProgram(
     var texbind1 = try gl_state.texture_color.bind(.@"2D");
     defer texbind1.unbind();
 
-    // If we have deferred operations, run them.
-    if (self.deferred_screen_size) |v| {
-        try v.apply(self);
-        self.deferred_screen_size = null;
-    }
-    if (self.deferred_font_size) |v| {
-        try v.apply(self);
-        self.deferred_font_size = null;
-    }
-
-    // Draw our background, then draw the fg on top of it.
-    try self.drawCells(bind.vbo, self.cells_bg);
-    try self.drawCells(bind.vbo, self.cells);
-}
-
-/// Loads some set of cell data into our buffer and issues a draw call.
-/// This expects all the OpenGL state to be setup.
-///
-/// Future: when we move to multiple shaders, this will go away and
-/// we'll have a draw call per-shader.
-fn drawCells(
-    self: *OpenGL,
-    binding: gl.Buffer.Binding,
-    cells: std.ArrayListUnmanaged(CellProgram.Cell),
-) !void {
-    // If we have no cells to render, then we render nothing.
-    if (cells.items.len == 0) return;
-
-    // Todo: get rid of this completely
-    self.gl_cells_written = 0;
-
     // Our allocated buffer on the GPU is smaller than our capacity.
     // We reallocate a new buffer with the full new capacity.
     if (self.gl_cells_size < cells.capacity) {
@@ -1724,7 +1791,7 @@ fn drawCells(
             cells.capacity,
         });
 
-        try binding.setDataNullManual(
+        try bind.vbo.setDataNullManual(
             @sizeOf(CellProgram.Cell) * cells.capacity,
             .static_draw,
         );
@@ -1737,7 +1804,7 @@ fn drawCells(
     if (self.gl_cells_written < cells.items.len) {
         const data = cells.items[self.gl_cells_written..];
         // log.info("sending {} cells to GPU", .{data.len});
-        try binding.setSubData(self.gl_cells_written * @sizeOf(CellProgram.Cell), data);
+        try bind.vbo.setSubData(self.gl_cells_written * @sizeOf(CellProgram.Cell), data);
 
         self.gl_cells_written += data.len;
         assert(data.len > 0);
