@@ -1144,7 +1144,57 @@ pub fn eraseDisplay(
     const protected = self.screen.protected_mode == .iso or protected_req;
 
     switch (mode) {
+        .scroll_complete => {
+            self.screen.scroll(.{ .clear = {} }) catch |err| {
+                log.warn("scroll clear failed, doing a normal clear err={}", .{err});
+                self.eraseDisplay(alloc, .complete, protected_req);
+                return;
+            };
+
+            // Unsets pending wrap state
+            self.screen.cursor.pending_wrap = false;
+
+            // Clear all Kitty graphics state for this screen
+            self.screen.kitty_images.delete(alloc, self, .{ .all = true });
+        },
+
         .complete => {
+            // If we're on the primary screen and our last non-empty row is
+            // a prompt, then we do a scroll_complete instead. This is a
+            // heuristic to get the generally desirable behavior that ^L
+            // at a prompt scrolls the screen contents prior to clearing.
+            // Most shells send `ESC [ H ESC [ 2 J` so we can't just check
+            // our current cursor position. See #905
+            if (self.active_screen == .primary) at_prompt: {
+                // Go from the bottom of the viewport up and see if we're
+                // at a prompt.
+                const viewport_max = Screen.RowIndexTag.viewport.maxLen(&self.screen);
+                for (0..viewport_max) |y| {
+                    const bottom_y = viewport_max - y - 1;
+                    const row = self.screen.getRow(.{ .viewport = bottom_y });
+                    if (row.isEmpty()) continue;
+                    switch (row.getSemanticPrompt()) {
+                        // If we're at a prompt or input area, then we are at a prompt.
+                        .prompt,
+                        .prompt_continuation,
+                        .input,
+                        => break,
+
+                        // If we have command output, then we're most certainly not
+                        // at a prompt.
+                        .command => break :at_prompt,
+
+                        // If we don't know, we keep searching.
+                        .unknown => {},
+                    }
+                } else break :at_prompt;
+
+                self.screen.scroll(.{ .clear = {} }) catch {
+                    // If we fail, we just fall back to doing a normal clear
+                    // so we don't worry about the error.
+                };
+            }
+
             var it = self.screen.rowIterator(.active);
             while (it.next()) |row| {
                 row.setWrapped(false);
@@ -6015,6 +6065,23 @@ test "Terminal: eraseDisplay protected below" {
 test "Terminal: eraseDisplay protected above" {
     const alloc = testing.allocator;
     var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    t.eraseDisplay(alloc, .scroll_complete, false);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+}
+
+test "Terminal: eraseDisplay scroll complete" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 3);
     defer t.deinit(alloc);
 
     try t.print('A');

@@ -1788,13 +1788,22 @@ pub const Scroll = union(enum) {
     /// this will change nothing. If the row is outside the viewport, the
     /// viewport will change so that this row is at the top of the viewport.
     row: RowIndex,
+
+    /// Scroll down and move all viewport contents into the scrollback
+    /// so that the screen is clear. This isn't eqiuivalent to "screen" with
+    /// the value set to the viewport size because this will handle the case
+    /// that the viewport is not full.
+    ///
+    /// This will ignore empty trailing rows. An empty row is a row that
+    /// has never been written to at all. A row with spaces is not empty.
+    clear: void,
 };
 
 /// Scroll the screen by the given behavior. Note that this will always
 /// "move" the screen. It is up to the caller to determine if they actually
 /// want to do that yet (i.e. are they writing to the end of the screen
 /// or not).
-pub fn scroll(self: *Screen, behavior: Scroll) !void {
+pub fn scroll(self: *Screen, behavior: Scroll) Allocator.Error!void {
     // No matter what, scrolling marks our image state as dirty since
     // it could move placements. If there are no placements or no images
     // this is still a very cheap operation.
@@ -1815,7 +1824,25 @@ pub fn scroll(self: *Screen, behavior: Scroll) !void {
 
         // Scroll to a specific row
         .row => |idx| self.scrollRow(idx),
+
+        // Scroll until the viewport is clear by moving the viewport contents
+        // into the scrollback.
+        .clear => try self.scrollClear(),
     }
+}
+
+fn scrollClear(self: *Screen) Allocator.Error!void {
+    // The full amount of rows in the viewport
+    const full_amount = self.rowsWritten() - self.viewport;
+
+    // Find the number of non-empty rows
+    const non_empty = for (0..full_amount) |i| {
+        const rev_i = full_amount - i - 1;
+        const row = self.getRow(.{ .viewport = rev_i });
+        if (!row.isEmpty()) break rev_i + 1;
+    } else full_amount;
+
+    try self.scroll(.{ .screen = @intCast(non_empty) });
 }
 
 fn scrollRow(self: *Screen, idx: RowIndex) void {
@@ -1830,7 +1857,7 @@ fn scrollRow(self: *Screen, idx: RowIndex) void {
     assert(screen_pt.inViewport(self));
 }
 
-fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) !void {
+fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) Allocator.Error!void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -3688,6 +3715,109 @@ test "Screen: scrolling with scrollback available doesn't move selection" {
         const contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
         try testing.expectEqualStrings("3IJKL", contents);
+    }
+}
+
+test "Screen: scroll and clear full screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+
+    try s.scroll(.{ .clear = {} });
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+    {
+        const contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scroll and clear partial screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH");
+
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH", contents);
+    }
+
+    try s.scroll(.{ .clear = {} });
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+    {
+        const contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH", contents);
+    }
+}
+
+test "Screen: scroll and clear empty screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    try s.scroll(.{ .clear = {} });
+    try testing.expectEqual(@as(usize, 0), s.viewport);
+}
+
+test "Screen: scroll and clear ignore blank lines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 10);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH");
+    try s.scroll(.{ .clear = {} });
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+
+    // Move back to top-left
+    s.cursor.x = 0;
+    s.cursor.y = 0;
+
+    // Write and clear
+    try s.testWriteString("3ABCD\n");
+    try s.scroll(.{ .clear = {} });
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+
+    // Move back to top-left
+    s.cursor.x = 0;
+    s.cursor.y = 0;
+    try s.testWriteString("X");
+
+    {
+        const contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH\n3ABCD\nX", contents);
     }
 }
 
