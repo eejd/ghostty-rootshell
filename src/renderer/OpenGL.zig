@@ -22,7 +22,11 @@ const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 
 const CellProgram = @import("opengl/CellProgram.zig");
+const gl_image = @import("opengl/image.zig");
 const custom = @import("opengl/custom.zig");
+const Image = gl_image.Image;
+const ImageMap = gl_image.ImageMap;
+const ImagePlacementList = std.ArrayListUnmanaged(gl_image.Placement);
 
 const log = std.log.scoped(.grid);
 
@@ -102,6 +106,12 @@ draw_mutex: DrawMutex = drawMutexZero,
 /// Current background to draw. This may not match self.background if the
 /// terminal is in reversed mode.
 draw_background: terminal.color.RGB,
+
+/// The images that we may render.
+images: ImageMap = .{},
+image_placements: ImagePlacementList = .{},
+image_bg_end: u32 = 0,
+image_text_end: u32 = 0,
 
 /// Defererred OpenGL operation to update the screen size.
 const SetScreenSize = struct {
@@ -306,6 +316,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
 
 pub fn deinit(self: *OpenGL) void {
     self.font_shaper.deinit();
+
+    {
+        var it = self.images.iterator();
+        while (it.next()) |kv| kv.value_ptr.deinit(self.alloc);
+        self.images.deinit(self.alloc);
+    }
+    self.image_placements.deinit(self.alloc);
 
     if (self.gl_state) |*v| v.deinit(self.alloc);
 
@@ -623,6 +640,13 @@ pub fn updateFrame(
             cursor_blink_visible,
         );
 
+        // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
+        // We only do this if the Kitty image state is dirty meaning only if
+        // it changes.
+        if (state.terminal.screen.kitty_images.dirty) {
+            try self.prepKittyGraphics(state.terminal);
+        }
+
         break :critical .{
             .gl_bg = self.background_color,
             .selection = selection,
@@ -648,6 +672,158 @@ pub fn updateFrame(
             critical.preedit,
             critical.cursor_style,
         );
+    }
+}
+
+/// This goes through the Kitty graphic placements and accumulates the
+/// placements we need to render on our viewport. It also ensures that
+/// the visible images are loaded on the GPU.
+fn prepKittyGraphics(
+    self: *OpenGL,
+    t: *terminal.Terminal,
+) !void {
+    const storage = &t.screen.kitty_images;
+    defer storage.dirty = false;
+
+    // We always clear our previous placements no matter what because
+    // we rebuild them from scratch.
+    self.image_placements.clearRetainingCapacity();
+
+    // Go through our known images and if there are any that are no longer
+    // in use then mark them to be freed.
+    //
+    // This never conflicts with the below because a placement can't
+    // reference an image that doesn't exist.
+    {
+        var it = self.images.iterator();
+        while (it.next()) |kv| {
+            if (storage.imageById(kv.key_ptr.*) == null) {
+                kv.value_ptr.markForUnload();
+            }
+        }
+    }
+
+    // The top-left and bottom-right corners of our viewport in screen
+    // points. This lets us determine offsets and containment of placements.
+    const top = (terminal.point.Viewport{}).toScreen(&t.screen);
+    const bot = (terminal.point.Viewport{
+        .x = t.screen.cols - 1,
+        .y = t.screen.rows - 1,
+    }).toScreen(&t.screen);
+
+    // Go through the placements and ensure the image is loaded on the GPU.
+    var it = storage.placements.iterator();
+    while (it.next()) |kv| {
+        // Find the image in storage
+        const p = kv.value_ptr;
+        const image = storage.imageById(kv.key_ptr.image_id) orelse {
+            log.warn(
+                "missing image for placement, ignoring image_id={}",
+                .{kv.key_ptr.image_id},
+            );
+            continue;
+        };
+
+        // If the selection isn't within our viewport then skip it.
+        const rect = p.rect(image, t);
+        if (rect.top_left.y > bot.y) continue;
+        if (rect.bottom_right.y < top.y) continue;
+
+        // If the top left is outside the viewport we need to calc an offset
+        // so that we render (0, 0) with some offset for the texture.
+        const offset_y: u32 = if (rect.top_left.y < t.screen.viewport) offset_y: {
+            const offset_cells = t.screen.viewport - rect.top_left.y;
+            const offset_pixels = offset_cells * self.cell_size.height;
+            break :offset_y @intCast(offset_pixels);
+        } else 0;
+
+        // If we already know about this image then do nothing
+        const gop = try self.images.getOrPut(self.alloc, kv.key_ptr.image_id);
+        if (!gop.found_existing) {
+            // Copy the data into the pending state.
+            const data = try self.alloc.dupe(u8, image.data);
+            errdefer self.alloc.free(data);
+
+            // Store it in the map
+            const pending: Image.Pending = .{
+                .width = image.width,
+                .height = image.height,
+                .data = data.ptr,
+            };
+
+            gop.value_ptr.* = switch (image.format) {
+                .rgb => .{ .pending_rgb = pending },
+                .rgba => .{ .pending_rgba = pending },
+                .png => unreachable, // should be decoded by now
+            };
+        }
+
+        // Convert our screen point to a viewport point
+        const viewport = p.point.toViewport(&t.screen);
+
+        // Calculate the source rectangle
+        const source_x = @min(image.width, p.source_x);
+        const source_y = @min(image.height, p.source_y + offset_y);
+        const source_width = if (p.source_width > 0)
+            @min(image.width - source_x, p.source_width)
+        else
+            image.width;
+        const source_height = if (p.source_height > 0)
+            @min(image.height, p.source_height)
+        else
+            image.height -| offset_y;
+
+        // Calculate the width/height of our image.
+        const dest_width = if (p.columns > 0) p.columns * self.cell_size.width else source_width;
+        const dest_height = if (p.rows > 0) p.rows * self.cell_size.height else source_height;
+
+        // Accumulate the placement
+        if (image.width > 0 and image.height > 0) {
+            try self.image_placements.append(self.alloc, .{
+                .image_id = kv.key_ptr.image_id,
+                .x = @intCast(p.point.x),
+                .y = @intCast(viewport.y),
+                .z = p.z,
+                .width = dest_width,
+                .height = dest_height,
+                .cell_offset_x = p.x_offset,
+                .cell_offset_y = p.y_offset,
+                .source_x = source_x,
+                .source_y = source_y,
+                .source_width = source_width,
+                .source_height = source_height,
+            });
+        }
+    }
+
+    // Sort the placements by their Z value.
+    std.mem.sortUnstable(
+        gl_image.Placement,
+        self.image_placements.items,
+        {},
+        struct {
+            fn lessThan(
+                ctx: void,
+                lhs: gl_image.Placement,
+                rhs: gl_image.Placement,
+            ) bool {
+                _ = ctx;
+                return lhs.z < rhs.z or (lhs.z == rhs.z and lhs.image_id < rhs.image_id);
+            }
+        }.lessThan,
+    );
+
+    // Find our indices
+    self.image_bg_end = 0;
+    self.image_text_end = 0;
+    const bg_limit = std.math.minInt(i32) / 2;
+    for (self.image_placements.items, 0..) |p, i| {
+        if (self.image_bg_end == 0 and p.z >= bg_limit) {
+            self.image_bg_end = @intCast(i);
+        }
+        if (self.image_text_end == 0 and p.z >= 0) {
+            self.image_text_end = @intCast(i);
+        }
     }
 }
 
@@ -1395,6 +1571,27 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
     const gl_state: *GLState = if (self.gl_state) |*v| v else return;
+
+    // Go through our images and see if we need to setup any textures.
+    {
+        var image_it = self.images.iterator();
+        while (image_it.next()) |kv| {
+            switch (kv.value_ptr.*) {
+                .ready => {},
+
+                .pending_rgb,
+                .pending_rgba,
+                => try kv.value_ptr.upload(self.alloc),
+
+                .unload_pending,
+                .unload_ready,
+                => {
+                    kv.value_ptr.deinit(self.alloc);
+                    self.images.removeByPtr(kv.key_ptr);
+                },
+            }
+        }
+    }
 
     // Draw our terminal cells
     try self.drawCellProgram(gl_state);
