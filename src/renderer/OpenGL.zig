@@ -22,6 +22,7 @@ const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 
 const CellProgram = @import("opengl/CellProgram.zig");
+const ImageProgram = @import("opengl/ImageProgram.zig");
 const gl_image = @import("opengl/image.zig");
 const custom = @import("opengl/custom.zig");
 const Image = gl_image.Image;
@@ -148,17 +149,22 @@ const SetScreenSize = struct {
         );
 
         // Update the projection uniform within our shader
-        try gl_state.cell_program.program.setUniform(
-            "projection",
+        inline for (.{ "cell_program", "image_program" }) |name| {
+            const program = @field(gl_state, name);
+            const bind = try program.program.use();
+            defer bind.unbind();
+            try program.program.setUniform(
+                "projection",
 
-            // 2D orthographic projection with the full w/h
-            math.ortho2d(
-                -1 * @as(f32, @floatFromInt(padding.left)),
-                @floatFromInt(padded_size.width + padding.right),
-                @floatFromInt(padded_size.height + padding.bottom),
-                -1 * @as(f32, @floatFromInt(padding.top)),
-            ),
-        );
+                // 2D orthographic projection with the full w/h
+                math.ortho2d(
+                    -1 * @as(f32, @floatFromInt(padding.left)),
+                    @floatFromInt(padded_size.width + padding.right),
+                    @floatFromInt(padded_size.height + padding.bottom),
+                    -1 * @as(f32, @floatFromInt(padding.top)),
+                ),
+            );
+        }
 
         // Update our custom shader resolution
         if (gl_state.custom) |*custom_state| {
@@ -173,13 +179,21 @@ const SetFontSize = struct {
     fn apply(self: SetFontSize, r: *const OpenGL) !void {
         const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
 
-        try gl_state.cell_program.program.setUniform(
-            "cell_size",
-            @Vector(2, f32){
-                @floatFromInt(self.metrics.cell_width),
-                @floatFromInt(self.metrics.cell_height),
-            },
-        );
+        inline for (.{ "cell_program", "image_program" }) |name| {
+            const program = @field(gl_state, name);
+            const bind = try program.program.use();
+            defer bind.unbind();
+            try program.program.setUniform(
+                "cell_size",
+                @Vector(2, f32){
+                    @floatFromInt(self.metrics.cell_width),
+                    @floatFromInt(self.metrics.cell_height),
+                },
+            );
+        }
+
+        const bind = try gl_state.cell_program.program.use();
+        defer bind.unbind();
         try gl_state.cell_program.program.setUniform(
             "strikethrough_position",
             @as(f32, @floatFromInt(self.metrics.strikethrough_position)),
@@ -1743,6 +1757,7 @@ fn drawCells(
 /// OpenGL context is replaced.
 const GLState = struct {
     cell_program: CellProgram,
+    image_program: ImageProgram,
     texture: gl.Texture,
     texture_color: gl.Texture,
     custom: ?custom.State,
@@ -1830,8 +1845,13 @@ const GLState = struct {
         const cell_program = try CellProgram.init();
         errdefer cell_program.deinit();
 
+        // Build our image renderer
+        const image_program = try ImageProgram.init();
+        errdefer image_program.deinit();
+
         return .{
             .cell_program = cell_program,
+            .image_program = image_program,
             .texture = tex,
             .texture_color = tex_color,
             .custom = custom_state,
@@ -1842,6 +1862,7 @@ const GLState = struct {
         if (self.custom) |v| v.deinit(alloc);
         self.texture.destroy();
         self.texture_color.destroy();
+        self.image_program.deinit();
         self.cell_program.deinit();
     }
 };
