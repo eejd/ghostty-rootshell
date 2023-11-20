@@ -1794,7 +1794,7 @@ pub const Scroll = union(enum) {
 /// "move" the screen. It is up to the caller to determine if they actually
 /// want to do that yet (i.e. are they writing to the end of the screen
 /// or not).
-pub fn scroll(self: *Screen, behavior: Scroll) !void {
+pub fn scroll(self: *Screen, behavior: Scroll) Allocator.Error!void {
     // No matter what, scrolling marks our image state as dirty since
     // it could move placements. If there are no placements or no images
     // this is still a very cheap operation.
@@ -1830,7 +1830,7 @@ fn scrollRow(self: *Screen, idx: RowIndex) void {
     assert(screen_pt.inViewport(self));
 }
 
-fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) !void {
+fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) Allocator.Error!void {
     const tracy = trace(@src());
     defer tracy.end();
 
