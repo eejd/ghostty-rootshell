@@ -62,6 +62,10 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_window_set_title(gtk_window, "Ghostty");
     c.gtk_window_set_default_size(gtk_window, 1000, 600);
 
+    // GTK4 grabs F10 input by default to focus the menubar icon. We want
+    // to disable this so that terminal programs can capture F10 (such as htop)
+    c.gtk_window_set_handle_menubar_accel(gtk_window, 0);
+
     // If we don't have the icon then we'll try to add our resources dir
     // to the search path and see if we can find it there.
     self.icon = try icon.appIcon(self.app, window);
