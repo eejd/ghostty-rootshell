@@ -755,7 +755,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
 
         // Then draw images under text
-        try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_text_end]);
+        try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
         try self.drawCells(encoder, &self.buf_cells, self.cells);
