@@ -1159,6 +1159,42 @@ pub fn eraseDisplay(
         },
 
         .complete => {
+            // If we're on the primary screen and our last non-empty row is
+            // a prompt, then we do a scroll_complete instead. This is a
+            // heuristic to get the generally desirable behavior that ^L
+            // at a prompt scrolls the screen contents prior to clearing.
+            // Most shells send `ESC [ H ESC [ 2 J` so we can't just check
+            // our current cursor position. See #905
+            if (self.active_screen == .primary) at_prompt: {
+                // Go from the bottom of the viewport up and see if we're
+                // at a prompt.
+                const viewport_max = Screen.RowIndexTag.viewport.maxLen(&self.screen);
+                for (0..viewport_max) |y| {
+                    const bottom_y = viewport_max - y - 1;
+                    const row = self.screen.getRow(.{ .viewport = bottom_y });
+                    if (row.isEmpty()) continue;
+                    switch (row.getSemanticPrompt()) {
+                        // If we're at a prompt or input area, then we are at a prompt.
+                        .prompt,
+                        .prompt_continuation,
+                        .input,
+                        => break,
+
+                        // If we have command output, then we're most certainly not
+                        // at a prompt.
+                        .command => break :at_prompt,
+
+                        // If we don't know, we keep searching.
+                        .unknown => {},
+                    }
+                } else break :at_prompt;
+
+                self.screen.scroll(.{ .clear = {} }) catch {
+                    // If we fail, we just fall back to doing a normal clear
+                    // so we don't worry about the error.
+                };
+            }
+
             var it = self.screen.rowIterator(.active);
             while (it.next()) |row| {
                 row.setWrapped(false);
