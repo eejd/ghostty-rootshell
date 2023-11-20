@@ -2427,6 +2427,9 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
     // No matter what we mark our image state as dirty
     self.kitty_images.dirty = true;
 
+    // Keep track if our cursor is at the bottom
+    const cursor_bottom = self.cursor.y == self.rows - 1;
+
     // If our columns increased, we alloc space for the new column width
     // and go through each row and reflow if necessary.
     if (cols > self.cols) {
@@ -2667,6 +2670,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
         // Whether we need to move the cursor or not
         var new_cursor: ?point.ScreenPoint = null;
+        var new_cursor_wrap: usize = 0;
 
         // Reset our variables because we're going to reprint the screen.
         self.cols = cols;
@@ -2767,6 +2771,13 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
                             }
                         }
 
+                        if (cursor_pos.y == old_y) {
+                            // If this original y is where our cursor is, we
+                            // track the number of wraps we do so we can try to
+                            // keep this whole line on the screen.
+                            new_cursor_wrap += 1;
+                        }
+
                         row = self.getRow(.{ .active = y });
                         row.setSemanticPrompt(cur_old_row.getSemanticPrompt());
                     }
@@ -2812,6 +2823,32 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
             const viewport_pos = pos.toViewport(self);
             self.cursor.x = @min(viewport_pos.x, self.cols - 1);
             self.cursor.y = @min(viewport_pos.y, self.rows - 1);
+
+            // We want to keep our cursor y at the same place. To do so, we
+            // scroll the screen. This scrolls all of the content so the cell
+            // the cursor is over doesn't change.
+            if (!cursor_bottom and old.cursor.y < self.cursor.y) scroll: {
+                const delta: isize = delta: {
+                    var delta: isize = @intCast(self.cursor.y - old.cursor.y);
+
+                    // new_cursor_wrap is the number of times the line that the
+                    // cursor was on previously was wrapped to fit this new col
+                    // width. We want to scroll that many times less so that
+                    // the whole line the cursor was on attempts to remain
+                    // in view.
+                    delta -= @intCast(new_cursor_wrap);
+
+                    if (delta <= 0) break :scroll;
+                    break :delta delta;
+                };
+
+                self.scroll(.{ .screen = delta }) catch |err| {
+                    log.warn("failed to scroll for resize, cursor may be off err={}", .{err});
+                    break :scroll;
+                };
+
+                self.cursor.y -= @intCast(delta);
+            }
         } else {
             // TODO: why is this necessary? Without this, neovim will
             // crash when we shrink the window to the smallest size. We
@@ -6419,6 +6456,36 @@ test "Screen: resize less cols with reflow previously wrapped and scrollback" {
     try testing.expectEqual(@as(u32, 'H'), s.getCell(.active, s.cursor.y, s.cursor.x).char);
     try testing.expectEqual(@as(usize, 0), s.cursor.x);
     try testing.expectEqual(@as(usize, 2), s.cursor.y);
+}
+
+test "Screen: resize less cols with scrollback keeps cursor row" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1A\n2B\n3C\n4D\n5E";
+    try s.testWriteString(str);
+
+    // Lets do a scroll and clear operation
+    try s.scroll(.{ .clear = {} });
+
+    // Move our cursor to the beginning
+    s.cursor.x = 0;
+    s.cursor.y = 0;
+
+    try s.resize(3, 3);
+
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        const expected = "";
+        try testing.expectEqualStrings(expected, contents);
+    }
+
+    // Cursor should be on the last line
+    try testing.expectEqual(@as(usize, 0), s.cursor.x);
+    try testing.expectEqual(@as(usize, 0), s.cursor.y);
 }
 
 test "Screen: resize more rows, less cols with reflow with scrollback" {
