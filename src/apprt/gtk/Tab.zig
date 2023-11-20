@@ -151,7 +151,8 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 /// Deinits tab by deiniting child if child is Paned.
 pub fn deinit(self: *Tab) void {
     switch (self.child) {
-        .none, .surface => return,
+        .none => return,
+        .surface => |s| s.shutdown(),
         .paned => |paned| {
             paned.deinit(self.window.app.core_app.alloc);
             self.window.app.core_app.alloc.destroy(paned);

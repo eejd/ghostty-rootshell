@@ -387,6 +387,12 @@ pub fn deinit(self: *Surface) void {
     if (self.cursor) |cursor| c.g_object_unref(cursor);
 }
 
+// shutdown removes the long-held reference to the gl_area and kicks off the
+// deinit/destroy process for this surface.
+pub fn shutdown(self: *Surface) void {
+    c.g_object_unref(self.gl_area);
+}
+
 // TODO: move this
 /// Change the container for the surface to `container`.
 pub fn setContainer(self: *Surface, container: Container) void {
