@@ -1144,6 +1144,20 @@ pub fn eraseDisplay(
     const protected = self.screen.protected_mode == .iso or protected_req;
 
     switch (mode) {
+        .scroll_complete => {
+            self.screen.scroll(.{ .clear = {} }) catch |err| {
+                log.warn("scroll clear failed, doing a normal clear err={}", .{err});
+                self.eraseDisplay(alloc, .complete, protected_req);
+                return;
+            };
+
+            // Unsets pending wrap state
+            self.screen.cursor.pending_wrap = false;
+
+            // Clear all Kitty graphics state for this screen
+            self.screen.kitty_images.delete(alloc, self, .{ .all = true });
+        },
+
         .complete => {
             var it = self.screen.rowIterator(.active);
             while (it.next()) |row| {
@@ -6015,6 +6029,23 @@ test "Terminal: eraseDisplay protected below" {
 test "Terminal: eraseDisplay protected above" {
     const alloc = testing.allocator;
     var t = try init(alloc, 10, 5);
+    defer t.deinit(alloc);
+
+    try t.print('A');
+    t.carriageReturn();
+    try t.linefeed();
+    t.eraseDisplay(alloc, .scroll_complete, false);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+}
+
+test "Terminal: eraseDisplay scroll complete" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 10, 3);
     defer t.deinit(alloc);
 
     try t.print('A');
