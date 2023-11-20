@@ -1683,19 +1683,28 @@ fn drawCellProgram(
     }
 
     // Draw background images first
-    try self.drawImages(gl_state, self.image_placements.items[0..self.image_bg_end]);
+    try self.drawImages(
+        gl_state,
+        self.image_placements.items[0..self.image_bg_end],
+    );
 
     // Draw our background
     try self.drawCells(gl_state, self.cells_bg);
 
     // Then draw images under text
-    try self.drawImages(gl_state, self.image_placements.items[self.image_bg_end..self.image_text_end]);
+    try self.drawImages(
+        gl_state,
+        self.image_placements.items[self.image_bg_end..self.image_text_end],
+    );
 
     // Drag foreground
     try self.drawCells(gl_state, self.cells);
 
     // Draw remaining images
-    try self.drawImages(gl_state, self.image_placements.items[self.image_text_end..]);
+    try self.drawImages(
+        gl_state,
+        self.image_placements.items[self.image_text_end..],
+    );
 }
 
 /// Runs the image program to draw images.
