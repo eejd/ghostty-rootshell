@@ -459,23 +459,29 @@ pub fn indexForCodepoint(
             defer disco_it.deinit();
 
             while (true) {
-                const face_ = disco_it.next() catch |err| {
+                var deferred_face = (disco_it.next() catch |err| {
                     log.warn("fallback search failed with error err={}", .{err});
                     break;
-                };
-                const face: GroupFace = .{ .fallback_deferred = face_ orelse break };
+                }) orelse break;
 
                 // Discovery is supposed to only return faces that have our
                 // codepoint but we can't search presentation in discovery so
                 // we have to check it here.
-                if (!face.hasCodepoint(cp, p_mode)) continue;
+                const face: GroupFace = .{ .fallback_deferred = deferred_face };
+                if (!face.hasCodepoint(cp, p_mode)) {
+                    deferred_face.deinit();
+                    continue;
+                }
 
                 var buf: [256]u8 = undefined;
                 log.info("found codepoint 0x{x} in fallback face={s}", .{
                     cp,
-                    face_.?.name(&buf) catch "<error>",
+                    deferred_face.name(&buf) catch "<error>",
                 });
-                return self.addFace(style, face) catch break :discover;
+                return self.addFace(style, face) catch {
+                    deferred_face.deinit();
+                    break :discover;
+                };
             }
 
             log.debug("no fallback face found for cp={x}", .{cp});
