@@ -1214,6 +1214,9 @@ fn prepKittyGraphics(
             self.image_text_end = @intCast(i);
         }
     }
+    if (self.image_text_end == 0) {
+        self.image_text_end = @intCast(self.image_placements.items.len);
+    }
 }
 
 /// Update the configuration.
