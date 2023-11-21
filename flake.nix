@@ -53,6 +53,15 @@
       let pkgs = import nixpkgs { inherit overlays system; };
       in rec {
         devShell = pkgs.devShell;
+
+        # NOTE: using packages.ghostty right out of the flake currently
+        # requires a build of LLVM 17 and Zig master from source. This will
+        # take quite a bit of time. Until LLVM 17 and an upcoming Zig 0.12 are
+        # up in nixpkgs, most folks will want to continue to use the devShell
+        # and the instructions found at:
+        #
+        #   https://github.com/mitchellh/ghostty/tree/main#developing-ghostty
+        #
         packages.ghostty = pkgs.ghostty;
         defaultPackage = packages.ghostty;
       }
