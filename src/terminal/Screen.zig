@@ -2397,6 +2397,23 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
         old_cursor_y_screen -| self.history
     else
         self.rows - 1;
+
+    // If our rows increased and our cursor is NOT at the bottom, we want
+    // to try to preserve the y value of the old cursor. In other words, we
+    // don't want to "pull down" scrollback. This is purely a UX feature.
+    if (self.rows > old.rows and
+        old.cursor.y < old.rows - 1 and
+        self.cursor.y > old.cursor.y)
+    {
+        const delta = self.cursor.y - old.cursor.y;
+        if (self.scroll(.{ .screen = @intCast(delta) })) {
+            self.cursor.y -= delta;
+        } else |err| {
+            // If this scroll fails its not that big of a deal so we just
+            // log and ignore.
+            log.warn("failed to scroll for resize, cursor may be off err={}", .{err});
+        }
+    }
 }
 
 /// Resize the screen. The rows or cols can be bigger or smaller. This
@@ -5362,7 +5379,7 @@ test "Screen: resize (no reflow) less cols" {
     }
 }
 
-test "Screen: resize (no reflow) more rows with scrollback" {
+test "Screen: resize (no reflow) more rows with scrollback cursor end" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -5576,7 +5593,8 @@ test "Screen: resize more rows with populated scrollback" {
     {
         const contents = try s.testString(alloc, .viewport);
         defer alloc.free(contents);
-        try testing.expectEqualStrings(str, contents);
+        const expected = "3IJKL\n4ABCD\n5EFGH";
+        try testing.expectEqualStrings(expected, contents);
     }
 }
 
