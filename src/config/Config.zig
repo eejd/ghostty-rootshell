@@ -472,6 +472,14 @@ keybind: Keybinds = .{},
 /// Currently only supported on macOS.
 @"window-step-resize": bool = false,
 
+/// When enabled, the full GTK titlebar is displayed instead of your window
+/// manager's simple titlebar. The behavior of this option will vary with your
+/// window manager.
+///
+/// This option does nothing when window-decoration is false or when running
+/// under MacOS.
+@"gtk-titlebar": bool = true,
+
 /// Whether to allow programs running in the terminal to read/write to
 /// the system clipboard (OSC 52, for googling). The default is to
 /// allow clipboard reading after prompting the user and allow writing
