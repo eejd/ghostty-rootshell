@@ -238,6 +238,9 @@ pub fn alternateScreen(
     // Clear our selection
     self.screen.selection = null;
 
+    // Mark kitty images as dirty so they redraw
+    self.screen.kitty_images.dirty = true;
+
     if (options.clear_on_enter) {
         self.eraseDisplay(alloc, .complete, false);
     }
@@ -268,6 +271,9 @@ pub fn primaryScreen(
 
     // Clear our selection
     self.screen.selection = null;
+
+    // Mark kitty images as dirty so they redraw
+    self.screen.kitty_images.dirty = true;
 
     // Restore the cursor from the primary screen
     if (options.cursor_save) self.restoreCursor();
