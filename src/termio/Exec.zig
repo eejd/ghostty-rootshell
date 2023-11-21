@@ -2278,30 +2278,57 @@ const StreamHandler = struct {
 
         var msg: termio.Message = .{ .write_small = .{} };
         const resp = switch (self.osc_color_report_format) {
-            .@"16-bit" => try std.fmt.bufPrint(
-                &msg.write_small.data,
-                "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}",
-                .{
-                    kind.code(),
-                    @as(u16, color.r) * 257,
-                    @as(u16, color.g) * 257,
-                    @as(u16, color.b) * 257,
-                    terminator.string(),
-                },
-            ),
+            .@"16-bit" => switch (kind) {
+                .palette => |i| try std.fmt.bufPrint(
+                    &msg.write_small.data,
+                    "\x1B]{s};{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}",
+                    .{
+                        kind.code(),
+                        i,
+                        @as(u16, color.r) * 257,
+                        @as(u16, color.g) * 257,
+                        @as(u16, color.b) * 257,
+                        terminator.string(),
+                    },
+                ),
+                else => try std.fmt.bufPrint(
+                    &msg.write_small.data,
+                    "\x1B]{s};rgb:{x:0>4}/{x:0>4}/{x:0>4}{s}",
+                    .{
+                        kind.code(),
+                        @as(u16, color.r) * 257,
+                        @as(u16, color.g) * 257,
+                        @as(u16, color.b) * 257,
+                        terminator.string(),
+                    },
+                ),
+            },
 
-            .@"8-bit" => try std.fmt.bufPrint(
-                &msg.write_small.data,
-                "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
-                .{
-                    kind.code(),
-                    @as(u16, color.r),
-                    @as(u16, color.g),
-                    @as(u16, color.b),
-                    terminator.string(),
-                },
-            ),
-
+            .@"8-bit" => switch (kind) {
+                .palette => |i| try std.fmt.bufPrint(
+                    &msg.write_small.data,
+                    "\x1B]{s};{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
+                    .{
+                        kind.code(),
+                        i,
+                        @as(u16, color.r),
+                        @as(u16, color.g),
+                        @as(u16, color.b),
+                        terminator.string(),
+                    },
+                ),
+                else => try std.fmt.bufPrint(
+                    &msg.write_small.data,
+                    "\x1B]{s};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
+                    .{
+                        kind.code(),
+                        @as(u16, color.r),
+                        @as(u16, color.g),
+                        @as(u16, color.b),
+                        terminator.string(),
+                    },
+                ),
+            },
             .none => unreachable, // early return above
         };
         msg.write_small.len = @intCast(resp.len);
