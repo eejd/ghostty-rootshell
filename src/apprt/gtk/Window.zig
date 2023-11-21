@@ -79,20 +79,24 @@ pub fn init(self: *Window, app: *App) !void {
     // Use the new GTK4 header bar. We only create a header bar if we have
     // window decorations.
     if (app.config.@"window-decoration") {
-        const header = c.gtk_header_bar_new();
-        c.gtk_window_set_titlebar(gtk_window, header);
-        {
-            const btn = c.gtk_menu_button_new();
-            c.gtk_widget_set_tooltip_text(btn, "Main Menu");
-            c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
-            c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
-            c.gtk_header_bar_pack_end(@ptrCast(header), btn);
-        }
-        {
-            const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
-            c.gtk_widget_set_tooltip_text(btn, "New Tab");
-            c.gtk_header_bar_pack_end(@ptrCast(header), btn);
-            _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
+        // gtk-titlebar can also be used to disable the header bar (but keep
+        // the window manager's decorations).
+        if (app.config.@"gtk-titlebar") {
+            const header = c.gtk_header_bar_new();
+            c.gtk_window_set_titlebar(gtk_window, header);
+            {
+                const btn = c.gtk_menu_button_new();
+                c.gtk_widget_set_tooltip_text(btn, "Main Menu");
+                c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
+                c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
+                c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+            }
+            {
+                const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
+                c.gtk_widget_set_tooltip_text(btn, "New Tab");
+                c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+                _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
+            }
         }
     } else {
         // Hide window decoration if configured. This has to happen before
