@@ -213,6 +213,7 @@ pub const RunIterator = struct {
             if (cell.attrs.grapheme) {
                 var it = self.row.codepointIterator(j);
                 while (it.next()) |cp| {
+                    // Do not send presentation modifiers
                     if (cp == 0xFE0E or cp == 0xFE0F) continue;
                     try self.hooks.addCodepoint(cp, @intCast(cluster));
                 }
@@ -269,7 +270,7 @@ pub const RunIterator = struct {
 
         while (it.next()) |cp| {
             // Ignore Emoji ZWJs
-            if (cp == 0xFE0E or cp == 0xFE0F) continue;
+            if (cp == 0xFE0E or cp == 0xFE0F or cp == 0x200D) continue;
 
             // Find a font that supports this codepoint. If none support this
             // then the whole grapheme can't be rendered so we return null.
@@ -288,7 +289,7 @@ pub const RunIterator = struct {
             it.reset();
             while (it.next()) |cp| {
                 // Ignore Emoji ZWJs
-                if (cp == 0xFE0E or cp == 0xFE0F) continue;
+                if (cp == 0xFE0E or cp == 0xFE0F or cp == 0x200D) continue;
                 if (!self.group.group.hasCodepoint(idx, cp, presentation)) break;
             } else {
                 // If the while completed, then we have a candidate that
