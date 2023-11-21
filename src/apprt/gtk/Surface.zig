@@ -658,6 +658,11 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
         log.err("surface failed to realize: {}", .{err});
         return;
     };
+
+    // When we have a realized surface, we also attach our input method context.
+    // We do this here instead of init because this allows us to relase the ref
+    // to the GLArea when we unrealized.
+    c.gtk_im_context_set_client_widget(self.im_context, @ptrCast(self.gl_area));
 }
 
 /// This is called when the underlying OpenGL resources must be released.
@@ -667,6 +672,9 @@ fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
 
     const self = userdataSelf(ud.?);
     self.core_surface.renderer.displayUnrealized();
+
+    // See gtkRealize for why we do this here.
+    c.gtk_im_context_set_client_widget(self.im_context, null);
 }
 
 /// render signal
@@ -924,6 +932,17 @@ fn keyEvent(
 
     // We only want to send the event through the IM context if we're a press
     if (action == .press or action == .repeat) {
+        // This can trigger an input method so we need to notify the im context
+        // where the cursor is so it can render the dropdowns in the correct
+        // place.
+        const ime_point = self.core_surface.imePoint();
+        c.gtk_im_context_set_cursor_location(self.im_context, &.{
+            .x = @intFromFloat(ime_point.x),
+            .y = @intFromFloat(ime_point.y),
+            .width = 1,
+            .height = 1,
+        });
+
         // We mark that we're in a keypress event. We use this in our
         // IM commit callback to determine if we need to send a char callback
         // to the core surface or not.
@@ -932,7 +951,8 @@ fn keyEvent(
 
         // Pass the event through the IM controller to handle dead key states.
         // Filter is true if the event was handled by the IM controller.
-        _ = c.gtk_im_context_filter_keypress(self.im_context, event) != 0;
+        const im_handled = c.gtk_im_context_filter_keypress(self.im_context, event) != 0;
+        // log.warn("im_handled={} im_len={} im_composing={}", .{ im_handled, self.im_len, self.im_composing });
 
         // If this is a dead key, then we're composing a character and
         // we need to set our proper preedit state.
@@ -942,10 +962,19 @@ fn keyEvent(
                 log.err("error in preedit callback err={}", .{err});
                 break :preedit;
             };
+
+            // If we're composing then we don't want to send the key
+            // event to the core surface so we always return immediately.
+            if (im_handled) return true;
         } else {
             // If we aren't composing, then we set our preedit to
             // empty no matter what.
             self.core_surface.preeditCallback(null) catch {};
+
+            // If the IM handled this and we have no text, then we just
+            // return because this probably just changed the input method
+            // or something.
+            if (im_handled and self.im_len == 0) return true;
         }
     }
 
@@ -1056,6 +1085,7 @@ fn gtkInputPreeditStart(
     // Mark that we are now composing a string with a dead key state.
     // We'll record the string in the preedit-changed callback.
     self.im_composing = true;
+    self.im_len = 0;
 }
 
 fn gtkInputPreeditChanged(
@@ -1071,6 +1101,12 @@ fn gtkInputPreeditChanged(
     defer c.g_free(buf);
     const str = std.mem.sliceTo(buf, 0);
 
+    // If our string becomes empty we ignore this. This can happen after
+    // a commit event when the preedit is being cleared and we don't want
+    // to set im_len to zero. This is safe because preeditstart always sets
+    // im_len to zero.
+    if (str.len == 0) return;
+
     // Copy the preedit string into the im_buf. This is safe because
     // commit will always overwrite this.
     self.im_len = @intCast(@min(self.im_buf.len, str.len));
@@ -1085,7 +1121,6 @@ fn gtkInputPreeditEnd(
     const self = userdataSelf(ud.?);
     if (!self.in_keypress) return;
     self.im_composing = false;
-    self.im_len = 0;
 }
 
 fn gtkInputCommit(
@@ -1104,7 +1139,7 @@ fn gtkInputCommit(
             @memcpy(self.im_buf[0..str.len], str);
             self.im_len = @intCast(str.len);
 
-            // log.debug("input commit: {x}", .{self.im_buf[0]});
+            // log.debug("input commit len={}", .{self.im_len});
         } else {
             log.warn("not enough buffer space for input method commit", .{});
         }
@@ -1131,6 +1166,11 @@ fn gtkInputCommit(
 
 fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
     const self = userdataSelf(ud.?);
+
+    // Notify our IM context
+    c.gtk_im_context_focus_in(self.im_context);
+
+    // Notify our surface
     self.core_surface.focusCallback(true) catch |err| {
         log.err("error in focus callback err={}", .{err});
         return;
@@ -1139,6 +1179,10 @@ fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
 
 fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
     const self = userdataSelf(ud.?);
+
+    // Notify our IM context
+    c.gtk_im_context_focus_out(self.im_context);
+
     self.core_surface.focusCallback(false) catch |err| {
         log.err("error in focus callback err={}", .{err});
         return;
