@@ -770,7 +770,14 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // Determine the width of this character so we can handle
     // non-single-width characters properly.
-    const width: usize = @intCast(@max(0, ziglyph.display_width.codePointWidth(c, .half)));
+    const width: usize = @intCast(@min(
+        @max(0, ziglyph.display_width.codePointWidth(c, .half)),
+        2,
+    ));
+
+    // Note: it is possible to have a width of "3" and a width of "-1"
+    // from ziglyph. We should look into those cases and handle them
+    // appropriately.
     assert(width <= 2);
     // log.debug("c={x} width={}", .{ c, width });
 
