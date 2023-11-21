@@ -50,7 +50,7 @@ let
   # (It's also possible that you might see a hash mismatch - without the
   # network errors - if you don't have a previous instance of the cache
   # derivation in your store already. If so, just update the value as above.)
-  zigCacheHash = "sha256-2zDoQ4AKHJal7njTvt38RVEkTyPHNNX90QFibKq/xh4=";
+  zigCacheHash = "sha256-nfvrGL7CMb8sr9gFhU5GVkN5H+hIxNzMPr2760rV2BM=";
 
   zigCache = src: stdenv.mkDerivation {
     inherit src;
