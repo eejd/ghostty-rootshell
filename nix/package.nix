@@ -27,6 +27,17 @@
 }:
 
 let
+  # The Zig hook has no way to select the release type without actual
+  # overriding of the default flags.
+  #
+  # TODO: Once
+  # https://github.com/ziglang/zig/issues/14281#issuecomment-1624220653 is
+  # ultimately acted on and has made its way to a nixpkgs implementation, this
+  # can probably be removed in favor of that.
+  zig012Hook = zig_0_12.hook.overrideAttrs {
+    zig_default_flags = "-Dcpu=baseline -Doptimize=ReleaseFast";
+  };
+
   # This hash is the computation of the zigCache fixed-output derivation. This
   # allows us to use remote package dependencies without breaking the sandbox.
   #
@@ -82,7 +93,7 @@ stdenv.mkDerivation (finalAttrs: {
     git
     ncurses
     pkg-config
-    zig_0_12.hook
+    zig012Hook
   ];
 
   buildInputs = [
