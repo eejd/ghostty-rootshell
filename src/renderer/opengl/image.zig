@@ -114,12 +114,52 @@ pub const Image = union(enum) {
         };
     }
 
+    /// Converts the image data to a format that can be uploaded to the GPU.
+    /// If the data is already in a format that can be uploaded, this is a
+    /// no-op.
+    fn convert(self: *Image, alloc: Allocator) !void {
+        switch (self.*) {
+            .ready,
+            .unload_pending,
+            .unload_ready,
+            => unreachable, // invalid
+
+            .pending_rgba => {}, // ready
+
+            // RGB needs to be converted to RGBA because Metal textures
+            // don't support RGB.
+            .pending_rgb => |*p| {
+                // Note: this is the slowest possible way to do this...
+                const data = p.dataSlice(3);
+                const pixels = data.len / 3;
+                var rgba = try alloc.alloc(u8, pixels * 4);
+                errdefer alloc.free(rgba);
+                var i: usize = 0;
+                while (i < pixels) : (i += 1) {
+                    const data_i = i * 3;
+                    const rgba_i = i * 4;
+                    rgba[rgba_i] = data[data_i];
+                    rgba[rgba_i + 1] = data[data_i + 1];
+                    rgba[rgba_i + 2] = data[data_i + 2];
+                    rgba[rgba_i + 3] = 255;
+                }
+
+                alloc.free(data);
+                p.data = rgba.ptr;
+                self.* = .{ .pending_rgba = p.* };
+            },
+        }
+    }
+
     /// Upload the pending image to the GPU and change the state of this
     /// image to ready.
     pub fn upload(
         self: *Image,
         alloc: Allocator,
     ) !void {
+        // Convert our data if we have to
+        try self.convert(alloc);
+
         // Get our pending info
         const p = self.pending().?;
 
