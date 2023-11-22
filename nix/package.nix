@@ -1,3 +1,10 @@
+# NOTE: using this derivation right out of the flake currently requires a build
+# of LLVM 17 and Zig master from source. This will take quite a bit of time.
+# Until LLVM 17 and an upcoming Zig 0.12 are up in nixpkgs, most folks will
+# want to continue to use the devShell and the instructions found at:
+#
+#   https://github.com/mitchellh/ghostty/tree/main#developing-ghostty
+#
 { lib
 , stdenv
 
@@ -50,7 +57,7 @@ let
   # (It's also possible that you might see a hash mismatch - without the
   # network errors - if you don't have a previous instance of the cache
   # derivation in your store already. If so, just update the value as above.)
-  zigCacheHash = "sha256-nfvrGL7CMb8sr9gFhU5GVkN5H+hIxNzMPr2760rV2BM=";
+  zigCacheHash = "sha256-/6XhZq5NYWbHhg0yQ9iT/6oGewsurIpeGNJyNT+E6CQ=";
 
   zigCache = src: stdenv.mkDerivation {
     inherit src;
