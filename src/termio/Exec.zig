@@ -1749,7 +1749,9 @@ const StreamHandler = struct {
             // Schedule a render since we changed colors
             .reverse_colors => try self.queueRender(),
 
-            // Origin resets cursor pos
+            // Origin resets cursor pos. This is called whether or not
+            // we're enabling or disabling origin mode and whether or
+            // not the value changed.
             .origin => self.terminal.setCursorPos(1, 1),
 
             .enable_left_and_right_margin => if (!enabled) {

@@ -2170,6 +2170,20 @@ test "Terminal: fullReset with a non-empty pen" {
     try testing.expect(cell.fg.eql(.{}));
 }
 
+test "Terminal: fullReset origin mode" {
+    var t = try init(testing.allocator, 10, 10);
+    defer t.deinit(testing.allocator);
+
+    t.setCursorPos(3, 5);
+    t.modes.set(.origin, true);
+    t.fullReset(testing.allocator);
+
+    // Origin mode should be reset and the cursor should be moved
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expect(!t.modes.get(.origin));
+}
+
 test "Terminal: input with no control characters" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);
