@@ -36,6 +36,15 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     /// The clipboard confirmation window, if shown.
     private var clipboardConfirmation: ClipboardConfirmationController? = nil
+
+    /// This is set to true when we care about frame changes. This is a small optimization since
+    /// this controller registers a listener for ALL frame change notifications and this lets us bail
+    /// early if we don't care.
+    private var tabListenForFrame: Bool = false
+    
+    /// This is the hash value of the last tabGroup.windows array. We use this to detect order
+    /// changes in the list.
+    private var tabWindowsHash: Int = 0
     
     init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         self.ghostty = ghostty
@@ -62,6 +71,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             selector: #selector(onConfirmClipboardRequest),
             name: Ghostty.Notification.confirmClipboard,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onFrameDidChange),
+            name: NSView.frameDidChangeNotification,
+            object: nil)
     }
     
     required init?(coder: NSCoder) {
@@ -73,13 +87,23 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         let center = NotificationCenter.default
         center.removeObserver(self)
     }
+    
+    //MARK: - Methods
 
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
     /// changes and when a window is closed.
     func relabelTabs() {
+        // Reset this to false. It'll be set back to true later.
+        tabListenForFrame = false
+        
         guard let windows = self.window?.tabbedWindows else { return }
         guard let cfg = ghostty.config else { return }
+
+        // We only listen for frame changes if we have more than 1 window,
+        // otherwise the accessory view doesn't matter.
+        tabListenForFrame = windows.count > 1
+        
         for (index, window) in windows.enumerated().prefix(9) {
             let action = "goto_tab:\(index + 1)"
             let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
@@ -94,8 +118,24 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
             let text = NSTextField(labelWithAttributedString: attributedString)
             text.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
+            text.postsFrameChangedNotifications = true
             window.tab.accessoryView = text
         }
+    }
+    
+    @objc private func onFrameDidChange(_ notification: NSNotification) {
+        // This is a huge hack to set the proper shortcut for tab selection
+        // on tab reordering using the mouse. There is no event, delegate, etc.
+        // as far as I can tell for when a tab is manually reordered with the
+        // mouse in a macOS-native tab group, so the way we detect it is setting
+        // the accessoryView "postsFrameChangedNotification" to true, listening
+        // for the view frame to change, comparing the windows list, and
+        // relabeling the tabs.
+        guard tabListenForFrame else { return }
+        guard let v = self.window?.tabbedWindows?.hashValue else { return }
+        guard tabWindowsHash != v else { return }
+        tabWindowsHash = v
+        self.relabelTabs()
     }
 
     //MARK: - NSWindowController
