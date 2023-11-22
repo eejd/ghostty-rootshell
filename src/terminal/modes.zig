@@ -189,6 +189,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "reverse_colors", .value = 5 },
     .{ .name = "origin", .value = 6 },
     .{ .name = "wraparound", .value = 7, .default = true },
+    .{ .name = "autorepeat", .value = 8 },
     .{ .name = "mouse_event_x10", .value = 9 },
     .{ .name = "cursor_blinking", .value = 12 },
     .{ .name = "cursor_visible", .value = 25, .default = true },

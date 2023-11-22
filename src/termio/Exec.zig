@@ -1746,6 +1746,12 @@ const StreamHandler = struct {
 
         // And then some modes require additional processing.
         switch (mode) {
+            // Just noting here that autorepeat has no effect on
+            // the terminal. xterm ignores this mode and so do we.
+            // We know about just so that we don't log that it is
+            // an unknown mode.
+            .autorepeat => {},
+
             // Schedule a render since we changed colors
             .reverse_colors => try self.queueRender(),
 
