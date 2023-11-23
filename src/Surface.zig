@@ -1414,6 +1414,10 @@ pub fn scrollCallback(
             self.io.terminal.modes.get(.mouse_alternate_scroll))
         {
             if (y.delta_unsigned > 0) {
+                // When we send mouse events as cursor keys we always
+                // clear the selection.
+                self.setSelection(null);
+
                 const seq = if (y.delta < 0) "\x1bOA" else "\x1bOB";
                 for (0..y.delta_unsigned) |_| {
                     _ = self.io_thread.mailbox.push(.{
