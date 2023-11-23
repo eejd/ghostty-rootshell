@@ -160,6 +160,8 @@ const c = @cImport({
 /// list is in the `share/ghostty/themes` directory (wherever you installed
 /// the Ghostty "share" directory.
 ///
+/// To see a list of available themes, run `ghostty +list-themes`.
+///
 /// Any additional colors specified via background, foreground, palette,
 /// etc. will override the colors specified in the theme.
 ///
