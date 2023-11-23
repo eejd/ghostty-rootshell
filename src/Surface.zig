@@ -71,6 +71,12 @@ renderer_thr: std.Thread,
 /// Mouse state.
 mouse: Mouse,
 
+/// The hash value of the last keybinding trigger that we performed. This
+/// is only set if the last key input matched a keybinding, consumed it,
+/// and performed it. This is used to prevent sending release/repeat events
+/// for handled bindings.
+last_binding_trigger: u64 = 0,
+
 /// The terminal IO handler.
 io: termio.Impl,
 io_thread: termio.Thread,
@@ -1123,7 +1129,7 @@ pub fn keyCallback(
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     binding: {
-        const binding_action: input.Binding.Action, const consumed = action: {
+        const binding_action: input.Binding.Action, const binding_trigger: input.Binding.Trigger, const consumed = action: {
             const binding_mods = event.mods.binding();
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
@@ -1133,6 +1139,7 @@ pub fn keyCallback(
             const set = self.config.keybind.set;
             if (set.get(trigger)) |v| break :action .{
                 v,
+                trigger,
                 set.getConsumed(trigger),
             };
 
@@ -1140,6 +1147,7 @@ pub fn keyCallback(
             trigger.physical = true;
             if (set.get(trigger)) |v| break :action .{
                 v,
+                trigger,
                 set.getConsumed(trigger),
             };
 
@@ -1149,16 +1157,26 @@ pub fn keyCallback(
         // We only execute the binding on press/repeat but we still consume
         // the key on release so that we don't send any release events.
         log.debug("key event binding consumed={} action={}", .{ consumed, binding_action });
-        const performed = if (event.action == .press or event.action == .repeat)
-            try self.performBindingAction(binding_action)
-        else
-            false;
+        const performed = if (event.action == .press or event.action == .repeat) press: {
+            self.last_binding_trigger = 0;
+            break :press try self.performBindingAction(binding_action);
+        } else false;
 
         // If we consume this event, then we are done. If we don't consume
         // it, we processed the action but we still want to process our
         // encodings, too.
         if (consumed and performed) {
+            self.last_binding_trigger = binding_trigger.hash();
             if (insp_ev) |*ev| ev.binding = binding_action;
+            return true;
+        }
+
+        // If we have a previous binding trigger and it matches this one,
+        // then we handled the down event so we don't want to send any further
+        // events.
+        if (self.last_binding_trigger > 0 and
+            self.last_binding_trigger == binding_trigger.hash())
+        {
             return true;
         }
     }
