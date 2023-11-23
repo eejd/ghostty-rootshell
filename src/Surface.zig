@@ -21,6 +21,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const ziglyph = @import("ziglyph");
+const main = @import("main.zig");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -445,7 +446,7 @@ pub fn init(
         .padding = padding,
         .full_config = config,
         .config = try termio.Impl.DerivedConfig.init(alloc, config),
-        .resources_dir = app.resources_dir,
+        .resources_dir = main.state.resources_dir,
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
