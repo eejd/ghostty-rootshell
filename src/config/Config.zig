@@ -153,6 +153,19 @@ const c = @cImport({
 @"adjust-strikethrough-position": ?MetricModifier = null,
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
 
+/// A named theme to use. The available themes are currently hardcoded to
+/// the themes that ship with Ghostty. On macOS, this list is in the
+/// `Ghostty.app/Contents/Resources/themes` directory. On Linux, this
+/// list is in the `share/ghostty/themes` directory (wherever you installed
+/// the Ghostty "share" directory.
+///
+/// Any additional colors specified via background, foreground, palette,
+/// etc. will override the colors specified in the theme.
+///
+/// A future update will allow custom themes to be installed in
+/// certain directories.
+theme: ?[]const u8 = null,
+
 /// Background color for the window.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 
@@ -726,6 +739,10 @@ _arena: ?ArenaAllocator = null,
 /// configuration file.
 _errors: ErrorList = .{},
 
+/// The inputs that built up this configuration. This is used to reload
+/// the configuration if we have to.
+_inputs: std.ArrayListUnmanaged([]const u8) = .{},
+
 pub fn deinit(self: *Config) void {
     if (self._arena) |arena| arena.deinit();
     self.* = undefined;
@@ -1182,6 +1199,16 @@ fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
     return copy;
 }
 
+/// Load configuration from an iterator that yields values that look like
+/// command-line arguments, i.e. `--key=value`.
+pub fn loadIter(
+    self: *Config,
+    alloc: Allocator,
+    iter: anytype,
+) !void {
+    try cli.args.parse(Config, alloc, self, iter);
+}
+
 /// Load the configuration from the default configuration file. The default
 /// configuration file is at `$XDG_CONFIG_HOME/ghostty/config`.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
@@ -1195,7 +1222,7 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
 
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
-        try cli.args.parse(Config, alloc, self, &iter);
+        try self.loadIter(alloc, &iter);
         try self.expandPaths(std.fs.path.dirname(config_path).?);
     } else |err| switch (err) {
         error.FileNotFound => std.log.info(
@@ -1222,7 +1249,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // Parse the config from the CLI args
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
-    try cli.args.parse(Config, alloc_gpa, self, &iter);
+    try self.loadIter(alloc_gpa, &iter);
 
     // Config files loaded from the CLI args are relative to pwd
     if (self.@"config-file".value.list.items.len > 0) {
@@ -1279,7 +1306,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         log.info("loading config-file path={s}", .{path});
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
-        try cli.args.parse(Config, alloc_gpa, self, &iter);
+        try self.loadIter(alloc_gpa, &iter);
         try self.expandPaths(std.fs.path.dirname(path).?);
     }
 }
