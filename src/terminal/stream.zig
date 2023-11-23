@@ -993,6 +993,10 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
+                .change_window_icon => |icon| {
+                    log.info("OSC 1 (change icon) received and ignored icon={s}", .{icon});
+                },
+
                 .clipboard_contents => |clip| {
                     if (@hasDecl(T, "clipboardContents")) {
                         try self.handler.clipboardContents(clip.kind, clip.data);

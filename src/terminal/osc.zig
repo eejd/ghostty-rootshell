@@ -22,6 +22,12 @@ pub const Command = union(enum) {
     /// as latin1.
     change_window_title: []const u8,
 
+    /// Set the icon of the terminal window. The name of the icon is not
+    /// well defined, so this is currently ignored by Ghostty at the time
+    /// of writing this. We just parse it so that we don't get parse errors
+    /// in the log.
+    change_window_icon: []const u8,
+
     /// First do a fresh-line. Then start a new command, and enter prompt mode:
     /// Subsequent text (until a OSC "133;B" or OSC "133;I" command) is a
     /// prompt string (as if followed by OSC 133;P;k=i\007). Note: I've noticed
@@ -343,6 +349,13 @@ pub const Parser = struct {
             },
 
             .@"1" => switch (c) {
+                ';' => {
+                    self.command = .{ .change_window_icon = undefined };
+
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.change_window_icon };
+                    self.buf_start = self.buf_idx;
+                },
                 '0' => self.state = .@"10",
                 '1' => self.state = .@"11",
                 '2' => self.state = .@"12",
@@ -892,6 +905,19 @@ test "OSC: change_window_title with utf8" {
     const cmd = p.end(null).?;
     try testing.expect(cmd == .change_window_title);
     try testing.expectEqualStrings("— ‐", cmd.change_window_title);
+}
+
+test "OSC: change_window_icon" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+    p.next('1');
+    p.next(';');
+    p.next('a');
+    p.next('b');
+    const cmd = p.end(null).?;
+    try testing.expect(cmd == .change_window_icon);
+    try testing.expectEqualStrings("ab", cmd.change_window_icon);
 }
 
 test "OSC: prompt_start" {
