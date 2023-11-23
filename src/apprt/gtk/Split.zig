@@ -11,8 +11,6 @@ const CoreSurface = @import("../../Surface.zig");
 
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
-const Position = @import("relation.zig").Position;
-const Child = @import("relation.zig").Child;
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
@@ -92,113 +90,38 @@ pub fn init(
     surface.grabFocus();
 }
 
-/// Focus on first Surface that can be found in given position. If there's a
-/// Split in the position, it will focus on the first surface in that position.
-pub fn focusFirstSurfaceInPosition(self: *Split, position: Position) void {
-    const child = self.childInPosition(position);
-    switch (child) {
-        .surface => |s| s.grabFocus(),
-        .paned => |p| p.focusFirstSurfaceInPosition(position),
-        .none => {
-            log.warn("attempted to focus on first surface, found none", .{});
-            return;
-        },
-    }
-}
-
-/// Split the Surface in the given position into a Split with two surfaces.
-pub fn splitSurfaceInPosition(self: *Split, position: Position, direction: input.SplitDirection) !void {
-    const surface: *Surface = self.surfaceInPosition(position) orelse return;
-
-    // Keep explicit reference to surface gl_area before we remove it.
-    const object: *c.GObject = @ptrCast(surface.gl_area);
-    _ = c.g_object_ref(object);
-    defer c.g_object_unref(object);
-
-    // Keep position of divider
-    const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
-    // Now remove it
-    self.removeChildInPosition(position);
-
-    // Create new Split
-    // NOTE: We cannot use `replaceChildInPosition` here because we need to
-    // first remove the surface before we create a new pane.
-    const paned = try Split.create(surface.app.core_app.alloc, surface, direction);
-    switch (position) {
-        .start => self.addChild1(.{ .paned = paned }),
-        .end => self.addChild2(.{ .paned = paned }),
-    }
-    // Restore position
-    c.gtk_paned_set_position(self.paned, parent_paned_position_before);
-
-    // Focus on new surface
-    paned.focusFirstSurfaceInPosition(.end);
-}
-
-/// Replace the existing .start or .end Child with the given new Child.
-pub fn replaceChildInPosition(self: *Split, child: Child, position: Position) void {
-    // Keep position of divider
-    const parent_paned_position_before = c.gtk_paned_get_position(self.paned);
-
-    // Focus on the sibling, otherwise we'll get a GTK warning
-    self.focusFirstSurfaceInPosition(if (position == .start) .end else .start);
-
-    // Now we can remove the other one
-    self.removeChildInPosition(position);
-
-    switch (position) {
-        .start => self.addChild1(child),
-        .end => self.addChild2(child),
-    }
-
-    // Restore position
-    c.gtk_paned_set_position(self.paned, parent_paned_position_before);
-}
-
-/// Remove both children, setting *c.GtkSplit start/end children to null.
-// pub fn removeChildren(self: *Split) void {
-//     self.removeChildInPosition(.start);
-//     self.removeChildInPosition(.end);
-//}
-
-/// Deinit the Split by deiniting its child Split, if they exist.
-pub fn deinit(self: *Split, alloc: Allocator) void {
-    for ([_]Child{ self.child1, self.child2 }) |child| {
-        switch (child) {
-            .none, .surface => continue,
-            .paned => |paned| {
-                paned.deinit(alloc);
-                alloc.destroy(paned);
-            },
-        }
-    }
-}
-
-fn removeChildInPosition(self: *Split, position: Position) void {
-    switch (position) {
-        .start => {
-            assert(self.child1 != .none);
-            self.child1 = .none;
-            c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
-        },
-        .end => {
-            assert(self.child2 != .none);
-            self.child2 = .none;
-            c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
-        },
-    }
+/// Remove the top left child.
+pub fn removeTopLeft(self: *Split) void {
+    self.removeChild(self.top_left, self.bottom_right);
 }
 
 /// Remove the top left child.
-pub fn removeTopLeft(self: *Split) void {
+pub fn removeBottomRight(self: *Split) void {
+    self.removeChild(self.bottom_right, self.top_left);
+}
+
+// TODO: Is this Zig-y?
+inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surface.Container.Elem) void {
+    const window = self.container.window() orelse return;
+
+    // TODO: Grab focus
+
+    // Keep a reference to the side that we want to keep, so it doesn't get
+    // destroyed when it's removed from our underlying GtkPaned.
+    const keep_object: *c.GObject = @ptrCast(keep.widget());
+    _ = c.g_object_ref(keep_object);
+    defer c.g_object_unref(keep_object);
+
     // Remove our children since we are going to no longer be
     // a split anyways. This prevents widgets with multiple parents.
     self.removeChildren();
 
-    // Our container must become whatever our bottom right is
-    self.container.replace(self.bottom_right);
+    // Our container must become whatever our top left is
+    self.container.replace(keep);
 
-    // TODO: memory management of top left
+    // TODO: is this correct?
+    remove.shutdown();
+    window.app.core_app.alloc.destroy(self);
 }
 
 // TODO: ehhhhhh
@@ -241,38 +164,4 @@ fn updateChildren(self: *const Split) void {
 fn removeChildren(self: *const Split) void {
     c.gtk_paned_set_start_child(@ptrCast(self.paned), null);
     c.gtk_paned_set_end_child(@ptrCast(self.paned), null);
-}
-
-fn addChild1(self: *Split, child: Child) void {
-    assert(self.child1 == .none);
-
-    const widget = child.widget() orelse return;
-    c.gtk_paned_set_start_child(@ptrCast(self.paned), widget);
-
-    self.child1 = child;
-    child.setParent(.{ .paned = .{ self, .start } });
-}
-
-fn addChild2(self: *Split, child: Child) void {
-    assert(self.child2 == .none);
-
-    const widget = child.widget() orelse return;
-    c.gtk_paned_set_end_child(@ptrCast(self.paned), widget);
-
-    self.child2 = child;
-    child.setParent(.{ .paned = .{ self, .end } });
-}
-
-fn childInPosition(self: *Split, position: Position) Child {
-    return switch (position) {
-        .start => self.child1,
-        .end => self.child2,
-    };
-}
-
-fn surfaceInPosition(self: *Split, position: Position) ?*Surface {
-    return switch (self.childInPosition(position)) {
-        .surface => |surface| surface,
-        else => null,
-    };
 }

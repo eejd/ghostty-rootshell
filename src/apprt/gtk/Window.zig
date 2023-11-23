@@ -16,10 +16,8 @@ const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
-const Paned = @import("Paned.zig");
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
-const Position = @import("relation.zig").Position;
 const icon = @import("icon.zig");
 const c = @import("c.zig");
 
@@ -254,75 +252,6 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
 
     // If we have remaining tabs, we need to make sure we grab focus.
     if (remaining > 0) self.focusCurrentTab();
-}
-
-/// Close the surface. This surface must be definitely part of this window.
-pub fn closeSurface(self: *Window, surface: *Surface) void {
-    assert(surface.container.window().? == self);
-
-    // TODO: fixme
-    // switch (surface.parent) {
-    //     .none => unreachable,
-    //     .tab => |tab| self.closeTab(tab),
-    //     .paned => |paned_tuple| {
-    //         const paned = paned_tuple[0];
-    //         const position = paned_tuple[1];
-    //
-    //         self.closeSurfaceInPaned(surface, paned, position);
-    //     },
-    // }
-}
-
-fn closeSurfaceInPaned(self: *Window, surface: *Surface, paned: *Paned, position: Position) void {
-    const sibling_child, const sibling_widget = switch (position) {
-        .start => .{
-            paned.child2,
-            c.gtk_paned_get_end_child(paned.paned),
-        },
-        .end => .{
-            paned.child1,
-            c.gtk_paned_get_start_child(paned.paned),
-        },
-    };
-
-    // Keep explicit reference to sibling's widget (gl_area, or Paned), so it's
-    // not destroyed when we remove it from GtkPaned.
-    const sibling_object: *c.GObject = @ptrCast(sibling_widget);
-    _ = c.g_object_ref(sibling_object);
-    defer c.g_object_unref(sibling_object);
-
-    // Remove reference on the surface we're closing
-    surface.setParent(.none);
-
-    // Remove children.
-    paned.removeChildren();
-    // Don't need to call paned.deinit, because we already removed children.
-    defer self.app.core_app.alloc.destroy(paned);
-
-    switch (paned.parent) {
-        .none => unreachable,
-        .tab => |tab| {
-            // If parent of Paned we belong to is a tab, we can
-            // replace the child with the other surface
-            tab.removeChild();
-            tab.setChild(sibling_child);
-        },
-        .paned => |parent_paned_tuple| {
-            const parent_paned = parent_paned_tuple[0];
-            const parent_paned_position = parent_paned_tuple[1];
-
-            parent_paned.replaceChildInPosition(sibling_child, parent_paned_position);
-        },
-    }
-
-    switch (sibling_child) {
-        .surface => |s| s.grabFocus(),
-        .paned => |p| {
-            // Focus on first surface in sibling Paned
-            p.focusFirstSurfaceInPosition(position);
-        },
-        else => {},
-    }
 }
 
 /// Returns true if this window has any tabs.

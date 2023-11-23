@@ -10,9 +10,6 @@ const font = @import("../../font/main.zig");
 const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
-const Paned = @import("Paned.zig");
-const Parent = @import("relation.zig").Parent;
-const Child = @import("relation.zig").Child;
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const c = @import("c.zig");
@@ -34,9 +31,6 @@ box: *c.GtkBox,
 /// The element of this tab so that we can handle splits and so on.
 elem: Surface.Container.Elem,
 
-// The child can be either a Surface if the tab is not split or a Paned
-child: Child,
-
 // We'll update this every time a Surface gains focus, so that we have it
 // when we switch to another Tab. Then when we switch back to this tab, we
 // can easily re-focus that terminal.
@@ -57,7 +51,6 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         .label_text = undefined,
         .box = undefined,
         .elem = undefined,
-        .child = undefined,
         .focus_child = undefined,
     };
 
@@ -93,7 +86,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         c.gtk_widget_set_size_request(label_text_widget, 100, 1);
     }
 
-    // Create a Box in which we'll later keep either Surface or Paned
+    // Create a Box in which we'll later keep either Surface or Split
     const box_widget = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
     c.gtk_widget_set_hexpand(box_widget, 1);
     c.gtk_widget_set_vexpand(box_widget, 1);
@@ -105,7 +98,6 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     });
     errdefer surface.destroy(window.app.core_app.alloc);
     surface.setContainer(.{ .tab_ = self });
-    self.child = .{ .surface = surface };
     self.elem = .{ .surface = surface };
 
     // Add Surface to the Tab
@@ -148,29 +140,16 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     surface.grabFocus();
 }
 
-/// Deinits tab by deiniting child if child is Paned.
+/// Deinits tab by deiniting child elem.
 pub fn deinit(self: *Tab) void {
-    switch (self.child) {
-        .none => return,
-        .surface => |s| s.shutdown(),
-        .paned => |paned| {
-            paned.deinit(self.window.app.core_app.alloc);
-            self.window.app.core_app.alloc.destroy(paned);
-        },
-    }
-}
-
-/// Remove the current child from the Tab. Noop if no child set.
-pub fn removeChild(self: *Tab) void {
-    const widget = self.child.widget() orelse return;
-    c.gtk_box_remove(self.box, widget);
-
-    self.child = .none;
+    self.elem.shutdown();
 }
 
 // TODO: move this
 /// Replace the surface element that this tab is showing.
 pub fn replaceElem(self: *Tab, elem: Surface.Container.Elem) void {
+    // _ = c.g_object_ref_sink(self.elem.widget());
+
     // Remove our previous widget
     c.gtk_box_remove(self.box, self.elem.widget());
 
@@ -184,15 +163,6 @@ pub fn replaceElem(self: *Tab, elem: Surface.Container.Elem) void {
 /// then that means our tab is also closing.
 pub fn closeElem(self: *Tab) void {
     self.window.closeTab(self);
-}
-
-/// Sets child to given child and sets parent on child.
-pub fn setChild(self: *Tab, child: Child) void {
-    const widget = child.widget() orelse return;
-    c.gtk_box_append(self.box, widget);
-
-    child.setParent(.{ .tab = self });
-    self.child = child;
 }
 
 fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {

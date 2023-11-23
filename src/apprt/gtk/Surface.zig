@@ -17,7 +17,6 @@ const Split = @import("Split.zig");
 const Tab = @import("Tab.zig");
 const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
-const Parent = @import("relation.zig").Parent;
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
@@ -79,6 +78,22 @@ pub const Container = union(enum) {
                 .split => |s| &s.container,
             };
         }
+
+        pub fn shutdown(self: Elem) void {
+            switch (self) {
+                .surface => |s| s.shutdown(),
+                .split => {
+                    @panic("TODO: shutdownsplit");
+                },
+            }
+        }
+
+        pub fn debugName(self: Elem) []const u8 {
+            return switch (self) {
+                .surface => "surface",
+                .split => "split",
+            };
+        }
     };
 
     /// Returns the window that this surface is attached to.
@@ -119,10 +134,14 @@ pub const Container = union(enum) {
     /// from a surface to a split or a split back to a surface or
     /// a split to a nested split and so on.
     pub fn replace(self: Container, elem: Elem) void {
+        log.debug("Container.replace. self={s}, elem={s}", .{ self.debugName(), elem.debugName() });
+
         // Move the element into the container
         switch (self) {
             .none => {},
-            .tab_ => |t| t.replaceElem(elem),
+            .tab_ => |t| {
+                t.replaceElem(elem);
+            },
             inline .split_tl, .split_br => |ptr| {
                 const s = self.split().?;
                 s.replace(ptr, elem);
@@ -137,12 +156,22 @@ pub const Container = union(enum) {
     /// children to effectively notify they're containing that
     /// all children at this level are exiting.
     pub fn remove(self: Container) void {
+        log.warn("Container.remove", .{});
         switch (self) {
             .none => {},
             .tab_ => |t| t.closeElem(),
             .split_tl => self.split().?.removeTopLeft(),
-            else => @panic("TOOD"),
+            .split_br => self.split().?.removeBottomRight(),
         }
+    }
+
+    pub fn debugName(self: Container) []const u8 {
+        return switch (self) {
+            .none => "none",
+            .tab_ => "tab",
+            .split_tl => "split_tl",
+            .split_br => "split_br",
+        };
     }
 };
 
@@ -662,10 +691,6 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
     if (c.gtk_widget_is_focus(widget) == 1) {
         self.updateTitleLabels();
     }
-}
-
-pub fn setParent(self: *Surface, parent: Parent) void {
-    self.parent = parent;
 }
 
 pub fn setMouseShape(
