@@ -156,6 +156,12 @@ Any custom color configuration (`palette`, `background`, `foreground`, etc.)
 in your configuration files will override the theme settings. This can be
 used to load a theme and fine-tune specific colors to your liking.
 
+**Interested in contributing a new theme or updating an existing theme?**
+Please send theme changes upstream to the
+[iTerm2 Color Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes))
+repository. Ghostty periodically updates the themes from this source.
+_Do not send theme changes to the Ghostty project directly_.
+
 ### Shell Integration
 
 Ghostty supports some features that require shell integration. I am aiming
