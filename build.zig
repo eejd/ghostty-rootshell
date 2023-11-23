@@ -305,6 +305,28 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
+    // Themes
+    {
+        const upstream = b.dependency("iterm2_themes", .{});
+        const install = b.addInstallDirectory(.{
+            .source_dir = upstream.path("ghostty"),
+            .install_dir = .{ .custom = "share" },
+            .install_subdir = "themes",
+        });
+        b.getInstallStep().dependOn(&install.step);
+
+        if (target.isDarwin() and exe_ != null) {
+            const mac_install = b.addInstallDirectory(options: {
+                var copy = install.options;
+                copy.install_dir = .{
+                    .custom = "Ghostty.app/Contents/Resources",
+                };
+                break :options copy;
+            });
+            b.getInstallStep().dependOn(&mac_install.step);
+        }
+    }
+
     // Terminfo
     {
         // Encode our terminfo
