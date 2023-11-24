@@ -134,6 +134,9 @@ pub const Action = union(enum) {
     /// Send an ESC sequence.
     esc: []const u8,
 
+    // Send the given text. Uses Zig string literal syntax.
+    text: []const u8,
+
     /// Send data to the pty depending on whether cursor key mode is
     /// enabled ("application") or disabled ("normal").
     cursor_key: CursorKey,
