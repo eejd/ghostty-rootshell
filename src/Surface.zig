@@ -2271,7 +2271,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .reload_config => try self.app.reloadConfig(self.rt_app),
 
-        .csi, .esc, .text => |data| {
+        .csi, .esc => |data| {
             // We need to send the CSI/ESC sequence as a single write request.
             // If you split it across two then the shell can interpret it
             // as two literals.
@@ -2279,10 +2279,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             const full_data = switch (action) {
                 .csi => try std.fmt.bufPrint(&buf, "\x1b[{s}", .{data}),
                 .esc => try std.fmt.bufPrint(&buf, "\x1b{s}", .{data}),
-                .text => configpkg.string.parse(&buf, data) catch |err| {
-                    log.warn("error parsing text binding text={s} err={}", .{ data, err });
-                    return true;
-                },
                 else => unreachable,
             };
             _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
@@ -2292,6 +2288,34 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             try self.io_thread.wakeup.notify();
 
             // CSI/ESC triggers a scroll.
+            {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                self.scrollToBottom() catch |err| {
+                    log.warn("error scrolling to bottom err={}", .{err});
+                };
+            }
+        },
+
+        .text => |data| {
+            // For text we always allocate just because its easier to
+            // handle all cases that way.
+            var buf = try self.alloc.alloc(u8, data.len);
+            defer self.alloc.free(buf);
+            const text = configpkg.string.parse(buf, data) catch |err| {
+                log.warn(
+                    "error parsing text binding text={s} err={}",
+                    .{ data, err },
+                );
+                return true;
+            };
+            _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+                self.alloc,
+                text,
+            ), .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+
+            // Text triggers a scroll.
             {
                 self.renderer_state.mutex.lock();
                 defer self.renderer_state.mutex.unlock();
