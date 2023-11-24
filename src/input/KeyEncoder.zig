@@ -87,6 +87,15 @@ fn kitty(
             return "";
         }
 
+        // IME confirmation still sends an enter key so if we have enter
+        // and UTF8 text we just send it directly since we assume that is
+        // whats happening.
+        if (self.event.key == .enter and
+            self.event.utf8.len > 0)
+        {
+            return try copyToBuf(buf, self.event.utf8);
+        }
+
         // If we're reporting all then we always send CSI sequences.
         if (!self.kitty_flags.report_all) {
             // Quote:
@@ -1175,6 +1184,25 @@ test "kitty: alternates omit control characters" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[3~", actual);
+}
+
+test "kitty: enter with utf8 (dead key state)" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .enter,
+            .utf8 = "A",
+            .unshifted_codepoint = 0x0D,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_alternates = true,
+            .report_all = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("A", actual);
 }
 
 test "legacy: enter with utf8 (dead key state)" {
