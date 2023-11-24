@@ -2254,6 +2254,39 @@ fn showMouse(self: *Surface) void {
     self.rt_surface.setMouseVisibility(true);
 }
 
+pub fn parseStringLiteral(out: []u8, bytes: []const u8) []u8 {
+    var offset: usize = 0;
+    var index: usize = 0;
+    while (true) {
+        if (index >= bytes.len or offset >= out.len) break;
+        const b = bytes[index];
+        switch (b) {
+            '\\' => {
+                const escape_char_index = index + 1;
+                const result = std.zig.string_literal.parseEscapeSequence(bytes, &index);
+                switch (result) {
+                    .success => |codepoint| {
+                        if (bytes[escape_char_index] == 'u') {
+                            const len = std.unicode.utf8Encode(codepoint, out[offset..]) catch break;
+                            offset += len;
+                        } else {
+                            out[offset] = @as(u8, @intCast(codepoint));
+                            offset += 1;
+                        }
+                    },
+                    .failure => break,
+                }
+            },
+            else => {
+                out[offset] = b;
+                offset += 1;
+                index += 1;
+            },
+        }
+    }
+    return out[0..offset];
+}
+
 /// Perform a binding action. A binding is a keybinding. This function
 /// must be called from the GUI thread.
 ///
@@ -2279,7 +2312,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             const full_data = switch (action) {
                 .csi => try std.fmt.bufPrint(&buf, "\x1b[{s}", .{data}),
                 .esc => try std.fmt.bufPrint(&buf, "\x1b{s}", .{data}),
-                .text => data,
+                .text => parseStringLiteral(&buf, data),
                 else => unreachable,
             };
             _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
