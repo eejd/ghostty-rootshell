@@ -321,6 +321,47 @@ pub const Action = union(enum) {
         };
     }
 
+    // Use Zig syntax to parse a string literal.
+    // Since the escaping syntax is verbose, we can do the parsing inplace.
+    pub fn parseStringLiteralInPlace(bytes: []const u8) []const u8 {
+        var out: [128]u8 = undefined;
+        var offset: usize = 0;
+        var index: usize = 0;
+        while (true) {
+            assert(offset <= index);
+            if (index >= bytes.len or offset >= out.len) break;
+            const b = bytes[index];
+            switch (b) {
+                '\\' => {
+                    const escape_char_index = index + 1;
+                    const result = std.zig.string_literal.parseEscapeSequence(bytes, &index);
+                    switch (result) {
+                        .success => |codepoint| {
+                            if (bytes[escape_char_index] == 'u') {
+                                const len = std.unicode.utf8Encode(codepoint, out[offset..]) catch break;
+                                offset += len;
+                            } else {
+                                out[offset] = @as(u8, @intCast(codepoint));
+                                offset += 1;
+                            }
+                        },
+                        .failure => break,
+                    }
+                },
+                else => {
+                    out[offset] = b;
+                    offset += 1;
+                    index += 1;
+                },
+            }
+        }
+        // No escaping => no copy needed.
+        if (offset == index and index == bytes.len) return bytes;
+        const mut_bytes: []u8 = @as([*]u8, @ptrFromInt(@intFromPtr(bytes.ptr)))[0..offset];
+        @memcpy(mut_bytes, out[0..offset]);
+        return mut_bytes;
+    }
+
     /// Parse an action in the format of "key=value" where key is the
     /// action name and value is the action parameter. The parameter
     /// is optional depending on the action.
@@ -346,7 +387,10 @@ pub const Action = union(enum) {
 
                     []const u8 => {
                         const idx = colonIdx orelse return Error.InvalidFormat;
-                        const param = input[idx + 1 ..];
+                        const param = if (std.mem.eql(u8, field.name, "text"))
+                            parseStringLiteralInPlace(input[idx + 1 ..])
+                        else
+                            input[idx + 1 ..];
                         return @unionInit(Action, field.name, param);
                     },
 
@@ -851,6 +895,12 @@ test "parse: action with string" {
         const binding = try parse("a=esc:A");
         try testing.expect(binding.action == .esc);
         try testing.expectEqualStrings("A", binding.action.esc);
+    }
+    // parameter
+    {
+        const binding = try parse("a=text:\\x03\\u{26a1}");
+        try testing.expect(binding.action == .text);
+        try testing.expectEqualStrings(binding.action.text, &[_]u8{ 3, 0xe2, 0x9a, 0xa1 });
     }
 }
 
