@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) !void {
         test_step.dependOn(&tests_run.step);
 
         // Uncomment this if we're debugging tests
-        // b.installArtifact(test_exe);
+        b.installArtifact(test_exe);
     }
 }
 

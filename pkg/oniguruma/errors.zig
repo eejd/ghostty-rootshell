@@ -5,9 +5,9 @@ const Encoding = @import("types.zig").Encoding;
 pub const MAX_ERROR_LEN = c.ONIG_MAX_ERROR_MESSAGE_LEN;
 
 /// Convert an Oniguruma error to an error.
-pub fn convertError(code: c_int) !void {
+pub fn convertError(code: c_int) !c_int {
+    if (code >= 0) return code;
     switch (code) {
-        c.ONIG_NORMAL => {},
         else => return error.OnigurumaError,
     }
 }
