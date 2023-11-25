@@ -469,3 +469,70 @@ prettier --write .
 ```
 
 Make sure your Prettier version matches the version of in [devshell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devshell.nix).
+
+### Nix Package
+
+> [!WARNING]
+> The Nix package currently depends on versions of LLVM and Zig that are
+> currently not in cache.nixos.org and will be built from source. This can take
+> a very long time, especially in situations where CPU is at a premium. Most
+> people should follow the instructions in [Developing
+> Ghostty](#developing-ghostty) instead.
+
+There is a functional Nix package that can be used in the `flake.nix` file
+(`packages.ghostty`). It can be used in NixOS configurations and otherwise
+built off of (however, please heed the above warning).
+
+Below is a sample on how to add it to a NixOS overlay:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
+
+    # NOTE: This will require your git SSH access to the repo
+    ghostty = {
+      url = git+ssh://git@github.com/mitchellh/ghostty;
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, ghostty, ... }: {
+    nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+      modules = [
+        {
+          nixpkgs.overlays = [
+            (final: prev: {
+              ghostty = ghostty.packages.${prev.system}.ghostty;
+            })
+          ];
+        }
+
+        # Other modules here...
+      ];
+    };
+  };
+}
+```
+
+You can also test the build of the nix package at any time by running `nix build .`
+
+#### Updating the Zig Cache Fixed-Output Derivation Hash
+
+The Nix package depends on a [fixed-output
+derivation](https://nixos.org/manual/nix/stable/language/advanced-attributes.html#adv-attr-outputHash)
+that manages the Zig package cache. This allows the package to be built in the
+Nix sandbox.
+
+Occasionally (usually when `build.zig.zon` is updated), the hash that
+identifies the cache will need to be updated. There are jobs that monitor the
+hash in CI, and builds will fail if it drifts.
+
+To update it, you can run the following in the repository root:
+
+```
+./nix/build-support/check-zig-cache-hash.sh --update
+```
+
+This will write out the `nix/zig_cache_hash.nix` file with the updated hash
+that can then be committed and pushed to fix the builds.
