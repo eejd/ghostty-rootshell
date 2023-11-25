@@ -4,6 +4,7 @@ const types = @import("types.zig");
 const errors = @import("errors.zig");
 const testEnsureInit = @import("testing.zig").ensureInit;
 const Region = @import("region.zig").Region;
+const Error = errors.Error;
 const ErrorInfo = errors.ErrorInfo;
 const Encoding = types.Encoding;
 const Option = types.Option;
@@ -36,17 +37,19 @@ pub const Regex = struct {
         c.onig_free(self.value);
     }
 
-    /// onig_search shorthand to search an entire string.
+    /// Search an entire string for matches. This always returns a region
+    /// which may heap allocate (C allocator).
     pub fn search(
         self: *Regex,
         str: []const u8,
-        region: *Region,
         options: Option,
-    ) !usize {
-        return try self.searchAdvanced(str, 0, str.len, region, options);
+    ) !Region {
+        var region: Region = .{};
+        _ = try self.searchAdvanced(str, 0, str.len, &region, options);
+        return region;
     }
 
-    /// onig_search
+    /// onig_search directly
     pub fn searchAdvanced(
         self: *Regex,
         str: []const u8,
@@ -76,8 +79,9 @@ test {
     var re = try Regex.init("foo", .{}, Encoding.utf8, Syntax.default, null);
     defer re.deinit();
 
-    var region: Region = .{};
-    defer region.deinit();
-    const pos = try re.search("hello foo bar", &region, .{});
-    try testing.expectEqual(@as(usize, 6), pos);
+    var reg = try re.search("hello foo bar", .{});
+    defer reg.deinit();
+    try testing.expectEqual(@as(usize, 1), reg.count());
+
+    try testing.expectError(Error.Mismatch, re.search("hello", .{}));
 }

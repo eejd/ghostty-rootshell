@@ -10,3 +10,7 @@ pub fn init(encs: []const *Encoding) !void {
         @intCast(encs.len),
     ));
 }
+
+pub fn deinit() void {
+    _ = c.onig_end();
+}
