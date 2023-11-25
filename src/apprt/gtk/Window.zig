@@ -210,6 +210,13 @@ pub fn newTab(self: *Window, parentSurface: ?*CoreSurface) !void {
     // does not (cursor doesn't blink) unless reactivated by refocusing.
 }
 
+// addTab adds a tab to the windows list of tabs.
+// This does *not* manage the underlying GtkNotebook pages.
+pub fn addTab(self: *Window, tab: *Tab) !void {
+    tab.window = self;
+    try self.tabs.append(self.app.core_app.alloc, tab);
+}
+
 pub fn removeTab(self: *Window, tab: *Tab) !void {
     // Remove the tab from our stored tabs.
     const tab_idx = for (self.tabs.items, 0..) |t, i| {
@@ -217,10 +224,6 @@ pub fn removeTab(self: *Window, tab: *Tab) !void {
     } else null;
 
     if (tab_idx) |idx| _ = self.tabs.orderedRemove(idx) else return error.TabNotFound;
-
-    // Deallocate the tab
-    tab.deinit(self.app.core_app.alloc);
-    self.app.core_app.alloc.destroy(tab);
 }
 
 /// Close the tab for the given notebook page. This will automatically
@@ -236,6 +239,9 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
         log.warn("tab {} not removable: {}", .{ page_idx, err });
         return;
     };
+    // Deallocate the tab
+    tab.deinit(self.app.core_app.alloc);
+    self.app.core_app.alloc.destroy(tab);
 
     c.gtk_notebook_remove_page(self.notebook, page_idx);
 
@@ -381,31 +387,35 @@ fn gtkNotebookCreateWindow(
     page: *c.GtkWidget,
     ud: ?*anyopaque,
 ) callconv(.C) ?*c.GtkNotebook {
-    _ = ud;
-    _ = page;
-    log.warn("feature needs to be re-implemented after adding gtk splits", .{});
-    return null;
     // The tab for the page is stored in the widget data.
-    // const tab: *Tab = @ptrCast(@alignCast(
-    //     c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
-    // ));
-    // const surface: *Surface = tab.focus_child;
+    const tab: *Tab = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
+    ));
 
-    // const self = userdataSelf(ud.?);
-    // const alloc = self.app.core_app.alloc;
+    const currentWindow = userdataSelf(ud.?);
+    const alloc = currentWindow.app.core_app.alloc;
+    const app = currentWindow.app;
 
-    // // Create a new window
-    // const window = Window.create(alloc, self.app) catch |err| {
-    //     log.warn("error creating new window error={}", .{err});
-    //     return null;
-    // };
+    // Create a new window
+    const window = Window.create(alloc, app) catch |err| {
+        log.warn("error creating new window error={}", .{err});
+        return null;
+    };
 
-    // // We need to update our surface to point to the new window and tab so that
-    // // events such as new tab go to the right window.
-    // surface.window = window;
-    // surface.tab = window.tabs.items[window.tabs.items.len - 1];
+    // Now remove the tab from the old window.
+    currentWindow.removeTab(tab) catch |err| {
+        log.warn("error removing tab error={}", .{err});
+        return null;
+    };
 
-    // return window.notebook;
+    // And add it to the new window.
+    tab.window = window;
+    window.addTab(tab) catch |err| {
+        log.warn("error adding tab to new window error={}", .{err});
+        return null;
+    };
+
+    return window.notebook;
 }
 
 fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
