@@ -112,8 +112,6 @@ inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surfac
     const window = self.container.window() orelse return;
     const alloc = window.app.core_app.alloc;
 
-    // TODO: Grab focus
-
     // Keep a reference to the side that we want to keep, so it doesn't get
     // destroyed when it's removed from our underlying GtkPaned.
     const keep_object: *c.GObject = @ptrCast(keep.widget());
@@ -126,6 +124,9 @@ inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surfac
 
     // Our container must become whatever our top left is
     self.container.replace(keep);
+
+    // Grab focus of the left-over side
+    keep.grabFocus();
 
     // TODO: is this correct?
     remove.deinit(alloc);
@@ -147,6 +148,11 @@ pub fn replace(
     const pos = c.gtk_paned_get_position(self.paned);
     defer c.gtk_paned_set_position(self.paned, pos);
     self.updateChildren();
+}
+
+// grabFocus grabs the focus of the top-left element.
+pub fn grabFocus(self: *Split) void {
+    self.top_left.grabFocus();
 }
 
 /// Update the paned children to represent the current state.

@@ -86,11 +86,11 @@ pub const Container = union(enum) {
             }
         }
 
-        pub fn debugName(self: Elem) []const u8 {
-            return switch (self) {
-                .surface => "surface",
-                .split => "split",
-            };
+        pub fn grabFocus(self: Elem) void {
+            switch (self) {
+                .surface => |s| s.grabFocus(),
+                .split => |s| s.grabFocus(),
+            }
         }
     };
 
@@ -132,14 +132,10 @@ pub const Container = union(enum) {
     /// from a surface to a split or a split back to a surface or
     /// a split to a nested split and so on.
     pub fn replace(self: Container, elem: Elem) void {
-        log.debug("Container.replace. self={s}, elem={s}", .{ self.debugName(), elem.debugName() });
-
         // Move the element into the container
         switch (self) {
             .none => {},
-            .tab_ => |t| {
-                t.replaceElem(elem);
-            },
+            .tab_ => |t| t.replaceElem(elem),
             inline .split_tl, .split_br => |ptr| {
                 const s = self.split().?;
                 s.replace(ptr, elem);
@@ -154,22 +150,12 @@ pub const Container = union(enum) {
     /// children to effectively notify they're containing that
     /// all children at this level are exiting.
     pub fn remove(self: Container) void {
-        log.warn("Container.remove", .{});
         switch (self) {
             .none => {},
             .tab_ => |t| t.closeElem(),
             .split_tl => self.split().?.removeTopLeft(),
             .split_br => self.split().?.removeBottomRight(),
         }
-    }
-
-    pub fn debugName(self: Container) []const u8 {
-        return switch (self) {
-            .none => "none",
-            .tab_ => "tab",
-            .split_tl => "split_tl",
-            .split_br => "split_br",
-        };
     }
 };
 
@@ -541,22 +527,8 @@ pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
 }
 
 pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
-    log.debug("splitting direction={}", .{direction});
     const alloc = self.app.core_app.alloc;
     _ = try Split.create(alloc, self, direction);
-
-    // switch (self.parent) {
-    //     .none => return,
-    //     .paned => |parent_paned_tuple| {
-    //         const paned = parent_paned_tuple[0];
-    //         const position = parent_paned_tuple[1];
-    //
-    //         try paned.splitSurfaceInPosition(position, direction);
-    //     },
-    //     .tab => |tab| {
-    //         try tab.splitSurface(direction);
-    //     },
-    // }
 }
 
 pub fn newTab(self: *Surface) !void {
@@ -1059,13 +1031,7 @@ fn gtkMouseDown(
     // If we don't have focus, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     if (c.gtk_widget_has_focus(gl_widget) == 0) {
-        if (self.container.tab()) |tab| tab.focus_child = self;
-        _ = c.gtk_widget_grab_focus(gl_widget);
-
-        // If we have siblings, we also update the title, since it means
-        // another sibling might have updated the title.
-        // TODO: fixme
-        //if (self.parent != Parent.tab) self.updateTitleLabels();
+        self.grabFocus();
     }
 
     self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
