@@ -1,5 +1,5 @@
 const c = @import("c.zig");
-const Encoding = @import("encoding.zig").Encoding;
+const Encoding = @import("types.zig").Encoding;
 const errors = @import("errors.zig");
 
 /// Call once per process to initialize Oniguruma. This should be given

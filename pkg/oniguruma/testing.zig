@@ -1,4 +1,5 @@
 const init = @import("init.zig");
+const Encoding = @import("types.zig").Encoding;
 
 var initialized: bool = false;
 
@@ -10,5 +11,5 @@ var initialized: bool = false;
 /// This always only initializes the encodings the tests use.
 pub fn ensureInit() !void {
     if (initialized) return;
-    try init.init();
+    try init.init(&.{Encoding.utf8});
 }
