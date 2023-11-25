@@ -193,7 +193,7 @@ fn initActions(self: *Window) void {
 pub fn deinit(self: *Window) void {
     self.icon.deinit(self.app);
     for (self.tabs.items) |tab| {
-        tab.deinit();
+        tab.deinit(self.app.core_app.alloc);
         self.app.core_app.alloc.destroy(tab);
     }
     self.tabs.deinit(self.app.core_app.alloc);
@@ -219,7 +219,7 @@ pub fn removeTab(self: *Window, tab: *Tab) !void {
     if (tab_idx) |idx| _ = self.tabs.orderedRemove(idx) else return error.TabNotFound;
 
     // Deallocate the tab
-    tab.deinit();
+    tab.deinit(self.app.core_app.alloc);
     self.app.core_app.alloc.destroy(tab);
 }
 

@@ -79,10 +79,10 @@ pub const Container = union(enum) {
             };
         }
 
-        pub fn destroy(self: Elem) void {
+        pub fn deinit(self: Elem, alloc: Allocator) void {
             switch (self) {
                 .surface => |s| s.unref(),
-                .split => |s| s.destroy(),
+                .split => |s| s.destroy(alloc),
             }
         }
 

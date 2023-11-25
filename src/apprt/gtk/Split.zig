@@ -90,16 +90,11 @@ pub fn init(
     surface.grabFocus();
 }
 
-pub fn destroy(self: *Split) void {
-    const window = self.container.window() orelse return;
+pub fn destroy(self: *Split, alloc: Allocator) void {
+    self.top_left.deinit(alloc);
+    self.bottom_right.deinit(alloc);
 
-    self.top_left.destroy();
-    self.bottom_right.destroy();
-
-    self.removeChildren();
-
-    // TODO: this is the same as in removeChild?
-    window.app.core_app.alloc.destroy(self);
+    alloc.destroy(self);
 }
 
 /// Remove the top left child.
@@ -115,6 +110,7 @@ pub fn removeBottomRight(self: *Split) void {
 // TODO: Is this Zig-y?
 inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surface.Container.Elem) void {
     const window = self.container.window() orelse return;
+    const alloc = window.app.core_app.alloc;
 
     // TODO: Grab focus
 
@@ -132,8 +128,8 @@ inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surfac
     self.container.replace(keep);
 
     // TODO: is this correct?
-    remove.destroy();
-    window.app.core_app.alloc.destroy(self);
+    remove.deinit(alloc);
+    alloc.destroy(self);
 }
 
 // TODO: ehhhhhh

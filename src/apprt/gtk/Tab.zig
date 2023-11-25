@@ -141,15 +141,13 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 }
 
 /// Deinits tab by deiniting child elem.
-pub fn deinit(self: *Tab) void {
-    self.elem.destroy();
+pub fn deinit(self: *Tab, alloc: Allocator) void {
+    self.elem.deinit(alloc);
 }
 
 // TODO: move this
 /// Replace the surface element that this tab is showing.
 pub fn replaceElem(self: *Tab, elem: Surface.Container.Elem) void {
-    // _ = c.g_object_ref_sink(self.elem.widget());
-
     // Remove our previous widget
     c.gtk_box_remove(self.box, self.elem.widget());
 
