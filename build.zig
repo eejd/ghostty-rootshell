@@ -798,6 +798,7 @@ fn addDeps(
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
         step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
         step.linkSystemLibrary2("libpng", dynamic_link_opts);
+        step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
         step.linkSystemLibrary2("pixman-1", dynamic_link_opts);
         step.linkSystemLibrary2("zlib", dynamic_link_opts);
 
