@@ -686,6 +686,10 @@ fn addDeps(
         .target = step.target,
         .optimize = step.optimize,
     });
+    const oniguruma_dep = b.dependency("oniguruma", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
     const opengl_dep = b.dependency("opengl", .{});
     const pixman_dep = b.dependency("pixman", .{
         .target = step.target,
@@ -749,6 +753,7 @@ fn addDeps(
         "fontconfig",
         fontconfig_dep.module("fontconfig"),
     );
+    step.addModule("oniguruma", oniguruma_dep.module("oniguruma"));
     step.addModule("freetype", freetype_dep.module("freetype"));
     step.addModule("glslang", glslang_dep.module("glslang"));
     step.addModule("spirv_cross", spirv_cross_dep.module("spirv_cross"));
@@ -803,6 +808,9 @@ fn addDeps(
 
     // Other dependencies, we may dynamically link
     if (static) {
+        step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
+        try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
+
         step.linkLibrary(zlib_dep.artifact("z"));
         try static_libs.append(zlib_dep.artifact("z").getEmittedBin());
 

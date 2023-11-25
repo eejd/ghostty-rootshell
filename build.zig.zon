@@ -32,6 +32,7 @@
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .libpng = .{ .path = "./pkg/libpng" },
         .macos = .{ .path = "./pkg/macos" },
+        .oniguruma = .{ .path = "./pkg/oniguruma" },
         .opengl = .{ .path = "./pkg/opengl" },
         .pixman = .{ .path = "./pkg/pixman" },
         .tracy = .{ .path = "./pkg/tracy" },
