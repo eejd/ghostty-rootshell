@@ -96,7 +96,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     var surface = try Surface.create(window.app.core_app.alloc, window.app, .{
         .parent2 = parent_,
     });
-    errdefer surface.destroy(window.app.core_app.alloc);
+    errdefer surface.unref();
     surface.setContainer(.{ .tab_ = self });
     self.elem = .{ .surface = surface };
 

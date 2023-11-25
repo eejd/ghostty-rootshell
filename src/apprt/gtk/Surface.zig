@@ -223,7 +223,9 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     // GL area be moved around i.e. between a split, a tab, etc.
     // without having to be really careful about ordering to
     // prevent a destroy.
-    // TODO: unref in deinit
+    //
+    // This is unref'd in the unref() method that's called by the
+    // self.container through Elem.deinit.
     _ = c.g_object_ref_sink(@ptrCast(gl_area));
     errdefer c.g_object_unref(@ptrCast(gl_area));
 
@@ -373,11 +375,6 @@ fn realize(self: *Surface) !void {
 
     // Note we're realized
     self.realized = true;
-}
-
-pub fn destroy(self: *Surface, alloc: Allocator) void {
-    self.deinit();
-    alloc.destroy(self);
 }
 
 pub fn deinit(self: *Surface) void {
