@@ -159,6 +159,19 @@ pub fn grabFocus(self: *Split) void {
 /// This should be called anytime the top/left or bottom/right
 /// element is changed.
 fn updateChildren(self: *const Split) void {
+    // TODO: Not sure we should keep this.
+    //
+    // We keep references to both widgets, because only Surface widgets have
+    // long-held references but GtkPaned will also get destroyed if we don't
+    // keep a reference here before removing.
+    const top_left_object: *c.GObject = @ptrCast(self.top_left.widget());
+    _ = c.g_object_ref(top_left_object);
+    defer c.g_object_unref(top_left_object);
+
+    const bottom_right_object: *c.GObject = @ptrCast(self.bottom_right.widget());
+    _ = c.g_object_ref(bottom_right_object);
+    defer c.g_object_unref(bottom_right_object);
+
     // We have to set both to null. If we overwrite the pane with
     // the same value, then GTK bugs out (the GL area unrealizes
     // and never rerealizes).
