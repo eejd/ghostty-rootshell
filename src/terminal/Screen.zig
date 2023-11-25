@@ -900,6 +900,63 @@ pub const GraphemeData = union(enum) {
     }
 };
 
+/// A line represents a line of text, potentially across soft-wrapped
+/// boundaries. This differs from row, which is a single physical row within
+/// the terminal screen.
+pub const Line = struct {
+    screen: *Screen,
+    tag: RowIndexTag,
+    start: usize,
+    len: usize,
+
+    /// The string contents of this line.
+    pub fn string(self: *const Line, alloc: Allocator) ![:0]const u8 {
+        // Get the start and end screen point.
+        const start_idx = self.tag.index(self.start).toScreen(self.screen).screen;
+        const end_idx = self.tag.index(self.start + (self.len - 1)).toScreen(self.screen).screen;
+
+        // Convert the start and end screen points into a selection across
+        // the entire rows. We then use selectionString because it handles
+        // unwrapping, graphemes, etc.
+        const sel: Selection = .{
+            .start = .{ .y = start_idx, .x = 0 },
+            .end = .{ .y = end_idx, .x = self.screen.cols - 1 },
+        };
+        return try self.screen.selectionString(alloc, sel, false);
+    }
+};
+
+/// Iterator over textual lines within the terminal. This will unwrap
+/// wrapped lines and consider them a single line.
+pub const LineIterator = struct {
+    row_it: RowIterator,
+
+    pub fn next(self: *LineIterator) ?Line {
+        const start = self.row_it.value;
+
+        // Get our current row
+        var row = self.row_it.next() orelse return null;
+        var len: usize = 1;
+
+        // While the row is wrapped we keep iterating over the rows
+        // and incrementing the length.
+        while (row.isWrapped()) {
+            // Note: this orelse shouldn't happen. A wrapped row should
+            // always have a next row. However, this isn't the place where
+            // we want to assert that.
+            row = self.row_it.next() orelse break;
+            len += 1;
+        }
+
+        return .{
+            .screen = self.row_it.screen,
+            .tag = self.row_it.tag,
+            .start = start,
+            .len = len,
+        };
+    }
+};
+
 // Initialize to header and not a cell so that we can check header.init
 // to know if the remainder of the row has been initialized or not.
 const StorageBuf = CircBuf(StorageCell, .{ .header = .{} });
@@ -1095,6 +1152,13 @@ pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
         .tag = tag,
         .max = tag.maxLen(self),
     };
+}
+
+/// Returns an iterator that iterates over the lines of the screen. A line
+/// is a single line of text which may wrap across multiple rows. A row
+/// is a single physical row of the terminal.
+pub fn lineIterator(self: *Screen, tag: RowIndexTag) LineIterator {
+    return .{ .row_it = self.rowIterator(tag) };
 }
 
 /// Returns the row at the given index. This row is writable, although
@@ -3402,6 +3466,62 @@ test "Screen: write long emoji" {
     try s.testWriteString(buf[0..buf_idx]);
     try testing.expect(s.rowsWritten() == 1);
     try testing.expectEqual(@as(usize, 5), s.cursor.x);
+}
+
+test "Screen: lineIterator" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD\n2EFGH";
+    try s.testWriteString(str);
+
+    // Test the line iterator
+    var iter = s.lineIterator(.viewport);
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("1ABCD", actual);
+    }
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("2EFGH", actual);
+    }
+    try testing.expect(iter.next() == null);
+}
+
+test "Screen: lineIterator soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD2EFGH\n3ABCD";
+    try s.testWriteString(str);
+
+    // Test the line iterator
+    var iter = s.lineIterator(.viewport);
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("1ABCD2EFGH", actual);
+    }
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("3ABCD", actual);
+    }
+    try testing.expect(iter.next() == null);
 }
 
 test "Screen: scrolling" {
