@@ -90,6 +90,18 @@ pub fn init(
     surface.grabFocus();
 }
 
+pub fn destroy(self: *Split) void {
+    const window = self.container.window() orelse return;
+
+    self.top_left.destroy();
+    self.bottom_right.destroy();
+
+    self.removeChildren();
+
+    // TODO: this is the same as in removeChild?
+    window.app.core_app.alloc.destroy(self);
+}
+
 /// Remove the top left child.
 pub fn removeTopLeft(self: *Split) void {
     self.removeChild(self.top_left, self.bottom_right);
@@ -120,7 +132,7 @@ inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surfac
     self.container.replace(keep);
 
     // TODO: is this correct?
-    remove.shutdown();
+    remove.destroy();
     window.app.core_app.alloc.destroy(self);
 }
 

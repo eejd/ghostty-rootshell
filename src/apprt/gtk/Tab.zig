@@ -142,7 +142,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 
 /// Deinits tab by deiniting child elem.
 pub fn deinit(self: *Tab) void {
-    self.elem.shutdown();
+    self.elem.destroy();
 }
 
 // TODO: move this

@@ -79,12 +79,10 @@ pub const Container = union(enum) {
             };
         }
 
-        pub fn shutdown(self: Elem) void {
+        pub fn destroy(self: Elem) void {
             switch (self) {
-                .surface => |s| s.shutdown(),
-                .split => {
-                    @panic("TODO: shutdownsplit");
-                },
+                .surface => |s| s.unref(),
+                .split => |s| s.destroy(),
             }
         }
 
@@ -416,9 +414,9 @@ pub fn deinit(self: *Surface) void {
     if (self.cursor) |cursor| c.g_object_unref(cursor);
 }
 
-// shutdown removes the long-held reference to the gl_area and kicks off the
+// unref removes the long-held reference to the gl_area and kicks off the
 // deinit/destroy process for this surface.
-pub fn shutdown(self: *Surface) void {
+pub fn unref(self: *Surface) void {
     c.g_object_unref(self.gl_area);
 }
 
