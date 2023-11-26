@@ -2140,62 +2140,14 @@ pub fn selectionString(
     // Get the slices for the string
     const slices = self.selectionSlices(sel);
 
-    // We can now know how much space we'll need to store the string. We loop
-    // over and UTF8-encode and calculate the exact size required. We will be
-    // off here by at most "newlines" values in the worst case that every
-    // single line is soft-wrapped.
-    const chars = chars: {
-        var count: usize = 0;
-
-        // We need to keep track of our x/y so that we can get graphemes.
-        var y: usize = slices.sel.start.y;
-        var x: usize = 0;
-        var row: Row = undefined;
-
-        const arr = [_][]StorageCell{ slices.top, slices.bot };
-        for (arr) |slice| {
-            for (slice, 0..) |cell, i| {
-                // detect row headers
-                if (@mod(i, self.cols + 1) == 0) {
-                    // We use each row header as an opportunity to "count"
-                    // a new row, and therefore count a possible newline.
-                    count += 1;
-
-                    // Increase our row count and get our next row
-                    y += 1;
-                    x = 0;
-                    row = self.getRow(.{ .screen = y - 1 });
-                    continue;
-                }
-
-                var buf: [4]u8 = undefined;
-                const char = if (cell.cell.char > 0) cell.cell.char else ' ';
-                count += try std.unicode.utf8Encode(@intCast(char), &buf);
-
-                // We need to also count any grapheme chars
-                var it = row.codepointIterator(x);
-                while (it.next()) |cp| {
-                    count += try std.unicode.utf8Encode(cp, &buf);
-                }
-
-                x += 1;
-            }
-        }
-
-        break :chars count;
-    };
-    const buf = try alloc.alloc(u8, chars + 1);
-    errdefer alloc.free(buf);
-
-    // Special case the empty case
-    if (chars == 0) {
-        buf[0] = 0;
-        return buf[0..0 :0];
-    }
+    // Use an ArrayList so that we can grow the array as we go. We
+    // build an initial capacity of just our rows in our selection times
+    // columns. It can be more or less based on graphemes, newlines, etc.
+    var strbuilder = try std.ArrayList(u8).initCapacity(alloc, slices.rows * self.cols);
+    defer strbuilder.deinit();
 
     // Connect the text from the two slices
     const arr = [_][]StorageCell{ slices.top, slices.bot };
-    var buf_i: usize = 0;
     var row_count: usize = 0;
     for (arr) |slice| {
         const row_start: usize = row_count;
@@ -2215,6 +2167,13 @@ pub fn selectionString(
             // the first row.
             var skip: usize = if (row_count == 0) slices.top_offset else 0;
 
+            // If we have runtime safety we need to initialize the row
+            // so that the proper union tag is set. In release modes we
+            // don't need to do this because we zero the memory.
+            if (std.debug.runtime_safety) {
+                _ = self.getRow(.{ .screen = slices.sel.start.y + row_i });
+            }
+
             const row: Row = .{ .screen = self, .storage = slice[start_idx..end_idx] };
             var it = row.cellIterator();
             var x: usize = 0;
@@ -2230,50 +2189,60 @@ pub fn selectionString(
                 if (cell.attrs.wide_spacer_head or
                     cell.attrs.wide_spacer_tail) continue;
 
+                var buf: [4]u8 = undefined;
                 const char = if (cell.char > 0) cell.char else ' ';
-                buf_i += try std.unicode.utf8Encode(@intCast(char), buf[buf_i..]);
+                {
+                    const encode_len = try std.unicode.utf8Encode(@intCast(char), &buf);
+                    try strbuilder.appendSlice(buf[0..encode_len]);
+                }
 
                 var cp_it = row.codepointIterator(x);
                 while (cp_it.next()) |cp| {
-                    buf_i += try std.unicode.utf8Encode(cp, buf[buf_i..]);
+                    const encode_len = try std.unicode.utf8Encode(cp, &buf);
+                    try strbuilder.appendSlice(buf[0..encode_len]);
                 }
             }
 
             // If this row is not soft-wrapped, add a newline
-            if (!row.header().flags.wrap) {
-                buf[buf_i] = '\n';
-                buf_i += 1;
-            }
+            if (!row.header().flags.wrap) try strbuilder.append('\n');
         }
     }
 
     // Remove our trailing newline, its never correct.
-    if (buf_i > 0 and buf[buf_i - 1] == '\n') buf_i -= 1;
+    if (strbuilder.items.len > 0 and
+        strbuilder.items[strbuilder.items.len - 1] == '\n')
+    {
+        strbuilder.items.len -= 1;
+    }
 
     // Remove any trailing spaces on lines. We could do optimize this by
     // doing this in the loop above but this isn't very hot path code and
     // this is simple.
     if (trim) {
-        var it = std.mem.tokenize(u8, buf[0..buf_i], "\n");
-        buf_i = 0;
+        var it = std.mem.tokenize(u8, strbuilder.items, "\n");
+
+        // Reset our items. We retain our capacity. Because we're only
+        // removing bytes, we know that the trimmed string must be no longer
+        // than the original string so we copy directly back into our
+        // allocated memory.
+        strbuilder.clearRetainingCapacity();
         while (it.next()) |line| {
             const trimmed = std.mem.trimRight(u8, line, " \t");
-            std.mem.copy(u8, buf[buf_i..], trimmed);
-            buf_i += trimmed.len;
-            buf[buf_i] = '\n';
-            buf_i += 1;
+            const i = strbuilder.items.len;
+            strbuilder.items.len += trimmed.len;
+            std.mem.copyForwards(u8, strbuilder.items[i..], trimmed);
+            strbuilder.appendAssumeCapacity('\n');
         }
 
         // Remove our trailing newline again
-        if (buf_i > 0) buf_i -= 1;
+        if (strbuilder.items.len > 0) strbuilder.items.len -= 1;
     }
 
-    // Add null termination
-    buf[buf_i] = 0;
+    // Get our final string
+    const string = try strbuilder.toOwnedSliceSentinel(0);
+    errdefer alloc.free(string);
 
-    // Realloc so our free length is exactly correct
-    const result = try alloc.realloc(buf, buf_i + 1);
-    return result[0..buf_i :0];
+    return string;
 }
 
 /// Returns the slices that make up the selection, in order. There are at most
