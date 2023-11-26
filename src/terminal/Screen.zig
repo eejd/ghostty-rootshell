@@ -909,8 +909,18 @@ pub const Line = struct {
     start: usize,
     len: usize,
 
-    /// The string contents of this line.
+    /// Return the string for this line.
     pub fn string(self: *const Line, alloc: Allocator) ![:0]const u8 {
+        return try self.screen.selectionString(alloc, self.selection(), true);
+    }
+
+    /// Receive the string for this line along with the byte-to-point mapping.
+    pub fn stringMap(self: *const Line, alloc: Allocator) !StringMap {
+        return try self.screen.selectionStringMap(alloc, self.selection());
+    }
+
+    /// Return a selection that covers the entire line.
+    pub fn selection(self: *const Line) Selection {
         // Get the start and end screen point.
         const start_idx = self.tag.index(self.start).toScreen(self.screen).screen;
         const end_idx = self.tag.index(self.start + (self.len - 1)).toScreen(self.screen).screen;
@@ -918,11 +928,10 @@ pub const Line = struct {
         // Convert the start and end screen points into a selection across
         // the entire rows. We then use selectionString because it handles
         // unwrapping, graphemes, etc.
-        const sel: Selection = .{
+        return .{
             .start = .{ .y = start_idx, .x = 0 },
             .end = .{ .y = end_idx, .x = self.screen.cols - 1 },
         };
-        return try self.screen.selectionString(alloc, sel, false);
     }
 };
 
@@ -2146,6 +2155,87 @@ pub fn selectionString(
     var strbuilder = try std.ArrayList(u8).initCapacity(alloc, slices.rows * self.cols);
     defer strbuilder.deinit();
 
+    // Get our string result.
+    try self.selectionSliceString(slices, &strbuilder, null);
+
+    // Remove any trailing spaces on lines. We could do optimize this by
+    // doing this in the loop above but this isn't very hot path code and
+    // this is simple.
+    if (trim) {
+        var it = std.mem.tokenize(u8, strbuilder.items, "\n");
+
+        // Reset our items. We retain our capacity. Because we're only
+        // removing bytes, we know that the trimmed string must be no longer
+        // than the original string so we copy directly back into our
+        // allocated memory.
+        strbuilder.clearRetainingCapacity();
+        while (it.next()) |line| {
+            const trimmed = std.mem.trimRight(u8, line, " \t");
+            const i = strbuilder.items.len;
+            strbuilder.items.len += trimmed.len;
+            std.mem.copyForwards(u8, strbuilder.items[i..], trimmed);
+            strbuilder.appendAssumeCapacity('\n');
+        }
+
+        // Remove our trailing newline again
+        if (strbuilder.items.len > 0) strbuilder.items.len -= 1;
+    }
+
+    // Get our final string
+    const string = try strbuilder.toOwnedSliceSentinel(0);
+    errdefer alloc.free(string);
+
+    return string;
+}
+
+/// A string along with the mapping of each individual byte in the string
+/// to the point in the screen.
+pub const StringMap = struct {
+    string: [:0]const u8,
+    map: []point.ScreenPoint,
+
+    pub fn deinit(self: StringMap, alloc: Allocator) void {
+        alloc.free(self.string);
+        alloc.free(self.map);
+    }
+};
+
+/// Returns the row text associated with a selection along with the
+/// mapping of each individual byte in the string to the point in the screen.
+fn selectionStringMap(
+    self: *Screen,
+    alloc: Allocator,
+    sel: Selection,
+) !StringMap {
+    // Get the slices for the string
+    const slices = self.selectionSlices(sel);
+
+    // Use an ArrayList so that we can grow the array as we go. We
+    // build an initial capacity of just our rows in our selection times
+    // columns. It can be more or less based on graphemes, newlines, etc.
+    var strbuilder = try std.ArrayList(u8).initCapacity(alloc, slices.rows * self.cols);
+    defer strbuilder.deinit();
+    var mapbuilder = try std.ArrayList(point.ScreenPoint).initCapacity(alloc, strbuilder.capacity);
+    defer mapbuilder.deinit();
+
+    // Get our results
+    try self.selectionSliceString(slices, &strbuilder, &mapbuilder);
+
+    // Get our final string
+    const string = try strbuilder.toOwnedSliceSentinel(0);
+    errdefer alloc.free(string);
+    const map = try mapbuilder.toOwnedSlice();
+    errdefer alloc.free(map);
+    return .{ .string = string, .map = map };
+}
+
+/// Takes a SelectionSlices value and builds the string and mapping for it.
+fn selectionSliceString(
+    self: *Screen,
+    slices: SelectionSlices,
+    strbuilder: *std.ArrayList(u8),
+    mapbuilder: ?*std.ArrayList(point.ScreenPoint),
+) !void {
     // Connect the text from the two slices
     const arr = [_][]StorageCell{ slices.top, slices.bot };
     var row_count: usize = 0;
@@ -2194,17 +2284,37 @@ pub fn selectionString(
                 {
                     const encode_len = try std.unicode.utf8Encode(@intCast(char), &buf);
                     try strbuilder.appendSlice(buf[0..encode_len]);
+                    if (mapbuilder) |b| {
+                        for (0..encode_len) |_| try b.append(.{
+                            .x = x,
+                            .y = slices.sel.start.y + row_i,
+                        });
+                    }
                 }
 
                 var cp_it = row.codepointIterator(x);
                 while (cp_it.next()) |cp| {
                     const encode_len = try std.unicode.utf8Encode(cp, &buf);
                     try strbuilder.appendSlice(buf[0..encode_len]);
+                    if (mapbuilder) |b| {
+                        for (0..encode_len) |_| try b.append(.{
+                            .x = x,
+                            .y = slices.sel.start.y + row_i,
+                        });
+                    }
                 }
             }
 
             // If this row is not soft-wrapped, add a newline
-            if (!row.header().flags.wrap) try strbuilder.append('\n');
+            if (!row.header().flags.wrap) {
+                try strbuilder.append('\n');
+                if (mapbuilder) |b| {
+                    try b.append(.{
+                        .x = self.cols - 1,
+                        .y = slices.sel.start.y + row_i,
+                    });
+                }
+            }
         }
     }
 
@@ -2213,42 +2323,17 @@ pub fn selectionString(
         strbuilder.items[strbuilder.items.len - 1] == '\n')
     {
         strbuilder.items.len -= 1;
+        if (mapbuilder) |b| b.items.len -= 1;
     }
 
-    // Remove any trailing spaces on lines. We could do optimize this by
-    // doing this in the loop above but this isn't very hot path code and
-    // this is simple.
-    if (trim) {
-        var it = std.mem.tokenize(u8, strbuilder.items, "\n");
-
-        // Reset our items. We retain our capacity. Because we're only
-        // removing bytes, we know that the trimmed string must be no longer
-        // than the original string so we copy directly back into our
-        // allocated memory.
-        strbuilder.clearRetainingCapacity();
-        while (it.next()) |line| {
-            const trimmed = std.mem.trimRight(u8, line, " \t");
-            const i = strbuilder.items.len;
-            strbuilder.items.len += trimmed.len;
-            std.mem.copyForwards(u8, strbuilder.items[i..], trimmed);
-            strbuilder.appendAssumeCapacity('\n');
+    if (std.debug.runtime_safety) {
+        if (mapbuilder) |b| {
+            assert(strbuilder.items.len == b.items.len);
         }
-
-        // Remove our trailing newline again
-        if (strbuilder.items.len > 0) strbuilder.items.len -= 1;
     }
-
-    // Get our final string
-    const string = try strbuilder.toOwnedSliceSentinel(0);
-    errdefer alloc.free(string);
-
-    return string;
 }
 
-/// Returns the slices that make up the selection, in order. There are at most
-/// two parts to handle the ring buffer. If the selection fits in one contiguous
-/// slice, then the second slice will have a length of zero.
-fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
+const SelectionSlices = struct {
     rows: usize,
 
     // The selection that the slices below represent. This may not
@@ -2261,7 +2346,12 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     top_offset: usize,
     top: []StorageCell,
     bot: []StorageCell,
-} {
+};
+
+/// Returns the slices that make up the selection, in order. There are at most
+/// two parts to handle the ring buffer. If the selection fits in one contiguous
+/// slice, then the second slice will have a length of zero.
+fn selectionSlices(self: *Screen, sel_raw: Selection) SelectionSlices {
     // Note: this function is tested via selectionString
 
     // If the selection starts beyond the end of the screen, then we return empty
