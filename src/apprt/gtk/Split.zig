@@ -62,6 +62,9 @@ pub fn init(
     const paned = c.gtk_paned_new(orientation);
     errdefer c.g_object_unref(paned);
 
+    // Keep a long-lived reference, which we unref in destroy.
+    _ = c.g_object_ref(paned);
+
     // Update all of our containers to point to the right place.
     // The split has to point to where the sibling pointed to because
     // we're inheriting its parent. The sibling points to its location
@@ -94,6 +97,9 @@ pub fn destroy(self: *Split, alloc: Allocator) void {
     self.top_left.deinit(alloc);
     self.bottom_right.deinit(alloc);
 
+    // Clean up our GTK reference.
+    c.g_object_unref(self.paned);
+
     alloc.destroy(self);
 }
 
@@ -111,12 +117,6 @@ pub fn removeBottomRight(self: *Split) void {
 inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surface.Container.Elem) void {
     const window = self.container.window() orelse return;
     const alloc = window.app.core_app.alloc;
-
-    // Keep a reference to the side that we want to keep, so it doesn't get
-    // destroyed when it's removed from our underlying GtkPaned.
-    const keep_object: *c.GObject = @ptrCast(keep.widget());
-    _ = c.g_object_ref(keep_object);
-    defer c.g_object_unref(keep_object);
 
     // Remove our children since we are going to no longer be
     // a split anyways. This prevents widgets with multiple parents.
@@ -159,19 +159,6 @@ pub fn grabFocus(self: *Split) void {
 /// This should be called anytime the top/left or bottom/right
 /// element is changed.
 fn updateChildren(self: *const Split) void {
-    // TODO: Not sure we should keep this.
-    //
-    // We keep references to both widgets, because only Surface widgets have
-    // long-held references but GtkPaned will also get destroyed if we don't
-    // keep a reference here before removing.
-    const top_left_object: *c.GObject = @ptrCast(self.top_left.widget());
-    _ = c.g_object_ref(top_left_object);
-    defer c.g_object_unref(top_left_object);
-
-    const bottom_right_object: *c.GObject = @ptrCast(self.bottom_right.widget());
-    _ = c.g_object_ref(bottom_right_object);
-    defer c.g_object_unref(bottom_right_object);
-
     // We have to set both to null. If we overwrite the pane with
     // the same value, then GTK bugs out (the GL area unrealizes
     // and never rerealizes).
