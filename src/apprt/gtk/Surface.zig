@@ -403,12 +403,9 @@ pub fn unref(self: *Surface) void {
     c.g_object_unref(self.gl_area);
 }
 
-// TODO: move this
-/// Change the container for the surface to `container`.
-pub fn setContainer(self: *Surface, container: Container) void {
-    self.container = container;
-
-    // TODO: do we need to ever update our title or anything here?
+pub fn destroy(self: *Surface, alloc: Allocator) void {
+    self.deinit();
+    alloc.destroy(self);
 }
 
 fn render(self: *Surface) !void {
