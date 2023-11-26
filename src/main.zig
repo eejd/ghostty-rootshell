@@ -6,6 +6,7 @@ const options = @import("build_options");
 const glfw = @import("glfw");
 const glslang = @import("glslang");
 const macos = @import("macos");
+const oni = @import("oniguruma");
 const tracy = @import("tracy");
 const cli = @import("cli.zig");
 const internal_os = @import("os/main.zig");
@@ -276,6 +277,9 @@ pub const GlobalState = struct {
 
         // Initialize glslang for shader compilation
         try glslang.init();
+
+        // Initialize oniguruma for regex
+        try oni.init(&.{oni.Encoding.utf8});
 
         // Find our resources directory once for the app so every launch
         // hereafter can use this cached value.

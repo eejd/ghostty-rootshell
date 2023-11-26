@@ -9,6 +9,7 @@ const builtin = @import("builtin");
 const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
+const oni = @import("oniguruma");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
 const apprt = @import("../apprt.zig");
@@ -118,6 +119,11 @@ texture_color: objc.Object, // MTLTexture
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
+
+/// Our URL regex.
+/// One day, this will be part of DerivedConfig since all regex matchers
+/// will be part of the config.
+url_regex: oni.Regex,
 
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
@@ -342,6 +348,16 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
     const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
 
+    // Create our URL regex
+    var url_re = try oni.Regex.init(
+        configpkg.url.regex,
+        .{},
+        oni.Encoding.utf8,
+        oni.Syntax.default,
+        null,
+    );
+    errdefer url_re.deinit();
+
     return Metal{
         .alloc = alloc,
         .config = options.config,
@@ -382,6 +398,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .texture_greyscale = texture_greyscale,
         .texture_color = texture_color,
         .custom_shader_state = custom_shader_state,
+
+        .url_regex = url_re,
     };
 }
 
@@ -410,6 +428,8 @@ pub fn deinit(self: *Metal) void {
     if (self.custom_shader_state) |*state| state.deinit();
 
     self.shaders.deinit(self.alloc);
+
+    self.url_regex.deinit();
 
     self.* = undefined;
 }
@@ -1371,6 +1391,49 @@ fn rebuildCells(
         (screen.rows * screen.cols * 2) + 1,
     );
 
+    // Create an arena for all our temporary allocations while rebuilding
+    var arena = ArenaAllocator.init(self.alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    // All of our matching URLs. The selections in this list MUST be in
+    // order of left-to-right top-to-bottom (English reading order). This
+    // requirement is necessary for the URL highlighting to work properly
+    // and has nothing to do with the locale.
+    var urls = std.ArrayList(terminal.Selection).init(arena_alloc);
+
+    // Find all the cells that have URLs.
+    var lineIter = screen.lineIterator(.viewport);
+    while (lineIter.next()) |line| {
+        const strmap = line.stringMap(arena_alloc) catch continue;
+        defer strmap.deinit(arena_alloc);
+
+        var offset: usize = 0;
+        while (true) {
+            var match = self.url_regex.search(strmap.string[offset..], .{}) catch |err| {
+                switch (err) {
+                    error.Mismatch => {},
+                    else => log.warn("failed to search for URLs err={}", .{err}),
+                }
+
+                break;
+            };
+            defer match.deinit();
+
+            // Determine the screen point for the match
+            const start_idx: usize = @intCast(match.starts()[0]);
+            const end_idx: usize = @intCast(match.ends()[0] - 1);
+            const start_pt = strmap.map[offset + start_idx];
+            const end_pt = strmap.map[offset + end_idx];
+
+            // Move our offset so we can continue searching
+            offset += end_idx;
+
+            // Store our selection
+            try urls.append(.{ .start = start_pt, .end = end_pt });
+        }
+    }
+
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
     const preedit_range: ?struct {
@@ -1387,6 +1450,10 @@ fn rebuildCells(
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
     var cursor_cell: ?mtl_shaders.Cell = null;
+
+    // Keep track of our current hint that is being tracked.
+    var hint: ?terminal.Selection = if (urls.items.len > 0) urls.items[0] else null;
+    var hint_i: usize = 0;
 
     // Build each cell
     var rowIter = screen.rowIterator(.viewport);
@@ -1475,10 +1542,43 @@ fn rebuildCells(
                     }
                 }
 
+                // It this cell is within our hint range then we need to
+                // underline it.
+                const cell: terminal.Screen.Cell = cell: {
+                    var cell = row.getCell(shaper_cell.x);
+                    if (hint) |sel| hint: {
+                        const pt: terminal.point.ScreenPoint = .{
+                            .x = shaper_cell.x,
+                            .y = y,
+                        };
+
+                        // If the end is before the point then we try to
+                        // move to the next hint.
+                        var compare_sel: terminal.Selection = sel;
+                        if (sel.end.before(pt)) {
+                            hint_i += 1;
+                            if (hint_i >= urls.items.len) {
+                                hint = null;
+                                break :hint;
+                            }
+
+                            compare_sel = urls.items[hint_i];
+                            hint = compare_sel;
+                        }
+
+                        if (compare_sel.contains(pt)) {
+                            cell.attrs.underline = .single;
+                            break :hint;
+                        }
+                    }
+
+                    break :cell cell;
+                };
+
                 if (self.updateCell(
                     term_selection,
                     screen,
-                    row.getCell(shaper_cell.x),
+                    cell,
                     shaper_cell,
                     run,
                     shaper_cell.x,
