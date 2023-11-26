@@ -13,6 +13,9 @@
 //!       affect this area.
 //!   * Viewport - The area that is currently visible to the user. This
 //!       can be thought of as the current window into the screen.
+//!   * Row - A single visible row in the screen.
+//!   * Line - A single line of text. This may map to multiple rows if
+//!       the row is soft-wrapped.
 //!
 //! The internal storage of the screen is stored in a circular buffer
 //! with roughly the following format:
@@ -1168,6 +1171,43 @@ pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
 /// is a single physical row of the terminal.
 pub fn lineIterator(self: *Screen, tag: RowIndexTag) LineIterator {
     return .{ .row_it = self.rowIterator(tag) };
+}
+
+/// Returns the line that contains the given point. This may be null if the
+/// point is outside the screen.
+pub fn getLine(self: *Screen, pt: point.ScreenPoint) ?Line {
+    // If our y is outside of our written area, we have no line.
+    if (pt.y >= RowIndexTag.screen.maxLen(self)) return null;
+    if (pt.x >= self.cols) return null;
+
+    // Find the starting y. We go back and as soon as we find a row that
+    // isn't wrapped, we know the NEXT line is the one we want.
+    const start_y: usize = if (pt.y == 0) 0 else start_y: {
+        for (1..pt.y) |y| {
+            const bot_y = pt.y - y;
+            const row = self.getRow(.{ .screen = bot_y });
+            if (!row.isWrapped()) break :start_y bot_y + 1;
+        }
+
+        break :start_y 0;
+    };
+
+    // Find the end y, which is the first row that isn't wrapped.
+    const end_y = end_y: {
+        for (pt.y..self.rowsWritten()) |y| {
+            const row = self.getRow(.{ .screen = y });
+            if (!row.isWrapped()) break :end_y y;
+        }
+
+        break :end_y self.rowsWritten() - 1;
+    };
+
+    return .{
+        .screen = self,
+        .tag = .screen,
+        .start = start_y,
+        .len = (end_y - start_y) + 1,
+    };
 }
 
 /// Returns the row at the given index. This row is writable, although
@@ -3581,6 +3621,35 @@ test "Screen: lineIterator soft wrap" {
         try testing.expectEqualStrings("3ABCD", actual);
     }
     try testing.expect(iter.next() == null);
+}
+
+test "Screen: getLine soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD2EFGH\n3ABCD";
+    try s.testWriteString(str);
+
+    // Test the line iterator
+    {
+        const line = s.getLine(.{ .x = 2, .y = 1 }).?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("1ABCD2EFGH", actual);
+    }
+    {
+        const line = s.getLine(.{ .x = 2, .y = 2 }).?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("3ABCD", actual);
+    }
+
+    try testing.expect(s.getLine(.{ .x = 2, .y = 3 }) == null);
+    try testing.expect(s.getLine(.{ .x = 7, .y = 1 }) == null);
 }
 
 test "Screen: scrolling" {
