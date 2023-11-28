@@ -2006,11 +2006,13 @@ pub fn mouseButtonCallback(
     }
 }
 
-/// Attempt to invoke the action of any link that is under the
-/// given position.
-fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
+/// Returns the link at the given cursor position, if any.
+fn linkAtPos(
+    self: *Surface,
+    pos: apprt.CursorPos,
+) !?DerivedConfig.Link {
     // If we have no configured links we can save a lot of work
-    if (self.config.links.len == 0) return false;
+    if (self.config.links.len == 0) return null;
 
     // Convert our cursor position to a screen point.
     const mouse_pt = mouse_pt: {
@@ -2020,7 +2022,7 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
 
     // Get the line we're hovering over.
     const line = self.io.terminal.screen.getLine(mouse_pt) orelse
-        return false;
+        return null;
     const strmap = try line.stringMap(self.alloc);
     defer strmap.deinit(self.alloc);
 
@@ -2032,14 +2034,19 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
             defer match.deinit();
             const sel = match.selection();
             if (!sel.contains(mouse_pt)) continue;
-
-            // Click!
-            log.info("link clicked action={}", .{link.action});
-            return true;
+            return link;
         }
     }
 
-    return false;
+    return null;
+}
+
+/// Attempt to invoke the action of any link that is under the
+/// given position.
+fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
+    const link = try self.linkAtPos(pos) orelse return false;
+    log.info("link clicked action={}", .{link.action});
+    return true;
 }
 
 pub fn cursorPosCallback(
@@ -2120,6 +2127,15 @@ pub fn cursorPosCallback(
         }
 
         return;
+    }
+
+    // Handle link hovering
+    // TODO: update render state with mouse pos
+    // TODO: unsure if resetting cursor logic is correct
+    if (try self.linkAtPos(pos)) |_| {
+        try self.rt_surface.setMouseShape(.pointer);
+    } else {
+        try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
     }
 }
 
