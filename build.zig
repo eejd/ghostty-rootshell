@@ -307,10 +307,9 @@ pub fn build(b: *std.Build) !void {
 
     // Themes
     {
-        // TODO: Move to the package manager to track the upstream
-        // Blocked by: https://github.com/ziglang/zig/issues/18089
+        const upstream = b.dependency("iterm2_themes", .{});
         const install = b.addInstallDirectory(.{
-            .source_dir = .{ .path = "vendor/iterm2-themes" },
+            .source_dir = upstream.path("ghostty"),
             .install_dir = .{ .custom = "share" },
             .install_subdir = "themes",
             .exclude_extensions = &.{".md"},
