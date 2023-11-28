@@ -2013,18 +2013,32 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
     if (self.config.links.len == 0) return false;
 
     // Convert our cursor position to a screen point.
-    const screen_point = screen_point: {
+    const mouse_pt = mouse_pt: {
         const viewport_point = self.posToViewport(pos.x, pos.y);
-        break :screen_point viewport_point.toScreen(&self.io.terminal.screen);
+        break :mouse_pt viewport_point.toScreen(&self.io.terminal.screen);
     };
 
     // Get the line we're hovering over.
-    const line = self.io.terminal.screen.getLine(screen_point) orelse
+    const line = self.io.terminal.screen.getLine(mouse_pt) orelse
         return false;
     const strmap = try line.stringMap(self.alloc);
     defer strmap.deinit(self.alloc);
 
-    // TODO
+    // Go through each link and see if we clicked it
+    for (self.config.links) |link| {
+        var it = strmap.searchIterator(link.regex);
+        while (true) {
+            var match = (try it.next()) orelse break;
+            defer match.deinit();
+            const sel = match.selection();
+            if (!sel.contains(mouse_pt)) continue;
+
+            // Click!
+            log.info("link clicked action={}", .{link.action});
+            return true;
+        }
+    }
+
     return false;
 }
 
