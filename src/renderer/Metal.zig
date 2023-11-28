@@ -1408,29 +1408,17 @@ fn rebuildCells(
         const strmap = line.stringMap(arena_alloc) catch continue;
         defer strmap.deinit(arena_alloc);
 
-        var offset: usize = 0;
+        var it = strmap.searchIterator(self.url_regex);
         while (true) {
-            var match = self.url_regex.search(strmap.string[offset..], .{}) catch |err| {
-                switch (err) {
-                    error.Mismatch => {},
-                    else => log.warn("failed to search for URLs err={}", .{err}),
-                }
-
+            const match_ = it.next() catch |err| {
+                log.warn("failed to search for URLs err={}", .{err});
                 break;
             };
+            var match = match_ orelse break;
             defer match.deinit();
 
-            // Determine the screen point for the match
-            const start_idx: usize = @intCast(match.starts()[0]);
-            const end_idx: usize = @intCast(match.ends()[0] - 1);
-            const start_pt = strmap.map[offset + start_idx];
-            const end_pt = strmap.map[offset + end_idx];
-
-            // Move our offset so we can continue searching
-            offset += end_idx;
-
             // Store our selection
-            try urls.append(.{ .start = start_pt, .end = end_pt });
+            try urls.append(match.selection());
         }
     }
 

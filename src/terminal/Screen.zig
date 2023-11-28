@@ -67,6 +67,7 @@ const kitty = @import("kitty.zig");
 const point = @import("point.zig");
 const CircBuf = @import("../circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
+const StringMap = @import("StringMap.zig");
 const fastmem = @import("../fastmem.zig");
 const charsets = @import("charsets.zig");
 
@@ -2227,18 +2228,6 @@ pub fn selectionString(
 
     return string;
 }
-
-/// A string along with the mapping of each individual byte in the string
-/// to the point in the screen.
-pub const StringMap = struct {
-    string: [:0]const u8,
-    map: []point.ScreenPoint,
-
-    pub fn deinit(self: StringMap, alloc: Allocator) void {
-        alloc.free(self.string);
-        alloc.free(self.map);
-    }
-};
 
 /// Returns the row text associated with a selection along with the
 /// mapping of each individual byte in the string to the point in the screen.
