@@ -7,6 +7,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const global_state = &@import("../main.zig").state;
 const fontpkg = @import("../font/main.zig");
 const inputpkg = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
@@ -152,6 +153,26 @@ const c = @cImport({
 @"adjust-underline-thickness": ?MetricModifier = null,
 @"adjust-strikethrough-position": ?MetricModifier = null,
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
+
+/// A named theme to use. The available themes are currently hardcoded to
+/// the themes that ship with Ghostty. On macOS, this list is in the
+/// `Ghostty.app/Contents/Resources/themes` directory. On Linux, this
+/// list is in the `share/ghostty/themes` directory (wherever you installed
+/// the Ghostty "share" directory.
+///
+/// To see a list of available themes, run `ghostty +list-themes`.
+///
+/// Any additional colors specified via background, foreground, palette,
+/// etc. will override the colors specified in the theme.
+///
+/// This configuration can be changed at runtime, but the new theme will
+/// only affect new cells. Existing colored cells will not be updated.
+/// Therefore, after changing the theme, you should restart any running
+/// programs to ensure they get the new colors.
+///
+/// A future update will allow custom themes to be installed in
+/// certain directories.
+theme: ?[]const u8 = null,
 
 /// Background color for the window.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
@@ -726,6 +747,10 @@ _arena: ?ArenaAllocator = null,
 /// configuration file.
 _errors: ErrorList = .{},
 
+/// The inputs that built up this configuration. This is used to reload
+/// the configuration if we have to.
+_inputs: std.ArrayListUnmanaged([]const u8) = .{},
+
 pub fn deinit(self: *Config) void {
     if (self._arena) |arena| arena.deinit();
     self.* = undefined;
@@ -1182,6 +1207,16 @@ fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
     return copy;
 }
 
+/// Load configuration from an iterator that yields values that look like
+/// command-line arguments, i.e. `--key=value`.
+pub fn loadIter(
+    self: *Config,
+    alloc: Allocator,
+    iter: anytype,
+) !void {
+    try cli.args.parse(Config, alloc, self, iter);
+}
+
 /// Load the configuration from the default configuration file. The default
 /// configuration file is at `$XDG_CONFIG_HOME/ghostty/config`.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
@@ -1195,7 +1230,7 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
 
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
-        try cli.args.parse(Config, alloc, self, &iter);
+        try self.loadIter(alloc, &iter);
         try self.expandPaths(std.fs.path.dirname(config_path).?);
     } else |err| switch (err) {
         error.FileNotFound => std.log.info(
@@ -1222,7 +1257,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // Parse the config from the CLI args
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
-    try cli.args.parse(Config, alloc_gpa, self, &iter);
+    try self.loadIter(alloc_gpa, &iter);
 
     // Config files loaded from the CLI args are relative to pwd
     if (self.@"config-file".value.list.items.len > 0) {
@@ -1279,7 +1314,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         log.info("loading config-file path={s}", .{path});
         var buf_reader = std.io.bufferedReader(file.reader());
         var iter = cli.args.lineIterator(buf_reader.reader());
-        try cli.args.parse(Config, alloc_gpa, self, &iter);
+        try self.loadIter(alloc_gpa, &iter);
         try self.expandPaths(std.fs.path.dirname(path).?);
     }
 }
@@ -1299,7 +1334,85 @@ fn expandPaths(self: *Config, base: []const u8) !void {
     }
 }
 
+fn loadTheme(self: *Config, theme: []const u8) !void {
+    const alloc = self._arena.?.allocator();
+    const resources_dir = global_state.resources_dir orelse {
+        try self._errors.add(alloc, .{
+            .message = "no resources directory found, themes will not work",
+        });
+        return;
+    };
+
+    const path = try std.fs.path.join(alloc, &.{
+        resources_dir,
+        "themes",
+        theme,
+    });
+
+    const cwd = std.fs.cwd();
+    var file = cwd.openFile(path, .{}) catch |err| {
+        switch (err) {
+            error.FileNotFound => try self._errors.add(alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    alloc,
+                    "theme \"{s}\" not found, path={s}",
+                    .{ theme, path },
+                ),
+            }),
+
+            else => try self._errors.add(alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    alloc,
+                    "failed to load theme \"{s}\": {}",
+                    .{ theme, err },
+                ),
+            }),
+        }
+        return;
+    };
+    defer file.close();
+
+    // From this point onwards, we load the theme and do a bit of a dance
+    // to achive two separate goals:
+    //
+    //   (1) We want the theme to be loaded and our existing config to
+    //       override the theme. So we need to load the theme and apply
+    //       our config on top of it.
+    //
+    //   (2) We want to free existing memory that we aren't using anymore
+    //       as a result of reloading the configuration.
+    //
+    // Point 2 is strictly a result of aur approach to point 1.
+
+    // Keep track of our input length prior ot loading the theme
+    // so that we can replay the previous config to override values.
+    const input_len = self._inputs.items.len;
+
+    // Load into a new configuration so that we can free the existing memory.
+    const alloc_gpa = self._arena.?.child_allocator;
+    var new_config = try default(alloc_gpa);
+    errdefer new_config.deinit();
+
+    // Load our theme
+    var buf_reader = std.io.bufferedReader(file.reader());
+    var iter = cli.args.lineIterator(buf_reader.reader());
+    try new_config.loadIter(alloc_gpa, &iter);
+
+    // Replay our previous inputs so that we can override values
+    // from the theme.
+    var slice_it = cli.args.sliceIterator(self._inputs.items[0..input_len]);
+    try new_config.loadIter(alloc_gpa, &slice_it);
+
+    // Success, swap our new config in and free the old.
+    self.deinit();
+    self.* = new_config;
+}
+
 pub fn finalize(self: *Config) !void {
+    // We always load the theme first because it may set other fields
+    // in our config.
+    if (self.theme) |theme| try self.loadTheme(theme);
+
     // If we have a font-family set and don't set the others, default
     // the others to the font family. This way, if someone does
     // --font-family=foo, then we try to get the stylized versions of
