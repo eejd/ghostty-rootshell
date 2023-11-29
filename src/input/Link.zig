@@ -13,7 +13,9 @@ regex: []const u8,
 /// The action that will be triggered when the link is clicked.
 action: Action,
 
-/// The situations in which the link will be highlighted.
+/// The situations in which the link will be highlighted. A link is only
+/// clickable by the mouse when it is highlighted, so this also controls
+/// when the link is clickable.
 highlight: Highlight,
 
 pub const Action = union(enum) {
