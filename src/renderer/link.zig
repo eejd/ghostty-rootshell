@@ -64,9 +64,10 @@ pub const Set = struct {
         self: *const Set,
         alloc: Allocator,
         screen: *Screen,
-        mouse_pt: point.Viewport,
+        mouse_vp_pt: point.Viewport,
     ) !MatchSet {
-        _ = mouse_pt;
+        // Convert the viewport point to a screen point.
+        const mouse_pt = mouse_vp_pt.toScreen(screen);
 
         // This contains our list of matches. The matches are stored
         // as selections which contain the start and end points of
@@ -89,6 +90,12 @@ pub const Set = struct {
 
             // Go through each link and see if we have any matches.
             for (self.links) |link| {
+                // If this is a hover link and our mouse point isn't within
+                // this line at all, we can skip it.
+                if (link.highlight == .hover) {
+                    if (!line.selection().contains(mouse_pt)) continue;
+                }
+
                 var it = strmap.searchIterator(link.regex);
                 while (true) {
                     const match_ = it.next() catch |err| {
@@ -97,7 +104,17 @@ pub const Set = struct {
                     };
                     var match = match_ orelse break;
                     defer match.deinit();
-                    try matches.append(match.selection());
+                    const sel = match.selection();
+
+                    // If this is a highlight link then we only want to
+                    // include matches that include our hover point.
+                    if (link.highlight == .hover and
+                        !sel.contains(mouse_pt))
+                    {
+                        continue;
+                    }
+
+                    try matches.append(sel);
                 }
             }
         }
@@ -180,4 +197,61 @@ test "matchset" {
     try testing.expect(!match.orderedContains(.{ .x = 3, .y = 0 }));
     try testing.expect(match.orderedContains(.{ .x = 1, .y = 1 }));
     try testing.expect(!match.orderedContains(.{ .x = 1, .y = 2 }));
+}
+
+test "matchset hover links" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Initialize our screen
+    var s = try Screen.init(alloc, 5, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Get a set
+    var set = try Set.fromConfig(alloc, &.{
+        .{
+            .regex = "AB",
+            .action = .{ .open = {} },
+            .highlight = .{ .hover = {} },
+        },
+
+        .{
+            .regex = "EF",
+            .action = .{ .open = {} },
+            .highlight = .{ .always = {} },
+        },
+    });
+    defer set.deinit(alloc);
+
+    // Not hovering over the first link
+    {
+        var match = try set.matchSet(alloc, &s, .{});
+        defer match.deinit(alloc);
+        try testing.expectEqual(@as(usize, 1), match.matches.len);
+
+        // Test our matches
+        try testing.expect(!match.orderedContains(.{ .x = 0, .y = 0 }));
+        try testing.expect(!match.orderedContains(.{ .x = 1, .y = 0 }));
+        try testing.expect(!match.orderedContains(.{ .x = 2, .y = 0 }));
+        try testing.expect(!match.orderedContains(.{ .x = 3, .y = 0 }));
+        try testing.expect(match.orderedContains(.{ .x = 1, .y = 1 }));
+        try testing.expect(!match.orderedContains(.{ .x = 1, .y = 2 }));
+    }
+
+    // Hovering over the first link
+    {
+        var match = try set.matchSet(alloc, &s, .{ .x = 1, .y = 0 });
+        defer match.deinit(alloc);
+        try testing.expectEqual(@as(usize, 2), match.matches.len);
+
+        // Test our matches
+        try testing.expect(!match.orderedContains(.{ .x = 0, .y = 0 }));
+        try testing.expect(match.orderedContains(.{ .x = 1, .y = 0 }));
+        try testing.expect(match.orderedContains(.{ .x = 2, .y = 0 }));
+        try testing.expect(!match.orderedContains(.{ .x = 3, .y = 0 }));
+        try testing.expect(match.orderedContains(.{ .x = 1, .y = 1 }));
+        try testing.expect(!match.orderedContains(.{ .x = 1, .y = 2 }));
+    }
 }
