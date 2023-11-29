@@ -2069,8 +2069,10 @@ pub fn cursorPosCallback(
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
 
-    // Update our mouse state
-    self.renderer_state.mouse.point = pos_vp;
+    // Update our mouse state. We set this to null initially because we only
+    // want to set it when we're not selecting or doing any other mouse
+    // event.
+    self.renderer_state.mouse.point = null;
 
     // If we have an inspector, we need to always record position information
     if (self.inspector) |insp| {
@@ -2136,6 +2138,7 @@ pub fn cursorPosCallback(
 
     // Handle link hovering
     if (try self.linkAtPos(pos)) |_| {
+        self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
         try self.rt_surface.setMouseShape(.pointer);
         try self.queueRender();
