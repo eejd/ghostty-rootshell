@@ -141,6 +141,10 @@ const Mouse = struct {
 
     /// True if the mouse position is currently over a link.
     over_link: bool = false,
+
+    /// The last x/y in the cursor position for links. We use this to
+    /// only process link hover events when the mouse actually moves cells.
+    link_point: ?terminal.point.Viewport = null,
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -2166,6 +2170,22 @@ pub fn cursorPosCallback(
     }
 
     // Handle link hovering
+    if (self.mouse.link_point) |last_vp| {
+        // If our last link viewport point is unchanged, then don't process
+        // links. This avoids constantly reprocessing regular expressions
+        // for every pixel change.
+        if (last_vp.eql(pos_vp)) {
+            // We have to restore old values that are always cleared
+            if (over_link) {
+                self.mouse.over_link = over_link;
+                self.renderer_state.mouse.point = pos_vp;
+            }
+
+            return;
+        }
+    }
+    self.mouse.link_point = pos_vp;
+
     if (try self.linkAtPos(pos)) |_| {
         self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
