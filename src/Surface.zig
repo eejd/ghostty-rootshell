@@ -2013,7 +2013,10 @@ pub fn mouseButtonCallback(
 fn linkAtPos(
     self: *Surface,
     pos: apprt.CursorPos,
-) !?DerivedConfig.Link {
+) !?struct {
+    DerivedConfig.Link,
+    terminal.Selection,
+} {
     // If we have no configured links we can save a lot of work
     if (self.config.links.len == 0) return null;
 
@@ -2037,7 +2040,7 @@ fn linkAtPos(
             defer match.deinit();
             const sel = match.selection();
             if (!sel.contains(mouse_pt)) continue;
-            return link;
+            return .{ link, sel };
         }
     }
 
@@ -2046,9 +2049,22 @@ fn linkAtPos(
 
 /// Attempt to invoke the action of any link that is under the
 /// given position.
+///
+/// Requires the renderer state mutex is held.
 fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
-    const link = try self.linkAtPos(pos) orelse return false;
-    log.info("link clicked action={}", .{link.action});
+    const link, const sel = try self.linkAtPos(pos) orelse return false;
+    switch (link.action) {
+        .open => {
+            const str = try self.io.terminal.screen.selectionString(
+                self.alloc,
+                sel,
+                false,
+            );
+            defer self.alloc.free(str);
+            try internal_os.open(self.alloc, str);
+        },
+    }
+
     return true;
 }
 
