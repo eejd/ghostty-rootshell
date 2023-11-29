@@ -138,6 +138,9 @@ const Mouse = struct {
 
     /// True if the mouse is hidden
     hidden: bool = false,
+
+    /// True if the mouse position is currently over a link.
+    over_link: bool = false,
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -2059,18 +2062,21 @@ pub fn cursorPosCallback(
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 
+    // The mouse position in the viewport
+    const pos_vp = self.posToViewport(pos.x, pos.y);
+
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // Update our mouse state
+    self.renderer_state.mouse.point = pos_vp;
 
     // If we have an inspector, we need to always record position information
     if (self.inspector) |insp| {
         insp.mouse.last_xpos = pos.x;
         insp.mouse.last_ypos = pos.y;
-
-        const point = self.posToViewport(pos.x, pos.y);
-        insp.mouse.last_point = point.toScreen(&self.io.terminal.screen);
-
+        insp.mouse.last_point = pos_vp.toScreen(&self.io.terminal.screen);
         try self.queueRender();
     }
 
@@ -2115,8 +2121,7 @@ pub fn cursorPosCallback(
         }
 
         // Convert to points
-        const viewport_point = self.posToViewport(pos.x, pos.y);
-        const screen_point = viewport_point.toScreen(&self.io.terminal.screen);
+        const screen_point = pos_vp.toScreen(&self.io.terminal.screen);
 
         // Handle dragging depending on click count
         switch (self.mouse.left_click_count) {
@@ -2130,12 +2135,14 @@ pub fn cursorPosCallback(
     }
 
     // Handle link hovering
-    // TODO: update render state with mouse pos
-    // TODO: unsure if resetting cursor logic is correct
     if (try self.linkAtPos(pos)) |_| {
+        self.mouse.over_link = true;
         try self.rt_surface.setMouseShape(.pointer);
-    } else {
+        try self.queueRender();
+    } else if (self.mouse.over_link) {
+        self.mouse.over_link = false;
         try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
+        try self.queueRender();
     }
 }
 

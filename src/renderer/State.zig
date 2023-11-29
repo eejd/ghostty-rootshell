@@ -29,7 +29,12 @@ preedit: ?Preedit = null,
 /// need about the mouse.
 mouse: Mouse = .{},
 
-pub const Mouse = struct {};
+pub const Mouse = struct {
+    /// The point on the viewport where the mouse currently is. We use
+    /// viewport points to avoid the complexity of mapping the mouse to
+    /// the renderer state.
+    point: ?terminal.point.Viewport = null,
+};
 
 /// The pre-edit state. See Surface.preeditCallback for more information.
 pub const Preedit = struct {

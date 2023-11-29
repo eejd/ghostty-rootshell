@@ -566,6 +566,7 @@ pub fn updateFrame(
         bg: terminal.color.RGB,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
+        mouse: renderer.State.Mouse,
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
     };
@@ -633,6 +634,7 @@ pub fn updateFrame(
             .bg = self.background_color,
             .selection = selection,
             .screen = screen_copy,
+            .mouse = state.mouse,
             .preedit = if (cursor_style != null) state.preedit else null,
             .cursor_style = cursor_style,
         };
@@ -643,6 +645,7 @@ pub fn updateFrame(
     try self.rebuildCells(
         critical.selection,
         &critical.screen,
+        critical.mouse,
         critical.preedit,
         critical.cursor_style,
     );
@@ -1365,6 +1368,7 @@ fn rebuildCells(
     self: *Metal,
     term_selection: ?terminal.Selection,
     screen: *terminal.Screen,
+    mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
 ) !void {
@@ -1391,7 +1395,7 @@ fn rebuildCells(
     var link_match_set = try self.config.links.matchSet(
         arena_alloc,
         screen,
-        .{}, // TODO: mouse hover point
+        mouse.point orelse .{},
     );
 
     // Determine our x/y range for preedit. We don't want to render anything
