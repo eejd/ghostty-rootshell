@@ -9,7 +9,6 @@ const builtin = @import("builtin");
 const glfw = @import("glfw");
 const objc = @import("objc");
 const macos = @import("macos");
-const oni = @import("oniguruma");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
 const apprt = @import("../apprt.zig");
@@ -19,6 +18,7 @@ const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
+const link = @import("link.zig");
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -120,11 +120,6 @@ texture_color: objc.Object, // MTLTexture
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
 
-/// Our URL regex.
-/// One day, this will be part of DerivedConfig since all regex matchers
-/// will be part of the config.
-url_regex: oni.Regex,
-
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
     /// custom shaders, we render directly to the drawable.
@@ -159,6 +154,7 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     custom_shaders: std.ArrayListUnmanaged([]const u8),
     custom_shader_animation: bool,
+    links: link.Set,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -179,6 +175,12 @@ pub const DerivedConfig = struct {
         font_styles.set(.bold, config.@"font-style-bold" != .false);
         font_styles.set(.italic, config.@"font-style-italic" != .false);
         font_styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
+
+        // Our link configs
+        const links = try link.Set.fromConfig(
+            alloc,
+            config.link.links.items,
+        );
 
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
@@ -214,12 +216,15 @@ pub const DerivedConfig = struct {
 
             .custom_shaders = custom_shaders,
             .custom_shader_animation = config.@"custom-shader-animation",
+            .links = links,
 
             .arena = arena,
         };
     }
 
     pub fn deinit(self: *DerivedConfig) void {
+        const alloc = self.arena.allocator();
+        self.links.deinit(alloc);
         self.arena.deinit();
     }
 };
@@ -348,16 +353,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
     const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
 
-    // Create our URL regex
-    var url_re = try oni.Regex.init(
-        configpkg.url.regex,
-        .{},
-        oni.Encoding.utf8,
-        oni.Syntax.default,
-        null,
-    );
-    errdefer url_re.deinit();
-
     return Metal{
         .alloc = alloc,
         .config = options.config,
@@ -398,8 +393,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .texture_greyscale = texture_greyscale,
         .texture_color = texture_color,
         .custom_shader_state = custom_shader_state,
-
-        .url_regex = url_re,
     };
 }
 
@@ -428,8 +421,6 @@ pub fn deinit(self: *Metal) void {
     if (self.custom_shader_state) |*state| state.deinit();
 
     self.shaders.deinit(self.alloc);
-
-    self.url_regex.deinit();
 
     self.* = undefined;
 }
@@ -1396,31 +1387,12 @@ fn rebuildCells(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    // All of our matching URLs. The selections in this list MUST be in
-    // order of left-to-right top-to-bottom (English reading order). This
-    // requirement is necessary for the URL highlighting to work properly
-    // and has nothing to do with the locale.
-    var urls = std.ArrayList(terminal.Selection).init(arena_alloc);
-
-    // Find all the cells that have URLs.
-    var lineIter = screen.lineIterator(.viewport);
-    while (lineIter.next()) |line| {
-        const strmap = line.stringMap(arena_alloc) catch continue;
-        defer strmap.deinit(arena_alloc);
-
-        var it = strmap.searchIterator(self.url_regex);
-        while (true) {
-            const match_ = it.next() catch |err| {
-                log.warn("failed to search for URLs err={}", .{err});
-                break;
-            };
-            var match = match_ orelse break;
-            defer match.deinit();
-
-            // Store our selection
-            try urls.append(match.selection());
-        }
-    }
+    // Create our match set for the links.
+    var link_match_set = try self.config.links.matchSet(
+        arena_alloc,
+        screen,
+        .{}, // TODO: mouse hover point
+    );
 
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
@@ -1438,10 +1410,6 @@ fn rebuildCells(
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
     var cursor_cell: ?mtl_shaders.Cell = null;
-
-    // Keep track of our current hint that is being tracked.
-    var hint: ?terminal.Selection = if (urls.items.len > 0) urls.items[0] else null;
-    var hint_i: usize = 0;
 
     // Build each cell
     var rowIter = screen.rowIterator(.viewport);
@@ -1534,30 +1502,14 @@ fn rebuildCells(
                 // underline it.
                 const cell: terminal.Screen.Cell = cell: {
                     var cell = row.getCell(shaper_cell.x);
-                    if (hint) |sel| hint: {
-                        const pt: terminal.point.ScreenPoint = .{
-                            .x = shaper_cell.x,
-                            .y = y,
-                        };
 
-                        // If the end is before the point then we try to
-                        // move to the next hint.
-                        var compare_sel: terminal.Selection = sel;
-                        if (sel.end.before(pt)) {
-                            hint_i += 1;
-                            if (hint_i >= urls.items.len) {
-                                hint = null;
-                                break :hint;
-                            }
-
-                            compare_sel = urls.items[hint_i];
-                            hint = compare_sel;
-                        }
-
-                        if (compare_sel.contains(pt)) {
-                            cell.attrs.underline = .single;
-                            break :hint;
-                        }
+                    // If our links contain this cell then we want to
+                    // underline it.
+                    if (link_match_set.orderedContains(.{
+                        .x = shaper_cell.x,
+                        .y = y,
+                    })) {
+                        cell.attrs.underline = .single;
                     }
 
                     break :cell cell;
