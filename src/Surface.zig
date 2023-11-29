@@ -1228,6 +1228,10 @@ pub fn keyCallback(
         self.hideMouse();
     }
 
+    // We always update our mouse mods here too because otherwise we only
+    // get mods when a button is pressed.
+    self.mouse.mods = event.mods;
+
     // When we are in the middle of a mouse event and we press shift,
     // we change the mouse to a text shape so that selection appears
     // possible.
@@ -1876,7 +1880,7 @@ pub fn mouseButtonCallback(
     // Handle link clicking. We want to do this before we do mouse
     // reporting or any other mouse handling because a successfully
     // clicked link will swallow the event.
-    if (button == .left and action == .release) {
+    if (button == .left and action == .release and self.mouse.over_link) {
         const pos = try self.rt_surface.getCursorPos();
         if (self.processLinks(pos)) |processed| {
             if (processed) return;
@@ -2085,6 +2089,12 @@ pub fn cursorPosCallback(
     // The mouse position in the viewport
     const pos_vp = self.posToViewport(pos.x, pos.y);
 
+    // We always reset the over link status because it will be reprocessed
+    // below. But we need the old value to know if we need to undo mouse
+    // shape changes.
+    const over_link = self.mouse.over_link;
+    self.mouse.over_link = false;
+
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
@@ -2106,7 +2116,6 @@ pub fn cursorPosCallback(
     if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
         if (self.mouse.mods.shift and
-            self.mouse.click_state[@intFromEnum(input.MouseButton.left)] == .press and
             !self.mouseShiftCapture(false)) break :report;
 
         // We use the first mouse button we find pressed in order to report
@@ -2162,8 +2171,7 @@ pub fn cursorPosCallback(
         self.mouse.over_link = true;
         try self.rt_surface.setMouseShape(.pointer);
         try self.queueRender();
-    } else if (self.mouse.over_link) {
-        self.mouse.over_link = false;
+    } else if (over_link) {
         try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
         try self.queueRender();
     }
