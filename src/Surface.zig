@@ -1878,7 +1878,11 @@ pub fn mouseButtonCallback(
     // clicked link will swallow the event.
     if (button == .left and action == .release) {
         const pos = try self.rt_surface.getCursorPos();
-        if (try self.processLinks(pos)) return;
+        if (self.processLinks(pos)) |processed| {
+            if (processed) return;
+        } else |err| {
+            log.warn("error processing links err={}", .{err});
+        }
     }
 
     // Report mouse events if enabled
