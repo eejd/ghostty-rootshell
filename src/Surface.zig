@@ -1232,9 +1232,17 @@ pub fn keyCallback(
         self.hideMouse();
     }
 
-    // We always update our mouse mods here too because otherwise we only
-    // get mods when a button is pressed.
-    self.mouse.mods = event.mods;
+    // If our mouse modifiers change, we run a cursor position event.
+    // This handles the scenario where URL highlighting should be
+    // toggled for example.
+    if (!self.mouse.mods.equal(event.mods)) mouse_mods: {
+        // We set this to null to force link reprocessing since
+        // mod changes can affect link highlighting.
+        self.mouse.link_point = null;
+        self.mouse.mods = event.mods;
+        const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
+        self.cursorPosCallback(pos) catch {};
+    }
 
     // When we are in the middle of a mouse event and we press shift,
     // we change the mouse to a text shape so that selection appears
@@ -2130,6 +2138,10 @@ pub fn cursorPosCallback(
         } else null;
 
         try self.mouseReport(button, .motion, self.mouse.mods, pos);
+
+        // If we were previously over a link, we need to queue a
+        // render to undo the link state.
+        if (over_link) try self.queueRender();
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
