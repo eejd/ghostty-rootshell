@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 pub usingnamespace @import("config/key.zig");
 pub const Config = @import("config/Config.zig");
 pub const string = @import("config/string.zig");
+pub const url = @import("config/url.zig");
 
 // Field types
 pub const CopyOnSelect = Config.CopyOnSelect;

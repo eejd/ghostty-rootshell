@@ -20,6 +20,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const oni = @import("oniguruma");
 const ziglyph = @import("ziglyph");
 const main = @import("main.zig");
 const renderer = @import("renderer.zig");
@@ -137,6 +138,13 @@ const Mouse = struct {
 
     /// True if the mouse is hidden
     hidden: bool = false,
+
+    /// True if the mouse position is currently over a link.
+    over_link: bool = false,
+
+    /// The last x/y in the cursor position for links. We use this to
+    /// only process link hover events when the mouse actually moves cells.
+    link_point: ?terminal.point.Viewport = null,
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -165,11 +173,37 @@ const DerivedConfig = struct {
     window_padding_y: u32,
     window_padding_balance: bool,
     title: ?[:0]const u8,
+    links: []const Link,
+
+    const Link = struct {
+        regex: oni.Regex,
+        action: input.Link.Action,
+    };
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
         const alloc = arena.allocator();
+
+        // Build all of our links
+        const links = links: {
+            var links = std.ArrayList(Link).init(alloc);
+            defer links.deinit();
+            for (config.link.links.items) |link| {
+                var regex = try link.oniRegex();
+                errdefer regex.deinit();
+                try links.append(.{
+                    .regex = regex,
+                    .action = link.action,
+                });
+            }
+
+            break :links try links.toOwnedSlice();
+        };
+        errdefer {
+            for (links) |*link| link.regex.deinit();
+            alloc.free(links);
+        }
 
         return .{
             .original_font_size = config.@"font-size",
@@ -192,6 +226,7 @@ const DerivedConfig = struct {
             .window_padding_y = config.@"window-padding-y",
             .window_padding_balance = config.@"window-padding-balance",
             .title = config.title,
+            .links = links,
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -1197,6 +1232,18 @@ pub fn keyCallback(
         self.hideMouse();
     }
 
+    // If our mouse modifiers change, we run a cursor position event.
+    // This handles the scenario where URL highlighting should be
+    // toggled for example.
+    if (!self.mouse.mods.equal(event.mods)) mouse_mods: {
+        // We set this to null to force link reprocessing since
+        // mod changes can affect link highlighting.
+        self.mouse.link_point = null;
+        self.mouse.mods = event.mods;
+        const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
+        self.cursorPosCallback(pos) catch {};
+    }
+
     // When we are in the middle of a mouse event and we press shift,
     // we change the mouse to a text shape so that selection appears
     // possible.
@@ -1842,6 +1889,18 @@ pub fn mouseButtonCallback(
         }
     }
 
+    // Handle link clicking. We want to do this before we do mouse
+    // reporting or any other mouse handling because a successfully
+    // clicked link will swallow the event.
+    if (button == .left and action == .release and self.mouse.over_link) {
+        const pos = try self.rt_surface.getCursorPos();
+        if (self.processLinks(pos)) |processed| {
+            if (processed) return;
+        } else |err| {
+            log.warn("error processing links err={}", .{err});
+        }
+    }
+
     // Report mouse events if enabled
     {
         self.renderer_state.mutex.lock();
@@ -1970,6 +2029,65 @@ pub fn mouseButtonCallback(
     }
 }
 
+/// Returns the link at the given cursor position, if any.
+fn linkAtPos(
+    self: *Surface,
+    pos: apprt.CursorPos,
+) !?struct {
+    DerivedConfig.Link,
+    terminal.Selection,
+} {
+    // If we have no configured links we can save a lot of work
+    if (self.config.links.len == 0) return null;
+
+    // Convert our cursor position to a screen point.
+    const mouse_pt = mouse_pt: {
+        const viewport_point = self.posToViewport(pos.x, pos.y);
+        break :mouse_pt viewport_point.toScreen(&self.io.terminal.screen);
+    };
+
+    // Get the line we're hovering over.
+    const line = self.io.terminal.screen.getLine(mouse_pt) orelse
+        return null;
+    const strmap = try line.stringMap(self.alloc);
+    defer strmap.deinit(self.alloc);
+
+    // Go through each link and see if we clicked it
+    for (self.config.links) |link| {
+        var it = strmap.searchIterator(link.regex);
+        while (true) {
+            var match = (try it.next()) orelse break;
+            defer match.deinit();
+            const sel = match.selection();
+            if (!sel.contains(mouse_pt)) continue;
+            return .{ link, sel };
+        }
+    }
+
+    return null;
+}
+
+/// Attempt to invoke the action of any link that is under the
+/// given position.
+///
+/// Requires the renderer state mutex is held.
+fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
+    const link, const sel = try self.linkAtPos(pos) orelse return false;
+    switch (link.action) {
+        .open => {
+            const str = try self.io.terminal.screen.selectionString(
+                self.alloc,
+                sel,
+                false,
+            );
+            defer self.alloc.free(str);
+            try internal_os.open(self.alloc, str);
+        },
+    }
+
+    return true;
+}
+
 pub fn cursorPosCallback(
     self: *Surface,
     pos: apprt.CursorPos,
@@ -1980,18 +2098,29 @@ pub fn cursorPosCallback(
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 
+    // The mouse position in the viewport
+    const pos_vp = self.posToViewport(pos.x, pos.y);
+
+    // We always reset the over link status because it will be reprocessed
+    // below. But we need the old value to know if we need to undo mouse
+    // shape changes.
+    const over_link = self.mouse.over_link;
+    self.mouse.over_link = false;
+
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // Update our mouse state. We set this to null initially because we only
+    // want to set it when we're not selecting or doing any other mouse
+    // event.
+    self.renderer_state.mouse.point = null;
 
     // If we have an inspector, we need to always record position information
     if (self.inspector) |insp| {
         insp.mouse.last_xpos = pos.x;
         insp.mouse.last_ypos = pos.y;
-
-        const point = self.posToViewport(pos.x, pos.y);
-        insp.mouse.last_point = point.toScreen(&self.io.terminal.screen);
-
+        insp.mouse.last_point = pos_vp.toScreen(&self.io.terminal.screen);
         try self.queueRender();
     }
 
@@ -1999,7 +2128,6 @@ pub fn cursorPosCallback(
     if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
         if (self.mouse.mods.shift and
-            self.mouse.click_state[@intFromEnum(input.MouseButton.left)] == .press and
             !self.mouseShiftCapture(false)) break :report;
 
         // We use the first mouse button we find pressed in order to report
@@ -2011,41 +2139,73 @@ pub fn cursorPosCallback(
 
         try self.mouseReport(button, .motion, self.mouse.mods, pos);
 
+        // If we were previously over a link, we need to queue a
+        // render to undo the link state.
+        if (over_link) try self.queueRender();
+
         // If we're doing mouse motion tracking, we do not support text
         // selection.
         return;
     }
 
-    // If the cursor isn't clicked currently, it doesn't matter
-    if (self.mouse.click_state[@intFromEnum(input.MouseButton.left)] != .press) return;
+    // Handle cursor position for text selection
+    if (self.mouse.click_state[@intFromEnum(input.MouseButton.left)] == .press) {
+        // All roads lead to requiring a re-render at this point.
+        try self.queueRender();
 
-    // All roads lead to requiring a re-render at this point.
-    try self.queueRender();
+        // If our y is negative, we're above the window. In this case, we scroll
+        // up. The amount we scroll up is dependent on how negative we are.
+        // Note: one day, we can change this from distance to time based if we want.
+        //log.warn("CURSOR POS: {} {}", .{ pos, self.screen_size });
+        const max_y: f32 = @floatFromInt(self.screen_size.height);
+        if (pos.y < 0 or pos.y > max_y) {
+            const delta: isize = if (pos.y < 0) -1 else 1;
+            try self.io.terminal.scrollViewport(.{ .delta = delta });
 
-    // If our y is negative, we're above the window. In this case, we scroll
-    // up. The amount we scroll up is dependent on how negative we are.
-    // Note: one day, we can change this from distance to time based if we want.
-    //log.warn("CURSOR POS: {} {}", .{ pos, self.screen_size });
-    const max_y: f32 = @floatFromInt(self.screen_size.height);
-    if (pos.y < 0 or pos.y > max_y) {
-        const delta: isize = if (pos.y < 0) -1 else 1;
-        try self.io.terminal.scrollViewport(.{ .delta = delta });
+            // TODO: We want a timer or something to repeat while we're still
+            // at this cursor position. Right now, the user has to jiggle their
+            // mouse in order to scroll.
+        }
 
-        // TODO: We want a timer or something to repeat while we're still
-        // at this cursor position. Right now, the user has to jiggle their
-        // mouse in order to scroll.
+        // Convert to points
+        const screen_point = pos_vp.toScreen(&self.io.terminal.screen);
+
+        // Handle dragging depending on click count
+        switch (self.mouse.left_click_count) {
+            1 => self.dragLeftClickSingle(screen_point, pos.x),
+            2 => self.dragLeftClickDouble(screen_point),
+            3 => self.dragLeftClickTriple(screen_point),
+            else => unreachable,
+        }
+
+        return;
     }
 
-    // Convert to points
-    const viewport_point = self.posToViewport(pos.x, pos.y);
-    const screen_point = viewport_point.toScreen(&self.io.terminal.screen);
+    // Handle link hovering
+    if (self.mouse.link_point) |last_vp| {
+        // If our last link viewport point is unchanged, then don't process
+        // links. This avoids constantly reprocessing regular expressions
+        // for every pixel change.
+        if (last_vp.eql(pos_vp)) {
+            // We have to restore old values that are always cleared
+            if (over_link) {
+                self.mouse.over_link = over_link;
+                self.renderer_state.mouse.point = pos_vp;
+            }
 
-    // Handle dragging depending on click count
-    switch (self.mouse.left_click_count) {
-        1 => self.dragLeftClickSingle(screen_point, pos.x),
-        2 => self.dragLeftClickDouble(screen_point),
-        3 => self.dragLeftClickTriple(screen_point),
-        else => unreachable,
+            return;
+        }
+    }
+    self.mouse.link_point = pos_vp;
+
+    if (try self.linkAtPos(pos)) |_| {
+        self.renderer_state.mouse.point = pos_vp;
+        self.mouse.over_link = true;
+        try self.rt_surface.setMouseShape(.pointer);
+        try self.queueRender();
+    } else if (over_link) {
+        try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
+        try self.queueRender();
     }
 }
 

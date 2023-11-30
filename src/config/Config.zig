@@ -14,6 +14,7 @@ const terminal = @import("../terminal/main.zig");
 const internal_os = @import("../os/main.zig");
 const cli = @import("../cli.zig");
 
+const url = @import("url.zig");
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
@@ -328,6 +329,28 @@ command: ?[]const u8 = null,
 /// set by Ghostty to be the command (possibly with a hyphen-prefix to
 /// indicate that it is a login shell, depending on the OS).
 @"command-arg": RepeatableString = .{},
+
+/// Match a regular expression against the terminal text and associate
+/// clicking it with an action. This can be used to match URLs, file paths,
+/// etc. Actions can be opening using the system opener (i.e. "open" or
+/// "xdg-open") or executing any arbitrary binding action.
+///
+/// Links that are configured earlier take precedence over links that
+/// are configured later.
+///
+/// A default link that matches a URL and opens it in the system opener
+/// always exists. This can be disabled using "link-url".
+///
+/// TODO: This can't currently be set!
+link: RepeatableLink = .{},
+
+/// Enable URL matching. URLs are matched on hover and open using the
+/// default system application for the linked URL.
+///
+/// The URL matcher is always lowest priority of any configured links
+/// (see "link"). If you want to customize URL matching, use "link"
+/// and disable this.
+@"link-url": bool = true,
 
 /// Start new windows in fullscreen. This setting applies to new
 /// windows and does not apply to tabs, splits, etc. However, this
@@ -1189,6 +1212,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
     }
 
+    // Add our default link for URL detection
+    try result.link.links.append(alloc, .{
+        .regex = url.regex,
+        .action = .{ .open = {} },
+        .highlight = .{ .hover = {} },
+    });
+
     return result;
 }
 
@@ -1527,6 +1557,10 @@ pub fn finalize(self: *Config) !void {
     // Minimmum window size
     if (self.@"window-width" > 0) self.@"window-width" = @max(10, self.@"window-width");
     if (self.@"window-height" > 0) self.@"window-height" = @max(4, self.@"window-height");
+
+    // If URLs are disabled, cut off the first link. The first link is
+    // always the URL matcher.
+    if (!self.@"link-url") self.link.links.items = self.link.links.items[1..];
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
@@ -2505,6 +2539,34 @@ pub const FontStyle = union(enum) {
 
         try p.parseCLI(alloc, "bold");
         try testing.expectEqualStrings("bold", p.name);
+    }
+};
+
+/// See "link" for documentation.
+pub const RepeatableLink = struct {
+    const Self = @This();
+
+    links: std.ArrayListUnmanaged(inputpkg.Link) = .{},
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input_: ?[]const u8) !void {
+        _ = self;
+        _ = alloc;
+        _ = input_;
+        return error.NotImplemented;
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        _ = self;
+        _ = alloc;
+        return .{};
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        _ = self;
+        _ = other;
+        return true;
     }
 };
 

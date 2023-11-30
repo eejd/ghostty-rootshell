@@ -13,6 +13,9 @@
 //!       affect this area.
 //!   * Viewport - The area that is currently visible to the user. This
 //!       can be thought of as the current window into the screen.
+//!   * Row - A single visible row in the screen.
+//!   * Line - A single line of text. This may map to multiple rows if
+//!       the row is soft-wrapped.
 //!
 //! The internal storage of the screen is stored in a circular buffer
 //! with roughly the following format:
@@ -64,6 +67,7 @@ const kitty = @import("kitty.zig");
 const point = @import("point.zig");
 const CircBuf = @import("../circ_buf.zig").CircBuf;
 const Selection = @import("Selection.zig");
+const StringMap = @import("StringMap.zig");
 const fastmem = @import("../fastmem.zig");
 const charsets = @import("charsets.zig");
 
@@ -900,6 +904,72 @@ pub const GraphemeData = union(enum) {
     }
 };
 
+/// A line represents a line of text, potentially across soft-wrapped
+/// boundaries. This differs from row, which is a single physical row within
+/// the terminal screen.
+pub const Line = struct {
+    screen: *Screen,
+    tag: RowIndexTag,
+    start: usize,
+    len: usize,
+
+    /// Return the string for this line.
+    pub fn string(self: *const Line, alloc: Allocator) ![:0]const u8 {
+        return try self.screen.selectionString(alloc, self.selection(), true);
+    }
+
+    /// Receive the string for this line along with the byte-to-point mapping.
+    pub fn stringMap(self: *const Line, alloc: Allocator) !StringMap {
+        return try self.screen.selectionStringMap(alloc, self.selection());
+    }
+
+    /// Return a selection that covers the entire line.
+    pub fn selection(self: *const Line) Selection {
+        // Get the start and end screen point.
+        const start_idx = self.tag.index(self.start).toScreen(self.screen).screen;
+        const end_idx = self.tag.index(self.start + (self.len - 1)).toScreen(self.screen).screen;
+
+        // Convert the start and end screen points into a selection across
+        // the entire rows. We then use selectionString because it handles
+        // unwrapping, graphemes, etc.
+        return .{
+            .start = .{ .y = start_idx, .x = 0 },
+            .end = .{ .y = end_idx, .x = self.screen.cols - 1 },
+        };
+    }
+};
+
+/// Iterator over textual lines within the terminal. This will unwrap
+/// wrapped lines and consider them a single line.
+pub const LineIterator = struct {
+    row_it: RowIterator,
+
+    pub fn next(self: *LineIterator) ?Line {
+        const start = self.row_it.value;
+
+        // Get our current row
+        var row = self.row_it.next() orelse return null;
+        var len: usize = 1;
+
+        // While the row is wrapped we keep iterating over the rows
+        // and incrementing the length.
+        while (row.isWrapped()) {
+            // Note: this orelse shouldn't happen. A wrapped row should
+            // always have a next row. However, this isn't the place where
+            // we want to assert that.
+            row = self.row_it.next() orelse break;
+            len += 1;
+        }
+
+        return .{
+            .screen = self.row_it.screen,
+            .tag = self.row_it.tag,
+            .start = start,
+            .len = len,
+        };
+    }
+};
+
 // Initialize to header and not a cell so that we can check header.init
 // to know if the remainder of the row has been initialized or not.
 const StorageBuf = CircBuf(StorageCell, .{ .header = .{} });
@@ -1094,6 +1164,50 @@ pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
         .screen = self,
         .tag = tag,
         .max = tag.maxLen(self),
+    };
+}
+
+/// Returns an iterator that iterates over the lines of the screen. A line
+/// is a single line of text which may wrap across multiple rows. A row
+/// is a single physical row of the terminal.
+pub fn lineIterator(self: *Screen, tag: RowIndexTag) LineIterator {
+    return .{ .row_it = self.rowIterator(tag) };
+}
+
+/// Returns the line that contains the given point. This may be null if the
+/// point is outside the screen.
+pub fn getLine(self: *Screen, pt: point.ScreenPoint) ?Line {
+    // If our y is outside of our written area, we have no line.
+    if (pt.y >= RowIndexTag.screen.maxLen(self)) return null;
+    if (pt.x >= self.cols) return null;
+
+    // Find the starting y. We go back and as soon as we find a row that
+    // isn't wrapped, we know the NEXT line is the one we want.
+    const start_y: usize = if (pt.y == 0) 0 else start_y: {
+        for (1..pt.y) |y| {
+            const bot_y = pt.y - y;
+            const row = self.getRow(.{ .screen = bot_y });
+            if (!row.isWrapped()) break :start_y bot_y + 1;
+        }
+
+        break :start_y 0;
+    };
+
+    // Find the end y, which is the first row that isn't wrapped.
+    const end_y = end_y: {
+        for (pt.y..self.rowsWritten()) |y| {
+            const row = self.getRow(.{ .screen = y });
+            if (!row.isWrapped()) break :end_y y;
+        }
+
+        break :end_y self.rowsWritten() - 1;
+    };
+
+    return .{
+        .screen = self,
+        .tag = .screen,
+        .start = start_y,
+        .len = (end_y - start_y) + 1,
     };
 }
 
@@ -2076,62 +2190,83 @@ pub fn selectionString(
     // Get the slices for the string
     const slices = self.selectionSlices(sel);
 
-    // We can now know how much space we'll need to store the string. We loop
-    // over and UTF8-encode and calculate the exact size required. We will be
-    // off here by at most "newlines" values in the worst case that every
-    // single line is soft-wrapped.
-    const chars = chars: {
-        var count: usize = 0;
+    // Use an ArrayList so that we can grow the array as we go. We
+    // build an initial capacity of just our rows in our selection times
+    // columns. It can be more or less based on graphemes, newlines, etc.
+    var strbuilder = try std.ArrayList(u8).initCapacity(alloc, slices.rows * self.cols);
+    defer strbuilder.deinit();
 
-        // We need to keep track of our x/y so that we can get graphemes.
-        var y: usize = slices.sel.start.y;
-        var x: usize = 0;
-        var row: Row = undefined;
+    // Get our string result.
+    try self.selectionSliceString(slices, &strbuilder, null);
 
-        const arr = [_][]StorageCell{ slices.top, slices.bot };
-        for (arr) |slice| {
-            for (slice, 0..) |cell, i| {
-                // detect row headers
-                if (@mod(i, self.cols + 1) == 0) {
-                    // We use each row header as an opportunity to "count"
-                    // a new row, and therefore count a possible newline.
-                    count += 1;
+    // Remove any trailing spaces on lines. We could do optimize this by
+    // doing this in the loop above but this isn't very hot path code and
+    // this is simple.
+    if (trim) {
+        var it = std.mem.tokenize(u8, strbuilder.items, "\n");
 
-                    // Increase our row count and get our next row
-                    y += 1;
-                    x = 0;
-                    row = self.getRow(.{ .screen = y - 1 });
-                    continue;
-                }
-
-                var buf: [4]u8 = undefined;
-                const char = if (cell.cell.char > 0) cell.cell.char else ' ';
-                count += try std.unicode.utf8Encode(@intCast(char), &buf);
-
-                // We need to also count any grapheme chars
-                var it = row.codepointIterator(x);
-                while (it.next()) |cp| {
-                    count += try std.unicode.utf8Encode(cp, &buf);
-                }
-
-                x += 1;
-            }
+        // Reset our items. We retain our capacity. Because we're only
+        // removing bytes, we know that the trimmed string must be no longer
+        // than the original string so we copy directly back into our
+        // allocated memory.
+        strbuilder.clearRetainingCapacity();
+        while (it.next()) |line| {
+            const trimmed = std.mem.trimRight(u8, line, " \t");
+            const i = strbuilder.items.len;
+            strbuilder.items.len += trimmed.len;
+            std.mem.copyForwards(u8, strbuilder.items[i..], trimmed);
+            strbuilder.appendAssumeCapacity('\n');
         }
 
-        break :chars count;
-    };
-    const buf = try alloc.alloc(u8, chars + 1);
-    errdefer alloc.free(buf);
-
-    // Special case the empty case
-    if (chars == 0) {
-        buf[0] = 0;
-        return buf[0..0 :0];
+        // Remove our trailing newline again
+        if (strbuilder.items.len > 0) strbuilder.items.len -= 1;
     }
 
+    // Get our final string
+    const string = try strbuilder.toOwnedSliceSentinel(0);
+    errdefer alloc.free(string);
+
+    return string;
+}
+
+/// Returns the row text associated with a selection along with the
+/// mapping of each individual byte in the string to the point in the screen.
+fn selectionStringMap(
+    self: *Screen,
+    alloc: Allocator,
+    sel: Selection,
+) !StringMap {
+    // Get the slices for the string
+    const slices = self.selectionSlices(sel);
+
+    // Use an ArrayList so that we can grow the array as we go. We
+    // build an initial capacity of just our rows in our selection times
+    // columns. It can be more or less based on graphemes, newlines, etc.
+    var strbuilder = try std.ArrayList(u8).initCapacity(alloc, slices.rows * self.cols);
+    defer strbuilder.deinit();
+    var mapbuilder = try std.ArrayList(point.ScreenPoint).initCapacity(alloc, strbuilder.capacity);
+    defer mapbuilder.deinit();
+
+    // Get our results
+    try self.selectionSliceString(slices, &strbuilder, &mapbuilder);
+
+    // Get our final string
+    const string = try strbuilder.toOwnedSliceSentinel(0);
+    errdefer alloc.free(string);
+    const map = try mapbuilder.toOwnedSlice();
+    errdefer alloc.free(map);
+    return .{ .string = string, .map = map };
+}
+
+/// Takes a SelectionSlices value and builds the string and mapping for it.
+fn selectionSliceString(
+    self: *Screen,
+    slices: SelectionSlices,
+    strbuilder: *std.ArrayList(u8),
+    mapbuilder: ?*std.ArrayList(point.ScreenPoint),
+) !void {
     // Connect the text from the two slices
     const arr = [_][]StorageCell{ slices.top, slices.bot };
-    var buf_i: usize = 0;
     var row_count: usize = 0;
     for (arr) |slice| {
         const row_start: usize = row_count;
@@ -2151,6 +2286,13 @@ pub fn selectionString(
             // the first row.
             var skip: usize = if (row_count == 0) slices.top_offset else 0;
 
+            // If we have runtime safety we need to initialize the row
+            // so that the proper union tag is set. In release modes we
+            // don't need to do this because we zero the memory.
+            if (std.debug.runtime_safety) {
+                _ = self.getRow(.{ .screen = slices.sel.start.y + row_i });
+            }
+
             const row: Row = .{ .screen = self, .storage = slice[start_idx..end_idx] };
             var it = row.cellIterator();
             var x: usize = 0;
@@ -2166,56 +2308,61 @@ pub fn selectionString(
                 if (cell.attrs.wide_spacer_head or
                     cell.attrs.wide_spacer_tail) continue;
 
+                var buf: [4]u8 = undefined;
                 const char = if (cell.char > 0) cell.char else ' ';
-                buf_i += try std.unicode.utf8Encode(@intCast(char), buf[buf_i..]);
+                {
+                    const encode_len = try std.unicode.utf8Encode(@intCast(char), &buf);
+                    try strbuilder.appendSlice(buf[0..encode_len]);
+                    if (mapbuilder) |b| {
+                        for (0..encode_len) |_| try b.append(.{
+                            .x = x,
+                            .y = slices.sel.start.y + row_i,
+                        });
+                    }
+                }
 
                 var cp_it = row.codepointIterator(x);
                 while (cp_it.next()) |cp| {
-                    buf_i += try std.unicode.utf8Encode(cp, buf[buf_i..]);
+                    const encode_len = try std.unicode.utf8Encode(cp, &buf);
+                    try strbuilder.appendSlice(buf[0..encode_len]);
+                    if (mapbuilder) |b| {
+                        for (0..encode_len) |_| try b.append(.{
+                            .x = x,
+                            .y = slices.sel.start.y + row_i,
+                        });
+                    }
                 }
             }
 
             // If this row is not soft-wrapped, add a newline
             if (!row.header().flags.wrap) {
-                buf[buf_i] = '\n';
-                buf_i += 1;
+                try strbuilder.append('\n');
+                if (mapbuilder) |b| {
+                    try b.append(.{
+                        .x = self.cols - 1,
+                        .y = slices.sel.start.y + row_i,
+                    });
+                }
             }
         }
     }
 
     // Remove our trailing newline, its never correct.
-    if (buf_i > 0 and buf[buf_i - 1] == '\n') buf_i -= 1;
-
-    // Remove any trailing spaces on lines. We could do optimize this by
-    // doing this in the loop above but this isn't very hot path code and
-    // this is simple.
-    if (trim) {
-        var it = std.mem.tokenize(u8, buf[0..buf_i], "\n");
-        buf_i = 0;
-        while (it.next()) |line| {
-            const trimmed = std.mem.trimRight(u8, line, " \t");
-            std.mem.copy(u8, buf[buf_i..], trimmed);
-            buf_i += trimmed.len;
-            buf[buf_i] = '\n';
-            buf_i += 1;
-        }
-
-        // Remove our trailing newline again
-        if (buf_i > 0) buf_i -= 1;
+    if (strbuilder.items.len > 0 and
+        strbuilder.items[strbuilder.items.len - 1] == '\n')
+    {
+        strbuilder.items.len -= 1;
+        if (mapbuilder) |b| b.items.len -= 1;
     }
 
-    // Add null termination
-    buf[buf_i] = 0;
-
-    // Realloc so our free length is exactly correct
-    const result = try alloc.realloc(buf, buf_i + 1);
-    return result[0..buf_i :0];
+    if (std.debug.runtime_safety) {
+        if (mapbuilder) |b| {
+            assert(strbuilder.items.len == b.items.len);
+        }
+    }
 }
 
-/// Returns the slices that make up the selection, in order. There are at most
-/// two parts to handle the ring buffer. If the selection fits in one contiguous
-/// slice, then the second slice will have a length of zero.
-fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
+const SelectionSlices = struct {
     rows: usize,
 
     // The selection that the slices below represent. This may not
@@ -2228,7 +2375,12 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) struct {
     top_offset: usize,
     top: []StorageCell,
     bot: []StorageCell,
-} {
+};
+
+/// Returns the slices that make up the selection, in order. There are at most
+/// two parts to handle the ring buffer. If the selection fits in one contiguous
+/// slice, then the second slice will have a length of zero.
+fn selectionSlices(self: *Screen, sel_raw: Selection) SelectionSlices {
     // Note: this function is tested via selectionString
 
     // If the selection starts beyond the end of the screen, then we return empty
@@ -3402,6 +3554,91 @@ test "Screen: write long emoji" {
     try s.testWriteString(buf[0..buf_idx]);
     try testing.expect(s.rowsWritten() == 1);
     try testing.expectEqual(@as(usize, 5), s.cursor.x);
+}
+
+test "Screen: lineIterator" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD\n2EFGH";
+    try s.testWriteString(str);
+
+    // Test the line iterator
+    var iter = s.lineIterator(.viewport);
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("1ABCD", actual);
+    }
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("2EFGH", actual);
+    }
+    try testing.expect(iter.next() == null);
+}
+
+test "Screen: lineIterator soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD2EFGH\n3ABCD";
+    try s.testWriteString(str);
+
+    // Test the line iterator
+    var iter = s.lineIterator(.viewport);
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("1ABCD2EFGH", actual);
+    }
+    {
+        const line = iter.next().?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("3ABCD", actual);
+    }
+    try testing.expect(iter.next() == null);
+}
+
+test "Screen: getLine soft wrap" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    // Sanity check that our test helpers work
+    const str = "1ABCD2EFGH\n3ABCD";
+    try s.testWriteString(str);
+
+    // Test the line iterator
+    {
+        const line = s.getLine(.{ .x = 2, .y = 1 }).?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("1ABCD2EFGH", actual);
+    }
+    {
+        const line = s.getLine(.{ .x = 2, .y = 2 }).?;
+        const actual = try line.string(alloc);
+        defer alloc.free(actual);
+        try testing.expectEqualStrings("3ABCD", actual);
+    }
+
+    try testing.expect(s.getLine(.{ .x = 2, .y = 3 }) == null);
+    try testing.expect(s.getLine(.{ .x = 7, .y = 1 }) == null);
 }
 
 test "Screen: scrolling" {

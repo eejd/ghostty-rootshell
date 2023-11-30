@@ -18,6 +18,7 @@ const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
+const link = @import("link.zig");
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -153,6 +154,7 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     custom_shaders: std.ArrayListUnmanaged([]const u8),
     custom_shader_animation: bool,
+    links: link.Set,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -173,6 +175,12 @@ pub const DerivedConfig = struct {
         font_styles.set(.bold, config.@"font-style-bold" != .false);
         font_styles.set(.italic, config.@"font-style-italic" != .false);
         font_styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
+
+        // Our link configs
+        const links = try link.Set.fromConfig(
+            alloc,
+            config.link.links.items,
+        );
 
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
@@ -208,12 +216,15 @@ pub const DerivedConfig = struct {
 
             .custom_shaders = custom_shaders,
             .custom_shader_animation = config.@"custom-shader-animation",
+            .links = links,
 
             .arena = arena,
         };
     }
 
     pub fn deinit(self: *DerivedConfig) void {
+        const alloc = self.arena.allocator();
+        self.links.deinit(alloc);
         self.arena.deinit();
     }
 };
@@ -555,6 +566,7 @@ pub fn updateFrame(
         bg: terminal.color.RGB,
         selection: ?terminal.Selection,
         screen: terminal.Screen,
+        mouse: renderer.State.Mouse,
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
     };
@@ -622,6 +634,7 @@ pub fn updateFrame(
             .bg = self.background_color,
             .selection = selection,
             .screen = screen_copy,
+            .mouse = state.mouse,
             .preedit = if (cursor_style != null) state.preedit else null,
             .cursor_style = cursor_style,
         };
@@ -632,6 +645,7 @@ pub fn updateFrame(
     try self.rebuildCells(
         critical.selection,
         &critical.screen,
+        critical.mouse,
         critical.preedit,
         critical.cursor_style,
     );
@@ -1354,6 +1368,7 @@ fn rebuildCells(
     self: *Metal,
     term_selection: ?terminal.Selection,
     screen: *terminal.Screen,
+    mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
 ) !void {
@@ -1369,6 +1384,18 @@ fn rebuildCells(
         // * 3 for background modes and cursor and underlines
         // + 1 for cursor
         (screen.rows * screen.cols * 2) + 1,
+    );
+
+    // Create an arena for all our temporary allocations while rebuilding
+    var arena = ArenaAllocator.init(self.alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    // Create our match set for the links.
+    var link_match_set = try self.config.links.matchSet(
+        arena_alloc,
+        screen,
+        mouse.point orelse .{},
     );
 
     // Determine our x/y range for preedit. We don't want to render anything
@@ -1475,10 +1502,27 @@ fn rebuildCells(
                     }
                 }
 
+                // It this cell is within our hint range then we need to
+                // underline it.
+                const cell: terminal.Screen.Cell = cell: {
+                    var cell = row.getCell(shaper_cell.x);
+
+                    // If our links contain this cell then we want to
+                    // underline it.
+                    if (link_match_set.orderedContains(.{
+                        .x = shaper_cell.x,
+                        .y = y,
+                    })) {
+                        cell.attrs.underline = .single;
+                    }
+
+                    break :cell cell;
+                };
+
                 if (self.updateCell(
                     term_selection,
                     screen,
-                    row.getCell(shaper_cell.x),
+                    cell,
                     shaper_cell,
                     run,
                     shaper_cell.x,

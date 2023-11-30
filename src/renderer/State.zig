@@ -25,6 +25,17 @@ inspector: ?*Inspector = null,
 /// a future exercise.
 preedit: ?Preedit = null,
 
+/// Mouse state. This only contains state relevant to what renderers
+/// need about the mouse.
+mouse: Mouse = .{},
+
+pub const Mouse = struct {
+    /// The point on the viewport where the mouse currently is. We use
+    /// viewport points to avoid the complexity of mapping the mouse to
+    /// the renderer state.
+    point: ?terminal.point.Viewport = null,
+};
+
 /// The pre-edit state. See Surface.preeditCallback for more information.
 pub const Preedit = struct {
     /// The codepoints to render as preedit text. We allow up to 16 codepoints
