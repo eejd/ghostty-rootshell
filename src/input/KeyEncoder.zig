@@ -175,7 +175,29 @@ fn kitty(
             }
         }
 
-        if (self.kitty_flags.report_associated) {
+        if (self.kitty_flags.report_associated) associated: {
+            if (comptime builtin.target.isDarwin()) {
+                // macOS has special logic because alt+key can produce unicode
+                // characters. If we are treating option as alt, then we do NOT
+                // report associated text. If we are not treating alt as alt,
+                // we do.
+                if (switch (self.macos_option_as_alt) {
+                    .left => all_mods.sides.alt == .left,
+                    .right => all_mods.sides.alt == .right,
+                    .true => true,
+
+                    // This is the main weird one. If we are NOT treating
+                    // option as alt, we still want to prevent text if we
+                    // have modifiers set WITHOUT alt. If alt is present,
+                    // macOS will handle generating the unicode character.
+                    // If alt is not present, we want to suppress.
+                    .false => !seq.mods.alt and seq.mods.preventsText(),
+                }) break :associated;
+            } else {
+                // If any modifiers are present, we don't report associated text.
+                if (seq.mods.preventsText()) break :associated;
+            }
+
             seq.text = self.event.utf8;
         }
 
@@ -583,6 +605,18 @@ const KittyMods = packed struct(u8) {
             .caps_lock = mods.caps_lock,
             .num_lock = mods.num_lock,
         };
+    }
+
+    /// Returns true if the modifiers prevent printable text.
+    ///
+    /// Note on macOS: this logic alone is not enough, since you must
+    /// consider macos_option_as_alt. See the Kitty encoder for more details.
+    pub fn preventsText(self: KittyMods) bool {
+        return self.alt or
+            self.ctrl or
+            self.super or
+            self.hyper or
+            self.meta;
     }
 
     /// Returns the raw int value of this packed struct.
@@ -1165,6 +1199,96 @@ test "kitty: left shift with report all" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[57441u", actual);
+}
+
+test "kitty: report associated with alt text on macOS with option" {
+    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .w,
+            .mods = .{ .alt = true },
+            .utf8 = "∑",
+            .unshifted_codepoint = 119,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+        .macos_option_as_alt = .false,
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[119;3;8721u", actual);
+}
+
+test "kitty: report associated with alt text on macOS with alt" {
+    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .w,
+            .mods = .{ .alt = true },
+            .utf8 = "∑",
+            .unshifted_codepoint = 119,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+        .macos_option_as_alt = .true,
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[119;3u", actual);
+}
+
+test "kitty: report associated with modifiers" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .j,
+            .mods = .{ .ctrl = true },
+            .utf8 = "j",
+            .unshifted_codepoint = 106,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[106;5u", actual);
+}
+
+test "kitty: report associated" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .j,
+            .mods = .{ .shift = true },
+            .utf8 = "J",
+            .unshifted_codepoint = 106,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[106:74;2;74u", actual);
 }
 
 test "kitty: alternates omit control characters" {
