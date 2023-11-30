@@ -366,15 +366,30 @@ fullscreen: bool = false,
 /// set title escape sequences programs (such as Neovim) may send.
 title: ?[:0]const u8 = null,
 
-/// The setting that will change the application class value. This value is
-/// often used with Linux window managers to change behavior (such as
-/// floating vs tiled). If you don't know what this is, don't set it.
+/// The setting that will change the application class value.
+///
+/// This controls the class field of the WM_CLASS X11 property (when running
+/// under X11), and the Wayland application ID (when running under Wayland).
+///
+/// Note that changing this value between invocations will create new, separate
+/// instances, of Ghostty when running with --gtk-single-instance=true. See
+/// that option for more details.
 ///
 /// The class name must follow the GTK requirements defined here:
 /// https://docs.gtk.org/gio/type_func.Application.id_is_valid.html
 ///
+/// The default is "com.mitchellh.ghostty".
+///
 /// This only affects GTK builds.
 class: ?[:0]const u8 = null,
+
+/// This controls the instance name field of the WM_CLASS X11 property when
+/// running under X11. It has no effect otherwise.
+///
+/// The default is "ghostty".
+///
+/// This only affects GTK builds.
+@"x11-instance-name": ?[:0]const u8 = null,
 
 /// The directory to change to after starting the command.
 ///

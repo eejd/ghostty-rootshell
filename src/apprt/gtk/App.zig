@@ -156,6 +156,35 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
+    const display = c.gdk_display_get_default();
+    if (c.g_type_check_instance_is_a(@ptrCast(@alignCast(display)), c.gdk_x11_display_get_type()) != 0) {
+        // Set the X11 window class property (WM_CLASS) if are are on an X11
+        // display.
+        //
+        // Note that we also set the program name here using g_set_prgname.
+        // This is how the instance name field for WM_CLASS is derived when
+        // calling gdk_x11_display_set_program_class; there does not seem to be
+        // a way to set it directly. It does not look like this is being set by
+        // our other app initialization routines currently, but since we're
+        // currently deriving its value from x11-instance-name effectively, I
+        // feel like gating it behind an X11 check is better intent.
+        //
+        // This makes the property show up like so when using xprop:
+        //
+        //     WM_CLASS(STRING) = "ghostty", "com.mitchellh.ghostty"
+        //
+        // Append "-debug" on both when using the debug build.
+        //
+        const prgname = if (config.@"x11-instance-name") |pn|
+            pn
+        else if (builtin.mode == .Debug)
+            "ghostty-debug"
+        else
+            "ghostty";
+        c.g_set_prgname(prgname);
+        c.gdk_x11_display_set_program_class(display, app_id);
+    }
+
     // This just calls the "activate" signal but its part of the normal
     // startup routine so we just call it:
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
