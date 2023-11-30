@@ -19,7 +19,7 @@ const Version = @import("src/build/Version.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.12.0-dev.1767+1e42a3de8";
+    const required_zig = "0.12.0-dev.1754+2a3226453";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
