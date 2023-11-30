@@ -19,7 +19,7 @@ const Version = @import("src/build/Version.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.12.0-dev.983+78f2ae7f2";
+    const required_zig = "0.12.0-dev.1754+2a3226453";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -875,7 +875,7 @@ fn benchSteps(
 ) !void {
     // Open the directory ./src/bench
     const c_dir_path = (comptime root()) ++ "/src/bench";
-    var c_dir = try fs.openIterableDirAbsolute(c_dir_path, .{});
+    var c_dir = try fs.openDirAbsolute(c_dir_path, .{ .iterate = true });
     defer c_dir.close();
 
     // Go through and add each as a step
@@ -918,7 +918,7 @@ fn conformanceSteps(
 
     // Open the directory ./conformance
     const c_dir_path = (comptime root()) ++ "/conformance";
-    var c_dir = try fs.openIterableDirAbsolute(c_dir_path, .{});
+    var c_dir = try fs.openDirAbsolute(c_dir_path, .{ .iterate = true });
     defer c_dir.close();
 
     // Go through and add each as a step

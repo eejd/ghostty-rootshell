@@ -43,7 +43,7 @@ pub fn run(alloc: Allocator) !u8 {
     const path = try std.fs.path.join(alloc, &.{ resources_dir, "themes" });
     defer alloc.free(path);
 
-    var dir = try std.fs.cwd().openIterableDir(path, .{});
+    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
 
     var walker = try dir.walk(alloc);

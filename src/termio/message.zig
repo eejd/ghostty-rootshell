@@ -130,7 +130,7 @@ pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type 
                     // If it fits in our small request, do that.
                     if (data.len <= Small.Max) {
                         var buf: Small.Array = undefined;
-                        std.mem.copy(Elem, &buf, data);
+                        @memcpy(buf[0..data.len], data);
                         return Self{
                             .small = .{
                                 .data = buf,
