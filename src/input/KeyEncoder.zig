@@ -175,7 +175,29 @@ fn kitty(
             }
         }
 
-        if (self.kitty_flags.report_associated and !seq.mods.preventsText()) {
+        if (self.kitty_flags.report_associated) associated: {
+            if (comptime builtin.target.isDarwin()) {
+                // macOS has special logic because alt+key can produce unicode
+                // characters. If we are treating option as alt, then we do NOT
+                // report associated text. If we are not treating alt as alt,
+                // we do.
+                if (switch (self.macos_option_as_alt) {
+                    .left => all_mods.sides.alt == .left,
+                    .right => all_mods.sides.alt == .right,
+                    .true => true,
+
+                    // This is the main weird one. If we are NOT treating
+                    // option as alt, we still want to prevent text if we
+                    // have modifiers set WITHOUT alt. If alt is present,
+                    // macOS will handle generating the unicode character.
+                    // If alt is not present, we want to suppress.
+                    .false => !seq.mods.alt and seq.mods.preventsText(),
+                }) break :associated;
+            } else {
+                // If any modifiers are present, we don't report associated text.
+                if (seq.mods.preventsText()) break :associated;
+            }
+
             seq.text = self.event.utf8;
         }
 
@@ -1178,6 +1200,54 @@ test "kitty: left shift with report all" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("\x1b[57441u", actual);
+}
+
+test "kitty: report associated with alt text on macOS with option" {
+    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .w,
+            .mods = .{ .alt = true },
+            .utf8 = "∑",
+            .unshifted_codepoint = 119,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+        .macos_option_as_alt = .false,
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[119;3;8721u", actual);
+}
+
+test "kitty: report associated with alt text on macOS with alt" {
+    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .w,
+            .mods = .{ .alt = true },
+            .utf8 = "∑",
+            .unshifted_codepoint = 119,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+        },
+        .macos_option_as_alt = .true,
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("\x1b[119;3u", actual);
 }
 
 test "kitty: report associated with modifiers" {
