@@ -912,7 +912,6 @@ fn keyEvent(
     ud: ?*anyopaque,
 ) bool {
     const self = userdataSelf(ud.?);
-    const mods = translateMods(gtk_mods);
     const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
     const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
 
@@ -985,6 +984,57 @@ fn keyEvent(
     const physical_key = keycode: for (input.keycodes.entries) |entry| {
         if (entry.native == keycode) break :keycode entry.key;
     } else .invalid;
+
+    // Get our modifiers. We have to translate modifier-only presses here
+    // to state in the mods manually because GTK only does it AFTER the press
+    // event.
+    const mods = mods: {
+        var mods = translateMods(gtk_mods);
+        switch (physical_key) {
+            .left_shift => {
+                mods.shift = action == .press;
+                if (mods.shift) mods.sides.shift = .left;
+            },
+
+            .right_shift => {
+                mods.shift = action == .press;
+                if (mods.shift) mods.sides.shift = .right;
+            },
+
+            .left_control => {
+                mods.ctrl = action == .press;
+                if (mods.ctrl) mods.sides.ctrl = .left;
+            },
+
+            .right_control => {
+                mods.ctrl = action == .press;
+                if (mods.ctrl) mods.sides.ctrl = .right;
+            },
+
+            .left_alt => {
+                mods.alt = action == .press;
+                if (mods.alt) mods.sides.alt = .left;
+            },
+
+            .right_alt => {
+                mods.alt = action == .press;
+                if (mods.alt) mods.sides.alt = .right;
+            },
+
+            .left_super => {
+                mods.super = action == .press;
+                if (mods.super) mods.sides.super = .left;
+            },
+
+            .right_super => {
+                mods.super = action == .press;
+                if (mods.super) mods.sides.super = .right;
+            },
+
+            else => {},
+        }
+        break :mods mods;
+    };
 
     // Get our consumed modifiers
     const consumed_mods: input.Mods = consumed: {
