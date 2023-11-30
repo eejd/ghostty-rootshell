@@ -339,11 +339,18 @@ command: ?[]const u8 = null,
 /// are configured later.
 ///
 /// A default link that matches a URL and opens it in the system opener
-/// always exists.
+/// always exists. This can be disabled using "link-url".
 ///
 /// TODO: This can't currently be set!
-/// TODO: make URL matching disable-able
 link: RepeatableLink = .{},
+
+/// Enable URL matching. URLs are matched on hover and open using the
+/// default system application for the linked URL.
+///
+/// The URL matcher is always lowest priority of any configured links
+/// (see "link"). If you want to customize URL matching, use "link"
+/// and disable this.
+@"link-url": bool = true,
 
 /// Start new windows in fullscreen. This setting applies to new
 /// windows and does not apply to tabs, splits, etc. However, this
@@ -1550,6 +1557,10 @@ pub fn finalize(self: *Config) !void {
     // Minimmum window size
     if (self.@"window-width" > 0) self.@"window-width" = @max(10, self.@"window-width");
     if (self.@"window-height" > 0) self.@"window-height" = @max(4, self.@"window-height");
+
+    // If URLs are disabled, cut off the first link. The first link is
+    // always the URL matcher.
+    if (!self.@"link-url") self.link.links.items = self.link.links.items[1..];
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
