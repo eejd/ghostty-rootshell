@@ -148,6 +148,8 @@ const Kind = enum {
 
             // Powerline fonts
             0xE0B0,
+            0xE0B4,
+            0xE0B6,
             0xE0B2,
             0xE0B8,
             0xE0BA,
