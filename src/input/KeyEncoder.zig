@@ -607,17 +607,16 @@ const KittyMods = packed struct(u8) {
         };
     }
 
-    /// Returns true if the modifiers prevent printable text
+    /// Returns true if the modifiers prevent printable text.
+    ///
+    /// Note on macOS: this logic alone is not enough, since you must
+    /// consider macos_option_as_alt. See the Kitty encoder for more details.
     pub fn preventsText(self: KittyMods) bool {
-        if (self.alt or
+        return self.alt or
             self.ctrl or
             self.super or
             self.hyper or
-            self.meta)
-        {
-            return true;
-        }
-        return false;
+            self.meta;
     }
 
     /// Returns the raw int value of this packed struct.
