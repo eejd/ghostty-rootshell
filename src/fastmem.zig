@@ -18,7 +18,7 @@ pub inline fn copy(comptime T: type, dest: []T, source: []const T) void {
     if (builtin.link_libc) {
         _ = memcpy(dest.ptr, source.ptr, source.len * @sizeOf(T));
     } else {
-        std.mem.copyForwards(T, dest, source);
+        @memcpy(dest[0..source.len], source);
     }
 }
 
