@@ -2246,7 +2246,7 @@ pub const Keybinds = struct {
             const buf = try alloc.alloc(u8, value.len);
             copy = buf;
 
-            std.mem.copy(u8, buf, value);
+            @memcpy(buf, value);
             break :value buf;
         };
         errdefer if (copy) |v| alloc.free(v);

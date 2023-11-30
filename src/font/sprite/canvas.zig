@@ -390,7 +390,7 @@ const PixmanImpl = struct {
                 var src_ptr = data.ptr;
                 var i: usize = 0;
                 while (i < height) : (i += 1) {
-                    std.mem.copy(u8, dst_ptr, src_ptr[0 .. width * depth]);
+                    @memcpy(dst_ptr[0 .. width * depth], src_ptr[0 .. width * depth]);
                     dst_ptr = dst_ptr[width * depth ..];
                     src_ptr += @as(usize, @intCast(stride));
                 }

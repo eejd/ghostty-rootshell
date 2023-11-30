@@ -762,7 +762,7 @@ const Subprocess = struct {
             // Copy it with a hyphen so its a login shell
             const argv0_buf = try alloc.alloc(u8, argv0.len + 1);
             argv0_buf[0] = '-';
-            std.mem.copy(u8, argv0_buf[1..], argv0);
+            @memcpy(argv0_buf[1..], argv0);
             break :argv0 argv0_buf;
         } else null;
 
@@ -2120,7 +2120,7 @@ const StreamHandler = struct {
             return;
         }
 
-        std.mem.copy(u8, &buf, title);
+        @memcpy(buf[0..title.len], title);
         buf[title.len] = 0;
 
         // Mark that we've seen a title

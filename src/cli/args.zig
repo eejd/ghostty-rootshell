@@ -204,14 +204,14 @@ fn parseIntoField(
                 []const u8 => value: {
                     const slice = value orelse return error.ValueRequired;
                     const buf = try alloc.alloc(u8, slice.len);
-                    mem.copy(u8, buf, slice);
+                    @memcpy(buf, slice);
                     break :value buf;
                 },
 
                 [:0]const u8 => value: {
                     const slice = value orelse return error.ValueRequired;
                     const buf = try alloc.allocSentinel(u8, slice.len, 0);
-                    mem.copy(u8, buf, slice);
+                    @memcpy(buf, slice);
                     buf[slice.len] = 0;
                     break :value buf;
                 },
@@ -709,7 +709,7 @@ pub fn LineIterator(comptime ReaderType: type) type {
                     // Trim any whitespace around it
                     const trim = std.mem.trim(u8, entry, whitespace);
                     if (trim.len != entry.len) {
-                        std.mem.copy(u8, entry, trim);
+                        std.mem.copyForwards(u8, entry, trim);
                         entry = entry[0..trim.len];
                     }
 
@@ -737,9 +737,9 @@ pub fn LineIterator(comptime ReaderType: type) type {
 
                         const len = key.len + value.len + 1;
                         if (entry.len != len) {
-                            std.mem.copy(u8, entry, key);
+                            std.mem.copyForwards(u8, entry, key);
                             entry[key.len] = '=';
-                            std.mem.copy(u8, entry[key.len + 1 ..], value);
+                            std.mem.copyForwards(u8, entry[key.len + 1 ..], value);
                             entry = entry[0..len];
                         }
                     }

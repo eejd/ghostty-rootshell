@@ -5,12 +5,12 @@
     .dependencies = .{
         // Zig libs
         .libxev = .{
-            .url = "https://github.com/mitchellh/libxev/archive/a5f8b9851c18d93a79a154004fb0393a1ec55c65.tar.gz",
-            .hash = "1220589dfd60060857bfcee53b0ee0e4175f764ae22d54e46054e2f81b63af1f6636",
+            .url = "https://github.com/mitchellh/libxev/archive/7eada4333c36b3e16f4dc2abad707149ef7b6de5.tar.gz",
+            .hash = "1220be2c7b3f3a07b9150720140c7038f454a9ce0cbc5d303767c1e4a50856ec1b01",
         },
         .mach_glfw = .{
-            .url = "https://github.com/hexops/mach-glfw/archive/16dc95cc7f74ebbbdd848d9a2c3cc4afc5717708.tar.gz",
-            .hash = "12202da6b8e9024c653f5d67f55a8065b401c42b3c08b69333d95400fe85d6019a59",
+            .url = "git+https://github.com/der-teufel-programming/mach-glfw#577220552e1b31c4496d2e0df2fb5fbc9287b966",
+            .hash = "12204779ba2f14b46f569110f774d5c3f48b7a105b6717e668bc410710bceae62072",
         },
         .zig_objc = .{
             .url = "https://github.com/mitchellh/zig-objc/archive/10e552bd37c2f61b9f570d5ceb145165c6f1854b.tar.gz",
