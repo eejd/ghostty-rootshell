@@ -451,22 +451,24 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
         if (self.terminal.active_screen == .alternate) return;
 
         // Clear our scrollback
-        if (history) try self.terminal.screen.clear(.history);
+        if (history) self.terminal.eraseDisplay(self.alloc, .scrollback, false);
 
-        // If we're not at a prompt, we clear the screen manually using
-        // the terminal screen state. If we are at a prompt, we send
-        // form-feed so that the shell can repaint the entire screen.
+        // If we're not at a prompt, we just delete above the cursor.
         if (!self.terminal.cursorIsAtPrompt()) {
-            // Clear above the cursor
             try self.terminal.screen.clear(.above_cursor);
-
-            // Exit
             return;
         }
+
+        // At a prompt, we want to first fully clear the screen, and then after
+        // send a FF (0x0C) to the shell so that it can repaint the screen.
+        // Mark the current row as a not a prompt so we can properly
+        // clear the full screen in the next eraseDisplay call.
+        self.terminal.markSemanticPrompt(.command);
+        assert(!self.terminal.cursorIsAtPrompt());
+        self.terminal.eraseDisplay(self.alloc, .complete, false);
     }
 
     // If we reached here it means we're at a prompt, so we send a form-feed.
-    assert(self.terminal.cursorIsAtPrompt());
     try self.queueWrite(&[_]u8{0x0C}, false);
 }
 
