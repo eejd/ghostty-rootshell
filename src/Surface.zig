@@ -1252,7 +1252,11 @@ pub fn keyCallback(
         event.physical_key == .right_shift)
     {
         switch (event.action) {
-            .press => try self.rt_surface.setMouseShape(.text),
+            .press => if (!self.mouse.over_link) {
+                // If the cursor is over a link then the pointer shape takes
+                // priority
+                try self.rt_surface.setMouseShape(.text);
+            },
             .release => try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape),
             .repeat => {},
         }
