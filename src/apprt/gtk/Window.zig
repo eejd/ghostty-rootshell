@@ -35,9 +35,6 @@ notebook: *c.GtkNotebook,
 /// pointer to this because GTK can use it at any time.
 icon: icon.Icon,
 
-/// The tab state for this window.
-tabs: std.ArrayListUnmanaged(*Tab),
-
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
@@ -59,7 +56,6 @@ pub fn init(self: *Window, app: *App) !void {
         .icon = undefined,
         .window = undefined,
         .notebook = undefined,
-        .tabs = .{},
     };
 
     // Create the window
@@ -189,35 +185,16 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     self.icon.deinit(self.app);
-    for (self.tabs.items) |tab| tab.destroy(self.app.core_app.alloc);
-    self.tabs.deinit(self.app.core_app.alloc);
 }
 
 /// Add a new tab to this window.
 pub fn newTab(self: *Window, parent: ?*CoreSurface) !void {
     const alloc = self.app.core_app.alloc;
-    const tab = try Tab.create(alloc, self, parent);
-    try self.tabs.append(alloc, tab);
+    _ = try Tab.create(alloc, self, parent);
 
     // TODO: When this is triggered through a GTK action, the new surface
     // redraws correctly. When it's triggered through keyboard shortcuts, it
     // does not (cursor doesn't blink) unless reactivated by refocusing.
-}
-
-// addTab adds a tab to the windows list of tabs.
-// This does *not* manage the underlying GtkNotebook pages.
-pub fn addTab(self: *Window, tab: *Tab) !void {
-    tab.window = self;
-    try self.tabs.append(self.app.core_app.alloc, tab);
-}
-
-pub fn removeTab(self: *Window, tab: *Tab) !void {
-    // Remove the tab from our stored tabs.
-    const tab_idx = for (self.tabs.items, 0..) |t, i| {
-        if (t == tab) break i;
-    } else null;
-
-    if (tab_idx) |idx| _ = self.tabs.orderedRemove(idx) else return error.TabNotFound;
 }
 
 /// Close the tab for the given notebook page. This will automatically
@@ -228,11 +205,6 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
     // Find page and tab which we're closing
     const page_idx = getNotebookPageIndex(page);
 
-    // Remove the tab from our stored tabs.
-    self.removeTab(tab) catch |err| {
-        log.warn("tab {} not removable: {}", .{ page_idx, err });
-        return;
-    };
     // Deallocate the tab
     tab.deinit(self.app.core_app.alloc);
     self.app.core_app.alloc.destroy(tab);
@@ -396,18 +368,8 @@ fn gtkNotebookCreateWindow(
         return null;
     };
 
-    // Now remove the tab from the old window.
-    currentWindow.removeTab(tab) catch |err| {
-        log.warn("error removing tab error={}", .{err});
-        return null;
-    };
-
     // And add it to the new window.
     tab.window = window;
-    window.addTab(tab) catch |err| {
-        log.warn("error adding tab to new window error={}", .{err});
-        return null;
-    };
 
     return window.notebook;
 }

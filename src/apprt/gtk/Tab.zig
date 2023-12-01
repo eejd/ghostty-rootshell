@@ -134,6 +134,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 
     // Attach all events
     _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
 
     // Switch to the new tab
     c.gtk_notebook_set_current_page(window.notebook, page_idx);
@@ -176,4 +177,13 @@ fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     const tab: *Tab = @ptrCast(@alignCast(ud));
     const window = tab.window;
     window.closeTab(tab);
+}
+
+fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
+    _ = v;
+    log.debug("tab box destroy", .{});
+
+    // When our box is destroyed, we want to destroy our tab, too.
+    const tab: *Tab = @ptrCast(@alignCast(ud));
+    tab.destroy(tab.window.app.core_app.alloc);
 }
