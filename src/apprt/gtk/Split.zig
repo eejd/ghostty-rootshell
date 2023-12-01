@@ -114,7 +114,6 @@ pub fn removeBottomRight(self: *Split) void {
     self.removeChild(self.bottom_right, self.top_left);
 }
 
-// TODO: Is this Zig-y?
 fn removeChild(
     self: *Split,
     remove: Surface.Container.Elem,
@@ -138,7 +137,10 @@ fn removeChild(
     alloc.destroy(self);
 }
 
-// TODO: ehhhhhh
+// This replaces the element at the given pointer with a new element.
+// The ptr must be either top_left or bottom_right (asserted in debug).
+// The memory of the old element must be freed or otherwise handled by
+// the caller.
 pub fn replace(
     self: *Split,
     ptr: *Surface.Container.Elem,
