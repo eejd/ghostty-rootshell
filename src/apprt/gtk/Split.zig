@@ -50,7 +50,7 @@ pub fn init(
     // Create the new child surface
     const alloc = sibling.app.core_app.alloc;
     var surface = try Surface.create(alloc, sibling.app, .{
-        .parent2 = &sibling.core_surface,
+        .parent = &sibling.core_surface,
     });
     errdefer surface.destroy(alloc);
 

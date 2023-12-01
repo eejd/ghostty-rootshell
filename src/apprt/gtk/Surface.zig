@@ -30,7 +30,7 @@ pub const opengl_single_threaded_draw = true;
 pub const Options = struct {
     /// The parent surface to inherit settings such as font size, working
     /// directory, etc. from.
-    parent2: ?*CoreSurface = null,
+    parent: ?*CoreSurface = null,
 };
 
 /// The container that this surface is directly attached to.
@@ -291,7 +291,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     // Inherit the parent's font size if we have a parent.
     const font_size: ?font.face.DesiredSize = font_size: {
         if (!app.config.@"window-inherit-font-size") break :font_size null;
-        const parent = opts.parent2 orelse break :font_size null;
+        const parent = opts.parent orelse break :font_size null;
         break :font_size parent.font_size;
     };
 
@@ -304,7 +304,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .title_text_buf_len = 0,
         .core_surface = undefined,
         .font_size = font_size,
-        .parentSurface = opts.parent2 != null,
+        .parentSurface = opts.parent != null,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,

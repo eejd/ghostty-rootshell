@@ -94,7 +94,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 
     // Create the initial surface since all tabs start as a single non-split
     var surface = try Surface.create(window.app.core_app.alloc, window.app, .{
-        .parent2 = parent_,
+        .parent = parent_,
     });
     errdefer surface.unref();
     surface.container = .{ .tab_ = self };
