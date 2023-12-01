@@ -881,23 +881,23 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     // Fonts
     try result.keybind.set.put(
         alloc,
-        .{ .key = .equal, .mods = ctrlOrSuper(.{}) },
+        .{ .key = .equal, .mods = inputpkg.ctrlOrSuper(.{}) },
         .{ .increase_font_size = 1 },
     );
     try result.keybind.set.put(
         alloc,
-        .{ .key = .minus, .mods = ctrlOrSuper(.{}) },
+        .{ .key = .minus, .mods = inputpkg.ctrlOrSuper(.{}) },
         .{ .decrease_font_size = 1 },
     );
     try result.keybind.set.put(
         alloc,
-        .{ .key = .zero, .mods = ctrlOrSuper(.{}) },
+        .{ .key = .zero, .mods = inputpkg.ctrlOrSuper(.{}) },
         .{ .reset_font_size = {} },
     );
 
     try result.keybind.set.put(
         alloc,
-        .{ .key = .j, .mods = ctrlOrSuper(.{ .shift = true }) },
+        .{ .key = .j, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
         .{ .write_scrollback_file = {} },
     );
 
@@ -1098,14 +1098,14 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     // Toggle fullscreen
     try result.keybind.set.put(
         alloc,
-        .{ .key = .enter, .mods = ctrlOrSuper(.{}) },
+        .{ .key = .enter, .mods = inputpkg.ctrlOrSuper(.{}) },
         .{ .toggle_fullscreen = {} },
     );
 
     // Toggle zoom a split
     try result.keybind.set.put(
         alloc,
-        .{ .key = .enter, .mods = ctrlOrSuper(.{ .shift = true }) },
+        .{ .key = .enter, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
         .{ .toggle_split_zoom = {} },
     );
 
@@ -1287,21 +1287,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     });
 
     return result;
-}
-
-/// This sets either "ctrl" or "super" to true (but not both)
-/// on mods depending on if the build target is Mac or not. On
-/// Mac, we default to super (i.e. super+c for copy) and on
-/// non-Mac we default to ctrl (i.e. ctrl+c for copy).
-fn ctrlOrSuper(mods: inputpkg.Mods) inputpkg.Mods {
-    var copy = mods;
-    if (comptime builtin.target.isDarwin()) {
-        copy.super = true;
-    } else {
-        copy.ctrl = true;
-    }
-
-    return copy;
 }
 
 /// Load configuration from an iterator that yields values that look like

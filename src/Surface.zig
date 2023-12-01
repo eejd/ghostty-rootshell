@@ -37,6 +37,7 @@ const input = @import("input.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
 const inspector = @import("inspector/main.zig");
+const SurfaceMouse = @import("surface_mouse.zig");
 
 const log = std.log.scoped(.surface);
 
@@ -1285,23 +1286,16 @@ pub fn keyCallback(
         if (rehide) self.hideMouse();
     }
 
-    // When we are in the middle of a mouse event and we press shift,
-    // we change the mouse to a text shape so that selection appears
-    // possible.
-    if (self.io.terminal.flags.mouse_event != .none and
-        event.physical_key == .left_shift or
-        event.physical_key == .right_shift)
-    {
-        switch (event.action) {
-            .press => if (!self.mouse.over_link) {
-                // If the cursor is over a link then the pointer shape takes
-                // priority
-                try self.rt_surface.setMouseShape(.text);
-            },
-            .release => try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape),
-            .repeat => {},
-        }
-    }
+    // Process the cursor state logic. This will update the cursor shape if
+    // needed, depending on the key state.
+    if ((SurfaceMouse{
+        .physical_key = event.physical_key,
+        .mouse_event = self.io.terminal.flags.mouse_event,
+        .mouse_shape = self.io.terminal.mouse_shape,
+        .mods = self.mouse.mods,
+        .over_link = self.mouse.over_link,
+    }).keyToMouseShape()) |shape|
+        try self.rt_surface.setMouseShape(shape);
 
     // No binding, so we have to perform an encoding task. This
     // may still result in no encoding. Under different modes and
@@ -2260,17 +2254,6 @@ pub fn cursorPosCallback(
     }
 }
 
-// Checks to see if super is on in mods (MacOS) or ctrl. We use this for
-// rectangle select along with alt.
-//
-// Not to be confused with ctrlOrSuper in Config.
-fn ctrlOrSuper(mods: input.Mods) bool {
-    if (comptime builtin.target.isDarwin()) {
-        return mods.super;
-    }
-    return mods.ctrl;
-}
-
 /// Double-click dragging moves the selection one "word" at a time.
 fn dragLeftClickDouble(
     self: *Surface,
@@ -2385,7 +2368,7 @@ fn dragLeftClickSingle(
         self.setSelection(if (selected) .{
             .start = screen_point,
             .end = screen_point,
-            .rectangle = ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt,
+            .rectangle = self.mouse.mods.ctrlOrSuper() and self.mouse.mods.alt,
         } else null);
 
         return;
@@ -2432,7 +2415,7 @@ fn dragLeftClickSingle(
         self.setSelection(.{
             .start = start,
             .end = screen_point,
-            .rectangle = ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt,
+            .rectangle = self.mouse.mods.ctrlOrSuper() and self.mouse.mods.alt,
         });
         return;
     }
@@ -2491,7 +2474,7 @@ fn dragLeftClickBefore(
     click_point: terminal.point.ScreenPoint,
     mods: input.Mods,
 ) bool {
-    if (ctrlOrSuper(mods) and mods.alt) {
+    if (mods.ctrlOrSuper() and mods.alt) {
         return screen_point.x < click_point.x;
     }
 

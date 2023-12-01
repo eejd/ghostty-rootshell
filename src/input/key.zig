@@ -145,6 +145,14 @@ pub const Mods = packed struct(Mods.Backing) {
         return result;
     }
 
+    /// Checks to see if super is on (MacOS) or ctrl.
+    pub fn ctrlOrSuper(self: Mods) bool {
+        if (comptime builtin.target.isDarwin()) {
+            return self.super;
+        }
+        return self.ctrl;
+    }
+
     // For our own understanding
     test {
         const testing = std.testing;
@@ -607,6 +615,26 @@ pub const Key = enum(c_int) {
             => null,
         };
     }
+
+    /// true if this key is one of the left or right versions of super (MacOS)
+    /// or ctrl.
+    pub fn ctrlOrSuper(self: Key) bool {
+        if (comptime builtin.target.isDarwin()) {
+            return self == .left_super or self == .right_super;
+        }
+        return self == .left_control or self == .right_control;
+    }
+
+    /// true if this key is either left or right shift.
+    pub fn leftOrRightShift(self: Key) bool {
+        return self == .left_shift or self == .right_shift;
+    }
+
+    /// true if this key is either left or right alt.
+    pub fn leftOrRightAlt(self: Key) bool {
+        return self == .left_alt or self == .right_alt;
+    }
+
     test "fromASCII should not return keypad keys" {
         const testing = std.testing;
         try testing.expect(Key.fromASCII('0').? == .zero);
@@ -689,3 +717,25 @@ pub const Key = enum(c_int) {
         .{ '=', .kp_equal },
     };
 };
+
+/// This sets either "ctrl" or "super" to true (but not both)
+/// on mods depending on if the build target is Mac or not. On
+/// Mac, we default to super (i.e. super+c for copy) and on
+/// non-Mac we default to ctrl (i.e. ctrl+c for copy).
+pub fn ctrlOrSuper(mods: Mods) Mods {
+    var copy = mods;
+    if (comptime builtin.target.isDarwin()) {
+        copy.super = true;
+    } else {
+        copy.ctrl = true;
+    }
+
+    return copy;
+}
+
+test "ctrlOrSuper" {
+    const testing = std.testing;
+    var m: Mods = ctrlOrSuper(.{});
+
+    try testing.expect(m.ctrlOrSuper());
+}
