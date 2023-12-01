@@ -193,89 +193,68 @@ pub const Side = enum { top_left, bottom_right };
 /// Returns the map that can be used to determine elements in various
 /// directions (primarily for gotoSplit).
 pub fn directionMap(self: *const Split, from: Side) DirectionMap {
-    return switch (from) {
-        .top_left => self.directionMapFromTopLeft(),
-        .bottom_right => self.directionMapFromBottomRight(),
-    };
-}
-
-fn directionMapFromTopLeft(self: *const Split) DirectionMap {
     var result = DirectionMap.initFull(null);
 
-    if (self.container.split()) |parent_split| {
-        const deepest_br = parent_split.deepestSurface(.bottom_right);
-        result.put(.previous, deepest_br);
+    if (self.directionPrevious(from)) |prev| {
+        result.put(.previous, prev);
 
         // This behavior matches the behavior of macOS at the time of writing
         // this. There is an open issue (#524) to make this depend on the
         // actual physical location of the current split.
-        result.put(.top, deepest_br);
-        result.put(.left, deepest_br);
+        result.put(.top, prev);
+        result.put(.left, prev);
     }
 
-    switch (self.bottom_right) {
-        .surface => |s| {
-            result.put(.next, s);
-            result.put(.bottom, s);
-            result.put(.right, s);
-        },
-
-        .split => |s| {
-            const deepest_tl = s.deepestSurface(.top_left);
-            result.put(.next, deepest_tl);
-            result.put(.bottom, deepest_tl);
-            result.put(.right, deepest_tl);
-        },
+    if (self.directionNext(from)) |next| {
+        result.put(.next, next);
+        result.put(.bottom, next);
+        result.put(.right, next);
     }
 
     return result;
 }
 
-fn directionMapFromBottomRight(self: *const Split) DirectionMap {
-    var result = DirectionMap.initFull(null);
+fn directionPrevious(self: *const Split, from: Side) ?*Surface {
+    switch (from) {
+        // From the bottom right, our previous is the deepest surface
+        // in the top-left of our own split.
+        .bottom_right => return self.top_left.deepestSurface(.bottom_right),
 
-    if (self.container.split()) |parent_split| {
-        const deepest_tl = parent_split.deepestSurface(.top_left);
-        result.put(.next, deepest_tl);
+        // From the top left its more complicated. It is the de
+        .top_left => {
+            // If we have no parent split then there can be no previous.
+            const parent = self.container.split() orelse return null;
+            const side = self.container.splitSide() orelse return null;
 
-        // This behavior matches the behavior of macOS at the time of writing
-        // this. There is an open issue (#524) to make this depend on the
-        // actual physical location of the current split.
-        result.put(.top, deepest_tl);
-        result.put(.left, deepest_tl);
-    }
-
-    switch (self.top_left) {
-        .surface => |s| {
-            result.put(.previous, s);
-            result.put(.bottom, s);
-            result.put(.right, s);
-        },
-
-        .split => |s| {
-            const deepest_br = s.deepestSurface(.bottom_right);
-            result.put(.previous, deepest_br);
-            result.put(.bottom, deepest_br);
-            result.put(.right, deepest_br);
+            // The previous value is the previous of the side that we are.
+            return switch (side) {
+                .top_left => parent.directionPrevious(.top_left),
+                .bottom_right => parent.directionPrevious(.bottom_right),
+            };
         },
     }
-
-    return result;
 }
 
-/// Get the most deeply nested surface for a given side.
-fn deepestSurface(self: *const Split, side: Side) *Surface {
-    return switch (side) {
-        .bottom_right => switch (self.bottom_right) {
-            .surface => |s| s,
-            .split => |s| s.deepestSurface(.bottom_right),
-        },
+fn directionNext(self: *const Split, from: Side) ?*Surface {
+    switch (from) {
+        // From the top left, our next is the earliest surface in the
+        // top-left direction of the bottom-right side of our split. Fun!
+        .top_left => return self.bottom_right.deepestSurface(.top_left),
 
-        .top_left => switch (self.top_left) {
-            .surface => |s| s,
-            .split => |s| s.deepestSurface(.top_left),
+        // From the bottom right is more compliated. It is the deepest
+        // (last) surface in the
+        .bottom_right => {
+            // If we have no parent split then there can be no next.
+            const parent = self.container.split() orelse return null;
+            const side = self.container.splitSide() orelse return null;
+
+            // The previous value is the previous of the side that we are.
+            return switch (side) {
+                .top_left => parent.directionNext(.bottom_right),
+                .bottom_right => parent.directionNext(.bottom_right),
+            };
         },
-    };
+    }
 }
 
 fn removeChildren(self: *const Split) void {

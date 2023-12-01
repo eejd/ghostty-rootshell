@@ -48,6 +48,9 @@ pub const Container = union(enum) {
     split_tl: *Elem,
     split_br: *Elem,
 
+    /// The side of the split.
+    pub const SplitSide = enum { top_left, bottom_right };
+
     /// Elem is the possible element of any container. A container can
     /// hold both a surface and a split. Any valid container should
     /// have an Elem value so that it can be properly used with
@@ -92,6 +95,18 @@ pub const Container = union(enum) {
                 .split => |s| s.grabFocus(),
             }
         }
+
+        /// The last surface in this container in the direction specified.
+        /// Direction must be "top_left" or "bottom_right".
+        pub fn deepestSurface(self: Elem, side: SplitSide) ?*Surface {
+            return switch (self) {
+                .surface => |s| s,
+                .split => |s| (switch (side) {
+                    .top_left => s.top_left,
+                    .bottom_right => s.bottom_right,
+                }).deepestSurface(side),
+            };
+        }
     };
 
     /// Returns the window that this surface is attached to.
@@ -124,6 +139,15 @@ pub const Container = union(enum) {
             .none, .tab_ => null,
             .split_tl => |ptr| @fieldParentPtr(Split, "top_left", ptr),
             .split_br => |ptr| @fieldParentPtr(Split, "bottom_right", ptr),
+        };
+    }
+
+    /// The side that we are in the split.
+    pub fn splitSide(self: Container) ?SplitSide {
+        return switch (self) {
+            .none, .tab_ => null,
+            .split_tl => .top_left,
+            .split_br => .bottom_right,
         };
     }
 
