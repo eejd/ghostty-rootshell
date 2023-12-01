@@ -524,6 +524,17 @@ pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
     _ = try Split.create(alloc, self, direction);
 }
 
+pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
+    const s = self.container.split() orelse return;
+    const map = s.directionMap(switch (self.container) {
+        .split_tl => .top_left,
+        .split_br => .bottom_right,
+        .none, .tab_ => unreachable,
+    });
+    const surface_ = map.get(direction) orelse return;
+    if (surface_) |surface| surface.grabFocus();
+}
+
 pub fn newTab(self: *Surface) !void {
     const window = self.container.window() orelse {
         log.info("surface cannot create new tab when not attached to a window", .{});
