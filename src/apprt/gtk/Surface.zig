@@ -4,6 +4,7 @@
 const Surface = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const configpkg = @import("../../config.zig");
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
@@ -12,44 +13,174 @@ const terminal = @import("../../terminal/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
+const Split = @import("Split.zig");
+const Tab = @import("Tab.zig");
 const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
 
-const log = std.log.scoped(.gtk);
+const log = std.log.scoped(.gtk_surface);
 
 /// This is detected by the OpenGL renderer to move to a single-threaded
 /// draw operation. This basically puts locks around our draw path.
 pub const opengl_single_threaded_draw = true;
 
 pub const Options = struct {
-    /// The window that this surface is attached to.
-    window: *Window,
-
-    /// The GL area that this surface should draw to.
-    gl_area: *c.GtkGLArea,
-
-    /// The label to use as the title of this surface. This will be
-    /// modified with setTitle.
-    title_label: ?*c.GtkLabel = null,
-
-    /// A font size to set on the surface once it is initialized.
-    font_size: ?font.face.DesiredSize = null,
-
-    /// True if this surface has a parent. This is a bit of a hack currently
-    /// to work around newConfig unconditinally inheriting the working
-    /// directory. The proper long term fix is to have the working directory
-    /// inherited upstream likely at the point where this field would be set,
-    /// then remove this field.
-    parent: bool = false,
+    /// The parent surface to inherit settings such as font size, working
+    /// directory, etc. from.
+    parent: ?*CoreSurface = null,
 };
 
-/// Where the title of this surface will go.
-const Title = union(enum) {
+/// The container that this surface is directly attached to.
+pub const Container = union(enum) {
+    /// The surface is not currently attached to anything. This means
+    /// that the GLArea has been created and potentially initialized
+    /// but the widget is currently floating and not part of any parent.
     none: void,
-    label: *c.GtkLabel,
+
+    /// Directly attached to a tab. (i.e. no splits)
+    tab_: *Tab,
+
+    /// A split within a split hierarchy. The key determines the
+    /// position of the split within the parent split.
+    split_tl: *Elem,
+    split_br: *Elem,
+
+    /// The side of the split.
+    pub const SplitSide = enum { top_left, bottom_right };
+
+    /// Elem is the possible element of any container. A container can
+    /// hold both a surface and a split. Any valid container should
+    /// have an Elem value so that it can be properly used with
+    /// splits.
+    pub const Elem = union(enum) {
+        /// A surface is a leaf element of the split -- a terminal
+        /// surface.
+        surface: *Surface,
+
+        /// A split is a nested split within a split. This lets you
+        /// for example have a horizontal split with a vertical split
+        /// on the left side (amongst all other possible
+        /// combinations).
+        split: *Split,
+
+        /// Returns the GTK widget to add to the paned for the given
+        /// element
+        pub fn widget(self: Elem) *c.GtkWidget {
+            return switch (self) {
+                .surface => |s| @ptrCast(s.gl_area),
+                .split => |s| @ptrCast(@alignCast(s.paned)),
+            };
+        }
+
+        pub fn containerPtr(self: Elem) *Container {
+            return switch (self) {
+                .surface => |s| &s.container,
+                .split => |s| &s.container,
+            };
+        }
+
+        pub fn deinit(self: Elem, alloc: Allocator) void {
+            switch (self) {
+                .surface => |s| s.unref(),
+                .split => |s| s.destroy(alloc),
+            }
+        }
+
+        pub fn grabFocus(self: Elem) void {
+            switch (self) {
+                .surface => |s| s.grabFocus(),
+                .split => |s| s.grabFocus(),
+            }
+        }
+
+        /// The last surface in this container in the direction specified.
+        /// Direction must be "top_left" or "bottom_right".
+        pub fn deepestSurface(self: Elem, side: SplitSide) ?*Surface {
+            return switch (self) {
+                .surface => |s| s,
+                .split => |s| (switch (side) {
+                    .top_left => s.top_left,
+                    .bottom_right => s.bottom_right,
+                }).deepestSurface(side),
+            };
+        }
+    };
+
+    /// Returns the window that this surface is attached to.
+    pub fn window(self: Container) ?*Window {
+        return switch (self) {
+            .none => null,
+            .tab_ => |v| v.window,
+            .split_tl, .split_br => split: {
+                const s = self.split() orelse break :split null;
+                break :split s.container.window();
+            },
+        };
+    }
+
+    /// Returns the tab container if it exists.
+    pub fn tab(self: Container) ?*Tab {
+        return switch (self) {
+            .none => null,
+            .tab_ => |v| v,
+            .split_tl, .split_br => split: {
+                const s = self.split() orelse break :split null;
+                break :split s.container.tab();
+            },
+        };
+    }
+
+    /// Returns the split containing this surface (if any).
+    pub fn split(self: Container) ?*Split {
+        return switch (self) {
+            .none, .tab_ => null,
+            .split_tl => |ptr| @fieldParentPtr(Split, "top_left", ptr),
+            .split_br => |ptr| @fieldParentPtr(Split, "bottom_right", ptr),
+        };
+    }
+
+    /// The side that we are in the split.
+    pub fn splitSide(self: Container) ?SplitSide {
+        return switch (self) {
+            .none, .tab_ => null,
+            .split_tl => .top_left,
+            .split_br => .bottom_right,
+        };
+    }
+
+    /// Replace the container's element with this element. This is
+    /// used by children to modify their parents to for example change
+    /// from a surface to a split or a split back to a surface or
+    /// a split to a nested split and so on.
+    pub fn replace(self: Container, elem: Elem) void {
+        // Move the element into the container
+        switch (self) {
+            .none => {},
+            .tab_ => |t| t.replaceElem(elem),
+            inline .split_tl, .split_br => |ptr| {
+                const s = self.split().?;
+                s.replace(ptr, elem);
+            },
+        }
+
+        // Update the reverse reference to the container
+        elem.containerPtr().* = self;
+    }
+
+    /// Remove ourselves from the container. This is used by
+    /// children to effectively notify they're container that
+    /// all children at this level are exiting.
+    pub fn remove(self: Container) void {
+        switch (self) {
+            .none => {},
+            .tab_ => |t| t.remove(),
+            .split_tl => self.split().?.removeTopLeft(),
+            .split_br => self.split().?.removeBottomRight(),
+        }
+    }
 };
 
 /// Whether the surface has been realized or not yet. When a surface is
@@ -57,14 +188,15 @@ const Title = union(enum) {
 /// surface has been initialized.
 realized: bool = false,
 
-/// See Options.parent
-parent: bool = false,
+/// True if this surface had a parent to start with.
+parent_surface: bool = false,
+
+/// The GUI container that this surface has been attached to. This
+/// dictates some behaviors such as new splits, etc.
+container: Container = .{ .none = {} },
 
 /// The app we're part of
 app: *App,
-
-/// The window we're part of
-window: *Window,
 
 /// Our GTK area
 gl_area: *c.GtkGLArea,
@@ -72,8 +204,11 @@ gl_area: *c.GtkGLArea,
 /// Any active cursor we may have
 cursor: ?*c.GdkCursor = null,
 
-/// Our title label (if there is one).
-title: Title,
+/// Our title. The raw value of the title. This will be kept up to date and
+/// .title will be updated if we have focus.
+/// When set the text in this buf will be null-terminated, because we need to
+/// pass it to GTK.
+title_text: ?[:0]const u8 = null,
 
 /// The core surface backing this surface
 core_surface: CoreSurface,
@@ -95,12 +230,37 @@ im_composing: bool = false,
 im_buf: [128]u8 = undefined,
 im_len: u7 = 0,
 
+pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
+    var surface = try alloc.create(Surface);
+    errdefer alloc.destroy(surface);
+    try surface.init(app, opts);
+    return surface;
+}
+
 pub fn init(self: *Surface, app: *App, opts: Options) !void {
-    const widget = @as(*c.GtkWidget, @ptrCast(opts.gl_area));
-    c.gtk_gl_area_set_required_version(opts.gl_area, 3, 3);
-    c.gtk_gl_area_set_has_stencil_buffer(opts.gl_area, 0);
-    c.gtk_gl_area_set_has_depth_buffer(opts.gl_area, 0);
-    c.gtk_gl_area_set_use_es(opts.gl_area, 0);
+    const widget: *c.GtkWidget = c.gtk_gl_area_new();
+    const gl_area: *c.GtkGLArea = @ptrCast(widget);
+
+    // We grab the floating reference to GL area. This lets the
+    // GL area be moved around i.e. between a split, a tab, etc.
+    // without having to be really careful about ordering to
+    // prevent a destroy.
+    //
+    // This is unref'd in the unref() method that's called by the
+    // self.container through Elem.deinit.
+    _ = c.g_object_ref_sink(@ptrCast(gl_area));
+    errdefer c.g_object_unref(@ptrCast(gl_area));
+
+    // We want the gl area to expand to fill the parent container.
+    c.gtk_widget_set_hexpand(widget, 1);
+    c.gtk_widget_set_vexpand(widget, 1);
+
+    // Various other GL properties
+    c.gtk_widget_set_cursor_from_name(@ptrCast(gl_area), "text");
+    c.gtk_gl_area_set_required_version(gl_area, 3, 3);
+    c.gtk_gl_area_set_has_stencil_buffer(gl_area, 0);
+    c.gtk_gl_area_set_has_depth_buffer(gl_area, 0);
+    c.gtk_gl_area_set_use_es(gl_area, 0);
 
     // Key event controller will tell us about raw keypress events.
     const ec_key = c.gtk_event_controller_key_new();
@@ -150,17 +310,22 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     c.gtk_widget_set_focusable(widget, 1);
     c.gtk_widget_set_focus_on_click(widget, 1);
 
+    // Inherit the parent's font size if we have a parent.
+    const font_size: ?font.face.DesiredSize = font_size: {
+        if (!app.config.@"window-inherit-font-size") break :font_size null;
+        const parent = opts.parent orelse break :font_size null;
+        break :font_size parent.font_size;
+    };
+
     // Build our result
     self.* = .{
         .app = app,
-        .window = opts.window,
-        .gl_area = opts.gl_area,
-        .title = if (opts.title_label) |label| .{
-            .label = label,
-        } else .{ .none = {} },
+        .container = .{ .none = {} },
+        .gl_area = gl_area,
+        .title_text = null,
         .core_surface = undefined,
-        .font_size = opts.font_size,
-        .parent = opts.parent,
+        .font_size = font_size,
+        .parent_surface = opts.parent != null,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
@@ -171,11 +336,11 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     try self.setMouseShape(.text);
 
     // GL events
-    _ = c.g_signal_connect_data(opts.gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "unrealize", c.G_CALLBACK(&gtkUnrealize), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(opts.gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "unrealize", c.G_CALLBACK(&gtkUnrealize), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "render", c.G_CALLBACK(&gtkRender), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gl_area, "resize", c.G_CALLBACK(&gtkResize), self, null, c.G_CONNECT_DEFAULT);
 
     _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_key_press, "key-released", c.G_CALLBACK(&gtkKeyReleased), self, null, c.G_CONNECT_DEFAULT);
@@ -209,8 +374,8 @@ fn realize(self: *Surface) !void {
     // Get our new surface config
     var config = try apprt.surface.newConfig(self.app.core_app, &self.app.config);
     defer config.deinit();
-    if (!self.parent) {
-        // A hack, see the "parent" field for more information.
+    if (!self.parent_surface) {
+        // A hack, see the "parent_surface" field for more information.
         config.@"working-directory" = self.app.config.@"working-directory";
     }
 
@@ -234,6 +399,8 @@ fn realize(self: *Surface) !void {
 }
 
 pub fn deinit(self: *Surface) void {
+    if (self.title_text) |title| self.app.core_app.alloc.free(title);
+
     // We don't allocate anything if we aren't realized.
     if (!self.realized) return;
 
@@ -253,6 +420,17 @@ pub fn deinit(self: *Surface) void {
     if (self.cursor) |cursor| c.g_object_unref(cursor);
 }
 
+// unref removes the long-held reference to the gl_area and kicks off the
+// deinit/destroy process for this surface.
+pub fn unref(self: *Surface) void {
+    c.g_object_unref(self.gl_area);
+}
+
+pub fn destroy(self: *Surface, alloc: Allocator) void {
+    self.deinit();
+    alloc.destroy(self);
+}
+
 fn render(self: *Surface) !void {
     try self.core_surface.renderer.drawFrame(self);
 }
@@ -269,14 +447,22 @@ pub fn redraw(self: *Surface) void {
 
 /// Close this surface.
 pub fn close(self: *Surface, processActive: bool) void {
+    // If we're not part of a window hierarchy, we never confirm
+    // so we can just directly remove ourselves and exit.
+    const window = self.container.window() orelse {
+        self.container.remove();
+        return;
+    };
+
+    // If we have no process active we can just exit immediately.
     if (!processActive) {
-        self.window.closeSurface(self);
+        self.container.remove();
         return;
     }
 
     // Setup our basic message
     const alert = c.gtk_message_dialog_new(
-        self.window.window,
+        window.window,
         c.GTK_DIALOG_MODAL,
         c.GTK_MESSAGE_QUESTION,
         c.GTK_BUTTONS_YES_NO,
@@ -336,27 +522,91 @@ pub fn controlInspector(self: *Surface, mode: input.InspectorMode) void {
 }
 
 pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFullscreen) void {
-    self.window.toggleFullscreen(mac_non_native);
+    const window = self.container.window() orelse {
+        log.info(
+            "toggleFullscreen invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.toggleFullscreen(mac_non_native);
+}
+
+pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
+    switch (self.title) {
+        .none => return null,
+        .label => |label| {
+            const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(label)));
+            return widget;
+        },
+    }
+}
+
+pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
+    const alloc = self.app.core_app.alloc;
+    _ = try Split.create(alloc, self, direction);
+}
+
+pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
+    const s = self.container.split() orelse return;
+    const map = s.directionMap(switch (self.container) {
+        .split_tl => .top_left,
+        .split_br => .bottom_right,
+        .none, .tab_ => unreachable,
+    });
+    const surface_ = map.get(direction) orelse return;
+    if (surface_) |surface| surface.grabFocus();
 }
 
 pub fn newTab(self: *Surface) !void {
-    try self.window.newTab(&self.core_surface);
+    const window = self.container.window() orelse {
+        log.info("surface cannot create new tab when not attached to a window", .{});
+        return;
+    };
+
+    try window.newTab(&self.core_surface);
 }
 
 pub fn hasTabs(self: *const Surface) bool {
-    return self.window.hasTabs();
+    const window = self.container.window() orelse return false;
+    return window.hasTabs();
 }
 
 pub fn gotoPreviousTab(self: *Surface) void {
-    self.window.gotoPreviousTab(self);
+    const window = self.container.window() orelse {
+        log.info(
+            "gotoPreviousTab invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.gotoPreviousTab(self);
 }
 
 pub fn gotoNextTab(self: *Surface) void {
-    self.window.gotoNextTab(self);
+    const window = self.container.window() orelse {
+        log.info(
+            "gotoNextTab invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.gotoNextTab(self);
 }
 
 pub fn gotoTab(self: *Surface, n: usize) void {
-    self.window.gotoTab(n);
+    const window = self.container.window() orelse {
+        log.info(
+            "gotoTab invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.gotoTab(n);
 }
 
 pub fn setShouldClose(self: *Surface) void {
@@ -380,10 +630,13 @@ pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
 }
 
 pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+    // This operation only makes sense if we're within a window view hierarchy.
+    const window = self.container.window() orelse return;
+
     // Note: this doesn't properly take into account the window decorations.
     // I'm not currently sure how to do that.
     c.gtk_window_set_default_size(
-        @ptrCast(self.window.window),
+        @ptrCast(window.window),
         @intCast(width),
         @intCast(height),
     );
@@ -401,24 +654,39 @@ pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.Surfac
     _ = max_;
 }
 
-pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-    switch (self.title) {
-        .none => {},
+pub fn grabFocus(self: *Surface) void {
+    if (self.container.tab()) |tab| tab.focus_child = self;
 
-        .label => |label| {
-            c.gtk_label_set_text(label, slice.ptr);
+    self.updateTitleLabels();
+    const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
+    _ = c.gtk_widget_grab_focus(widget);
+}
 
-            const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
-            if (c.gtk_widget_is_focus(widget) == 1) {
-                c.gtk_window_set_title(self.window.window, c.gtk_label_get_text(label));
-            }
-        },
+fn updateTitleLabels(self: *Surface) void {
+    // If we have no title, then we have nothing to update.
+    const title = self.title_text orelse return;
+
+    // If we have a tab, then we have to update the tab
+    if (self.container.tab()) |tab| {
+        c.gtk_label_set_text(tab.label_text, title.ptr);
     }
 
-    // const root = c.gtk_widget_get_root(@ptrCast(
-    //     *c.GtkWidget,
-    //     self.gl_area,
-    // ));
+    // If we have a window, then we have to update the window title.
+    if (self.container.window()) |window| {
+        c.gtk_window_set_title(window.window, title.ptr);
+    }
+}
+
+pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+    const alloc = self.app.core_app.alloc;
+    const copy = try alloc.dupeZ(u8, slice);
+    errdefer alloc.free(copy);
+
+    if (self.title_text) |old| alloc.free(old);
+    self.title_text = copy;
+
+    const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
+    if (c.gtk_widget_is_focus(widget) == 1) self.updateTitleLabels();
 }
 
 pub fn setMouseShape(
@@ -672,6 +940,7 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
 fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     _ = area;
 
+    log.debug("gl surface unrealized", .{});
     const self = userdataSelf(ud.?);
     self.core_surface.renderer.displayUnrealized();
 
@@ -705,8 +974,8 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
         };
 
         const window_scale_factor = scale: {
-            const window = @as(*c.GtkNative, @ptrCast(self.window.window));
-            const gdk_surface = c.gtk_native_get_surface(window);
+            const window = self.container.window() orelse break :scale 0;
+            const gdk_surface = c.gtk_native_get_surface(@ptrCast(window.window));
             break :scale c.gdk_surface_get_scale_factor(gdk_surface);
         };
 
@@ -788,7 +1057,7 @@ fn gtkMouseDown(
     // If we don't have focus, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     if (c.gtk_widget_has_focus(gl_widget) == 0) {
-        _ = c.gtk_widget_grab_focus(gl_widget);
+        self.grabFocus();
     }
 
     self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
@@ -1249,7 +1518,7 @@ fn gtkCloseConfirmation(
     c.gtk_window_destroy(@ptrCast(alert));
     if (response == c.GTK_RESPONSE_YES) {
         const self = userdataSelf(ud.?);
-        self.window.closeSurface(self);
+        self.container.remove();
     }
 }
 
