@@ -205,10 +205,8 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
     // Find page and tab which we're closing
     const page_idx = getNotebookPageIndex(page);
 
-    // Deallocate the tab
-    tab.deinit(self.app.core_app.alloc);
-    self.app.core_app.alloc.destroy(tab);
-
+    // Remove the page. This will destroy the GTK widgets in the page which
+    // will trigger Tab cleanup.
     c.gtk_notebook_remove_page(self.notebook, page_idx);
 
     const remaining = c.gtk_notebook_get_n_pages(self.notebook);
