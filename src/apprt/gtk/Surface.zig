@@ -184,9 +184,7 @@ cursor: ?*c.GdkCursor = null,
 /// .title will be updated if we have focus.
 /// When set the text in this buf will be null-terminated, because we need to
 /// pass it to GTK.
-/// TODO: what's a big enough value?
-title_text_buf: [4096]u8,
-title_text_buf_len: u13,
+title_text: ?[:0]const u8 = null,
 
 /// The core surface backing this surface
 core_surface: CoreSurface,
@@ -300,8 +298,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .app = app,
         .container = .{ .none = {} },
         .gl_area = gl_area,
-        .title_text_buf = undefined,
-        .title_text_buf_len = 0,
+        .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
         .parentSurface = opts.parent != null,
@@ -378,6 +375,8 @@ fn realize(self: *Surface) !void {
 }
 
 pub fn deinit(self: *Surface) void {
+    if (self.title_text) |title| self.app.core_app.alloc.free(title);
+
     // We don't allocate anything if we aren't realized.
     if (!self.realized) return;
 
@@ -630,31 +629,29 @@ pub fn grabFocus(self: *Surface) void {
 
 fn updateTitleLabels(self: *Surface) void {
     // If we have no title, then we have nothing to update.
-    if (self.title_text_buf_len == 0) return;
-    const slice: []u8 = self.title_text_buf[0..self.title_text_buf_len];
+    const title = self.title_text orelse return;
 
     // If we have a tab, then we have to update the tab
     if (self.container.tab()) |tab| {
-        c.gtk_label_set_text(tab.label_text, slice.ptr);
+        c.gtk_label_set_text(tab.label_text, title.ptr);
     }
 
     // If we have a window, then we have to update the window title.
     if (self.container.window()) |window| {
-        c.gtk_window_set_title(window.window, slice.ptr);
+        c.gtk_window_set_title(window.window, title.ptr);
     }
 }
 
 pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-    const len = @min(self.title_text_buf.len - 1, slice.len);
-    @memcpy(self.title_text_buf[0..len], slice[0..]);
-    // Null-terminate this because we then need to pass it to GTK.
-    self.title_text_buf[len] = 0;
-    self.title_text_buf_len = len;
+    const alloc = self.app.core_app.alloc;
+    const copy = try alloc.dupeZ(u8, slice);
+    errdefer alloc.free(copy);
+
+    if (self.title_text) |old| alloc.free(old);
+    self.title_text = copy;
 
     const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
-    if (c.gtk_widget_is_focus(widget) == 1) {
-        self.updateTitleLabels();
-    }
+    if (c.gtk_widget_is_focus(widget) == 1) self.updateTitleLabels();
 }
 
 pub fn setMouseShape(
