@@ -164,8 +164,8 @@ pub const Container = union(enum) {
 /// surface has been initialized.
 realized: bool = false,
 
-/// See Options.parentSurface
-parentSurface: bool = false,
+/// True if this surface had a parent to start with.
+parent_surface: bool = false,
 
 /// The GUI container that this surface has been attached to. This
 /// dictates some behaviors such as new splits, etc.
@@ -301,7 +301,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
-        .parentSurface = opts.parent != null,
+        .parent_surface = opts.parent != null,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
@@ -350,8 +350,8 @@ fn realize(self: *Surface) !void {
     // Get our new surface config
     var config = try apprt.surface.newConfig(self.app.core_app, &self.app.config);
     defer config.deinit();
-    if (!self.parentSurface) {
-        // A hack, see the "parentSurface" field for more information.
+    if (!self.parent_surface) {
+        // A hack, see the "parent_surface" field for more information.
         config.@"working-directory" = self.app.config.@"working-directory";
     }
 
