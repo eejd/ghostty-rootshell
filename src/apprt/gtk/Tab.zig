@@ -166,10 +166,8 @@ pub fn replaceElem(self: *Tab, elem: Surface.Container.Elem) void {
     self.elem = elem;
 }
 
-// TODO: move this
-/// The surface element is closing. If we're the direct parent
-/// then that means our tab is also closing.
-pub fn closeElem(self: *Tab) void {
+/// Remove this tab from the window.
+pub fn remove(self: *Tab) void {
     self.window.closeTab(self);
 }
 

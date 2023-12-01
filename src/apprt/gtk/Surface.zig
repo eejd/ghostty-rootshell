@@ -147,12 +147,12 @@ pub const Container = union(enum) {
     }
 
     /// Remove ourselves from the container. This is used by
-    /// children to effectively notify they're containing that
+    /// children to effectively notify they're container that
     /// all children at this level are exiting.
     pub fn remove(self: Container) void {
         switch (self) {
             .none => {},
-            .tab_ => |t| t.closeElem(),
+            .tab_ => |t| t.remove(),
             .split_tl => self.split().?.removeTopLeft(),
             .split_br => self.split().?.removeBottomRight(),
         }

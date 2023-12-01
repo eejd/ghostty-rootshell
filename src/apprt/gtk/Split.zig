@@ -47,7 +47,7 @@ pub fn init(
     sibling: *Surface,
     direction: input.SplitDirection,
 ) !void {
-    // Create the new child surface
+    // Create the new child surface for the other direction.
     const alloc = sibling.app.core_app.alloc;
     var surface = try Surface.create(alloc, sibling.app, .{
         .parent = &sibling.core_surface,
@@ -97,7 +97,8 @@ pub fn destroy(self: *Split, alloc: Allocator) void {
     self.top_left.deinit(alloc);
     self.bottom_right.deinit(alloc);
 
-    // Clean up our GTK reference.
+    // Clean up our GTK reference. This will trigger all the destroy callbacks
+    // that are necessary for the surfaces to clean up.
     c.g_object_unref(self.paned);
 
     alloc.destroy(self);
@@ -114,7 +115,11 @@ pub fn removeBottomRight(self: *Split) void {
 }
 
 // TODO: Is this Zig-y?
-inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surface.Container.Elem) void {
+fn removeChild(
+    self: *Split,
+    remove: Surface.Container.Elem,
+    keep: Surface.Container.Elem,
+) void {
     const window = self.container.window() orelse return;
     const alloc = window.app.core_app.alloc;
 
@@ -128,7 +133,7 @@ inline fn removeChild(self: *Split, remove: Surface.Container.Elem, keep: Surfac
     // Grab focus of the left-over side
     keep.grabFocus();
 
-    // TODO: is this correct?
+    // When a child is removed we are no longer a split, so destroy ourself
     remove.deinit(alloc);
     alloc.destroy(self);
 }
