@@ -18,9 +18,10 @@ const log = std.log.scoped(.gtk);
 
 pub const GHOSTTY_TAB = "ghostty_tab";
 
+/// The window that owns this tab.
 window: *Window,
 
-/// The tab label.
+/// The tab label. The tab label is the text that appears on the tab.
 label_text: *c.GtkLabel,
 
 /// We'll put our children into this box instead of packing them
@@ -86,7 +87,9 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         c.gtk_widget_set_size_request(label_text_widget, 100, 1);
     }
 
-    // Create a Box in which we'll later keep either Surface or Split
+    // Create a Box in which we'll later keep either Surface or Split.
+    // Using a box makes it easier to maintain the tab contents because
+    // we never need to change the root widget of the notebook page (tab).
     const box_widget = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
     c.gtk_widget_set_hexpand(box_widget, 1);
     c.gtk_widget_set_vexpand(box_widget, 1);
@@ -143,6 +146,12 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 /// Deinits tab by deiniting child elem.
 pub fn deinit(self: *Tab, alloc: Allocator) void {
     self.elem.deinit(alloc);
+}
+
+/// Deinit and deallocate the tab.
+pub fn destroy(self: *Tab, alloc: Allocator) void {
+    self.deinit(alloc);
+    alloc.destroy(self);
 }
 
 // TODO: move this

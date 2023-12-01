@@ -35,6 +35,7 @@ notebook: *c.GtkNotebook,
 /// pointer to this because GTK can use it at any time.
 icon: icon.Icon,
 
+/// The tab state for this window.
 tabs: std.ArrayListUnmanaged(*Tab),
 
 pub fn create(alloc: Allocator, app: *App) !*Window {
@@ -58,12 +59,8 @@ pub fn init(self: *Window, app: *App) !void {
         .icon = undefined,
         .window = undefined,
         .notebook = undefined,
-        .tabs = undefined,
+        .tabs = .{},
     };
-
-    var tabs: std.ArrayListUnmanaged(*Tab) = .{};
-    errdefer tabs.deinit(app.core_app.alloc);
-    self.tabs = tabs;
 
     // Create the window
     const window = c.gtk_application_window_new(app.app);
@@ -192,17 +189,14 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     self.icon.deinit(self.app);
-    for (self.tabs.items) |tab| {
-        tab.deinit(self.app.core_app.alloc);
-        self.app.core_app.alloc.destroy(tab);
-    }
+    for (self.tabs.items) |tab| tab.destroy(self.app.core_app.alloc);
     self.tabs.deinit(self.app.core_app.alloc);
 }
 
 /// Add a new tab to this window.
-pub fn newTab(self: *Window, parentSurface: ?*CoreSurface) !void {
+pub fn newTab(self: *Window, parent: ?*CoreSurface) !void {
     const alloc = self.app.core_app.alloc;
-    const tab = try Tab.create(alloc, self, parentSurface);
+    const tab = try Tab.create(alloc, self, parent);
     try self.tabs.append(alloc, tab);
 
     // TODO: When this is triggered through a GTK action, the new surface
