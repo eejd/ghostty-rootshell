@@ -250,7 +250,7 @@ fn directionNext(self: *const Split, from: Side) ?*Surface {
 
             // The previous value is the previous of the side that we are.
             return switch (side) {
-                .top_left => parent.directionNext(.bottom_right),
+                .top_left => parent.directionNext(.top_left),
                 .bottom_right => parent.directionNext(.bottom_right),
             };
         },
