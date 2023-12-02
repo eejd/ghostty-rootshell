@@ -168,7 +168,14 @@ vertex VertexOut uber_vertex(
     // (between 0.0 and 1.0) and must be done in the fragment shader.
     out.tex_coord = float2(input.glyph_pos) + float2(input.glyph_size) * position;
 
-    out.color = contrasted_color(uniforms.min_contrast, out.color, float4(input.bg_color) / 255.0f);
+    // If we have a minimum contrast, we need to check if we need to
+    // change the color of the text to ensure it has enough contrast
+    // with the background.
+    if (uniforms.min_contrast > 1.0f && input.mode == MODE_FG) {
+      float4 bg_color = float4(input.bg_color) / 255.0f;
+      out.color = contrasted_color(uniforms.min_contrast, out.color, bg_color);
+    }
+
     break;
   }
 
