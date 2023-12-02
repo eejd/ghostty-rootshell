@@ -29,11 +29,17 @@ pub const Cell = extern struct {
     glyph_offset_x: i32 = 0,
     glyph_offset_y: i32 = 0,
 
-    /// vec4 fg_color_in
+    /// vec4 color_in
     r: u8,
     g: u8,
     b: u8,
     a: u8,
+
+    /// vec4 bg_color_in
+    bg_r: u8,
+    bg_g: u8,
+    bg_b: u8,
+    bg_a: u8,
 
     /// uint mode
     mode: CellMode,
@@ -105,9 +111,11 @@ pub fn init() !CellProgram {
     offset += 2 * @sizeOf(i32);
     try vbobind.attributeAdvanced(4, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(Cell), offset);
     offset += 4 * @sizeOf(u8);
-    try vbobind.attributeIAdvanced(5, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(Cell), offset);
-    offset += 1 * @sizeOf(u8);
+    try vbobind.attributeAdvanced(5, 4, gl.c.GL_UNSIGNED_BYTE, false, @sizeOf(Cell), offset);
+    offset += 4 * @sizeOf(u8);
     try vbobind.attributeIAdvanced(6, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(Cell), offset);
+    offset += 1 * @sizeOf(u8);
+    try vbobind.attributeIAdvanced(7, 1, gl.c.GL_UNSIGNED_BYTE, @sizeOf(Cell), offset);
     try vbobind.enableAttribArray(0);
     try vbobind.enableAttribArray(1);
     try vbobind.enableAttribArray(2);
@@ -115,6 +123,7 @@ pub fn init() !CellProgram {
     try vbobind.enableAttribArray(4);
     try vbobind.enableAttribArray(5);
     try vbobind.enableAttribArray(6);
+    try vbobind.enableAttribArray(7);
     try vbobind.attributeDivisor(0, 1);
     try vbobind.attributeDivisor(1, 1);
     try vbobind.attributeDivisor(2, 1);
@@ -122,6 +131,7 @@ pub fn init() !CellProgram {
     try vbobind.attributeDivisor(4, 1);
     try vbobind.attributeDivisor(5, 1);
     try vbobind.attributeDivisor(6, 1);
+    try vbobind.attributeDivisor(7, 1);
 
     return .{
         .program = program,

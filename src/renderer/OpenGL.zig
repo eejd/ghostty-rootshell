@@ -101,6 +101,7 @@ surface_mailbox: apprt.surface.Mailbox,
 /// simple we apply all OpenGL context changes in the render() call.
 deferred_screen_size: ?SetScreenSize = null,
 deferred_font_size: ?SetFontSize = null,
+deferred_config: ?SetConfig = null,
 
 /// If we're drawing with single threaded operations
 draw_mutex: DrawMutex = drawMutexZero,
@@ -206,6 +207,20 @@ const SetFontSize = struct {
     }
 };
 
+const SetConfig = struct {
+    fn apply(self: SetConfig, r: *const OpenGL) !void {
+        _ = self;
+        const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
+
+        const bind = try gl_state.cell_program.program.use();
+        defer bind.unbind();
+        try gl_state.cell_program.program.setUniform(
+            "min_contrast",
+            r.config.min_contrast,
+        );
+    }
+};
+
 /// The configuration for this renderer that is derived from the main
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
@@ -224,6 +239,7 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([]const u8),
     custom_shader_animation: bool,
     links: link.Set,
@@ -275,6 +291,7 @@ pub const DerivedConfig = struct {
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
+            .min_contrast = @floatCast(config.@"minimum-contrast"),
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -336,6 +353,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .padding = options.padding,
         .surface_mailbox = options.surface_mailbox,
         .deferred_font_size = .{ .metrics = metrics },
+        .deferred_config = .{},
     };
 }
 
@@ -462,6 +480,7 @@ pub fn displayRealize(self: *OpenGL) !void {
         self.deferred_screen_size = .{ .size = size };
     }
     self.deferred_font_size = .{ .metrics = metrics };
+    self.deferred_config = .{};
 }
 
 /// Callback called by renderer.Thread when it begins.
@@ -1148,6 +1167,10 @@ fn addPreeditCell(
         .g = bg.g,
         .b = bg.b,
         .a = 255,
+        .bg_r = 0,
+        .bg_g = 0,
+        .bg_b = 0,
+        .bg_a = 0,
     });
 
     // Add our text
@@ -1166,6 +1189,10 @@ fn addPreeditCell(
         .g = fg.g,
         .b = fg.b,
         .a = 255,
+        .bg_r = bg.r,
+        .bg_g = bg.g,
+        .bg_b = bg.b,
+        .bg_a = 255,
     });
 }
 
@@ -1227,6 +1254,10 @@ fn addCursor(
         .g = color.g,
         .b = color.b,
         .a = alpha,
+        .bg_r = 0,
+        .bg_g = 0,
+        .bg_b = 0,
+        .bg_a = 0,
         .glyph_x = glyph.atlas_x,
         .glyph_y = glyph.atlas_y,
         .glyph_width = glyph.width,
@@ -1334,7 +1365,7 @@ pub fn updateCell(
     const alpha: u8 = if (cell.attrs.faint) 175 else 255;
 
     // If the cell has a background, we always draw it.
-    if (colors.bg) |rgb| {
+    const bg: [4]u8 = if (colors.bg) |rgb| bg: {
         // Determine our background alpha. If we have transparency configured
         // then this is dynamic depending on some situations. This is all
         // in an attempt to make transparency look the best for various
@@ -1378,8 +1409,19 @@ pub fn updateCell(
             .g = rgb.g,
             .b = rgb.b,
             .a = bg_alpha,
+            .bg_r = 0,
+            .bg_g = 0,
+            .bg_b = 0,
+            .bg_a = 0,
         });
-    }
+
+        break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
+    } else .{
+        self.draw_background.r,
+        self.draw_background.g,
+        self.draw_background.b,
+        @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
+    };
 
     // If the cell has a character, draw it
     if (cell.char > 0) {
@@ -1416,6 +1458,10 @@ pub fn updateCell(
             .g = colors.fg.g,
             .b = colors.fg.b,
             .a = alpha,
+            .bg_r = bg[0],
+            .bg_g = bg[1],
+            .bg_b = bg[2],
+            .bg_a = bg[3],
         });
     }
 
@@ -1453,6 +1499,10 @@ pub fn updateCell(
             .g = color.g,
             .b = color.b,
             .a = alpha,
+            .bg_r = bg[0],
+            .bg_g = bg[1],
+            .bg_b = bg[2],
+            .bg_a = bg[3],
         });
     }
 
@@ -1472,6 +1522,10 @@ pub fn updateCell(
             .g = colors.fg.g,
             .b = colors.fg.b,
             .a = alpha,
+            .bg_r = bg[0],
+            .bg_g = bg[1],
+            .bg_b = bg[2],
+            .bg_a = bg[3],
         });
     }
 
@@ -1510,6 +1564,9 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
         self.font_shaper.deinit();
         self.font_shaper = font_shaper;
     }
+
+    // Update our uniforms
+    self.deferred_config = .{};
 
     self.config.deinit();
     self.config = config.*;
@@ -1727,6 +1784,10 @@ fn drawCellProgram(
     if (self.deferred_font_size) |v| {
         try v.apply(self);
         self.deferred_font_size = null;
+    }
+    if (self.deferred_config) |v| {
+        try v.apply(self);
+        self.deferred_config = null;
     }
 
     // Draw background images first

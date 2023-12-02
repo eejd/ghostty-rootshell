@@ -152,6 +152,7 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([]const u8),
     custom_shader_animation: bool,
     links: link.Set,
@@ -203,6 +204,7 @@ pub const DerivedConfig = struct {
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
+            .min_contrast = @floatCast(config.@"minimum-contrast"),
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -374,6 +376,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .cell_size = undefined,
             .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
             .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
+            .min_contrast = options.config.min_contrast,
         },
 
         // Fonts
@@ -531,6 +534,7 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
         },
         .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
         .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
+        .min_contrast = self.uniforms.min_contrast,
     };
 
     // Recalculate our cell size. If it is the same as before, then we do
@@ -1257,6 +1261,9 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
         self.font_shaper = font_shaper;
     }
 
+    // Set our new minimum contrast
+    self.uniforms.min_contrast = config.min_contrast;
+
     self.config.deinit();
     self.config = config.*;
 }
@@ -1305,6 +1312,7 @@ pub fn setScreenSize(
         },
         .strikethrough_position = old.strikethrough_position,
         .strikethrough_thickness = old.strikethrough_thickness,
+        .min_contrast = old.min_contrast,
     };
 
     // Reset our buffer sizes so that we free memory when the screen shrinks.
@@ -1667,7 +1675,7 @@ pub fn updateCell(
     const alpha: u8 = if (cell.attrs.faint) 175 else 255;
 
     // If the cell has a background, we always draw it.
-    if (colors.bg) |rgb| {
+    const bg: [4]u8 = if (colors.bg) |rgb| bg: {
         // Determine our background alpha. If we have transparency configured
         // then this is dynamic depending on some situations. This is all
         // in an attempt to make transparency look the best for various
@@ -1701,8 +1709,16 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
+            .bg_color = .{ 0, 0, 0, 0 },
         });
-    }
+
+        break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
+    } else .{
+        self.current_background_color.r,
+        self.current_background_color.g,
+        self.current_background_color.b,
+        @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
+    };
 
     // If the cell has a character, draw it
     if (cell.char > 0) {
@@ -1729,6 +1745,7 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .bg_color = bg,
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -1759,6 +1776,7 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ color.r, color.g, color.b, alpha },
+            .bg_color = bg,
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -1771,6 +1789,7 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .bg_color = bg,
         });
     }
 
@@ -1834,6 +1853,7 @@ fn addCursor(
         },
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
+        .bg_color = .{ 0, 0, 0, 0 },
         .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
         .glyph_size = .{ glyph.width, glyph.height },
         .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -1886,6 +1906,7 @@ fn addPreeditCell(
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ bg.r, bg.g, bg.b, 255 },
+        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
     });
 
     // Add our text
@@ -1894,6 +1915,7 @@ fn addPreeditCell(
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
+        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
         .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
         .glyph_size = .{ glyph.width, glyph.height },
         .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
