@@ -78,9 +78,12 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
             "ApplePressAndHoldEnabled": false,
         ])
         
-        // Let's launch our first window.
-        // TODO: we should detect if we restored windows and if so not launch a new window.
-        terminalManager.newWindow()
+        // Let's launch our first window. We only do this if we have no other windows. It
+        // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
+        // is called before this.
+        if (terminalManager.windows.count == 0) {
+            terminalManager.newWindow()
+        }
         
         // Initial config loading
         configDidReload(ghostty)
