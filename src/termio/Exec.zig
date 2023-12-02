@@ -157,6 +157,9 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         opts.config.cursor_blink orelse true,
     );
 
+    // Set our default cursor style
+    term.screen.cursor.style = opts.config.cursor_style;
+
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
 
