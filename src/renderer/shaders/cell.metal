@@ -30,6 +30,7 @@ struct VertexIn {
   uchar4 color [[ attribute(5) ]];
 
   // The fields below are present only when rendering text.
+  uchar4 bg_color [[ attribute(7) ]];
 
   // The position of the glyph in the texture (x,y)
   uint2 glyph_pos [[ attribute(2) ]];
@@ -48,6 +49,51 @@ struct VertexOut {
   float4 color;
   float2 tex_coord;
 };
+
+//-------------------------------------------------------------------
+// Color Functions
+//-------------------------------------------------------------------
+#pragma mark - Colors
+
+// https://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
+float luminance_component(float c) {
+    if (c <= 0.03928f) {
+        return c / 12.92f;
+    } else {
+        return pow((c + 0.055f) / 1.055f, 2.4f);
+    }
+}
+
+float relative_luminance(float3 color) {
+  color.r = luminance_component(color.r);
+  color.g = luminance_component(color.g);
+  color.b = luminance_component(color.b);
+  float3 weights = float3(0.2126f, 0.7152f, 0.0722f);
+  return dot(color, weights);
+}
+
+// https://www.w3.org/TR/2008/REC-WCAG20-20081211/#contrast-ratiodef
+float contrast_ratio(float3 color1, float3 color2) {
+  float l1 = relative_luminance(color1);
+  float l2 = relative_luminance(color2);
+  return (max(l1, l2) + 0.05f) / (min(l1, l2) + 0.05f);
+}
+
+float4 contrasted_color(float4 fg, float4 bg) {
+    float3 fg_premult = fg.rgb * fg.a;
+    float3 bg_premult = bg.rgb * bg.a;
+    float ratio = contrast_ratio(fg_premult, bg_premult);
+    if (ratio <= 3.0f) {
+        float ratio = contrast_ratio(float3(1.0f), bg_premult);
+        if (ratio > 3.0f) {
+            return float4(1.0f);
+        } else {
+            return float4(0.0f, 0.0f, 0.0f, 1.0f);
+        }
+    }
+
+    return fg;
+}
 
 //-------------------------------------------------------------------
 // Terminal Grid Cell Shader
@@ -112,6 +158,8 @@ vertex VertexOut uber_vertex(
     // Calculate the texture coordinate in pixels. This is NOT normalized
     // (between 0.0 and 1.0) and must be done in the fragment shader.
     out.tex_coord = float2(input.glyph_pos) + float2(input.glyph_size) * position;
+
+    out.color = contrasted_color(out.color, float4(input.bg_color) / 255.0f);
     break;
   }
 

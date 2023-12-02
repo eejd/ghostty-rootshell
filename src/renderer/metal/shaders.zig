@@ -95,6 +95,7 @@ pub const Cell = extern struct {
     glyph_size: [2]u32 = .{ 0, 0 },
     glyph_offset: [2]i32 = .{ 0, 0 },
     color: [4]u8,
+    bg_color: [4]u8,
     cell_width: u8,
 
     pub const Mode = enum(u8) {
@@ -399,6 +400,17 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "color")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 7)},
+            );
+
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "bg_color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {

@@ -1667,7 +1667,7 @@ pub fn updateCell(
     const alpha: u8 = if (cell.attrs.faint) 175 else 255;
 
     // If the cell has a background, we always draw it.
-    if (colors.bg) |rgb| {
+    const bg: [4]u8 = if (colors.bg) |rgb| bg: {
         // Determine our background alpha. If we have transparency configured
         // then this is dynamic depending on some situations. This is all
         // in an attempt to make transparency look the best for various
@@ -1701,8 +1701,11 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
+            .bg_color = .{ 0, 0, 0, 0 },
         });
-    }
+
+        break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
+    } else .{ 0, 0, 0, 0 };
 
     // If the cell has a character, draw it
     if (cell.char > 0) {
@@ -1729,6 +1732,7 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .bg_color = bg,
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -1759,6 +1763,7 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ color.r, color.g, color.b, alpha },
+            .bg_color = bg,
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -1771,6 +1776,7 @@ pub fn updateCell(
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.widthLegacy(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .bg_color = bg,
         });
     }
 
@@ -1834,6 +1840,7 @@ fn addCursor(
         },
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
+        .bg_color = .{ 0, 0, 0, 0 },
         .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
         .glyph_size = .{ glyph.width, glyph.height },
         .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
@@ -1886,6 +1893,7 @@ fn addPreeditCell(
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ bg.r, bg.g, bg.b, 255 },
+        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
     });
 
     // Add our text
@@ -1894,6 +1902,7 @@ fn addPreeditCell(
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
+        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
         .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
         .glyph_size = .{ glyph.width, glyph.height },
         .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
