@@ -126,6 +126,10 @@ pub const Uniforms = extern struct {
     /// Metrics for underline/strikethrough
     strikethrough_position: f32,
     strikethrough_thickness: f32,
+
+    /// The minimum contrast ratio for text. The contrast ratio is calculated
+    /// according to the WCAG 2.0 spec.
+    min_contrast: f32,
 };
 
 /// The uniforms used for custom postprocess shaders.

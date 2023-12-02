@@ -152,6 +152,7 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([]const u8),
     custom_shader_animation: bool,
     links: link.Set,
@@ -203,6 +204,7 @@ pub const DerivedConfig = struct {
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
+            .min_contrast = @floatCast(config.@"minimum-contrast"),
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -374,6 +376,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .cell_size = undefined,
             .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
             .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
+            .min_contrast = options.config.min_contrast,
         },
 
         // Fonts
@@ -531,6 +534,7 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
         },
         .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
         .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
+        .min_contrast = self.uniforms.min_contrast,
     };
 
     // Recalculate our cell size. If it is the same as before, then we do
@@ -1257,6 +1261,9 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
         self.font_shaper = font_shaper;
     }
 
+    // Set our new minimum contrast
+    self.uniforms.min_contrast = config.min_contrast;
+
     self.config.deinit();
     self.config = config.*;
 }
@@ -1305,6 +1312,7 @@ pub fn setScreenSize(
         },
         .strikethrough_position = old.strikethrough_position,
         .strikethrough_thickness = old.strikethrough_thickness,
+        .min_contrast = old.min_contrast,
     };
 
     // Reset our buffer sizes so that we free memory when the screen shrinks.
@@ -1705,7 +1713,12 @@ pub fn updateCell(
         });
 
         break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
-    } else .{ 0, 0, 0, 0 };
+    } else .{
+        self.current_background_color.r,
+        self.current_background_color.g,
+        self.current_background_color.b,
+        @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
+    };
 
     // If the cell has a character, draw it
     if (cell.char > 0) {
