@@ -199,6 +199,13 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// colors. The contrast ratio is a value between 1 and 21. A value of
 /// 1 allows for no contrast (i.e. black on black). This value is
 /// the contrast ratio as defined by the WCAG 2.0 specification.
+///
+/// If you want to avoid invisible text (same color as background),
+/// a value of 1.1 is a good value. If you want to avoid text that is
+/// difficult to read, a value of 3 or higher is a good value. The higher
+/// the value, the more likely that text will become black or white.
+///
+/// This value does not apply to Emoji or images.
 @"minimum-contrast": f64 = 1,
 
 /// Color palette for the 256 color form that many terminal applications
