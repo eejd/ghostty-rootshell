@@ -2135,6 +2135,10 @@ const StreamHandler = struct {
         self: *StreamHandler,
         shape: terminal.MouseShape,
     ) !void {
+        // Avoid changing the shape it it is already set to avoid excess
+        // cross-thread messaging.
+        if (self.terminal.mouse_shape == shape) return;
+
         self.terminal.mouse_shape = shape;
         _ = self.ev.surface_mailbox.push(.{
             .set_mouse_shape = shape,
