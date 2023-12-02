@@ -226,6 +226,8 @@ pub const Face = struct {
         glyph_index: u32,
         opts: font.face.RenderOptions,
     ) !Glyph {
+        const metrics = opts.grid_metrics orelse self.metrics;
+
         // If our glyph has color, we want to render the color
         try self.face.loadGlyph(glyph_index, .{
             .render = true,
@@ -288,7 +290,7 @@ pub const Face = struct {
         // and copy the atlas.
         const bitmap_original = bitmap_converted orelse bitmap_ft;
         const bitmap_resized: ?freetype.c.struct_FT_Bitmap_ = resized: {
-            const max = opts.max_height orelse break :resized null;
+            const max = metrics.cell_height;
             const bm = bitmap_original;
             if (bm.rows <= max) break :resized null;
 
@@ -425,7 +427,7 @@ pub const Face = struct {
             // baseline calculation. The baseline calculation is so that everything
             // is properly centered when we render it out into a monospace grid.
             // Note: we add here because our X/Y is actually reversed, adding goes UP.
-            break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intCast(self.metrics.cell_baseline));
+            break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intCast(metrics.cell_baseline));
         };
 
         // log.warn("renderGlyph width={} height={} offset_x={} offset_y={} glyph_metrics={}", .{
@@ -662,7 +664,15 @@ test "color emoji" {
     // resize
     {
         const glyph = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, .{
-            .max_height = 24,
+            .grid_metrics = .{
+                .cell_width = 10,
+                .cell_height = 24,
+                .cell_baseline = 0,
+                .underline_position = 0,
+                .underline_thickness = 0,
+                .strikethrough_position = 0,
+                .strikethrough_thickness = 0,
+            },
         });
         try testing.expectEqual(@as(u32, 24), glyph.height);
     }

@@ -71,10 +71,11 @@ pub const Variation = struct {
 
 /// Additional options for rendering glyphs.
 pub const RenderOptions = struct {
-    /// The maximum height of the glyph. If this is set, then any glyph
-    /// larger than this height will be shrunk to this height. The scaling
-    /// is typically naive, but ultimately up to the rasterizer.
-    max_height: ?u16 = null,
+    /// The metrics that are defining the grid layout. These are usually
+    /// the metrics of the primary font face. The grid metrics are used
+    /// by the font face to better layout the glyph in situations where
+    /// the font is not exactly the same size as the grid.
+    grid_metrics: ?Metrics = null,
 
     /// The number of grid cells this glyph will take up. This can be used
     /// optionally by the rasterizer to better layout the glyph.

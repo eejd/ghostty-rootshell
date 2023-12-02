@@ -386,7 +386,9 @@ pub const Face = struct {
         const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
-            const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_baseline);
+            //const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_baseline);
+            const metrics = opts.grid_metrics orelse self.metrics;
+            const baseline_from_bottom: f64 = @floatFromInt(metrics.cell_baseline);
 
             // Next we offset our baseline by the bearing in the font. We
             // ADD here because CoreText y is UP.

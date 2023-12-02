@@ -56,8 +56,8 @@ config: DerivedConfig,
 /// The mailbox for communicating with the window.
 surface_mailbox: apprt.surface.Mailbox,
 
-/// Current cell dimensions for this grid.
-cell_size: renderer.CellSize,
+/// Current font metrics defining our grid.
+grid_metrics: font.face.Metrics,
 
 /// Current screen size dimensions for this grid. This is set on the first
 /// resize event, and is not immediately available.
@@ -359,7 +359,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .alloc = alloc,
         .config = options.config,
         .surface_mailbox = options.surface_mailbox,
-        .cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height },
+        .grid_metrics = metrics,
         .screen_size = null,
         .padding = options.padding,
         .focused = true,
@@ -497,7 +497,10 @@ fn gridSize(self: *Metal) ?renderer.GridSize {
     const screen_size = self.screen_size orelse return null;
     return renderer.GridSize.init(
         screen_size.subPadding(self.padding.explicit),
-        self.cell_size,
+        .{
+            .width = self.grid_metrics.cell_width,
+            .height = self.grid_metrics.cell_height,
+        },
     );
 }
 
@@ -523,14 +526,13 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
         const face = try self.font_group.group.faceFromIndex(index);
         break :metrics face.metrics;
     };
-    const new_cell_size = .{ .width = metrics.cell_width, .height = metrics.cell_height };
 
     // Update our uniforms
     self.uniforms = .{
         .projection_matrix = self.uniforms.projection_matrix,
         .cell_size = .{
-            @floatFromInt(new_cell_size.width),
-            @floatFromInt(new_cell_size.height),
+            @floatFromInt(metrics.cell_width),
+            @floatFromInt(metrics.cell_height),
         },
         .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
         .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
@@ -539,20 +541,23 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
 
     // Recalculate our cell size. If it is the same as before, then we do
     // nothing since the grid size couldn't have possibly changed.
-    if (std.meta.eql(self.cell_size, new_cell_size)) return;
-    self.cell_size = new_cell_size;
+    if (std.meta.eql(self.grid_metrics, metrics)) return;
+    self.grid_metrics = metrics;
 
     // Set the sprite font up
     self.font_group.group.sprite = font.sprite.Face{
-        .width = self.cell_size.width,
-        .height = self.cell_size.height,
+        .width = metrics.cell_width,
+        .height = metrics.cell_height,
         .thickness = metrics.underline_thickness * @as(u32, if (self.config.font_thicken) 2 else 1),
         .underline_position = metrics.underline_position,
     };
 
     // Notify the window that the cell size changed.
     _ = self.surface_mailbox.push(.{
-        .cell_size = new_cell_size,
+        .cell_size = .{
+            .width = metrics.cell_width,
+            .height = metrics.cell_height,
+        },
     }, .{ .forever = {} });
 }
 
@@ -1140,7 +1145,7 @@ fn prepKittyGraphics(
         // so that we render (0, 0) with some offset for the texture.
         const offset_y: u32 = if (rect.top_left.y < t.screen.viewport) offset_y: {
             const offset_cells = t.screen.viewport - rect.top_left.y;
-            const offset_pixels = offset_cells * self.cell_size.height;
+            const offset_pixels = offset_cells * self.grid_metrics.cell_height;
             break :offset_y @intCast(offset_pixels);
         } else 0;
 
@@ -1181,8 +1186,8 @@ fn prepKittyGraphics(
             image.height -| offset_y;
 
         // Calculate the width/height of our image.
-        const dest_width = if (p.columns > 0) p.columns * self.cell_size.width else source_width;
-        const dest_height = if (p.rows > 0) p.rows * self.cell_size.height else source_height;
+        const dest_width = if (p.columns > 0) p.columns * self.grid_metrics.cell_width else source_width;
+        const dest_height = if (p.rows > 0) p.rows * self.grid_metrics.cell_height else source_height;
 
         // Accumulate the placement
         if (image.width > 0 and image.height > 0) {
@@ -1286,7 +1291,14 @@ pub fn setScreenSize(
     // the leftover amounts on the right/bottom that don't fit a full grid cell
     // and we split them equal across all boundaries.
     const padding = if (self.padding.balance)
-        renderer.Padding.balanced(dim, grid_size, self.cell_size)
+        renderer.Padding.balanced(
+            dim,
+            grid_size,
+            .{
+                .width = self.grid_metrics.cell_width,
+                .height = self.grid_metrics.cell_height,
+            },
+        )
     else
         self.padding.explicit;
     const padded_dim = dim.subPadding(padding);
@@ -1307,8 +1319,8 @@ pub fn setScreenSize(
             -1 * @as(f32, @floatFromInt(padding.top)),
         ),
         .cell_size = .{
-            @floatFromInt(self.cell_size.width),
-            @floatFromInt(self.cell_size.height),
+            @floatFromInt(self.grid_metrics.cell_width),
+            @floatFromInt(self.grid_metrics.cell_height),
         },
         .strikethrough_position = old.strikethrough_position,
         .strikethrough_thickness = old.strikethrough_thickness,
@@ -1366,7 +1378,7 @@ pub fn setScreenSize(
         };
     }
 
-    log.debug("screen size screen={} grid={}, cell={}", .{ dim, grid_size, self.cell_size });
+    log.debug("screen size screen={} grid={}, cell_width={} cell_height={}", .{ dim, grid_size, self.grid_metrics.cell_width, self.grid_metrics.cell_height });
 }
 
 /// Sync all the CPU cells with the GPU state (but still on the CPU here).
@@ -1728,7 +1740,7 @@ pub fn updateCell(
             shaper_run.font_index,
             shaper_cell.glyph_index,
             .{
-                .max_height = @intCast(self.cell_size.height),
+                .grid_metrics = self.grid_metrics,
                 .thicken = self.config.font_thicken,
             },
         );
@@ -1766,7 +1778,10 @@ pub fn updateCell(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
-            .{ .cell_width = if (cell.attrs.wide) 2 else 1 },
+            .{
+                .cell_width = if (cell.attrs.wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
         );
 
         const color = if (cell.attrs.underline_color) cell.underline_fg else colors.fg;
@@ -1839,7 +1854,10 @@ fn addCursor(
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
-        .{ .cell_width = if (wide) 2 else 1 },
+        .{
+            .cell_width = if (wide) 2 else 1,
+            .grid_metrics = self.grid_metrics,
+        },
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
         return null;
@@ -1894,7 +1912,7 @@ fn addPreeditCell(
         self.alloc,
         font_index,
         glyph_index,
-        .{},
+        .{ .grid_metrics = self.grid_metrics },
     ) catch |err| {
         log.warn("error rendering preedit glyph err={}", .{err});
         return;
