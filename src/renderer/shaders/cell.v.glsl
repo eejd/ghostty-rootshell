@@ -25,14 +25,18 @@ layout (location = 3) in vec2 glyph_offset;
 // depends on mode.
 layout (location = 4) in vec4 color_in;
 
+// Only set for MODE_FG, this is the background color of the FG text.
+// This is used to detect minimal contrast for the text.
+layout (location = 5) in vec4 bg_color_in;
+
 // The mode of this shader. The mode determines what fields are used,
 // what the output will be, etc. This shader is capable of executing in
 // multiple "modes" so that we can share some logic and so that we can draw
 // the entire terminal grid in a single GPU pass.
-layout (location = 5) in uint mode_in;
+layout (location = 6) in uint mode_in;
 
 // The width in cells of this item.
-layout (location = 6) in uint grid_width;
+layout (location = 7) in uint grid_width;
 
 // The background or foreground color for the fragment, depending on
 // whether this is a background or foreground pass.
@@ -54,6 +58,7 @@ uniform vec2 cell_size;
 uniform mat4 projection;
 uniform float strikethrough_position;
 uniform float strikethrough_thickness;
+uniform float min_contrast;
 
 /********************************************************************
  * Modes
@@ -74,6 +79,61 @@ uniform float strikethrough_thickness;
  * fg color to use for the glyph.
  *
  */
+
+//-------------------------------------------------------------------
+// Color Functions
+//-------------------------------------------------------------------
+
+// https://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
+float luminance_component(float c) {
+    if (c <= 0.03928) {
+        return c / 12.92;
+    } else {
+        return pow((c + 0.055) / 1.055, 2.4);
+    }
+}
+
+float relative_luminance(vec3 color) {
+    vec3 color_adjusted = vec3(
+        luminance_component(color.r),
+        luminance_component(color.g),
+        luminance_component(color.b)
+    );
+
+    vec3 weights = vec3(0.2126, 0.7152, 0.0722);
+    return dot(color_adjusted, weights);
+}
+
+// https://www.w3.org/TR/2008/REC-WCAG20-20081211/#contrast-ratiodef
+float contrast_ratio(vec3 color1, vec3 color2) {
+    float luminance1 = relative_luminance(color1) + 0.05;
+    float luminance2 = relative_luminance(color2) + 0.05;
+    return max(luminance1, luminance2) / min(luminance1, luminance2);
+}
+
+// Return the fg if the contrast ratio is greater than min, otherwise
+// return a color that satisfies the contrast ratio. Currently, the color
+// is always white or black, whichever has the highest contrast ratio.
+vec4 contrasted_color(float min_ratio, vec4 fg, vec4 bg) {
+    vec3 fg_premult = fg.rgb * fg.a;
+    vec3 bg_premult = bg.rgb * bg.a;
+    float ratio = contrast_ratio(fg_premult, bg_premult);
+    if (ratio < min_ratio) {
+        float white_ratio = contrast_ratio(vec3(1.0, 1.0, 1.0), bg_premult);
+        float black_ratio = contrast_ratio(vec3(0.0, 0.0, 0.0), bg_premult);
+        if (white_ratio > black_ratio) {
+            return vec4(1.0, 1.0, 1.0, fg.a);
+        } else {
+            return vec4(0.0, 0.0, 0.0, fg.a);
+        }
+    }
+
+    return fg;
+}
+
+//-------------------------------------------------------------------
+// Main
+//-------------------------------------------------------------------
 
 void main() {
     // We always forward our mode unmasked because the fragment
@@ -147,8 +207,15 @@ void main() {
         vec2 glyph_tex_size = glyph_size / text_size;
         glyph_tex_coords = glyph_tex_pos + glyph_tex_size * position;
 
-        // Set our foreground color output
-        color = color_in / 255.;
+        // If we have a minimum contrast, we need to check if we need to
+        // change the color of the text to ensure it has enough contrast
+        // with the background.
+        vec4 color_final = color_in / 255.0;
+        if (min_contrast > 1.0 && mode == MODE_FG) {
+            vec4 bg_color = bg_color_in / 255.0;
+            color_final = contrasted_color(min_contrast, color_final, bg_color);
+        }
+        color = color_final;
         break;
 
     case MODE_STRIKETHROUGH:
