@@ -69,11 +69,45 @@ pub const Preedit = struct {
         return result;
     }
 
-    pub fn range(self: *const Preedit, start: usize, max: usize) [2]usize {
+    /// Range returns the start and end x position of the preedit text
+    /// along with any codepoint offset necessary to fit the preedit
+    /// into the available space.
+    pub fn range(self: *const Preedit, start: usize, max: usize) struct {
+        start: usize,
+        end: usize,
+        cp_offset: usize,
+    } {
+        // If our width is greater than the number of cells we have
+        // then we need to adjust our codepoint start to a point where
+        // our width would be less than the number of cells we have.
+        const w, const cp_offset = width: {
+            // max is inclusive, so we need to add 1 to it.
+            const max_width = max - start + 1;
+
+            // Rebuild our width in reverse order. This is because we want
+            // to offset by the end cells, not the start cells (if we have to).
+            var w: usize = 0;
+            for (0..self.codepoints.len) |i| {
+                const reverse_i = self.codepoints.len - i - 1;
+                const cp = self.codepoints[reverse_i];
+                w += if (cp.wide) 2 else 1;
+                if (w > max_width) {
+                    break :width .{ w, reverse_i };
+                }
+            }
+
+            // Width fit in the max width so no offset necessary.
+            break :width .{ w, 0 };
+        };
+
         // If our preedit goes off the end of the screen, we adjust it so
         // that it shifts left.
-        const end = start + self.width();
-        const offset = if (end > max) end - max else 0;
-        return .{ start -| offset, end -| offset };
+        const end = start + w;
+        const start_offset = if (end > max) end - max else 0;
+        return .{
+            .start = start -| start_offset,
+            .end = end -| start_offset,
+            .cp_offset = cp_offset,
+        };
     }
 };

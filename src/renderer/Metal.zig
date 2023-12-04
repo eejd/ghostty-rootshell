@@ -1434,10 +1434,13 @@ fn rebuildCells(
     const preedit_range: ?struct {
         y: usize,
         x: [2]usize,
+        cp_offset: usize,
     } = if (preedit) |preedit_v| preedit: {
+        const range = preedit_v.range(screen.cursor.x, screen.cols - 1);
         break :preedit .{
             .y = screen.cursor.y,
-            .x = preedit_v.range(screen.cursor.x, screen.cols - 1),
+            .x = .{ range.start, range.end },
+            .cp_offset = range.cp_offset,
         };
     } else null;
 
@@ -1583,7 +1586,7 @@ fn rebuildCells(
         if (preedit) |preedit_v| {
             const range = preedit_range.?;
             var x = range.x[0];
-            for (preedit_v.codepoints) |cp| {
+            for (preedit_v.codepoints[range.cp_offset..]) |cp| {
                 self.addPreeditCell(cp, x, range.y) catch |err| {
                     log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
                         x,
