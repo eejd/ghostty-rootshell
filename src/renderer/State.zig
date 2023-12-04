@@ -39,7 +39,7 @@ pub const Mouse = struct {
 /// The pre-edit state. See Surface.preeditCallback for more information.
 pub const Preedit = struct {
     /// The codepoints to render as preedit text.
-    codepoints: []Codepoint,
+    codepoints: []const Codepoint = &.{},
 
     /// A single codepoint to render as preedit text.
     pub const Codepoint = struct {
