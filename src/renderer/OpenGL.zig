@@ -697,6 +697,14 @@ pub fn updateFrame(
             cursor_blink_visible,
         );
 
+        // Get our preedit state
+        const preedit: ?renderer.State.Preedit = preedit: {
+            if (cursor_style == null) break :preedit null;
+            const p = state.preedit orelse break :preedit null;
+            break :preedit try p.clone(self.alloc);
+        };
+        errdefer if (preedit) |p| p.deinit(self.alloc);
+
         // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
         // We only do this if the Kitty image state is dirty meaning only if
         // it changes.
@@ -709,11 +717,14 @@ pub fn updateFrame(
             .selection = selection,
             .screen = screen_copy,
             .mouse = state.mouse,
-            .preedit = if (cursor_style != null) state.preedit else null,
+            .preedit = preedit,
             .cursor_style = cursor_style,
         };
     };
-    defer critical.screen.deinit();
+    defer {
+        critical.screen.deinit();
+        if (critical.preedit) |p| p.deinit(self.alloc);
+    }
 
     // Grab our draw mutex if we have it and update our data
     {
@@ -1083,7 +1094,7 @@ pub fn rebuildCells(
         if (preedit) |preedit_v| {
             const range = preedit_range.?;
             var x = range.x[0];
-            for (preedit_v.codepoints[0..preedit_v.len]) |cp| {
+            for (preedit_v.codepoints) |cp| {
                 self.addPreeditCell(cp, x, range.y) catch |err| {
                     log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
                         x,

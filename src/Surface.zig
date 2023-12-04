@@ -629,6 +629,8 @@ pub fn deinit(self: *Surface) void {
         self.alloc.destroy(v);
     }
 
+    // Clean up our render state
+    if (self.renderer_state.preedit) |p| self.alloc.free(p.codepoints);
     self.alloc.destroy(self.renderer_state.mutex);
     self.config.deinit();
 
@@ -1087,7 +1089,10 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     defer self.renderer_state.mutex.unlock();
 
     // We always clear our prior preedit
-    self.renderer_state.preedit = null;
+    if (self.renderer_state.preedit) |p| {
+        self.alloc.free(p.codepoints);
+        self.renderer_state.preedit = null;
+    }
 
     // If we have no text, we're done. We queue a render in case we cleared
     // a prior preedit (likely).
@@ -1101,7 +1106,9 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     var it = view.iterator();
 
     // Allocate the codepoints slice
-    var preedit: renderer.State.Preedit = .{};
+    const Codepoint = renderer.State.Preedit.Codepoint;
+    var codepoints: std.ArrayListUnmanaged(Codepoint) = .{};
+    defer codepoints.deinit(self.alloc);
     while (it.nextCodepoint()) |cp| {
         const width = ziglyph.display_width.codePointWidth(cp, .half);
 
@@ -1110,21 +1117,18 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
         // Let's just ignore it.
         if (width <= 0) continue;
 
-        preedit.codepoints[preedit.len] = .{ .codepoint = cp, .wide = width >= 2 };
-        preedit.len += 1;
-
-        // This is a strange edge case. We have a generous buffer for
-        // preedit text but if we exceed it, we just truncate.
-        if (preedit.len >= preedit.codepoints.len) {
-            log.warn("preedit text is longer than our buffer, truncating", .{});
-            break;
-        }
+        try codepoints.append(
+            self.alloc,
+            .{ .codepoint = cp, .wide = width >= 2 },
+        );
     }
 
     // If we have no codepoints, then we're done.
-    if (preedit.len == 0) return;
+    if (codepoints.items.len == 0) return;
 
-    self.renderer_state.preedit = preedit;
+    self.renderer_state.preedit = .{
+        .codepoints = try codepoints.toOwnedSlice(self.alloc),
+    };
     try self.queueRender();
 }
 

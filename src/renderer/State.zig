@@ -38,11 +38,8 @@ pub const Mouse = struct {
 
 /// The pre-edit state. See Surface.preeditCallback for more information.
 pub const Preedit = struct {
-    /// The codepoints to render as preedit text. We allow up to 16 codepoints
-    /// as a sort of arbitrary limit. If we experience a realisitic use case
-    /// where we need more please open an issue.
-    codepoints: [16]Codepoint = undefined,
-    len: u8 = 0,
+    /// The codepoints to render as preedit text.
+    codepoints: []Codepoint,
 
     /// A single codepoint to render as preedit text.
     pub const Codepoint = struct {
@@ -50,10 +47,22 @@ pub const Preedit = struct {
         wide: bool = false,
     };
 
+    /// Deinit this preedit that was cre
+    pub fn deinit(self: *const Preedit, alloc: Allocator) void {
+        alloc.free(self.codepoints);
+    }
+
+    /// Allocate a copy of this preedit in the given allocator..
+    pub fn clone(self: *const Preedit, alloc: Allocator) !Preedit {
+        return .{
+            .codepoints = try alloc.dupe(Codepoint, self.codepoints),
+        };
+    }
+
     /// The width in cells of all codepoints in the preedit.
     pub fn width(self: *const Preedit) usize {
         var result: usize = 0;
-        for (self.codepoints[0..self.len]) |cp| {
+        for (self.codepoints) |cp| {
             result += if (cp.wide) 2 else 1;
         }
 
