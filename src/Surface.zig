@@ -1474,7 +1474,13 @@ pub fn scrollCallback(
                 // clear the selection.
                 self.setSelection(null);
 
-                const seq = if (y.delta < 0) "\x1bOA" else "\x1bOB";
+                const seq = if (self.io.terminal.modes.get(.cursor_keys)) seq: {
+                    // cursor key: application mode
+                    break :seq if (y.delta < 0) "\x1bOA" else "\x1bOB";
+                } else seq: {
+                    // cursor key: normal mode
+                    break :seq if (y.delta < 0) "\x1b[A" else "\x1b[B";
+                };
                 for (0..y.delta_unsigned) |_| {
                     _ = self.io_thread.mailbox.push(.{
                         .write_stable = seq,
