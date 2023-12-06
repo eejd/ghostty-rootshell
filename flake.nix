@@ -63,6 +63,7 @@
         #   https://github.com/mitchellh/ghostty/tree/main#developing-ghostty
         #
         packages.ghostty = pkgs.ghostty;
+        packages.default = packages.ghostty;
         defaultPackage = packages.ghostty;
       }
     );
