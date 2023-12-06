@@ -15,11 +15,16 @@ const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
 
+pub const Orientation = enum { horizontal, vertical };
+
 /// Our actual GtkPaned widget
 paned: *c.GtkPaned,
 
 /// The container for this split panel.
 container: Surface.Container,
+
+/// The orientation of this split panel.
+orientation: Orientation,
 
 /// The elements of this split panel.
 top_left: Surface.Container.Elem,
@@ -78,6 +83,10 @@ pub fn init(
         .container = container,
         .top_left = .{ .surface = sibling },
         .bottom_right = .{ .surface = surface },
+        .orientation = (switch (direction) {
+            .right => .horizontal,
+            .down => .vertical,
+        }),
     };
 
     // Replace the previous containers element with our split.
@@ -135,6 +144,15 @@ fn removeChild(
     // When a child is removed we are no longer a split, so destroy ourself
     remove.deinit(alloc);
     alloc.destroy(self);
+}
+
+pub fn moveDivider(self: *Split, direction: input.SplitResizeDirection, amount: u16) void {
+    const pos = c.gtk_paned_get_position(self.paned);
+    const new = switch (direction) {
+        .up, .left => pos - amount,
+        .down, .right => pos + amount,
+    };
+    c.gtk_paned_set_position(self.paned, new);
 }
 
 // This replaces the element at the given pointer with a new element.

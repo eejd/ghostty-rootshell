@@ -151,6 +151,19 @@ pub const Container = union(enum) {
         };
     }
 
+    /// Returns the first split with the given orientation, walking upwards in
+    /// the tree.
+    pub fn firstSplitWithOrientation(self: Container, orientation: Split.Orientation) ?*Split {
+        return switch (self) {
+            .none, .tab_ => null,
+            .split_tl, .split_br => split: {
+                const s = self.split() orelse break :split null;
+                if (s.orientation == orientation) break :split s;
+                break :split s.container.firstSplitWithOrientation(orientation);
+            },
+        };
+    }
+
     /// Replace the container's element with this element. This is
     /// used by children to modify their parents to for example change
     /// from a surface to a split or a split back to a surface or
@@ -557,6 +570,14 @@ pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) voi
     });
     const surface_ = map.get(direction) orelse return;
     if (surface_) |surface| surface.grabFocus();
+}
+
+pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
+    const s = self.container.firstSplitWithOrientation(switch (direction) {
+        .up, .down => .vertical,
+        .left, .right => .horizontal,
+    }) orelse return;
+    s.moveDivider(direction, amount);
 }
 
 pub fn newTab(self: *Surface) !void {
