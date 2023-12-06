@@ -1085,6 +1085,8 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
 ///
 /// The preedit input must be UTF-8 encoded.
 pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
+    // log.debug("text preeditCallback value={any}", .{preedit_});
+
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
 
@@ -1124,7 +1126,10 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     }
 
     // If we have no codepoints, then we're done.
-    if (codepoints.items.len == 0) return;
+    if (codepoints.items.len == 0) {
+        try self.queueRender();
+        return;
+    }
 
     self.renderer_state.preedit = .{
         .codepoints = try codepoints.toOwnedSlice(self.alloc),
