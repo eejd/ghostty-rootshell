@@ -1245,12 +1245,17 @@ pub fn keyCallback(
     // This handles the scenario where URL highlighting should be
     // toggled for example.
     if (!self.mouse.mods.equal(event.mods)) mouse_mods: {
+        // Usually moving the cursor unhides the mouse so we need
+        // to hide it again if it was hidden.
+        const rehide = self.mouse.hidden;
+
         // We set this to null to force link reprocessing since
         // mod changes can affect link highlighting.
         self.mouse.link_point = null;
         self.mouse.mods = event.mods;
         const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
         self.cursorPosCallback(pos) catch {};
+        if (rehide) self.hideMouse();
     }
 
     // When we are in the middle of a mouse event and we press shift,
