@@ -3021,7 +3021,7 @@ fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const 
     } else log.warn("runtime doesn't support desktop notifications", .{});
 }
 
-pub const face_ttf = @embedFile("font/res/FiraCode-Regular.ttf");
-pub const face_bold_ttf = @embedFile("font/res/FiraCode-Bold.ttf");
+pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");
+pub const face_bold_ttf = @embedFile("font/res/JetBrainsMono-Bold.ttf");
 pub const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
 pub const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");
