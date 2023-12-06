@@ -521,11 +521,11 @@ Below is a sample on how to add it to a NixOS overlay:
 ```nix
 {
   inputs = {
-    nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # NOTE: This will require your git SSH access to the repo
     ghostty = {
-      url = git+ssh://git@github.com/mitchellh/ghostty;
+      url = "git+ssh://git@github.com/mitchellh/ghostty";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
