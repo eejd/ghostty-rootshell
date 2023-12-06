@@ -781,14 +781,19 @@ extension Ghostty {
                 ) ?? event
             }
             
+            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+            
             // By setting this to non-nil, we note that we'rein a keyDown event. From here,
             // we call interpretKeyEvents so that we can handle complex input such as Korean
             // language.
             keyTextAccumulator = []
             defer { keyTextAccumulator = nil }
+            
+            // We need to know what the length of marked text was before this event to
+            // know if these events cleared it.
+            let markedTextBefore = markedText.length > 0
+            
             self.interpretKeyEvents([translationEvent])
-
-            let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             
             // If we have text, then we've composed a character, send that down. We do this
             // first because if we completed a preedit, the text will be available here
@@ -802,7 +807,10 @@ extension Ghostty {
             }
             
             // If we have marked text, we're in a preedit state. Send that down.
-            if (markedText.length > 0) {
+            // If we don't have marked text but we had marked text before, then the preedit
+            // was cleared so we want to send down an empty string to ensure we've cleared
+            // the preedit.
+            if (markedText.length > 0 || markedTextBefore) {
                 handled = true
                 keyAction(action, event: event, preedit: markedText.string)
             }
