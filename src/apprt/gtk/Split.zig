@@ -15,7 +15,25 @@ const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
 
-pub const Orientation = enum { horizontal, vertical };
+/// The split orientation.
+pub const Orientation = enum {
+    horizontal,
+    vertical,
+
+    pub fn fromDirection(direction: input.SplitDirection) Orientation {
+        return switch (direction) {
+            .right => .horizontal,
+            .down => .vertical,
+        };
+    }
+
+    pub fn fromResizeDirection(direction: input.SplitResizeDirection) Orientation {
+        return switch (direction) {
+            .up, .down => .vertical,
+            .left, .right => .horizontal,
+        };
+    }
+};
 
 /// Our actual GtkPaned widget
 paned: *c.GtkPaned,
@@ -83,10 +101,7 @@ pub fn init(
         .container = container,
         .top_left = .{ .surface = sibling },
         .bottom_right = .{ .surface = surface },
-        .orientation = (switch (direction) {
-            .right => .horizontal,
-            .down => .vertical,
-        }),
+        .orientation = Orientation.fromDirection(direction),
     };
 
     // Replace the previous containers element with our split.
@@ -146,12 +161,14 @@ fn removeChild(
     alloc.destroy(self);
 }
 
+/// Move the divider in the given direction by the given amount.
 pub fn moveDivider(self: *Split, direction: input.SplitResizeDirection, amount: u16) void {
     const pos = c.gtk_paned_get_position(self.paned);
     const new = switch (direction) {
         .up, .left => pos - amount,
         .down, .right => pos + amount,
     };
+
     c.gtk_paned_set_position(self.paned, new);
 }
 

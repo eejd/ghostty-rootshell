@@ -153,7 +153,10 @@ pub const Container = union(enum) {
 
     /// Returns the first split with the given orientation, walking upwards in
     /// the tree.
-    pub fn firstSplitWithOrientation(self: Container, orientation: Split.Orientation) ?*Split {
+    pub fn firstSplitWithOrientation(
+        self: Container,
+        orientation: Split.Orientation,
+    ) ?*Split {
         return switch (self) {
             .none, .tab_ => null,
             .split_tl, .split_br => split: {
@@ -573,10 +576,9 @@ pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) voi
 }
 
 pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
-    const s = self.container.firstSplitWithOrientation(switch (direction) {
-        .up, .down => .vertical,
-        .left, .right => .horizontal,
-    }) orelse return;
+    const s = self.container.firstSplitWithOrientation(
+        Split.Orientation.fromResizeDirection(direction),
+    ) orelse return;
     s.moveDivider(direction, amount);
 }
 
