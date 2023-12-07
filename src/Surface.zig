@@ -104,6 +104,25 @@ config: DerivedConfig,
 /// This is used to determine if we need to confirm, hold open, etc.
 child_exited: bool = false,
 
+/// The effect of an input event. This can be used by callers to take
+/// the appropriate action after an input event. For example, key
+/// input can be forwarded to the OS for further processing if it
+/// wasn't handled in any way by Ghostty.
+pub const InputEffect = enum {
+    /// The input was not handled in any way by Ghostty and should be
+    /// forwarded to other subsystems (i.e. the OS) for further
+    /// processing.
+    ignored,
+
+    /// The input was handled and consumed by Ghostty.
+    consumed,
+
+    /// The input resulted in a close event for this surface so
+    /// the surface, runtime surface, etc. pointers may all be
+    /// unsafe to use so exit immediately.
+    closed,
+};
+
 /// Mouse state for the surface.
 const Mouse = struct {
     /// The last tracked mouse button state by button.
@@ -1143,7 +1162,7 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
 pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
-) !bool {
+) !InputEffect {
     // log.debug("text keyCallback event={}", .{event});
 
     // Setup our inspector event if we have an inspector.
@@ -1207,13 +1226,21 @@ pub fn keyCallback(
             break :press try self.performBindingAction(binding_action);
         } else false;
 
+        // If we performed an action and it was a closing action,
+        // our "self" pointer is not safe to use anymore so we need to
+        // just exit immediately.
+        if (performed and closingAction(binding_action)) {
+            log.debug("key binding is a closing binding, halting key event processing", .{});
+            return .closed;
+        }
+
         // If we consume this event, then we are done. If we don't consume
         // it, we processed the action but we still want to process our
         // encodings, too.
         if (consumed and performed) {
             self.last_binding_trigger = binding_trigger.hash();
             if (insp_ev) |*ev| ev.binding = binding_action;
-            return true;
+            return .consumed;
         }
 
         // If we have a previous binding trigger and it matches this one,
@@ -1222,7 +1249,7 @@ pub fn keyCallback(
         if (self.last_binding_trigger > 0 and
             self.last_binding_trigger == binding_trigger.hash())
         {
-            return true;
+            return .consumed;
         }
     }
 
@@ -1230,7 +1257,7 @@ pub fn keyCallback(
     if (self.config.vt_kam_allowed) {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        if (self.io.terminal.modes.get(.disable_keyboard)) return true;
+        if (self.io.terminal.modes.get(.disable_keyboard)) return .consumed;
     }
 
     // If this input event has text, then we hide the mouse if configured.
@@ -1297,7 +1324,7 @@ pub fn keyCallback(
 
     var data: termio.Message.WriteReq.Small.Array = undefined;
     const seq = try enc.encode(&data);
-    if (seq.len == 0) return false;
+    if (seq.len == 0) return .ignored;
 
     _ = self.io_thread.mailbox.push(.{
         .write_small = .{
@@ -1324,7 +1351,7 @@ pub fn keyCallback(
         try self.queueRender();
     }
 
-    return true;
+    return .consumed;
 }
 
 /// Sends text as-is to the terminal without triggering any keyboard
@@ -2826,6 +2853,19 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
     }
 
     return true;
+}
+
+/// Returns true if performing the given action result in closing
+/// the surface. This is used to determine if our self pointer is
+/// still valid after performing some binding action.
+fn closingAction(action: input.Binding.Action) bool {
+    return switch (action) {
+        .close_surface,
+        .close_window,
+        => true,
+
+        else => false,
+    };
 }
 
 /// Call this to complete a clipboard request sent to apprt. This should

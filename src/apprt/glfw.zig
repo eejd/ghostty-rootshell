@@ -928,16 +928,21 @@ pub const Surface = struct {
             .utf8 = "",
         };
 
-        const consumed = core_win.keyCallback(key_event) catch |err| {
+        const effect = core_win.keyCallback(key_event) catch |err| {
             log.err("error in key callback err={}", .{err});
             return;
         };
+
+        // Surface closed.
+        if (effect == .closed) return;
 
         // If it wasn't consumed, we set it on our self so that charcallback
         // can make another attempt. Otherwise, we set null so the charcallback
         // is ignored.
         core_win.rt_surface.key_event = null;
-        if (!consumed and (action == .press or action == .repeat)) {
+        if (effect == .ignored and
+            (action == .press or action == .repeat))
+        {
             core_win.rt_surface.key_event = key_event;
         }
     }
