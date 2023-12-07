@@ -34,6 +34,7 @@ pub const Attribute = union(enum) {
     underline: Underline,
     reset_underline: void,
     underline_color: color.RGB,
+    @"256_underline_color": u8,
     reset_underline_color: void,
 
     /// Blink the text
@@ -253,6 +254,11 @@ pub const Parser = struct {
                         .b = @truncate(rgb[2]),
                     },
                 };
+            } else if (slice.len >= 3 and slice[1] == 5) {
+                self.idx += 2;
+                return Attribute{
+                    .@"256_underline_color" = @truncate(slice[2]),
+                };
             },
 
             59 => return Attribute{ .reset_underline_color = {} },
@@ -462,6 +468,13 @@ test "sgr: 256 color" {
     var p: Parser = .{ .params = &[_]u16{ 38, 5, 161, 48, 5, 236 } };
     try testing.expect(p.next().? == .@"256_fg");
     try testing.expect(p.next().? == .@"256_bg");
+    try testing.expect(p.next() == null);
+}
+
+test "sgr: 256 color underline" {
+    var p: Parser = .{ .params = &[_]u16{ 58, 5, 9 } };
+    try testing.expect(p.next().? == .@"256_underline_color");
+    try testing.expect(p.next() == null);
 }
 
 test "sgr: 24-bit bg color" {
