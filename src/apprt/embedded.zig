@@ -794,7 +794,7 @@ pub const Surface = struct {
         } else .invalid;
 
         // Invoke the core Ghostty logic to handle this input.
-        const consumed = self.core_surface.keyCallback(.{
+        const effect = self.core_surface.keyCallback(.{
             .action = action,
             .key = key,
             .physical_key = physical_key,
@@ -808,11 +808,15 @@ pub const Surface = struct {
             return;
         };
 
-        // If we consume the key then we want to reset the dead key state.
-        if (consumed and is_down) {
-            self.keymap_state = .{};
-            self.core_surface.preeditCallback(null) catch {};
-            return;
+        switch (effect) {
+            .closed => return,
+            .ignored => {},
+            .consumed => if (is_down) {
+                // If we consume the key then we want to reset the dead
+                // key state.
+                self.keymap_state = .{};
+                self.core_surface.preeditCallback(null) catch {};
+            },
         }
     }
 

@@ -1394,7 +1394,7 @@ fn keyEvent(
     }
 
     // Invoke the core Ghostty logic to handle this input.
-    const consumed = self.core_surface.keyCallback(.{
+    const effect = self.core_surface.keyCallback(.{
         .action = action,
         .key = key,
         .physical_key = physical_key,
@@ -1408,11 +1408,16 @@ fn keyEvent(
         return false;
     };
 
-    // If we consume the key then we want to reset the dead key state.
-    if (consumed and (action == .press or action == .repeat)) {
-        c.gtk_im_context_reset(self.im_context);
-        self.core_surface.preeditCallback(null) catch {};
-        return true;
+    switch (effect) {
+        .closed => return true,
+        .ignored => {},
+        .consumed => if (action == .press or action == .repeat) {
+            // If we consume the key then we want to reset the dead key
+            // state.
+            c.gtk_im_context_reset(self.im_context);
+            self.core_surface.preeditCallback(null) catch {};
+            return true;
+        },
     }
 
     return false;
