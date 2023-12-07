@@ -90,14 +90,33 @@ class TerminalManager {
     
     private func newTab(to parent: NSWindow, withBaseConfig base: Ghostty.SurfaceConfiguration?) {
         // Create a new window and add it to the parent
-        let window = createWindow(withBaseConfig: base).window!
+        let controller = createWindow(withBaseConfig: base)
+        let window = controller.window!
         
         // If the parent is miniaturized, then macOS exhibits really strange behaviors
         // so we have to bring it back out.
         if (parent.isMiniaturized) { parent.deminiaturize(self) }
         
+        // If our parent tab group already has this window, macOS added it and
+        // we need to remove it so we can set the correct order in the next line.
+        // If we don't do this, macOS gets really confused and the tabbedWindows
+        // state becomes incorrect.
+        //
+        // At the time of writing this code, the only known case this happens
+        // is when the "+" button is clicked in the tab bar.
+        if let tg = parent.tabGroup, tg.windows.firstIndex(of: window) != nil {
+            tg.removeWindow(window)
+        }
+        
+        // Add the window to the tab group and show it
         parent.addTabbedWindow(window, ordered: .above)
         window.makeKeyAndOrderFront(self)
+        
+        // It takes an event loop cycle until the macOS tabGroup state becomes
+        // consistent which causes our tab labeling to be off when the "+" button
+        // is used in the tab bar. This fixes that. If we can find a more robust
+        // solution we should do that.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { controller.relabelTabs() }
     }
     
     /// Creates a window controller, adds it to our managed list, and returns it.
