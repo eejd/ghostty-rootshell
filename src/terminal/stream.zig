@@ -577,6 +577,7 @@ pub fn Stream(comptime Handler: type) type {
                 // SGR - Select Graphic Rendition
                 'm' => switch (action.intermediates.len) {
                     0 => if (@hasDecl(T, "setAttribute")) {
+                        // log.info("parse SGR params={any}", .{action.params});
                         var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
                         while (p.next()) |attr| {
                             // log.info("SGR attribute: {}", .{attr});

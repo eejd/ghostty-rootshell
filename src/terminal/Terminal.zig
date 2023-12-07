@@ -515,6 +515,11 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
             };
         },
 
+        .@"256_underline_color" => |idx| {
+            self.screen.cursor.pen.attrs.underline_color = true;
+            self.screen.cursor.pen.underline_fg = self.color_palette.colors[idx];
+        },
+
         .reset_underline_color => {
             self.screen.cursor.pen.attrs.underline_color = false;
         },
