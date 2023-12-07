@@ -99,7 +99,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         
         guard let windows = self.window?.tabbedWindows else { return }
         guard let cfg = ghostty.config else { return }
-
+        
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
@@ -189,7 +189,21 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     override func newWindowForTab(_ sender: Any?) {
         // Trigger the ghostty core event logic for a new tab.
         guard let surface = self.focusedSurface?.surface else { return }
-        ghostty.newTab(surface: surface)
+        
+        // This is necessary due to a really strange issue on macOS that I was never
+        // able to figure out: if we create a new tab in this function directly, then
+        // it is incorrectly added to the wrong index in `tabGroup.windows`. The macOS
+        // `tabGroup.windows` documentation says that will always be in visual order
+        // of the tab but I was finding that not to be true. By introducing a small delay,
+        // I noticed everything works. I can't explain it and I'd rather not do this so
+        // if someone can figure this out that'd be great.
+        //
+        // See: https://github.com/mitchellh/ghostty/issues/1010
+        // Last reproduced on macOS 14.1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+            guard let s = self else { return }
+            s.ghostty.newTab(surface: surface)
+        }
     }
     
     //MARK: - NSWindowDelegate
