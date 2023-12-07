@@ -977,6 +977,28 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .goto_split = .right },
         );
 
+        // Resizing splits
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .up, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+            .{ .resize_split = .{ .up, 10 } },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .down, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+            .{ .resize_split = .{ .down, 10 } },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .left, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+            .{ .resize_split = .{ .left, 10 } },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .right, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+            .{ .resize_split = .{ .right, 10 } },
+        );
+
         // Viewport scrolling
         try result.keybind.set.put(
             alloc,
