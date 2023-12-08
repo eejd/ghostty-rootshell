@@ -49,6 +49,7 @@ beta users using Ghostty as their primary terminal. See more in
 | ------------------ | ------------------------------------------------------------------------ | -------------------------- |
 | macOS              | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip) | MacOS 12+ Universal Binary |
 | Linux              | [Build from Source](#developing-ghostty)                                 |                            |
+| Linux (NixOS/Nix)  | [Use the Flake](#nix-package)                                            |                            |
 | Windows            | [Build from Source](#developing-ghostty)                                 | [Notes](#windows-notes)    |
 
 ### Configuration
@@ -505,50 +506,42 @@ Make sure your Prettier version matches the version of in [devshell.nix](https:/
 
 ### Nix Package
 
-> [!WARNING]
-> The Nix package currently depends on versions of LLVM and Zig that are
-> currently not in cache.nixos.org and will be built from source. This can take
-> a very long time, especially in situations where CPU is at a premium. Most
-> people should follow the instructions in [Developing
-> Ghostty](#developing-ghostty) instead.
+There is Nix package that can be used in the flake (`packages.ghostty` or `packages.default`).
+It can be used in NixOS configurations and otherwise built off of.
 
-There is a functional Nix package that can be used in the `flake.nix` file
-(`packages.ghostty`). It can be used in NixOS configurations and otherwise
-built off of (however, please heed the above warning).
-
-Below is a sample on how to add it to a NixOS overlay:
+Below is an example:
 
 ```nix
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # NOTE: This will require your git SSH access to the repo
+    # NOTE: This will require your git SSH access to the repo.
+    #
+    # WARNING: Do NOT pin the `nixpkgs` input, as that will
+    # declare the cache useless. If you do, you will have
+    # to compile LLVM, Zig and Ghostty itself on your machine,
+    # which will take a very very long time.
     ghostty = {
       url = "git+ssh://git@github.com/mitchellh/ghostty";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
   outputs = { nixpkgs, ghostty, ... }: {
-    nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+    nixosConfigurations.mysystem = nixpkgs.lib.nixosSystem {
       modules = [
         {
-          nixpkgs.overlays = [
-            (final: prev: {
-              ghostty = ghostty.packages.${prev.system}.ghostty;
-            })
+          environment.systemPackages = [
+            ghostty.packages.x86_64-linux.default
           ];
         }
-
-        # Other modules here...
       ];
     };
   };
 }
 ```
 
-You can also test the build of the nix package at any time by running `nix build .`
+You can also test the build of the nix package at any time by running `nix build .`.
 
 #### Updating the Zig Cache Fixed-Output Derivation Hash
 
@@ -567,5 +560,5 @@ To update it, you can run the following in the repository root:
 ./nix/build-support/check-zig-cache-hash.sh --update
 ```
 
-This will write out the `nix/zig_cache_hash.nix` file with the updated hash
+This will write out the `nix/zig-cache-hash.nix` file with the updated hash
 that can then be committed and pushed to fix the builds.

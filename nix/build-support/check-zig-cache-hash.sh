@@ -3,7 +3,7 @@
 # Nothing in this script should fail.
 set -e
 
-CACHE_HASH_FILE="$(realpath "$(dirname "$0")/../zig_cache_hash.nix")"
+CACHE_HASH_FILE="$(realpath "$(dirname "$0")/../zig-cache-hash.nix")"
 
 help() {
   echo ""
@@ -11,7 +11,7 @@ help() {
   echo "commit, and push the update:"
   echo ""
   echo "    ./nix/build-support/check-zig-cache-hash.sh --update"
-  echo "    git add nix/zig_cache_hash.nix"
+  echo "    git add nix/zig-cache-hash.nix"
   echo "    git commit -m \"nix: update Zig cache hash\""
   echo "    git push"
   echo ""

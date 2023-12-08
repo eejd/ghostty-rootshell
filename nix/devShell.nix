@@ -1,8 +1,11 @@
-{ mkShell, lib, stdenv
+{
+  mkShell
+, lib
+, stdenv
 
 , bashInteractive
 , gdb
-, glxinfo
+#, glxinfo # unused
 , ncurses
 , nodejs
 , nodePackages
@@ -13,7 +16,7 @@
 , scdoc
 , tracy
 , valgrind
-, vulkan-loader
+#, vulkan-loader # unused
 , vttest
 , wabt
 , wasmtime
@@ -66,7 +69,7 @@ let
     gtk4
     glib
   ];
-in mkShell rec {
+in mkShell {
   name = "ghostty";
 
   nativeBuildInputs = [

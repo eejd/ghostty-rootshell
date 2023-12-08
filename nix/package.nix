@@ -1,11 +1,5 @@
-# NOTE: using this derivation right out of the flake currently requires a build
-# of LLVM 17 and Zig master from source. This will take quite a bit of time.
-# Until LLVM 17 and an upcoming Zig 0.12 are up in nixpkgs, most folks will
-# want to continue to use the devShell and the instructions found at:
-#
-#   https://github.com/mitchellh/ghostty/tree/main#developing-ghostty
-#
-{ lib
+{
+  lib
 , stdenv
 
 , bzip2
@@ -31,9 +25,7 @@
 , ncurses
 , pkg-config
 , zig_0_12
-}:
-
-let
+}: let
   # The Zig hook has no way to select the release type without actual
   # overriding of the default flags.
   #
@@ -57,7 +49,7 @@ let
   # (It's also possible that you might see a hash mismatch - without the
   # network errors - if you don't have a previous instance of the cache
   # derivation in your store already. If so, just update the value as above.)
-  zigCacheHash = import ./zig_cache_hash.nix;
+  zigCacheHash = import ./zig-cache-hash.nix;
 
   zigCache = src: stdenv.mkDerivation {
     inherit src;
@@ -88,9 +80,7 @@ let
     outputHashMode = "recursive";
     outputHash = zigCacheHash;
   };
-in
-
-stdenv.mkDerivation (finalAttrs: {
+in stdenv.mkDerivation (finalAttrs: {
   pname = "ghostty";
   version = "0.1.0";
 
