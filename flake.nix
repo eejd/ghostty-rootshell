@@ -1,18 +1,13 @@
 {
   description = "👻";
 
-  nixConfig = {
-    extra-trusted-substituters = "https://cache.garnix.io/";
-    extra-trusted-public-keys = "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=";
-  };
-
   inputs = {
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
     # We want to stay as up to date as possible but need to be careful that the
     # glibc versions used by our dependencies from Nix are compatible with the
     # system glibc that the user is building for.
-    nixpkgs-stable.url = "github:nixos/nixpkgs/release-23.11";
+    nixpkgs-stable.url = "github:nixos/nixpkgs/release-23.05";
 
     # This is a nixpkgs mirror (based off of nixos-unstable) that contains
     # patches for LLVM 17 and Zig 0.12 (master/nightly).
@@ -47,7 +42,7 @@
     pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
     pkgs-zig-0-12 = nixpkgs-zig-0-12.legacyPackages.${system};
   in {
-    devShell = pkgs-stable.callPackage ./nix/devShell.nix {
+    devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
       inherit (pkgs-unstable) tracy;
       inherit (zls.packages.${system}) zls;
 
