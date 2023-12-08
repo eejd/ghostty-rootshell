@@ -4,13 +4,13 @@
 , autoPatchelfHook
 }:
 
-stdenv.mkDerivation {
+stdenv.mkDerivation rec {
   version = "0.1.0-e7a96089";
   pname = "wraptest";
 
   src = fetchFromGitHub {
     owner = "mattiase";
-    repo = "wraptest";
+    repo = pname;
     rev = "e7a960892873035d2ef56b9770c32b43635821fb";
     sha256 = "sha256-+v6xpPCmvKfsDkPmBSv6+6yAg2Kzame5Zwx2WKjQreI=";
   };
@@ -20,12 +20,20 @@ stdenv.mkDerivation {
   ];
 
   buildPhase = ''
-    gcc -o wraptest wraptest.c
+    runHook preBuild
+
+    cc -O3 -o wraptest wraptest.c
+
+    runHook postBuild
   '';
 
   installPhase = ''
+    runHook preInstall
+
     mkdir -p $out/bin
-    cp wraptest $out/bin
+    cp wraptest $out/bin/
+
+    runHook postInstall
   '';
 
   meta = {
