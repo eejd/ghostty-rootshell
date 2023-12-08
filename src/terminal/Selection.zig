@@ -156,6 +156,8 @@ pub fn topLeft(self: Selection) ScreenPoint {
     return switch (self.order()) {
         .forward => self.start,
         .reverse => self.end,
+        .mirrored_forward => .{ .x = self.end.x, .y = self.start.y },
+        .mirrored_reverse => .{ .x = self.start.x, .y = self.end.y },
     };
 }
 
@@ -164,10 +166,15 @@ pub fn bottomRight(self: Selection) ScreenPoint {
     return switch (self.order()) {
         .forward => self.end,
         .reverse => self.start,
+        .mirrored_forward => .{ .x = self.start.x, .y = self.end.y },
+        .mirrored_reverse => .{ .x = self.end.x, .y = self.start.y },
     };
 }
 
 /// Returns the selection in the given order.
+///
+/// Note that only forward and reverse are useful desired orders for this
+/// function. All other orders act as if forward order was desired.
 pub fn ordered(self: Selection, desired: Order) Selection {
     if (self.order() == desired) return self;
     const tl = self.topLeft();
@@ -175,13 +182,40 @@ pub fn ordered(self: Selection, desired: Order) Selection {
     return switch (desired) {
         .forward => .{ .start = tl, .end = br, .rectangle = self.rectangle },
         .reverse => .{ .start = br, .end = tl, .rectangle = self.rectangle },
+        else => .{ .start = tl, .end = br, .rectangle = self.rectangle },
     };
 }
 
-/// The order of the selection (whether it is selecting forward or back).
-pub const Order = enum { forward, reverse };
+/// The order of the selection:
+///
+///  * forward: start(x, y) is before end(x, y) (top-left to bottom-right).
+///  * reverse: end(x, y) is before start(x, y) (bottom-right to top-left).
+///  * mirrored_[forward|reverse]: special, rectangle selections only (see below).
+///
+///  For regular selections, the above also holds for top-right to bottom-left
+///  (forward) and bottom-left to top-right (reverse). However, for rectangle
+///  selections, both of these selections are *mirrored* as orientation
+///  operations only flip the x or y axis, not both. Depending on the y axis
+///  direction, this is either mirrored_forward or mirrored_reverse.
+///
+pub const Order = enum { forward, reverse, mirrored_forward, mirrored_reverse };
 
 fn order(self: Selection) Order {
+    if (self.rectangle) {
+        // Reverse (also handles single-column)
+        if (self.start.y > self.end.y and self.start.x >= self.end.x) return .reverse;
+        if (self.start.y >= self.end.y and self.start.x > self.end.x) return .reverse;
+
+        // Mirror, bottom-left to top-right
+        if (self.start.y > self.end.y and self.start.x < self.end.x) return .mirrored_reverse;
+
+        // Mirror, top-right to bottom-left
+        if (self.start.y < self.end.y and self.start.x > self.end.x) return .mirrored_forward;
+
+        // Forward
+        return .forward;
+    }
+
     if (self.start.y < self.end.y) return .forward;
     if (self.start.y > self.end.y) return .reverse;
     if (self.start.x <= self.end.x) return .forward;
@@ -407,5 +441,311 @@ test "Selection: within" {
 
         // Not within at all
         try testing.expect(!sel.within(.{ .x = 0, .y = 0 }, .{ .x = 4, .y = 1 }));
+    }
+}
+
+test "Selection: order, standard" {
+    const testing = std.testing;
+    {
+        // forward, multi-line
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+    {
+        // reverse, multi-line
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 2 },
+            .end = .{ .x = 2, .y = 1 },
+        };
+
+        try testing.expect(sel.order() == .reverse);
+    }
+    {
+        // forward, same-line
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 1 },
+            .end = .{ .x = 3, .y = 1 },
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+    {
+        // forward, single char
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 1 },
+            .end = .{ .x = 2, .y = 1 },
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+    {
+        // reverse, single line
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+        };
+
+        try testing.expect(sel.order() == .reverse);
+    }
+}
+
+test "Selection: order, rectangle" {
+    const testing = std.testing;
+    // Conventions:
+    // TL - top left
+    // BL - bottom left
+    // TR - top right
+    // BR - bottom right
+    {
+        // forward (TL -> BR)
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+    {
+        // reverse (BR -> TL)
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 2 },
+            .end = .{ .x = 1, .y = 1 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .reverse);
+    }
+    {
+        // mirrored_forward (TR -> BL)
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 3 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .mirrored_forward);
+    }
+    {
+        // mirrored_reverse (BL -> TR)
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 3 },
+            .end = .{ .x = 3, .y = 1 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .mirrored_reverse);
+    }
+    {
+        // forward, single line (left -> right )
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 1 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+    {
+        // reverse, single line (right -> left)
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .reverse);
+    }
+    {
+        // forward, single column (top -> bottom)
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 1 },
+            .end = .{ .x = 2, .y = 3 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+    {
+        // reverse, single column (bottom -> top)
+        const sel: Selection = .{
+            .start = .{ .x = 2, .y = 3 },
+            .end = .{ .x = 2, .y = 1 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .reverse);
+    }
+    {
+        // forward, single cell
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+            .rectangle = true,
+        };
+
+        try testing.expect(sel.order() == .forward);
+    }
+}
+
+test "topLeft" {
+    const testing = std.testing;
+    {
+        // forward
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 1 },
+        };
+        const expected: ScreenPoint = .{ .x = 1, .y = 1 };
+        try testing.expectEqual(sel.topLeft(), expected);
+    }
+    {
+        // reverse
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+        };
+        const expected: ScreenPoint = .{ .x = 1, .y = 1 };
+        try testing.expectEqual(sel.topLeft(), expected);
+    }
+    {
+        // mirrored_forward
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 3 },
+            .rectangle = true,
+        };
+        const expected: ScreenPoint = .{ .x = 1, .y = 1 };
+        try testing.expectEqual(sel.topLeft(), expected);
+    }
+    {
+        // mirrored_reverse
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 3 },
+            .end = .{ .x = 3, .y = 1 },
+            .rectangle = true,
+        };
+        const expected: ScreenPoint = .{ .x = 1, .y = 1 };
+        try testing.expectEqual(sel.topLeft(), expected);
+    }
+}
+
+test "bottomRight" {
+    const testing = std.testing;
+    {
+        // forward
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 1 },
+        };
+        const expected: ScreenPoint = .{ .x = 3, .y = 1 };
+        try testing.expectEqual(sel.bottomRight(), expected);
+    }
+    {
+        // reverse
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+        };
+        const expected: ScreenPoint = .{ .x = 3, .y = 1 };
+        try testing.expectEqual(sel.bottomRight(), expected);
+    }
+    {
+        // mirrored_forward
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 3 },
+            .rectangle = true,
+        };
+        const expected: ScreenPoint = .{ .x = 3, .y = 3 };
+        try testing.expectEqual(sel.bottomRight(), expected);
+    }
+    {
+        // mirrored_reverse
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 3 },
+            .end = .{ .x = 3, .y = 1 },
+            .rectangle = true,
+        };
+        const expected: ScreenPoint = .{ .x = 3, .y = 3 };
+        try testing.expectEqual(sel.bottomRight(), expected);
+    }
+}
+
+test "ordered" {
+    const testing = std.testing;
+    {
+        // forward
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 1 },
+        };
+        const sel_reverse: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+        };
+        try testing.expectEqual(sel.ordered(.forward), sel);
+        try testing.expectEqual(sel.ordered(.reverse), sel_reverse);
+        try testing.expectEqual(sel.ordered(.mirrored_reverse), sel);
+    }
+    {
+        // reverse
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 1 },
+        };
+        const sel_forward: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 1 },
+        };
+        try testing.expectEqual(sel.ordered(.forward), sel_forward);
+        try testing.expectEqual(sel.ordered(.reverse), sel);
+        try testing.expectEqual(sel.ordered(.mirrored_forward), sel_forward);
+    }
+    {
+        // mirrored_forward
+        const sel: Selection = .{
+            .start = .{ .x = 3, .y = 1 },
+            .end = .{ .x = 1, .y = 3 },
+            .rectangle = true,
+        };
+        const sel_forward: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+            .rectangle = true,
+        };
+        const sel_reverse: Selection = .{
+            .start = .{ .x = 3, .y = 3 },
+            .end = .{ .x = 1, .y = 1 },
+            .rectangle = true,
+        };
+        try testing.expectEqual(sel.ordered(.forward), sel_forward);
+        try testing.expectEqual(sel.ordered(.reverse), sel_reverse);
+        try testing.expectEqual(sel.ordered(.mirrored_reverse), sel_forward);
+    }
+    {
+        // mirrored_reverse
+        const sel: Selection = .{
+            .start = .{ .x = 1, .y = 3 },
+            .end = .{ .x = 3, .y = 1 },
+            .rectangle = true,
+        };
+        const sel_forward: Selection = .{
+            .start = .{ .x = 1, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+            .rectangle = true,
+        };
+        const sel_reverse: Selection = .{
+            .start = .{ .x = 3, .y = 3 },
+            .end = .{ .x = 1, .y = 1 },
+            .rectangle = true,
+        };
+        try testing.expectEqual(sel.ordered(.forward), sel_forward);
+        try testing.expectEqual(sel.ordered(.reverse), sel_reverse);
+        try testing.expectEqual(sel.ordered(.mirrored_forward), sel_forward);
     }
 }

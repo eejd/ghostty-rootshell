@@ -2300,13 +2300,11 @@ fn dragLeftClickDouble(
         self.setSelection(.{
             .start = word_current.start,
             .end = word_start.end,
-            .rectangle = ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt,
         });
     } else {
         self.setSelection(.{
             .start = word_start.start,
             .end = word_current.end,
-            .rectangle = ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt,
         });
     }
 }
@@ -2409,7 +2407,7 @@ fn dragLeftClickSingle(
         //   - Inverse logic for a point after the start.
         const click_point = self.mouse.left_click_point;
         const start: terminal.point.ScreenPoint = if (screen_point.before(click_point)) start: {
-            if (cell_start_xpos >= cell_xboundary) {
+            if ((ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt) or cell_start_xpos >= cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x > 0) terminal.point.ScreenPoint{
@@ -2421,7 +2419,7 @@ fn dragLeftClickSingle(
                 };
             }
         } else start: {
-            if (cell_start_xpos < cell_xboundary) {
+            if ((ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt) or cell_start_xpos < cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x < self.io.terminal.screen.cols - 1) terminal.point.ScreenPoint{
