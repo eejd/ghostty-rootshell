@@ -63,16 +63,30 @@ class TerminalManager {
     /// Create a new terminal window.
     func newWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         let c = createWindow(withBaseConfig: base)
-        if let window = c.window {
-            Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+        let window = c.window!
+        
+        // We want to go fullscreen if we're configured for new windows to go fullscreen
+        var toggleFullScreen = ghostty.windowFullscreen
+        
+        // If the previous focused window prior to creating this window is fullscreen,
+        // then this window also becomes fullscreen.
+        if let parent = focusedSurface?.window, parent.styleMask.contains(.fullScreen) {
+            toggleFullScreen = true
         }
         
-        if (ghostty.windowFullscreen) {
-            // NOTE: this doesn't properly handle non-native fullscreen yet
-            c.window?.toggleFullScreen(nil)
+        if (toggleFullScreen && !window.styleMask.contains(.fullScreen)) {
+            window.toggleFullScreen(nil)
         }
         
         c.showWindow(self)
+        
+        // Only cascade if we aren't fullscreen. This has to be dispatched async
+        // because it takes one event loop tick for showWindow to work.
+        if (!window.styleMask.contains(.fullScreen)) {
+            DispatchQueue.main.async {
+                Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+            }
+        }
     }
     
     /// Creates a new tab in the current main window. If there are no windows, a window
