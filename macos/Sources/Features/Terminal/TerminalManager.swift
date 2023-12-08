@@ -122,6 +122,11 @@ class TerminalManager {
             tg.removeWindow(window)
         }
         
+        // Our windows start our invisible. We need to make it visible. If we
+        // don't do this then various features such as window blur won't work because
+        // the macOS APIs only work on a visible window.
+        controller.showWindow(self)
+        
         // Add the window to the tab group and show it
         parent.addTabbedWindow(window, ordered: .above)
         window.makeKeyAndOrderFront(self)

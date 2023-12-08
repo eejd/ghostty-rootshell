@@ -486,7 +486,7 @@ extension Ghostty {
                 cursorUpdate(with: NSEvent())
             }
         }
-
+        
         override func viewDidMoveToWindow() {
             guard let window = self.window else { return }
             guard let surface = self.surface else { return }
