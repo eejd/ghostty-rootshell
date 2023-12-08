@@ -49,7 +49,7 @@
   # (It's also possible that you might see a hash mismatch - without the
   # network errors - if you don't have a previous instance of the cache
   # derivation in your store already. If so, just update the value as above.)
-  zigCacheHash = import ./zig-cache-hash.nix;
+  zigCacheHash = import ./zigCacheHash.nix;
 
   zigCache = src: stdenv.mkDerivation {
     inherit src;

@@ -3,15 +3,15 @@
 # Nothing in this script should fail.
 set -e
 
-CACHE_HASH_FILE="$(realpath "$(dirname "$0")/../zig-cache-hash.nix")"
+CACHE_HASH_FILE="$(realpath "$(dirname "$0")/../zigCacheHash.nix")"
 
 help() {
   echo ""
   echo "To fix, please (manually) re-run the script from the repository root,"
   echo "commit, and push the update:"
   echo ""
-  echo "    ./nix/build-support/check-zig-cache-hash.sh --update"
-  echo "    git add nix/zig-cache-hash.nix"
+  echo "    ./nix/build-support/check-zigCacheHash.sh --update"
+  echo "    git add nix/zigCacheHash.nix"
   echo "    git commit -m \"nix: update Zig cache hash\""
   echo "    git push"
   echo ""
@@ -52,7 +52,7 @@ fi
 
 # Write out the cache file
 cat > "${CACHE_HASH_FILE}" <<EOS
-# This file is auto-generated! check build-support/check-zig-cache-hash.sh for
+# This file is auto-generated! check build-support/check-zigCacheHash.sh for
 # more details.
 "${ZIG_CACHE_HASH}"
 EOS

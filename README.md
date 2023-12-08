@@ -560,5 +560,5 @@ To update it, you can run the following in the repository root:
 ./nix/build-support/check-zig-cache-hash.sh --update
 ```
 
-This will write out the `nix/zig-cache-hash.nix` file with the updated hash
+This will write out the `nix/zigCacheHash.nix` file with the updated hash
 that can then be committed and pushed to fix the builds.
