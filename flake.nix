@@ -9,8 +9,8 @@
     # system glibc that the user is building for.
     nixpkgs-stable.url = "github:nixos/nixpkgs/release-23.05";
 
-    # This is a nixpkgs mirror (based off of nixos-unstable) that contains
-    # patches for LLVM 17 and Zig 0.12 (master/nightly).
+    # This is a nixpkgs mirror (based off of master) that contains
+    # patches for Zig 0.12 (master/nightly).
     #
     # This gives an up-to-date Zig that contains the nixpkgs patches,
     # specifically the ones relating to NativeTargetInfo
