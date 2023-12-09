@@ -8,7 +8,7 @@ pub const Key = key: {
     const field_infos = std.meta.fields(Config);
     var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
     var i: usize = 0;
-    inline for (field_infos) |field| {
+    for (field_infos) |field| {
         // Ignore fields starting with "_" since they're internal and
         // not copied ever.
         if (field.name[0] == '_') continue;
