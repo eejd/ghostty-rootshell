@@ -502,7 +502,7 @@ run this from the repo root before you commit:
 prettier --write .
 ```
 
-Make sure your Prettier version matches the version of in [devshell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devshell.nix).
+Make sure your Prettier version matches the version of in [devShell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devShell.nix).
 
 ### Nix Package
 
