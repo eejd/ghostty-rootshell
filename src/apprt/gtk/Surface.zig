@@ -1210,13 +1210,48 @@ fn keyEvent(
     // Get the unshifted unicode value of the keyval. This is used
     // by the Kitty keyboard protocol.
     const keyval_unicode_unshifted: u21 = unshifted: {
-        // Note: this can't possibly always be right, specifically in the
-        // case of multi-level/group keyboards. But, this works for Dvorak,
-        // Norwegian, and French layouts and thats what we have real users for
-        // right now.
-        const lower = c.gdk_keyval_to_lower(keyval);
-        const lower_unicode = c.gdk_keyval_to_unicode(lower);
-        break :unshifted std.math.cast(u21, lower_unicode) orelse 0;
+        // We need to get the currently active keyboard layout so we know
+        // what group to look at.
+        const layout = c.gdk_key_event_get_layout(@ptrCast(event));
+
+        // Get all the possible keyboard mappings for this keycode. A keycode
+        // is the physical key pressed.
+        const display = c.gtk_widget_get_display(@ptrCast(self.gl_area));
+        var keys: [*]c.GdkKeymapKey = undefined;
+        var keyvals: [*]c.guint = undefined;
+        var n_keys: c_int = 0;
+        if (c.gdk_display_map_keycode(
+            display,
+            keycode,
+            @ptrCast(&keys),
+            @ptrCast(&keyvals),
+            &n_keys,
+        ) == 0) break :unshifted 0;
+
+        defer c.g_free(keys);
+        defer c.g_free(keyvals);
+
+        // debugging:
+        // log.debug("layout={}", .{layout});
+        // for (0..@intCast(n_keys)) |i| {
+        //     log.debug("keymap key={} codepoint={x}", .{
+        //         keys[i],
+        //         c.gdk_keyval_to_unicode(keyvals[i]),
+        //     });
+        // }
+
+        for (0..@intCast(n_keys)) |i| {
+            if (keys[i].group == layout and
+                keys[i].level == 0)
+            {
+                break :unshifted std.math.cast(
+                    u21,
+                    c.gdk_keyval_to_unicode(keyvals[i]),
+                ) orelse 0;
+            }
+        }
+
+        break :unshifted 0;
     };
 
     // We always reset our committed text when ending a keypress so that
@@ -1368,6 +1403,14 @@ fn keyEvent(
         if (gtk_key.keyFromKeyval(keyval)) |key| {
             break :key key;
         }
+
+        // If we have im text then this is invalid. This means that
+        // the keypress generated some character that we don't know about
+        // in our key enum. We don't want to use the physical key because
+        // it can be simply wrong. For example on "Turkish Q" the "i" key
+        // on a US layout results in "ı" which is not the same as "i" so
+        // we shouldn't use the physical key.
+        if (self.im_len > 0 or keyval_unicode_unshifted != 0) break :key .invalid;
 
         break :key physical_key;
     } else .invalid;
