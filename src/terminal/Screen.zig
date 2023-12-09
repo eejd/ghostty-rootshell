@@ -2485,11 +2485,14 @@ pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
         // because we aren't going to trim.
         if (self.rows == rows) break :blank 0;
 
-        // If there is history, blank line counting is disabled and
-        // we generate scrollback. Why? Terminal.app does it, seems... fine.
-        if (self.history > 0) break :blank 0;
+        const blank = self.trailingBlankLines();
 
-        break :blank self.trailingBlankLines();
+        // If we are shrinking the number of rows, we don't want to trim
+        // off more blank rows than the number we're shrinking because it
+        // creates a jarring screen move experience.
+        if (self.rows > rows) break :blank @min(blank, self.rows - rows);
+
+        break :blank blank;
     };
 
     // Make a copy so we can access the old indexes.
@@ -5369,7 +5372,7 @@ test "Screen: selectionString, rectangle, basic" {
 
     var s = try init(alloc, 5, 30, 0);
     defer s.deinit();
-    const str = 
+    const str =
         \\Lorem ipsum dolor
         \\sit amet, consectetur
         \\adipiscing elit, sed do
@@ -5381,7 +5384,7 @@ test "Screen: selectionString, rectangle, basic" {
         .end = .{ .x = 6, .y = 3 },
         .rectangle = true,
     };
-    const expected = 
+    const expected =
         \\t ame
         \\ipisc
         \\usmod
@@ -5399,7 +5402,7 @@ test "Screen: selectionString, rectangle, w/EOL" {
 
     var s = try init(alloc, 5, 30, 0);
     defer s.deinit();
-    const str = 
+    const str =
         \\Lorem ipsum dolor
         \\sit amet, consectetur
         \\adipiscing elit, sed do
@@ -5411,7 +5414,7 @@ test "Screen: selectionString, rectangle, w/EOL" {
         .end = .{ .x = 26, .y = 4 },
         .rectangle = true,
     };
-    const expected = 
+    const expected =
         \\dolor
         \\nsectetur
         \\lit, sed do
@@ -5431,7 +5434,7 @@ test "Screen: selectionString, rectangle, more complex w/breaks" {
 
     var s = try init(alloc, 8, 30, 0);
     defer s.deinit();
-    const str = 
+    const str =
         \\Lorem ipsum dolor
         \\sit amet, consectetur
         \\adipiscing elit, sed do
@@ -5446,7 +5449,7 @@ test "Screen: selectionString, rectangle, more complex w/breaks" {
         .end = .{ .x = 26, .y = 7 },
         .rectangle = true,
     };
-    const expected = 
+    const expected =
         \\elit, sed do
         \\por incididunt
         \\t dolore
@@ -5761,6 +5764,31 @@ test "Screen: resize (no reflow) less rows with scrollback" {
         defer alloc.free(contents);
         const expected = "2EFGH\n3IJKL\n4ABCD\n5EFGH";
         try testing.expectEqualStrings(expected, contents);
+    }
+}
+
+// https://github.com/mitchellh/ghostty/issues/1030
+test "Screen: resize (no reflow) less rows with empty trailing" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1\n2\n3\n4\n5\n6\n7\n8";
+    try s.testWriteString(str);
+    try s.scroll(.{ .clear = {} });
+    s.cursor.x = 0;
+    s.cursor.y = 0;
+    try s.testWriteString("A\nB");
+
+    const cursor = s.cursor;
+    try s.resizeWithoutReflow(2, 5);
+    try testing.expectEqual(cursor, s.cursor);
+
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("A\nB", contents);
     }
 }
 
