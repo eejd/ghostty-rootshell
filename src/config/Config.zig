@@ -462,6 +462,13 @@ class: ?[:0]const u8 = null,
 ///     send a string value that includes spaces, wrap the entire
 ///     trigger/action in double quotes. Example: --keybind="up=csi:A B"
 ///
+/// There are some additional special values that can be specified for
+/// keybind:
+///
+///   - `keybind = clear` will clear all set keybindings. Warning: this
+///     removes ALL keybindings up to this point, including the default
+///     keybindings.
+///
 keybind: Keybinds = .{},
 
 /// Window padding. This applies padding between the terminal cells and
@@ -2306,6 +2313,17 @@ pub const Keybinds = struct {
             break :value buf;
         };
         errdefer if (copy) |v| alloc.free(v);
+
+        // Check for special values
+        if (std.mem.eql(u8, value, "clear")) {
+            // We don't clear the memory because its in the arena and unlikely
+            // to be free-able anyways (since arenas can only clear the last
+            // allocated value). This isn't a memory leak because the arena
+            // will be freed when the config is freed.
+            log.info("config has 'keybind = clear', all keybinds cleared", .{});
+            self.set = .{};
+            return;
+        }
 
         const binding = try inputpkg.Binding.parse(value);
         switch (binding.action) {
